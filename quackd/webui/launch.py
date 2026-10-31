@@ -38,7 +38,7 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 EVERY_NETWORK = ("0.0.0.0", "::", "")
@@ -144,13 +144,35 @@ def urls(bind: str, port: int, token_value: str | None) -> list[str]:
     return [f"http://{_url_host(host)}:{port}{tail}" for host in hosts]
 
 
+#: The quiet zone a scanner needs round a code, in modules, and what OpenCV draws of it already.
+QUIET_ZONE = 4
+OPENCV_BORDER = 2
+
+
+def _qr_modules(text: str) -> list[list[bool]]:
+    """`text` as a QR code's modules, True where a module is dark, with the quiet zone a scanner
+    needs round it, error correction at level M. OpenCV, which quackd already depends on, draws
+    one pixel per module with two modules of quiet zone, so two more are added here."""
+    import cv2
+
+    params = cv2.QRCodeEncoder.Params()
+    params.correction_level = cv2.QRCodeEncoder_CORRECT_LEVEL_M
+    code = cv2.QRCodeEncoder.create(params).encode(text)
+    if code is None or code.size == 0:
+        raise ValueError(f"{len(text)} characters are more than one QR code holds")
+    margin = QUIET_ZONE - OPENCV_BORDER
+    width = int(code.shape[1]) + 2 * margin
+    light = [[False] * width for _ in range(margin)]
+    grid = cast("list[list[int]]", code.tolist())  # a code is always two-dimensional
+    rows = [[False] * margin + [int(p) == 0 for p in row] + [False] * margin for row in grid]
+    return [*light, *rows, *[list(r) for r in light]]
+
+
 def qr_image(text: str, *, module_px: int = 6) -> Any:
     """`text` as a QR code picture, black on white, the quiet zone a scanner needs included."""
     from PIL import Image
 
-    from quackd.passport_qr import qr_modules
-
-    rows = qr_modules(text)
+    rows = _qr_modules(text)
     picture = Image.new("1", (len(rows[0]), len(rows)), 1)
     for y, row in enumerate(rows):
         for x, dark in enumerate(row):
@@ -165,9 +187,7 @@ def qr_lines(text: str) -> list[str]:
     """`text` as a QR code in half blocks, two rows of modules to a line of text, light modules
     drawn and dark ones left as the terminal's own dark background, which is how a phone reads
     a code off a dark terminal."""
-    from quackd.passport_qr import qr_modules
-
-    rows = qr_modules(text)
+    rows = _qr_modules(text)
     if len(rows) % 2:
         rows.append([False] * len(rows[0]))
     glyph = {(True, True): "█", (True, False): "▀", (False, True): "▄", (False, False): " "}

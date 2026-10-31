@@ -16,8 +16,7 @@ import re
 import socket
 import ssl
 import time
-from dataclasses import dataclass
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from quackd.passport import jws
 from quackd.passport.errors import PassportError
@@ -34,6 +33,14 @@ _STATUS = re.compile(rb"^HTTP/1\.[01] ([1-5][0-9][0-9])(?: ([^\r\n]*))?$")
 _REDIRECTS = (301, 302, 303, 307, 308)
 
 
+class Unreachable(PassportError):
+    """A host that could not be reached, or did not answer within the reader's time: no answer
+    at all, which is worth trying again later, where a refusal is an answer (spec 5.7)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("5.7", message)
+
+
 class HttpStatus(PassportError):
     """A host that answered, with a status other than 200."""
 
@@ -42,25 +49,14 @@ class HttpStatus(PassportError):
         self.status = status
 
 
-@dataclass(frozen=True)
-class Target:
-    """A URL to fetch, and the short id its `#rp=` fragment promised, if it had one."""
-
-    url: str
-    short_id: str | None
-
-
-def target(text: str) -> Target:
-    """A URL as a person typed it or a camera read it (spec 5.2).
-
-    A bare host, `http://10.0.0.5:8790`, means its well-known URL. The fragment never travels
-    to the server; `#rp=` in it is the short id the passport must turn out to have."""
+def target(text: str) -> str:
+    """The URL to fetch for one a person typed (spec 5.1). A bare host, `http://10.0.0.5:8790`,
+    means its well-known URL, and a fragment, which never travels to a server, is dropped."""
     parts = urlsplit(text.strip())
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise PassportError("5.7", f"{text!r} is not an http or https URL")
-    promised = parse_qs(parts.fragment).get("rp", [None])[0]
     path = parts.path if parts.path not in ("", "/") else WELL_KNOWN_JSON
-    return Target(urlunsplit((parts.scheme, parts.netloc, path, parts.query, "")), promised)
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, ""))
 
 
 def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEOUT_S) -> bytes:
@@ -137,7 +133,7 @@ def _exchange(
     except PassportError:
         raise
     except OSError as e:
-        raise PassportError("5.7", f"{url} could not be reached: {e}") from e
+        raise Unreachable(f"{url} could not be reached: {e}") from e
     return _parse(answer, url)
 
 
@@ -147,14 +143,12 @@ def _read(sock: socket.socket, budget: int, deadline: float, url: str, timeout: 
     while True:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise PassportError("5.7", f"{url} took more than the {timeout:g} s a reader waits")
+            raise Unreachable(f"{url} took more than the {timeout:g} s a reader waits")
         sock.settimeout(left)
         try:
             chunk = sock.recv(min(65_536, budget - total))
         except TimeoutError as e:
-            raise PassportError(
-                "5.7", f"{url} took more than the {timeout:g} s a reader waits"
-            ) from e
+            raise Unreachable(f"{url} took more than the {timeout:g} s a reader waits") from e
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)

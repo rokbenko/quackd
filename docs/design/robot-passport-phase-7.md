@@ -1,7 +1,19 @@
 # Design: Robot Passport, phase 7, reaching robots that do not run quackd
 
-**Status:** planned, nothing of it built · **Follows:** 0.23.0, which shipped phases 1 to 6 ·
-**Written:** 2026-10-22
+**Status:** dropped by ADR-0073 on 2026-10-29, nothing of it built · **Follows:** 0.23.0, which
+shipped phases 1 to 6 · **Written:** 2026-10-22
+
+> **Read on 2026-10-29:** phase 7 is dropped, and none of its six pieces will be built.
+> [ADR-0073](../adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md) moved Robot
+> Passport onto the robot it introduces: `quackd onboard` runs on the robot's own computer, an
+> NVIDIA Jetson first, the owner signs what the passport says, and robots near each other find
+> one another by Bluetooth LE and talk over the LAN or a Bluetooth link. The pieces below were
+> ways to reach robots that do not run quackd, and the QR stickers, the MQTT binding and the ROS 2
+> binding they built on went in 0.29.0. "First: the run 0.23.0 still owes" and "Also open,
+> outside phase 7" are replaced by PLAN.md's item for Robot Passport on two Jetsons with
+> Bluetooth. The links below into docs/passport/ still land, most of them on a short note that
+> says what went and when. The rest of this note is the plan as it stood on 2026-10-22, left as
+> it was.
 
 This is the working plan for Robot Passport after 0.23.0. It is written so that a session that
 knows nothing else can pick it up: read this note, then [roadmap.md](../passport/roadmap.md),

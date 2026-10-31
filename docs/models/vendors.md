@@ -72,7 +72,7 @@ a gated repository and what starts and reaches an endpoint ([vlas.md](vlas.md)).
 GR00T N1.7 is served as LeRobot's `groot` type. Its backbone's tokenizer,
 `nvidia/Cosmos-Reason2-2B`, is gated on the Hub, and its weights are under the NVIDIA Open Model
 License. An NVIDIA Jetson is something else: a board quackd reaches with `--host` for its model
-server, camera and detector, and never runs on ([guides/jetson.md](../guides/jetson.md)).
+server, camera and detector ([guides/jetson.md](../guides/jetson.md)).
 
 ### Physical Intelligence
 

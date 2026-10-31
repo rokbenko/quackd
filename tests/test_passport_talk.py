@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from quackd.passport.talk import (
     MAX_PENDING,
     MAX_SESSIONS,
     REMEMBERED,
+    Answered,
     Endpoint,
     VersionUnknown,
     envelope,
@@ -32,12 +34,12 @@ from quackd.passport.talk import (
     seal,
     version_answer,
 )
+from tests.passport_helpers import INTRUDER, OWNER, OWNER_B, REFERENCE, RUNTIME, A, B, passport
+from tests.passport_helpers import doc as passport_doc
 
 VECTORS = Path(__file__).resolve().parents[1] / "docs" / "passport" / "vectors"
-KEYS = json.loads((VECTORS / "keys.json").read_text(encoding="utf-8"))["keys"]
-A = SigningKey(bytes.fromhex(KEYS["robot-a"]["seed_hex"]))
-B = SigningKey(bytes.fromhex(KEYS["robot-b"]["seed_hex"]))
-INTRUDER = SigningKey(bytes.fromhex(KEYS["intruder"]["seed_hex"]))
+#: When the vector passports were signed, and until when their owners' signatures hold.
+VECTOR_ISSUED, VECTOR_EXPIRES = "2026-10-28T00:00:00Z", "2027-10-28T00:00:00Z"
 
 
 def nonce(label: str) -> str:
@@ -50,7 +52,21 @@ def vector(name: str) -> str:
 
 
 def passport_of(key: SigningKey, name: str) -> str:
-    return document.sign({"passport": "0.1", "id": key.did, "name": name}, key)
+    """A 1.0 passport for `key`, signed by its owner: B's by the vectors' second owner."""
+    return passport(key, OWNER_B if key == B else OWNER, name)
+
+
+def vector_passport(key: SigningKey, owner: SigningKey, name: str) -> str:
+    """The passport a vector hello carries, member for member as the script writes it."""
+    doc = {
+        "passport": document.VERSION,
+        "id": key.did,
+        "name": name,
+        "owner": {"id": owner.did},
+        "issued": VECTOR_ISSUED,
+        "expires": VECTOR_EXPIRES,
+    }
+    return document.sign(doc, owner)
 
 
 def tokens(*labels: str) -> Callable[[], str]:
@@ -69,8 +85,8 @@ class Clock:
 def pair(clock: Clock | None = None) -> tuple[Endpoint, Endpoint]:
     when = clock or Clock()
     return (
-        Endpoint(A.did, passport_of(A, "duck-01"), A, clock=when),
-        Endpoint(B.did, passport_of(B, "cart-01"), B, clock=when),
+        Endpoint(A.did, passport_of(A, "g1-edu-01"), A, clock=when),
+        Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, clock=when),
     )
 
 
@@ -96,18 +112,28 @@ def test_every_valid_talk_vector_reads(name: str) -> None:
     assert message.signed and message.sender in (A.did, B.did)
 
 
-def test_an_unsigned_ask_is_refused_as_the_vectors_say() -> None:
+def test_an_unsigned_message_is_refused_as_the_vectors_say() -> None:
     with pytest.raises(PassportError) as caught:
-        read_message(vector("ask-unsigned.json"))
+        read_message(vector("unsigned-say.json"))
     assert caught.value.rule == "6.1"
 
 
 def test_two_endpoints_write_the_vectors_hello_byte_for_byte() -> None:
     a = Endpoint(
-        A.did, passport_of(A, "duck-01"), A, token=tokens("robot-a/session-1", "msg-1", "msg-3")
+        A.did,
+        vector_passport(A, OWNER, "g1-edu-01"),
+        A,
+        token=tokens("robot-a/session-1", "msg-1", "msg-3"),
+        wall=lambda: REFERENCE,
+        runtime=RUNTIME["robot-a"],
     )
     b = Endpoint(
-        B.did, passport_of(B, "cart-01"), B, token=tokens("robot-b/session-1", "msg-2", "msg-4")
+        B.did,
+        vector_passport(B, OWNER_B, "agile-one-sn-01"),
+        B,
+        token=tokens("robot-b/session-1", "msg-2", "msg-4"),
+        wall=lambda: REFERENCE,
+        runtime=RUNTIME["robot-b"],
     )
     first = a.hello(B.did)
     assert first == vector("hello-1.jws")
@@ -119,12 +145,13 @@ def test_two_endpoints_write_the_vectors_hello_byte_for_byte() -> None:
     opened = b.receive(read_message(vector("hello-3.jws")))
     assert opened.status == 204 and opened.event is not None
     assert opened.event.session.nonces == (nonce("robot-a/session-1"), nonce("robot-b/session-1"))
-    said = b.say(A.did, "cart-01 here, heading for the kitchen door")
+    assert opened.event.session.runtime == RUNTIME["robot-a"]
+    said = b.say(A.did, "agile-one-sn-01 here, holding the door for you")
     assert said == vector("say-in-session.jws")
     heard = a.receive(read_message(said))
-    assert (
-        heard.event is not None and heard.event.text == "cart-01 here, heading for the kitchen door"
-    )
+    assert heard.event is not None
+    assert heard.event.text == "agile-one-sn-01 here, holding the door for you"
+    assert heard.event.session.runtime == RUNTIME["robot-b"]
     replayed = a.receive(read_message(vector("say-replayed.jws")))
     assert replayed.status == 403 and "match no session" in replayed.reason
 
@@ -151,8 +178,8 @@ def test_a_second_step_lifted_from_one_handshake_into_another_is_refused() -> No
 
 
 def test_only_the_robot_a_hello_was_sent_to_can_answer_it() -> None:
-    a = Endpoint(A.did, passport_of(A, "duck-01"), A)
-    intruder = Endpoint(INTRUDER.did, passport_of(INTRUDER, "cart-01"), INTRUDER)
+    a = Endpoint(A.did, passport_of(A, "g1-edu-01"), A)
+    intruder = Endpoint(INTRUDER.did, passport_of(INTRUDER, "agile-one-sn-01"), INTRUDER)
     answer = intruder.receive(read_message(a.hello(B.did)))
     assert answer.status == 403  # the hello is addressed to B, not to the intruder
     first = a.hello(B.did)
@@ -168,14 +195,14 @@ def test_a_word_from_another_robot_with_this_sessions_nonces_is_refused() -> Non
     handshake(a, b)
     session = b.session_with(A.did)
     assert session is not None
-    doc = envelope("say", INTRUDER.did, {"text": "it is me, duck-01"}, nonces=session.nonces)
+    doc = envelope("say", INTRUDER.did, {"text": "it is me, g1-edu-01"}, nonces=session.nonces)
     refused = b.receive(read_message(seal(doc, INTRUDER)))
     assert refused.status == 403
 
 
-def test_an_unsigned_message_naming_a_did_key_is_refused() -> None:
+def test_an_unsigned_message_is_refused_whoever_it_names() -> None:
     doc = envelope("say", A.did, {"text": "hi"}, nonces=(nonce("x"), nonce("y")))
-    with pytest.raises(PassportError, match="anybody can write that"):
+    with pytest.raises(PassportError, match="unsigned message"):
         read_message(strict.dumps(doc))
 
 
@@ -188,7 +215,7 @@ def test_a_message_signed_by_a_key_its_from_does_not_hold_is_refused() -> None:
 
 def test_a_passport_signature_never_passes_as_a_message() -> None:
     with pytest.raises(PassportError, match="typ"):
-        read_message(passport_of(A, "duck-01"))
+        read_message(passport_of(A, "g1-edu-01"))
 
 
 def test_a_repeated_message_is_dropped_and_a_repeated_hello_answered_again() -> None:
@@ -237,7 +264,7 @@ def test_a_message_replayed_into_its_session_is_dropped_however_many_came_betwee
 
 def test_quiet_sessions_end_before_a_new_hello_meets_the_limit() -> None:
     clock = Clock()
-    b = Endpoint(B.did, passport_of(B, "cart-01"), B, clock=clock)
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, clock=clock)
     for i in range(MAX_SESSIONS):
         key = SigningKey.generate()
         handshake(Endpoint(key.did, passport_of(key, f"robot-{i}"), key, clock=clock), b)
@@ -255,7 +282,7 @@ def test_a_part_outside_base64url_is_refused_and_never_raises_anything_else() ->
 
 
 def test_a_flood_of_hellos_is_refused_once_the_table_is_full() -> None:
-    b = Endpoint(B.did, passport_of(B, "cart-01"), B)
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B)
     for _ in range(MAX_PENDING):
         stranger = SigningKey.generate()
         hello = Endpoint(stranger.did, passport_of(stranger, "x"), stranger).hello(B.did)
@@ -265,30 +292,102 @@ def test_a_flood_of_hellos_is_refused_once_the_table_is_full() -> None:
     assert b.receive(read_message(hello)).status == 429
 
 
-def test_a_robot_with_no_key_opens_a_session_that_says_so_and_can_never_ask() -> None:
-    robot = "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10"
-    plain = strict.dumps({"passport": "0.1", "id": robot, "name": "toy"}).decode()
-    toy = Endpoint(robot, plain)
-    b = Endpoint(B.did, passport_of(B, "cart-01"), B)
-    answer = b.receive(read_message(toy.hello(B.did)))
-    assert answer.wire is not None
-    third = toy.receive(read_message(answer.wire))
-    assert third.wire is not None and third.event is not None
-    opened = b.receive(read_message(third.wire))
-    assert opened.event is not None and opened.event.session.authenticated is False
-    assert b.receive(read_message(toy.say(B.did, "beep"))).event is not None
-    ask = envelope("ask", robot, {"skill": "pause"}, nonces=opened.event.session.nonces)
-    with pytest.raises(PassportError, match="must be signed"):
-        read_message(seal(ask, None))
+def _hello_carrying(carried: str, *, sender: SigningKey = A) -> str:
+    """A first hello from `sender`, signed by it, carrying whatever passport text it likes."""
+    doc = envelope(
+        "hello", sender.did, {"passport": carried, "nonce": nonce("n")}, to=B.did, msg=nonce("m")
+    )
+    return seal(doc, sender)
+
+
+def test_a_hello_carrying_an_unsigned_passport_is_refused() -> None:
+    """A robot proves its key in the hello and its owner vouches in the passport: a passport
+    nobody signed is a claim anybody could write, so no session opens on it."""
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B)
+    unsigned = strict.dumps(passport_doc(A)).decode()
+    answer = b.receive(read_message(_hello_carrying(unsigned)))
+    assert answer.status == 400 and "signed by its owner" in answer.reason
+    assert b.sessions == {}
+
+
+def test_a_hello_carrying_another_robots_passport_is_refused() -> None:
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, wall=lambda: REFERENCE)
+    answer = b.receive(read_message(vector("hello-foreign-passport.jws")))
+    assert answer.status == 400 and "another robot's" in answer.reason
+
+
+def test_a_hello_carrying_a_passport_past_its_dates_is_refused() -> None:
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, wall=lambda: REFERENCE)
+    expired = (VECTORS / "expired.jws").read_text(encoding="utf-8").strip()
+    answer = b.receive(read_message(_hello_carrying(expired)))
+    assert answer.status == 400 and "4.5" in answer.reason
+
+
+def test_a_hello_carrying_this_robots_own_passport_is_refused() -> None:
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B)
+    mirror = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B)
+    answer = b.receive(read_message(mirror.hello("*")))
+    assert answer.status in (400, 403)
+    assert b.sessions == {}
+
+
+@pytest.mark.parametrize("status", [403, 429, 503, 400])
+def test_a_hello_answered_with_a_status_says_which_so_a_caller_can_wait_or_give_up(
+    status: int,
+) -> None:
+    """403 is a robot that has not heard this one by radio yet, 429 and 503 one that is busy:
+    worth another try soon. Anything else is a no. Whoever said hello reads the difference from
+    the status, and from no word of the other robot's."""
+    a, _b = pair()
+    with pytest.raises(Answered) as answered:
+        open_session(a, None, lambda _wire: (status, "not now\n"))
+    assert answered.value.status == status and answered.value.rule == "6.3"
+    assert not a.sessions
+
+
+def test_a_hellos_runtime_rides_with_it_and_reaches_the_session() -> None:
+    """What no owner signs, the software, the beacon id the radio advertises now and the port
+    to answer on, travels in the hello and stays on the session for the glue to use."""
+    a, b = pair()
+    a.runtime = {"software": "quackd/x", "beacon": "0123456789abcdef", "reach": {"http_port": 9}}
+    b.runtime = {"beacon": "fedcba9876543210"}
+    handshake(a, b)
+    on_b, on_a = b.session_with(A.did), a.session_with(B.did)
+    assert on_b is not None and on_a is not None
+    assert on_b.runtime == a.runtime and on_a.runtime == b.runtime
+
+
+@pytest.mark.parametrize(
+    "runtime",
+    [
+        {"beacon": "NOT-HEX-AT-ALL!!"},
+        {"beacon": "0123"},
+        {"software": "x" * 65},
+        {"reach": {"http_port": 70_000}},
+        {"reach": {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}},
+        {"reach": {"note": "x" * 65}},
+        {"reach": "8790"},
+    ],
+)
+def test_a_hello_whose_runtime_is_malformed_is_refused(runtime: dict[str, object]) -> None:
+    doc = envelope(
+        "hello",
+        A.did,
+        {"passport": passport_of(A, "g1-edu-01"), "nonce": nonce("n"), **runtime},
+        to=B.did,
+    )
+    with pytest.raises(PassportError) as caught:
+        read_message(seal(doc, A))
+    assert caught.value.rule == "6.3"
 
 
 def test_a_message_in_a_version_this_robot_does_not_read_is_answered_with_the_versions() -> None:
     doc = envelope("say", A.did, {"text": "hi"}, nonces=(nonce("x"), nonce("y")))
-    doc["passport"] = "1.0"
+    doc["passport"] = "2.0"
     with pytest.raises(VersionUnknown) as caught:
         read_message(seal(doc, A))
     answer = read_message(version_answer(caught.value, B.did, B))
-    assert answer.type == "answer" and answer.body["versions"] == ["0.1"]
+    assert answer.type == "answer" and answer.body["versions"] == [document.VERSION]
     assert answer.re == doc["msg"] and answer.to == A.did
 
 
@@ -301,9 +400,9 @@ def test_a_message_is_held_to_its_size_and_a_hello_may_carry_a_large_passport() 
     long_say["nonces"] = list(session.nonces)
     with pytest.raises(PassportError, match="any message but a hello"):
         read_message(seal(long_say, A))
-    doc = {"passport": "0.1", "id": A.did, "name": "duck-01", "padding": ""}
+    doc = passport_doc(A, padding="")
     doc["padding"] = "x" * (document.MAX_BYTES - len(strict.dumps(doc)))
-    big = Endpoint(A.did, document.sign(doc, A), A).hello(B.did)
+    big = Endpoint(A.did, document.sign(doc, OWNER), A).hello(B.did)
     assert len(big) > MAX_MESSAGE_BYTES
     assert read_message(big).type == "hello"
 
@@ -339,11 +438,44 @@ def test_open_session_runs_the_hello_over_a_channel_whose_reply_rides_back() -> 
         return reply.status, reply.wire
 
     session = open_session(a, B.did, post)
-    assert session.peer == B.did and session.authenticated
+    assert session.peer == B.did
     assert b.session_with(A.did) is not None
 
-    refused = Endpoint(A.did, passport_of(A, "duck-01"), A)
+    refused = Endpoint(A.did, passport_of(A, "g1-edu-01"), A)
     replies = iter([(200, None), (403, None)])
     with pytest.raises(PassportError, match="not with a hello"):
         open_session(refused, B.did, lambda _wire: next(replies))
     assert refused.sessions == {}
+
+
+def test_a_second_hello_posted_to_the_inbox_is_refused_and_the_real_answer_still_opens() -> None:
+    """A second hello only ever comes back on the reply to the first. One posted to this
+    robot's inbox is somebody who saw the first, cleartext on a LAN or a link, racing the robot
+    it was for: taken, it opened a session for the eavesdropper and cost the real meeting."""
+    a, b = pair()
+    eavesdropper = Endpoint(INTRUDER.did, passport_of(INTRUDER, "van-07"), INTRUDER, clock=Clock())
+    first = a.hello(None)
+    forged = eavesdropper.receive(read_message(first))
+    assert forged.status == 200 and forged.wire is not None
+    refused = a.receive(read_message(forged.wire), from_inbox=True)
+    assert refused.status == 403 and "reply to the first" in refused.reason
+    real = b.receive(read_message(first))
+    assert real.status == 200 and real.wire is not None
+    opened = a.receive(read_message(real.wire))
+    assert opened.status == 200 and opened.event is not None and opened.event.kind == "met"
+    assert a.session_with(B.did) is not None and a.session_with(INTRUDER.did) is None
+
+
+def test_a_session_ends_when_the_passport_it_was_opened_on_expires() -> None:
+    """A reader may not use a passport past its `expires` (spec 5.8), and a robot that keeps
+    talking every few minutes kept its session, and the tier it was judged at, for ever."""
+    clock = Clock()
+    now = [time.time()]
+    a = Endpoint(A.did, passport_of(A, "g1-edu-01"), A, clock=clock, wall=lambda: now[0])
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, clock=clock, wall=lambda: now[0])
+    handshake(a, b)
+    assert a.session_with(B.did) is not None
+    expires = document.read_jws(passport_of(B, "agile-one-sn-01")).document["expires"]
+    now[0] = document.epoch(expires, "expires") + 3600
+    assert [s.peer for s in a.expire()] == [B.did]
+    assert a.session_with(B.did) is None

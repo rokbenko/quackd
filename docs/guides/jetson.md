@@ -1,32 +1,40 @@
 # quackd and an NVIDIA Jetson
 
 A Jetson is small enough to ride on a robot and has a GPU, and on its own it is already a
-robot's computer. quackd never runs on it. quackd stays on your laptop, and `--host` names the
-board, which gives the quackd there four things: the model on the board's GPU, the board's
-health, frames from a camera on the board, and detections computed on its GPU. The first is
-your own model server, installed on the board. The other three come from one small daemon quackd
-ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md), the way it ships a camera
-daemon for the Open Duck Mini's Pi.
+robot's computer. quackd meets one in two ways. Every quackd command but one stays on your
+laptop, and `--host` names the board, which gives the quackd there four things: the model on the
+board's GPU, the board's health, frames from a camera on the board, and detections computed on
+its GPU. The first is your own model server, installed on the board. The other three come from
+one small daemon quackd ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
+the way it ships a camera daemon for the Open Duck Mini's Pi. The other way is the one part of
+quackd that runs on the board itself, `quackd onboard`, which a robot that carries a Jetson runs
+so that it can introduce itself to robots it meets, and which drives the robot from there when
+the robot's file names an adapter ([Robot Passport on the board](#robot-passport-on-the-board)).
 
 Nothing on this page has been run on a Jetson by this project. It is written from NVIDIA's own
-documentation, and quackd's side of it, the daemon, the client, the detector and the camera,
-was exercised against fakes on a laptop. The [Status](#status) section at the end says exactly
-what that does and does not prove, and what to send back if you run it on yours.
+documentation, and quackd's side of it, the daemon, the client, the detector, the camera and
+`quackd onboard`, was exercised against fakes on a laptop. The [Status](#status) section at the
+end says exactly what that does and does not prove, and what to send back if you run it on
+yours.
 
 > [!NOTE]
 > A Jetson is not a robot. It never appears in `quackd list-adapters` and there is no
 > `--robot jetson:...`. An adapter is a body with a manifest and intents. A Jetson is a
-> computer, and `--host` names it beside the body `--robot` names
+> computer: `--host` names it beside the body `--robot` names, and `quackd onboard` calls it a
+> board, the computer a robot carries
 > ([ADR-0044](../adr/0044-a-jetson-is-a-host-not-a-body.md) decided the first half,
-> [ADR-0046](../adr/0046-the-jetson-is-reached-not-run-on.md) the second).
+> [ADR-0046](../adr/0046-the-jetson-is-reached-not-run-on.md) the second, and
+> [ADR-0073](../adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md) put the
+> one command that runs on the board there).
 
 ## Reached, not run on
 
-The arrangement is two machines. The laptop runs quackd: the loop, the executor, the gates and
-the record. The board runs what needs the board: the model server on its GPU (Ollama, or
-`llama-server` or vLLM), quackd's host daemon, and, when the board is a robot's own computer,
-that robot's daemon. quackd reaches the model server through the local presets that already
-exist ([guides/local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port 9874.
+The arrangement `--host` makes is two machines. The laptop runs quackd: the loop, the executor,
+the gates and the record. The board runs what needs the board: the model server on its GPU
+(Ollama, or `llama-server` or vLLM), quackd's host daemon, and, when the board is a robot's own
+computer, that robot's daemon. quackd reaches the model server through the local presets that
+already exist ([guides/local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port
+9874.
 
 `--host HOST[:PORT]` names the board on `quackd run`, `serve-mcp`, `doctor`, `robot add` and
 `robot edit`, and `--host-token` goes with it. The port is the daemon's, 9874 unless you changed
@@ -110,15 +118,15 @@ The L4T column is off NVIDIA's JetPack archive and the Ubuntu column off each re
 download page, both read on 2026-09-22. **NVIDIA publishes no Python version at all**: that
 column is Ubuntu's own default `python3` for the release beside it. All of it is version
 sensitive by nature, so check it against the board in front of you. `quackd doctor --host`
-names your board's JetPack out of this same table in `quackd/doctor.py`, and
+names your board's JetPack out of this same table in `quackd/boards/l4t.py`, and
 `tests/test_docs.py` holds the two copies to each other so the page and the command cannot
 drift apart. The releases are spelled in three parts here, which is the form the parser
 normalises to, so JetPack 6.1 appears as `36.4.0` where NVIDIA's own table writes `36.4`.
 
-quackd's own Python floor does not reach the board, because the quackd package is not
-installed there. The board runs only the host daemon, one file under JetPack's own `python3`,
-written for Python 3.10 with nothing but the standard library at import, and each thing it
-serves asks for a little more:
+For `--host`, quackd's own Python floor does not reach the board, because the quackd package is
+not installed there. The board runs only the host daemon, one file under JetPack's own
+`python3`, written for Python 3.10 with nothing but the standard library at import, and each
+thing it serves asks for a little more:
 
 - **Health** needs nothing installed. The daemon reads five files and runs `nvpmodel -q` and
   `tegrastats`, which JetPack ships.
@@ -132,6 +140,12 @@ JetPack 5 (L4T 35.x, Ubuntu 20.04, Python 3.8) is older than the Python the daem
 for, so this page stops at 6. JetPack 7 brought the Orin family onto Ubuntu 24.04 and Python
 3.12, and its wheel ecosystem is younger: treat it as forward looking and keep 6.2 as the one
 this page is written for.
+
+`quackd onboard` is the exception to all of this, because it is quackd itself. It needs Python
+3.11 or newer, which JetPack 6 does not ship, so there it runs on a Python uv fetches for it,
+with `--python 3.12`, and leaves JetPack's own `python3` to the host daemon. It takes an Orin on
+JetPack 6 or 7.2, L4T 36 or 39, and a Thor on JetPack 7, L4T 38 or 39, and refuses a Xavier and
+JetPack 5 with the reason ([Robot Passport on the board](#robot-passport-on-the-board)).
 
 ## Find out what you have
 
@@ -515,6 +529,63 @@ That is why the host daemon's systemd unit runs it at `Nice=10`, under `MemoryMa
 `OOMScoreAdjust=500`: it is the process the board should lose first. Losing it costs quackd a
 camera, detections and the board's health. Losing the control loop mid-step costs the robot.
 
+## Robot Passport on the board
+
+`quackd onboard` is the one part of quackd that runs on a Jetson, and it runs there because a
+robot's identity belongs to its body. It keeps the robot's [Robot Passport](../passport/README.md),
+listens over Bluetooth LE for robots that come close, checks their passports, and lets the
+robot's brain talk to them over the LAN or a Bluetooth link
+([ADR-0073](../adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
+It is for a robot that carries the board, a humanoid or a robot on four legs, and not for a board
+on the bench beside a robot, which `--host` is for. Everything else on this page still runs on
+the laptop.
+
+Three commands, on the board:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install "quackd[onboard]"
+quackd onboard
+```
+
+What the board needs for them:
+
+- **An Orin on JetPack 6 or 7.2, or a Thor on JetPack 7.** `quackd onboard` reads the board from
+  its device tree and `/etc/nv_tegra_release`, and refuses a Xavier and JetPack 5 with the
+  reason. On any other computer it refuses and names `--board sim`, which stands in for a robot's
+  computer on a laptop and says so in the passport it signs.
+- **Python 3.11 or newer.** JetPack 6 ships 3.10, so there the second command is
+  `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the
+  tool. JetPack's own `python3` is left to the host daemon.
+- **A Bluetooth adapter BlueZ can drive,** advertising and accepting a link at once.
+  `quackd onboard preflight` says what the adapter, `bluetoothd` and your permissions allow
+  before the wizard installs the service.
+- **systemd.** The wizard installs `quackd-onboard.service`, a system unit that runs the service
+  as your user in the `bluetooth` group, at `Nice=10`, under `MemoryMax=1G` and with
+  `OOMScoreAdjust=300`, and it prints the sudo lines before it runs them. It refuses to run as
+  root.
+
+The wizard asks what only the owner knows, writes `robot.yaml` and `robot.env` under
+`~/.quackd/onboard/`, makes the robot's key and the owner's, sealed with a passphrase, signs the
+passport, and offers to switch on BlueZ's address privacy, `Privacy = device` in
+`/etc/bluetooth/main.conf` with the old file kept as a backup, which is meant to keep the
+radio's own address from following the robot. Switching it on restarts bluetoothd, which drops
+every Bluetooth connection the robot has for a moment, a remote or an e-stop among them, so the
+wizard asks first. [passport/quickstart.md](../passport/quickstart.md) has the steps, and
+[passport/quackd.md](../passport/quackd.md) the file, the service and every command.
+
+On a robot whose board already holds a control daemon, the service is one process more beside
+the three [above](#beside-a-robots-own-daemon): a Bluetooth scanner, during a meeting or a goal
+a pilot's requests, and when the robot's file names an adapter, the run that drives the body.
+Nobody has measured what that costs a robot's control loop, and the unit's limits are a
+precaution, not a measurement.
+
+> [!WARNING]
+> `quackd onboard` has run on the `sim` board, a laptop standing in for a robot's computer, and
+> its Bluetooth half against fakes. Recognising a real board, uv's Python on JetPack, BlueZ
+> advertising and accepting a link at once, address privacy and the unit across a reboot are
+> untested on a Jetson.
+
 ## What quackd doctor shows
 
 With a host named, by `--host`, by the robot `--robot` names or by `QUACKD_HOST`, doctor grows
@@ -613,6 +684,9 @@ your own board.
   apart.
 - Every block of quackd output on this page was printed on Windows. Where a board answered, it
   was that fake daemon, and the Ollama in the servers table was a stub.
+- `quackd onboard` has run on the `sim` board alone: the wizard, the service and two simulated
+  robots meeting on one laptop, over a simulated air, with the radio's code against fakes, and
+  its BlueZ half has never met bluetoothd.
 - The JetPack table and the model download sizes were read from NVIDIA's and Ollama's own
   pages on 2026-09-22. Everything version sensitive here goes stale on somebody else's
   release schedule, so check it against the board rather than trusting the date.
@@ -621,7 +695,9 @@ What that leaves unproven is everything about the board: the CSI pipeline, a USB
 detection, how long a frame takes to go from the laptop to the board's YOLO and back inside
 `go_to`'s loop, Ollama on the Orin GPU, `nvpmodel`, what doctor reads off a real board's files
 and a real `tegrastats` line, and whether a model server or a detector can share a robot's
-Jetson without its control loop suffering.
+Jetson without its control loop suffering. For `quackd onboard` it leaves all of it: a real
+board recognised, uv's Python on JetPack, BlueZ advertising and accepting a link, the signal
+strength at which two robots meet, address privacy taking effect, and the unit across a reboot.
 
 If you run it, please open a Discussion or an issue with:
 
@@ -636,6 +712,9 @@ If you run it, please open a Discussion or an issue with:
   `detect` blocks are the round trip inside `go_to`'s loop, split into the board's share
   and the rest
 - which board, which JetPack, and which camera
+- for `quackd onboard`, `quackd onboard status --json`, `journalctl -u quackd-onboard` from a
+  meeting, the signal strength another robot was heard at 1, 3 and 10 m, and a `tegrastats` line
+  captured while the two talked
 
 A transcript is the most useful thing of all, and
 [`docs/assets/transcripts/`](../assets/transcripts/) is where the contributor ones live.

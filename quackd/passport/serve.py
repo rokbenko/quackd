@@ -1,9 +1,8 @@
-"""Serving passports over HTTP (spec 5.1): the well-known URL, an index, and nothing else.
+"""Serving a passport over HTTP (spec 5.1): the well-known URL, the talk inbox, nothing else.
 
-One robot is served at `/.well-known/robot-passport.json`, and at `.jws` once it is signed.
-Several are served each under `/robots/<name>/`, with an index at the well-known URL listing
-them on this same host (spec 2.7), so a reader is never sent anywhere else. The standard
-library's threading server is enough: a passport is a few kilobytes, read rarely.
+A robot serves its own passport, at `/.well-known/robot-passport.json` and, signed by its
+owner, at `.jws`. The standard library's threading server is enough: a passport is a few
+kilobytes, read rarely.
 
 It is on a network, so nobody on it may hold it up. A connection gets five seconds a read and
 ten in all, at most 32 are served at once and the rest are closed as they arrive, and a POST
@@ -16,14 +15,13 @@ import contextlib
 import json
 import socket
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from quackd.passport import strict
 from quackd.passport.beacon import WELL_KNOWN_JSON, WELL_KNOWN_JWS
-from quackd.passport.document import VERSION
+from quackd.passport.talk import MAX_HELLO_BYTES
 
 INBOX_PATH = "/robot-passport/inbox"
 JSON_TYPE = "application/json"
@@ -50,45 +48,29 @@ class Served:
         return str(json.loads(self.passport)["id"])
 
 
-def robot_paths(name: str) -> tuple[str, str]:
-    return f"/robots/{name}/robot-passport.json", f"/robots/{name}/robot-passport.jws"
-
-
-def routes(robots: Sequence[Served]) -> dict[str, tuple[bytes, str]]:
+def routes(robot: Served | None) -> dict[str, tuple[bytes, str]]:
     """Every path this server answers, with its body and media type."""
-    table: dict[str, tuple[bytes, str]] = {}
-    for robot in robots:
-        json_path, jws_path = robot_paths(robot.name)
-        table[json_path] = (robot.passport, JSON_TYPE)
-        if robot.jws is not None:
-            table[jws_path] = (robot.jws.encode("ascii"), JWS_TYPE)
-    if len(robots) == 1:
-        only = robots[0]
-        table[WELL_KNOWN_JSON] = (only.passport, JSON_TYPE)
-        if only.jws is not None:
-            table[WELL_KNOWN_JWS] = (only.jws.encode("ascii"), JWS_TYPE)
-    elif robots:
-        index = {
-            "passport": VERSION,
-            "robots": [{"name": r.name, "id": r.id, "url": robot_paths(r.name)[0]} for r in robots],
-        }
-        table[WELL_KNOWN_JSON] = (strict.dumps(index), JSON_TYPE)
+    if robot is None:
+        return {}
+    table = {WELL_KNOWN_JSON: (robot.passport, JSON_TYPE)}
+    if robot.jws is not None:
+        table[WELL_KNOWN_JWS] = (robot.jws.encode("ascii"), JWS_TYPE)
     return table
 
 
 class PassportServer:
-    """An HTTP server for some robots' passports, on a thread of its own."""
+    """An HTTP server for one robot's passport and its talk inbox, on a thread of its own."""
 
     def __init__(
         self,
-        robots: Sequence[Served],
+        robot: Served | None,
         *,
         host: str = "0.0.0.0",
         port: int = 0,
         inbox: Inbox | None = None,
-        inbox_limit: int = 4096,
+        inbox_limit: int = MAX_HELLO_BYTES,
     ) -> None:
-        self._routes = routes(robots)
+        self._routes = routes(robot)
         self._inbox = inbox
         self._inbox_limit = inbox_limit
         self._httpd = _Bounded((host, port), self._handler())
@@ -98,9 +80,9 @@ class PassportServer:
     def port(self) -> int:
         return int(self._httpd.server_address[1])
 
-    def update(self, robots: Sequence[Served]) -> None:
-        """Serve these passports from now on: one assignment, so a request sees old or new."""
-        self._routes = routes(robots)
+    def update(self, robot: Served | None) -> None:
+        """Serve this passport from now on: one assignment, so a request sees old or new."""
+        self._routes = routes(robot)
 
     def listen(self, inbox: Inbox) -> None:
         """Take talk messages at `INBOX_PATH` from now on, handing each to `inbox`."""

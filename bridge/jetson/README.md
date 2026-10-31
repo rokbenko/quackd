@@ -1,11 +1,14 @@
 # quackd's host daemon for an NVIDIA Jetson
 
-quackd never runs on the Jetson. It runs on your laptop, and `--host` names the board. This
-daemon is what answers there: one file, `quackd_jetson_hostd.py`, serving HTTP on port 9874. It
-gives the quackd on your laptop three things from the board: a frame from a camera on it,
-detections computed on its GPU, and the board's own health (model, L4T release, memory, swap,
-power mode, one `tegrastats` line). The fourth thing, the language model on the board's GPU, is
-your own model server (Ollama or another), and quackd reaches it through the same `--host`.
+Every quackd command but one runs on your laptop, and `--host` names the board. This daemon is
+what answers there: one file, `quackd_jetson_hostd.py`, serving HTTP on port 9874. It gives the
+quackd on your laptop three things from the board: a frame from a camera on it, detections
+computed on its GPU, and the board's own health (model, L4T release, memory, swap, power mode,
+one `tegrastats` line). The fourth thing, the language model on the board's GPU, is your own
+model server (Ollama or another), and quackd reaches it through the same `--host`. The one that
+does run on a robot's own Jetson, `quackd onboard`, Robot Passport's service, has nothing to do
+with this daemon
+([docs/guides/jetson.md](../../docs/guides/jetson.md#robot-passport-on-the-board)).
 
 For the whole arrangement, which JetPack you have and which model fits which board, see
 [`docs/guides/jetson.md`](../../docs/guides/jetson.md). This page is the reference for the daemon

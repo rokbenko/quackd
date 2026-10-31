@@ -8,8 +8,8 @@ whole. It needs the standard library and `cryptography`, which quackd already de
 - `document`: reading a passport (the rules of spec section 3) and the view a reader shows.
 - `keys`: Ed25519 keys as `did:key`s, and short ids.
 - `jws`: compact JWS over exact bytes, the one signature format.
-- `stamps`: one key vouching that another key is its robot.
 - `strict`: JSON with no duplicate members, bounded.
+- `talk`: messages, and the three-step hello in which two robots check each other.
 """
 
 from __future__ import annotations

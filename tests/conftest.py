@@ -65,6 +65,15 @@ def _registry_in_tmp(
 
 
 @pytest.fixture(autouse=True)
+def _onboard_in_tmp(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same rule again for `quackd onboard`: a test never writes a robot's directory, its
+    keys above all, into the developer's real `~/.quackd/onboard`."""
+    monkeypatch.setenv("QUACKD_ONBOARD_DIR", str(tmp_path_factory.mktemp("quackd-onboard")))
+
+
+@pytest.fixture(autouse=True)
 def _asset_cache_in_tmp(
     request: pytest.FixtureRequest,
     tmp_path_factory: pytest.TempPathFactory,

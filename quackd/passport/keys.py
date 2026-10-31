@@ -46,13 +46,21 @@ def did_from_public(public: bytes) -> str:
     return DID_PREFIX + b58encode(ED25519_PUB + public)
 
 
+#: The longest `did:key` read at all: an Ed25519 one is 56 characters.
+MAX_DID = 64
+
+
 def public_from_did(did: str) -> bytes:
     """The 32-byte Ed25519 key a `did:key` holds, or a refusal under rule 7.
 
     A `did:key` that decodes to the same key but is spelled differently is refused as well: one
     key has one spelling, so comparing two ids as strings is comparing two keys."""
     if not isinstance(did, str) or not did.startswith(DID_PREFIX):
-        raise PassportError("rule 7", f"{did!r} is not a did:key")
+        raise PassportError("rule 7", f"{did!r:.80} is not a did:key")
+    if len(did) > MAX_DID:
+        # an Ed25519 did:key is 56 characters, and decoding base58 costs the square of the
+        # length, so a kid of 16 KB in a hello would cost a robot real time for nothing
+        raise PassportError("rule 7", f"{did[:40]!r}... is too long to be an Ed25519 did:key")
     try:
         raw = b58decode(did[len(DID_PREFIX) :])
     except ValueError as e:

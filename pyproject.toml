@@ -118,6 +118,17 @@ lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 # runs through `st.fragment(run_every=...)`: 1.59 and 1.61 each fixed a TypeError it raised, and
 # 1.60 stopped it rerunning twice a tick. CI tests the version uv.lock pins.
 ui = ["streamlit>=1.61,<2"]
+# Robot Passport on the robot's own computer (`quackd onboard`): zeroconf for the LAN half on
+# every platform, an OpenAI-compatible client for the robot's brain, and bleak and dbus-fast for
+# the Bluetooth half, which is BlueZ and so Linux only. On Windows and macOS the last two are
+# left out by their markers, and `quackd onboard serve --board sim` needs neither. Kept out of
+# `dev` and `all`: a laptop that only drives robots never imports any of it (quackd/radio/).
+onboard = [
+  "zeroconf>=0.132",
+  "openai>=1.66,<4",
+  "bleak>=3.0.2,<4; platform_system == 'Linux'",
+  "dbus-fast>=5.2,<6; platform_system == 'Linux'",
+]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
 # `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
 # base dependency of lerobot). Without it `import lerobot` succeeds and opening the arm's port

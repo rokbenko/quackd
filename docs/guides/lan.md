@@ -62,17 +62,21 @@ not been exercised between two machines.
 
 ## Robot passports (`_robot-passport._tcp.local.`)
 
-Beside its own record, quackd can advertise a robot's [Robot Passport](../passport/README.md):
-`quackd passport serve --robot NAME --announce` serves the passport at the well-known URL and
-advertises `_robot-passport._tcp`, a record for anything at all, quackd or not, where
-`_quackd._tcp` speaks to other quackd instances. Its TXT keys are `v`, `id` (the robot's short
-id), `sha` (the passport's digest) and `path`, and its port is one that really serves the
-passport, which `_quackd._tcp`'s port 0 never did. `quackd discover` lists both, and `quackd meet`
-reads what it finds. [docs/passport/discovery.md](../passport/discovery.md) has the whole binding,
-and [docs/passport/quackd.md](../passport/quackd.md) the commands and what they print.
+Beside its own record there is one more, and it belongs to Robot Passport. A robot that runs
+`quackd onboard` on its own computer announces its [Robot Passport](../passport/README.md) as
+`_robot-passport._tcp`, a record for anything at all, quackd or not, where `_quackd._tcp` speaks
+to other quackd instances. Its TXT record says `v=2` and carries `id`, the robot's static short
+id, and `bt`, the Bluetooth beacon id it advertises now, which changes every 15 minutes. Its port
+is one that really serves the passport at the well-known URL and takes talk at its inbox, which
+`_quackd._tcp`'s port 0 never did. A robot that heard another by radio looks for that beacon id
+in a `bt`, so two robots on one network talk over it, and over a Bluetooth link when they share
+none. `quackd discover` lists both kinds of record and passes over a passport record at `v=1`,
+and `quackd passport check HOST:PORT` reads the passport it finds.
+[docs/passport/discovery.md](../passport/discovery.md) has the whole binding, and
+[docs/passport/quackd.md](../passport/quackd.md) the commands.
 
-**Status.** Tested on fakes in the suite, and run once between separate processes on one Windows
-11 machine with real zeroconf. It has not run between two machines.
+**Status.** The `v=2` record is tested on fakes in the suite, and robots on the `sim` board find
+each other through a simulated network on one machine. It has not run between two machines.
 
 ## The MQTT flock bus
 

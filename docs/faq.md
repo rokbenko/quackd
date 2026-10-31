@@ -297,9 +297,9 @@ still shows you the shape of the log.
 
 ## Real robots
 
-**Does the robot need a powerful onboard computer?** No. quackd's own process, the part
-that calls the LLM and runs the detector, never has to run on the robot itself: you run
-`quackd run` on a laptop or a server, a network hop away, and it talks to the robot (or the
+**Does the robot need a powerful onboard computer?** Not to be driven. quackd's own process,
+the part that calls the LLM and runs the detector, never has to run on the robot itself: you
+run `quackd run` on a laptop or a server, a network hop away, and it talks to the robot (or the
 simulator) from there. The Open Duck Mini's official target, a Raspberry Pi Zero 2 W, only
 ever runs its existing 50 Hz walk policy plus two small daemons that do run on the Pi, a
 bridge and a camera server, and neither does any perception or inference of its own: just
@@ -310,6 +310,9 @@ When the robot's computer is an NVIDIA Jetson, as a ToddlerBot's is, quackd stil
 laptop and uses the board from there: `--host` reaches the model server on its GPU, a camera on
 it, YOLO detections computed on that GPU, and the board's health in `quackd doctor`, all
 through one small daemon quackd ships for the board ([guides/jetson.md](guides/jetson.md)).
+Robot Passport is the one exception. A robot that introduces itself to robots it meets runs
+`quackd onboard` on its own computer, an NVIDIA Jetson first, because its identity belongs to
+its body, and nobody has run that on a Jetson yet ([passport/README.md](passport/README.md)).
 
 **Does quackd use TOF or another depth sensor for obstacle avoidance?** Partly. It reads no
 depth sensor itself: `go_to` steers on the colour camera, an HSV threshold (or optionally YOLO)
@@ -552,14 +555,25 @@ publishes is found exactly the same way, through the `quackd.adapters` entry poi
 no pull request to this repository. Writing one:
 [adapters/writing-an-adapter.md](adapters/writing-an-adapter.md).
 
-**Is a Jetson one of the nine?** No, and it is not a tenth. A Jetson is a computer, not a
-body: it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
+**Is a Jetson one of the nine?** No, and it is not a tenth. A Jetson is a computer, not a body:
+it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
 `--robot jetson:...`, and there is no adapter to install for it
-([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). quackd does not run on it either. It
-names the board with `--host` from the laptop, and uses the model server on its GPU, its camera,
-its detector and its health from there, which is the arrangement *Does the robot need a
-powerful onboard computer?* above describes ([guides/jetson.md](guides/jetson.md),
-[ADR-0046](adr/0046-the-jetson-is-reached-not-run-on.md)).
+([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). Every quackd command but one stays off
+it as well: quackd names the board with `--host` from the laptop, and uses the model server on
+its GPU, its camera, its detector and its health from there, which is the arrangement *Does the
+robot need a powerful onboard computer?* above describes ([guides/jetson.md](guides/jetson.md),
+[ADR-0046](adr/0046-the-jetson-is-reached-not-run-on.md)). The one command that does run on a
+Jetson is `quackd onboard`, Robot Passport's service, on a robot that carries the board, which
+it can drive from there, and it calls the Jetson a board, never a robot
+([ADR-0073](adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
+
+**Why do an SO-101 and a Microduck carry no Robot Passport?** Because an arm is fixed in place
+and will rarely meet another robot, and a toy-sized robot has no computer on board that can run
+quackd. Since 0.29.0 a passport lives on the robot it describes, served by `quackd onboard` from
+the robot's own computer, so the robots that carry one are bigger mobile ones, humanoids and
+robots on four legs, which nearly all carry an NVIDIA Jetson that can run quackd. quackd drives
+an arm and a duck exactly as it did before
+([passport/compatibility.md](passport/compatibility.md)).
 
 **Why does `validate` say "requires kick, but arm-01 (lerobot-so101) does not provide
 it"?** Because it is true. A `.duck` lists what it needs (`requires`, or for a `duck: 0`

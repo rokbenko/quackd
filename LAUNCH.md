@@ -59,12 +59,17 @@ drives one robot a command at a time, a line that names a call running with no m
 empty Enter braking at once, that `quackd run` waits for less, its Claude requests marked for
 Anthropic's prompt cache and an Anthropic or OpenAI pilot's client warmed while the robot
 connects, and that a `stop` asked for beside a walk or a `go_to` ends it, though drive has driven
-no real robot and none of the seconds saved has been measured on a real model yet. **0.28's is
+no real robot and none of the seconds saved has been measured on a real model yet. 0.28's was
 that `quackd ui` puts `quackd run` and `quackd drive` in a page in the browser, a phone's too,
 that a robot that says where it is names the spots it stood on and walks back to them, that a
 Microduck in its 2D simulator maps a room it has never seen and looks for the ball in it, and
 that a drive session's goals take run's flags for the pilot, the arm and memory and ask the
-person driving, though none of it has moved a real robot or been tried from a phone yet.**
+person driving, though none of it has moved a real robot or been tried from a phone yet.
+**0.29's is that Robot Passport moves onto the robot it introduces: `quackd onboard` runs on the
+robot's own computer, an NVIDIA Jetson first, its owner signs what the passport says, robots
+near each other find one another by Bluetooth and talk over the LAN or a Bluetooth link, and
+passports served from a laptop, stickers, stamps and the MQTT and ROS 2 bindings are gone,
+though nothing of it has run on a Jetson or over a real radio yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

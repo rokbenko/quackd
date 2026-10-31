@@ -1,0 +1,47 @@
+# robot.yaml for the demo's household robot: a mock of an Agile ONE SN humanoid, with the
+# figures Agile Robots published when it launched the robot on 21 October 2026, built on NVIDIA
+# Isaac GR00T with a Jetson Thor on board. Nothing here drives one: `quackd onboard demo` runs
+# this file on a laptop's sim board, and its passport says so.
+onboard: 1
+
+passport:
+  name: agile-one-sn-mock
+  maker:
+    vendor: "agile-robots"
+    model: "agile-one-sn"
+  owner:
+    label: "Household (demo)"
+    contact: "https://example.org/household"
+  body:
+    embodiment: humanoid
+    mobility: legged
+    manipulator: arms
+    sensors: [camera, lidar]
+    mass_kg: [43, official, "Agile Robots, Agile ONE SN launch, 21 Oct 2026 (NVIDIA says 40 kg)"]
+    height_m: [1.4, official, "Agile Robots, Agile ONE SN launch, 21 Oct 2026"]
+    payload_kg: [3, official, "Agile Robots: up to 3 kg an arm, Agile ONE SN launch, 21 Oct 2026"]
+  skills: [report_state, stop]
+  cannot: ["move: this is a mock on a laptop, and no Agile ONE SN is here"]
+  safety:
+    estop: none
+    how_to_stop: "Simulated: stop the process."
+
+meeting:
+  task: |
+    You are the household's robot, inside its front door. The household expects a parcel today
+    and booked the courier company to bring it. Introduce yourself to the robot that came close
+    and listen to what it wants. You can carry up to 3 kg an arm. Agree with a courier where it
+    leaves a parcel, in one or two sentences each way. You move nothing yourself here: say what
+    you would do.
+  with_strangers: true
+  per_hour: 6
+
+trust:
+  strangers_may_pause: true
+  pins: []
+
+radio:
+  meet_within_m: 2
+
+lan:
+  port: 0

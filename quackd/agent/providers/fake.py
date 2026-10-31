@@ -528,7 +528,7 @@ def flock_hello_strategy(obs: Observation, step: int, history: list[Exchange]) -
 
 
 NEARBY_PAUSES_S = (0.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0)
-"""How long `nearby-hello`'s rule waits on the wall clock before each check for a robot nearby,
+"""How long the meeting rule waits on the wall clock before each check for a robot nearby,
 about fifteen seconds in all: time for another robot to start and say hello, and a run that
 nobody meets still ends. Never more than two seconds apart, so a robot that says hello is
 answered while it is still listening."""
@@ -539,7 +539,7 @@ ANSWER_PAUSE_S = 3.0
 something back. Without them the robot that spoke first was gone before the other answered."""
 
 
-def nearby_hello_pause(call: ToolCall, history: list[Exchange]) -> float:
+def meeting_pause(call: ToolCall, history: list[Exchange]) -> float:
     if call.name != "report_state":
         return 0.0
     if _told(history) is not None:
@@ -572,9 +572,9 @@ def _told(history: list[Exchange]) -> dict[str, Any] | None:
     return None
 
 
-def nearby_hello_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
-    """Robot Passport's demo: wait for a robot from outside the flock to come near, tell it hello
-    by the name it is shown under, wait a little for it to say something back, and stop.
+def meeting_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Robot Passport's meeting task, scripted: wait for a robot to come near, tell it hello by
+    the name it is shown under, wait a little for it to say something back, and stop.
 
     It reads `features["nearby"]`, the very `Robots nearby` lines a model is shown, so it runs
     the whole path: the hello, the block in the observation, `tell`, and the `say` that reaches
@@ -711,7 +711,7 @@ def favourite_spot_strategy(obs: Observation, step: int, history: list[Exchange]
 
 STRATEGIES: dict[str, Strategy] = {
     "flock-hello": flock_hello_strategy,
-    "nearby-hello": nearby_hello_strategy,
+    "meeting": meeting_strategy,
     "hello-world": hello_world_strategy,
     "find-and-kick": find_and_kick_strategy,
     "patrol-and-quack": patrol_strategy,
@@ -730,7 +730,7 @@ STRATEGIES: dict[str, Strategy] = {
 
 PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {
     flock_hello_strategy: flock_hello_pause,
-    nearby_hello_strategy: nearby_hello_pause,
+    meeting_strategy: meeting_pause,
 }
 """Strategies that wait on the wall clock before some of their calls, and how long. A rule
 decides in no time, and a peer it is waiting on needs some."""
@@ -849,6 +849,9 @@ class FakeProvider:
                 strategy, label = square_strategy(), "goal:square"
             elif "circle" in text or "circuit" in text:
                 strategy, label = circle_strategy(), "goal:circle"
+            elif "greet" in text:  # "say hello" is hello-world's, which stops at once
+                # the meeting's rule: a robot on its own computer greeting the robot near it
+                strategy, label = meeting_strategy, "goal:greet"
         return cls(strategy=strategy or generic_strategy, model=f"scripted:{label}", vision=vision)
 
     async def step(

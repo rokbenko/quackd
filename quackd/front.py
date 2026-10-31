@@ -333,12 +333,19 @@ class Channel:
                     callback()
 
     def start_reading(
-        self, on_op: Callable[[Mapping[str, Any]], None], on_end: Callable[[], None], fd: int = 0
+        self,
+        on_op: Callable[[Mapping[str, Any]], None],
+        on_end: Callable[[], None],
+        fd: int = 0,
+        *,
+        take: Callable[[], bytes] | None = None,
     ) -> threading.Thread:
         """Read the page's lines from `fd` until it ends, each handed to `on_op`, then
-        `on_end` once. A line that is not an op is said back as a notice and skipped."""
+        `on_end` once. A line that is not an op is said back as a notice and skipped. `take`
+        reads from something that is no file descriptor instead, a socket's `recv` on Windows,
+        where `quackd onboard goal` talks to the service: it returns b"" at the end."""
 
-        take_chunk = _waiting_reader(fd) or (lambda: os.read(fd, 65536))
+        take_chunk = take or _waiting_reader(fd) or (lambda: os.read(fd, 65536))
 
         def read() -> None:
             pending = b""
@@ -627,11 +634,20 @@ class Front:
     switch's first press does; `quackd drive` hands it the session's own queue, and its ops
     become lines, brakes and the session's end."""
 
-    def __init__(self, channel: Channel, command: str) -> None:
+    def __init__(
+        self,
+        channel: Channel,
+        command: str,
+        *,
+        quit_now: Callable[[], None] | None = None,
+    ) -> None:
         from quackd import ui
 
         self.command = command
         self._channel = channel
+        #: what a second Stop does: the process quits, as a second Ctrl-C makes it (None), except
+        #: in the onboard service, where a goal is one run of many and the stop only stands
+        self._quit_now = quit_now
         self.questions = Questions(channel)
         self._status = ui.RunStatus()
         self._said: tuple[str, str] = ("", "")
@@ -928,7 +944,7 @@ class Front:
         self.questions.close(self._withdrawal())
         if now and not first:
             # the quit first: a word can wait on a page that has stopped reading stderr
-            _thread.interrupt_main()
+            (self._quit_now or _thread.interrupt_main)()
             self._say("stop: quitting at once", warn=True)
             return
         if not first:

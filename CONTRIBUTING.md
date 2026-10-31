@@ -66,6 +66,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the nine quackd publishes, as strings), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, as strings), `factory.py` (`--robot` to a body) |
 | `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/quackd_<name>/` |
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
+| `quackd/onboard/`, `quackd/boards/`, `quackd/radio/` | Robot Passport on a robot's own computer, the one part of quackd that runs there: `quackd onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `quackd/passport/`, which imports nothing else from quackd |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
 | `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
 
@@ -106,8 +107,8 @@ machinery, because it owns that robot's control loop rather than feeding one.
 
 Touching `bridge/jetson/`? That is the daemon at the far end of `--host`, and the one under
 `bridge/` that is not a robot side: it serves a Jetson's camera, a YOLO detector on its GPU
-and the board's own files and command output, and it has no control path at all. quackd
-stays on the laptop and never runs on the board. The daemon runs there under JetPack's own
+and the board's own files and command output, and it has no control path at all. Every quackd
+command but `quackd onboard` stays off the board. The daemon runs there under JetPack's own
 Python 3.10, so it is written to 3.10 and imports only the standard library until a camera
 or a detector needs more, and it never imports quackd. `tests/test_jetson_hostd.py` holds
 all of that in the ordinary suite with nothing extra installed: it drives the real server in
@@ -118,11 +119,24 @@ other. `tests/test_jetson_host_contract.py` runs the real daemon against the rea
 the real `quackd doctor`, which is what catches the two drifting apart, and the rest of the
 suite talks to `tests/fake_jetson_hostd.py`. The board in all of them is files written by
 `tests/jetson_fixtures.py`, and `tests/test_docs.py` holds the JetPack table in
-[docs/guides/jetson.md](docs/guides/jetson.md) against `_JETPACK_FOR_L4T` in `quackd/doctor.py`, so
+[docs/guides/jetson.md](docs/guides/jetson.md) against `JETPACK_FOR_L4T` in `quackd/boards/l4t.py`, so
 editing one of those two and not the other fails locally. Nothing here has been run on a
 Jetson by this project, so what you change is checked against the contract and a board made
 of files, and never against the board it is named after
 ([ADR-0046](docs/adr/0046-the-jetson-is-reached-not-run-on.md)).
+
+Touching `quackd/onboard/`, `quackd/boards/` or `quackd/radio/`? That is Robot Passport on a
+robot's own computer, the one part of quackd that runs there, and the suite runs all of it on the
+`sim` board: a laptop standing in for the robot's computer, a simulated air between processes on
+one machine for the radio, and fakes for BlueZ, so nothing you change needs a board or a Bluetooth
+adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with `quackd[onboard]`,
+and the radio's tests run with both installed in CI's `onboard` job, on a private bus
+`dbus-run-session` starts, so sync `--extra onboard` on Linux to run them yourself. A board other
+than a Jetson comes in as a plugin through the `quackd.boards` entry point group, the way an
+adapter comes in through `quackd.adapters`, and may not take the names `jetson` or `sim`. Nothing
+in these folders has run on a Jetson or over a real radio, so a change is checked against the sim
+board and the fakes, and a page or a help string that claims more than that of a board or a radio
+is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
 Touching `web/`? That is the browser demo, and the only quackd code that is not Python: plain
 JavaScript modules, no build step, nothing to install. Run it with the server in the directory

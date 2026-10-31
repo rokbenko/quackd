@@ -1,6 +1,6 @@
 {
   "warning": "TEST KEYS. They are published, so they must never sign for a real robot.",
-  "reference_time": "2026-10-21T00:00:00Z",
+  "reference_time": "2026-10-29T00:00:00Z",
   "keys": {
     "robot-a": {
       "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
@@ -25,10 +25,32 @@
       "public_hex": "174553b456dddfc6908ecab1c101fe6ab21e2baa0617795b7d43a63482993fd5",
       "did": "did:key:z6Mkg26jczDiqsPK4momfvhZTTyFefWEyxYiSisFJ2wWJFkg",
       "short_id": "68894d58f18f2c34"
+    },
+    "owner-b": {
+      "seed_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+      "public_hex": "cd14b37f956e953194ff7fb73b3d81dcc561d61a7538094b7c3e1a643ee5f3aa",
+      "did": "did:key:z6MktFovzcapNZyZBWzFJpCXf26B8XLKdXtwfwnXXFebPgzM",
+      "short_id": "519cae93e93ad011"
     }
   },
   "session": {
     "nonce_a": "vfXlXvct7qw_iSDdWldDYg",
     "nonce_b": "MZtCrMC_w7RjeuBQcEBeaw"
+  },
+  "runtime": {
+    "robot-a": {
+      "software": "example/1.0",
+      "beacon": "a1a1a1a1a1a1a1a1",
+      "reach": {
+        "http_port": 8790
+      }
+    },
+    "robot-b": {
+      "software": "example/1.0",
+      "beacon": "b2b2b2b2b2b2b2b2",
+      "reach": {
+        "http_port": 8790
+      }
+    }
   }
 }
