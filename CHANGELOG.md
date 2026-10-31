@@ -9,6 +9,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-10-31
+
 0.29.0 moves Robot Passport onto the robot it introduces. `quackd onboard` runs on the robot's own
 computer, an NVIDIA Jetson first, and sets the robot up once: a wizard asks what only the owner
 knows, writes `robot.yaml`, the one file a robot is set up from, makes the robot's keys, has its
@@ -39,9 +41,9 @@ their makers' published figures, are what has run.
 
 - **`quackd onboard`, Robot Passport on the robot itself.** Run bare, it is the wizard: it checks
   the board and what the robot can reach, asks what only the owner knows (the robot's name, what it
-  is and who made it, who owns it and how to reach them, how a person stops it, and its brain),
-  then writes `robot.yaml` and `robot.env`, makes the keys, asks for the owner's passphrase twice
-  and signs. On a Jetson it then offers to switch on BlueZ's address privacy, which restarts
+  is and who made it, who owns it and how to reach them, how a person stops it, its brain, and how
+  close another robot comes before they meet), then writes `robot.yaml` and `robot.env`, makes the
+  keys, asks for the owner's passphrase twice and signs. On a Jetson it then offers to switch on BlueZ's address privacy, which restarts
   bluetoothd, and prints the sudo lines that install and start `quackd-onboard.service` before it
   runs them. `--board jetson|sim`, `--dir`, `--file` (a robot file that answers the questions),
   `--owner-key`, `--passphrase-file`, `--days`, `--no-service` and `--yes` shape it, and it refuses
@@ -77,7 +79,7 @@ their makers' published figures, are what has run.
 - **The owner key, sealed on the robot.** It is sealed with a passphrase of at least 12 characters,
   by scrypt and AES-256-GCM, typed twice where it is made and hidden every time, and
   `--passphrase-file` gives it to a script, refused on Linux and macOS when anybody but its owner
-  can read the file. No environment variable carries a passphrase, and the service never needs one.
+  has any permission on the file. No environment variable carries a passphrase, and the service never needs one.
   A second robot of the same owner is signed by the same key, given with `--owner-key`. The robot's
   own key is a plain file readable by its owner alone, because the service reads it when the robot
   boots and nobody is there to type.
@@ -129,7 +131,8 @@ their makers' published figures, are what has run.
   key that is its robot key, and one read outside its `issued` and `expires`. The specification is
   1.0, so a 0.x reader refuses these passports at its version rule, and quackd refuses a 0.1
   passport, naming the releases that wrote one, 0.23 to 0.28. A 0.1 talk message is answered `no`
-  with `versions: ["1.0"]`, and a DNS-SD record at `v=1` is passed over.
+  with `versions: ["1.0"]`, in plain text over the LAN, and a DNS-SD record at `v=1` is passed
+  over.
 - **Breaking. Both robots verify each other before any talk.** Every message is signed by its
   sender's robot key, and an unsigned one is refused. The first `hello` carries the sender's
   owner-signed passport and a runtime block its robot key signs: its software, the beacon id it
@@ -8956,7 +8959,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/rokbenko/quackd/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/rokbenko/quackd/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/rokbenko/quackd/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/rokbenko/quackd/compare/v0.25.0...v0.26.0
