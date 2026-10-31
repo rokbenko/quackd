@@ -108,9 +108,12 @@ When a robot meets another for the first time, a person can **pin** its robot ke
 key, so the next meeting starts at known. That is how SSH treats a server's host key, for the same
 reason: no authority everyone trusts exists, and first contact approved by a person is the best
 anchor there is. `quackd onboard pin` pins a robot this one met, by the start of its short id, the
-name it was met under or its `did:key`, and `--owner` pins the owner key that signed it. Pins live
-in `robot.yaml` under `trust.pins`, edited as text so your comments survive, and
-`quackd onboard forget` removes one ([quackd.md](quackd.md#pinning)).
+name it was met under or its `did:key`, and `--owner` pins the owner key that signed it. A robot's
+pin names the owner key that signed it then: whoever holds a robot key could otherwise sign its
+passport with a key of their own and stay known past the day its owner's signature ran out. Pins
+live in `robot.yaml` under `trust.pins`, edited as text so your comments survive, and
+`quackd onboard forget` removes one ([quackd.md](quackd.md#pinning)). A change to the pins reaches
+every open session at its next word.
 
 ## The tiers
 
@@ -123,7 +126,7 @@ bounded ([spec section 6.5](spec.md#65-ask-and-answer)).
 | Tier | How a robot gets there | What it can make your robot do | What your robot's brain hears |
 |---|---|---|---|
 | stranger | its passport checked out, and nothing about it is pinned | `pause` for up to 5 s, and `identify` by light or sound | its closed-vocabulary facts, under a name made from its key. Its free text, its name and its sentences included, goes to the log, for a person. |
-| known | a person pinned its robot key, or the owner key that signed it | `pause` for up to 10 s, and `identify` by light, sound or motion | its name, skills, what it cannot do and its safety, and what it says, JSON-quoted |
+| known | a person pinned its robot key, signed by the owner it had then, or the owner key that signed it | `pause` for up to 10 s, and `identify` by light, sound or motion | its name, skills, what it cannot do and its safety, and what it says, JSON-quoted |
 | same owner | it is signed by this robot's own owner key | what a known robot can | the same |
 
 quackd identifies a body by sound alone, so an `identify` by light or motion is answered `no`, and

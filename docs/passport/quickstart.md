@@ -291,5 +291,5 @@ met by one (1)
 ```
 
 They are strangers to each other, so neither brain hears what the other says. `quackd onboard pin`
-with the other's name changes that from their next session, and [quackd.md](quackd.md#pinning) shows
-it.
+with the other's name changes that from the next word it says, and [quackd.md](quackd.md#pinning)
+shows it.

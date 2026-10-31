@@ -165,11 +165,15 @@ class Pin(_Strict):
     id: str
     name: str = Field(min_length=1, max_length=64)
     pinned: str = Field(min_length=10, max_length=32)
+    #: a robot pin's: the owner key that signed it when it was pinned (`quackd onboard pin`
+    #: writes it), so a robot key signed for by another owner is a stranger's again
+    owner: str | None = None
 
-    @field_validator("id")
+    @field_validator("id", "owner")
     @classmethod
-    def _did(cls, did: str) -> str:
-        public_from_did(did)  # a pin names a key, which must be one a robot can hold
+    def _did(cls, did: str | None) -> str | None:
+        if did is not None:
+            public_from_did(did)  # a pin names a key, which must be one a robot can hold
         return did
 
 
@@ -205,7 +209,7 @@ class RobotFile(_Strict):
 
     def trust_pins(self) -> list[TrustPin]:
         """The pins as the trust judge takes them."""
-        return [TrustPin(p.kind, p.id, p.name, p.pinned) for p in self.trust.pins]
+        return [TrustPin(p.kind, p.id, p.name, p.pinned, p.owner) for p in self.trust.pins]
 
 
 #: The sections that may be left empty, which YAML reads as null.
@@ -259,7 +263,11 @@ def _said(error: Any) -> str:
 
 def pin_line(pin: Pin, indent: str = "    ") -> str:
     name = pin.name.replace('"', "'")
-    return f'{indent}- {{kind: {pin.kind}, id: "{pin.id}", name: "{name}", pinned: "{pin.pinned}"}}'
+    owner = f', owner: "{pin.owner}"' if pin.owner else ""
+    return (
+        f'{indent}- {{kind: {pin.kind}, id: "{pin.id}", name: "{name}", '
+        f'pinned: "{pin.pinned}"{owner}}}'
+    )
 
 
 def add_pin(path: Path, pin: Pin) -> None:

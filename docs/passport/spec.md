@@ -436,7 +436,8 @@ coordinates.
 
 A receiver that cannot read a message's version answers `answer` with `result` `no`, `reason`
 `version` and `versions` listing what it reads: a 1.0 robot answers a 0.1 message with `versions`
-`["1.0"]`.
+`["1.0"]`. Over a LAN, where no robot it has heard has said hello yet, it SHOULD answer in plain
+text naming the same versions instead, so that it signs nothing for a robot it has not met (6.3).
 
 ## 7. Versions of this specification
 

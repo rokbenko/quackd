@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 
 from quackd.passport.errors import PassportError
@@ -41,6 +42,10 @@ def _number(text: str) -> float | int:
     return value
 
 
+#: Half a surrogate pair: a code point no UTF-8 can carry, which only JSON's escapes can name.
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def _integer(text: str) -> int:
     """An integer, if a double can hold it exactly. Python's own ints have no limit, and one of
     four hundred digits is valid JSON that no other reader agrees on, and that crashes arithmetic
@@ -61,12 +66,14 @@ def loads(data: bytes, *, limit: int) -> Any:
     except UnicodeDecodeError as e:
         raise PassportError("rule 2", f"it is not UTF-8 ({e.reason} at byte {e.start})") from e
     try:
-        return json.loads(
-            text,
-            object_pairs_hook=_no_duplicates,
-            parse_constant=_no_constants,
-            parse_float=_number,
-            parse_int=_integer,
+        return _no_surrogates(
+            json.loads(
+                text,
+                object_pairs_hook=_no_duplicates,
+                parse_constant=_no_constants,
+                parse_float=_number,
+                parse_int=_integer,
+            )
         )
     except PassportError:
         raise
@@ -74,6 +81,26 @@ def loads(data: bytes, *, limit: int) -> Any:
         raise PassportError("rule 2", "it is nested too deeply to read") from e
     except ValueError as e:
         raise PassportError("rule 2", f"it is not JSON: {e}") from e
+
+
+def _no_surrogates(value: Any) -> Any:
+    """`value`, once no string in it holds half a surrogate pair: JSON's `\\ud800` escape decodes
+    to one, which I-JSON (RFC 7493) refuses, and which no file writes as UTF-8, so a stranger's
+    one word of it ended the run whose record tried to."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if _SURROGATE.search(item):
+                raise PassportError(
+                    "rule 2", "it holds half a surrogate pair, which I-JSON refuses"
+                )
+        elif isinstance(item, dict):
+            stack.extend(item)
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return value
 
 
 def dumps(value: Any) -> bytes:

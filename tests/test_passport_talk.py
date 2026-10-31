@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -445,3 +446,36 @@ def test_open_session_runs_the_hello_over_a_channel_whose_reply_rides_back() -> 
     with pytest.raises(PassportError, match="not with a hello"):
         open_session(refused, B.did, lambda _wire: next(replies))
     assert refused.sessions == {}
+
+
+def test_a_second_hello_posted_to_the_inbox_is_refused_and_the_real_answer_still_opens() -> None:
+    """A second hello only ever comes back on the reply to the first. One posted to this
+    robot's inbox is somebody who saw the first, cleartext on a LAN or a link, racing the robot
+    it was for: taken, it opened a session for the eavesdropper and cost the real meeting."""
+    a, b = pair()
+    eavesdropper = Endpoint(INTRUDER.did, passport_of(INTRUDER, "van-07"), INTRUDER, clock=Clock())
+    first = a.hello(None)
+    forged = eavesdropper.receive(read_message(first))
+    assert forged.status == 200 and forged.wire is not None
+    refused = a.receive(read_message(forged.wire), from_inbox=True)
+    assert refused.status == 403 and "reply to the first" in refused.reason
+    real = b.receive(read_message(first))
+    assert real.status == 200 and real.wire is not None
+    opened = a.receive(read_message(real.wire))
+    assert opened.status == 200 and opened.event is not None and opened.event.kind == "met"
+    assert a.session_with(B.did) is not None and a.session_with(INTRUDER.did) is None
+
+
+def test_a_session_ends_when_the_passport_it_was_opened_on_expires() -> None:
+    """A reader may not use a passport past its `expires` (spec 5.8), and a robot that keeps
+    talking every few minutes kept its session, and the tier it was judged at, for ever."""
+    clock = Clock()
+    now = [time.time()]
+    a = Endpoint(A.did, passport_of(A, "g1-edu-01"), A, clock=clock, wall=lambda: now[0])
+    b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, clock=clock, wall=lambda: now[0])
+    handshake(a, b)
+    assert a.session_with(B.did) is not None
+    expires = document.read_jws(passport_of(B, "agile-one-sn-01")).document["expires"]
+    now[0] = document.epoch(expires, "expires") + 3600
+    assert [s.peer for s in a.expire()] == [B.did]
+    assert a.session_with(B.did) is None

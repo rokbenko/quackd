@@ -160,3 +160,32 @@ def test_a_robot_that_takes_this_robots_name_or_its_owners_is_warned_about() -> 
     sibling = labelled(B, OWNER, "cart-01", "Rok's lab")
     honest = judge(read(sibling), **own)
     assert honest.tier == "same owner" and honest.warnings == ()
+
+
+def test_a_robot_pinned_with_its_owner_is_a_stranger_once_another_owner_signs_for_it() -> None:
+    """Whoever holds a robot key could otherwise sign that robot's passport with a key of their
+    own and talk as a robot a person trusts, past the day its owner's signature ran out. A pin
+    names the owner that signed the robot when it was pinned, as `quackd onboard pin` writes it."""
+    pins = [Pin("robot", B.did, "cart-01", PINNED, owner=OWNER_B.did)]
+    as_pinned = judge(read(passport(B, OWNER_B, "cart-01")), own_owner=OWNER.did, pins=pins)
+    assert as_pinned.tier == "known"
+    forged = judge(read(passport(B, INTRUDER, "cart-01")), own_owner=OWNER.did, pins=pins)
+    assert forged.tier == "stranger" and "another owner" in forged.why
+    assert any("pin it again" in warning for warning in forged.warnings)
+
+
+@pytest.mark.parametrize(
+    "lookalike",
+    [
+        "cart\u201001",
+        "cart\u201101",
+        "cart\u221201",
+        "cart-01\u034f",
+        "cart-01\ufe0f",
+        "cart-01\u3164",
+    ],
+)
+def test_hyphens_and_marks_that_show_nothing_are_folded_away(lookalike: str) -> None:
+    from quackd.passport_trust import fold
+
+    assert fold(lookalike) == fold("cart-01")

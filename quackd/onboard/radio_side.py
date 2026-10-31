@@ -160,14 +160,29 @@ class RadioSide:
         """Talk on its way: over HTTP for an `http://` route, over the link for a `ble://` one."""
         return self.transports.post(route, wire)
 
-    def heard(self, beacon: str) -> bool:
-        """Whether the radio heard `beacon` lately: what a hello over the network must be."""
+    def heard(self, beacon: str, origin: str = "") -> bool:
+        """Whether a hello over the network that names `beacon`, from `origin`, may be answered:
+        the radio heard that beacon lately, and when the robot advertising it has a LAN record,
+        the hello comes from an address that record names. A beacon id is public, in every
+        advert and every record, so the radio's word alone let any host on the LAN borrow the
+        id of a robot that really was near."""
         if not self.loop.running:
             return False
         try:
-            return self.loop.call(self._heard(beacon), CALL_S)
+            if not self.loop.call(self._heard(beacon), CALL_S):
+                return False
         except Exception:
             return False
+        if self.lan is None or not origin.startswith("http://"):
+            return True
+        try:
+            record = self.lan.lookup(beacon)
+        except Exception:
+            record = None
+        if record is None:
+            return True  # no record to hold it to: the radio's word stands
+        address = origin.removeprefix("http://").strip("[]")
+        return address in {record.host, *record.addresses}
 
     async def _heard(self, beacon: str) -> bool:
         return self.tracker.heard(beacon, within_s=HEARD_WITHIN_S, now=self.clock())

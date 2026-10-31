@@ -433,14 +433,16 @@ A pin is the one thing in Robot Passport only a person makes. `quackd onboard pi
 robot this one met, named by the start of its short id, four hex characters or more, by the name it
 was met under, or by its `did:key`. `--owner` pins the owner key that signed it instead, so every
 robot that owner signs is known, including ones this robot has never met. The pin goes into
-`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive. The service
-reloads it at once, and the next session with that robot starts at known:
+`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive. A robot's
+pin names the owner key that signed it then, so if another owner key ever signs for that robot key,
+it is a stranger again until you pin it once more. The service reads the pin at once and judges every
+open session again, so the robot is known from its next word:
 
 ```
 $ quackd onboard pin 0406f179 --dir ~/sim/one
 trust the robot two, so its words reach this robot's brain? [y/N]: y
 ✓ pinned the robot two in /home/robot/sim/one/robot.yaml
-✓ the running service trusts it from its next meeting
+✓ the running service trusts it from now on
 $ quackd onboard met --dir ~/sim/one
 met by one (1)                                           
 ╭──────────────────┬───────┬──────────┬─────────────────╮
@@ -450,8 +452,10 @@ met by one (1)
 ╰──────────────────┴───────┴──────────┴─────────────────╯
 ```
 
-`quackd onboard forget WHICH` removes a pin the same way. A robot whose name, or owner label, reads
-like a pinned one's under another key is warned about, and only a key decides a tier
+`quackd onboard forget WHICH` removes a pin the same way, and an open session with that robot is a
+stranger's from its next word. A robot whose name, or owner label, reads like a pinned one's under
+another key is warned about, in the service's log, in `met` and before `pin` asks, and only a key
+decides a tier
 ([trust.md](trust.md#a-name-that-looks-like-another)).
 
 ## Talking

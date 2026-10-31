@@ -202,3 +202,35 @@ def test_the_demo_asks_which_brain_before_it_starts_anything(tmp_path: Path) -> 
     unknown = runner.invoke(app, ["onboard", "demo", "--offline", "--act", "dance"])
     assert unknown.exit_code == 1 and "no act called 'dance'" in flat(unknown.output)
     assert not (tmp_path / "kept").exists()
+
+
+def test_a_robot_pin_names_its_owner_and_a_warning_reaches_met_and_pin(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """`pin` writes the owner that signed the robot, so another owner signing for that robot key
+    makes it a stranger again; and what the judge warned of is shown where a person decides."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    other = "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd"
+    owner = "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2"
+    warning = "a robot named cart-01 was pinned with another key"
+    row = {
+        "at": "2026-10-29T10:00:00Z",
+        "id": other,
+        "name": "cart-0l",
+        "shown": "stranger-56475aa7",
+        "tier": "stranger",
+        "short_id": "56475aa75463474c",
+        "owner_id": owner,
+        "owner_label": "Somebody",
+        "via": "ble",
+        "warn": [warning],
+    }
+    (home / "met.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    met = runner.invoke(app, ["onboard", "met", "--dir", str(home)])
+    # in a cell of the table, which wraps it between the borders
+    assert met.exit_code == 0 and "another key" in flat(met.output)
+    pinned = runner.invoke(app, ["onboard", "pin", "5647", "--yes", "--dir", str(home)])
+    assert pinned.exit_code == 0 and warning in flat(pinned.output)
+    pins = config.load(home / "robot.yaml").trust.pins
+    assert [(p.kind, p.id, p.owner) for p in pins] == [("robot", other, owner)]

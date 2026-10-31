@@ -111,8 +111,11 @@ therefore never signs. The robot key signs them, with the rest of the message:
 | `reach` | how to send to it on a LAN: `http_port`, the port of its inbox |
 
 A first `hello` that arrives over the LAN is answered only when its `beacon` was heard on the radio
-in the last 8 seconds, so the LAN can carry talk but never decides who is near. A `hello` over a
-Bluetooth link was heard by being there.
+in the last 8 seconds and, when the robot advertising that beacon has a LAN record, it comes from an
+address the record names: a beacon id is in every advert and every record, so naming one proves
+nothing. The LAN can carry talk but never decides who is near. A `hello` over a Bluetooth link was
+heard by being there. A second `hello` comes back only as the reply to the first, so one posted to
+an inbox is refused, and a session ends when the passport it was opened on expires.
 
 ### After the hello
 

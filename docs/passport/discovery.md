@@ -108,7 +108,8 @@ Every pair stays under 200 bytes, a reader never trusts the instance name, and a
 0.1 shape, is ignored. The record puts the fixed short id beside the current beacon id, so anybody
 on the LAN can tie the two together ([privacy.md](privacy.md#tracking)). A `hello` that arrives over
 the LAN is answered `403`, "this robot has not heard you by radio", unless the beacon it carries was
-heard over the radio in the last 8 seconds: the LAN carries talk, and the radio decides who is near.
+heard over the radio in the last 8 seconds and, when that robot has a LAN record, the `hello` comes
+from an address the record names: the LAN carries talk, and the radio decides who is near.
 In quackd a Jetson announces this record, and on the sim board a folder stands in for it.
 
 ### The Bluetooth link

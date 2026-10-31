@@ -446,7 +446,7 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
                 passport(key, owner, name, notes="x" * 3000),
                 judge=lambda reading: Judgement("stranger", "a test's", ()),
                 send=self.transports.post,
-                heard=lambda b: self.tracker.heard(b, within_s=8, now=air.clock),
+                heard=lambda b, _origin="": self.tracker.heard(b, within_s=8, now=air.clock),
                 on_session=self._session,
                 runtime={"software": "quackd/test", "beacon": beacon, "reach": {"http_port": 8790}},
             )

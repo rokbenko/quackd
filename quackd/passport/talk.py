@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from quackd.passport import jws, strict
-from quackd.passport.document import MAJOR, VERSION, Reading, check_id, read_jws
+from quackd.passport.document import MAJOR, VERSION, Reading, check_id, read_jws, valid_at
 from quackd.passport.errors import PassportError
 from quackd.passport.keys import SigningKey
 
@@ -49,12 +49,12 @@ REMEMBERED_PER_SESSION = 256
 SIGNED_TYPE = "application/jose"
 PLAIN_TYPE = "application/json"
 
-_VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
-_TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
-_NONCE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")
-_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\Z")
+_TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}\Z")
+_NONCE = re.compile(r"^[A-Za-z0-9_-]{22,64}\Z")
+_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
 #: The beacon id a robot's radio advertises now: eight random bytes, which rotate (spec 5.6).
-_BEACON = re.compile(r"^[0-9a-f]{16}$")
+_BEACON = re.compile(r"^[0-9a-f]{16}\Z")
 #: The runtime members a hello may carry beside its passport, which change without the owner
 #: signing anything: the software that wrote it, its beacon id and how to reach it (6.3).
 RUNTIME = ("software", "beacon", "reach")
@@ -506,7 +506,15 @@ class Endpoint:
             return ended
 
     def _quiet(self, session: Session) -> bool:
-        return self.clock() - session.last > self.idle_s
+        """Over: quiet for `idle_s`, or its robot's passport past `expires`, which a reader may
+        not use the passport beyond (spec 5.8), however much the robot keeps talking."""
+        if self.clock() - session.last > self.idle_s:
+            return True
+        try:
+            valid_at(session.passport.document, int(self.wall()))
+        except PassportError:
+            return True
+        return False
 
     def _forget_stale(self) -> None:
         now = self.clock()
@@ -516,9 +524,12 @@ class Endpoint:
 
     # ── what this robot receives ────────────────────────────────────────────────────────
 
-    def receive(self, message: Message) -> Reply:
+    def receive(self, message: Message, *, from_inbox: bool = False) -> Reply:
         """What `message` comes to. A refusal is a reply with a status, never an exception, so
-        the caller only has to carry it back the way the message came."""
+        the caller only has to carry it back the way the message came. `from_inbox` is a message
+        that arrived at this robot's inbox, rather than as the reply to one it sent: the second
+        step of a hello this robot started is only ever that reply, and one posted to the inbox
+        is somebody who saw the first step racing the robot it was for."""
         with self._lock:
             if message.to not in (None, "*", self.me):
                 return Reply(403, reason="it is addressed to another robot")
@@ -528,7 +539,11 @@ class Endpoint:
             if seen in memory:
                 return self._repeat(message) or Reply(204, reason="a repeat, dropped")
             try:
-                reply = self._hello(message) if message.type == "hello" else self._spoken(message)
+                reply = (
+                    self._hello(message, from_inbox)
+                    if message.type == "hello"
+                    else self._spoken(message)
+                )
             except PassportError as e:
                 return Reply(400, reason=f"{e.rule}: {e}")
             if reply.status < 300:
@@ -556,11 +571,13 @@ class Endpoint:
                     return Reply(200, answered.wire, reason="a repeated hello, answered again")
         return None
 
-    def _hello(self, m: Message) -> Reply:
+    def _hello(self, m: Message, from_inbox: bool = False) -> Reply:
         self._forget_stale()
         if m.re is None:
             return self._first(m)
         if m.re in self._started:
+            if from_inbox:
+                return Reply(403, reason="a second hello comes back on the reply to the first")
             return self._second(m)
         if m.re in self._answered:
             return self._third(m)

@@ -9424,11 +9424,14 @@ def onboard_met(
                 Text(ui.printable(str(row.get("why", ""))), style=ui.STYLES["warn"]),
             )
         else:
+            tier = Text(str(row.get("tier", "")))
+            for warning in row.get("warn") or []:
+                tier.append(f"\n{ui.printable(str(warning))}", style=ui.STYLES["warn"])
             t.add_row(
                 when,
                 Text(ui.printable(str(row.get("name", "")))),
                 str(row.get("short_id", ""))[:8],
-                str(row.get("tier", "")),
+                tier,
             )
     ui.console.print(t)
 
@@ -9499,8 +9502,11 @@ def onboard_pin(
             id=robot["id"],
             name=str(robot.get("name"))[:64],
             pinned=date.today().isoformat(),
+            owner=robot.get("owner_id") or None,
         )
     what = f"the owner {pin.name}" if owner else f"the robot {pin.name}"
+    for warning in robot.get("warn") or []:
+        ui.console.print(_warn_line(ui.printable(str(warning))))
     if not yes and not typer.confirm(
         f"trust {what}, so its words reach this robot's brain?", default=False
     ):
@@ -9513,7 +9519,7 @@ def onboard_pin(
         return
     ui.console.print(_ok_line(f"pinned {what} in {home.robot_yaml}"))
     if _tell_service(home, {"op": "reload"}) is not None:
-        ui.console.print(_ok_line("the running service trusts it from its next meeting"))
+        ui.console.print(_ok_line("the running service trusts it from now on"))
 
 
 @onboard_app.command("forget")

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from quackd.passport import fetch
-from quackd.passport.document import CORE_SKILLS, Reading
+from quackd.passport.document import CORE_SKILLS, VERSION, Reading
 from quackd.passport.errors import PassportError
 from quackd.passport.keys import SigningKey
 from quackd.passport.serve import INBOX_PATH
@@ -102,7 +102,7 @@ class Talker:
         wall: Callable[[], float] = time.time,
         on_heard: Callable[[Heard], None] | None = None,
         runtime: dict[str, Any] | None = None,
-        heard: Callable[[str], bool] | None = None,
+        heard: Callable[[str, str], bool] | None = None,
         on_session: Callable[[Session, bool], None] | None = None,
         on_refused: Callable[[str, int, str], None] | None = None,
     ) -> None:
@@ -148,7 +148,7 @@ class Talker:
             with self._lock:
                 for ended in self.endpoint.expire():
                     self._note(Event("quiet", ended))
-        reply = self.endpoint.receive(message)
+        reply = self.endpoint.receive(message, from_inbox=True)
         if reply.event is None:
             return reply
         session = reply.event.session
@@ -238,6 +238,10 @@ class Talker:
         try:
             message = read_message(raw)
         except VersionUnknown as e:
+            if origin.startswith("http://"):
+                # a signed answer to a robot nobody heard, to whatever id and `re` it names, is
+                # a signature anybody on the LAN could have for the asking: text says it as well
+                return 400, f"6.7: this robot reads Robot Passport {VERSION} only\n"
             return 200, version_answer(e, self.id, self.endpoint.key)
         except PassportError as e:
             status, why = (413 if "over the" in str(e) else 400), f"{e.rule}: {e}"
@@ -248,7 +252,7 @@ class Talker:
         first = message.type == "hello" and message.re is None
         if first and origin.startswith("http://") and self._heard is not None:
             beacon = message.body.get("beacon")
-            if not isinstance(beacon, str) or not self._heard(beacon):
+            if not isinstance(beacon, str) or not self._heard(beacon, origin):
                 return 403, "this robot has not heard you by radio, so you are not near\n"
         reply = self.receive(message, origin=origin)
         if reply.wire is not None:
@@ -350,6 +354,13 @@ class Talker:
         raise PassportError("6.3", f"this robot has no session with {who}")
 
     # ── what a person and a pilot are told ──────────────────────────────────────────────
+
+    def rejudge(self) -> None:
+        """Every open session judged again from the pins as they are now, when robot.yaml
+        changed: a robot forgotten is a stranger from its next word, one pinned known."""
+        with self._lock:
+            for session in self.endpoint.sessions.values():
+                session.judged = None
 
     def tier_of(self, session: Session) -> Judgement:
         """The tier of the robot a session is with, judged once for the session and kept on it,

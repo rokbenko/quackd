@@ -32,6 +32,9 @@ class Pin:
     id: str
     name: str
     pinned: str
+    #: a robot pin's: the owner key that signed the robot when it was pinned, or None for a pin
+    #: written by hand without one, which trusts the robot key whoever signs for it
+    owner: str | None = None
 
 
 #: Letters of other scripts drawn like Latin ones, and the digits drawn like letters, read as
@@ -48,6 +51,14 @@ _LOOKALIKES = str.maketrans(
 )
 
 
+#: Every hyphen, dash and minus a robot's name could be written with, read as the ASCII one.
+_DASHES = str.maketrans(
+    dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2043\u2212\u02d7", "-")
+)
+#: Letters that draw nothing at all: the Hangul fillers.
+_FILLERS = frozenset("\u115f\u1160\u3164\uffa0")
+
+
 @dataclass(frozen=True)
 class Judgement:
     """A reading's tier, the one line that says why, and anything a person should be told."""
@@ -60,8 +71,12 @@ class Judgement:
 def fold(name: str) -> str:
     """A name as a person sees it, to tell whether two would look alike: NFKC and casefolded,
     with no character that shows nothing, its spaces collapsed, and lookalikes read as Latin."""
-    text = unicodedata.normalize("NFKC", name).casefold()
-    shown = "".join(c for c in text if unicodedata.category(c) not in ("Cc", "Cf", "Zl", "Zp"))
+    text = unicodedata.normalize("NFKC", name).casefold().translate(_DASHES)
+    shown = "".join(
+        c
+        for c in text
+        if unicodedata.category(c) not in ("Cc", "Cf", "Mn", "Zl", "Zp") and c not in _FILLERS
+    )
     return " ".join(shown.split()).translate(_LOOKALIKES)
 
 
@@ -101,7 +116,16 @@ def judge(
         pinned = owners[reading.owner_id]
         return Judgement("known", f"signed by {pinned.name}, an owner you pinned", tuple(warnings))
     if reading.id in robots:
-        return Judgement("known", f"pinned on {robots[reading.id].pinned[:10]}", tuple(warnings))
+        pin = robots[reading.id]
+        if pin.owner is not None and pin.owner != reading.owner_id:
+            # whoever holds a robot key could otherwise sign its passport with a key of their
+            # own, and talk as a robot a person trusts past the day its owner's signature ran out
+            warnings.append(
+                f"{pin.name} was pinned as its owner signed it then, and another owner key "
+                "signs it now: it is read as a stranger until you pin it again"
+            )
+            return Judgement("stranger", "pinned, and signed by another owner", tuple(warnings))
+        return Judgement("known", f"pinned on {pin.pinned[:10]}", tuple(warnings))
     return Judgement("stranger", "signed by an owner nobody here pinned", tuple(warnings))
 
 

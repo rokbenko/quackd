@@ -390,3 +390,31 @@ def test_a_did_too_long_to_be_an_ed25519_key_is_refused_before_it_is_decoded() -
         public_from_did("did:key:z" + "6" * 100_000)
     assert refused.value.rule == "rule 7" and "too long" in str(refused.value)
     assert time.perf_counter() - started < 0.5
+
+
+def test_half_a_surrogate_pair_is_not_i_json_and_is_refused_before_anything_holds_it() -> None:
+    """JSON's escape for half a pair decodes to a string no file can write as UTF-8, so one word
+    of it in a stranger's message ended the run whose record tried to (spec 2.1, RFC 7493)."""
+    with pytest.raises(PassportError) as refused:
+        strict.loads(b'{"name": "cart\\ud800"}', limit=1024)
+    assert refused.value.rule == "rule 2" and "surrogate" in str(refused.value)
+    with pytest.raises(PassportError):
+        strict.loads(b'{"\\udfff": 1}', limit=1024)  # in a member's name too
+    whole = strict.loads(b'{"name": "\\ud83e\\udd86"}', limit=1024)  # a pair is one character
+    assert whole == {"name": "\U0001f986"}
+
+
+@pytest.mark.parametrize(
+    ("member", "value"),
+    [("passport", "1.0\n"), ("skills", ["stop\n"])],
+)
+def test_a_value_with_a_trailing_newline_is_not_one_its_pattern_allows(
+    member: str, value: object
+) -> None:
+    """Python's `$` matches before a final newline, so each pattern ends at the string's end."""
+    from tests.passport_helpers import OWNER, A, doc
+
+    changed = doc(A, OWNER, "cart-01")
+    changed[member] = value
+    with pytest.raises(PassportError):
+        document.validate(changed)

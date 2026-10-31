@@ -317,3 +317,44 @@ def test_robot_env_reaches_a_service_started_in_a_terminal_and_a_set_variable_wi
     assert os.environ["LOCAL_API_KEY"] == "from-the-file"
     assert os.environ["QUACKD_TEST_SET"] == "from-the-shell"
     assert load_env(tmp_path / "missing.env") == []
+
+
+def test_a_lan_hello_naming_a_beacon_comes_from_an_address_that_robots_record_names() -> None:
+    """A beacon id is public, in every advert and every LAN record, so the radio having heard
+    it let any host on the LAN borrow the id of a robot that really was near."""
+    from quackd.lan.lookup import LanRecord
+    from quackd.onboard.radio_side import RadioSide
+    from quackd.radio import NoRadio, Sighting
+
+    class Lan:
+        def __init__(self) -> None:
+            self.records: dict[str, LanRecord] = {}
+
+        def publish(self, txt: Any, *, host: str, port: int) -> bool:
+            return True
+
+        def withdraw(self) -> None:
+            return None
+
+        def lookup(self, beacon_id: str) -> LanRecord | None:
+            return self.records.get(beacon_id)
+
+    lan = Lan()
+    side = RadioSide(NoRadio(), lan=lan, server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()
+    beacon = "0123456789abcdef"
+
+    async def hear() -> None:
+        side.tracker.observe(Sighting(beacon, 0, -60.0, "sim:near", time.monotonic()))
+
+    try:
+        side.loop.call(hear(), 5)
+        assert side.heard(beacon, "http://10.0.0.9")  # no record to hold it to: the radio's word
+        record = LanRecord("10.0.0.5", 8790, "abcd", beacon, ("10.0.0.5", "192.168.1.5"))
+        lan.records[beacon] = record
+        assert side.heard(beacon, "http://10.0.0.5") and side.heard(beacon, "http://192.168.1.5")
+        assert not side.heard(beacon, "http://10.0.0.9")  # another host, borrowing its beacon id
+        assert not side.heard("fedcba9876543210", "http://10.0.0.5")  # a beacon never heard
+        assert side.heard(beacon, "ble://a1b2c3d4")  # a link is near by construction
+    finally:
+        side.close()

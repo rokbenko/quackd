@@ -752,7 +752,7 @@ class SimLan:
             host, port = doc.get("host"), doc.get("port")
             if not isinstance(host, str) or not isinstance(port, int) or not 0 < port < 65536:
                 continue
-            return LanRecord(host, port, str(txt.get("id", "")), beacon_id)
+            return LanRecord(host, port, str(txt.get("id", "")), beacon_id, (host,))
         return None
 
 

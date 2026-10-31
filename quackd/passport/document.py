@@ -83,11 +83,11 @@ FIGURES = (
 KNOWN_EXTENSIONS = frozenset({"org.quackd"})
 
 #: A version has at most nine digits a part, so reading one never converts a huge number.
-_VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
-_DID = re.compile(r"^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$")
-_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-_EXT = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
-_DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$")
+_VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\Z")
+_DID = re.compile(r"^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}\Z")
+_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
+_EXT = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+\Z")
+_DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})\Z")
 
 _MEMBERS = {
     "": (

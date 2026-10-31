@@ -283,7 +283,7 @@ def test_a_robot_whose_hello_names_no_port_can_only_be_answered(lan: Callable[..
 def test_over_a_bluetooth_link_a_hello_is_near_already_and_replies_ride_the_same_link() -> None:
     link = Link()
     # a radio that has heard no beacon at all: a hello over a link it holds needs none
-    duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01", heard=lambda beacon: False)
+    duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01", heard=lambda _beacon, _origin: False)
     cart, cart_heard = on_link(link, CART, OWNER_B, "cart-01")
     assert cart.meet(Link.ROUTE) == DUCK.did
     assert duck.session_named(CART.did).route == Link.ROUTE
@@ -301,7 +301,7 @@ def test_a_hello_over_the_network_from_a_robot_the_radio_has_not_heard_is_refuse
     """Sharing a network is not being near: a robot answers a hello over HTTP only when the
     beacon id it names is one its radio heard."""
     near: set[str] = set()
-    duck = lan(DUCK, OWNER, "duck-01", beacon=DUCK_BEACON, radio=near.__contains__)
+    duck = lan(DUCK, OWNER, "duck-01", beacon=DUCK_BEACON, radio=lambda b, _origin: b in near)
     cart = lan(CART, OWNER_B, "cart-01", beacon=CART_BEACON)
     with pytest.raises(PassportError, match="answered 403"):
         cart.talker.meet(duck.inbox)
@@ -374,16 +374,21 @@ def test_the_inbox_takes_a_hello_for_this_robot_or_anyone_and_refuses_the_rest()
 def test_a_message_in_another_major_version_is_answered_with_the_versions_read(
     version: str,
 ) -> None:
-    """0.1 is what quackd 0.23 to 0.28 spoke: answered, not dropped (spec 6.7)."""
+    """0.1 is what quackd 0.23 to 0.28 spoke: answered, not dropped (spec 6.7). Over a link,
+    which is near by construction, the answer is signed; over HTTP, from a robot nobody has
+    heard yet, it is text, so no host on the LAN gets this robot's signature for the asking."""
     old = envelope("say", CART.did, {"text": "hi"})
     old["passport"] = version
-    status, reply, kind = alone().inbox_http(
-        seal(old, CART).encode(), "application/jose", "127.0.0.1"
-    )
-    assert (status, kind) == (200, "application/jose") and reply is not None
+    status, reply = alone().inbox(seal(old, CART), Link.ROUTE)
+    assert status == 200 and reply is not None
     answer = read_message(reply)
     assert answer.to == CART.did
     assert answer.body == {"result": "no", "reason": "version", "versions": [document.VERSION]}
+    status, text, kind = alone().inbox_http(
+        seal(old, CART).encode(), "application/jose", "127.0.0.1"
+    )
+    assert (status, kind) == (400, "text/plain") and text is not None
+    assert text.decode().startswith("6.7") and document.VERSION in text.decode()
 
 
 def test_a_peers_passport_is_read_against_this_robots_own_clock() -> None:
@@ -433,3 +438,22 @@ def test_a_stranger_that_takes_a_pinned_robots_name_never_gets_words_meant_for_i
 
 def test_nothing_nearby_is_no_block_at_all() -> None:
     assert alone().lines() == []
+
+
+def test_a_pin_taken_back_makes_an_open_session_a_strangers_from_its_next_word() -> None:
+    """A tier was judged once and kept on its session, so `quackd onboard forget` left a robot
+    known for as long as it kept talking. The service judges every open session again when
+    robot.yaml changes."""
+    link = Link()
+    duck, _ = on_link(link, DUCK, OWNER, "duck-01")
+    cart, _ = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    session = duck.endpoint.session_with(CART.did)
+    assert session is not None
+    pins = [Pin("robot", CART.did, "cart-01", "2026-10-29")]
+    duck._judge = judged(OWNER, pins)
+    duck.rejudge()
+    assert duck.tier_of(session).tier == "known"
+    pins.clear()
+    duck.rejudge()
+    assert duck.tier_of(session).tier == "stranger"

@@ -366,6 +366,11 @@ class Service:
             row["owner_id"] = session.passport.owner_id
             row["owner_label"] = owner.get("label")
             row["via"] = str(session.route or "").split(":", 1)[0] or None
+            warnings = list(self.talker.tier_of(session).warnings) if self.talker else []
+            if warnings:
+                row["warn"] = warnings
+                for warning in warnings:
+                    self.log(f"{heard.passport_name}: {warning}")
         self._append(self.home.met_log, row)
 
     def refused(self, who: str, why: str) -> None:
@@ -540,6 +545,7 @@ class Service:
             self.slot.file = self.file
         if self.talker is not None and self.check.reading is not None:
             self.talker._judge = self._judge_for(self.check.reading)
+            self.talker.rejudge()
         return {"ok": True, "pins": len(self.file.trust.pins)}
 
     def _met_rows(self, limit: int) -> list[dict[str, Any]]:

@@ -203,7 +203,9 @@ def record_from_info(info: Any) -> LanRecord | None:
     host = urlsplit(beacon.url()).hostname
     if not host:
         return None
-    return LanRecord(host, beacon.port, beacon.short_id, beacon.beacon_id)
+    return LanRecord(
+        host, beacon.port, beacon.short_id, beacon.beacon_id, (host, *beacon.addresses)
+    )
 
 
 __all__ = [

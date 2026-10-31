@@ -7,7 +7,7 @@ re-exports both and holds `PassportBrowser`, the lookup a robot uses on a real n
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -23,6 +23,9 @@ class LanRecord:
     port: int
     short_id: str
     beacon_id: str | None
+    #: every address the record names, `host` among them: what a hello over the LAN claiming
+    #: this beacon id must come from
+    addresses: tuple[str, ...] = field(default=(), compare=False)
 
 
 class LanDirectory(Protocol):
