@@ -201,3 +201,22 @@ def test_a_file_laid_out_another_way_gets_the_line_to_paste(tmp_path: Path) -> N
     pin = config.Pin(kind="robot", id=A.did, name="g1-edu-02", pinned="2026-10-29")
     with pytest.raises(config.FileError, match="add this line"):
         config.add_pin(path, pin)
+
+
+def test_a_pinned_name_with_backslashes_and_control_characters_reads_back_as_it_was(
+    tmp_path: Path,
+) -> None:
+    """A name is what the other robot chose. Written between plain double quotes, a backslash in
+    it was an escape YAML read as something else, so the pin went in under another name."""
+    path = tmp_path / "robot.yaml"
+    path.write_text(template(), encoding="utf-8")
+    name = 'cart \\ "01" \x1b[2J'
+    config.add_pin(path, config.Pin(kind="robot", id=A.did, name=name, pinned="2026-10-31"))
+    assert config.load(path).trust.pins[0].name == name
+
+
+def test_a_robot_file_that_is_not_utf8_is_refused_as_a_file(tmp_path: Path) -> None:
+    path = tmp_path / "robot.yaml"
+    path.write_bytes(template().encode("utf-8") + "# caf\u00e9\n".encode("latin-1"))
+    with pytest.raises(config.FileError, match="not UTF-8"):
+        config.load(path)

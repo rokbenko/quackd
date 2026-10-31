@@ -9,6 +9,7 @@ and by the owner's word on strangers, and a meeting its robots left ends after t
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import threading
 from pathlib import Path
@@ -199,5 +200,68 @@ def test_a_kept_connection_carries_lines_until_the_handler_closes_it(tmp_path: P
             lines = [conn.read(), conn.read()]
         assert [line["ev"] for line in lines if line] == ["event", "end"]
         assert done.wait(5)
+    finally:
+        server.close()
+
+
+def test_a_stop_takes_back_the_question_a_goal_waits_on() -> None:
+    """A run waiting on its question holds its own loop, where the abort cannot land until the
+    question is answered, so a stop takes the question back, as a page's Stop does. Before, a
+    stop said it worked and the goal waited up to five minutes for its answer."""
+
+    class Questions:
+        closed: str | None = None
+
+        def close(self, why: str) -> None:
+            self.closed = why
+
+    class Front:
+        questions = Questions()
+
+    slot = RunSlot(robot_file(), lambda duck, kind, front: Run(duck, kind), safe_verbs=list)
+    hold = threading.Event()
+    thread = threading.Thread(target=hold.wait, daemon=True)
+    thread.start()
+    front = Front()
+    slot.running = brain.Running("goal", "goal", 0.0, set(), None, front)
+    slot.running.thread = thread
+    try:
+        assert slot.stop("stopped by quackd onboard stop")
+        assert front.questions.closed == "stopped by quackd onboard stop"
+    finally:
+        hold.set()
+
+
+def test_a_client_that_says_hello_slowly_is_cut_off_and_a_goals_reads_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A client without the token held a slot for as long as it sent a byte every few seconds,
+    and eight of them locked the owner out of stop and status. And a goal's reads kept the
+    hello's five seconds, so any model turn longer than that ended the goal."""
+    import socket
+    import time
+
+    monkeypatch.setattr(control, "HELLO_S", 0.5)
+    server = control.ControlServer(lambda op, conn: {"ev": "ok"}, hello={"robot": "r"})
+    server.start(tmp_path / "control.json")
+    try:
+        slow = socket.create_connection(("127.0.0.1", server.port), timeout=5)
+        started = time.monotonic()
+        slow.sendall(b"{")
+        time.sleep(0.3)
+        with contextlib.suppress(OSError):
+            slow.sendall(b'"')  # still a byte inside every per-read timeout
+        try:
+            data = slow.recv(100)
+        except OSError:
+            data = b""
+        assert data == b"" and time.monotonic() - started < 3
+        slow.close()
+        with control.connect(tmp_path / "control.json") as conn:
+            assert conn.sock.gettimeout() is None
+        odd = socket.create_connection(("127.0.0.1", server.port), timeout=5)
+        odd.sendall(json.dumps({"op": "hello", "token": "\u00e9t\u00e9"}).encode() + b"\n")
+        assert b"refused" in odd.recv(1000)  # a token that is not ASCII is a refusal, not a crash
+        odd.close()
     finally:
         server.close()

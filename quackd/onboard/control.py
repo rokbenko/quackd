@@ -124,11 +124,18 @@ class ControlServer:
     def _serve(self, sock: socket.socket) -> None:
         conn = Connection(sock)
         kept = False
+        # the hello and the op inside `HELLO_S` in all, however slowly the bytes come, so no
+        # client without the token holds one of the slots for longer than that
+        cut_off = threading.Timer(HELLO_S, _close_quietly, args=(sock,))
+        cut_off.daemon = True
+        cut_off.start()
         try:
             sock.settimeout(HELLO_S)
             hello = conn.read()
-            given = str((hello or {}).get("token", ""))
-            if (hello or {}).get("op") != "hello" or not hmac.compare_digest(given, self.token):
+            given = str((hello or {}).get("token", "")).encode("utf-8", errors="replace")
+            if (hello or {}).get("op") != "hello" or not hmac.compare_digest(
+                given, self.token.encode("utf-8")
+            ):
                 conn.send(
                     {"ev": "refused", "reason": "a client says hello with control.json's token"}
                 )
@@ -138,6 +145,7 @@ class ControlServer:
             if op is None or not isinstance(op.get("op"), str):
                 conn.send({"ev": "refused", "reason": "no op after the hello"})
                 return
+            cut_off.cancel()
             sock.settimeout(None)
             reply = self._handle(op, conn)
             if reply is None:
@@ -147,9 +155,15 @@ class ControlServer:
         except (OSError, ValueError):
             return
         finally:
+            cut_off.cancel()
             if not kept:
                 conn.close()
             self._clients.release()
+
+
+def _close_quietly(sock: socket.socket) -> None:
+    with contextlib.suppress(OSError):
+        sock.close()
 
 
 def write_private(path: Path, text: str) -> None:
@@ -177,8 +191,12 @@ def _where(control_json: Path) -> tuple[int, str]:
 
 
 @contextlib.contextmanager
-def connect(control_json: Path, *, timeout: float = HELLO_S) -> Iterator[Connection]:
-    """A hello'd connection to the service whose control.json this is."""
+def connect(
+    control_json: Path, *, timeout: float = HELLO_S, then: float | None = None
+) -> Iterator[Connection]:
+    """A hello'd connection to the service whose control.json this is: `timeout` for the
+    hello, and `then` for every read after it, None for as long as it takes, which a goal's
+    lines need, since a model's turn can take longer than any hello."""
     port, token = _where(control_json)
     try:
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
@@ -190,6 +208,7 @@ def connect(control_json: Path, *, timeout: float = HELLO_S) -> Iterator[Connect
         hello = conn.read()
         if hello is None or hello.get("ev") != "hello":
             raise ControlError(str((hello or {}).get("reason", "the service refused the hello")))
+        sock.settimeout(then)
         yield conn
     finally:
         conn.close()
@@ -197,7 +216,7 @@ def connect(control_json: Path, *, timeout: float = HELLO_S) -> Iterator[Connect
 
 def request(control_json: Path, op: Mapping[str, Any], *, timeout: float = 10.0) -> dict[str, Any]:
     """One op and the service's reply to it."""
-    with connect(control_json, timeout=timeout) as conn:
+    with connect(control_json, timeout=timeout, then=timeout) as conn:
         conn.send(dict(op))
         reply = conn.read()
     if reply is None:

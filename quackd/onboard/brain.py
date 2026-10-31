@@ -266,6 +266,11 @@ class RunSlot:
         if aio is not None and agent is not None and not aio.is_closed():
             with contextlib.suppress(RuntimeError):  # the loop closed as the stop was sent
                 aio.call_soon_threadsafe(_set_abort, agent, why)
+        if running.front is not None:
+            # a run waiting on its question holds its own loop, where the abort cannot land
+            # until it is answered: the question is taken back, as a page's Stop takes it
+            with contextlib.suppress(Exception):
+                running.front.questions.close(why)
         self._log(f"the {running.kind} is stopping: {why}")
 
 

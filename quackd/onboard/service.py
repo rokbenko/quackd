@@ -29,6 +29,7 @@ import signal
 import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -58,6 +59,10 @@ STATUS_EVERY_S = 2.0
 #: kept in runs/: a robot that meets robots all day must not fill its disk with records.
 MET_KEPT = 200
 RUNS_KEPT = 200
+#: How big met.jsonl grows before it is cut to its newest rows, and how many refusals a minute
+#: it takes: a host that sends nothing but refusals fills neither the disk nor the journal.
+MET_FILE_MAX = 1 << 20
+REFUSALS_PER_MINUTE = 30
 
 
 @dataclass
@@ -180,13 +185,25 @@ class Service:
         home: OnboardDir,
         *,
         facts: BoardFacts,
-        radio_side: RadioSide,
+        radio_side: RadioSide | Callable[[], RadioSide],
         log: Callable[[str], None],
     ) -> None:
         self.home = home
         self.facts = facts
-        self.radio_side = radio_side
+        #: the radio while talk is on, and how to make one, since talk turns off when the
+        #: robot's own passport stops checking out and on again when it does
+        self.radio_side: RadioSide | None = None
+        self._make_side: Callable[[], RadioSide] | None = None
+        if isinstance(radio_side, RadioSide):
+            self.radio_side = radio_side
+        else:
+            self._make_side = radio_side
         self.log = log
+        #: why robot.yaml, edited since the service read it, does not read, for status
+        self.file_problem: str | None = None
+        self._lock = threading.Lock()
+        self._refusals: deque[float] = deque()
+        self._refusals_dropped = 0
         self.file: RobotFile = config.load(home.robot_yaml)
         self.robot_key = read_robot_key(home.robot_key)
         self.token = (
@@ -205,36 +222,12 @@ class Service:
         self.slot: RunSlot | None = None
         self.control: Any = None
         self._courtesy: Any = None
-        self.radio_side.on_event = self._meet_event
 
     # ── up and down ─────────────────────────────────────────────────────────────────────
 
     def start(self) -> Service:
         self.home.ensure()
         self.log(f"onboard {self.file.passport.name}: {self.check.why}")
-        reading = self.check.reading
-        if self.check.ok and reading is not None and self.token is not None:
-            self.talker = Talker(
-                self.file.passport.name,
-                self.robot_key,
-                self.token,
-                judge=self._judge_for(reading),
-                send=self.radio_side.send,
-                runtime={"software": f"quackd/{__version__}"},
-                heard=self.radio_side.heard,
-                on_heard=self._heard,
-                on_session=self.radio_side.on_session,
-                on_refused=self._refused_hello,
-            )
-            served = Served(self.file.passport.name, reading.raw, self.token)
-            self.server = PassportServer(
-                served,
-                host=self.radio_side.lan_host,
-                port=self.file.lan.port,
-                inbox=self.talker.inbox_http,
-                inbox_limit=MAX_HELLO_BYTES,
-            ).start()
-            self.talker.endpoint.runtime["reach"] = {"http_port": self.server.port}
         self.slot = RunSlot(
             self.file,
             self._make_loop,
@@ -243,14 +236,7 @@ class Service:
             holding=self._holding,
             released=self._released,
         )
-        self.radio_side.busy_elsewhere = self._in_a_meeting
-        if self.talker is not None and reading is not None and self.server is not None:
-            self.radio_side.start(
-                self.talker,
-                short_id=reading.short_id,
-                digest=reading.digest,
-                http_port=self.server.port,
-            )
+        self._start_talk()
         from quackd.onboard.control import ControlServer
 
         self.control = ControlServer(
@@ -267,11 +253,83 @@ class Service:
         while not self._stop.wait(TICK_S):
             self.tick()
 
+    def _start_talk(self) -> None:
+        """Talk on, for a passport that checks out: the Talker, the passport server and the
+        radio. At start, and again whenever a check that failed passes, a passport signed or a
+        clock set."""
+        reading = self.check.reading
+        if self.talker is not None or not self.check.ok or reading is None or self.token is None:
+            return
+        if self.radio_side is None:
+            if self._make_side is None:
+                return  # a radio handed over once, and closed since, cannot be had again
+            self.radio_side = self._make_side()
+        side = self.radio_side
+        side.on_event = self._meet_event
+        side.busy_elsewhere = self._in_a_meeting
+        talker = Talker(
+            self.file.passport.name,
+            self.robot_key,
+            self.token,
+            judge=self._judge_for(reading),
+            send=side.send,
+            runtime={"software": f"quackd/{__version__}"},
+            heard=side.heard,
+            on_heard=self._heard,
+            on_session=side.on_session,
+            on_refused=self._refused_hello,
+        )
+        served = Served(self.file.passport.name, reading.raw, self.token)
+        server = PassportServer(
+            served,
+            host=side.lan_host,
+            port=self.file.lan.port,
+            inbox=talker.inbox_http,
+            inbox_limit=MAX_HELLO_BYTES,
+        ).start()
+        talker.endpoint.runtime["reach"] = {"http_port": server.port}
+        self.talker, self.server = talker, server
+        side.start(talker, short_id=reading.short_id, digest=reading.digest, http_port=server.port)
+
+    def _stop_talk(self, why: str) -> None:
+        """Talk off, until the passport checks out again: a bye to every robot met, and the
+        radio and the passport server down."""
+        talker, self.talker = self.talker, None
+        if talker is None:
+            return
+        for peer in list(talker.peers_open()):
+            with contextlib.suppress(Exception):
+                talker.leave(peer)
+        side, self.radio_side = self.radio_side, None
+        if side is not None:
+            with contextlib.suppress(Exception):
+                side.close()
+        server, self.server = self.server, None
+        if server is not None:
+            server.close()
+        self.log(f"talk is off: {why}")
+
+    def _recheck(self) -> None:
+        """Its own passport against the clock again: one that ran out turns talk off, and a
+        clock set since, or a passport signed since, turns it back on."""
+        was = self.check.ok
+        self.check = check_board(check_own_passport(self.token, self.robot_key.did), self.facts)
+        if self.check.ok and self.talker is None:
+            if not was:
+                self.log(f"onboard {self.file.passport.name}: {self.check.why}")
+            try:
+                self._start_talk()
+            except Exception as e:  # a port taken, say: said, and tried again on the next look
+                self.log(f"talk could not start: {e}")
+        elif not self.check.ok and self.talker is not None:
+            self._stop_talk(self.check.why)
+
     def tick(self) -> None:
-        try:
-            self.radio_side.tick()
-        except Exception as e:  # one bad tick must not end the service
-            self.log(f"radio: a tick failed: {e}")
+        if self.radio_side is not None and self.talker is not None:
+            try:
+                self.radio_side.tick()
+            except Exception as e:  # one bad tick must not end the service
+                self.log(f"radio: a tick failed: {e}")
         if self.slot is not None:
             self.slot.tick()
         now = time.monotonic()
@@ -286,6 +344,7 @@ class Service:
                     if done.get("ok")
                     else f"robot.yaml changed and does not read: {done.get('reason')}"
                 )
+            self._recheck()
             self._write_status()
 
     def _stamps(self) -> tuple[float | None, float | None]:
@@ -311,8 +370,9 @@ class Service:
             for peer in list(self.talker.peers_open()):
                 with contextlib.suppress(Exception):
                     self.talker.leave(peer)
-        with contextlib.suppress(Exception):
-            self.radio_side.close()
+        if self.radio_side is not None:
+            with contextlib.suppress(Exception):
+                self.radio_side.close()
         if self.server is not None:
             self.server.close()
         if self.control is not None:
@@ -374,7 +434,19 @@ class Service:
         self._append(self.home.met_log, row)
 
     def refused(self, who: str, why: str) -> None:
-        """A robot the radio heard whose hello did not check out: logged, and kept for `met`."""
+        """A robot the radio heard whose hello did not check out: logged, and kept for `met`,
+        at most `REFUSALS_PER_MINUTE` a minute, so a flood fills neither the disk nor the log."""
+        now = time.monotonic()
+        with self._lock:
+            while self._refusals and now - self._refusals[0] > 60.0:
+                self._refusals.popleft()
+            if len(self._refusals) >= REFUSALS_PER_MINUTE:
+                self._refusals_dropped += 1
+                return
+            self._refusals.append(now)
+            dropped, self._refusals_dropped = self._refusals_dropped, 0
+        if dropped:
+            self.log(f"{dropped} more refusals in the last minute were not written down")
         self.log(f"refused {who}: {why}")
         row = {"at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "refused": who, "why": why}
         self._append(self.home.met_log, row)
@@ -394,12 +466,18 @@ class Service:
         running = self.slot.running if self.slot is not None else None
         return running is not None and running.kind == "meeting"
 
-    @staticmethod
-    def _append(path: os.PathLike[str], row: Mapping[str, Any]) -> None:
-        with contextlib.suppress(OSError):
+    def _append(self, path: Path, row: Mapping[str, Any]) -> None:
+        """One row more, one writer at a time, and the file cut to its newest rows once it
+        passes `MET_FILE_MAX`."""
+        with self._lock, contextlib.suppress(OSError):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8", newline="") as f:
                 f.write(json.dumps(row) + "\n")
+            if path.stat().st_size > MET_FILE_MAX:
+                from quackd.onboard.control import write_private
+
+                kept = path.read_text(encoding="utf-8").splitlines()[-MET_KEPT * 5 :]
+                write_private(path, "\n".join(kept) + "\n")
 
     # ── runs ────────────────────────────────────────────────────────────────────────────
 
@@ -472,7 +550,12 @@ class Service:
             decide=front.decide if front is not None else _meeting_go,
             acknowledge=front.acknowledge if front is not None else None,
             view=front.view if front is not None else None,
-            memory=RobotMemory(self.file.passport.name, self.home.memory),
+            # a goal's notes are the robot's; a meeting keeps none, since what it would note
+            # is what a robot it met claimed, and a note comes back to a later run as the
+            # robot's own word
+            memory=RobotMemory(self.file.passport.name, self.home.memory)
+            if kind == "goal"
+            else None,
             price=brain.price,
             nearby=self.talker,
         )
@@ -511,7 +594,9 @@ class Service:
         front = Front(channel, "onboard goal", quit_now=lambda: None)
         channel.on_broken(front.on_end)
         if op.get("yes") is True:
+            # the run's record says --yes answered, never a person, for a doubt as for a verb
             front.confirm.answers_as = "--yes"  # type: ignore[attr-defined]
+            front.decide.answers_as = "--yes"  # type: ignore[attr-defined]
         steps = op.get("max_steps")
         why = self.slot.goal(
             text, front, max_steps=steps if isinstance(steps, int) and steps > 0 else None
@@ -530,7 +615,9 @@ class Service:
         try:
             self.file = config.load(self.home.robot_yaml)
         except config.FileError as e:
+            self.file_problem = f"{e}; the service keeps the file it read last"
             return {"ok": False, "reason": str(e)}
+        self.file_problem = None
         # a passport signed again since start: served from now on, and in every new hello
         if self.home.passport_jws.exists():
             token = self.home.passport_jws.read_text(encoding="utf-8").strip()
@@ -541,6 +628,8 @@ class Service:
                     self.server.update(Served(self.file.passport.name, check.reading.raw, token))
                 if self.talker is not None:
                     self.talker.endpoint.passport = token
+                else:
+                    self._start_talk()  # signed while talk was off: on, at once
         if self.slot is not None:
             self.slot.file = self.file
         if self.talker is not None and self.check.reading is not None:
@@ -589,7 +678,10 @@ class Service:
             },
             "brain": {"llm": self.file.brain.llm, "base_url": self.file.brain.base_url},
             "lan": {"port": self.server.port if self.server is not None else None},
-            "radio": self.radio_side.status(),
+            "radio": self.radio_side.status()
+            if self.radio_side is not None
+            else {"state": "off", "detail": f"talk is off: {self.check.why}"},
+            "file_problem": self.file_problem,
             "run": self.slot.state() if self.slot is not None else {"run": "idle"},
             "nearby": nearby,
         }
@@ -653,22 +745,23 @@ def serve(
         speed=speed,
     )
     rotate_s = file.radio.rotate_min * 60.0 / speed
-    if facts.kind == "sim" and radio != "off":
-        place = sim or SimPlace(air=default_air_dir())
-        side = sim_side(
-            air=place.air,
-            path=place.path,
-            network=place.network,
-            t0=place.t0,
-            speed=place.speed,
-            seed=place.seed,
-            token=place.token,
-            policy=policy,
-            rotate_s=rotate_s,
-            log=log,
-        )
-    else:
-        side = board_side(
+
+    def side() -> RadioSide:
+        if facts.kind == "sim" and radio != "off":
+            place = sim or SimPlace(air=default_air_dir())
+            return sim_side(
+                air=place.air,
+                path=place.path,
+                network=place.network,
+                t0=place.t0,
+                speed=place.speed,
+                seed=place.seed,
+                token=place.token,
+                policy=policy,
+                rotate_s=rotate_s,
+                log=log,
+            )
+        return board_side(
             radio_kind=radio or chosen.radio_kind,
             instance=file.passport.name,
             browser=_browser(log),
@@ -677,6 +770,7 @@ def serve(
             log=log,
             advertise=file.radio.advertise,
         )
+
     home.ensure()
     with held(home.lock):
         service = Service(home, facts=facts, radio_side=side, log=log)

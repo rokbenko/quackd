@@ -245,7 +245,10 @@ class Talker:
             return 200, version_answer(e, self.id, self.endpoint.key)
         except PassportError as e:
             status, why = (413 if "over the" in str(e) else 400), f"{e.rule}: {e}"
-            self._refused(origin, status, why)
+            if not origin.startswith("http://"):
+                # over the LAN nothing yet says the radio heard the sender, and a host that
+                # posts nonsense is noise, not a robot that was refused
+                self._refused(origin, status, why)
             return status, why + "\n"
         if message.to not in (None, "*", self.id):
             return 404, "no robot here by that id\n"

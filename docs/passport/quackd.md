@@ -639,7 +639,7 @@ file, then `~/.quackd/onboard/`.
 | the passport the owner signed, which the service serves | `passport.jws` |
 | the control port and its token | `control.json` |
 | the service's state, every 2 seconds | `status.json` |
-| the robots met and refused | `met.jsonl` |
+| the robots met and refused, at most 30 refusals a minute, and cut to its newest rows past 1 MB | `met.jsonl` |
 | each run's record, the newest 200 | `runs/` |
 | what the robot remembers, and quackd's cache | `memory/` and `cache/` |
 

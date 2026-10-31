@@ -9364,6 +9364,9 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
         if why is not None and passport.get("ok"):
             said = f"{why}, so other robots still see what was signed: quackd onboard sign"
             rows.append(("unsigned", Text(said, style=ui.STYLES["warn"])))
+    if reply.get("file_problem"):
+        problem = ui.printable(str(reply["file_problem"]))
+        rows.append(("robot.yaml", Text(problem, style=ui.STYLES["warn"])))
     shown_board = reply.get("board") or {}
     rows.append(
         (
@@ -9377,7 +9380,7 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
     rows.append(("brain", str((reply.get("brain") or {}).get("llm") or "none: no meetings")))
     rows += _radio_rows(radio)
     for robot in reply.get("nearby") or []:
-        rows.append(("talking", f"{robot.get('shown')} ({robot.get('tier')})"))
+        rows.append(("talking", f"{ui.printable(str(robot.get('shown')))} ({robot.get('tier')})"))
     title = f", {run['title']}" if run.get("title") else ""
     rows.append(("run", f"{run.get('run', 'idle')}{title}"))
     for row in _met_rows(home, 5):
@@ -9504,7 +9507,9 @@ def onboard_pin(
             pinned=date.today().isoformat(),
             owner=robot.get("owner_id") or None,
         )
-    what = f"the owner {pin.name}" if owner else f"the robot {pin.name}"
+    # a name is what the other robot chose, so it reaches the terminal escaped
+    shown = ui.printable(pin.name)
+    what = f"the owner {shown}" if owner else f"the robot {shown}"
     for warning in robot.get("warn") or []:
         ui.console.print(_warn_line(ui.printable(str(warning))))
     if not yes and not typer.confirm(
@@ -9546,7 +9551,7 @@ def onboard_forget(
         _fail(f"{wanted!r} names {len(matches)} pins: give its did or more of its short id")
         return
     config.remove_pin(home.robot_yaml, matches[0].id)
-    ui.console.print(_ok_line(f"forgot {matches[0].kind} {matches[0].name}"))
+    ui.console.print(_ok_line(f"forgot {matches[0].kind} {ui.printable(matches[0].name)}"))
     _tell_service(home, {"op": "reload"})
 
 

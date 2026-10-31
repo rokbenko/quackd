@@ -457,3 +457,16 @@ def test_a_pin_taken_back_makes_an_open_session_a_strangers_from_its_next_word()
     pins.clear()
     duck.rejudge()
     assert duck.tier_of(session).tier == "stranger"
+
+
+def test_a_message_that_does_not_read_is_kept_as_a_refusal_from_a_link_and_not_from_the_lan() -> (
+    None
+):
+    """Over the LAN nothing says the radio heard the sender yet, so a host posting nonsense, ten
+    thousand times, wrote ten thousand refusals and hid every robot really met."""
+    refused: list[str] = []
+    duck = alone(on_refused=lambda origin, _status, _why: refused.append(origin))
+    assert duck.inbox("not a message at all", "http://192.0.2.9")[0] == 400
+    assert refused == []
+    assert duck.inbox("not a message at all", Link.ROUTE)[0] == 400
+    assert refused == [Link.ROUTE]

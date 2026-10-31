@@ -358,3 +358,84 @@ def test_a_lan_hello_naming_a_beacon_comes_from_an_address_that_robots_record_na
         assert side.heard(beacon, "ble://a1b2c3d4")  # a link is near by construction
     finally:
         side.close()
+
+
+def test_talk_goes_off_when_its_own_passport_stops_checking_out_and_on_when_it_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The service read its own passport against the clock only as it started: one that expired
+    went on being served, a clock set since stayed silent, and a passport signed while talk was
+    off never turned it on."""
+    from quackd.onboard import service as onboard_service
+
+    air = air_for(tmp_path)
+    household = robot(tmp_path, HOUSEHOLD)
+    real = onboard_service.check_own_passport
+    failing = [False]
+
+    def check(token: str | None, did: str, *, now: int | None = None) -> Any:
+        if failing[0]:
+            return onboard_service.SelfCheck(False, "its own passport does not check out: 4.5")
+        return real(token, did, now=now)
+
+    monkeypatch.setattr(onboard_service, "check_own_passport", check)
+    with running(household, SimPlace(air, STANDS, "none", speed=SPEED)) as service:
+        assert service.talker is not None
+        failing[0] = True
+        assert wait_for(lambda: service.talker is None, 15)
+        assert service.status()["radio"]["state"] == "off"
+        failing[0] = False
+        assert wait_for(lambda: service.talker is not None, 15)
+
+
+def test_a_robot_file_that_stops_reading_is_named_in_status_and_the_service_runs_on(
+    tmp_path: Path,
+) -> None:
+    """One byte that is not UTF-8 ended the service, and every restart after it."""
+    air = air_for(tmp_path)
+    household = robot(tmp_path, HOUSEHOLD)
+    with running(household, SimPlace(air, STANDS, "none", speed=SPEED)) as service:
+        text = household.robot_yaml.read_bytes()
+        household.robot_yaml.write_bytes(text + "# caf\u00e9\n".encode("latin-1"))
+        assert wait_for(lambda: service.file_problem is not None, 15)
+        assert "not UTF-8" in str(service.status()["file_problem"])
+        assert service.talker is not None
+
+
+def test_refusals_are_written_at_most_thirty_a_minute_and_rows_from_many_threads_all_kept(
+    tmp_path: Path,
+) -> None:
+    home = robot(tmp_path, HOUSEHOLD)
+    lines: list[str] = []
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lines.append)  # type: ignore[arg-type,return-value]
+    for n in range(100):
+        service.refused(f"ble://{n:08x}", "4.4: a test's")
+    assert len(met(home)) == 30
+    home.met_log.unlink()
+    writers = [
+        threading.Thread(
+            target=lambda base=base: [
+                service._append(home.met_log, {"n": base + i}) for i in range(100)
+            ]
+        )
+        for base in range(0, 1000, 100)
+    ]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join()
+    assert sorted(row["n"] for row in met(home)) == list(range(1000))
+
+
+def test_a_meeting_keeps_no_notes_and_a_goal_does(tmp_path: Path) -> None:
+    """A meeting's notes would be what a robot it met claimed, back in a later run as the robot's
+    own word, so a meeting is offered no `remember`."""
+    from quackd.duckfile.parser import duck_from_goal
+    from quackd.onboard.meeting import meeting_duck
+
+    home = robot(tmp_path, HOUSEHOLD)
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type,return-value]
+    meeting = service._make_loop(meeting_duck("say who you are"), "meeting", None)
+    assert meeting.cfg.memory is None
+    goal = service._make_loop(duck_from_goal("report your state", ["report_state"]), "goal", None)
+    assert goal.cfg.memory is not None

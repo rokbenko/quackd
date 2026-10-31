@@ -234,3 +234,26 @@ def test_a_robot_pin_names_its_owner_and_a_warning_reaches_met_and_pin(
     assert pinned.exit_code == 0 and warning in flat(pinned.output)
     pins = config.load(home / "robot.yaml").trust.pins
     assert [(p.kind, p.id, p.owner) for p in pins] == [("robot", other, owner)]
+
+
+def test_a_name_another_robot_chose_reaches_the_terminal_escaped(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    row = {
+        "at": "2026-10-29T10:00:00Z",
+        "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+        "name": "cart\x1b[2J\x07",
+        "shown": "stranger-56475aa7",
+        "tier": "stranger",
+        "short_id": "56475aa75463474c",
+        "owner_id": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2",
+        "owner_label": "Somebody",
+        "via": "ble",
+    }
+    (home / "met.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    pinned = runner.invoke(app, ["onboard", "pin", "5647", "--yes", "--dir", str(home)])
+    assert pinned.exit_code == 0 and "\x1b" not in pinned.output and "\x07" not in pinned.output
+    forgot = runner.invoke(app, ["onboard", "forget", "5647", "--dir", str(home)])
+    assert forgot.exit_code == 0 and "\x1b" not in forgot.output

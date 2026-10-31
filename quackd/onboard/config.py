@@ -11,6 +11,7 @@ they were.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -247,6 +248,8 @@ def load(path: Path) -> RobotFile:
         text = path.read_text(encoding="utf-8")
     except OSError as e:
         raise FileError(f"cannot read {path}: {e}") from None
+    except UnicodeDecodeError as e:
+        raise FileError(f"{path} is not UTF-8: {e.reason} at byte {e.start}") from None
     return loads(text, str(path))
 
 
@@ -262,10 +265,11 @@ def _said(error: Any) -> str:
 
 
 def pin_line(pin: Pin, indent: str = "    ") -> str:
-    name = pin.name.replace('"', "'")
+    # JSON's string is YAML's double-quoted one, every backslash and control character escaped
+    name = json.dumps(pin.name)
     owner = f', owner: "{pin.owner}"' if pin.owner else ""
     return (
-        f'{indent}- {{kind: {pin.kind}, id: "{pin.id}", name: "{name}", '
+        f'{indent}- {{kind: {pin.kind}, id: "{pin.id}", name: {name}, '
         f'pinned: "{pin.pinned}"{owner}}}'
     )
 
