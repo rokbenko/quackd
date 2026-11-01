@@ -27,6 +27,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   next line, so nothing may first load them after a command has begun reading stdin.
   `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
 
+### Documentation
+
+- **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
+  were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
+  call to find its next number, and five autouse fixtures called it for every test, so each test cost
+  more than the one before: 8,000 tests that did nothing took 2 minutes 6 seconds without that and
+  had reached 86% when stopped at 45 minutes with it. That fix alone took Windows on 3.12 from 51:32
+  to 23:01, macOS on 3.12 from 33:41 to 23:18 and Ubuntu on 3.12 from 24:24 to 16:11. The six jobs
+  then run on every core a runner has (`pytest -n auto`, in `dev` now), which takes them to about 8,
+  10 and 6 minutes. Six tests that hold a margin on a wall clock, each of which has gone red under
+  load and passed alone, run after the rest on their own (`-m serial`). The jobs' limit is back down
+  from 60 minutes to 30, so a hang is called sooner. Three smaller things came with it: a test that
+  merely runs `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of
+  xdist's workers, where it fired in any that finished before the last, and on Windows the suite's
+  event loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and
+  held a whole run once as the ephemeral ports wrapped round. No quackd code changes, and no test
+  changes what it asserts.
+
 ## [0.29.1] — 2026-11-01
 
 0.29.1 fixes three things in `quackd onboard` that an install rehearsal of 0.29.0 led to. Its
