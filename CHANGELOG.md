@@ -39,7 +39,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Python wheel of about 350 KB with nothing under it. A detection on every target quackd ships is
   the same to the last bit: `tests/test_color_blob_parity.py` holds every colour there is, 1,500
   awkward masks and every field of `detect()` on simulator, noisy and saturated frames against OpenCV
-  itself, on both versions CI locks and at the floors `pyproject.toml` allows. OpenCV on Apple Silicon
+  itself, on 4.13 and on 5.0 and at the floors `pyproject.toml` allows. OpenCV on Apple Silicon
   and Linux on Arm does not read every colour as it does on x86: 6,582 of the 16,777,216 come out a
   saturation step lower, and quackd now gives the x86 answer on every machine. No colour crosses a
   shipped target's threshold that way. A target tuned by hand on Arm can gain up to 1,158 colours if
@@ -100,6 +100,15 @@ These are files you copy to the robot, so a robot has them once you copy them ag
   combination, and `.github/workflows/fresh-install.yml` does now, with built wheels in a clean
   environment beside it. It keeps a schedule of its own so another project's release can say so there
   without stopping a tag. The suite passes on those versions today: 7,669 passed and none failed.
+- **`uv.lock` is refreshed, from 112 known advisories to 52.** It ships to nobody, since a fresh
+  install resolves for itself and has none, so this is for a checkout and for CI. 39 of the 52 are
+  Pillow, which LeRobot holds under 13, and the rest are in `virtualenv`, `transformers`, `setuptools`
+  and `torch`. CI installs no provider SDK, so the new `openai` and `google-genai` were run for real
+  against a stand-in for each vendor's API, with `anthropic` beside them, and all eight requests they
+  sent were identical to the old versions'. `huggingface-hub` stays at 1.29.0, the version
+  `policy/endpoint_upstream_api.py` was read at. Python 3.11 and 3.12 lock one OpenCV and one numpy
+  now, and the nightly above is what runs the newest of each. One test used a nested `pytest.approx`,
+  which pytest 9.2 refuses, and compares point by point.
 - **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
   were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
   call to find its next number, and five autouse fixtures called it for every test, so each test cost

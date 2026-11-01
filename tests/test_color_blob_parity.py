@@ -6,7 +6,8 @@ quackd ships.
 OpenCV gives two answers, one on x86 and another on Arm, so the conversion is held to the x86 one,
 which numpy's integers give on either, and on Arm what the difference can reach is held to nothing.
 
-Python 3.11 and 3.12 lock different major versions of OpenCV, and both have to agree."""
+CI locks OpenCV 4.13, and the nightly `fresh-install` job runs this on the newest there is, 5.0 as
+this is written, so both major versions are held to it."""
 
 from __future__ import annotations
 

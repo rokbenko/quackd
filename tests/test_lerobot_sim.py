@@ -689,7 +689,8 @@ def test_objects_are_laid_out_by_the_seed_within_reach(mjcf: str) -> None:
         assert PLACE_NEAR * workspace.reach <= r <= PLACE_FAR * workspace.reach
         assert z == pytest.approx(workspace.table_top + obj.rest_height, abs=1e-3)
     other.place_objects(5)
-    assert places(other) == pytest.approx(places(first), abs=1e-9)
+    for moved, original in zip(places(other), places(first), strict=True):
+        assert moved == pytest.approx(original, abs=1e-9)
 
 
 def _pointing_down(arm: ArmModel, reach_share: float, tip_height: float) -> dict[str, float]:
