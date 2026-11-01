@@ -259,15 +259,17 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    uv run --no-sync python -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'
    uv run --no-sync mypy
    UV_PROJECT_ENVIRONMENT=.venv312 uv run --no-sync mypy
-   QUACKD_STRICT_SEEDS=1 uv run --no-sync pytest
-   QUACKD_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest
+   QUACKD_STRICT_SEEDS=1 uv run --no-sync pytest -n auto -m "not serial"
+   QUACKD_STRICT_SEEDS=1 uv run --no-sync pytest -m serial
+   QUACKD_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -n auto -m "not serial"
+   QUACKD_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -m serial
    uv run --no-sync quackd validate ducks/*.duck
    ```
 
    mypy runs under 3.11 and 3.12 because CI's 3.12 jobs see stricter numpy stubs. `.venv` is the
    3.11 environment in the main checkout, and nothing makes it so anywhere else, so the line
    before the first mypy fails when it is not. In a worktree whose `.venv` is 3.12, run that
-   mypy with `UV_PROJECT_ENVIRONMENT` naming a 3.11 environment. The second pytest is for what
+   mypy with `UV_PROJECT_ENVIRONMENT` naming a 3.11 environment. The second pair of pytests is for what
    fails only on GitHub's runners, where Typer colours `--help` because `GITHUB_ACTIONS` is set.
    The packaging check, a core wheel installed alone that must refuse and say what to install,
    is CI's `packaging` job, and it runs in the next step.
