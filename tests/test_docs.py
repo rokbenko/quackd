@@ -1574,7 +1574,7 @@ def test_the_cell_count_reads_a_row_as_github_does() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md", "LAUNCH.md"]
+    "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md"]
 )
 def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
     """Half of the 0.5 documentation audit was stale counts that no test could see.
@@ -4244,8 +4244,8 @@ def test_every_release_links_the_compare_the_procedure_writes() -> None:
 def test_the_release_order_lives_in_releasing_md_and_every_page_that_names_it_links_there() -> None:
     """The release checklist was PLAN.md's last section until 0.16.1 moved it into RELEASING.md,
     beside the rules for which release is which. PLAN.md keeps one line pointing there and no
-    step of its own, since a step added back would be a second list that drifts. The README,
-    LAUNCH.md and CONTRIBUTING.md each say something RELEASING.md decides, so each links it,
+    step of its own, since a step added back would be a second list that drifts. The README and
+    CONTRIBUTING.md each say something RELEASING.md decides, so each links it,
     and ADR-0037, whose Consequences put the order in PLAN.md, carries a note that does. No
     living document sends a reader to PLAN.md for a release any more, except RELEASING.md's own
     procedure, which says what a release does to PLAN.md's open items: every release commit
@@ -4254,7 +4254,7 @@ def test_the_release_order_lives_in_releasing_md_and_every_page_that_names_it_li
     checklist = plan.split("\n## Release checklist\n", 1)[1].split("\n## ", 1)[0]
     assert "](RELEASING.md)" in checklist, "PLAN.md's release checklist does not point on"
     assert not re.search(r"^\s*\d+\. ", checklist, flags=re.M), "PLAN.md has release steps again"
-    for name in ("README.md", "LAUNCH.md", "CONTRIBUTING.md"):
+    for name in ("README.md", "CONTRIBUTING.md"):
         assert "](RELEASING.md)" in (REPO / name).read_text(encoding="utf-8"), (
             f"{name} does not link RELEASING.md"
         )

@@ -180,10 +180,9 @@ exception still holds.
   even after the file is deleted. A broken release is yanked on PyPI, which leaves it
   installable by an exact pin and hides it from every other resolve, and the next patch fixes
   it.
-- **A patch leaves the story alone.** It gets no sentence in LAUNCH.md's first paragraph, it
-  does not change the `Version X.Y` line under the README's Status, and it does not touch the
-  GitHub About text or topics. Its tag message and its release body are short: what it fixes,
-  in a paragraph or two.
+- **A patch leaves the story alone.** It does not change the `Version X.Y` line under the
+  README's Status, and it does not touch the GitHub About text or topics. Its tag message and
+  its release body are short: what it fixes, in a paragraph or two.
 
 ## Cutting a release
 
@@ -221,8 +220,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    copies of the window in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037 are
    edited by hand, and so is the version in the `policy` line of the two `quackd policy check`
    outputs quoted in docs/adapters/lerobot/README.md, which a check run on the release has to print.
-   A minor also moves the `Version X.Y` line under the README's Status, and LAUNCH.md's first
-   paragraph gains a sentence if the story changed.
+   A minor also moves the `Version X.Y` line under the README's Status.
 4. **The changelog.** `## [Unreleased]` becomes `## [X.Y.Z] — YYYY-MM-DD`, dated the day it
    ships, so a release that is held is dated again. At the foot, `[Unreleased]:` compares
    `vX.Y.Z...HEAD`, and a new `[X.Y.Z]:` line compares the last tag with `vX.Y.Z` the way every

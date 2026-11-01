@@ -91,6 +91,15 @@ These are files you copy to the robot, so a robot has them once you copy them ag
 
 ### Documentation
 
+- **`LAUNCH.md` has left the repository.** It was notes on how the project goes public, and its first
+  line said not to publish it. Nothing read it at run time, and the release steps no longer mention
+  it.
+- **A nightly job runs the suite on what a fresh install gets.** The lock's numpy and Pillow stay old
+  because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it, so it resolves
+  past both: numpy 2.5 and Pillow 13 where CI runs numpy 2.2 or 2.4 and Pillow 12. No job ran that
+  combination, and `.github/workflows/fresh-install.yml` does now, with built wheels in a clean
+  environment beside it. It keeps a schedule of its own so another project's release can say so there
+  without stopping a tag. The suite passes on those versions today: 7,669 passed and none failed.
 - **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
   were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
   call to find its next number, and five autouse fixtures called it for every test, so each test cost
