@@ -2,8 +2,10 @@
 
 It used to ask OpenCV, which is half of a default install on disk and most of its download, for an
 HSV conversion, a threshold, the outer contours of what passed, and each contour's area and box.
-These give the same answers to the last bit, OpenCV's 8-bit HSV and its polygon areas included, and
-`tests/test_color_blob_parity.py` holds them to it against OpenCV itself.
+These give the answers OpenCV gives on x86 to the last bit, its 8-bit HSV and its polygon areas
+included, and `tests/test_color_blob_parity.py` holds them to it against OpenCV itself. OpenCV on
+Arm reads a few saturations a step off from that. This reads them the x86 way on every machine,
+which moves no pixel across the threshold of any target quackd ships.
 
 Most of a frame matches no target, so the work goes where the pixels are. `Candidates` finds the
 ones bright and saturated enough for any target with cheap arithmetic, and does the exact conversion
