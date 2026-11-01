@@ -1,4 +1,4 @@
-"""The default detector: an HSV threshold. No model, no download, ~1 ms per frame.
+"""The default detector: an HSV threshold. No model, no download, a few ms per frame.
 
 The duck's two simulators draw the ball in a known orange, and the cartoon draws its person in
 a known blue, so this works out of the box. The person target stays for the cartoon's sake:
@@ -15,11 +15,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-import cv2
 import numpy as np
 from PIL import Image
 
 from quackd.perception.base import Detection
+from quackd.perception.blobs import Candidates, biggest_blobs
 
 DEFAULT_FOV_DEG = 90.0  # matches the sim camera; a real IMX219 is ~62°
 
@@ -100,23 +100,21 @@ class ColorBlobDetector:
     def detect(self, image: Image.Image) -> list[Detection]:
         rgb = np.asarray(image.convert("RGB"))
         h, w = rgb.shape[:2]
-        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
         f = (w / 2) / math.tan(math.radians(self.fov_deg) / 2)
         out: list[Detection] = []
+        if not self.targets:
+            return out
+        pixels = Candidates(
+            rgb, min(t.hsv.s_lo for t in self.targets), min(t.hsv.v_lo for t in self.targets)
+        )
         for target in self.targets:
             r = target.hsv
-            # uint8 arrays, not tuples: OpenCV accepts both, but the stubs only type the
-            # array overload, and which stub version resolves depends on the Python minor
-            lo = np.array([r.h_lo, r.s_lo, r.v_lo], dtype=np.uint8)
-            hi = np.array([r.h_hi, 255, 255], dtype=np.uint8)
-            mask = cv2.inRange(hsv, lo, hi)
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            blobs = sorted(contours, key=cv2.contourArea, reverse=True)[: self.max_per_label]
-            for c in blobs:
-                area = float(cv2.contourArea(c))
-                if area < self.min_area_px:
-                    continue
-                x, y, bw, bh = cv2.boundingRect(c)
+            found = pixels.matching(r.h_lo, r.h_hi, r.s_lo, r.v_lo)
+            if found is None:
+                continue
+            mask, top, left = found
+            for area, (x, y, bw, bh) in biggest_blobs(mask, self.max_per_label, self.min_area_px):
+                x, y = x + left, y + top
                 cx, cy = x + bw / 2, y + bh / 2
                 bearing = -math.degrees(math.atan((cx - w / 2) / f))
                 if target.round:

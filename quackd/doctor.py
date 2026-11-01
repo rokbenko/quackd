@@ -113,7 +113,6 @@ _METADATA_ONLY = {
 CORE_MODULES = (
     ("pydantic", "pydantic"),
     ("mcp", "mcp"),
-    ("opencv", "cv2"),
     ("numpy", "numpy"),
     ("Pillow", "PIL"),
 )
@@ -144,9 +143,9 @@ def _installed(module: str) -> str | None:
         return md.version(dist)
     except md.PackageNotFoundError:
         pass
-    # An import name is not a distribution name: `cv2` ships as opencv-python-headless here
-    # and as opencv-python elsewhere, `PIL` as pillow. Ask the installer which one it was,
-    # rather than printing "?" next to a package that is plainly installed and working.
+    # An import name is not a distribution name: `yaml` ships as pyyaml, `PIL` as pillow. Ask
+    # the installer which one it was, rather than printing "?" next to a package that is plainly
+    # installed and working.
     for candidate in md.packages_distributions().get(module.split(".")[0], []):
         try:
             return md.version(candidate)

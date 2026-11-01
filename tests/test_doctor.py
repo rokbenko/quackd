@@ -179,7 +179,7 @@ def test_collect_answers_in_data_with_no_styling_in_it() -> None:
     for tag in ("[green]", "[red]", "[yellow]", "[dim]", "[/"):
         assert tag not in blob, tag
     assert report.ok is True
-    assert [c.name for c in report.core] == ["pydantic", "mcp", "opencv", "numpy", "Pillow"]
+    assert [c.name for c in report.core] == ["pydantic", "mcp", "numpy", "Pillow"]
     assert len(report.adapters) == len(ADAPTER_NAMES), "one row for every adapter quackd ships"
     assert report.bundled_ducks > 0
     assert {p.upstream for p in report.pins} >= {"microduck", "lerobot", "microduck_rl"}
