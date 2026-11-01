@@ -9,6 +9,48 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **`quackd onboard preflight` passes a brain on a model server of your own that takes no key.**
+  The wizard asks for a local brain's key with `nothing, for a server needing none`, and writes no
+  `robot.env` when the answer is nothing, and a local preset sends the word `not-needed` when
+  `LOCAL_API_KEY` is unset. Preflight failed that brain all the same,
+  `ollama:qwen3:8b, and robot.env holds no LOCAL_API_KEY`, and exited 1. It passes it now with
+  `ollama:qwen3:8b, with no LOCAL_API_KEY, for a server needing none`, and a hosted brain with no
+  key fails as before. `tests/test_onboard_cli.py` runs preflight on a robot set up with
+  `ollama:qwen3:8b` and no key, and on the same robot given a Gemini brain. It failed before this
+  change.
+- **`quackd onboard demo --llm` takes a local model with no key.** The quickstart says `--llm` and
+  `--base-url` choose the demo's brain as they do for `quackd run`, which runs a local model with no
+  key, yet the demo refused one: `ollama:qwen3:8b needs LOCAL_API_KEY in the environment, and it is
+  not set`. A local preset starts with no key now, and its key is passed on only when it is set. A
+  hosted brain still needs its own. The same test asks the demo for both, and failed before this
+  change.
+- **`quackd onboard preflight` says where a brain goes, and sends nobody to a service that cannot
+  start.** A robot with no brain was told only `brain.llm`, and is told `set brain.llm in` and the
+  path of its `robot.yaml` now. On a computer no board knows, the service's row said to run
+  `quackd onboard serve`, which refuses there just as the board's row says. That row names no
+  command now, so in `--json` it has no `hint`, like every other row with nothing to do, and the
+  board's row, which names `--board sim`, is the one to follow. On a Jetson the row offered only
+  `sudo systemctl start quackd-onboard`, and a robot set up with `--no-service` has no unit to
+  start, so it offers `quackd onboard serve` beside it now, as `status` and `goal` do.
+  `tests/test_onboard_cli.py` runs preflight with no board on a robot with no brain, and on a
+  made up Jetson. Both failed before this change.
+
+### Documentation
+
+- **docs/passport/quackd.md says what JetPack 6 needs.** Its three commands showed
+  `uv tool install "quackd[onboard]"` without the `--python 3.12` JetPack 6 needs, which the README,
+  the quickstart and the Jetson guide say. It says so now, and it and the quickstart quote what uv
+  prints without it: `the current Python version (3.10.12) does not satisfy Python>=3.11`. The
+  README's install block says it beside the line too.
+- **The roadmap says how near the onboard side has come to a Jetson.** On 2026-11-01 the three
+  commands ran in an `ubuntu:22.04` container for arm64 under emulation, which is JetPack 6's
+  userland without the board. The plain install stopped on its Python 3.10, `--python 3.12`
+  installed 0.29.0, the bare wizard refused the computer and named `--board sim`, and on the sim
+  board the wizard from a file and preflight ran, and the demo's five acts matched what each
+  expected. docs/passport/roadmap.md says so, and that no column of its table moves for it.
+
 ## [0.29.0] — 2026-10-31
 
 0.29.0 moves Robot Passport onto the robot it introduces. `quackd onboard` runs on the robot's own

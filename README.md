@@ -675,7 +675,7 @@ uv pip install "quackd[mujoco]"                        # the duck plus its physi
 uv pip install "quackd[lerobot-sim]"                   # the arm's simulator: MuJoCo and no LeRobot, so Python 3.11 is enough
 uv pip install "quackd[lerobot-vla]"                   # the arm's policy server: LeRobot, torch and transformers, Python 3.12
 uv pip install "quackd[ui]"                            # the page in a browser or on a phone, quackd ui: Streamlit
-uv tool install "quackd[onboard]"                      # on a robot's own computer: quackd onboard, Robot Passport
+uv tool install "quackd[onboard]"                      # on a robot's own computer: quackd onboard, Robot Passport, with --python 3.12 on JetPack 6
 uv pip install "quackd[anthropic]"                     # the brain: or openai, gemini, grok, mistral, deepseek, cohere, qwen, kimi, glm, meta, openrouter, all
 git clone https://github.com/rokbenko/quackd && cd quackd && uv sync --extra dev   # contributors: the core and all nine adapters, editable
 ```

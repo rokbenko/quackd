@@ -20,6 +20,7 @@ The first installs uv. The second installs quackd with what a robot needs: zeroc
 OpenAI-compatible client for its brain, and, on Linux, bleak and dbus-fast for Bluetooth through
 BlueZ. quackd needs Python 3.11 or later and JetPack 6 ships 3.10, so on JetPack 6 write
 `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for quackd.
+Without it uv stops with `the current Python version (3.10.12) does not satisfy Python>=3.11`.
 
 `quackd onboard` is a wizard, and it does the rest in this order:
 
