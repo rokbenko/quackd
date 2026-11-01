@@ -126,9 +126,18 @@ async def test_turn_rate_goes_out_in_degrees_per_second() -> None:
         await _until(lambda: host.state["theta.vel"] != 0.0)
         assert host.state["theta.vel"] == pytest.approx(math.degrees(1.0), rel=1e-6)
         assert host.state["x.vel"] == pytest.approx(0.2)
-        # and it comes back the other way
-        state = await link.get_state()
-        assert state.extras["twist"]["wz"] == pytest.approx(1.0, rel=1e-6)
+
+        # and it comes back the other way, with the next observation the host sends: read once,
+        # straight after sending, this raced that observation and lost on a full machine
+        async def turning() -> float:
+            for _ in range(300):
+                wz = (await link.get_state()).extras["twist"]["wz"]
+                if wz != 0.0:
+                    return wz
+                await asyncio.sleep(0.01)
+            return 0.0
+
+        assert await turning() == pytest.approx(1.0, rel=1e-6)
         await link.close()
 
 
