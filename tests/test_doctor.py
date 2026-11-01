@@ -992,7 +992,7 @@ def test_the_servers_table_asks_the_presets_on_the_host(
         "llamacpp": "http://127.0.0.1:8080/v1",
         "lmstudio": "http://127.0.0.1:1234/v1",
     }
-    assert probed[0] == "http://me:hunter2@gpu-box:8000/v1", "the real URL is the one probed"
+    assert "http://me:hunter2@gpu-box:8000/v1" in probed, "the real URL is the one probed"
     assert report.host is not None
     assert [s.preset for s in report.host.servers] == ["ollama", "vllm", "llamacpp", "lmstudio"], (
         "the board's block holds what was asked on the board, and QUACKD_BASE_URL is not that"
@@ -1004,12 +1004,13 @@ def test_the_servers_table_asks_the_presets_on_the_host(
 
     probed.clear()
     doctor.collect()
-    assert probed[1:] == [
+    assert set(probed) == {
+        "http://me:hunter2@gpu-box:8000/v1",
         "http://localhost:11434/v1",
         "http://localhost:8000/v1",
         "http://localhost:8080/v1",
         "http://localhost:1234/v1",
-    ], "without a board, the presets stay on this machine"
+    }, "without a board, the presets stay on this machine"
 
 
 def test_the_progress_callback_names_each_network_step(hostd: FakeHostd) -> None:

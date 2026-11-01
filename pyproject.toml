@@ -177,6 +177,9 @@ dev = [
   "hatchling>=1.25",
   "pytest>=8.2",
   "pytest-asyncio>=0.23",
+  # CI's six test jobs run on every core a runner has (`-n auto`, ci.yml). Not in addopts: a test
+  # that runs pytest itself reads that, and one test on a laptop has no need of workers.
+  "pytest-xdist>=3.5",
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML",
@@ -339,6 +342,9 @@ testpaths = ["tests"]
 addopts = "-q"
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
+    # Each holds a margin on a wall clock, so on a machine that workers have filled it fails for
+    # the machine's reasons. CI runs these after the rest, on their own (ci.yml).
+    "serial: holds a margin on a wall clock, and runs alone on CI, after the parallel stage",
     # The tests allowed to read the developer's own asset cache, with so101_model below: the
     # conftest does not redirect them to a throwaway one. They never fetch: an empty cache skips.
     "real_duck: needs upstream's Microduck model and policies already cached",

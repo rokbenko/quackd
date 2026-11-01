@@ -959,6 +959,7 @@ def _serve_in_subprocess(tmp_path: Path, script: Path, watchdog_s: str) -> subpr
     return subprocess.Popen([sys.executable, str(runner)], env=env)
 
 
+@pytest.mark.serial
 def test_the_shim_intercepts_the_import_form_upstream_actually_uses(tmp_path: Path) -> None:
     """PAD_SUBSTITUTION is the single assumption the whole bridge stands on, and nothing
     executed `install_shim`, `runpy` or `main()`'s serve path: NetworkController was always
@@ -991,6 +992,7 @@ def test_a_slow_boot_is_not_mistaken_for_a_missing_shim(tmp_path: Path) -> None:
         proc.wait(timeout=15)
 
 
+@pytest.mark.serial
 async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) -> None:
     """The one real-socket test moved for exactly DEADMAN_S, so `vx == 0` at the end passed
     whether the verb's own stop landed or the client had simply starved the deadman. Sample

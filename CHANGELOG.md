@@ -26,6 +26,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   because ultralytics brings the build that wants a display's libraries. LeRobot's `opencv://`
   cameras get OpenCV from LeRobot as they always did, and the daemons under `bridge/` use the robot's
   own.
+- **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
+  Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so five
+  presets held the report for twelve seconds to learn that nothing was running. It also read every
+  installed package's file list up to four times, and now reads it once, only for an import name
+  nothing here knows. A report on Windows went from 17.3 s to 6.6 s, measured beside 0.29.1 on the
+  same machine. The rows, their order and `--json` are as they were, and a Ctrl-C lands at once.
+  Linux refuses a closed port immediately, so expect less there. `tests/test_doctor_probes.py` holds
+  every probe to starting before any finishes, and failed before this change.
+- **`quackd --help` waits for less.** Help, `--version`, a bare `quackd` and the shell completing a
+  word no longer load numpy, asyncio, pydantic or YAML, which were most of what they waited for:
+  `--help` from 1.44 s to 0.82 s, `run --help` from 1.72 s to 1.12 s and `--version` from 1.17 s to
+  0.62 s, on the same machine. Every other command loads them before it starts, as it always has,
+  which matters beyond speed: on Windows a DLL loading behind a read pending on a pipe waits for the
+  next line, so nothing may first load them after a command has begun reading stdin.
+  `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
+
+### Documentation
+
+- **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
+  were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
+  call to find its next number, and five autouse fixtures called it for every test, so each test cost
+  more than the one before: 8,000 tests that did nothing took 2 minutes 6 seconds without that and
+  had reached 86% when stopped at 45 minutes with it. That fix alone took Windows on 3.12 from 51:32
+  to 23:01, macOS on 3.12 from 33:41 to 23:18 and Ubuntu on 3.12 from 24:24 to 16:11. The six jobs
+  then run on every core a runner has (`pytest -n auto`, in `dev` now), which takes them to about 8,
+  10 and 6 minutes. Six tests that hold a margin on a wall clock, each of which has gone red under
+  load and passed alone, run after the rest on their own (`-m serial`). The jobs' limit is back down
+  from 60 minutes to 30, so a hang is called sooner. Three smaller things came with it: a test that
+  merely runs `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of
+  xdist's workers, where it fired in any that finished before the last, and on Windows the suite's
+  event loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and
+  held a whole run once as the ephemeral ports wrapped round. No quackd code changes, and no test
+  changes what it asserts.
 
 ## [0.29.1] — 2026-11-01
 

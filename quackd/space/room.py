@@ -35,10 +35,10 @@ import math
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
-import yaml
+if TYPE_CHECKING:
+    import numpy as np
 
 WALL_THICKNESS_M = 0.04
 """How thick a wall is drawn and collided with, unless the room says."""
@@ -261,6 +261,8 @@ def spawn(
     """Where `room` puts the duck and the ball for `seed`: its own start and spot where it names
     them, and free floor drawn from its stream where it does not, the ball half a metre or more
     from the duck. The stream comes back with them, for a world that draws more from it."""
+    import numpy as np
+
     draw = np.random.default_rng([seed, ROOM_STREAM])
     if room.start is not None:
         duck = room.start
@@ -330,6 +332,8 @@ def nearest_free(room: Room, x: float, y: float, r: float) -> tuple[float, float
 
 def load_room(name_or_path: str | Path) -> Room:
     """A built-in room by name, or a room file by path."""
+    import yaml
+
     text: str
     where: str
     candidate = Path(name_or_path)
