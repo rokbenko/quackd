@@ -17,11 +17,13 @@ question nobody answered and never as a no."""
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import inspect
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import asyncio
 
 
 class QuestionWithdrawn(Exception):
@@ -56,6 +58,8 @@ async def answered(
     answers as a coroutine, with `abort` watched beside it. An answer that came as the abort was
     set has been given, and stands; one still awaited is taken back, its coroutine cancelled, and
     `QuestionWithdrawn` raised. Whatever the asker itself raises goes up as it was."""
+    import asyncio
+
     from quackd.release import cancel_and_wait
 
     said = asker(*args)

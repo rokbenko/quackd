@@ -9,6 +9,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
+  Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so five
+  presets held the report for twelve seconds to learn that nothing was running. It also read every
+  installed package's file list up to four times, and now reads it once, only for an import name
+  nothing here knows. A report on Windows went from 17.3 s to 6.6 s, measured beside 0.29.1 on the
+  same machine. The rows, their order and `--json` are as they were, and a Ctrl-C lands at once.
+  Linux refuses a closed port immediately, so expect less there. `tests/test_doctor_probes.py` holds
+  every probe to starting before any finishes, and failed before this change.
+- **`quackd --help` waits for less.** Help, `--version`, a bare `quackd` and the shell completing a
+  word no longer load numpy, asyncio, pydantic or YAML, which were most of what they waited for:
+  `--help` from 1.44 s to 0.82 s, `run --help` from 1.72 s to 1.12 s and `--version` from 1.17 s to
+  0.62 s, on the same machine. Every other command loads them before it starts, as it always has,
+  which matters beyond speed: on Windows a DLL loading behind a read pending on a pipe waits for the
+  next line, so nothing may first load them after a command has begun reading stdin.
+  `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
+
 ## [0.29.1] — 2026-11-01
 
 0.29.1 fixes three things in `quackd onboard` that an install rehearsal of 0.29.0 led to. Its
