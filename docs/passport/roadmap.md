@@ -11,6 +11,14 @@ the sim board standing in for a robot's computer and a folder for the air. One t
 processes that hear each other and pass a request over a simulated link. No part of it has run
 between two machines.
 
+The nearest it has come to a Jetson is JetPack 6's userland without the board. On 2026-11-01 the
+three commands ran in an `ubuntu:22.04` container for arm64 under emulation, whose own Python is
+3.10. The plain `uv tool install "quackd[onboard]"` stopped there, as the pages say it does on
+JetPack 6, and with `--python 3.12` it installed quackd 0.29.0 with bleak and dbus-fast. The bare
+wizard refused the computer and named `--board sim`, and on the sim board the wizard from a file
+and `preflight` ran, and every one of the demo's five acts matched what it expected. The container
+had none of a Jetson's own files, no bluetoothd and no systemd, so no column of the table moves.
+
 | Part | Specified | Built in quackd | Tested on the sim board | Run on a Jetson | Run over a real radio |
 |---|---|---|---|---|---|
 | the passport, signed by its owner | 1.0 | yes: the wizard, `sign`, `show`, `quackd passport check` | yes, against the vectors | no | does not apply |

@@ -31,6 +31,10 @@ uv tool install "quackd[onboard]"
 quackd onboard
 ```
 
+quackd needs Python 3.11 or newer and JetPack 6 ships 3.10, so on JetPack 6 the second line is
+`uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the tool.
+Without it uv stops with `the current Python version (3.10.12) does not satisfy Python>=3.11`.
+
 [quickstart.md](quickstart.md) walks through what the wizard asks and does. On a laptop,
 `--board sim` runs the same wizard and the same service with a folder for the air, and a robot's
 folder of its own with `--dir`:

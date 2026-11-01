@@ -67,8 +67,12 @@ def preflight(
     if radio is not None:
         checks.insert(1, radio)
     running = service() if service is not None else None
+    # with no board, serve refuses as the board's row does, so that row says what to do; a
+    # robot set up with --no-service has no unit, so the terminal is offered beside it
     start = (
-        "sudo systemctl start quackd-onboard"
+        None
+        if radio_kind is None
+        else "sudo systemctl start quackd-onboard, or quackd onboard serve"
         if radio_kind == "bluez"
         else f"quackd onboard serve{' --board sim' if radio_kind == 'sim' else ''}"
     )
@@ -190,7 +194,12 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
 def _brain(home: OnboardDir, file: Any) -> Check:
     llm = file.brain.llm
     if not llm:
-        return Check("brain", "warn", "none, so robots are met and nobody talks", "brain.llm")
+        return Check(
+            "brain",
+            "warn",
+            "none, so robots are met and nobody talks",
+            f"set brain.llm in {home.robot_yaml}",
+        )
     where = f" at {file.brain.base_url}" if file.brain.base_url else ""
     sdk = sdk_for(llm)
     if sdk is not None and importlib.util.find_spec(sdk) is None:
@@ -199,6 +208,10 @@ def _brain(home: OnboardDir, file: Any) -> Check:
         )
     variable = key_variable(llm)
     if variable is not None and not _env_has(home, variable):
+        if not key_needed(llm):
+            return Check(
+                "brain", "ok", f"{llm}{where}, with no {variable}, for a server needing none"
+            )
         return Check(
             "brain",
             "fail",
@@ -224,6 +237,15 @@ def key_variable(llm: str) -> str | None:
     return KEY_ENV.get(vendor) or "LOCAL_API_KEY"
 
 
+def key_needed(llm: str) -> bool:
+    """Whether a brain stops without its key. A model server of your own may take none, and its
+    provider sends the word `not-needed` when `LOCAL_API_KEY` is unset."""
+    from quackd.agent.providers.local import LOCAL_NAMES
+
+    vendor = llm.split(":", 1)[0].strip().lower()
+    return key_variable(llm) is not None and vendor not in LOCAL_NAMES
+
+
 def _env_has(home: OnboardDir, variable: str) -> bool:
     import os
 
@@ -236,4 +258,4 @@ def _env_has(home: OnboardDir, variable: str) -> bool:
     return any(line.split("=", 1)[0].strip() == variable for line in lines if "=" in line)
 
 
-__all__ = ["EARLIEST_YEAR", "Check", "key_variable", "preflight"]
+__all__ = ["EARLIEST_YEAR", "Check", "key_needed", "key_variable", "preflight"]

@@ -9783,7 +9783,7 @@ def onboard_demo(
     service of its own on the sim board. It ends with what each act expected beside what
     happened, and exits 0 only when every one matched."""
     from quackd.onboard import demo
-    from quackd.onboard.preflight import key_variable
+    from quackd.onboard.preflight import key_needed, key_variable
 
     if offline and llm:
         _fail("--offline flies the scripted pilot, so it takes no --llm")
@@ -9795,7 +9795,7 @@ def onboard_demo(
         _fail(f"no act called {unknown[0]!r}: {', '.join(demo.ACTS)}")
     brain = "fake" if offline else str(llm)
     key_env = key_variable(brain)
-    if key_env and not os.environ.get(key_env):
+    if key_env and key_needed(brain) and not os.environ.get(key_env):
         _fail(f"{brain} needs {key_env} in the environment, and it is not set")
     workspace = demo.workspace_for(keep)
 

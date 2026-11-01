@@ -17,8 +17,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from quackd import boards
 from quackd.cli import app
-from quackd.onboard import config
+from quackd.onboard import config, demo
 from quackd.passport import document
 
 runner = CliRunner()
@@ -182,6 +183,88 @@ def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(
         app, ["onboard", "preflight", "--board", "sim", "--dir", str(tmp_path / "x"), "--json"]
     )
     assert empty.exit_code == 1 and json.loads(empty.output)["ok"] is False
+
+
+def preflight_rows(home: Path, *board: str) -> tuple[int, dict[str, dict[str, str]]]:
+    checked = runner.invoke(app, ["onboard", "preflight", *board, "--dir", str(home), "--json"])
+    return checked.exit_code, {row["check"]: row for row in json.loads(checked.output)["checks"]}
+
+
+def test_preflight_off_a_robot_leaves_the_next_step_to_the_board_row(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Where no board knows the computer, serve refuses just as the board's row does, so the
+    service's row names no command of its own; and a robot with no brain is told where one goes."""
+    no_brain = tmp_path / "no-brain.yaml"
+    text = robot_file.read_text(encoding="utf-8")
+    no_brain.write_text(text.replace('\nbrain:\n  llm: "fake"\n', "\n", 1), encoding="utf-8")
+    home = tmp_path / "robot"
+    assert onboard(home, no_brain, secret).exit_code == 0
+
+    def no_board(name: str | None = None, **_: object) -> object:
+        raise boards.NotARobot("it found no NVIDIA Jetson")
+
+    monkeypatch.setattr(boards, "detect", no_board)
+    code, rows = preflight_rows(home)
+    assert code == 1 and rows["board"]["state"] == "fail"
+    assert rows["service"] == {"check": "service", "state": "warn", "detail": "not running here"}
+    assert rows["brain"]["state"] == "warn"
+    assert rows["brain"]["hint"] == f"set brain.llm in {home / 'robot.yaml'}"
+
+
+def test_preflight_on_a_jetson_offers_the_terminal_beside_the_unit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Jetson set up with --no-service has no unit to start, so the service's row offers
+    `quackd onboard serve` beside it, as `status` and `goal` do."""
+    from quackd.onboard.preflight import preflight
+    from quackd.onboard.store import OnboardDir
+
+    class Jetson:
+        name = "jetson"
+        explicit_only = False
+        radio_kind = "bluez"
+
+        def radio(self) -> boards.RadioCheck:
+            return boards.RadioCheck(ok=True, adapter="hci0")
+
+    facts = boards.BoardFacts(kind="jetson", model="NVIDIA Jetson AGX Thor", soc="tegra264")
+    monkeypatch.setattr(boards, "detect", lambda name=None, **_: (Jetson(), facts))
+    checks = preflight(OnboardDir(tmp_path), None, service=lambda: None, radio_rows=lambda *_: [])
+    service = {check.name: check for check in checks}["service"]
+    assert service.hint == "sudo systemctl start quackd-onboard, or quackd onboard serve"
+
+
+def test_a_brain_on_a_server_of_your_own_needs_no_key(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wizard writes no robot.env for a server needing none, and a local preset sends the word
+    `not-needed` then, so preflight passes that brain and the demo starts with it; a hosted brain
+    with no key still fails both. Empty reads as unset, and survives a developer's `.env`."""
+    for name in ("LOCAL_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.setenv(name, "")
+    local = tmp_path / "local.yaml"
+    text = robot_file.read_text(encoding="utf-8")
+    local.write_text(text.replace('llm: "fake"', 'llm: "ollama:qwen3:8b"', 1), encoding="utf-8")
+    home = tmp_path / "robot"
+    assert onboard(home, local, secret, "--yes").exit_code == 0
+    assert not (home / "robot.env").exists()
+    code, rows = preflight_rows(home, "--board", "sim")
+    assert code == 0 and rows["brain"]["state"] == "ok"
+    assert "no LOCAL_API_KEY" in rows["brain"]["detail"]
+    yaml = home / "robot.yaml"
+    hosted = yaml.read_text(encoding="utf-8").replace("ollama:qwen3:8b", "gemini:gemini-3-flash")
+    yaml.write_text(hosted, encoding="utf-8")
+    code, rows = preflight_rows(home, "--board", "sim")
+    assert code == 1 and rows["brain"]["state"] == "fail"
+    assert "GEMINI_API_KEY" in rows["brain"]["detail"]
+    started: list[str] = []
+    monkeypatch.setattr(demo, "run_demo", lambda **kw: started.append(kw["llm"]) or [])
+    ran = runner.invoke(app, ["onboard", "demo", "--llm", "ollama:qwen3:8b", "--json"])
+    assert ran.exit_code == 0, ran.output
+    refused = runner.invoke(app, ["onboard", "demo", "--llm", "gemini:gemini-3-flash"])
+    assert refused.exit_code == 1 and "needs GEMINI_API_KEY" in flat(refused.output)
+    assert started == ["ollama:qwen3:8b"]
 
 
 def test_what_needs_a_service_says_none_is_running(
