@@ -269,7 +269,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    mypy runs under 3.11 and 3.12 because CI's 3.12 jobs see stricter numpy stubs. `.venv` is the
    3.11 environment in the main checkout, and nothing makes it so anywhere else, so the line
    before the first mypy fails when it is not. In a worktree whose `.venv` is 3.12, run that
-   mypy with `UV_PROJECT_ENVIRONMENT` naming a 3.11 environment. The second pair of pytests is for what
+   mypy with `UV_PROJECT_ENVIRONMENT` naming a 3.11 environment. The second pair is for what
    fails only on GitHub's runners, where Typer colours `--help` because `GITHUB_ACTIONS` is set.
    The packaging check, a core wheel installed alone that must refuse and say what to install,
    is CI's `packaging` job, and it runs in the next step.
