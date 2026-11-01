@@ -244,6 +244,12 @@ def make_handler(store: FrameStore, fps: float = DEFAULT_FPS) -> type[BaseHTTPRe
 
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
+            # Only a browser's script sends this, and it is no client here: a page the operator
+            # visits has no business reading the duck's camera through a tunnel. A person opening
+            # a frame in a tab sends none, and still gets the frame.
+            if self.headers.get("Origin") is not None:
+                self._json(403, {"ok": False, "reason": "not from a web page"})
+                return
             if path in (SNAPSHOT_PATH, "/"):
                 jpeg, at = store.get()
                 if jpeg is None:

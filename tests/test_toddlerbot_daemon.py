@@ -609,7 +609,7 @@ async def test_the_token_is_compared_in_constant_time() -> None:
         D.hmac = real_module
 
     assert calls, "the handshake never compared the token in constant time"
-    assert ("hunter2", "hunter2") in calls
+    assert (str(b"hunter2"), str(b"hunter2")) in calls, "as bytes: a str that is not ASCII raises"
 
 
 def test_this_robot_does_not_take_the_open_ducks_ports() -> None:

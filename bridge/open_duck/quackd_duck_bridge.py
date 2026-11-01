@@ -36,6 +36,7 @@ import json
 import logging
 import math
 import os
+import re
 import selectors
 import signal
 import socket
@@ -52,6 +53,13 @@ BRIDGE_VERSION = "0.1.0"
 JSONRPC = "2.0"
 DEFAULT_PORT = 9871
 MAX_LINE = 64 * 1024
+HTTP_REQUEST_LINE = re.compile(rb"^[^\s{]+ \S+ HTTP/[0-9]")
+"""The first line of an HTTP request, which is all a browser can open a connection with. A page the
+operator happens to visit can POST to 127.0.0.1 through the tunnel the docs recommend: the headers
+are no JSON and were skipped, and the body's line was then read as a command. Any word for the
+method, because a page on a name it rebinds to 127.0.0.1 is same-origin and sends `patch` or `A1`
+as written. No client of this daemon starts a connection with anything but a JSON object, which is
+what the `{` keeps out."""
 
 # The runtime's own XBoxController clamps, read from upstream source on 2026-09-03. The
 # bridge re-applies them no matter what arrives, because a client is not to be trusted.
@@ -337,7 +345,9 @@ class BridgeCore:
     def handle(self, msg: dict[str, Any], *, authed: bool) -> tuple[dict[str, Any] | None, bool]:
         """Return (reply or None, is_now_authed). A notification replies with None."""
         method = msg.get("method")
-        params = msg.get("params") or {}
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
         msg_id = msg.get("id")
 
         if method == "duck.hello":
@@ -356,8 +366,11 @@ class BridgeCore:
                     ),
                     authed,
                 )
+            # as bytes: compare_digest raises on a str that is not ASCII, and that was a way
+            # for a client with no token to end the only thread this server has
             if self.token is not None and not hmac.compare_digest(
-                str(params.get("token") or ""), self.token
+                str(params.get("token") or "").encode("utf-8", "surrogatepass"),
+                self.token.encode("utf-8", "surrogatepass"),
             ):
                 return self._err(
                     msg_id, 2, "bad or missing token; see the bridge's token file"
@@ -679,6 +692,8 @@ class _Client:
     buf: bytes = b""
     authed: bool = False
     out: list[bytes] = field(default_factory=list)
+    #: Whether a line has arrived yet: only the first can open an HTTP request.
+    spoken: bool = False
     #: Whether this connection has ever driven the duck. Only a client that was actually
     #: commanding gets to zero it on the way out — see `Server._drop`.
     commanded: bool = False
@@ -714,7 +729,14 @@ class Server(threading.Thread):
                 if key.data is None:
                     self._accept()
                 else:
-                    self._serve(key)
+                    # This is the only thread the server has, so whatever one client's bytes do
+                    # to it costs that client and nobody else: the duck's other pilot, or the
+                    # next one, is still reachable.
+                    try:
+                        self._serve(key)
+                    except Exception:
+                        log.exception("dropping a client whose request could not be answered")
+                        self._drop(key.data)
         self._sel.close()
         self._listener.close()
 
@@ -744,6 +766,12 @@ class Server(threading.Thread):
             return
         client.buf += data
         if len(client.buf) > MAX_LINE:
+            # No client opens with this, and a browser can: a URL past the limit would push its
+            # request line out of the first place, and the body behind it would be read.
+            if not client.spoken:
+                log.warning("closing a connection that opened with an oversized line")
+                self._drop(client)
+                return
             log.warning("dropping an oversized line from a client")
             client.buf = b""
             return
@@ -751,13 +779,31 @@ class Server(threading.Thread):
             line, _, client.buf = client.buf.partition(b"\n")
             if not line.strip():
                 continue
+            first, client.spoken = not client.spoken, True
+            if first and HTTP_REQUEST_LINE.match(line):
+                log.warning("closing a connection that opened with an HTTP request")
+                self._drop(client)
+                return
+            # Nothing a peer sends may end the server's thread, token or no token: `7` is JSON
+            # with no `.get`, a stray byte is a UnicodeDecodeError rather than a JSONDecodeError,
+            # a thousand brackets are a RecursionError, and any of them used to leave the duck
+            # torqued and unreachable.
             try:
                 msg = json.loads(line)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 continue
-            if msg.get("method") == "duck.command":
+            if not isinstance(msg, dict):
+                log.warning("ignoring a line that is not a JSON-RPC object: %.80r", msg)
+                continue
+            try:
+                reply, client.authed = self.core.handle(msg, authed=client.authed)
+            except Exception:
+                log.exception("a request could not be answered, and the server carries on")
+                continue
+            # Only a client that may drive counts as driving: anything could say the word, and
+            # leaving would then stop a duck somebody else was walking.
+            if client.authed and msg.get("method") == "duck.command":
                 client.commanded = True
-            reply, client.authed = self.core.handle(msg, authed=client.authed)
             if reply is not None:
                 self._send(client, reply)
 

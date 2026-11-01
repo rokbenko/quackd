@@ -1201,6 +1201,12 @@ def make_handler(daemon: Hostd) -> type[BaseHTTPRequestHandler]:
         def _route(self, method: str) -> None:
             self._consumed = False
             path, _, query = self.path.partition("?")
+            # Only a browser sends this, and a browser is never a client here. Any page the operator
+            # visits can reach 127.0.0.1 through the ssh tunnel the docs recommend. Closed on the
+            # head alone, like a request with no token.
+            if self.headers.get("Origin") is not None:
+                self._json(403, {"ok": False, "reason": "not from a web page"}, close=True)
+                return
             if not daemon.authorised(self.headers.get(TOKEN_HEADER)):
                 # answered on the head alone and closed: a client without the token is never
                 # waited on for its body, and nothing it sends is kept (see _linger)

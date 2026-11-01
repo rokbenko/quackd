@@ -255,6 +255,7 @@ you would most like to poke at from the sofa.
 ```
 quackd serve-mcp --robot microduck:sim2d --seed 7    # a different world
 quackd serve-mcp --duckfile find-and-kick            # start with a contract loaded
+quackd serve-mcp --duckfile find-and-kick --lock-duckfile   # and refuse a file that asks for more
 quackd serve-mcp --dry-run                           # intents are logged, never sent
 quackd serve-mcp --yes                               # allow confirm-gated verbs (no terminal to ask)
 quackd serve-mcp --robot microduck:jsonrpc --address tcp://127.0.0.1:9870   # real robot, experimental
