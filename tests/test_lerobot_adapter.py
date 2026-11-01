@@ -1597,6 +1597,7 @@ async def test_real_backend_refuses_an_arm_with_no_calibration_file() -> None:
         await adapter.connect()
 
 
+@pytest.mark.serial
 async def test_real_backend_runs_an_injected_policy_for_pick() -> None:
     arm = FakeArm(camera=False, object_in_jaws=True)
     policy = FakePolicy()
@@ -1825,6 +1826,7 @@ async def test_a_cancelled_call_wedges_like_a_timed_out_one() -> None:
         release.set()
 
 
+@pytest.mark.serial
 async def test_two_picks_at_once_leave_exactly_one_policy_loop_that_stop_cancels() -> None:
     class Forever:
         def act(self, observation: dict[str, Any], *, task: str) -> dict[str, float] | None:

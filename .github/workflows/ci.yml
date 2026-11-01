@@ -51,7 +51,13 @@ jobs:
       - name: Types
         run: uv run mypy
       - name: Tests (no network, no API keys; seeded sweeps must be 10 of 10)
-        run: uv run pytest
+        run: uv run pytest -n auto -m "not serial"
+        env:
+          QUACKD_STRICT_SEEDS: "1"
+      - name: The tests that hold a margin on a wall clock, on their own
+        # Whatever the stage above did: a run that failed there still says how these went.
+        if: ${{ !cancelled() }}
+        run: uv run pytest -m serial
         env:
           QUACKD_STRICT_SEEDS: "1"
       - name: Validate starter ducks
