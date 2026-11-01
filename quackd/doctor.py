@@ -15,12 +15,14 @@ here used to *be* a markup string, so there was nothing underneath to serialise.
 from __future__ import annotations
 
 import contextlib
+import functools
 import importlib
 import importlib.metadata as md
 import os
 import platform
 import re
-from collections.abc import Awaitable, Callable, Sequence
+import threading
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -113,7 +115,6 @@ _METADATA_ONLY = {
 CORE_MODULES = (
     ("pydantic", "pydantic"),
     ("mcp", "mcp"),
-    ("opencv", "cv2"),
     ("numpy", "numpy"),
     ("Pillow", "PIL"),
 )
@@ -129,6 +130,24 @@ FLOCK_NOTE = (
 )
 
 
+_DISTRIBUTION_OF = {
+    "google.genai": "google-genai",
+    "paho.mqtt.client": "paho-mqtt",
+    "PIL": "pillow",
+    "zmq": "pyzmq",
+}
+"""Import names whose distribution has another name and only that one, so finding its version never
+has to walk every installed package (`_packages_distributions`)."""
+
+
+@functools.cache
+def _packages_distributions() -> Mapping[str, list[str]]:
+    """Which distribution provides each import name. Reading every installed package's file list
+    takes over a second, and a report asks for this once per import name that needs it, so it is
+    read once."""
+    return md.packages_distributions()
+
+
 def _installed(module: str) -> str | None:
     if module in _METADATA_ONLY:
         try:
@@ -139,15 +158,15 @@ def _installed(module: str) -> str | None:
         importlib.import_module(module)
     except Exception:
         return None
-    dist = {"google.genai": "google-genai", "paho.mqtt.client": "paho-mqtt"}.get(module, module)
+    dist = _DISTRIBUTION_OF.get(module, module)
     try:
         return md.version(dist)
     except md.PackageNotFoundError:
         pass
-    # An import name is not a distribution name: `cv2` ships as opencv-python-headless here
-    # and as opencv-python elsewhere, `PIL` as pillow. Ask the installer which one it was,
-    # rather than printing "?" next to a package that is plainly installed and working.
-    for candidate in md.packages_distributions().get(module.split(".")[0], []):
+    # An import name is not always a distribution name: `yaml` ships as pyyaml. Ask the installer
+    # which one it was, rather than printing "?" next to a package that is plainly installed and
+    # working.
+    for candidate in _packages_distributions().get(module.split(".")[0], []):
         try:
             return md.version(candidate)
         except md.PackageNotFoundError:
@@ -656,6 +675,36 @@ def _probe_models(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
     shown = ", ".join(i for i in ids[:3] if i)
     more = f" (+{len(ids) - 3})" if len(ids) > 3 else ""
     return "up", f"{shown}{more}" if ids else "no models loaded"
+
+
+def _probe_together(urls: Sequence[str]) -> dict[str, tuple[str, str]]:
+    """`_probe_models` for each of `urls`, all at once.
+
+    A closed port on Windows takes its whole timeout to say so, for each address `localhost` has,
+    so five presets asked one after the other held the report for twelve seconds to learn that
+    nothing was running. Daemon threads rather than a pool, and a join that wakes: a Ctrl-C lands
+    at once and nothing waits for a probe on the way out."""
+    answers: dict[str, tuple[str, str]] = {}
+    raised: list[BaseException] = []
+
+    def ask(url: str) -> None:
+        try:
+            answers[url] = _probe_models(url)
+        except BaseException as e:  # never from the real one, which is `Never raises`
+            raised.append(e)
+
+    threads = [
+        threading.Thread(target=ask, args=(url,), name="quackd-doctor-probe", daemon=True)
+        for url in dict.fromkeys(urls)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        while thread.is_alive():
+            thread.join(0.05)
+    if raised:
+        raise raised[0]
+    return answers
 
 
 def _ollama_root(url: str) -> str:
@@ -1473,11 +1522,11 @@ def collect(
     # is down or refused still has its board's presets asked, since the model server can be up
     # without it; a name that found no address has none asked, since there is no machine to ask.
     board = report.host if report.host is not None and report.host.address else None
+    # In the order they print: a row with its answer already, or a server still to be asked.
+    slots: list[ServerRow | tuple[str, str, str, bool]] = []
     for preset, url in {**PRESETS, **({"local": custom} if custom else {})}.items():
         if not url:
-            report.servers.append(
-                ServerRow(preset, "", "unset", "set QUACKD_BASE_URL or --base-url")
-            )
+            slots.append(ServerRow(preset, "", "unset", "set QUACKD_BASE_URL or --base-url"))
             continue
         on_board = False
         if board is not None and preset != "local":
@@ -1490,11 +1539,18 @@ def collect(
             skipped = ServerRow(
                 preset, shown, "skipped", f"not asked: {host_of(board.host)} has no address"
             )
-            report.servers.append(skipped)
+            slots.append(skipped)
             board.servers.append(skipped)
             continue
         say(f"probing {preset} at {shown}")
-        state, detail = _probe_models(url)
+        slots.append((preset, url, shown, on_board))
+    answers = _probe_together([slot[1] for slot in slots if isinstance(slot, tuple)])
+    for slot in slots:
+        if isinstance(slot, ServerRow):
+            report.servers.append(slot)
+            continue
+        preset, url, shown, on_board = slot
+        state, detail = answers[url]
         row = ServerRow(preset, shown, state, detail)
         if preset == "ollama" and state == "up":
             root = _ollama_root(url)

@@ -29,6 +29,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   can read the token, so the line says to use a network you trust and `--new-token` if it was not.
   Nothing about the page or a phone reaching it has changed.
 
+### Changed
+
+- **A default install is half the size, because OpenCV has left it.** `uv pip install quackd` went
+  from 230 MB to 118 MB on disk and from 30 s to 22 s on an empty cache on Windows, and the download
+  fell by 50 to 69% by platform, from 92.4 MB to 36.4 MB on Linux. Two things in the core used it,
+  and both are still here. The default detector does the same arithmetic with numpy
+  (`quackd/perception/blobs.py`), and `quackd ui`'s QR code for a phone comes from `segno`, a pure
+  Python wheel of about 350 KB with nothing under it. A detection is the same to the last bit:
+  `tests/test_color_blob_parity.py` holds every colour there is, 1,500 awkward masks and every field
+  of `detect()` on simulator, noisy and saturated frames against OpenCV itself, on both versions CI
+  locks and at the floors `pyproject.toml` allows. A frame costs 2.7 ms where OpenCV took 1.6 at 256
+  pixels and 8.9 ms where it took 7.2 at 640x480, and the worst frames are quicker than they were,
+  341 ms where it took 685 on a frame of nothing but saturated noise. `quackd doctor` has one row
+  fewer, `opencv`, in its table and in `--json`. `quackd[yolo]` brings the headless wheel itself,
+  because ultralytics brings the build that wants a display's libraries. LeRobot's `opencv://`
+  cameras get OpenCV from LeRobot as they always did, and the daemons under `bridge/` use the robot's
+  own.
+- **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
+  Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so five
+  presets held the report for twelve seconds to learn that nothing was running. It also read every
+  installed package's file list up to four times, and now reads it once, only for an import name
+  nothing here knows. A report on Windows went from 17.3 s to 6.6 s, measured beside 0.29.1 on the
+  same machine. The rows, their order and `--json` are as they were, and a Ctrl-C lands at once.
+  Linux refuses a closed port immediately, so expect less there. `tests/test_doctor_probes.py` holds
+  every probe to starting before any finishes, and failed before this change.
+- **`quackd --help` waits for less.** Help, `--version`, a bare `quackd` and the shell completing a
+  word no longer load numpy, asyncio, pydantic or YAML, which were most of what they waited for:
+  `--help` from 1.44 s to 0.82 s, `run --help` from 1.72 s to 1.12 s and `--version` from 1.17 s to
+  0.62 s, on the same machine. Every other command loads them before it starts, as it always has,
+  which matters beyond speed: on Windows a DLL loading behind a read pending on a pipe waits for the
+  next line, so nothing may first load them after a command has begun reading stdin.
+  `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
+
 ### Security
 
 - **One line could end the Open Duck bridge, token or no token.** `7`, `[]`, `null`, a stray byte, a
@@ -50,6 +83,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   bridge does, and throws the rest away.
 
 These are files you copy to the robot, so a robot has them once you copy them again.
+
+### Documentation
+
+- **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
+  were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
+  call to find its next number, and five autouse fixtures called it for every test, so each test cost
+  more than the one before: 8,000 tests that did nothing took 2 minutes 6 seconds without that and
+  had reached 86% when stopped at 45 minutes with it. That fix alone took Windows on 3.12 from 51:32
+  to 23:01, macOS on 3.12 from 33:41 to 23:18 and Ubuntu on 3.12 from 24:24 to 16:11. The six jobs
+  then run on every core a runner has (`pytest -n auto`, in `dev` now), which takes them to about 8,
+  10 and 6 minutes. Six tests that hold a margin on a wall clock, each of which has gone red under
+  load and passed alone, run after the rest on their own (`-m serial`). The jobs' limit is back down
+  from 60 minutes to 30, so a hang is called sooner. Three smaller things came with it: a test that
+  merely runs `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of
+  xdist's workers, where it fired in any that finished before the last, and on Windows the suite's
+  event loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and
+  held a whole run once as the ephemeral ports wrapped round. No quackd code changes, and no test
+  changes what it asserts.
 
 ## [0.29.1] — 2026-11-01
 

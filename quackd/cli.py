@@ -8,10 +8,10 @@ demo needs one. Commands are thin: they parse, load `.env`, wire objects togethe
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import errno
 import glob
+import importlib
 import io
 import json
 import os
@@ -25,7 +25,6 @@ from urllib.parse import urlsplit
 
 import typer
 from dotenv import load_dotenv
-from pydantic import ValidationError
 from rich.text import Text
 
 from quackd import __version__, dotenv_names, ui
@@ -45,7 +44,7 @@ from quackd.agent.providers.catalogue import (
 )
 from quackd.answers import DID_IT, GO_AHEAD, WATCHING
 from quackd.command import command_text
-from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
+from quackd.preflight_defaults import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 from quackd.space.room import BUILT_IN as BUILT_IN_ROOMS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
@@ -1872,6 +1871,8 @@ def _run_impl(
     play: bool | None = None,
     effort: str | None = None,
 ) -> None:
+    import asyncio
+
     from quackd.adapters.base import AdapterError as _AdapterError
     from quackd.adapters.base import policy_choice, policy_hint
     from quackd.adapters.factory import describe, make_adapter, registry_for
@@ -3007,6 +3008,8 @@ def _run_pilots_impl(
     effort: str | None = None,
 ) -> None:
     """A pilot per body, all at once. The other flock is `_run_flock_impl`."""
+    import asyncio
+
     from quackd.agent.loop import resolve_play
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import make_provider, resolve_llm
@@ -3233,6 +3236,8 @@ def _run_flock_impl(
     price: str | None = None,
     effort: str | None = None,
 ) -> None:
+    import asyncio
+
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import make_provider, resolve_llm
     from quackd.flock.runner import FLOCK_LOG, run_flock
@@ -4404,6 +4409,8 @@ def _preflight_impl(
     play: bool | None = None,
     effort: str | None = None,
 ) -> None:
+    import asyncio
+
     from quackd.adapters.base import AdapterError, policy_choice
     from quackd.adapters.factory import describe, make_adapter
     from quackd.agent.images import TaskImageError, load_task_images
@@ -4943,6 +4950,8 @@ def _drive_command(
     run_name: str | None,
 ) -> None:
     """`quackd drive`'s body, the same behind either front end."""
+    import asyncio
+
     from quackd.adapters.base import AdapterError
     from quackd.agent.decision.base import DecisionError
     from quackd.agent.providers.base import ProviderError
@@ -6785,6 +6794,8 @@ def robot_add(
 
 def _one_line(e: Exception) -> Exception:
     """A pydantic error folded to the one sentence a person needs, keeping its own words."""
+    from pydantic import ValidationError
+
     if isinstance(e, ValidationError):
         return ValueError(
             "; ".join(
@@ -7210,6 +7221,8 @@ def robot_edit(
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Change what a registered robot is or where it is."""
+    from pydantic import ValidationError
+
     from quackd.adapters.base import AdapterError
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import parse_llm
@@ -7294,6 +7307,10 @@ def robot_rest_pose(
     is refused a run, which would let go of it wherever it ended. Fold the arm by hand first,
     with nothing connected, so the pose you record is one it can hold with torque off.
     """
+    import asyncio
+
+    from pydantic import ValidationError
+
     from quackd.adapters.base import AdapterError
     from quackd.adapters.factory import describe, make_adapter
     from quackd.registry import RegistryError
@@ -7591,6 +7608,8 @@ class _DoctorHands:
         """Install the kill switch, from inside the probe's event loop, which it needs, for a real
         body handed to people: called as the body is about to connect. A press while a connect is
         failing ends its retries, as in `robot release`."""
+        import asyncio
+
         from quackd.safety import KillSwitch
 
         if self.switch is not None or not getattr(adapter, "supports_hand_off", False):
@@ -7625,6 +7644,8 @@ class _DoctorHands:
 
     async def park(self, adapter: Any) -> RestResult:
         """The probe's fold, with the hands away first and a press stopping it."""
+        import asyncio
+
         from quackd.adapters.base import RestResult, go_to_rest_if_any
         from quackd.release import (
             FOLD_STOPPED,
@@ -7685,6 +7706,8 @@ def _switch_pressed(_message: str) -> None:
 
 
 async def _hands_away() -> None:
+    import asyncio
+
     from quackd.release import HANDS_AWAY_S
 
     await asyncio.sleep(HANDS_AWAY_S)
@@ -7719,6 +7742,8 @@ def robot_release(
     connects. Ctrl-C or q stops a fold. No verb and no MCP tool can do this: it is a command a
     person types.
     """
+    import asyncio
+
     from quackd.adapters.base import AdapterError, go_to_rest_if_any, let_go_if_any
     from quackd.adapters.factory import make_adapter
     from quackd.registry import RegistryError
@@ -8199,6 +8224,8 @@ def flock_create(
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Name a group of registered robots. With no --robot it lists them and asks."""
+    from pydantic import ValidationError
+
     from quackd.registry import MAX_MEMBERS, RegistryError, StoredFlock
 
     try:
@@ -8372,6 +8399,8 @@ def flock_edit(
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Add or drop members, change the description, or rename the flock."""
+    from pydantic import ValidationError
+
     from quackd.registry import RegistryError
 
     if not (add or remove or description is not None or rename):
@@ -8679,6 +8708,8 @@ def _print_map(summary: str, *, again: bool = False) -> None:
 
 async def _map_watch_pause() -> None:
     """The wait between two drawings of `quackd map --watch`. The seam tests replace."""
+    import asyncio
+
     await asyncio.sleep(MAP_WATCH_S)
 
 
@@ -8686,6 +8717,8 @@ async def _wipe_map(name: str, book: Any) -> None:
     """Forget the robot's map, once the person at the terminal has said yes to what it orphans.
     The question is asked off the event loop, so the robot's own links keep being read while
     the person thinks."""
+    import asyncio
+
     source = book.source
     if not source.can_wipe:
         _fail(f"{source.describe()} keeps no map to wipe")
@@ -8739,6 +8772,10 @@ def map_command(
 
     It connects to the robot, with no camera, and reads it as the `map` verb does: nothing
     moves. The places are the ones kept beside the robot's memory."""
+    import asyncio
+
+    from pydantic import ValidationError
+
     from quackd.verbs.places import MapParams, map_verb
     from quackd.verbs.registry import VerbContext
 
@@ -8855,6 +8892,10 @@ def places_add(
 
     It connects to the robot and reads where it is from the robot's own reading, never from
     coordinates anybody types. Nothing moves."""
+    import asyncio
+
+    from pydantic import ValidationError
+
     from quackd.verbs.places import MarkPlaceParams, mark_place
     from quackd.verbs.registry import VerbContext
 
@@ -10064,6 +10105,24 @@ def _rich_traceback(kind: type[BaseException], exc: BaseException, tb: Any) -> N
     )
 
 
+def _asks_only_for_help(argv: list[str]) -> bool:
+    """Whether this invocation can only print: nothing after the name, `--help` or the version
+    anywhere, or the shell asking to complete a word. Nothing else may skip
+    `_load_what_a_command_needs`, and a false yes costs nothing but the order of some imports."""
+    asks = not argv or {"--help", "--version", "-V"}.intersection(argv)
+    return bool(asks) or "_QUACKD_COMPLETE" in os.environ
+
+
+def _load_what_a_command_needs() -> None:
+    """Import what every command but help ends up needing, before any of them can start reading
+    stdin. They are not at the top of this module because help needs none of them and they are
+    most of what it waited for. They are not left to whenever a command first uses them because
+    of Windows: a DLL loading behind a read pending on a pipe waits for the next line to arrive
+    (`front._waiting_reader` has the whole story), and these load DLLs."""
+    for module in ("asyncio", "pydantic", "yaml", "numpy", "quackd.preflight", "quackd.space.room"):
+        importlib.import_module(module)
+
+
 def main() -> None:
     """The console entry point: `app()`, and the two things a command that prints for a
     living owes its terminal.
@@ -10073,6 +10132,8 @@ def main() -> None:
     list-verbs | head` closes the pipe halfway down the table, and Python's answer to that
     is a second wall of text about a broken pipe on top of the output that was asked for."""
     sys.excepthook = _rich_traceback
+    if not _asks_only_for_help(sys.argv[1:]):
+        _load_what_a_command_needs()
     try:
         app()
     except BrokenPipeError:

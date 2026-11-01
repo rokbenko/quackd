@@ -301,7 +301,6 @@ class _Serving:
     """The real daemon, its real loop and its real socket, on loopback."""
 
     def __init__(self, **caps: bool) -> None:
-        self.port = _free_port()
         robot = D.FakeRobot()
         self.daemon = D.Daemon(robot, D.FakeSim(robot), fake=True)
         D.Handler.daemon_ref = self.daemon
@@ -318,7 +317,10 @@ class _Serving:
             D.Handler.capabilities["walk_envelope"] = caps["envelope"]
         D.Handler.robot_name = "toddlerbot_2xc"
         D.Handler.motors = robot.nu
-        self.server = D.Server(("127.0.0.1", self.port), D.Handler)
+        # Port 0, asked for by the socket that keeps it: a port found free and bound afterwards
+        # can be another worker's by then, and SO_REUSEADDR on Windows hides the collision.
+        self.server = D.Server(("127.0.0.1", 0), D.Handler)
+        self.port = self.server.server_address[1]
         self._loop = threading.Thread(target=self.daemon.run, daemon=True)
         self._serve = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -559,6 +561,7 @@ async def test_a_faulted_loop_fails_the_heartbeat_rather_than_looking_healthy() 
         await link.close()
 
 
+@pytest.mark.serial
 async def test_a_client_that_dies_mid_move_trips_the_deadman() -> None:
     """The failure the deadman exists for is not a polite stop. It is a client that stops
     existing while the robot is walking, because silence on this body means hold the last
@@ -892,6 +895,7 @@ def test_a_gripper_build_has_gripper_motors_and_a_plain_one_does_not() -> None:
     assert gripped.grippers["left"] and gripped.grippers["right"]
 
 
+@pytest.mark.serial
 def test_closing_a_gripper_actually_commands_the_motor() -> None:
     """`bot.grip` used to answer accepted and command nothing at all, on a capability taken
     from a command line flag rather than from the body."""
