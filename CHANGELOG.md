@@ -9,6 +9,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.29.1] — 2026-11-01
+
+0.29.1 fixes three things in `quackd onboard` that an install rehearsal of 0.29.0 led to. Its
+preflight and its demo take a brain on a model server of your own with no key, which the wizard
+sets up on purpose, and preflight says where a missing brain goes and sends nobody to a service
+that cannot start. A hosted brain still needs its key, and nothing a robot advertises, signs or
+says is different.
+
 ### Fixed
 
 - **`quackd onboard preflight` passes a brain on a model server of your own that takes no key.**
@@ -9001,7 +9009,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.29.1...HEAD
+[0.29.1]: https://github.com/rokbenko/quackd/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/rokbenko/quackd/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/rokbenko/quackd/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/rokbenko/quackd/compare/v0.26.0...v0.27.0
