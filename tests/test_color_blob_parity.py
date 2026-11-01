@@ -3,12 +3,16 @@ numpy for now has to give the same answers to the last bit, because a detection'
 distance and a run's next move. OpenCV is here as the oracle, in `dev` and imported by nothing
 quackd ships.
 
+OpenCV gives two answers, one on x86 and another on Arm, so the conversion is held to the x86 one,
+which numpy's integers give on either, and on Arm what the difference can reach is held to nothing.
+
 Python 3.11 and 3.12 lock different major versions of OpenCV, and both have to agree."""
 
 from __future__ import annotations
 
 import ast
 import math
+import platform
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -20,11 +24,12 @@ from PIL import Image
 
 from quackd.perception.base import Detection
 from quackd.perception.blobs import Candidates, biggest_blobs, rgb_to_hsv
-from quackd.perception.color_blob import ColorBlobDetector, HSVRange, Target
+from quackd.perception.color_blob import DEFAULT_TARGETS, ColorBlobDetector, HSVRange, Target
 from quackd.sim2d.render import render_duckcam
 from quackd.sim2d.world import World
 
 REPO = Path(__file__).resolve().parents[1]
+ON_ARM = platform.machine().lower() in ("arm64", "aarch64")
 
 
 def _every_colour(red: int) -> np.ndarray:
@@ -33,14 +38,56 @@ def _every_colour(red: int) -> np.ndarray:
     return np.stack((np.full((256, 256), red), green, blue), axis=-1).astype(np.uint8)
 
 
-def test_every_colour_there_is_converts_as_opencvs_does() -> None:
+def _read_both_ways(red: int, width: int) -> tuple[np.ndarray, np.ndarray]:
+    """This red's colours as numpy reads them and as OpenCV does `width` pixels to a row, since on
+    Arm a row's width decides which of OpenCV's code each pixel goes through."""
+    frame = _every_colour(red)
+    pixels = frame.reshape(-1, 3)
+    usable = len(pixels) - len(pixels) % width
+    theirs = cv2.cvtColor(pixels[:usable].reshape(-1, width, 3), cv2.COLOR_RGB2HSV)
+    return rgb_to_hsv(frame).reshape(-1, 3)[:usable], theirs.reshape(-1, 3)
+
+
+@pytest.mark.skipif(ON_ARM, reason="OpenCV rounds its own way on Arm: the test after this one")
+@pytest.mark.parametrize("width", [256, 1, 17])
+def test_every_colour_there_is_converts_as_opencvs_does(width: int) -> None:
     wrong = 0
     for red in range(256):
-        frame = _every_colour(red)
-        wrong += int(
-            np.any(rgb_to_hsv(frame) != cv2.cvtColor(frame, cv2.COLOR_RGB2HSV), axis=-1).sum()
-        )
+        ours, theirs = _read_both_ways(red, width)
+        wrong += int(np.any(ours != theirs, axis=-1).sum())
     assert wrong == 0, f"{wrong} of 16,777,216 colours"
+
+
+def _within(hsv: np.ndarray, target: Target) -> np.ndarray:
+    r = target.hsv
+    return (
+        (hsv[:, 0] >= r.h_lo)
+        & (hsv[:, 0] <= r.h_hi)
+        & (hsv[:, 1] >= r.s_lo)
+        & (hsv[:, 2] >= r.v_lo)
+    )
+
+
+@pytest.mark.skipif(not ON_ARM, reason="OpenCV gives one answer at any width off Arm")
+@pytest.mark.parametrize("width", [256, 1, 17])
+def test_opencvs_rounding_on_arm_moves_no_pixel_of_any_target_quackd_ships(width: int) -> None:
+    """On Apple Silicon and Linux on Arm, OpenCV does not read a colour as it does on x86, and not
+    always the same way twice: its NEON code reads 6,582 colours a saturation step lower, and the
+    code for what is left of a row, the last columns of a frame no multiple of 8 wide, reads 123,444
+    a step either way. numpy keeps the x86 answer everywhere. So what has to hold here is what that
+    can reach, which is nothing: hue and value agree, saturation is a step off at most, and no
+    colour crosses the threshold of a target quackd ships. A mask is a pixel's colour and nothing
+    else, so the masks are the same, and what is made from a mask is held to OpenCV further down."""
+    moved = 0
+    for red in range(256):
+        ours, theirs = _read_both_ways(red, width)
+        difference = ours.astype(np.int16) - theirs.astype(np.int16)
+        assert not difference[:, [0, 2]].any()
+        assert np.abs(difference[:, 1]).max() <= 1
+        moved += int(np.count_nonzero(difference[:, 1]))
+        for target in DEFAULT_TARGETS:
+            assert np.array_equal(_within(ours, target), _within(theirs, target)), target
+    assert moved < 16_777_216 // 100, f"{moved} colours, more than OpenCV has moved until now"
 
 
 @pytest.mark.parametrize(
@@ -54,7 +101,7 @@ def test_the_prefilter_never_loses_a_pixel_and_reads_each_it_keeps_exactly(
     is throw away a pixel the exact test would have kept."""
     for red in range(0, 256, 5):
         frame = _every_colour(red)
-        truth = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+        truth = rgb_to_hsv(frame)
         found = Candidates(frame, saturation, value)
         kept = np.zeros(frame.shape[:2], dtype=bool)
         kept[found.rows, found.columns] = True
@@ -80,7 +127,7 @@ def test_the_range_test_picks_what_inrange_picks(
 ) -> None:
     for red in range(0, 256, 5):
         frame = _every_colour(red)
-        truth = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+        truth = rgb_to_hsv(frame)
         low = np.array([hue_low, saturation, value], dtype=np.uint8)
         high = np.array([hue_high, 255, 255], dtype=np.uint8)
         theirs = cv2.inRange(truth, low, high) != 0
