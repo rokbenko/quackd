@@ -149,7 +149,7 @@ def tally(path: Path) -> int:
                 ran += 1
                 if record.get("name") not in allowed:
                     outside.append(str(record.get("name")))
-        elif kind == "gate" and record.get("outcome") != "allowed":
+        elif kind == "gate" and record.get("outcome") not in ("allowed", "ignored"):
             gates[record["gate"]] = gates.get(record["gate"], 0) + 1
         elif kind == "intent":
             sent[record["intent"]] = sent.get(record["intent"], 0) + 1
