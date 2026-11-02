@@ -3,12 +3,17 @@
 A terminal in its usual mode hands a program its input a line at a time, so `q` stopped nothing
 until somebody pressed Enter as well: under every line that says `Ctrl-C or q stops it`, with an
 arm moving and a person who has no reason to know about the second key. So at a console the key
-thread reads keys as they are pressed, through what is here. A pipe or a file has no keys to
-wait for and goes on being read as it always was, which is why this answers None for them.
+thread reads keys as they are pressed, through what is here.
 
 A key thread has to be able to end, too. A blocking read cannot be told to stop, and one left
 behind by a switch that had finished went on taking keys from the next, so both of these look
 for a key a few dozen times a second and end when they are closed.
+
+Only the keys the switch has a use for come out: what can be typed, Enter and Backspace, and
+Ctrl-C where it reads as a key. Nothing else means anything here. An arrow or a function key
+above all, which arrives as several characters and can end in `Q`, and Ctrl-D and Ctrl-Z, which
+a console reading lines turned into the end of the stream: one stray press then took `q` away
+for the rest of the run, with the line that promises it still on the screen.
 
 Nothing here knows what a key means: that is `KillSwitch._watch_keys`. Echoing is here, because
 a console that is no longer reading lines may no longer be echoing them either, and a person
@@ -21,6 +26,7 @@ import codecs
 import contextlib
 import importlib
 import os
+import select
 import sys
 import threading
 from typing import Any, Protocol
@@ -29,10 +35,16 @@ POLL_S = 0.02
 """How long a key can wait to be seen, and well inside the tenth of a second a verb's own tick
 takes to act on the stop it causes. Looking this often costs nothing a laptop or a Jetson can
 measure."""
+ESCAPE_GAP_S = 0.05
+"""How long the rest of an arrow or a function key may take to come in behind its escape. Longer
+than a terminal needs and shorter than anybody presses Esc and then another key."""
+ENTER = ("\r", "\n")
+BACKSPACE = ("\b", "\x7f")
+CTRL_C = "\x03"
 
-END_OF_INPUT = {"win32": "\x1a"}
-"""The key that says there is no more, Ctrl-Z on Windows and Ctrl-D everywhere else. A console
-reading lines turned it into the end of the stream itself."""
+
+def _has_a_use(key: str) -> bool:
+    return key in ENTER or key in BACKSPACE or key == CTRL_C or key.isprintable()
 
 
 class ConsoleKeys(Protocol):
@@ -69,21 +81,30 @@ class WindowsKeys:
                 self._closed.wait(POLL_S)
                 continue
             key = self._console.getwch()
-            if key in ("\x00", "\xe0"):
-                # An arrow or a function key comes as two, and is no character. `à` reads as the
-                # first of them and has no second, which is why this looks before it reads: a
-                # read here would sit on the next key, and the next key may be `q`.
-                if self._console.kbhit():
-                    self._console.getwch()
+            if key in ("\x00", "\xe0") and self._second_half_waiting():
+                self._console.getwch()
                 continue
-            if key == END_OF_INPUT["win32"]:
-                return ""
-            self._echo(key)
-            return key
+            if _has_a_use(key):
+                self._echo(key)
+                return key
         return ""
 
+    def _second_half_waiting(self) -> bool:
+        """An arrow or a function key reads as `\\x00` or `\\xe0` and then a second character, and
+        `kbhit` does not see that one, because the C runtime has put it by for the next read: left
+        there it comes out with the next key pressed, as a key, and PageDown's is `Q`. `à` reads
+        as the same first half with no second, so a read for one would sit on the next key. The
+        runtime has one such place, which is how to tell: pushing a character back fails where
+        one is waiting there."""
+        try:
+            self._console.ungetwch("\x00")
+        except OSError:
+            return True
+        self._console.getwch()
+        return False
+
     def _echo(self, key: str) -> None:
-        if key in ("\r", "\n"):
+        if key in ENTER:
             self._console.putwch("\r")
             self._console.putwch("\n")
         elif key.isprintable():
@@ -104,14 +125,14 @@ class PosixKeys:
     """A terminal out of its line mode (`ICANON`), and nothing else changed: it still echoes, and
     Ctrl-C is still a signal. A control key echoes as nothing rather than `^?` (`ECHOCTL`), so a
     backspace can be drawn here. Put back by `close`, and at exit for a run that never got there.
-
-    Ctrl-D is an ordinary key once lines are off, so it is read as the end of the stream here."""
+    A kill that gives Python no say, SIGTERM or Ctrl-\\, leaves it to the shell waiting on it."""
 
     def __init__(self, fd: int) -> None:
         termios: Any = importlib.import_module("termios")  # no such module to type on Windows
         self._fd = fd
         self._closed = threading.Event()
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+        self._ahead = b""
         self._termios = termios
         self._as_found = termios.tcgetattr(fd)
         mode = termios.tcgetattr(fd)
@@ -122,24 +143,49 @@ class PosixKeys:
         atexit.register(self.close)
 
     def read(self) -> str:
-        import select
-
         while not self._closed.is_set():
-            try:
-                ready, _, _ = select.select([self._fd], [], [], POLL_S)
-                if not ready:
-                    continue
-                data = os.read(self._fd, 1)
-            except (OSError, ValueError):  # the terminal went away
+            data = self._byte(POLL_S)
+            if data is None:
+                continue
+            if not data:  # the terminal went away
                 return ""
-            if not data:
-                return ""
-            key = self._decoder.decode(data)
-            if key == "\x04":
-                return ""
-            if key:  # nothing yet in the middle of a character
+            if data == b"\x1b":
+                self._skip_escape()
+                continue
+            key = self._decoder.decode(data)  # nothing yet in the middle of a character
+            if key and _has_a_use(key):
                 return key
         return ""
+
+    def _byte(self, wait_s: float) -> bytes | None:
+        """One byte from the terminal, `b""` where it has gone away, None where none came. Not
+        while this process is in its background, where a read stops the whole process, robot and
+        all, until somebody brings it back."""
+        if self._ahead:
+            data, self._ahead = self._ahead, b""
+            return data
+        try:
+            ready, _, _ = select.select([self._fd], [], [], wait_s)
+            if not ready:
+                return None
+            if _behind_the_terminal(self._fd):
+                self._closed.wait(POLL_S)
+                return None
+            return os.read(self._fd, 1)
+        except (OSError, ValueError):
+            return b""
+
+    def _skip_escape(self) -> None:
+        """An arrow or a function key is an escape and a run of characters that are no keys: F2
+        ends in `Q`, and would stop the run. Esc on its own, or Alt and a key, leaves that key."""
+        data = self._byte(ESCAPE_GAP_S)
+        if data == b"[":
+            while (data := self._byte(ESCAPE_GAP_S)) and not 0x40 <= data[0] <= 0x7E:
+                pass
+        elif data == b"O":
+            self._byte(ESCAPE_GAP_S)
+        elif data:
+            self._ahead = data
 
     def erase(self) -> None:
         with contextlib.suppress(OSError):
@@ -154,8 +200,28 @@ class PosixKeys:
             return
         self._closed.set()
         atexit.unregister(self.close)
+        if _behind_the_terminal(self._fd):  # the attempt would stop the process, and it is not ours
+            return
         with contextlib.suppress(OSError, self._termios.error):
             self._termios.tcsetattr(self._fd, self._termios.TCSANOW, self._as_found)
+
+
+def _behind_the_terminal(fd: int) -> bool:
+    if sys.platform == "win32":  # no such thing there
+        return False
+    try:
+        return os.tcgetpgrp(fd) != os.getpgrp()
+    except OSError:  # no terminal of this process's at all, so nothing to be behind
+        return False
+
+
+def in_the_background(stream: Any) -> bool:
+    """Whether `stream` is a terminal this process is in the background of. A read from it stops
+    the whole process, robot and all, and so does changing its mode."""
+    try:
+        return _behind_the_terminal(stream.fileno())
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def is_a_console(stream: Any) -> bool:
@@ -177,9 +243,8 @@ def is_a_console(stream: Any) -> bool:
 
 
 def console_keys(stream: Any) -> ConsoleKeys | None:
-    """`stream`'s keys one at a time, or None where it is to be read as it always was: anything
-    that is no console, and a terminal this process is in the background of, which it must not
-    change the mode of (the attempt stops the whole process, robot and all)."""
+    """`stream`'s keys one at a time, or None where it is no console to read that way: NUL, which
+    says it is a terminal and is at its end at once, and a terminal that will not change mode."""
     try:
         if not is_a_console(stream):
             return None
@@ -187,12 +252,16 @@ def console_keys(stream: Any) -> ConsoleKeys | None:
             import msvcrt
 
             return WindowsKeys(msvcrt)
-        fd = stream.fileno()
-        if os.tcgetpgrp(fd) != os.getpgrp():
-            return None
-        return PosixKeys(fd)
+        return PosixKeys(stream.fileno())
     except Exception:
         return None
 
 
-__all__ = ["ConsoleKeys", "PosixKeys", "WindowsKeys", "console_keys", "is_a_console"]
+__all__ = [
+    "ConsoleKeys",
+    "PosixKeys",
+    "WindowsKeys",
+    "console_keys",
+    "in_the_background",
+    "is_a_console",
+]

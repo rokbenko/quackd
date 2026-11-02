@@ -142,6 +142,15 @@ def _block_to_dict(block: Any) -> dict[str, Any]:
     return {"type": getattr(block, "type", "text"), "text": str(block)}
 
 
+def _replayable(block: dict[str, Any]) -> dict[str, Any]:
+    """A block as the next request can send it back. The API refuses a `tool_use` whose input is
+    no object, so one kept as it came ended the run a turn later than `tool_arguments` was there
+    to stop it from. An object is unchanged, and so is every other block."""
+    if block.get("type") != "tool_use":
+        return block
+    return {**block, "input": tool_arguments(block.get("input"))}
+
+
 def _tool_choice(*, forced: bool) -> dict[str, Any]:
     """One call per turn either way: `any` insists on it, `auto` only allows it, and
     `disable_parallel_tool_use` works with both."""
@@ -224,7 +233,7 @@ def parse_response(response: Any) -> ProviderTurn:
         ),
         stop_reason=stop_reason,
         refused=stop_reason == "refusal",
-        raw=[_block_to_dict(b) for b in response.content],
+        raw=[_replayable(_block_to_dict(b)) for b in response.content],
         thinking="\n\n".join(thoughts) or None,
         served_by=_served_by(response),
     )

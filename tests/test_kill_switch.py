@@ -307,11 +307,35 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     assert quiet.declined is False, "a question nobody answered was filed as a no"
 
 
+async def test_a_key_held_down_answers_no_deliberate_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enter auto-repeats. Held from before the question, one of the stream landed just after its
+    half second and answered it: an arm dropped, twice over, on nobody having read a word. An
+    answer comes out of a quiet, and the person who let go of the key can still give it."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
+    ks, _ = switch()
+    loop = asyncio.get_running_loop()
+
+    async def held(seconds: float) -> None:
+        end = loop.time() + seconds
+        while loop.time() < end:
+            ks._heard_enter("")
+            await asyncio.sleep(0.02)
+
+    holding = asyncio.create_task(held(0.4))
+    assert await ks.wait_for_enter(timeout_s=0.35, until_abort=False, deliberate=True) is False
+    await holding
+    letting_go = loop.call_later(0.2, ks._heard_enter, "")
+    assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
+    letting_go.cancel()
+
+
 async def test_the_key_thread_records_each_line_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """What was typed on each line is what a deliberate question reads, and a terminal that
     ends its lines with a carriage return and a newline has sent one Enter, not two: the
     second, an empty line, would otherwise be read as the bare Enter after an `n`."""
     ks, _ = switch()
     await feed(ks, "n\r\nyes\n\n", monkeypatch)
-    assert [text for _at, text in ks._enters] == ["n", "yes", ""]
+    assert [text for _at, _quiet, text in ks._enters] == ["n", "yes", ""]
     assert ks.presses == 0

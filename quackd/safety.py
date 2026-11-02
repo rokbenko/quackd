@@ -34,7 +34,7 @@ from quackd.duckfile.schema import (
     Budgets,
     DuckFrontmatter,
 )
-from quackd.keys import ConsoleKeys, console_keys
+from quackd.keys import ConsoleKeys, console_keys, in_the_background
 from quackd.log import (
     A_PERSON,
     A_PIPE,
@@ -342,9 +342,10 @@ class Executor:
     verb's context compares it with the count when the verb began (`VerbContext.interrupted`),
     so a verb that runs for a while ends on a brake pulled from beside it."""
     first_motion_at: float | None = None
-    """When the first verb that moves the body (`_moves_now`) was handed to the transport, on
-    `time.monotonic()`'s clock, or None until one has been. Never on a dry run, which hands
-    nothing over, and never a read. The loop writes it as `first_motion_s` on the record's own
+    """When the first verb that moved the body (`_moves_now`) was handed to the transport, on
+    `time.monotonic()`'s clock, or None until one has come back having done so: it answered ok, or
+    the body took an intent of it. Never on a dry run, which hands nothing over, and never a read.
+    The loop writes it as `first_motion_s` on the record's own
     clock, which is how long somebody standing by the robot waited for it to do anything at all:
     on the README's arm run two model calls and the serial port's ten seconds came first."""
     first_motion_llm_calls: int | None = None
@@ -1417,7 +1418,17 @@ terminal the moment it starts, and an Enter pressed twice, or pressed while the 
 still starting, used to answer the question that followed it before anybody could have read it:
 one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
 arm and decides in half a second, and an Enter that comes too soon is passed by rather than
-taken, so a person who did mean it presses it again."""
+taken, so a person who did mean it presses it again. It is also how long a console must have
+been quiet before an Enter counts: a key held down, or pressed twice, is a run of Enters, one of
+which is always going to land just after any moment you care to name."""
+ENTER_BEHIND_Q_S = 2.0
+"""How long after a `q` at a console an Enter is taken for the old habit of finishing the line,
+and answers nothing (`KillSwitch._watch_keys`). The press ends the run and the question that
+opens the gripper is up a moment later, so this errs long: an Enter passed by costs a second
+press of it, and one taken costs what was in the jaws."""
+ASK_POLL_S = 0.05
+"""How often a question put on the loop's thread looks for what else may have ended it
+(`KillSwitch.ask`). An untimed wait there cannot be interrupted on Windows, Ctrl-C included."""
 
 
 class KillSwitch:
@@ -1447,8 +1458,8 @@ class KillSwitch:
         """Stdin is finished, so no keystroke is ever coming.
 
         A wait for a person has to end on this or it never ends at all. The run that needs it
-        is the one that has an arm limp in somebody's hands: without it, a terminal closed or a
-        Ctrl-D typed at the wrong moment leaves quackd waiting for ever, holding nothing."""
+        is the one that has an arm limp in somebody's hands: without it, a terminal closed at
+        the wrong moment leaves quackd waiting for ever, holding nothing."""
         self._loop: asyncio.AbstractEventLoop | None = None
         self._previous: Any = None
         self._thread: threading.Thread | None = None
@@ -1458,24 +1469,29 @@ class KillSwitch:
         self.declined = False
         """The last deliberate wait ended on a line with something typed on it, which is a no:
         `n`, `no`, anything but a bare Enter (`wait_for_enter(deliberate=True)`)."""
-        self._enters: deque[tuple[float, str]] = deque(maxlen=32)
-        """Each Enter the key thread read, as when it was read and what was typed on its line,
-        newest last. Written by the key thread and read by a deliberate wait, under the lock."""
+        self._enters: deque[tuple[float, float, str]] = deque(maxlen=32)
+        """Each Enter the key thread read, as when it was read, how long since the Enter before
+        it, and what was typed on its line, newest last. Written by the key thread and read by a
+        deliberate wait, under the lock."""
         self._enters_lock = threading.Lock()
+        self._last_enter = -math.inf
 
     def _heard_enter(self, text: str) -> None:
         """An Enter the key thread read, recorded with what was typed on its line and when, and
         only then announced, so a wait woken by it finds the line it answers already there."""
+        now = time.monotonic()
         with self._enters_lock:
-            self._enters.append((time.monotonic(), text.strip()))
+            self._enters.append((now, now - self._last_enter, text.strip()))
+            self._last_enter = now
         self._announce(self.entered)
 
     def _line_since(self, since: float) -> str | None:
-        """What was typed on the first line whose Enter was read at `since` or later, or None
-        where no Enter has been read since then."""
+        """What was typed on the first line whose Enter was read at `since` or later and out of
+        a quiet (`TYPED_AHEAD_S`), or None where no such Enter has been read. Enter held down from
+        before a question answered it the moment the question's half second was up."""
         with self._enters_lock:
-            for at, text in self._enters:
-                if at >= since:
+            for at, quiet, text in self._enters:
+                if at >= since and quiet >= TYPED_AHEAD_S:
                     return text
         return None
 
@@ -1510,10 +1526,10 @@ class KillSwitch:
         with no Enter behind it, which is what every line that names it has always promised. It
         is no part of the line then, or the Enter that answers a question a minute later would
         read as a line with something typed on it. An Enter close behind it is the old habit of
-        finishing the line, and is passed by (`TYPED_AHEAD_S`), or the question the press brought
-        on would be answered yes by the hand still finishing it. From a pipe or a file `q` comes
-        with the rest of its line and is part of it, and a wait never takes that line's Enter for
-        an answer (`wait_for_enter`)."""
+        finishing the line, and is passed by (`ENTER_BEHIND_Q_S`), or the question the press
+        brought on would be answered yes by the hand still finishing it. Where it reads a stream
+        and not a console, `q` comes with the rest of its line and is part of it, and a wait never
+        takes that line's Enter for an answer (`wait_for_enter`)."""
         keys = self._keys
         read = keys.read if keys is not None else functools.partial(sys.stdin.read, 1)
         typed: list[str] = []
@@ -1551,7 +1567,7 @@ class KillSwitch:
                     continue
                 typed.clear()
                 if ch in ("\r", "\n"):
-                    behind_a_q = keys is not None and time.monotonic() - q_at < TYPED_AHEAD_S
+                    behind_a_q = keys is not None and time.monotonic() - q_at < ENTER_BEHIND_Q_S
                     if not (ch == "\n" and previous == "\r") and not behind_a_q:
                         self._heard_enter("".join(line))
                     line.clear()
@@ -1579,17 +1595,29 @@ class KillSwitch:
         newline the key thread had already swallowed, which is a hang with a robot mid-verb.
 
         Falls back to `input()` wherever no key thread is running, which is every caller with
-        no terminal and every test, so nothing that was not already racing changes."""
-        if self._thread is None or not self._thread.is_alive():
+        no terminal and every test, so nothing that was not already racing changes.
+
+        A press answers no, and so does the key thread ending under the question. An untimed wait
+        here sat on the loop's thread with nothing to wake it once the thread had gone, and on
+        Windows it could not even be interrupted, so a question nobody could answer ended only
+        when somebody killed the process."""
+        thread = self._thread
+        if thread is None or not thread.is_alive():
             return input(prompt)
         with self._asking:
             while not self._lines.empty():  # anything typed before the question was asked
                 self._lines.get_nowait()
+            presses = self.presses
             self._line_wanted.set()
             try:
                 sys.stderr.write(prompt)
                 sys.stderr.flush()
-                return self._lines.get()
+                while True:
+                    try:
+                        return self._lines.get(timeout=ASK_POLL_S)
+                    except queue.Empty:
+                        if self.presses != presses or not thread.is_alive():
+                            return ""
             finally:
                 self._line_wanted.clear()
 
@@ -1621,15 +1649,15 @@ class KillSwitch:
         `keys_ended` where the thread ran and stdin then finished under it.
 
         A press of the kill switch during the wait is never an Enter, whatever came with it. A
-        pipe hands `q` to the key thread with the Enter that ends its line, so the press and the
-        Enter arrive together, and the wait used to answer True when both were in by the time it
-        looked: `q`, the key that stops the run, taken for yes.
+        stream that is no console hands `q` to the key thread with the Enter that ends its line,
+        so the press and the Enter arrive together, and the wait used to answer True when both
+        were in by the time it looked: `q`, the key that stops the run, taken for yes.
 
         `deliberate` is for a question whose Enter moves an arm or drops it (`quackd.release`).
         Only a bare Enter answers it. A line with anything typed on it, `n` the commonest, is a
         no, and the wait ends saying so (`declined`); and an Enter read within `TYPED_AHEAD_S`
-        of the question being put was typed before anybody could have read it, so the wait goes
-        on past it."""
+        of the question being put was typed before anybody could have read it, or of the Enter
+        before it is a key held down or pressed twice, so the wait goes on past it."""
         loop = asyncio.get_running_loop()
         asked_at = time.monotonic()
         presses = self.presses
@@ -1675,7 +1703,12 @@ class KillSwitch:
         self._loop = asyncio.get_running_loop()
         with contextlib.suppress(ValueError):  # not the main thread
             self._previous = signal.signal(signal.SIGINT, self._on_sigint)
-        if keys and sys.stdin is not None and sys.stdin.isatty():
+        if (
+            keys
+            and sys.stdin is not None
+            and sys.stdin.isatty()
+            and not in_the_background(sys.stdin)
+        ):
             self._keys = console_keys(sys.stdin)
             self._thread = threading.Thread(
                 target=self._watch_keys, name="quackd-keys", daemon=True

@@ -4320,6 +4320,31 @@ def test_the_gripper_budget_ends_inside_the_executors_timeout() -> None:
         assert GRIPPER_S <= gripper_budget_s(step) <= GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S
 
 
+class BusyClock(SteppedClock):
+    """A tick that takes longer than its sleep, as one does with a send and its reads on a bus."""
+
+    def __init__(self, bus_s: float) -> None:
+        super().__init__()
+        self.bus_s = bus_s
+
+    async def sleep(self, seconds: float) -> None:
+        await super().sleep(seconds + self.bus_s)
+
+
+async def test_the_gripper_is_given_the_bus_s_time_too() -> None:
+    """A budget of sleeps alone gave a real bus a few milliseconds a tick at a lowered cap, so a
+    gripper in good order ran out of time at 90 of its 100, and at the hand-back that says it
+    cannot open and leaves the arm where it is."""
+    arm = FakeArm(step=1.0)
+    clock = BusyClock(bus_s=TICK_S)
+    adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, max_step_deg=1.0, clock=clock))
+    manifest = await adapter.connect()
+    ex = _executor(adapter, manifest)
+    arm.positions["gripper"] = GRIPPER_CLOSED
+    opened = await ex.run_verb("gripper", {"open": True})
+    assert opened.ok, opened.summary
+
+
 async def test_the_gripper_opens_all_the_way_at_a_lowered_step_cap() -> None:
     """At a cap of 1 a whole open is a hundred sends, past `GRIPPER_S`, and a gripper in good
     order stopped part of the way saying it had run out of time."""

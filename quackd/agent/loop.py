@@ -733,9 +733,10 @@ class AgentLoop:
         self.billed_calls = 0
         """How many calls were costed at what the vendor said it billed rather than at a rate.
         Written into the summary only when there was one."""
+        self._press_watch: asyncio.Future[Any] | None = None
         self._fold_watch: Callable[[], Awaitable[Any]] | None = None
         """What hears a fresh press from the hand-back to the end of the fold, once somebody has
-        been asked about the gripper (`_hand_back`)."""
+        been asked about the gripper (`_watch_for_a_press`)."""
         self._no_fold = False
         """The hand-back left the arm where it is: a press, or a gripper that would not open."""
         self._handed_over = False
@@ -1275,24 +1276,49 @@ class AgentLoop:
         A run that handed the arm to somebody has them at the jaws at this point, whichever way
         it ended, so there a fresh press stops the fold even after a press ended the run, a later
         Ctrl-C does too rather than quitting, and a hand-back that held the arm means no fold."""
-        if self._no_fold:
-            return None
-        watch = self._fold_watch
-        if watch is None:
-            if self.executor.abort.is_set() or self.cfg.dry_run:
-                return await self._rest()
-            watch = self._pressed_during_the_fold
         try:
-            return await fold_unless_stopped(functools.partial(self._rest, pause=False), watch)
-        except FoldStopped:
-            pass
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            if self._fold_watch is None:
-                raise
-        with contextlib.suppress(Exception):
-            await self.executor.logged_transport().stop()
-        self._note(FOLD_STOPPED)
-        return None
+            if self._no_fold:
+                return None
+            watch = self._fold_watch
+            if watch is None:
+                if self.executor.abort.is_set() or self.cfg.dry_run:
+                    return await self._rest()
+                watch = self._pressed_during_the_fold
+            try:
+                return await fold_unless_stopped(functools.partial(self._rest, pause=False), watch)
+            except FoldStopped:
+                pass
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                if self._fold_watch is None:
+                    raise
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                await self.executor.logged_transport().stop()
+            self._note(FOLD_STOPPED)
+            return None
+        finally:
+            if self._press_watch is not None:
+                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                    await cancel_and_wait(self._press_watch)
+
+    def _what_a_press_cannot_end(self) -> tuple[type[BaseException], ...]:
+        """What the rest of a teardown carries on through. Anywhere else a later Ctrl-C quits at
+        once, as the panel says it does. Not once somebody has been asked about the gripper: a
+        hand near the jaws presses twice, and the second press landing on a stop, a read or the
+        close went straight past the close, `run_end` and the summary, and left an energised arm
+        with no record of what became of it."""
+        if self._fold_watch is None:
+            return (Exception,)
+        return (Exception, asyncio.CancelledError, KeyboardInterrupt)
+
+    def _watch_for_a_press(self, hand: HandOff) -> None:
+        """One watch from the end of the question to the end of the fold, counted from once. The
+        opening, the count and the fold each counting from where they began lost a press made in
+        between, and the arm folded under the hand that made it."""
+        stopped = getattr(hand, "stopped", None)
+        if stopped is None or self._press_watch is not None:
+            return
+        self._press_watch = asyncio.ensure_future(stopped())
+        self._fold_watch = functools.partial(asyncio.shield, self._press_watch)
 
     async def _pressed_during_the_fold(self) -> None:
         """Returns when a person's stop, the kill switch or the page's Stop button, sets the
@@ -1326,6 +1352,9 @@ class AgentLoop:
     there is the one who should take it out. They are at the jaws when they answer, so it says
     how long they have, and `FOLDING_IN` says it again as that time begins."""
 
+    NO_ANSWER_TYPED = (
+        "a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up"
+    )
     HELD_BACK = "the arm was not folded and nothing was released: it is holding where it stopped"
     """Said when a press stopped the hand-back: the gripper opening, or the count before the
     fold. The close says what is left to do, from its own read of the arm."""
@@ -1643,9 +1672,6 @@ class AgentLoop:
             with contextlib.suppress(Exception):
                 hand.say(said)
             return
-        # However the question ends somebody may be at the jaws, so from here to the end of the
-        # fold a fresh press holds the arm where it is, whichever way the run ended.
-        self._fold_watch = getattr(hand, "stopped", None)
         await self._unload(hand)
         if not self._no_fold:
             await self._hands_away(hand)
@@ -1653,17 +1679,22 @@ class AgentLoop:
     async def _unload(self, hand: HandOff) -> None:
         """The question, and on Enter the gripper opening. Nothing here raises (`_hand_back`)."""
         try:
+            # deliberate: this Enter opens the jaws on whatever is in them. A `q` and the habit
+            # of an Enter behind it, or `n` and Enter, used to do it
             unloaded = await hand.wait(
-                self.HAND_IT_BACK, timeout_s=self.HAND_BACK_S, until_abort=False
+                self.HAND_IT_BACK, timeout_s=self.HAND_BACK_S, until_abort=False, deliberate=True
             )
         except (asyncio.CancelledError, KeyboardInterrupt):
             # A second Ctrl-C in this window used to raise through the whole teardown, which
             # skipped the rest move, the close, `run_end` and the summary. Here it means the
-            # gripper stays shut, and the rest of the teardown still runs. A third press lands
-            # somewhere without this guard and still quits at once.
+            # gripper stays shut, and the rest of the teardown still runs.
             self._emit("hand_off", stage="skipped", reason="interrupted while waiting")
             self._note("the gripper was left as it is, and the arm still folds up")
             return
+        finally:
+            # However the question ends somebody may be at the jaws, so from here to the end of
+            # the fold a fresh press holds the arm where it is, whichever way the run ended.
+            self._watch_for_a_press(hand)
         self._ask_recorded("hand_off", self.HAND_IT_BACK, unloaded, hand)
         if not unloaded:
             # why the wait ended, where the person can say (`_TerminalHandOff.ended`), for
@@ -1677,6 +1708,9 @@ class AgentLoop:
             elif ended == "no keys":
                 self._emit("hand_off", stage="skipped", reason="no key could be read")
                 self._note("no key could be read, so the gripper stays shut and the arm folds up")
+            elif ended == "declined":
+                self._emit("hand_off", stage="skipped", reason="a line was typed")
+                self._note(self.NO_ANSWER_TYPED)
             else:
                 self._emit("hand_off", stage="skipped", reason="nobody answered")
                 self._note("nobody unloaded the gripper, so it stays shut and the arm folds up")
@@ -1693,16 +1727,16 @@ class AgentLoop:
         # said out loud, not left to be discovered when the arm folds up with the pencil still
         # in it. And the arm stays where it is, since they have just been told to reach in.
         self._no_fold = True
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
             await self.executor.logged_transport().stop()
-        self._emit("hand_off", stage="stuck", reason=why)
         said = (
             f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
             "where it stopped and does not fold"
         )
-        self._note(said)
         with contextlib.suppress(Exception):
             hand.say(said)
+        self._emit("hand_off", stage="stuck", reason=why)
+        self._note(said)
 
     async def _open_the_gripper(self) -> str | None:
         """Drive the gripper all the way open, or say why it did not get there.
@@ -1742,9 +1776,13 @@ class AgentLoop:
         since it first folded anything, and this says it in the same words. On the transport's
         clock, which is the wall on a real arm."""
         said = FOLDING_IN.format(name="the arm", seconds=HANDS_AWAY_S)
-        self._note(said)
+        if getattr(hand, "ended", None) == "no keys":
+            said = said.replace(" or q", "")  # there is no reading it, and Ctrl-C is no key
+        # to them first: a record that cannot be written is no reason not to tell them
         with contextlib.suppress(Exception):
             hand.say(said)
+        with contextlib.suppress(Exception):
+            self._note(said)
         try:
             await fold_unless_stopped(
                 functools.partial(self.cfg.transport.sleep, HANDS_AWAY_S), self._fold_watch
@@ -1755,12 +1793,12 @@ class AgentLoop:
     async def _hold_the_arm(self, hand: HandOff, why: str) -> None:
         """A press during the hand-back: the arm stays where it is, and nothing folds it."""
         self._no_fold = True
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
             await self.executor.logged_transport().stop()
-        self._emit("hand_off", stage="kept", reason=why)
-        self._note(self.HELD_BACK)
         with contextlib.suppress(Exception):
             hand.say(self.HELD_BACK)
+        self._emit("hand_off", stage="kept", reason=why)
+        self._note(self.HELD_BACK)
 
     async def _offer_release(self, parked: RestResult | None) -> None:
         """Ask the person at the terminal about an arm whose last rest move missed.
@@ -3133,6 +3171,17 @@ class AgentLoop:
                         break
                     continue
 
+                if call.name in DECLARE_NAMES and "_unparsed" in call.arguments:
+                    # a declaration whose words could not be read declares nothing: a list for
+                    # arguments used to end the run a success, for no reason at all
+                    last_verb = mine_verb = call.name
+                    last_result = mine_result = VerbResult.fail(
+                        f"invalid params for {call.name}: its arguments were not an object, so "
+                        "nothing was declared"
+                    )
+                    self._note(last_result.summary)
+                    continue
+
                 if call.name in DECLARE_NAMES:
                     outcome = "success" if call.name == "declare_success" else "failure"
                     reason = str(call.arguments.get("reason", ""))
@@ -3270,9 +3319,9 @@ class AgentLoop:
                 # torque off while they hold it, before the close keeps it on
                 await self._offer_release(folded)
             final_state: dict[str, Any] = {}
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
                 final_state = (await cfg.transport.get_state()).model_dump()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
                 await cfg.transport.close()
             if note := getattr(cfg.transport, "close_note", None):
                 self._note(str(note))

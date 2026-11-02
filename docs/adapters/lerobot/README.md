@@ -2010,8 +2010,10 @@ The order below is the whole of the feature, and none of it is a step you can sk
    folding to its rest pose with a pencil still in the jaws drives that pencil into the bench,
    and the person who put it there is the one who should take it out. That wait is bounded at
    **120 seconds**, since a run has to end even when the room is empty.
-7. **Then the fold.** Enter drives the gripper all the way open, every send of it through the
-   logged transport, so it is in the record like every other intent. A gripper that cannot get
+7. **Then the fold.** Only a bare Enter is a yes: a line with anything typed on it is a no, and
+   an Enter close behind a `q`, or too soon to have read the question, is passed by. It drives the
+   gripper all the way open, every send of it through the logged transport, so it is in the record
+   like every other intent. A gripper that cannot get
    there is said out loud, and the arm stays where it is, because you have just been told to
    reach in. Then, however the question ended, quackd says it is about to fold and gives your
    hands 3 seconds. A Ctrl-C or `q` during the opening, those seconds or the fold holds the arm
@@ -2121,8 +2123,8 @@ left out):
 stays shut, the stage is recorded as skipped, and the rest of the teardown runs anyway, which
 is the difference between a run that ends with the arm folded and a record written and one that
 leaves an energised arm and no transcript. The 3 seconds still follow, and a press in them or in
-the fold holds the arm where it is. A third Ctrl-C lands somewhere without that guard and quits at
-once:
+the fold holds the arm where it is, with the close and the record still to come. Keep pressing
+Ctrl-C after that and quackd can still quit without them, with the arm holding:
 
 ```
 ·  hand    skipped: interrupted while waiting

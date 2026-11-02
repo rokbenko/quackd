@@ -49,6 +49,8 @@ def tool_arguments(raw: Any) -> dict[str, Any]:
     odd call, where text that is not JSON at all was already answered and tried again."""
     value = raw
     if isinstance(raw, str):
+        if not raw.strip():
+            return {}
         try:
             value = json.loads(raw)
         except json.JSONDecodeError:

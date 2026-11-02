@@ -457,6 +457,14 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
     assert parse_tool_call_from_text(text, NAMES) is None
 
 
+@pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"'])
+def test_arguments_it_cannot_read_are_kept_for_the_gate(args: str) -> None:
+    """Not `{}`, which is the call with its defaults, and the arm's `gripper` opens by default, on
+    nothing the model said. The gate refuses them and tells the pilot, as for every other vendor."""
+    call = parse_tool_call_from_text(f'{{"name": "walk_to", "arguments": {args}}}', NAMES)
+    assert call is not None and list(call.arguments) == ["_unparsed"], call
+
+
 async def test_text_fallback_synthesizes_a_tool_call() -> None:
     text = 'Let me walk there.\n```json\n{"name": "walk_to", "arguments": {"target": "ball"}}\n```'
     p = LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text)))

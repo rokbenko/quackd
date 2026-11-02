@@ -37,7 +37,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.duck`'s `verbs.allow` |
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the model calls `assess_task` |
-| `params` | the arguments fit the verb's schema. `stop` is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the model, not a crash |
+| `params` | the arguments fit the verb's schema. `stop` as quackd ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the model, not a crash |
 | `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
@@ -189,7 +189,8 @@ energised with no record written". The gripper is left exactly as the run left i
 still folded to its recorded rest pose, the transport is still closed, and the record still
 ends with a `run_end` and a summary. A press in the 3 seconds that follow the question, however it
 ended, or in the fold after them, holds the arm where it is with nothing released, on a run a press
-ended too, because somebody may be at the jaws. The two questions over a missed fold are the other. A press
+ended too, because somebody may be at the jaws.
+The two questions over a missed fold are the other. A press
 at either of them keeps torque on, and so does one during the fold the first of them asked for,
 which stops that fold at most a step cap past where you pressed (5 degrees by default). One
 landing on the release that Enter at the second sends is caught as well. Either way the teardown

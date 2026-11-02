@@ -816,9 +816,9 @@ folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-
 stops it before it moves
 ```
 
-[Section 08](#08-the-first-task) puts a whole run's log around those three lines.
+[Section 08](#08-the-first-task) puts a whole run's log around those lines.
 
-**Read the middle line rather than skimming it.** Those are the angles the arm reported after
+**Read the line that says it is holding your pose rather than skimming it.** Those are the angles the arm reported after
 torque came back on, not the angles you thought you left. quackd compares them against what it
 measured a moment earlier and refuses if any joint has moved more than five degrees, because
 the interesting failure here is silent: a heavy forearm sags a little as it takes its own
@@ -1260,8 +1260,8 @@ version was not one: a second Ctrl-C there raised straight through the whole tea
 skipped the rest move, the close, the run's own end record and the summary, and left an
 energised arm holding a pencil with nothing written down about the run that put it there. The
 arm still gives you 3 seconds before it folds, and a Ctrl-C or `q` in them or in the fold holds
-it where it is, with nothing released. A third Ctrl-C lands somewhere without that guard and
-still quits at once.
+it where it is, with nothing released, and the close, the end record and the summary still come.
+Keep pressing Ctrl-C after that and quackd can still quit without them, with the arm holding.
 
 Section 07's [two questions](#what-a-run-then-does-with-it), after a fold back to the rest pose
 that missed, open one more window, an exception of the same kind. **During the second fold**,
@@ -3353,14 +3353,12 @@ terminal running `quackd run`, and an MCP session has no terminal of its own:
 
 - **Ask for `robot_run_verb(verb="stop")`.** It re-sends the present position as the goal of
   every body joint inside its travel, so the arm holds where it is rather than sagging. It
-  answers `stopped (velocity zeroed)` on the mock. **It is not a mid-move brake.** Part 1's
-  Ctrl-C is: the kill switch sets the executor's abort, which cancels the verb that is running.
-  The `stop` verb sets nothing, cancels nothing, and a `move_joints` already in flight sends its
-  next goal ten times a second, so it overwrites the hold within a tenth of a second and
-  finishes the motion, however long it was asked to take. In practice the model cannot call it
-  mid-move anyway, because it is still waiting for that `move_joints` tool call to return.
-  `stop` is what you reach for between verbs, and cutting power is what you reach for during
-  one.
+  answers `stopped (velocity zeroed)` on the mock. A `move_joints`, a `gripper` or a `place`
+  already in flight ends at its next tick rather than sending another goal over the hold, and
+  comes back saying `a stop was sent while it ran`. In practice a model can rarely call it
+  mid-move, because it is still waiting for that `move_joints` tool call to return, and only a
+  client that runs two calls at once can send it. `stop` is what you reach for between verbs, and
+  cutting power is what you reach for during one.
 - **End the session.** A client disconnect, stdin closing, or quitting the client unwinds the
   server, which stops, parks and disconnects every robot it holds. The disconnect releases torque,
   which is LeRobot's default and what quackd asks for over an arm at its rest pose, so the

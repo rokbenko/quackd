@@ -261,7 +261,7 @@ async def ask(
     Only a bare Enter, read after the question was put, is a yes (`deliberate`): every question
     here moves the arm or drops it, so a line with anything typed on it is a no, `n` the
     commonest, and an Enter pressed before anybody could have read the question is passed by.
-    A press of the kill switch is never a yes either, though `q` arrives with an Enter. The wait
+    A press of the kill switch is never a yes either, nor an Enter close behind a `q`. The wait
     watches a fresh key press rather than the abort flag (`until_abort=False`): the flag is set
     on every run a person ended, which are the runs most likely to have missed their fold, and
     watching it would skip the question on exactly those. A Ctrl-C that reaches here as an

@@ -1662,8 +1662,8 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
     the real wait would sit there until the suite's own watchdog killed it.
 
     What is asserted is what the person at the bench is told, in order: the arm is theirs, then
-    that they can let go of the pose they set, then that the gripper opens before the arm folds
-    up. Those three lines are the entire user interface of a hand-off."""
+    that they can let go of the pose they set, then that the gripper opens all the way and when
+    the arm folds up. Those lines are the entire user interface of a hand-off."""
     from quackd.safety import KillSwitch
 
     async def pressed(self: KillSwitch, *, timeout_s: float | None = None, **_: Any) -> bool:

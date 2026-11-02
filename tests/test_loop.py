@@ -3190,6 +3190,7 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
     assert person.asked[1] == (AgentLoop.HAND_IT_BACK, AgentLoop.HAND_BACK_S, False), (
         "the end ask is bounded and does not listen for the kill switch: the run is over"
     )
+    assert person.deliberate[1] is True, "its Enter opens the jaws on what is in them"
 
     opened = [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
     assert [e["params"] for e in opened] == [{"open": True}], "opened once, at the hand-back"
@@ -3407,6 +3408,7 @@ async def test_a_cancellation_in_the_hand_back_still_finishes_the_teardown(
             "nobody answered",
             "nobody unloaded the gripper, so it stays shut and the arm folds up",
         ),
+        ("declined", "a line was typed", AgentLoop.NO_ANSWER_TYPED),
     ],
 )
 async def test_the_hand_back_records_why_its_wait_ended(
@@ -3519,21 +3521,69 @@ async def test_a_gripper_that_will_not_open_leaves_the_arm_where_it_is(tmp_path:
     assert not any(FOLDING_IN[:20] in s for s in person.said), "no count: nothing is coming"
 
 
-class PressesAt(ScriptedPerson):
-    """A person who presses the kill switch at one of the hand-back's three stretches, through
-    `stopped()`, as the CLI's terminal hears it: the gripper opening is the first watch, the
-    count the second, the fold the third. A question that ended without Enter has no opening,
-    so its count is the first."""
+class Presser(ScriptedPerson):
+    """Somebody with a kill switch, heard through `stopped()` as the CLI's terminal hears it: the
+    presses are counted when it is called, so one made before that is not one made since."""
 
-    def __init__(self, *args: Any, press_on: int, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.press_on = press_on
-        self.watches = 0
+        self.presses = 0
+        self.pressed = asyncio.Event()
 
-    async def stopped(self) -> None:
-        self.watches += 1
-        if self.watches != self.press_on:
-            await asyncio.Event().wait()
+    def press(self) -> None:
+        self.presses += 1
+        self.pressed.set()
+
+    def stopped(self) -> Any:
+        presses = self.presses
+
+        async def fresh_press() -> None:
+            while self.presses == presses:
+                self.pressed.clear()
+                await self.pressed.wait()
+
+        return fresh_press()
+
+
+class PressesAtTheCount(Presser):
+    """Presses as the count is said, in the breath between the opening and the count's own wait,
+    which is where a watch of its own for each stretch lost it."""
+
+    def say(self, text: str) -> None:
+        super().say(text)
+        if text == COUNT:
+            self.press()
+
+
+@pytest.mark.parametrize("where", ["stop", "state", "close"])
+async def test_a_second_press_cannot_take_the_record_with_it(tmp_path: Path, where: str) -> None:
+    """A hand near the jaws presses twice. The first holds the arm, and the second reaches the
+    teardown as a cancellation wherever it is by then, which used to go straight past the close,
+    `run_end` and the summary, and leave an energised arm with no record of what became of it."""
+    mock = LeRobotMock(rest_pose=REST)
+    _takes_a_moment(mock)
+    person = PressesAtTheCount(mock, places=PLACED)
+    interrupted: list[str] = []
+
+    def second_press_on(method: str, name: str) -> None:
+        real = getattr(mock, method)
+
+        async def cancelled(*args: Any, **kwargs: Any) -> Any:
+            if person.presses and name not in interrupted:
+                interrupted.append(name)
+                raise asyncio.CancelledError
+            return await real(*args, **kwargs)
+
+        setattr(mock, method, cancelled)
+
+    second_press_on({"stop": "stop", "state": "get_state", "close": "close"}[where], where)
+    result = await run_duck(_by_hand(mock, person, tmp_path))
+    assert interrupted == [where], "the second press landed where it was meant to"
+    assert result.outcome == "success", result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert [e for e in events if e["kind"] == "run_end"], "the record has its end"
+    assert (result.run_dir / "summary.json").exists()
+    assert AgentLoop.HELD_BACK in person.said
 
 
 class ClockedPerson(ScriptedPerson):
@@ -3552,12 +3602,13 @@ COUNT = FOLDING_IN.format(name="the arm", seconds=HANDS_AWAY_S)
 
 
 def _takes_a_moment(mock: LeRobotMock) -> None:
-    """Time on the mock passes at once, and a press has to find something still running."""
+    """Time on the mock passes at once, and a press has to find something still running. Longer
+    than a tick of Windows' clock, or the loop calls the timer due as it sets it."""
     sleep = mock.sleep
 
     async def taking_a_moment(seconds: float) -> None:
         await sleep(seconds)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
 
     mock.sleep = taking_a_moment  # type: ignore[method-assign]
 
@@ -3602,18 +3653,39 @@ async def test_the_hands_get_their_seconds_before_the_fold_however_the_question_
     assert COUNT in [e["text"] for e in events if e["kind"] == "note"], "and the record says so"
 
 
+def _presses_while_opening(mock: LeRobotMock, person: Presser) -> None:
+    """A press the moment the first `gripper` goal has gone out."""
+    send = mock.send_intent
+
+    async def sending(intent: Any) -> Any:
+        ack = await send(intent)
+        if intent.kind == "gripper":
+            person.press()
+        return ack
+
+    mock.send_intent = sending  # type: ignore[method-assign]
+
+
 @pytest.mark.parametrize(
-    ("press_on", "said"),
-    [(1, "a press stopped the gripper opening"), (2, "a press stopped the fold before it began")],
+    ("where", "said"),
+    [
+        ("opening", "a press stopped the gripper opening"),
+        ("count", "a press stopped the fold before it began"),
+    ],
 )
 async def test_a_press_during_the_hand_back_holds_the_arm_where_it_is(
-    tmp_path: Path, press_on: int, said: str
+    tmp_path: Path, where: str, said: str
 ) -> None:
     """`FOLDING_IN` says Ctrl-C or `q` stops it before it moves, and on a run a press ended the
     abort flag was already set, so nothing was listening. It is a fresh press that counts."""
     mock = LeRobotMock(rest_pose=REST)
     _takes_a_moment(mock)
-    person = PressesAt(mock, places=PLACED, press_on=press_on)
+    person: Presser
+    if where == "opening":
+        person = Presser(mock, places=PLACED)
+        _presses_while_opening(mock, person)
+    else:
+        person = PressesAtTheCount(mock, places=PLACED)
     result = await run_duck(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
@@ -3627,12 +3699,33 @@ async def test_a_press_during_the_hand_back_holds_the_arm_where_it_is(
     assert mock.close_note is not None and "torque was left on" in mock.close_note
 
 
+async def test_declaring_with_arguments_that_are_no_object_declares_nothing(
+    tmp_path: Path,
+) -> None:
+    """A list for arguments used to end the run a success, for no reason at all. The pilot is told,
+    and what it says next is what counts."""
+    mock = LeRobotMock(rest_pose=REST)
+    calls = [
+        ToolCall(name="declare_success", arguments={"_unparsed": "[1, 2]"}),
+        ToolCall(name="declare_failure", arguments={"reason": "it could not"}),
+    ]
+    result = await run_duck(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider(script=calls),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "failure" and result.reason == "it could not", result.reason
+
+
 async def test_a_press_after_a_question_nobody_answered_still_holds_the_arm(
     tmp_path: Path,
 ) -> None:
     mock = LeRobotMock(rest_pose=REST)
     _takes_a_moment(mock)
-    person = PressesAt(mock, places=PLACED, answers=[True, False], press_on=1)
+    person = PressesAtTheCount(mock, places=PLACED, answers=[True, False])
     result = await run_duck(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
@@ -3655,11 +3748,12 @@ async def test_a_press_stops_the_fold_after_the_hand_back_on_a_run_a_press_ended
         folds += 1
         if folds == 1:
             return await real()
+        person.press()
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
 
     mock.go_to_rest = second_is_endless  # type: ignore[method-assign]
-    person = PressesAt(mock, places=PLACED, press_on=3)
+    person = Presser(mock, places=PLACED)
     loop = AgentLoop(_by_hand(mock, person, tmp_path))
     person.on_wait = lambda _p: loop.executor.abort.set()
     result = await asyncio.wait_for(loop.run(), timeout=10)

@@ -69,8 +69,12 @@ GRIPPER_S = 6.0
 """The least time to give the gripper. The step cap applies to its 0..100 range too, so a full
 open takes 100 divided by the step, times the tick, and a lowered cap needs longer than this
 (`gripper_budget_s`)."""
-GRIPPER_TIMEOUT_S = 20.0
-"""The executor's timeout for `gripper`, which `gripper_budget_s` ends inside."""
+GRIPPER_TICK_SLACK = 3.0
+"""How many of `TICK_S` to allow for each send of a full open or close. A tick is a sleep and then
+the bus's time, a send and the reads behind it, which nothing here can know before it has run."""
+GRIPPER_TIMEOUT_S = 60.0
+"""The executor's timeout for `gripper`, which `gripper_budget_s` ends inside. Long, because a
+gripper that has stopped moving is called stalled within a few ticks whatever this says."""
 
 MOVE_MIN_S = 0.2
 MOVE_MAX_S = 12.0
@@ -498,13 +502,15 @@ def move_budget_s(distance: float, duration_s: float, step_deg: float | None) ->
 
 
 def gripper_budget_s(step_deg: float | None) -> float:
-    """How long a full open or close is watched: `GRIPPER_S`, or the whole range at the step cap
-    and a settle where a lowered cap (`QUACKD_LEROBOT_MAX_STEP_DEG`) makes that longer. It was
-    `GRIPPER_S` alone, so at a cap of 1 a gripper in good order stopped part of the way and said
-    it had run out of time. Ends inside the executor's timeout, as a move's does."""
+    """How long a full open or close is watched: `GRIPPER_S`, or the whole range at the step cap,
+    with the bus's time (`GRIPPER_TICK_SLACK`) and a settle, where a lowered cap
+    (`QUACKD_LEROBOT_MAX_STEP_DEG`) makes that longer. It was `GRIPPER_S` alone, so at a cap of 1 a
+    gripper in good order stopped part of the way and said it had run out of time. Ends inside the
+    executor's timeout, as a move's does."""
     if not step_deg or step_deg <= 0:
         return GRIPPER_S
-    whole = (GRIPPER_OPEN - GRIPPER_CLOSED) / (step_deg / TICK_S) + MOVE_SETTLE_S
+    sends = (GRIPPER_OPEN - GRIPPER_CLOSED) / step_deg
+    whole = sends * TICK_S * GRIPPER_TICK_SLACK + MOVE_SETTLE_S
     return min(max(GRIPPER_S, whole), GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S)
 
 
