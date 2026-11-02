@@ -1611,7 +1611,7 @@ def _ask(question: str) -> bool:
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
     answer = switch.ask(f"{question} [y/N]: ")
-    ui.note(f"{question} [y/N]: {answer.strip() or '(Enter)'}")
+    ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 
 
@@ -6587,10 +6587,13 @@ def _can_prompt() -> bool:
     Only a console has a console mode, so on Windows that is asked as well.
 
     Behind the page it is never one, whatever stdin is: the page's lines arrive there, and the
-    page puts a run's questions itself (`_someone_to_ask`)."""
+    page puts a run's questions itself (`_someone_to_ask`). Nor from a terminal's background, where
+    reading it stops the whole process."""
     if _FRONT is not None:
         return False
-    return _is_a_console(sys.stdin)
+    from quackd.keys import in_the_background
+
+    return _is_a_console(sys.stdin) and not in_the_background(sys.stdin)
 
 
 def _can_draw_a_prompt() -> bool:

@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from quackd.safety import KillSwitch
+from quackd.safety import ENTER_ALONE_S, TYPED_AHEAD_S, KillSwitch
 
 
 def switch() -> tuple[KillSwitch, list[str]]:
@@ -307,28 +307,58 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     assert quiet.declined is False, "a question nobody answered was filed as a no"
 
 
+@pytest.mark.parametrize("delay", [0.3, 0.5, 1.0])
 async def test_a_key_held_down_answers_no_deliberate_question(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, delay: float
 ) -> None:
-    """Enter auto-repeats. Held from before the question, one of the stream landed just after its
-    half second and answered it: an arm dropped, twice over, on nobody having read a word. An
-    answer comes out of a quiet, and the person who let go of the key can still give it."""
+    """Enter auto-repeats, a repeat delay after the press and then a few dozen times a second. Held
+    from just before the question's half second was up, the first repeat came out of a long quiet
+    whatever a person's keyboard is set to, and answered the question that drops an arm. What gives
+    it away is the next one. And the person who has let go of the key can still answer."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
     ks, _ = switch()
     loop = asyncio.get_running_loop()
 
-    async def held(seconds: float) -> None:
-        end = loop.time() + seconds
+    async def held() -> None:
+        await asyncio.sleep(0.05)
+        ks._heard_enter("")  # the press, before anybody could have read the question
+        await asyncio.sleep(delay)
+        end = loop.time() + 0.5
         while loop.time() < end:
             ks._heard_enter("")
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.03)
 
-    holding = asyncio.create_task(held(0.4))
-    assert await ks.wait_for_enter(timeout_s=0.35, until_abort=False, deliberate=True) is False
+    holding = asyncio.create_task(held())
+    assert (
+        await ks.wait_for_enter(timeout_s=delay + 0.5, until_abort=False, deliberate=True) is False
+    )
     await holding
-    letting_go = loop.call_later(0.2, ks._heard_enter, "")
+    await asyncio.sleep(ENTER_ALONE_S * 1.5)
+    loop.call_later(0.2, ks._heard_enter, "")
     assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
-    letting_go.cancel()
+
+
+async def test_enter_pressed_again_and_again_at_a_human_pace_still_gets_through() -> None:
+    """A question that took only an Enter out of a long quiet would lock out the person pressing
+    it because nothing seemed to happen."""
+    ks, _ = switch()
+    loop = asyncio.get_running_loop()
+    pace = ENTER_ALONE_S * 1.4
+    ks._heard_enter("")  # they began before the question was up
+    for n in range(1, 8):
+        loop.call_later(TYPED_AHEAD_S + n * pace, ks._heard_enter, "")
+    assert await ks.wait_for_enter(timeout_s=8.0, until_abort=False, deliberate=True) is True
+
+
+async def test_an_enter_twice_in_a_breath_is_no_answer() -> None:
+    ks, _ = switch()
+    loop = asyncio.get_running_loop()
+    loop.call_later(TYPED_AHEAD_S + 0.1, ks._heard_enter, "")
+    loop.call_later(TYPED_AHEAD_S + 0.15, ks._heard_enter, "")
+    got = await ks.wait_for_enter(
+        timeout_s=TYPED_AHEAD_S + 0.15 + ENTER_ALONE_S * 2, until_abort=False, deliberate=True
+    )
+    assert got is False, "two presses in a breath are a slip, and pressing it once more answers"
 
 
 async def test_the_key_thread_records_each_line_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -337,5 +367,5 @@ async def test_the_key_thread_records_each_line_once(monkeypatch: pytest.MonkeyP
     second, an empty line, would otherwise be read as the bare Enter after an `n`."""
     ks, _ = switch()
     await feed(ks, "n\r\nyes\n\n", monkeypatch)
-    assert [text for _at, _quiet, text in ks._enters] == ["n", "yes", ""]
+    assert [enter.text for enter in ks._enters] == ["n", "yes", ""]
     assert ks.presses == 0

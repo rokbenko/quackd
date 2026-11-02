@@ -22,7 +22,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn
 
 from pydantic import ValidationError
 
@@ -1418,9 +1418,14 @@ terminal the moment it starts, and an Enter pressed twice, or pressed while the 
 still starting, used to answer the question that followed it before anybody could have read it:
 one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
 arm and decides in half a second, and an Enter that comes too soon is passed by rather than
-taken, so a person who did mean it presses it again. It is also how long a console must have
-been quiet before an Enter counts: a key held down, or pressed twice, is a run of Enters, one of
-which is always going to land just after any moment you care to name."""
+taken, so a person who did mean it presses it again."""
+ENTER_ALONE_S = 0.25
+"""How long an Enter has to stand alone, with nothing read this long before it or after it, to
+answer a question that moves or drops an arm. A key held down is a stream of Enters, and its
+first repeat can come a second after the press, past any wait a person could be asked to sit
+through, so a wait before it proves nothing. What gives a held key away is the next Enter, a few
+dozen milliseconds behind. An answer takes this long to be sure of, which nobody notices, and
+somebody pressing it again and again at any human pace still gets through."""
 ENTER_BEHIND_Q_S = 2.0
 """How long after a `q` at a console an Enter is taken for the old habit of finishing the line,
 and answers nothing (`KillSwitch._watch_keys`). The press ends the run and the question that
@@ -1429,6 +1434,18 @@ press of it, and one taken costs what was in the jaws."""
 ASK_POLL_S = 0.05
 """How often a question put on the loop's thread looks for what else may have ended it
 (`KillSwitch.ask`). An untimed wait there cannot be interrupted on Windows, Ctrl-C included."""
+
+
+class _Enter(NamedTuple):
+    """One Enter the key thread read."""
+
+    at: float
+    quiet: float
+    """How long since the Enter before it, whatever became of that one."""
+    text: str
+    """What was typed on its line."""
+    answers: bool
+    """False for one that goes to no wait: behind a `q`, or ending the line of a `[y/N]`."""
 
 
 class KillSwitch:
@@ -1469,30 +1486,40 @@ class KillSwitch:
         self.declined = False
         """The last deliberate wait ended on a line with something typed on it, which is a no:
         `n`, `no`, anything but a bare Enter (`wait_for_enter(deliberate=True)`)."""
-        self._enters: deque[tuple[float, float, str]] = deque(maxlen=32)
-        """Each Enter the key thread read, as when it was read, how long since the Enter before
-        it, and what was typed on its line, newest last. Written by the key thread and read by a
+        self._enters: deque[_Enter] = deque(maxlen=32)
+        """Each Enter the key thread read, newest last. Written by the key thread and read by a
         deliberate wait, under the lock."""
         self._enters_lock = threading.Lock()
         self._last_enter = -math.inf
+        self._line: list[str] = []
+        """What has been typed since the last Enter, under the lock."""
+        self._last_key = -math.inf
+        self.unanswered: str | None = None
+        """Why the last `ask` came back with no line anybody typed, or None where one did."""
 
-    def _heard_enter(self, text: str) -> None:
+    def _heard_enter(self, text: str, *, answers: bool = True) -> None:
         """An Enter the key thread read, recorded with what was typed on its line and when, and
-        only then announced, so a wait woken by it finds the line it answers already there."""
+        only then announced, so a wait woken by it finds the line it answers already there. One
+        that answers nothing is recorded too, since it is still the Enter before the next."""
         now = time.monotonic()
         with self._enters_lock:
-            self._enters.append((now, now - self._last_enter, text.strip()))
+            self._enters.append(_Enter(now, now - self._last_enter, text.strip(), answers))
             self._last_enter = now
-        self._announce(self.entered)
+        if answers:
+            self._announce(self.entered)
 
     def _line_since(self, since: float) -> str | None:
-        """What was typed on the first line whose Enter was read at `since` or later and out of
-        a quiet (`TYPED_AHEAD_S`), or None where no such Enter has been read. Enter held down from
-        before a question answered it the moment the question's half second was up."""
+        """What was typed on the first line whose Enter was read at `since` or later and stands
+        alone (`ENTER_ALONE_S`), or None where no such Enter has been read yet. Enter held down
+        from before a question answered it the moment the question's half second was up."""
+        now = time.monotonic()
         with self._enters_lock:
-            for at, quiet, text in self._enters:
-                if at >= since and quiet >= TYPED_AHEAD_S:
-                    return text
+            enters = list(self._enters)
+        for n, enter in enumerate(enters):
+            after = enters[n + 1].at if n + 1 < len(enters) else now
+            alone = enter.quiet >= ENTER_ALONE_S and after - enter.at >= ENTER_ALONE_S
+            if enter.answers and enter.at >= since and alone:
+                return enter.text
         return None
 
     def _fire(self, why: str) -> None:
@@ -1533,7 +1560,7 @@ class KillSwitch:
         keys = self._keys
         read = keys.read if keys is not None else functools.partial(sys.stdin.read, 1)
         typed: list[str] = []
-        line: list[str] = []
+        line = self._line
         previous = ""
         q_at = -math.inf
         try:
@@ -1545,10 +1572,11 @@ class KillSwitch:
                     return
                 if keys is not None:
                     if ch in ("\b", "\x7f"):
-                        edited = typed if self._line_wanted.is_set() else line
-                        if edited:
-                            edited.pop()
-                            keys.erase()
+                        with self._enters_lock:
+                            edited = typed if self._line_wanted.is_set() else line
+                            if edited:
+                                edited.pop()
+                                keys.erase()
                         continue
                     if ch == "\x03":  # Ctrl-C, should it land while the console is being read
                         self._fire("Ctrl-C")
@@ -1560,6 +1588,7 @@ class KillSwitch:
                     # the reply, and the prompt would then wait for a newline this thread had
                     # already swallowed. So it collects the line and hands it over instead.
                     if ch in ("\r", "\n"):
+                        self._heard_enter("", answers=False)
                         self._lines.put("".join(typed))
                         typed.clear()
                     else:
@@ -1568,15 +1597,19 @@ class KillSwitch:
                 typed.clear()
                 if ch in ("\r", "\n"):
                     behind_a_q = keys is not None and time.monotonic() - q_at < ENTER_BEHIND_Q_S
-                    if not (ch == "\n" and previous == "\r") and not behind_a_q:
-                        self._heard_enter("".join(line))
-                    line.clear()
+                    with self._enters_lock:
+                        text = "".join(line)
+                        line.clear()
+                    if not (ch == "\n" and previous == "\r"):
+                        self._heard_enter(text, answers=not behind_a_q)
                     previous = ch
                     continue
                 previous = ch
                 pressed_q = ch.strip().lower() == "q"
-                if keys is None or not pressed_q:
-                    line.append(ch)
+                with self._enters_lock:
+                    self._last_key = time.monotonic()
+                    if keys is None or not pressed_q:
+                        line.append(ch)
                 if pressed_q:
                     q_at = time.monotonic()
                     if keys is not None:
@@ -1600,7 +1633,12 @@ class KillSwitch:
         A press answers no, and so does the key thread ending under the question. An untimed wait
         here sat on the loop's thread with nothing to wake it once the thread had gone, and on
         Windows it could not even be interrupted, so a question nobody could answer ended only
-        when somebody killed the process."""
+        when somebody killed the process. A process in the terminal's background answers no as
+        well, since reading the terminal from there stops the whole process."""
+        self.unanswered = None
+        if in_the_background(sys.stdin):
+            self.unanswered = "(this process is in the terminal's background: no)"
+            return ""
         thread = self._thread
         if thread is None or not thread.is_alive():
             return input(prompt)
@@ -1616,7 +1654,11 @@ class KillSwitch:
                     try:
                         return self._lines.get(timeout=ASK_POLL_S)
                     except queue.Empty:
-                        if self.presses != presses or not thread.is_alive():
+                        if self.presses != presses:
+                            self.unanswered = "(the kill switch ended the question: no)"
+                            return ""
+                        if not thread.is_alive():
+                            self.unanswered = "(no key could be read: no)"
                             return ""
             finally:
                 self._line_wanted.clear()
@@ -1655,13 +1697,19 @@ class KillSwitch:
 
         `deliberate` is for a question whose Enter moves an arm or drops it (`quackd.release`).
         Only a bare Enter answers it. A line with anything typed on it, `n` the commonest, is a
-        no, and the wait ends saying so (`declined`); and an Enter read within `TYPED_AHEAD_S`
-        of the question being put was typed before anybody could have read it, or of the Enter
-        before it is a key held down or pressed twice, so the wait goes on past it."""
+        no, and the wait ends saying so (`declined`), though not a key from before the question,
+        which may be a stray press from minutes ago; an Enter read within `TYPED_AHEAD_S` of the
+        question being put was typed before anybody could have read it, so the wait goes on past
+        it; and so it does past one that does not stand alone (`ENTER_ALONE_S`), a key held down
+        or pressed twice."""
         loop = asyncio.get_running_loop()
         asked_at = time.monotonic()
         presses = self.presses
         self.declined = False
+        if deliberate:
+            with self._enters_lock:
+                if asked_at - self._last_key >= TYPED_AHEAD_S:
+                    self._line.clear()
         self.entered.clear()
         self.pressed.clear()
         deadline = None if timeout_s is None else loop.time() + timeout_s
@@ -1676,27 +1724,35 @@ class KillSwitch:
             left = None if deadline is None else deadline - loop.time()
             if left is not None and left <= 0:
                 return False
-            watched = [
-                asyncio.ensure_future(self.entered.wait()),
+            # a deliberate wait comes back to see whether an Enter has stood alone for long enough
+            wake = left
+            if deliberate:
+                wake = ENTER_ALONE_S if left is None else min(left, ENTER_ALONE_S)
+            others = [
                 asyncio.ensure_future((self.abort if until_abort else self.pressed).wait()),
                 # nobody is going to press anything, so the caller is owed that answer rather
                 # than a wait that never returns
                 asyncio.ensure_future(self.keys_ended.wait()),
             ]
+            watched = [asyncio.ensure_future(self.entered.wait()), *others]
             try:
-                await asyncio.wait(watched, timeout=left, return_when=asyncio.FIRST_COMPLETED)
+                await asyncio.wait(watched, timeout=wake, return_when=asyncio.FIRST_COMPLETED)
+                ended = any(task.done() for task in others)
             finally:
                 for task in watched:
                     task.cancel()
                     # awaited, so a cancelled task is never left for the loop to complain about
                     with contextlib.suppress(asyncio.CancelledError, Exception):
                         await task
-            if self.presses > presses or not self.entered.is_set():
+            if self.presses > presses:
                 return False
             if not deliberate:
-                return True
-            # An Enter was read. Whether it answers is the check at the top: one read too soon
-            # after the question was put is passed by, and the wait goes on for the next.
+                return self.entered.is_set()
+            if ended and not self.entered.is_set():
+                return False
+            # An Enter was read, or the time came to look again. Whether one answers is the check
+            # at the top: one read too soon after the question was put, or that does not stand
+            # alone, is passed by, and the wait goes on for the next.
             self.entered.clear()
 
     def install(self, *, keys: bool = True) -> None:

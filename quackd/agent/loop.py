@@ -1292,7 +1292,7 @@ class AgentLoop:
                 if self._fold_watch is None:
                     raise
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await self.executor.logged_transport().stop()
+                await self._unbroken(self.executor.logged_transport().stop())
             self._note(FOLD_STOPPED)
             return None
         finally:
@@ -1309,6 +1309,19 @@ class AgentLoop:
         if self._fold_watch is None:
             return (Exception,)
         return (Exception, asyncio.CancelledError, KeyboardInterrupt)
+
+    async def _unbroken(self, step: Awaitable[T]) -> T:
+        """`step` to its end whatever is pressed meanwhile, once somebody has been asked about the
+        gripper, and every step this is for has a deadline of its own. A press cut a close short
+        where it landed, on a camera's or a read, and swallowing that left the arm energised and
+        connected, with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up."""
+        if self._fold_watch is None:
+            return await step
+        running = asyncio.ensure_future(step)
+        while not running.done():
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                await asyncio.wait({running})
+        return running.result()
 
     def _watch_for_a_press(self, hand: HandOff) -> None:
         """One watch from the end of the question to the end of the fold, counted from once. The
@@ -1672,7 +1685,10 @@ class AgentLoop:
             with contextlib.suppress(Exception):
                 hand.say(said)
             return
-        await self._unload(hand)
+        # A record that cannot be written is no reason to fold under a hand with no word said:
+        # a disk that filled here went straight to the fold, gripper shut and nobody told.
+        with contextlib.suppress(Exception):
+            await self._unload(hand)
         if not self._no_fold:
             await self._hands_away(hand)
 
@@ -1695,7 +1711,8 @@ class AgentLoop:
             # However the question ends somebody may be at the jaws, so from here to the end of
             # the fold a fresh press holds the arm where it is, whichever way the run ended.
             self._watch_for_a_press(hand)
-        self._ask_recorded("hand_off", self.HAND_IT_BACK, unloaded, hand)
+        with contextlib.suppress(Exception):
+            self._ask_recorded("hand_off", self.HAND_IT_BACK, unloaded, hand)
         if not unloaded:
             # why the wait ended, where the person can say (`_TerminalHandOff.ended`), for
             # `_offer_release`'s reason: this wait watches a fresh key press and not the abort
@@ -1728,7 +1745,7 @@ class AgentLoop:
         # in it. And the arm stays where it is, since they have just been told to reach in.
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self.executor.logged_transport().stop()
+            await self._unbroken(self.executor.logged_transport().stop())
         said = (
             f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
             "where it stopped and does not fold"
@@ -1794,7 +1811,7 @@ class AgentLoop:
         """A press during the hand-back: the arm stays where it is, and nothing folds it."""
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self.executor.logged_transport().stop()
+            await self._unbroken(self.executor.logged_transport().stop())
         with contextlib.suppress(Exception):
             hand.say(self.HELD_BACK)
         self._emit("hand_off", stage="kept", reason=why)
@@ -3320,9 +3337,9 @@ class AgentLoop:
                 await self._offer_release(folded)
             final_state: dict[str, Any] = {}
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                final_state = (await cfg.transport.get_state()).model_dump()
+                final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await cfg.transport.close()
+                await self._unbroken(cfg.transport.close())
             if note := getattr(cfg.transport, "close_note", None):
                 self._note(str(note))
             # The whole run, on the transcript's own clock, which started the instant the

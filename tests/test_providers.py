@@ -945,12 +945,24 @@ def test_arguments_that_are_not_an_object_reach_the_gate_on_responses(raw: str) 
     assert turn.tool_calls[0].arguments == {"_unparsed": raw}
 
 
-@pytest.mark.parametrize("raw", ["null", "{}", "", "  "])
-async def test_a_null_for_arguments_is_a_call_with_none(raw: str) -> None:
-    """What some servers send for a tool that takes nothing. It has only one reading."""
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", raw)))
+async def test_a_call_with_no_arguments_is_a_call_with_none() -> None:
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", None)))  # type: ignore[arg-type]
     assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
-    assert parse_responses(responses_result("stop", raw)).tool_calls[0].arguments == {}
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", "{}")))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
+
+
+@pytest.mark.parametrize("raw", ["", "  ", "null"])
+async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaults(
+    raw: str,
+) -> None:
+    """A turn cut off before its arguments comes as a blank, and running the verb with its defaults
+    opened the arm's gripper on nothing the model said. The gate refuses it, as it always did."""
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("gripper", raw)))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
+    assert parse_responses(responses_result("gripper", raw)).tool_calls[0].arguments == {
+        "_unparsed": raw
+    }
 
 
 @pytest.mark.parametrize("given", [[1, 2], "text", 42])

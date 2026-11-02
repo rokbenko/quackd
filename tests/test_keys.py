@@ -31,7 +31,7 @@ from quackd.keys import (
     console_keys,
     is_a_console,
 )
-from quackd.safety import ASK_POLL_S, TYPED_AHEAD_S, KillSwitch
+from quackd.safety import ASK_POLL_S, ENTER_ALONE_S, TYPED_AHEAD_S, KillSwitch
 
 
 class FakeConsole:
@@ -183,6 +183,11 @@ class Pressed:
         self.closed = True
 
 
+def heard(ks: KillSwitch) -> list[str]:
+    """What was typed on each line whose Enter goes to a wait."""
+    return [enter.text for enter in ks._enters if enter.answers]
+
+
 async def press(*keys: str | float) -> tuple[KillSwitch, list[str], Pressed]:
     """The whole of the key thread's loop over `keys`, in a thread as it really runs."""
     said: list[str] = []
@@ -231,7 +236,7 @@ async def test_the_old_habit_of_enter_after_q_answers_nothing() -> None:
     its question in a moment, and the hand still finishing that habit must not answer it."""
     ks, _, _ = await press("q", "\r")
     assert not ks.entered.is_set()
-    assert ks._line_since(0.0) is None
+    assert heard(ks) == []
 
 
 async def test_a_slow_habit_answers_nothing_either() -> None:
@@ -239,7 +244,7 @@ async def test_a_slow_habit_answers_nothing_either() -> None:
     gives anybody, and still behind the `q`, opened the jaws on what was in them."""
     ks, _, _ = await press("q", TYPED_AHEAD_S + 0.05, "\r")
     assert not ks.entered.is_set()
-    assert ks._line_since(0.0) is None
+    assert heard(ks) == []
 
 
 async def test_a_later_enter_is_a_bare_one(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,12 +253,77 @@ async def test_a_later_enter_is_a_bare_one(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.05)
     ks, _, _ = await press("q", 0.1, "\r")
     assert ks.entered.is_set()
-    assert ks._line_since(0.0) == ""
+    assert heard(ks) == [""]
+
+
+async def test_an_enter_held_down_behind_a_q_answers_nothing_when_the_habit_is_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Enters passed by behind a `q` were not counted as Enters at all, so the first past the
+    window looked as though it had come out of a long quiet, and it opened the jaws."""
+    monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.1)
+    repeats = [key for _ in range(20) for key in ("\r", 0.02)]
+    ks, _, _ = await press("q", *repeats)
+    assert len(heard(ks)) > 5, "the window has passed, and they go to a wait"
+    await asyncio.sleep(ENTER_ALONE_S * 1.5)
+    assert ks._line_since(0.0) is None, "and none of them stands alone"
+
+
+async def test_an_enter_passed_by_behind_a_q_is_still_the_enter_before_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second of two quick Enters, the first inside the window and the second just past it, is
+    no answer. If the first were never counted the second would seem to come out of a long quiet."""
+    monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.05)
+    gap = ENTER_ALONE_S / 2
+    ks, _, _ = await press("q", "\r", gap, "\r")
+    assert len(heard(ks)) == 1, "the first passed by, the second to a wait"
+    await asyncio.sleep(ENTER_ALONE_S * 1.5)
+    assert ks._line_since(0.0) is None
+
+
+async def _asked_and_pressed(*keys: str | float) -> tuple[bool, KillSwitch]:
+    """A deliberate question put as `keys` begin, with a half second's grace of none."""
+    ks = KillSwitch(asyncio.Event())
+    ks._loop = asyncio.get_running_loop()
+    ks._keys = Pressed(*keys)
+    reading = asyncio.ensure_future(asyncio.to_thread(ks._watch_keys))
+    await asyncio.sleep(0.05)
+    answer = await ks.wait_for_enter(timeout_s=1.5, until_abort=False, deliberate=True)
+    await reading
+    return answer, ks
+
+
+async def test_a_stray_key_from_before_the_question_is_no_answer_to_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Press `x` mid-run, and the Enter that opens the jaws ten minutes later read as a line with
+    something typed on it: a no, with a hand on the pencil and the arm folding 3 s on."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
+    answer, ks = await _asked_and_pressed("x", 0.3, "\r", 0.5)
+    assert answer is True and ks.declined is False
+
+
+async def test_what_is_typed_after_the_question_is_still_a_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
+    answer, ks = await _asked_and_pressed(0.3, "n", "\r", 0.5)
+    assert answer is False and ks.declined is True
+
+
+async def test_a_key_typed_just_before_the_question_is_still_a_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Too close to it to be a stray press from long ago, and a no is the safe reading."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.2)
+    answer, ks = await _asked_and_pressed("n", 0.4, "\r", 0.5)
+    assert answer is False and ks.declined is True
 
 
 async def test_a_line_with_something_on_it_is_still_that_line() -> None:
     ks, _, _ = await press("n", "o", "\r")
-    assert ks._line_since(0.0) == "no"
+    assert heard(ks) == ["no"]
     assert ks.presses == 0
 
 
@@ -261,11 +331,11 @@ async def test_a_backspace_takes_a_key_off_the_line() -> None:
     """A console read a key at a time does none of this for anybody: a deliberate question takes
     only a bare Enter, and `n`, backspace, Enter is one."""
     ks, _, console = await press("n", "\b", "\r")
-    assert ks._line_since(0.0) == ""
+    assert heard(ks) == [""]
     assert console.erased == 1
 
     ks, _, console = await press("n", "\x7f", "\x7f", "\r")
-    assert ks._line_since(0.0) == ""
+    assert heard(ks) == [""]
     assert console.erased == 1, "the second had nothing to take"
 
 
@@ -305,6 +375,7 @@ async def test_a_press_at_a_question_answers_no() -> None:
         await asyncio.sleep(ASK_POLL_S)
         ks._fire("Ctrl-C")
         assert await asyncio.wait_for(asking, timeout=5) == ""
+        assert ks.unanswered is not None and "kill switch" in ks.unanswered, "the record says so"
     finally:
         done.set()
 
@@ -319,6 +390,31 @@ async def test_a_question_the_key_thread_has_gone_from_answers_no() -> None:
     await asyncio.sleep(ASK_POLL_S)
     done.set()
     assert await asyncio.wait_for(asking, timeout=5) == ""
+    assert ks.unanswered is not None and "no key" in ks.unanswered, "the record says so"
+
+
+def test_the_saved_terminal_says_why_a_question_went_unanswered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It said `(Enter)` of a `[y/N]` a press had ended, which nobody pressed."""
+    from quackd import cli
+
+    class Ended:
+        unanswered: str | None = "(the kill switch ended the question: no)"
+
+        def ask(self, _prompt: str) -> str:
+            return ""
+
+    notes: list[str] = []
+    monkeypatch.setattr(cli, "_SWITCH", Ended())
+    monkeypatch.setattr(cli.ui, "note", notes.append)
+    assert cli._ask("run it?") is False
+    assert notes == ["run it? [y/N]: (the kill switch ended the question: no)"]
+
+    Ended.unanswered = None
+    notes.clear()
+    assert cli._ask("run it?") is False
+    assert notes == ["run it? [y/N]: (Enter)"], "a bare Enter is still one"
 
 
 async def test_a_question_still_takes_its_line() -> None:
@@ -330,6 +426,7 @@ async def test_a_question_still_takes_its_line() -> None:
         await asyncio.sleep(ASK_POLL_S)
         ks._lines.put("y")
         assert await asyncio.wait_for(asking, timeout=5) == "y"
+        assert ks.unanswered is None
     finally:
         done.set()
 
@@ -410,7 +507,8 @@ def test_a_terminal_hands_over_a_key_with_no_enter(pty_pair: Any) -> None:
     before = _settings(slave)
     keys = PosixKeys(slave)
     assert not _lflag(slave) & termios.ICANON, "out of its line mode"
-    assert _lflag(slave) & termios.ECHO and _lflag(slave) & termios.ISIG, "and nothing else"
+    assert not _lflag(slave) & termios.ECHO, "and drawn by this"
+    assert _lflag(slave) & termios.ISIG, "and Ctrl-C is still a signal"
     try:
         os.write(master, b"q")
         assert keys.read() == "q"
@@ -470,6 +568,9 @@ async def main():
     ks = KillSwitch(asyncio.Event())
     ks.install()
     print(in_the_background(sys.stdin), ks._thread is None, ks.keys_ended.is_set(), flush=True)
+    print(repr(ks.ask("")), flush=True)
+    from quackd import cli
+    print(cli._can_prompt(), flush=True)
 
 pid = os.fork()
 if pid == 0:
@@ -504,9 +605,52 @@ def test_a_terminal_this_process_is_behind_is_not_read(pty_pair: Any) -> None:
     try:
         assert child.stdout is not None
         assert child.stdout.readline().strip() == "True True True"
+        assert child.stdout.readline().strip() == "''", "a question there is a no, unread"
+        assert child.stdout.readline().strip() == "False", "and quackd has nobody there to ask"
         assert child.wait(timeout=20) == 0
     finally:
         child.kill()
+
+
+@posix_only
+def test_only_what_has_a_use_reaches_the_screen() -> None:
+    """Left to the terminal, an arrow key moved the cursor, and the lines after it could be written
+    over a question still standing."""
+    import pty
+
+    master, slave = pty.openpty()
+    keys = PosixKeys(slave)
+    try:
+        os.write(master, b"\x1b[Ax\r")
+        assert [keys.read(), keys.read()] == ["x", "\n"]
+        keys.erase()
+        drawn = b""
+        wanted = b"x\r\n\b \b"
+        while len(drawn) < len(wanted):  # a terminal hands it over in as many pieces as it likes
+            drawn += os.read(master, 64)
+        assert drawn == wanted
+    finally:
+        keys.close()
+        os.close(slave)
+        os.close(master)
+
+
+@posix_only
+def test_ctrl_z_is_no_key_either(pty_pair: Any) -> None:
+    """It stopped the whole process, with an arm on its last goal and nothing reading `q`. Put back
+    as it was with the rest, which the test above holds it to."""
+    import termios
+
+    _, slave = pty_pair
+    before = termios.tcgetattr(slave)[6][termios.VSUSP]
+    keys = PosixKeys(slave)
+    try:
+        off = bytes([os.fpathconf(slave, "PC_VDISABLE")])
+        assert before != off, "the terminal had it on to begin with"
+        assert termios.tcgetattr(slave)[6][termios.VSUSP] == off
+    finally:
+        keys.close()
+    assert termios.tcgetattr(slave)[6][termios.VSUSP] == before
 
 
 @posix_only

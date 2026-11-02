@@ -641,8 +641,8 @@ stopped
     gripper shut
     ```
 
-    Take hold of what is in the jaws first and then press Enter, with nothing typed before it:
-    the gripper opens all the way while you have it, a few seconds from shut at the default step
+    Take hold of what is in the jaws first and then press Enter once, with nothing typed on the
+    line: the gripper opens all the way while you have it, a few seconds from shut at the default step
     cap, and a line then says the arm folds in 3 seconds. Take your hands away in those seconds, and a Ctrl-C or `q` in them
     or in the fold holds the arm where it is. A gripper that cannot open is said out loud, and the
     arm stays where it is, since you are being told to reach in. That question stands for two

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import itertools
 import json
@@ -3555,35 +3556,80 @@ class PressesAtTheCount(Presser):
             self.press()
 
 
-@pytest.mark.parametrize("where", ["stop", "state", "close"])
-async def test_a_second_press_cannot_take_the_record_with_it(tmp_path: Path, where: str) -> None:
+@pytest.mark.parametrize("where", ["stop", "get_state", "close"])
+async def test_a_second_press_cannot_take_the_close_or_the_record_with_it(
+    tmp_path: Path, where: str
+) -> None:
     """A hand near the jaws presses twice. The first holds the arm, and the second reaches the
-    teardown as a cancellation wherever it is by then, which used to go straight past the close,
-    `run_end` and the summary, and leave an energised arm with no record of what became of it."""
+    teardown as a cancellation wherever it is by then. It went straight past the close, `run_end`
+    and the summary, and swallowed on the close it left the arm energised and connected, with
+    `SUCCESS` on the panel and nobody told. So each of those goes on to its end."""
     mock = LeRobotMock(rest_pose=REST)
     _takes_a_moment(mock)
     person = PressesAtTheCount(mock, places=PLACED)
-    interrupted: list[str] = []
+    real = getattr(mock, where)
+    pressed: list[str] = []
+    finished: list[str] = []
+    running: asyncio.Task[Any] | None = None
 
-    def second_press_on(method: str, name: str) -> None:
-        real = getattr(mock, method)
+    async def pressed_on(*args: Any, **kwargs: Any) -> Any:
+        if person.presses and not pressed:
+            pressed.append(where)
+            assert running is not None
+            running.cancel()
+            await asyncio.sleep(0.05)
+            answer = await real(*args, **kwargs)
+            finished.append(where)
+            return answer
+        return await real(*args, **kwargs)
 
-        async def cancelled(*args: Any, **kwargs: Any) -> Any:
-            if person.presses and name not in interrupted:
-                interrupted.append(name)
-                raise asyncio.CancelledError
-            return await real(*args, **kwargs)
-
-        setattr(mock, method, cancelled)
-
-    second_press_on({"stop": "stop", "state": "get_state", "close": "close"}[where], where)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
-    assert interrupted == [where], "the second press landed where it was meant to"
+    setattr(mock, where, pressed_on)
+    running = asyncio.create_task(run_duck(_by_hand(mock, person, tmp_path)))
+    result = await running
+    assert pressed == [where] == finished, "it landed there, and that went on to its end"
     assert result.outcome == "success", result.reason
+    assert mock.sequence[-1] == "close"
+    assert mock.close_note is not None and "torque was left on" in mock.close_note
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert [e for e in events if e["kind"] == "run_end"], "the record has its end"
     assert (result.run_dir / "summary.json").exists()
     assert AgentLoop.HELD_BACK in person.said
+
+
+class MarkedPerson(ScriptedPerson):
+    """Marked as one a question was really put to, so the record writes a `prompt` for it."""
+
+    asks_a_person = True
+
+
+@pytest.mark.parametrize("full_at", ["prompt", "hand_off"])
+async def test_a_record_that_cannot_be_written_does_not_fold_under_the_hand(
+    tmp_path: Path, full_at: str
+) -> None:
+    """The disk fills as the person answers, or just after the gripper opens. The write raised out
+    of the hand-back, past the count, and the arm folded at once under a hand told it had 3 s,
+    with the jaws still shut in the first case. A run a full disk ended lands here every time."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = MarkedPerson(mock, places=PLACED)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    real = loop.event_log.record
+    assert real is not None
+    full = False
+
+    def sink(event: Any) -> None:
+        nonlocal full
+        answered = event.data.get("question") == AgentLoop.HAND_IT_BACK
+        if event.kind == full_at and (answered or event.data.get("stage") == "unloaded"):
+            full = True
+        if full and event.kind in ("prompt", "hand_off", "note"):
+            raise OSError(28, "No space left on device")
+        real(event)
+
+    loop.event_log.record = sink
+    with contextlib.suppress(Exception):
+        await loop.run()
+    assert COUNT in person.said, "the fold went with nobody told and no count"
+    assert mock.joints["gripper"] == GRIPPER_OPEN, "and Enter still opened the jaws"
 
 
 class ClockedPerson(ScriptedPerson):

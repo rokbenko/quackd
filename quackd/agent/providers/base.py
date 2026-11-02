@@ -46,17 +46,17 @@ def tool_arguments(raw: Any) -> dict[str, Any]:
     value. Anything else is kept under `_unparsed`, where no verb has a field, so the params gate
     refuses the call and tells the pilot what it sent. A model is not trusted to send an object,
     and a list here used to fail `ToolCall` itself: the run ended on a validation error over one
-    odd call, where text that is not JSON at all was already answered and tried again."""
+    odd call, where text that is not JSON at all was already answered and tried again. A blank or
+    a `null` goes the same way, and only a vendor's own None is a call with none: a turn cut off
+    before its arguments is no call with its defaults, and the arm's `gripper` opens by default."""
+    if raw is None:
+        return {}
     value = raw
     if isinstance(raw, str):
-        if not raw.strip():
-            return {}
         try:
             value = json.loads(raw)
         except json.JSONDecodeError:
             return {"_unparsed": raw}
-    if value is None:
-        return {}
     return dict(value) if isinstance(value, Mapping) else {"_unparsed": raw}
 
 

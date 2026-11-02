@@ -16,8 +16,8 @@ a console reading lines turned into the end of the stream: one stray press then 
 for the rest of the run, with the line that promises it still on the screen.
 
 Nothing here knows what a key means: that is `KillSwitch._watch_keys`. Echoing is here, because
-a console that is no longer reading lines may no longer be echoing them either, and a person
-answering a question has to see what they typed."""
+a console read this way echoes nothing by itself, and a person answering a question has to see
+what they typed."""
 
 from __future__ import annotations
 
@@ -47,6 +47,25 @@ def _has_a_use(key: str) -> bool:
     return key in ENTER or key in BACKSPACE or key == CTRL_C or key.isprintable()
 
 
+class _Echoing:
+    """What a key looks like on the screen, where nothing else draws it."""
+
+    def _put(self, text: str) -> None:
+        raise NotImplementedError
+
+    def _echo(self, key: str) -> None:
+        if key in ENTER:
+            self._put("\r\n")
+        elif key.isprintable():
+            self._put(key)
+
+    def erase(self) -> None:
+        self._put("\b \b")
+
+    def newline(self) -> None:
+        self._put("\r\n")
+
+
 class ConsoleKeys(Protocol):
     """A console read a key at a time."""
 
@@ -67,7 +86,7 @@ class ConsoleKeys(Protocol):
         ...
 
 
-class WindowsKeys:
+class WindowsKeys(_Echoing):
     """`msvcrt`, which reads the console's keys directly and leaves its mode alone, so Ctrl-C is
     still the signal it always was. It echoes nothing, so this does."""
 
@@ -103,29 +122,22 @@ class WindowsKeys:
         self._console.getwch()
         return False
 
-    def _echo(self, key: str) -> None:
-        if key in ENTER:
-            self._console.putwch("\r")
-            self._console.putwch("\n")
-        elif key.isprintable():
+    def _put(self, text: str) -> None:
+        for key in text:
             self._console.putwch(key)
-
-    def erase(self) -> None:
-        for key in ("\b", " ", "\b"):
-            self._console.putwch(key)
-
-    def newline(self) -> None:
-        self._echo("\n")
 
     def close(self) -> None:
         self._closed.set()
 
 
-class PosixKeys:
-    """A terminal out of its line mode (`ICANON`), and nothing else changed: it still echoes, and
-    Ctrl-C is still a signal. A control key echoes as nothing rather than `^?` (`ECHOCTL`), so a
-    backspace can be drawn here. Put back by `close`, and at exit for a run that never got there.
-    A kill that gives Python no say, SIGTERM or Ctrl-\\, leaves it to the shell waiting on it."""
+class PosixKeys(_Echoing):
+    """A terminal out of its line mode (`ICANON`), and echoing nothing by itself (`ECHO`), so that
+    this draws what has a use and nothing else: left to the terminal, an arrow key moved the cursor
+    and the lines after it could be written over a question still standing. Ctrl-C is still a
+    signal, and Ctrl-Z no longer is (`VSUSP`, and `VDSUSP` on macOS): it stopped the whole process,
+    with an arm on its last goal and nothing reading `q`. Put back by `close`, and at exit for a
+    run that never got there. A kill that gives Python no say, SIGTERM or Ctrl-\\, leaves it to the
+    shell waiting on it."""
 
     def __init__(self, fd: int) -> None:
         termios: Any = importlib.import_module("termios")  # no such module to type on Windows
@@ -136,9 +148,14 @@ class PosixKeys:
         self._termios = termios
         self._as_found = termios.tcgetattr(fd)
         mode = termios.tcgetattr(fd)
-        mode[3] &= ~(termios.ICANON | getattr(termios, "ECHOCTL", 0))
+        mode[3] &= ~(termios.ICANON | termios.ECHO)
         mode[6][termios.VMIN] = 1
         mode[6][termios.VTIME] = 0
+        off = _no_character(fd)
+        if off is not None:
+            for name in ("VSUSP", "VDSUSP"):
+                if hasattr(termios, name):
+                    mode[6][getattr(termios, name)] = off
         termios.tcsetattr(fd, termios.TCSANOW, mode)
         atexit.register(self.close)
 
@@ -154,6 +171,7 @@ class PosixKeys:
                 continue
             key = self._decoder.decode(data)  # nothing yet in the middle of a character
             if key and _has_a_use(key):
+                self._echo(key)
                 return key
         return ""
 
@@ -187,13 +205,10 @@ class PosixKeys:
         elif data:
             self._ahead = data
 
-    def erase(self) -> None:
+    def _put(self, text: str) -> None:
+        # the terminal turns a new line into both by itself (`ONLCR`)
         with contextlib.suppress(OSError):
-            os.write(self._fd, b"\b \b")
-
-    def newline(self) -> None:
-        with contextlib.suppress(OSError):
-            os.write(self._fd, b"\r\n")
+            os.write(self._fd, text.replace("\r\n", "\n").encode(errors="replace"))
 
     def close(self) -> None:
         if self._closed.is_set():
@@ -204,6 +219,17 @@ class PosixKeys:
             return
         with contextlib.suppress(OSError, self._termios.error):
             self._termios.tcsetattr(self._fd, self._termios.TCSANOW, self._as_found)
+
+
+def _no_character(fd: int) -> bytes | None:
+    """What this terminal takes in a control character's place to mean it has none."""
+    if sys.platform == "win32":
+        return None
+    try:
+        off = os.fpathconf(fd, "PC_VDISABLE")
+    except (OSError, ValueError):
+        return None
+    return bytes([off]) if off >= 0 else None
 
 
 def _behind_the_terminal(fd: int) -> bool:

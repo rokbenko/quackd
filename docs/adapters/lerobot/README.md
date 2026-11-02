@@ -2011,7 +2011,8 @@ The order below is the whole of the feature, and none of it is a step you can sk
    and the person who put it there is the one who should take it out. That wait is bounded at
    **120 seconds**, since a run has to end even when the room is empty.
 7. **Then the fold.** Only a bare Enter is a yes: a line with anything typed on it is a no, and
-   an Enter close behind a `q`, or too soon to have read the question, is passed by. It drives the
+   an Enter close behind a `q`, too soon to have read the question, or from a key held down, is
+   passed by. It drives the
    gripper all the way open, every send of it through the logged transport, so it is in the record
    like every other intent. A gripper that cannot get
    there is said out loud, and the arm stays where it is, because you have just been told to
