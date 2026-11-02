@@ -9,6 +9,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.30.1] — 2026-11-02
+
+0.30.1 fixes what going through the SO-101's examples against 0.30.0 found, most of it between a person
+and a moving arm: the end of a `--by-hand` run, `q`, a `stop` from beside a move, and what a press or a
+held key does to a question that moves or drops the arm. What changes for you, under the safety rule: at
+the question that opens the jaws press a bare Enter once, because a line with anything typed on it is a no
+now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None of it has met an arm.
+
 ### Fixed
 
 - **The end of a `--by-hand` run opens the gripper all the way, and gives your hands time.** The
@@ -37,13 +45,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the key thread had gone nothing could answer it, and on Windows Ctrl-C did nothing at any `[y/N]`
   until somebody answered it. A press answers no now, and so does the key thread ending.
 - **A key held down answers no question that moves or drops an arm.** A bare Enter has to stand alone
-  now to be a yes, with no other Enter within 0.45 s either side of it, which is the slowest key repeat
-  Windows can be set to, and a slower one cannot be told from somebody pressing it. Enter auto-repeating
-  from before the first question answered each of them as soon as its half second was up, and could
-  drop an arm on nobody having read a word. So press it once, and stop: pressing it again and again
-  answers once you stop and press it again. A line with something typed on it is a no at once, and
-  a stray key from earlier in the run no longer makes the Enter after it a no: only what was typed
-  around the question counts.
+  now to be a yes, with no other Enter within 0.45 s either side of it, which is past the slowest key
+  repeat Windows can be set to, and a slower one cannot be told from somebody pressing it. Enter
+  auto-repeating from before the first question answered each of them as soon as its half second was
+  up, and could drop an arm on nobody having read a word. So press it once, and stop: pressing it
+  again and again answers once you stop and press it again. A line with something typed on it is a no
+  at once, and a stray key from earlier in the run no longer makes the Enter after it a no: only what
+  was typed around the question counts.
 - **A `stop` from beside a running arm move ends it.** Over MCP a second call's `stop` answered
   `stopped (velocity zeroed)`, and the next tick of `move_joints`, `gripper` or `place` sent a fresh goal,
   so the arm held for a tenth of a second and went on to where it was going, with the pilot told the
@@ -9266,7 +9274,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.1...HEAD
+[0.30.1]: https://github.com/rokbenko/quackd/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/rokbenko/quackd/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/rokbenko/quackd/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/rokbenko/quackd/compare/v0.28.0...v0.29.0
