@@ -122,7 +122,7 @@ def _scratch_dir(factory: pytest.TempPathFactory, name: str) -> Path:
 
 @pytest.fixture(autouse=True)
 def _no_model_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Doctor asks five local servers whether they are up. Whether any is running on the machine
+    """Doctor asks the local servers whether they are up. Whether any is running on the machine
     the suite runs on is not what a test is about, and on Windows a closed port takes three
     seconds to say so, for a test that merely runs `quackd doctor`. A test about the answer
     replaces this with its own, and `test_doctor.py` holds the real probe for the tests about

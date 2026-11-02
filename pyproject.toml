@@ -40,8 +40,8 @@ dependencies = [
   "numpy>=1.26",
   "pillow>=10.3",
   # `quackd ui`'s QR code for a phone (quackd/webui/launch.py), and imported nowhere else: pure
-  # Python, about 350 KB, with nothing under it. Here rather than in the `ui` extra so that the
-  # code survives an upgrade that keeps Streamlit and forgets the extra.
+  # Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. Here rather than in the
+  # `ui` extra so that the code survives an upgrade that keeps Streamlit and forgets the extra.
   "segno>=1.6",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
@@ -102,20 +102,20 @@ live = ["pygame>=2.5"]
 # onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
 # velstand a stock robot runs; the Microduck's meshes and those policies are fetched at run time
 # and never shipped here (docs/reference/licenses.md).
-mujoco = ["quackd-microduck[mujoco]>=0.29.1,<0.30"]
-microduck = ["quackd-microduck>=0.29.1,<0.30"]
+mujoco = ["quackd-microduck[mujoco]>=0.30.0,<0.31"]
+microduck = ["quackd-microduck>=0.30.0,<0.31"]
 # Every robot quackd publishes, each with the SDK its real backend needs. The honest "all":
 # it pulls torch on Python 3.12 because the arm does.
 robots = [
-  "quackd-microduck>=0.29.1,<0.30",
-  "quackd-lerobot[sdk]>=0.29.1,<0.30",
-  "quackd-rosbridge[sdk]>=0.29.1,<0.30",
-  "quackd-open-duck>=0.29.1,<0.30",
-  "quackd-xlerobot>=0.29.1,<0.30",
-  "quackd-alohamini>=0.29.1,<0.30",
-  "quackd-toddlerbot>=0.29.1,<0.30",
-  "quackd-huebot>=0.29.1,<0.30",
-  "quackd-moss>=0.29.1,<0.30",
+  "quackd-microduck>=0.30.0,<0.31",
+  "quackd-lerobot[sdk]>=0.30.0,<0.31",
+  "quackd-rosbridge[sdk]>=0.30.0,<0.31",
+  "quackd-open-duck>=0.30.0,<0.31",
+  "quackd-xlerobot>=0.30.0,<0.31",
+  "quackd-alohamini>=0.30.0,<0.31",
+  "quackd-toddlerbot>=0.30.0,<0.31",
+  "quackd-huebot>=0.30.0,<0.31",
+  "quackd-moss>=0.30.0,<0.31",
 ]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
@@ -139,38 +139,38 @@ onboard = [
 # `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
 # base dependency of lerobot). Without it `import lerobot` succeeds and opening the arm's port
 # fails, so it belongs in the extra rather than in a paragraph somebody has to read.
-lerobot = ["quackd-lerobot[sdk]>=0.29.1,<0.30"]
+lerobot = ["quackd-lerobot[sdk]>=0.30.0,<0.31"]
 # The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
 # of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
 # fetched at run time and never shipped (docs/reference/licenses.md).
-lerobot-sim = ["quackd-lerobot[sim]>=0.29.1,<0.30"]
+lerobot-sim = ["quackd-lerobot[sim]>=0.30.0,<0.31"]
 # The arm's policy server (`quackd policy serve`), which loads LeRobot checkpoints in a process
 # of its own: LeRobot, torch and transformers on Python 3.12, and nothing the arm's own process
 # imports. Install it where the policy runs, on the laptop beside the arm or on a rented GPU.
-lerobot-vla = ["quackd-lerobot[vla]>=0.29.1,<0.30"]
-rosbridge = ["quackd-rosbridge[sdk]>=0.29.1,<0.30"]
+lerobot-vla = ["quackd-lerobot[vla]>=0.30.0,<0.31"]
+rosbridge = ["quackd-rosbridge[sdk]>=0.30.0,<0.31"]
 # XLeRobot is not an installable package: its own install is copying files into a lerobot
 # tree. So quackd speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
 # the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot/README.md).
-xlerobot = ["quackd-xlerobot>=0.29.1,<0.30"]
+xlerobot = ["quackd-xlerobot>=0.30.0,<0.31"]
 # AlohaMini is a fork of LeRobot that calls itself lerobot and is not published, so it
 # cannot be a dependency at all. quackd speaks its ZeroMQ host protocol instead.
-alohamini = ["quackd-alohamini>=0.29.1,<0.30"]
-open_duck = ["quackd-open-duck>=0.29.1,<0.30"]
-toddlerbot = ["quackd-toddlerbot>=0.29.1,<0.30"]
+alohamini = ["quackd-alohamini>=0.30.0,<0.31"]
+open_duck = ["quackd-open-duck>=0.30.0,<0.31"]
+toddlerbot = ["quackd-toddlerbot>=0.30.0,<0.31"]
 # Huebot's own API is closed. Its maker is writing a shim for the robot that is to answer the
 # Microduck's JSON-RPC, which quackd speaks with the standard library, so there is no robot
 # library to pull.
-huebot = ["quackd-huebot>=0.29.1,<0.30"]
+huebot = ["quackd-huebot>=0.30.0,<0.31"]
 # MOSS runs dimOS on the rover, which quackd does not import. It speaks MOSS's own cockpit, and
 # a bridge quackd ships for the rover, over HTTP with the standard library, so there is no robot
 # library to pull.
-moss = ["quackd-moss>=0.29.1,<0.30"]
+moss = ["quackd-moss>=0.30.0,<0.31"]
 # The Microduck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
 # mediad also serves one PNG per GET /frame, which needs nothing installed, so this is for the
 # stream. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not pulling the
 # track off a real Microduck, and never imported unless --camera-url says webrtc://.
-microduck-camera = ["quackd-microduck[camera]>=0.29.1,<0.30"]
+microduck-camera = ["quackd-microduck[camera]>=0.30.0,<0.31"]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py
   # can import the metadata hook that rewrites the README for PyPI.
@@ -201,7 +201,7 @@ dev = [
   # run it.
   "pyzmq>=26",
   # The oracle quackd/perception/blobs.py is held to (tests/test_color_blob_parity.py), and what
-  # reads the QR codes back (tests/test_webui_launch.py). Nothing quackd ships imports it.
+  # reads the QR codes back (tests/test_webui_launch.py). Nothing in a quackd wheel imports it.
   "opencv-python-headless>=4.9",
 ]
 

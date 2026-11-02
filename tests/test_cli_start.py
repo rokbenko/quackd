@@ -1,9 +1,9 @@
 """What a command waits for before it does anything.
 
-Help needs none of numpy, asyncio, pydantic or YAML, and they were most of what it waited for. Every
-real command still gets them before it runs, for a reason that has nothing to do with speed: on
-Windows a DLL loading behind a read pending on a pipe waits for the next line, so nothing may first
-load them after a command has started reading stdin (`front._waiting_reader`)."""
+Help needs none of numpy, asyncio, pydantic or YAML, and they were over a third of what it waited
+for. Every real command still gets them before it runs, for a reason that has nothing to do with
+speed: on Windows a DLL loading behind a read pending on a pipe waits for the next line, so nothing
+may first load them after a command has started reading stdin (`front._waiting_reader`)."""
 
 from __future__ import annotations
 
@@ -44,7 +44,8 @@ def test_importing_the_cli_loads_none_of_what_only_a_command_needs() -> None:
 
 
 @pytest.mark.parametrize(
-    "argv", [["--help"], ["run", "--help"], ["doctor", "--help"], ["--version"], []]
+    "argv",
+    [["--help"], ["-h"], ["run", "--help"], ["run", "-h"], ["doctor", "--help"], ["--version"], []],
 )
 def test_asking_for_help_loads_none_of_it(argv: list[str]) -> None:
     script = (
@@ -80,9 +81,11 @@ def test_a_real_command_has_all_of_it_before_the_command_starts(argv: list[str])
     [
         ([], True),
         (["--help"], True),
+        (["-h"], True),
         (["--version"], True),
         (["-V"], True),
         (["run", "--help"], True),
+        (["run", "-h"], True),
         (["policy", "endpoint", "--help"], True),
         (["run"], False),
         (["run", "hello-world", "--goal", "help me"], False),

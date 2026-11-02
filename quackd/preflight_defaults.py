@@ -1,5 +1,5 @@
 """The defaults of `quackd preflight`, apart from the module that runs it: the CLI shows them in
-its help, and that module's pydantic models and YAML are most of what help would wait for. It
+its help, and that module's pydantic models and YAML are much of what help would wait for. It
 imports nothing."""
 
 DEFAULT_SEEDS = 3

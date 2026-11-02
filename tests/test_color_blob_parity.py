@@ -1,10 +1,11 @@
 """The default detector, held to OpenCV. It used to ask OpenCV for all of this, and what it asks
 numpy for now has to give the same answers to the last bit, because a detection's area sets its
-distance and a run's next move. OpenCV is here as the oracle, in `dev` and imported by nothing
-quackd ships.
+distance and a run's next move. OpenCV is here as the oracle, in `dev` and imported by nothing in
+a wheel quackd ships.
 
-OpenCV gives two answers, one on x86 and another on Arm, so the conversion is held to the x86 one,
-which numpy's integers give on either, and on Arm what the difference can reach is held to nothing.
+OpenCV gives one answer on x86 and two on Apple Silicon and Linux on Arm, so the conversion is held
+to the x86 one, which numpy's integers give on any of them, and on Arm what the difference can reach
+is held to nothing.
 
 CI locks OpenCV 4.13, and the nightly `fresh-install` job runs this on the newest there is, 5.0 as
 this is written, so both major versions are held to it."""
@@ -209,6 +210,65 @@ def test_blobs_come_back_as_opencvs_contours_do() -> None:
         assert ours == _opencvs_blobs(mask, keep, min_area), (number, mask.shape, keep, min_area)
 
 
+@pytest.mark.parametrize(("height", "width"), [(1, 8), (2, 6), (3, 4), (4, 3)])
+def test_every_mask_of_a_small_size_comes_back_as_opencvs_contours_do(
+    height: int, width: int
+) -> None:
+    """Every pinch, hole, island and diagonal there can be at this size. An area comes from counting
+    windows, with nothing to say so but this that it is the polygon OpenCV measures."""
+    bits = 1 << np.arange(height * width)
+    for number in range(1 << (height * width)):
+        mask = ((number & bits) != 0).astype(np.uint8).reshape(height, width)
+        assert biggest_blobs(mask, None) == _opencvs_blobs(mask, None, 0), mask.tolist()
+
+
+def _spiral(height: int, width: int) -> np.ndarray:
+    """One line wound inwards: as long an edge as a mask can have, with everything inside it joined
+    to the outside by the way in."""
+    mask = np.zeros((height, width), dtype=np.uint8)
+    top, left, bottom, right = 0, 0, height - 1, width - 1
+    while top <= bottom and left <= right:
+        mask[top, left : right + 1] = 1
+        mask[top : bottom + 1, right] = 1
+        if bottom - 2 >= top:
+            mask[bottom, left : right + 1] = 1
+        if right - 2 >= left:
+            mask[top + 2 : bottom + 1, left] = 1
+        if top + 2 <= bottom and left + 1 <= right:
+            mask[top + 2, left + 1] = 1
+        top, left, bottom, right = top + 2, left + 2, bottom - 2, right - 2
+    return mask
+
+
+def _long_edges() -> dict[str, np.ndarray]:
+    """Masks the size of a frame with hardly anything but edge."""
+    height, width = 480, 640
+    rng = np.random.default_rng(20261102)
+    columns, rows = np.meshgrid(np.arange(width), np.arange(height))
+    comb = np.zeros((height, width), dtype=np.uint8)
+    comb[::2, :] = 1
+    comb[:, 0] = 1
+    fence = np.zeros((height, width), dtype=np.uint8)
+    fence[:, ::2] = 1
+    fence[0, :] = 1
+    return {
+        "comb": comb,
+        "fence": fence,
+        "checker": ((rows + columns) % 2 == 0).astype(np.uint8),
+        "spiral": _spiral(height, width),
+        "speckle 45%": (rng.random((height, width)) < 0.45).astype(np.uint8),
+        "speckle 60%": (rng.random((height, width)) < 0.60).astype(np.uint8),
+        "speckle 80%": (rng.random((height, width)) < 0.80).astype(np.uint8),
+    }
+
+
+@pytest.mark.parametrize("name", list(_long_edges()))
+def test_a_mask_of_nothing_but_edge_comes_back_as_opencvs_contours_do(name: str) -> None:
+    mask = _long_edges()[name]
+    for keep, min_area in ((1, 12), (3, 4), (None, 0)):
+        assert biggest_blobs(mask, keep, min_area) == _opencvs_blobs(mask, keep, min_area)
+
+
 def test_asking_for_no_blobs_gets_none() -> None:
     mask = np.ones((8, 8), dtype=np.uint8)
     assert biggest_blobs(mask, 0) == _opencvs_blobs(mask, 0, 0) == []
@@ -268,15 +328,14 @@ def _simulator_frames(count: int) -> list[Image.Image]:
 
 
 def _with_sensor_noise(image: Image.Image, rng: np.random.Generator) -> Image.Image:
-    """What a real camera does to a frame: every mask comes out messy, which is where a walk round a
-    blob's edge earns its keep."""
+    """What a real camera does to a frame: every mask comes out messy."""
     pixels = np.asarray(image.convert("RGB")).astype(np.int16)
     pixels = pixels + rng.normal(0, 18, pixels.shape).astype(np.int16) + int(rng.integers(-30, 30))
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8))
 
 
 def _saturated(density: float, height: int = 240, width: int = 320) -> Image.Image:
-    """Bright, saturated pixels of every hue: the worst a frame can be, every target's mask full."""
+    """Bright, saturated pixels of every hue: every target's mask full of small blobs."""
     rng = np.random.default_rng(int(density * 100))
     frame = np.full((height, width, 3), 60, dtype=np.uint8)
     hit = rng.random((height, width)) < density

@@ -183,9 +183,10 @@ def _warn_redirected_keys() -> None:
             host = urlsplit(value if "//" in value else f"//{value}").hostname
             if host and host not in ("localhost", "127.0.0.1", "::1"):
                 _say_on_stderr(
-                    f"{address} comes from a .env file and {key} from your shell, so this "
-                    f"sends that key to {ui.printable(host)}. If that is not yours, stop here. "
-                    f"Exporting {address} in your shell says it is, and ends this line."
+                    f"{address} comes from a .env file and {key} from your shell, so anything "
+                    f"here that uses that key sends it to {ui.printable(host)}. If that is not "
+                    f"yours, stop here. Exporting {address} in your shell says it is, and ends "
+                    "this line."
                 )
 
 
@@ -10109,16 +10110,16 @@ def _asks_only_for_help(argv: list[str]) -> bool:
     """Whether this invocation can only print: nothing after the name, `--help` or the version
     anywhere, or the shell asking to complete a word. Nothing else may skip
     `_load_what_a_command_needs`, and a false yes costs nothing but the order of some imports."""
-    asks = not argv or {"--help", "--version", "-V"}.intersection(argv)
+    asks = not argv or {"--help", "-h", "--version", "-V"}.intersection(argv)
     return bool(asks) or "_QUACKD_COMPLETE" in os.environ
 
 
 def _load_what_a_command_needs() -> None:
     """Import what every command but help ends up needing, before any of them can start reading
     stdin. They are not at the top of this module because help needs none of them and they are
-    most of what it waited for. They are not left to whenever a command first uses them because
-    of Windows: a DLL loading behind a read pending on a pipe waits for the next line to arrive
-    (`front._waiting_reader` has the whole story), and these load DLLs."""
+    over a third of what it waited for. They are not left to whenever a command first uses them
+    because of Windows: a DLL loading behind a read pending on a pipe waits for the next line to
+    arrive (`front._waiting_reader` has the whole story), and these load DLLs."""
     for module in ("asyncio", "pydantic", "yaml", "numpy", "quackd.preflight", "quackd.space.room"):
         importlib.import_module(module)
 

@@ -32,8 +32,8 @@ jobs:
       - name: The newest of everything, with no lock
         shell: bash
         run: |
-          uv venv --python ${{ matrix.python }} fresh
-          python_in() { if [ -x fresh/bin/python ]; then echo fresh/bin/python; else echo fresh/Scripts/python.exe; fi; }
+          uv venv --python ${{ matrix.python }} .fresh
+          python_in() { if [ -x .fresh/bin/python ]; then echo .fresh/bin/python; else echo .fresh/Scripts/python.exe; fi; }
           echo "PY=$(python_in)" >> "$GITHUB_ENV"
           editable=(-e .)
           for adapter in adapters/*/; do editable+=(-e "$adapter"); done
@@ -71,13 +71,13 @@ jobs:
         run: |
           uv venv --python 3.12 bare
           python_in() { if [ -x bare/bin/python ]; then echo bare/bin/python; else echo bare/Scripts/python.exe; fi; }
-          echo "PY=$(python_in)" >> "$GITHUB_ENV"
+          echo "PY=$PWD/$(python_in)" >> "$GITHUB_ENV"
           uv pip install --python "$(python_in)" dist/quackd-*.whl dist/quackd_microduck-*.whl
       - name: What a person runs first
         shell: bash
         run: |
           set -euo pipefail
-          run() { "$PY" -c "from quackd.cli import main; main()" "$@"; }
+          run() { "$PY" -P -c "from quackd.cli import main; main()" "$@"; }
           run --version
           run doctor
           run list-verbs --robot microduck:sim2d
