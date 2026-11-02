@@ -325,6 +325,15 @@ def _no_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_redirected_key_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A developer with `OPENAI_BASE_URL` in an untracked `.env` and a key in their shell would see
+    the line this says in every CLI test's output, and nowhere else. Emptying the variables, as the
+    fixtures here do for others, would hand a real SDK an empty address, so the line is silenced
+    instead, and `tests/test_cli_redirected_keys.py` holds the real one, bound at its import."""
+    monkeypatch.setattr("quackd.cli._warn_redirected_keys", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """`QUACKD_HOST` moves every local preset's model server to another machine, and the CLI
     loads a developer's `.env` in its root callback, so one line in an untracked file would

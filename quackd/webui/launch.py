@@ -311,6 +311,10 @@ def serve(
                 "Anyone who can reach this address and has the token can drive your robots. "
                 "Keep the address to yourself."
             )
+            say(
+                "This is plain HTTP, so anyone who can read this network's traffic can read the "
+                "token too: use a network you trust, and --new-token if it was not."
+            )
             if can_draw(sys.stdout):
                 for line in qr_lines(reach[0]):
                     say(line)

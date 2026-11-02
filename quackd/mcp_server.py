@@ -39,8 +39,9 @@ from quackd.agent.prompts import body_summary, play_joints, play_paragraphs, pla
 from quackd.agent.transcript import png_bytes
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.parser import DuckParseError, load_duck
-from quackd.duckfile.schema import Budgets, DuckFile
+from quackd.duckfile.schema import Budgets, DuckFile, DuckFrontmatter
 from quackd.duckfile.validate import validate_duck
+from quackd.duckfile.widen import widened_by
 from quackd.host import HostChoice, HostError, reach_host, resolve_host, unreached
 from quackd.log import (
     EventLog,
@@ -242,6 +243,9 @@ class RobotSession:
     """What this robot keeps between sessions (`quackd memory`). None = off."""
     event_log: EventLog | None = None
     """Narrates this robot's calls to stderr and into each result's `log`. None = off."""
+    locked_to: DuckFrontmatter | None = None
+    """The contract `--lock-duckfile` holds this session to, or None, as it is by default, where a
+    contract the client loads replaces the one before it."""
 
     def _gate(self, name: str, gate: str, reason: str) -> None:
         """A refusal the session makes before the executor sees the call, told the same way."""
@@ -725,6 +729,16 @@ class RobotSession:
                     "error": "; ".join(p.message for p in problems),
                     "problems": [p.message for p in problems],
                 }
+        if self.locked_to is not None:
+            wider = widened_by(self.locked_to, duck.frontmatter, self.registry.canonical)
+            if wider:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"this server holds {self.name} to the contract it started with "
+                        f"(--lock-duckfile), and this file asks for more: {'; '.join(wider)}"
+                    ),
+                }
         # Validated, so its policy section is the one the verb is held to from now on. Narrowed
         # before anything is adopted, so a file this body's verb cannot be held to leaves the
         # session's task, its verdict and its verb as they were; and nothing is awaited from
@@ -912,6 +926,7 @@ def build_fleet_server(
     robots: Mapping[str, DuckTransport],
     *,
     duckfile: str | None = None,
+    lock_duckfile: bool = False,
     dry_run: bool = False,
     yes: bool = False,
     registry: VerbRegistry | None = None,
@@ -1011,7 +1026,10 @@ def build_fleet_server(
     if fleet.default not in sessions:
         raise ValueError(f"default robot {fleet.default!r} is not one of {list(sessions)}")
     if duckfile:
-        sessions[fleet.default].adopt(load_duck(duckfile))
+        started_with = load_duck(duckfile)
+        sessions[fleet.default].adopt(started_with)
+        if lock_duckfile:
+            sessions[fleet.default].locked_to = started_with.frontmatter
 
     @contextlib.asynccontextmanager
     async def lifespan(_server: MCPServer) -> AsyncIterator[Fleet]:
@@ -1212,6 +1230,7 @@ def build_server(
     transport: DuckTransport,
     *,
     duckfile: str | None = None,
+    lock_duckfile: bool = False,
     dry_run: bool = False,
     yes: bool = False,
     registry: VerbRegistry | None = None,
@@ -1226,6 +1245,7 @@ def build_server(
     mcp, fleet = build_fleet_server(
         {name: transport},
         duckfile=duckfile,
+        lock_duckfile=lock_duckfile,
         dry_run=dry_run,
         yes=yes,
         registry=registry,
@@ -1570,6 +1590,7 @@ def serve(
     async_chunks: bool = True,
     room: str | None = None,
     map_address: str | None = None,
+    lock_duckfile: bool = False,
 ) -> None:
     plan = fleet_from_flags(
         robot=robot,
@@ -1600,6 +1621,7 @@ def serve(
         memory_keys=plan.memory_keys,
         default=plan.default,
         duckfile=duckfile,
+        lock_duckfile=lock_duckfile,
         dry_run=dry_run,
         yes=yes,
         memory=memory,

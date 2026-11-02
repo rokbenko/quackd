@@ -97,6 +97,8 @@ Also in scope:
   pointed, which is what `--base-url` is for, and `--llm openai` sends its key to whatever
   `OPENAI_BASE_URL` names, as the SDK always has, so a board named there is sent `OPENAI_API_KEY` in
   the clear: a model server you run is reached with a local preset, which sends it no hosted key.
+  Where a project's `.env` chose that address and the key came from your shell, quackd says so on
+  stderr, naming the variable and the host, and goes on: it is your call and it may be on purpose.
   What would be a security issue: a line of `OPENAI_CUSTOM_HEADERS`, or `OPENAI_ORG_ID` or
   `OPENAI_PROJECT_ID`, reaching an address that is neither OpenAI's own API nor the one
   `OPENAI_BASE_URL` gives `--llm openai`, an authorization other than the provider's own key on any
@@ -485,6 +487,15 @@ Also in scope:
   and turns the arm's torque off. MOSS's own cockpit, on port 8904, is not quackd's code and has
   **no authentication at all**: it binds `0.0.0.0`, and anything that reaches it reads the rover
   and commands it. Reach both through an ssh tunnel.
+- **A web page in the operator's browser can reach a tunnel.** `127.0.0.1` is where the tunnel
+  ends, and a page can POST there. So the two line daemons close a connection that opens with an
+  HTTP request or an oversized line, and the three HTTP daemons refuse a request carrying `Origin`,
+  which no client of theirs sends, and which a browser sends on every POST and on any fetch across
+  origins whose answer a script means to read. A page can still ask an HTTP daemon with no token
+  for a frame it cannot read. A page on a name it rebinds to `127.0.0.1` is same-origin, so it sends
+  no `Origin` on a GET and can read a frame from one. A token closes that, and the camera daemon has
+  none: keep its tunnel to the machine you trust. Refusing an unfamiliar `Host` would close it too,
+  and would also refuse a proxy somebody put there on purpose, so it is not done.
 - The recommended deployment for all of them is an ssh tunnel
   (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 -L 9873:127.0.0.1:9873 -L 9874:127.0.0.1:9874`,
   `-L 9875:127.0.0.1:9875` for a policy server on another machine, and

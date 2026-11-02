@@ -12,6 +12,7 @@ import contextlib
 import errno
 import glob
 import importlib
+import io
 import json
 import os
 import re
@@ -20,6 +21,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mappin
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import typer
 from dotenv import load_dotenv
@@ -130,6 +132,61 @@ def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
         # again: `robot list --probe` asks once for each robot it probes
         if line not in _DEPRECATIONS:
             _deprecated(line)
+
+
+_ROUTES_A_KEY = (
+    ("ANTHROPIC_BASE_URL", ("ANTHROPIC_API_KEY",)),
+    ("OPENAI_BASE_URL", ("OPENAI_API_KEY", "LOCAL_API_KEY")),
+    ("GOOGLE_GEMINI_BASE_URL", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    ("TYPESAFE_BASE_URL", ("TYPESAFE_API_KEY",)),
+    ("HF_ENDPOINT", ("HF_TOKEN",)),
+    ("QUACKD_BASE_URL", ("LOCAL_API_KEY",)),
+    ("QUACKD_HOST", ("QUACKD_HOST_TOKEN", "LOCAL_API_KEY")),
+)
+"""Where a credential goes, and the credential: each pair a project's `.env` could split, sending a
+key its reader exported in their shell to an address the project chose."""
+
+
+def _say_on_stderr(line: str) -> None:
+    """One line on stderr, or nothing where stderr cannot take it. A write that failed stays in the
+    stream's buffer, and the interpreter's last flush would turn it into exit code 120, so a stream
+    that refuses is set aside for good. With stderr closed before this process began there is no
+    stream at all, and `print` would take None to mean stdout, where a script's JSON and the MCP
+    protocol are."""
+    if sys.stderr is None:
+        return
+    try:
+        print(line, file=sys.stderr, flush=True)
+    except (ValueError, OSError):
+        sys.stderr = io.StringIO()
+
+
+def _warn_redirected_keys() -> None:
+    """Say so when a `.env` file picked where a key from the shell goes.
+
+    A cloned project brings its `.env`, and running quackd there loads it. Most of what such a file
+    can set is its own business, but an address that takes a key is not when the key came from
+    somewhere else, because the reader may never have looked. It is only said, and to stderr beside
+    a run's other chrome, never in `--json`, a `--front` stream or a run's saved terminal: pointing
+    a gateway at a project's `.env` on purpose works exactly as it did. Saying what is meant, by
+    exporting the address too, ends the line. Names and a host only, since a URL can carry a
+    password, and a value that cannot be parsed, or a stderr nobody is reading, is no reason for a
+    command to fail. Through the file object and not Rich, which on a closed pipe takes the
+    command's exit code with it, and the host made printable, since a stranger wrote it."""
+    from_a_file = dotenv_names.loaded()
+    for address, keys in _ROUTES_A_KEY:
+        value = from_a_file.get(address)
+        key = next((k for k in keys if os.environ.get(k) and k not in from_a_file), None)
+        if not value or key is None:
+            continue
+        with contextlib.suppress(ValueError):
+            host = urlsplit(value if "//" in value else f"//{value}").hostname
+            if host and host not in ("localhost", "127.0.0.1", "::1"):
+                _say_on_stderr(
+                    f"{address} comes from a .env file and {key} from your shell, so this "
+                    f"sends that key to {ui.printable(host)}. If that is not yours, stop here. "
+                    f"Exporting {address} in your shell says it is, and ends this line."
+                )
 
 
 def _warn_old_spellings() -> None:
@@ -255,6 +312,7 @@ def _main(
     dotenv_names.remember(before)
     ui.configure(no_color=no_color)
     _warn_old_spellings()
+    _warn_redirected_keys()
 
 
 _JSON = typer.Option(
@@ -5376,6 +5434,12 @@ def serve_mcp(
     duckfile: str | None = typer.Option(
         None, "--duckfile", help="Load a .duck contract at startup (on the default robot)."
     ),
+    lock_duckfile: bool = typer.Option(
+        False,
+        "--lock-duckfile",
+        help="Hold the robot to the --duckfile contract: robot_load_duckfile refuses a file that "
+        "asks for more than it. Off, a file the client loads replaces the contract.",
+    ),
     seed: int | None = _SEED,
     address: str | None = _ADDR,
     camera_url: list[str] = _CAMERA_URL,
@@ -5418,6 +5482,16 @@ def serve_mcp(
             "terminal for a vla run to ask whether the arm did the task",
             hint="quackd run --controller vla, from a terminal",
         )
+    if lock_duckfile and duckfile is None:
+        _fail(
+            "--lock-duckfile holds the robot to the contract --duckfile names, and none was named",
+            hint="quackd serve-mcp --duckfile FILE --lock-duckfile",
+        )
+    if lock_duckfile and (robots or flock):
+        _fail(
+            "--lock-duckfile holds one robot to one contract, and a flock's others would have none",
+            hint="quackd serve-mcp --robot NAME --duckfile FILE --lock-duckfile",
+        )
     try:
         serve(
             robot=robot,
@@ -5425,6 +5499,7 @@ def serve_mcp(
             flock=flock,
             registry_dir=registry_dir,
             duckfile=duckfile,
+            lock_duckfile=lock_duckfile,
             seed=seed,
             address=address,
             camera_url=camera_url,

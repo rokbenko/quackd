@@ -228,6 +228,7 @@ Nothing is installed on the phone.
    quackd ui: http://192.168.1.23:8501/?token=…
               http://10.0.0.5:8501/?token=…
    Anyone who can reach this address and has the token can drive your robots. Keep the address to yourself.
+   This is plain HTTP, so anyone who can read this network's traffic can read the token too: use a network you trust, and --new-token if it was not.
    ```
 
    The QR code follows, drawn in the terminal, or saved as `ui-qr.png` in the quackd home where

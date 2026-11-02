@@ -65,6 +65,7 @@ import json
 import logging
 import math
 import os
+import re
 import signal
 import socket
 import socketserver
@@ -84,6 +85,16 @@ PROTOCOL = "quackd-toddlerbot-bridge"
 PROTOCOL_VERSION = 1
 JSONRPC_VERSION = "2.0"
 DEFAULT_PORT = 9873
+MAX_LINE = 64 * 1024
+"""The longest request line kept. Real requests are tiny and frames only go the other way, and with
+no limit a peer that never sent a newline could fill the memory of the process walking the robot."""
+HTTP_REQUEST_LINE = re.compile(rb"^[^\s{]+ \S+ HTTP/[0-9]")
+"""The first line of an HTTP request, which is all a browser can open a connection with. A page the
+operator happens to visit can POST to 127.0.0.1 through the tunnel the docs recommend: the headers
+are no JSON and were skipped, and the body's line was then read as a command. Any word for the
+method, because a page on a name it rebinds to 127.0.0.1 is same-origin and sends `patch` or `A1`
+as written. No client of this daemon starts a connection with anything but a JSON object, which is
+what the `{` keeps out."""
 """The Open Duck Mini takes 9871 for its bridge and 9872 for its camera daemon, and
 SECURITY.md tells people to tunnel that pair, so this robot starts after both."""
 TOKEN_ENV = "QUACKD_TODDLERBOT_TOKEN"
@@ -805,7 +816,24 @@ class Handler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         authed = self.token is None
-        for raw in self.rfile:
+        spoken = False
+        while raw := self.rfile.readline(MAX_LINE + 1):
+            if len(raw) > MAX_LINE:
+                # No client opens with this, and a browser can: a URL past the limit would push
+                # its request line out of the first place, and the body behind it would be read.
+                if not spoken:
+                    log.warning("closing a connection that opened with an oversized line")
+                    return
+                log.warning("dropping an oversized line from a client")
+                while raw and not raw.endswith(b"\n"):
+                    raw = self.rfile.readline(MAX_LINE + 1)
+                continue
+            if not raw.strip():
+                continue
+            first, spoken = not spoken, True
+            if first and HTTP_REQUEST_LINE.match(raw):
+                log.warning("closing a connection that opened with an HTTP request")
+                return
             try:
                 msg = json.loads(raw)
             except ValueError:
@@ -833,8 +861,10 @@ class Handler(socketserver.StreamRequestHandler):
     ) -> tuple[Any, bool]:
         d = self.daemon_ref
         if method == "bot.hello":
+            # as bytes: compare_digest raises on a str that is not ASCII
             if self.token is not None and not hmac.compare_digest(
-                str(params.get("token") or ""), self.token
+                str(params.get("token") or "").encode("utf-8", "surrogatepass"),
+                self.token.encode("utf-8", "surrogatepass"),
             ):
                 raise _Refused(ERR_BAD_TOKEN, "bad or missing token")
             return {

@@ -2926,6 +2926,13 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
 
         def _route(self, method: str) -> None:
             path, _, query = self.path.partition("?")
+            # Only a browser sends this, and a browser is never a client here. Any page the operator
+            # visits can POST to 127.0.0.1 through the ssh tunnel the docs recommend, and with no
+            # token on the bridge that was the rover's tracks and its arm's cycle.
+            if self.headers.get("Origin") is not None:
+                self._drop_body()
+                self._json(403, {"ok": False, "reason": "not from a web page"}, close=True)
+                return
             if not bridge.authorised(self.headers.get(TOKEN_HEADER)):
                 # its body read and dropped first, as one refused for its length is: a close
                 # with a body unread, or still to come, resets the connection, and the

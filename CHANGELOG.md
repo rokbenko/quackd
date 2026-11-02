@@ -9,6 +9,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`quackd serve-mcp --lock-duckfile`.** By default a contract the client loads replaces the one the
+  server started with, which is how a client moves on to its next task. An operator who started the
+  server to hold the model to one file can now say so, and `robot_load_duckfile` then refuses a file
+  that asks for more: a verb outside the allowlist, a confirm dropped, a budget raised, an abort
+  loosened, longer policy segments, wider instructions or a changed datasheet, each named in the
+  refusal. A file asking for no more still loads. It needs `--duckfile`, and it is for one robot, so
+  `--robots` and `--flock` refuse it. Off, nothing about a server has changed.
+- **quackd says so when a project's `.env` chose where your key goes.** A cloned project brings its
+  `.env`, and running quackd there loads it. Where such a file sets `ANTHROPIC_BASE_URL`,
+  `OPENAI_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `TYPESAFE_BASE_URL`, `HF_ENDPOINT`, `QUACKD_BASE_URL`
+  or `QUACKD_HOST` to another machine and the key for it came from your shell, one line on stderr
+  names the variable and the host. Nothing is refused, stdout, `--json` and a run's saved terminal
+  are as they were, and a gateway set that way on purpose works as it did. Exporting the address in
+  your shell ends the line.
+- **`quackd ui` off loopback says the page is plain HTTP.** Anyone who can read that network's traffic
+  can read the token, so the line says to use a network you trust and `--new-token` if it was not.
+  Nothing about the page or a phone reaching it has changed.
+
 ### Changed
 
 - **A default install is half the size, because OpenCV has left it.** `uv pip install quackd` went
@@ -46,6 +66,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   which matters beyond speed: on Windows a DLL loading behind a read pending on a pipe waits for the
   next line, so nothing may first load them after a command has begun reading stdin.
   `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
+
+### Security
+
+- **One line could end the Open Duck bridge, token or no token.** `7`, `[]`, `null`, a stray byte, a
+  token that was not ASCII, or a thousand brackets each raised out of the only thread the server has,
+  which left the duck stopped, torqued and unreachable. None of them can now, and whatever one
+  client's bytes raise costs that client alone. A client that had not authenticated could also stop a
+  duck somebody else was walking, by saying `duck.command` and hanging up, and can no longer.
+- **A web page could drive a robot through the ssh tunnel the docs recommend.** A page the operator
+  happens to visit can POST to `127.0.0.1`. On a daemon with no token, which is how the README starts
+  ToddlerBot's, that read its state and got `bot.stand` accepted: the headers are no JSON and were
+  skipped, and the body's line was then read as a command. A MOSS bridge with no token took `/twist`
+  and `/arm/cycle` the same way. The two line daemons now close a connection that opens with an HTTP
+  request or an oversized line, which no client of theirs does, and the three HTTP daemons refuse a
+  request carrying `Origin`. No real client sends either, and a person opening a frame in a browser
+  tab still gets it. A token was always the fuller answer and still is: `SECURITY.md` says what a
+  page can still do to a daemon without one.
+- **ToddlerBot's daemon read a line of any length.** A peer that never sent a newline could fill the
+  memory of the process walking the robot. It reads at most 64 KiB of a line now, as the Open Duck
+  bridge does, and throws the rest away.
+
+These are files you copy to the robot, so a robot has them once you copy them again.
 
 ### Documentation
 
