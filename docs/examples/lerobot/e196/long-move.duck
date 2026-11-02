@@ -1,0 +1,25 @@
+# SO-101 run sheet. E196: Stop from the chat, mid-move.
+# Loaded from the chat with robot_load_duckfile over MCP: see the run sheet.
+---
+duck: 1
+name: e196-long-move
+description: "A twelve-second move, and a stop beside it."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, stop]
+  confirm: []
+budgets:
+  max_steps: 8
+  max_minutes: 4
+  max_llm_calls: 20
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Do exactly what the person asks with `move_joints` and `stop`, and say what each call answered.

@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E001: Draw a circle with joint angles.
+# SO-101 run sheet. E001: Draw a circle with joint angles.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e001/duck-picture.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --image docs/examples/lerobot/e001/duck.png --llm openai:gpt-6-sol --max-steps 20 --no-memory
 ---

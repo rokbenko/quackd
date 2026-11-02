@@ -1,0 +1,31 @@
+# SO-101 run sheet. E191: Pull a camera mid-run.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e191/watch.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory --run-name top
+# The run sheet has all 2 runs of this file, one per --run-name.
+---
+duck: 1
+name: e191-watch
+description: "Watch both cameras and report what changes."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 10
+  max_minutes: 5
+  max_llm_calls: 24
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Watch the camera and report what you see, one fresh look per turn with `report_state`. Keep going until you have taken eight looks, then say what changed and declare success.
+
+## Notes
+
+- Each `report_state` is one more look: a fresh picture comes with every observation.

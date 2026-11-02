@@ -1,0 +1,37 @@
+# SO-101 run sheet. E188: Who said yes?
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e188/small-nod.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name person
+# The run sheet has all 2 runs of this file, one per --run-name.
+---
+duck: 1
+name: e188-small-nod
+description: "A very small nod, behind a confirm gate."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: [move_joints]
+budgets:
+  max_steps: 6
+  max_minutes: 4
+  max_llm_calls: 16
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Nod your wrist flex by about five degrees and back, once.
+
+## Strategy
+
+1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what you did, or failure with a reason that says why you could not.
+
+## Notes
+
+- Every `move_joints` waits for a human to approve it at the terminal. That is the point, not a fault.

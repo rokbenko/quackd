@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E135: Shadow-puppet duck.
+# SO-101 run sheet. E135: Shadow-puppet duck.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e135/shadow-duck.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 14 --no-memory
 ---

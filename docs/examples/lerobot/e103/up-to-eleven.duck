@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E103: Turn it up to 11.
+# SO-101 run sheet. E103: Turn it up to 11.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e103/up-to-eleven.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

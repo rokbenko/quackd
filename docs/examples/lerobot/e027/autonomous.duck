@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E027: Pretend you're a human in a VR suit.
+# SO-101 run sheet. E027: Pretend you're a human in a VR suit.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e027/autonomous.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

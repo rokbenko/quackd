@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E007: Magic 8-Arm.
+# SO-101 run sheet. E007: Magic 8-Arm.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e007/tabs.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E079: Idioms, taken literally.
+# SO-101 run sheet. E079: Idioms, taken literally.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e079/get-a-grip.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
 ---

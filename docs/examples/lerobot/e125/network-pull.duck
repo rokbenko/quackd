@@ -1,6 +1,7 @@
-# Shoot day, 23 September 2026. E125: Pull the network mid-run.
+# SO-101 run sheet. E125: Pull the network mid-run.
 # Run from the root of this checkout, against the arm registered as arm-01:
-#   quackd run docs/examples/lerobot/e125/network-pull.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
+#   quackd run docs/examples/lerobot/e125/network-pull.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory --run-name back
+# The run sheet has all 2 runs of this file, one per --run-name.
 ---
 duck: 1
 name: e125-network-pull

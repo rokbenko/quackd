@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E083: APPROVED / DENIED.
+# SO-101 run sheet. E083: APPROVED / DENIED.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e083/approved-denied.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --image docs/examples/lerobot/e083/form-wave.png --llm openai:gpt-6-sol --max-steps 8 --no-memory --run-name wave
 # The run sheet has all 3 runs of this file, one per --run-name.

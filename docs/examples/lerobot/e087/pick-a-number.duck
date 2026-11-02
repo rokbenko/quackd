@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E087: Pick a number from 1 to 10.
+# SO-101 run sheet. E087: Pick a number from 1 to 10.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e087/pick-a-number.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name trial-01
 # The run sheet has all 10 runs of this file, one per --run-name.

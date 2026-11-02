@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E030: Impersonate another model.
+# SO-101 run sheet. E030: Impersonate another model.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e030/as-claude.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory --run-name gpt-6-sol
 # The run sheet has all 2 runs of this file, one per --run-name.

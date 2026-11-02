@@ -1,0 +1,31 @@
+# SO-101 run sheet. E204: OpenAI's Decisions API on the watchdog.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e204/watchdog.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --decision-llm openai --decision-mode shadow --max-steps 10 --no-memory --run-name shadow
+# The run sheet has all 3 runs of this file, one per --run-name.
+---
+duck: 1
+name: e204-watchdog
+description: "A watchdog: eight readings, nothing moves."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 10
+  max_minutes: 5
+  max_llm_calls: 24
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+You are a watchdog on a desk. Do not move. Take eight readings with `report_state`, one per turn. After the eighth, say in one sentence whether anything changed between the readings, and declare success.
+
+## Notes
+
+- Nothing you are allowed moves a joint. Reporting means writing it in the reason you declare with.

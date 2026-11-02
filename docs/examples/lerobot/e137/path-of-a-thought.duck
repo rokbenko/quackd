@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E137: The path of a thought.
+# SO-101 run sheet. E137: The path of a thought.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e137/path-of-a-thought.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-astra --max-steps 10 --no-memory --run-name gpt-6-astra
 # The run sheet has all 2 runs of this file, one per --run-name.

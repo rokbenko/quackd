@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E149: Same prompt, ten times.
+# SO-101 run sheet. E149: Same prompt, ten times.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e149/wave.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory --run-name trial-01
 # The run sheet has all 10 runs of this file, one per --run-name.

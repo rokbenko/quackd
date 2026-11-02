@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E099: Limbo.
+# SO-101 run sheet. E099: Limbo.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e099/limbo.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory --run-name round-1
 # The run sheet has all 3 runs of this file, one per --run-name.

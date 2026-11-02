@@ -9,6 +9,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **The SO-101's task files are revised against 0.30.0, and there are more of them, most of them
+  about safety.** None of the 223 files or the 356 quackd lines on the run sheet is refused by
+  0.30.0, so what changed around them is what they say, and they no longer name a shoot day. `e038`
+  waves to eight siblings, not six, and is `e038/eight-siblings.duck`, and `e066` counts from the
+  arm's own date. `e125` runs twice, because a dropped connection is asked again since 0.24.0, and
+  `e150` adds GPT-6.1 Sol, Claude Fable 5.1 and Gemini Robotics ER 2. `e166` to `e207` are new,
+  and `e126` has a command at last: `e126/monkey.py`, a stand-in for a model that fires random and
+  malformed calls at the mock arm, and tallies what got through. They walk the arm through the bench
+  steps 0.15.0 and 0.24.0 owe it, a hazard at a time, starting with the power switch, then the gates
+  and stops, a red team's worth of ways past them, a scripted policy, and what 0.30.0's detector
+  takes on a real camera. [docs/examples/lerobot/README.md](docs/examples/lerobot/README.md) says what
+  each block is and how it was checked. None of them has run on an arm.
+- **A different arm is a different calibration.** The hardware checklist and the first run say what
+  Enter at `lerobot-calibrate`'s first prompt does on an arm the file did not come from: it writes the
+  other arm's travel into this arm's servos, and quackd then reads the arm as calibrated.
+
 ## [0.30.0] — 2026-11-02
 
 0.30.0 is a cleanup. A default install is half the size, `quackd doctor` and `quackd --help` answer

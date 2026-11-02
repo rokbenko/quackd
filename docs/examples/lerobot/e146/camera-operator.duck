@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E146: Robot camera operator.
+# SO-101 run sheet. E146: Robot camera operator.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e146/camera-operator.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
 ---

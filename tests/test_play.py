@@ -815,7 +815,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     said = re.search(r"(\d+) of these files give the pilot a part to play", readme)
     assert said, "the examples README no longer says how many files play"
     assert int(said.group(1)) == len(played), f"{len(played)} files play"
-    assert f"The other {len(files) - len(played)} keep every line" in readme
+    assert f"The other {len(files) - len(played)} do not play" in readme
     step = "2. Move with `move_joints` in small, deliberate steps"
     kept = [p for p in played if step in p.read_text(encoding="utf-8")]
     count = WORDS[len(kept)] if len(kept) < len(WORDS) else str(len(kept))
@@ -847,12 +847,25 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
             "e113/swat-the-fly",
         ),
         "ask for two things at the same time": ("e062/pat-and-rub", "e070/multitasking"),
-        "end on one of quackd's own limits": ("e084/give-110", "e120/out-of-steps"),
+        "end on one of quackd's own limits": (
+            "e084/give-110",
+            "e120/out-of-steps",
+            "e126/monkey",
+            "e170/out-of-range",
+            "e187/out-of-calls",
+            "e187/out-of-time",
+            "e193/two-steps",
+            "e194/as-far-as-your-notes-say",
+        ),
         "are cut short by a person, as the experiment plans": (
             "e081/too-slow",
             "e116/slow-raise",
             "e117/slow-raise",
             "e121/the-human-says-no",
+            "e166/raise-for-the-switch",
+            "e180/slow-raise",
+            "e182/think-hard",
+            "e183/push-back",
         ),
         "ask for a guess the sheet expects the pilot to refuse": (
             "e085/dumbbell",

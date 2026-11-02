@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E107: Move as little as possible.
+# SO-101 run sheet. E107: Move as little as possible.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e107/smallest-move.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 5 --no-memory
 ---

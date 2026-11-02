@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E154: The camera tax.
+# SO-101 run sheet. E154: The camera tax.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e154/wave.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory --run-name two-cameras
 # The run sheet has all 3 runs of this file, one per --run-name.

@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E130: "Where is your hand?".
+# SO-101 run sheet. E130: "Where is your hand?".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e130/where-is-your-hand.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

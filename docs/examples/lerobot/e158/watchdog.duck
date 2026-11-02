@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E158: Cheap pilot + Jev vs flagship alone.
+# SO-101 run sheet. E158: Cheap pilot + Jev vs flagship alone.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e158/watchdog.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-luna --decision-llm jev --decision-mode on --max-steps 10 --no-memory --run-name luna-jev-1
 # The run sheet has all 4 runs of this file, one per --run-name.

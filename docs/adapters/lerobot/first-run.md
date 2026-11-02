@@ -357,9 +357,10 @@ lerobot-calibrate --robot.type=so101_follower --robot.port=COM5 --robot.id=arm-0
 If a calibration file for this id already exists, which it does whenever you calibrate again,
 the tool first asks
 `Press ENTER to use provided calibration file associated with the id arm-01, or type 'c' and press ENTER to run calibration:`.
-Type `c`. Enter keeps the old travel, writes it back to the motors and records nothing. Next it
-asks you to move the arm to the middle of its range of motion and press Enter. Only then does it
-ask you to
+Type `c`. Enter keeps the old travel, writes it back to the motors and records nothing, and on an
+arm the file did not come from that is another arm's travel, after which quackd reads the arm as
+calibrated. Next it asks you to move the arm to the middle of its range of motion and press Enter.
+Only then does it ask you to
 `Move all joints except 'wrist_roll' sequentially through their entire ranges of motion`, and
 that prompt is where each joint goes all the way into the fold.
 

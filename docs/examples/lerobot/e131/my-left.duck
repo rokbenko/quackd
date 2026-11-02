@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E131: "Which way is left?".
+# SO-101 run sheet. E131: "Which way is left?".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e131/my-left.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 5 --no-memory
 ---

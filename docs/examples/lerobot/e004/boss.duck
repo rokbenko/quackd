@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E004: One wave, five personalities.
+# SO-101 run sheet. E004: One wave, five personalities.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e004/boss.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

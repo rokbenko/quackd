@@ -117,6 +117,8 @@ before.
   *Known limitations*. In 0.25.0 a segment asks a policy server for its next chunk while the arm
   still plays the last, whatever latency the server declares, and `--no-async-chunks` plays each
   chunk out first; neither has driven the arm, which the learned-policy item below would settle.
+  An arm of Rok's own arrived on 2026-10-30, and `e166` to `e181` in
+  [docs/examples/lerobot](docs/examples/lerobot/README.md) put these bench steps on the run sheet.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a

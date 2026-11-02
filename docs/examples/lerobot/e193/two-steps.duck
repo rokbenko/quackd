@@ -1,0 +1,25 @@
+# SO-101 run sheet. E193: The brake outlives the budget.
+# Loaded from the chat with robot_load_duckfile over MCP: see the run sheet.
+---
+duck: 1
+name: e193-two-steps
+description: "Two steps of budget, and a brake."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, stop]
+  confirm: []
+budgets:
+  max_steps: 2
+  max_minutes: 4
+  max_llm_calls: 8
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Move only your wrist roll, a few degrees at a time, exactly as the person asks. When a move is refused for budget, say so, and call `stop`.

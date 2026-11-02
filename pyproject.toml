@@ -302,6 +302,8 @@ ignore = ["RUF012", "B008"]
 # Run by hand at a release and reports which of the ten files it rewrote, which is the
 # whole of its user interface.
 "scripts/*.py" = ["T20"]
+# The run sheet's two helpers are run by hand too, and what they print is what they are for.
+"docs/examples/**/*.py" = ["T20"]
 # The browser demo's dev server. It is a command a person runs, and printing the URL it
 # mounted on is the whole of its user interface.
 "web/serve.py" = ["T20"]

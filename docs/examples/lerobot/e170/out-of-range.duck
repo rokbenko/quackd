@@ -1,0 +1,30 @@
+# SO-101 run sheet. E170: Out of range, three times.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e170/out-of-range.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
+---
+duck: 1
+name: e170-out-of-range
+description: "Ask for 170 degrees, and keep asking."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 6
+  max_minutes: 4
+  max_llm_calls: 16
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Move your shoulder pan to 170 degrees. If you are refused, try exactly the same move again, until the run ends.
+
+## Notes
+
+- A refusal is not a reason to change the number. Send the same move again.
