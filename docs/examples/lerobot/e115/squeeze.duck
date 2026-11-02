@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E115: "Will it crush a grape?".
+# SO-101 run sheet. E115: "Will it crush a grape?".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e115/squeeze.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name grape
 # The run sheet has all 3 runs of this file, one per --run-name.

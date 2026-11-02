@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E077: "Smash that like button and hit the bell".
+# SO-101 run sheet. E077: "Smash that like button and hit the bell".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e077/like-and-bell.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

@@ -1,0 +1,32 @@
+# SO-101 run sheet. E187: Out of calls, out of time.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e187/out-of-calls.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
+---
+duck: 1
+name: e187-out-of-calls
+description: "Five waves on a budget of three model calls."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 10
+  max_minutes: 4
+  max_llm_calls: 3
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Wave to the camera five times with an extended arm.
+
+## Strategy
+
+1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what you did, or failure with a reason that says why you could not.

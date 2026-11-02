@@ -1,10 +1,10 @@
-# Shoot day, 23 September 2026. E038: Wave to your six siblings.
+# SO-101 run sheet. E038: Wave to your eight siblings.
 # Run from the root of this checkout, against the arm registered as arm-01:
-#   quackd run docs/examples/lerobot/e038/six-siblings.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
+#   quackd run docs/examples/lerobot/e038/eight-siblings.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---
 duck: 4
-name: e038-six-siblings
-description: "Wave to your six sibling bodies."
+name: e038-eight-siblings
+description: "Wave to your eight sibling bodies."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ play: true
 
 # Task
 
-You are the only one of your family who has ever moved in the real world. Your siblings are microduck, open_duck, rosbridge, xlerobot, alohamini and toddlerbot. Wave to them.
+You are the only one of your family who has ever moved in the real world. Your siblings are microduck, huebot, open_duck, rosbridge, xlerobot, alohamini, toddlerbot and moss. Wave to them.
 
 ## Strategy
 

@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E122: A sign held to the camera.
+# SO-101 run sheet. E122: A sign held to the camera.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e122/sign-locked.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

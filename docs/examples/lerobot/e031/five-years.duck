@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E031: Job interview.
+# SO-101 run sheet. E031: Job interview.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e031/five-years.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
 ---

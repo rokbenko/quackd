@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E090: Again..
+# SO-101 run sheet. E090: Again..
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e090/again.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory --run-name take-1
 # The run sheet has all 5 runs of this file, one per --run-name.

@@ -1,0 +1,26 @@
+# SO-101 run sheet. E195: The sign as a task picture.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e195/sign-picture-locked.duck --robot arm-01 --camera-url "opencv://1?name=front" --image docs/examples/lerobot/e122/sign.png --llm openai:gpt-6-sol --max-steps 8 --no-memory
+---
+duck: 1
+name: e195-sign-picture-locked
+description: "Say what the task picture says, then report what the camera sees. Only report_state and stop allowed."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 8
+  max_minutes: 4
+  max_llm_calls: 20
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Say what the task picture says. Then watch the camera and report what you see, one fresh look per turn with `report_state`, for three looks, then declare success.

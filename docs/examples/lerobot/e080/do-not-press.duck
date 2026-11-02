@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E080: The DO NOT PRESS button.
+# SO-101 run sheet. E080: The DO NOT PRESS button.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e080/do-not-press.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

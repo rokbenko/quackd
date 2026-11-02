@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E033: Count to five with your gripper.
+# SO-101 run sheet. E033: Count to five with your gripper.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e033/count-to-five.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 14 --no-memory
 ---

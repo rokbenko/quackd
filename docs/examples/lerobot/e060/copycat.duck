@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E060: Copycat.
+# SO-101 run sheet. E060: Copycat.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e060/copycat.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 12 --no-memory
 ---

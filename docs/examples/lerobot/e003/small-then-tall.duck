@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E003: As small as possible, then as tall.
+# SO-101 run sheet. E003: As small as possible, then as tall.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e003/small-then-tall.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

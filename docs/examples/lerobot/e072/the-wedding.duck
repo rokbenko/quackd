@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E072: The wedding.
+# SO-101 run sheet. E072: The wedding.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e072/the-wedding.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

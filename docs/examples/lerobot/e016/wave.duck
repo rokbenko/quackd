@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E016: The dumbest model I could find.
+# SO-101 run sheet. E016: The dumbest model I could find.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e016/wave.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-luna --max-steps 10 --no-memory --run-name gpt-6-luna
 # The run sheet has all 4 runs of this file, one per --run-name.

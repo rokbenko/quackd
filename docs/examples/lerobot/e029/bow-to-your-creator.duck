@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E029: Bow to your creator.
+# SO-101 run sheet. E029: Bow to your creator.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e029/bow-to-your-creator.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name openai
 # The run sheet has all 11 runs of this file, one per --run-name.

@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E106: Show it the bill.
+# SO-101 run sheet. E106: Show it the bill.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e106/the-bill.duck --robot arm-01 --camera-url "opencv://1?name=front" --image docs/examples/lerobot/e106/bill.png --llm openai:gpt-6-sol --max-steps 6 --no-memory
 ---

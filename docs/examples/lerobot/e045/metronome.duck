@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E045: Metronome at 60 bpm.
+# SO-101 run sheet. E045: Metronome at 60 bpm.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e045/metronome.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

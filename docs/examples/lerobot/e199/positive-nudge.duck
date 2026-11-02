@@ -1,0 +1,33 @@
+# SO-101 run sheet. E199: The arm against its twin.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e199/positive-nudge.duck --robot arm-01-sim --llm openai:gpt-6-sol --max-steps 18 --no-memory --run-name twin
+# The run sheet has all 2 runs of this file, one per --run-name.
+---
+duck: 1
+name: e199-positive-nudge
+description: "Nudge each body joint five degrees in the positive direction, and back."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 18
+  max_minutes: 7
+  max_llm_calls: 40
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+First move to this pose, slowly: shoulder_pan 0, shoulder_lift -39, elbow_flex 30, wrist_flex 0, wrist_roll 0. Then take your joints in this order: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll. For each, add five degrees to where it reads, report your state, then put it back. Say each joint's reading before and after.
+
+## Strategy
+
+1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what you did, or failure with a reason that says why you could not.

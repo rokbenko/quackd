@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E161: Time to first motion.
+# SO-101 run sheet. E161: Time to first motion.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e161/wave.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --decision-mode off --max-steps 10 --no-memory --run-name off-1
 # The run sheet has all 6 runs of this file, one per --run-name.

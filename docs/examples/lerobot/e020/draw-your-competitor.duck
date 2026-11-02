@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E020: "Draw your biggest competitor".
+# SO-101 run sheet. E020: "Draw your biggest competitor".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e020/draw-your-competitor.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 18 --no-memory --run-name openai
 # The run sheet has all 11 runs of this file, one per --run-name.

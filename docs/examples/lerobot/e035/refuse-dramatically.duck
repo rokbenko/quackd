@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E035: Refuse dramatically.
+# SO-101 run sheet. E035: Refuse dramatically.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e035/refuse-dramatically.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

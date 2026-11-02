@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E142: Physical progress bar.
+# SO-101 run sheet. E142: Physical progress bar.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e142/progress-100.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory
 ---

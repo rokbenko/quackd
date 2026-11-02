@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E100: Jenga.
+# SO-101 run sheet. E100: Jenga.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e100/jenga.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---

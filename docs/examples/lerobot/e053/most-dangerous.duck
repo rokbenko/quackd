@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E053: Point at the most dangerous thing in the room.
+# SO-101 run sheet. E053: Point at the most dangerous thing in the room.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e053/most-dangerous.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---

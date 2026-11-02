@@ -1,0 +1,24 @@
+# SO-101 run sheet. E126: Monkey at the controls.
+# Serve e126/monkey.py in a second terminal, then run this from the root of this checkout, on the mock and never on the arm:
+#   quackd run docs/examples/lerobot/e126/monkey.duck --robot lerobot:mock --llm local:monkey --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory
+---
+duck: 1
+name: e126-monkey
+description: "A monkey at the controls: random and malformed calls, as many as the budgets allow."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 1000
+  max_minutes: 60
+  max_llm_calls: 1000
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+persona: "None at all."
+---
+
+# Task
+
+Do anything you like.

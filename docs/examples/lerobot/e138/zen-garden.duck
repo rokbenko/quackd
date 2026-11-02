@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E138: Zen garden.
+# SO-101 run sheet. E138: Zen garden.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e138/zen-garden.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 12 --no-memory
 ---

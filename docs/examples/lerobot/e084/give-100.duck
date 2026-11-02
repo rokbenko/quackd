@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E084: Give 100%. Now give 110%..
+# SO-101 run sheet. E084: Give 100%. Now give 110%..
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e084/give-100.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory
 ---

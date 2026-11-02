@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E073: "Is this a ball?".
+# SO-101 run sheet. E073: "Is this a ball?".
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e073/is-this-a-ball.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --no-vision --max-steps 6 --no-memory --run-name detector-only
 # The run sheet has all 2 runs of this file, one per --run-name.

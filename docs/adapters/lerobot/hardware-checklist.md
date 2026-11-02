@@ -86,7 +86,9 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    which is also the id a bare `--robot lerobot:real` uses. A run needs that name, because only
    a registered name keeps a rest pose. quackd reads every joint's travel out of that file and
    refuses to drive an arm without one, and two arms sharing an id share a file with nothing in
-   it to say which arm it came from.
+   it to say which arm it came from. So move an old file aside before you calibrate a different
+   arm under its id: the tool's first prompt offers to use it, and Enter writes the other arm's
+   travel into this arm's servos, after which quackd reads the arm as calibrated.
 
    Upstream will ask you to move every joint through its range **except `wrist_roll`**, and it
    records a full encoder turn for that one rather than anything you swept. That is not a

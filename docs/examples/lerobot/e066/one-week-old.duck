@@ -1,4 +1,4 @@
-# Shoot day, 23 September 2026. E066: One week old.
+# SO-101 run sheet. E066: One week old.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e066/one-week-old.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
 ---
@@ -24,7 +24,7 @@ play: true
 
 # Task
 
-Your first real run was on 15 September 2026, and today is 23 September 2026: you are one week and a day old. Celebrate, and make a wish.
+You came out of the box on 30 October 2026, and this is your first week on a real desk. Celebrate, and make a wish.
 
 ## Strategy
 
