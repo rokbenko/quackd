@@ -9,6 +9,7 @@ ConPTY before a release that touches this: a test here would need a package noth
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import os
 import subprocess
@@ -280,14 +281,26 @@ async def test_uninstalling_ends_the_thread_and_says_nothing_of_it() -> None:
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="no pty on Windows")
 
 
+def _drain(master: int) -> None:
+    with contextlib.suppress(OSError):
+        while os.read(master, 1024):
+            pass
+
+
 @pytest.fixture
 def pty_pair() -> Any:
+    """Both ends of a terminal, with what it echoes read off the far one, as a window does. On
+    macOS the process that owns a terminal waits at its exit for the terminal's output to drain,
+    and nobody reading it is a child that never exits."""
     import pty
 
     master, slave = pty.openpty()
+    draining = threading.Thread(target=_drain, args=(master,), daemon=True)
+    draining.start()
     yield master, slave
-    os.close(master)
     os.close(slave)
+    draining.join(2)
+    os.close(master)
 
 
 def _lflag(fd: int) -> int:
@@ -296,12 +309,22 @@ def _lflag(fd: int) -> int:
     return termios.tcgetattr(fd)[3]
 
 
+def _settings(fd: int) -> list[Any]:
+    """A terminal's settings, less `PENDIN`, which a BSD kernel sets by itself on the way back to
+    line mode: nothing asked for it, and it only says what was waiting gets reprinted."""
+    import termios
+
+    mode = termios.tcgetattr(fd)
+    mode[3] &= ~getattr(termios, "PENDIN", 0)
+    return mode
+
+
 @posix_only
 def test_a_terminal_hands_over_a_key_with_no_enter(pty_pair: Any) -> None:
     import termios
 
     master, slave = pty_pair
-    before = termios.tcgetattr(slave)
+    before = _settings(slave)
     keys = PosixKeys(slave)
     assert not _lflag(slave) & termios.ICANON, "out of its line mode"
     assert _lflag(slave) & termios.ECHO and _lflag(slave) & termios.ISIG, "and nothing else"
@@ -314,7 +337,7 @@ def test_a_terminal_hands_over_a_key_with_no_enter(pty_pair: Any) -> None:
         assert keys.read() == "", "Ctrl-D is the end of the keys, now lines are off"
     finally:
         keys.close()
-    assert termios.tcgetattr(slave) == before, "and the terminal is put back as it was found"
+    assert _settings(slave) == before, "and the terminal is put back as it was found"
 
 
 @posix_only
@@ -368,10 +391,8 @@ def _at_a_terminal(finish: str, master: int, slave: int) -> subprocess.Popen[str
 
 @posix_only
 def test_a_real_switch_on_a_real_terminal_fires_on_q_alone(pty_pair: Any) -> None:
-    import termios
-
     master, slave = pty_pair
-    before = termios.tcgetattr(slave)
+    before = _settings(slave)
     child = _at_a_terminal("ks.uninstall()", master, slave)
     try:
         assert child.stdout is not None
@@ -381,16 +402,14 @@ def test_a_real_switch_on_a_real_terminal_fires_on_q_alone(pty_pair: Any) -> Non
         assert child.wait(timeout=20) == 0
     finally:
         child.kill()
-    assert termios.tcgetattr(slave) == before, "uninstalling put the terminal back"
+    assert _settings(slave) == before, "uninstalling put the terminal back"
 
 
 @posix_only
 def test_a_run_that_never_uninstalls_still_puts_the_terminal_back(pty_pair: Any) -> None:
     """A crash on the way out must not leave somebody's shell with no line editing."""
-    import termios
-
     master, slave = pty_pair
-    before = termios.tcgetattr(slave)
+    before = _settings(slave)
     child = _at_a_terminal("sys.exit(3)", master, slave)
     try:
         assert child.stdout is not None
@@ -400,4 +419,4 @@ def test_a_run_that_never_uninstalls_still_puts_the_terminal_back(pty_pair: Any)
         assert child.wait(timeout=20) == 3
     finally:
         child.kill()
-    assert termios.tcgetattr(slave) == before
+    assert _settings(slave) == before

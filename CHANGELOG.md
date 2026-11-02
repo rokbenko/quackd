@@ -38,9 +38,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   wherever it is, and a read or a send can be out on the bus when it does. The stop behind it was
   refused on that call while the abort said one was sent, and the close in the same breath told
   somebody who had just stopped the arm that quackd could not tell whether it was holding itself up,
-  and to cut its power. The arm's twin did it on most presses during a fold. What lands behind a
-  cancelled call now waits for it, no longer than that call's own deadline, as it always did behind a
-  policy segment.
+  and to cut its power. The arm's twin did it often. What lands behind a cancelled call now waits
+  for it, no longer than that call's own deadline, as it always did behind a policy segment.
 - **`stop` is never refused for what came with it.** It takes no arguments, and a call with any was
   refused at the `params` gate with nothing sent to the body. They are ignored now, and the record says
   so. A third party's `stop` that cannot run without its own arguments is still refused.
