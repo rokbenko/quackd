@@ -9,6 +9,55 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **The end of a `--by-hand` run opens the gripper all the way, and gives your hands time.** The
+  question said the gripper opens before the arm folds. On `lerobot:real` Enter sent one goal, which
+  the step cap held to a few units of the hundred, and the fold began in the same breath, with the
+  pencil still in the jaws and a hand on the pencil. A mock whose goals land at once could never show
+  it.
+  Enter now drives the gripper until it reads open. Then, however the question ended, quackd says it
+  is about to fold and waits 3 seconds, in the words `quackd robot release` uses. A Ctrl-C or `q`
+  during the opening, the count or the fold holds the arm where it is with nothing released, on a run
+  a press ended as well. A gripper that cannot open is said to the person as well as to the log, and
+  the arm no longer folds over the hand it has just told to reach in.
+- **`q` stops a run with no Enter behind it.** Every line that names it says so, and a terminal reading
+  lines handed it over only with the Enter that sent the line, so somebody standing at a moving arm
+  pressed a key that did nothing. At a console quackd now reads keys as they are pressed, and leaves
+  Ctrl-C the signal it was. An Enter close behind the `q` is taken for the old habit and answers
+  nothing. Backspace still edits what you type at a question, Ctrl-D, or Ctrl-Z on Windows, still ends
+  the keys, and a pipe or a file is read as it always was. At a console the key thread now ends with
+  its run, where one left blocked on stdin went on taking keys from whatever read the console next.
+  And the panel at the head of a run says `Ctrl-C twice quits at once`, since `q` twice never has.
+- **A `stop` from beside a running arm move ends it.** Over MCP a second call's `stop` answered
+  `stopped (velocity zeroed)`, and the next tick of `move_joints`, `gripper` or `place` sent a fresh goal,
+  so the arm held for a tenth of a second and went on to where it was going, with the pilot told the
+  brake had worked. They end where they are now, say so, and are not counted as failures by
+  `abort_when`. They also end when the run's minutes run out, which is a failure.
+- **`stop` is never refused for what came with it.** It takes no arguments, and a call with any was
+  refused at the `params` gate with nothing sent to the body. They are ignored now, and the record says
+  so. A third party's `stop` that cannot run without its own arguments is still refused.
+- **`gripper` and `place` get the time a lowered step cap needs.** At `QUACKD_LEROBOT_MAX_STEP_DEG=1` a
+  full open is a hundred sends, and a gripper in good order stopped part of the way saying it had run
+  out of time.
+- **A tool call whose arguments are no object is the pilot's to correct.** A list, a number or a string
+  there failed quackd's own model of the call, and the run ended on a validation error over one odd
+  turn, where text that is not JSON was already refused at the `params` gate and tried again. It goes
+  the same way now on every vendor, and a `null` is a call with no arguments.
+- **A verb that refused itself is no first motion.** The record gave a first motion when the arm's
+  `move_joints` answered a goal off its travel with the range and sent nothing. It now counts a verb
+  that worked or one whose intent the body accepted, as of when it was handed over.
+- **`quackd drive` reads a dict in a call written out.** `move_joints(positions={"shoulder_pan": 20},
+  duration_s=2)` went to the pilot as a goal, on the one verb people type numbers into. It is the exact
+  lane's now, with the keys written or bare, and is still read as literals and never evaluated.
+
+### Known limitations
+
+- **None of the fixes above has met an arm.** They ran on the mock, on the arm's twin and in a real
+  console, and what an arm owes them is on the run sheet: a pencil taken from the jaws as they open at
+  the end of a `--by-hand` run, whether 3 seconds is long enough to get a hand clear, `q` with no Enter
+  at the arm's own terminal on Windows and on Linux, and a `stop` from a chat beside a long move.
+
 ### Documentation
 
 - **The SO-101's task files are revised against 0.30.0, and there are more of them, most of them
@@ -26,6 +75,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A different arm is a different calibration.** The hardware checklist and the first run say what
   Enter at `lerobot-calibrate`'s first prompt does on an arm the file did not come from: it writes the
   other arm's travel into this arm's servos, and quackd then reads the arm as calibrated.
+- **Clamp the base.** The hardware checklist and the first run say so before anything moves, and the
+  checklist's row for a stalled camera says what `report_state` and `doctor` each print.
 
 ## [0.30.0] — 2026-11-02
 

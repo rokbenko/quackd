@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import math
 import queue
 import signal
@@ -33,11 +34,13 @@ from quackd.duckfile.schema import (
     Budgets,
     DuckFrontmatter,
 )
+from quackd.keys import ConsoleKeys, console_keys
 from quackd.log import (
     A_PERSON,
     A_PIPE,
     EventLog,
     LoggedTransport,
+    Tally,
     a_person_was_asked,
     asked_on,
     counting,
@@ -158,6 +161,10 @@ class VerdictRequired(VerbNotAllowed):
 
 class ConfirmDenied(PermissionError):
     """A human said no."""
+
+
+def _invalid(e: ValidationError) -> str:
+    return "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
 
 
 @dataclass
@@ -474,6 +481,20 @@ class Executor:
             return False
         return self._may_move(canonical, verb)
 
+    def _parsed(self, name: str, canonical: str, verb: Verb, params: dict[str, Any]) -> Any:
+        """A call's arguments as its verb reads them. `stop` is never refused for them: it takes
+        none, and a pilot in trouble that sends one anyway has reached for the brake, which was
+        counted before any gate (`stops`), so a verb beside it had already ended on a stop that
+        then never left. Only a third party's stop that cannot run without its own is refused."""
+        try:
+            return verb.params.model_validate(params)
+        except ValidationError as e:
+            if canonical != "stop":
+                raise
+            parsed = verb.params.model_validate({})
+            self._emit("gate", name=name, gate="params", outcome="ignored", reason=_invalid(e))
+            return parsed
+
     def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
         """The `paused` gate: refuse a verb that may move the body while a pause holds."""
         held = self.paused_until - time.monotonic()
@@ -653,6 +674,7 @@ class Executor:
                     name,
                     canonical,
                     params,
+                    sent=counter,
                     source=source,
                     nested=nested,
                     picked_by=picked_by,
@@ -720,6 +742,7 @@ class Executor:
         canonical: str,
         params: dict[str, Any],
         *,
+        sent: Tally,
         source: Source,
         nested: bool,
         picked_by: str | None = None,
@@ -815,11 +838,9 @@ class Executor:
             raise VerdictRequired(reason)
 
         try:
-            parsed = verb.params.model_validate(params)
+            parsed = self._parsed(name, canonical, verb, params)
         except ValidationError as e:
-            msgs = "; ".join(
-                f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()
-            )
+            msgs = _invalid(e)
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
 
@@ -937,6 +958,7 @@ class Executor:
                 params,
                 verb,
                 parsed,
+                sent=sent,
                 source=source,
                 preempts=preempts,
                 stops=stops,
@@ -951,6 +973,7 @@ class Executor:
                 params,
                 verb,
                 parsed,
+                sent=sent,
                 source=source,
                 timed=True,
                 preempts=preempts,
@@ -968,6 +991,7 @@ class Executor:
         verb: Verb,
         parsed: Any,
         *,
+        sent: Tally,
         source: Source,
         timed: bool = False,
         preempts: int | None = None,
@@ -1054,12 +1078,11 @@ class Executor:
             )
 
         self.log(f"→ {name}({parsed.model_dump()})")
-        if self.first_motion_at is None and self._moves_now(canonical, verb):
-            # Here, after every gate, the state read, the preconditions and the dry run's branch,
-            # so a verb that was refused, a dry run and a read never count as the robot moving.
-            self.first_motion_at = time.monotonic()
-            budget = self.budget
-            self.first_motion_llm_calls = budget.llm_calls if budget is not None else None
+        # Here, after every gate, the state read, the preconditions and the dry run's branch, so
+        # a verb that was refused, a dry run and a read never count as the robot moving.
+        may_be_first = self.first_motion_at is None and self._moves_now(canonical, verb)
+        handed_over = time.monotonic()
+        calls_by_then = self.budget.llm_calls if self.budget is not None else None
         robot_before = self._robot_now() if timed else None
         result: VerbResult | None = None
         try:
@@ -1089,6 +1112,17 @@ class Executor:
             # ran the policy for as long as it liked with nothing charged.
             if timed and self.budget is not None:
                 self.budget.note_policy(_segment_seconds(result, robot_before, self._robot_now()))
+            # And only once it is known: a verb past every gate can still send nothing, the way
+            # the arm's `move_joints` answers a goal off its travel with the range. A verb that
+            # says it worked is believed, since only `send_intent` is tallied and a rest move or
+            # a skill goes by a method of its own.
+            if (
+                may_be_first
+                and self.first_motion_at is None
+                and ((result is not None and result.ok) or sent.accepted)
+            ):
+                self.first_motion_at = handed_over
+                self.first_motion_llm_calls = calls_by_then
         self.log(f"← {name}: {'ok' if result.ok else 'FAIL'} {result.summary}")
         return self._record(name, params, result)
 
@@ -1418,6 +1452,9 @@ class KillSwitch:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._previous: Any = None
         self._thread: threading.Thread | None = None
+        self._keys: ConsoleKeys | None = None
+        """The console a key at a time, where there is one to read (`quackd.keys`)."""
+        self._uninstalled = False
         self.declined = False
         """The last deliberate wait ended on a line with something typed on it, which is a no:
         `n`, `no`, anything but a bare Enter (`wait_for_enter(deliberate=True)`)."""
@@ -1467,19 +1504,39 @@ class KillSwitch:
 
         Every Enter is recorded with what was typed on its line (`_heard_enter`), because a
         question that drops an arm takes only a bare one, and a terminal that ends its lines
-        with `\\r\\n` sends one Enter, not two. `q` still fires the switch the moment it is read,
-        and is part of its line too: a terminal in its usual mode hands it over only with the
-        Enter that sends the line, and a wait never takes that Enter for an answer
-        (`wait_for_enter`)."""
+        with `\\r\\n` sends one Enter, not two.
+
+        At a console it reads keys as they are pressed (`quackd.keys`), so `q` fires the switch
+        with no Enter behind it, which is what every line that names it has always promised. It
+        is no part of the line then, or the Enter that answers a question a minute later would
+        read as a line with something typed on it. An Enter close behind it is the old habit of
+        finishing the line, and is passed by (`TYPED_AHEAD_S`), or the question the press brought
+        on would be answered yes by the hand still finishing it. From a pipe or a file `q` comes
+        with the rest of its line and is part of it, and a wait never takes that line's Enter for
+        an answer (`wait_for_enter`)."""
+        keys = self._keys
+        read = keys.read if keys is not None else functools.partial(sys.stdin.read, 1)
         typed: list[str] = []
         line: list[str] = []
         previous = ""
+        q_at = -math.inf
         try:
             while True:
-                ch = sys.stdin.read(1)
+                ch = read()
                 if not ch:
-                    self._announce(self.keys_ended)
+                    if not self._uninstalled:
+                        self._announce(self.keys_ended)
                     return
+                if keys is not None:
+                    if ch in ("\b", "\x7f"):
+                        edited = typed if self._line_wanted.is_set() else line
+                        if edited:
+                            edited.pop()
+                            keys.erase()
+                        continue
+                    if ch == "\x03":  # Ctrl-C, should it land while the console is being read
+                        self._fire("Ctrl-C")
+                        continue
                 if self._line_wanted.is_set():
                     # Somebody is being asked a question, so every key belongs to the answer.
                     # This reader cannot stand aside while a prompt runs its own `input()`: it
@@ -1494,14 +1551,20 @@ class KillSwitch:
                     continue
                 typed.clear()
                 if ch in ("\r", "\n"):
-                    if not (ch == "\n" and previous == "\r"):
+                    behind_a_q = keys is not None and time.monotonic() - q_at < TYPED_AHEAD_S
+                    if not (ch == "\n" and previous == "\r") and not behind_a_q:
                         self._heard_enter("".join(line))
                     line.clear()
                     previous = ch
                     continue
                 previous = ch
-                line.append(ch)
-                if ch.strip().lower() == "q":
+                pressed_q = ch.strip().lower() == "q"
+                if keys is None or not pressed_q:
+                    line.append(ch)
+                if pressed_q:
+                    q_at = time.monotonic()
+                    if keys is not None:
+                        keys.newline()
                     self._fire("'q' pressed")
         except Exception:
             self._announce(self.keys_ended)
@@ -1558,9 +1621,9 @@ class KillSwitch:
         `keys_ended` where the thread ran and stdin then finished under it.
 
         A press of the kill switch during the wait is never an Enter, whatever came with it. A
-        terminal in its usual mode hands `q` to the key thread only with the Enter that sends its
-        line, so the press and the Enter arrive together, and the wait used to answer True when
-        both were in by the time it looked: `q`, the key that stops the run, taken for yes.
+        pipe hands `q` to the key thread with the Enter that ends its line, so the press and the
+        Enter arrive together, and the wait used to answer True when both were in by the time it
+        looked: `q`, the key that stops the run, taken for yes.
 
         `deliberate` is for a question whose Enter moves an arm or drops it (`quackd.release`).
         Only a bare Enter answers it. A line with anything typed on it, `n` the commonest, is a
@@ -1613,6 +1676,7 @@ class KillSwitch:
         with contextlib.suppress(ValueError):  # not the main thread
             self._previous = signal.signal(signal.SIGINT, self._on_sigint)
         if keys and sys.stdin is not None and sys.stdin.isatty():
+            self._keys = console_keys(sys.stdin)
             self._thread = threading.Thread(
                 target=self._watch_keys, name="quackd-keys", daemon=True
             )
@@ -1633,3 +1697,6 @@ class KillSwitch:
 
     def uninstall(self) -> None:
         self._restore()
+        if self._keys is not None:
+            self._uninstalled = True
+            self._keys.close()

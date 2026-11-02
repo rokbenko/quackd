@@ -34,7 +34,7 @@ $ quackd --no-color run find-the-ball --room two-rooms --llm fake --yes --seed 3
 │ provider  fake (scripted:find-the-ball)                                                         │
 │ robot     microduck:sim2d  seed 3                                                               │
 │ detector  color_blob on this machine                                                            │
-└─ Ctrl-C or q stops the duck. Press it twice to quit at once. ───────────────────────────────────┘
+└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────────────┘
 ▶  verb    find(target='ball', minutes=4)
 ⚠  gate    confirm: allowed the confirm gate was allowed
 →  send    look x4 over 1.5 s (x 0.766..1, y -0.643..0.643, z 0)

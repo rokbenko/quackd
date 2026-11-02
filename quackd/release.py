@@ -29,7 +29,7 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, TypeVar
 
 from quackd.adapters.base import HandResult, RestResult, let_go_if_any
 
@@ -55,6 +55,7 @@ class Person(Protocol):
 
 
 Hook = Callable[..., None]
+T = TypeVar("T")
 
 
 def _nothing(*_args: Any, **_kwargs: Any) -> None:
@@ -326,10 +327,12 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
 
 
 async def fold_unless_stopped(
-    fold: Callable[[], Awaitable[RestResult | None]],
+    fold: Callable[[], Awaitable[T]],
     stopped: Callable[[], Awaitable[Any]] | None,
-) -> RestResult | None:
+) -> T:
     """Fold, unless the person stops it with a fresh Ctrl-C or `q` first: then `FoldStopped`.
+    Whatever else a person standing at the arm may stop goes through here too: the count before
+    a fold, and the gripper opening at the end of a `--by-hand` run.
 
     The fold is the arm's own rest move, which runs until it arrives, stalls or runs out of
     time, and never looks at the kill switch: in a teardown the abort flag is already set and

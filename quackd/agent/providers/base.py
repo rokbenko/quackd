@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import contextlib
 import email.utils
+import json
 import math
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +39,23 @@ class ToolCall(BaseModel):
     """Opaque and provider-owned, base64 text. Gemini 3 signs every function call it makes
     and refuses the next turn unless the signature is handed back on that same call; other
     providers leave it empty and nothing reads it."""
+
+
+def tool_arguments(raw: Any) -> dict[str, Any]:
+    """A tool call's arguments as the object they have to be, from a vendor's text or its parsed
+    value. Anything else is kept under `_unparsed`, where no verb has a field, so the params gate
+    refuses the call and tells the pilot what it sent. A model is not trusted to send an object,
+    and a list here used to fail `ToolCall` itself: the run ended on a validation error over one
+    odd call, where text that is not JSON at all was already answered and tried again."""
+    value = raw
+    if isinstance(raw, str):
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"_unparsed": raw}
+    if value is None:
+        return {}
+    return dict(value) if isinstance(value, Mapping) else {"_unparsed": raw}
 
 
 class Usage(BaseModel):

@@ -104,6 +104,14 @@ def test_every_call_the_stepper_would_offer_reads_as_itself() -> None:
         ("move(vx=0.2, duration_s=2)", "move", {"vx": 0.2, "duration_s": 2}),
         ("walk(vx=-0.1)", "move", {"vx": -0.1}),
         ("go_to(target=person)", "go_to", {"target": "person"}),
+        ("go_to(target=person)", "go_to", {"target": "person"}),
+        (
+            'move(vx={"shoulder_pan": 20, "gripper": -5.5}, duration_s=2)',
+            "move",
+            {"vx": {"shoulder_pan": 20, "gripper": -5.5}, "duration_s": 2},
+        ),
+        ("move(vx={shoulder_pan: 20})", "move", {"vx": {"shoulder_pan": 20}}),
+        ("move(vx={})", "move", {"vx": {}}),
     ],
 )
 def test_a_line_that_names_a_call_outright_is_that_call(
@@ -143,6 +151,14 @@ def test_a_verbs_own_call_beats_a_preset_spelled_the_same_way() -> None:
         "move(vx=1+1)",
         "move(**{'vx': 1})",
         "move(0.2)",
+        "move(vx={'a': 1+1})",
+        "move(vx={'a': __import__('os').system('echo hi')})",
+        "move(vx={**{'a': 1}})",
+        "move(vx={1: 2})",
+        "move(vx={1+1: 2})",
+        "move(vx={'a': {'b': abs(1)}})",
+        "nosuchverb(x=1)",
+        "move(0.2)",
         "nosuchverb(x=1)",
         "say",
         "please be careful",
@@ -152,6 +168,15 @@ def test_a_line_the_lane_cannot_read_is_left_for_the_others(line: str) -> None:
     """Nothing written out is evaluated: anything but a literal value, a name it calls, an operator
     or a starred argument, and the line is not a call this lane reads."""
     assert _lane().parse(line) is None
+
+
+def test_a_call_with_a_dict_in_it_shows_the_way_it_was_read() -> None:
+    """The arm's `move_joints(positions=..., duration_s=...)` went to the pilot as a goal, since
+    this lane read no dict: the one verb people type a number into, and the only one that was
+    not theirs. The label is what the screen says ran, so it says what the numbers were."""
+    matched = _lane().parse('move(vx={"shoulder_pan": 20, "gripper": -5.5}, duration_s=2)')
+    assert matched is not None
+    assert matched.label == "move(duration_s=2, vx={shoulder_pan: 20, gripper: -5.5})"
 
 
 def test_a_dangerous_verb_is_named_and_refused() -> None:

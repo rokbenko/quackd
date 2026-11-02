@@ -337,7 +337,7 @@ printed it:
 │ robot     microduck:sim2d                                                               │
 │ detector  color_blob on this machine                                                    │
 │ host      127.0.0.1:9874  daemon 0.1.0  camera as an extra view, detect, tegra          │
-└─ Ctrl-C or q stops the duck. Press it twice to quit at once. ───────────────────────────┘
+└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
 ```
 
 No model server was listening there, so that run stopped at its first model call with
@@ -362,7 +362,7 @@ quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:
 │ robot     open_duck:bridge                                                              │
 │ detector  yolo@host  127.0.0.1:9874  yolov8n.pt on cuda                                 │
 │ host      127.0.0.1:9874  daemon 0.1.0  camera as an extra view, detect, tegra          │
-└─ Ctrl-C or q stops the duck. Press it twice to quit at once. ───────────────────────────┘
+└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
 ```
 
 That came from the same fake board with no duck at the address, so the run stopped at connect,

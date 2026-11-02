@@ -204,13 +204,21 @@ def capturing() -> Iterator[list[LogEvent]]:
 
 # ── counting one verb's intents ─────────────────────────────────────────────────────────
 
-_tallies: contextvars.ContextVar[tuple[Counter[str], ...]] = contextvars.ContextVar(
+
+class Tally(Counter[str]):
+    """The intents one verb sent, by kind. `accepted` is how many of them the body took, which
+    is a separate number because a body can refuse every one of them and never move."""
+
+    accepted: int = 0
+
+
+_tallies: contextvars.ContextVar[tuple[Tally, ...]] = contextvars.ContextVar(
     "quackd_intent_tallies", default=()
 )
 
 
 @contextlib.contextmanager
-def counting() -> Iterator[Counter[str]]:
+def counting() -> Iterator[Tally]:
     """One tally for the verb in flight in this context, chained onto its parents' so a nested
     verb's intents count for the composite too.
 
@@ -219,7 +227,7 @@ def counting() -> Iterator[Counter[str]]:
     other's frame, and a verb that is cancelled unwinds its own frame instead of popping
     somebody else's. With a shared stack, a `quack` that overlapped a `move` reported the
     move's intents as its own and the move reported neither its resends nor its stop."""
-    tally: Counter[str] = Counter()
+    tally = Tally()
     token = _tallies.set((*_tallies.get(), tally))
     try:
         yield tally
@@ -274,6 +282,9 @@ class LoggedTransport:
             )
             raise
         self._count(intent.kind)
+        if ack.accepted:
+            for tally in _tallies.get():
+                tally.accepted += 1
         self._event_log.emit(
             "intent",
             intent=intent.kind,
@@ -1557,6 +1568,7 @@ __all__ = [
     "LogLine",
     "LoggedTransport",
     "Sink",
+    "Tally",
     "call_lines",
     "cap_lines",
     "capture_sink",

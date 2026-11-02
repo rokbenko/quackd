@@ -44,6 +44,7 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
     picture_parts,
+    tool_arguments,
 )
 from quackd.agent.providers.catalogue import default_model_for, find_model
 from quackd.agent.providers.openai_headers import (
@@ -300,17 +301,12 @@ def parse_responses(response: Any) -> ProviderTurn:
     for item in getattr(response, "output", None) or []:
         kind = getattr(item, "type", None)
         if kind == "function_call":
-            raw_args = getattr(item, "arguments", None)
-            try:
-                args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args or {})
-            except json.JSONDecodeError:
-                args = {"_unparsed": raw_args}
             # call_id, not id: it is what a later function_call_output must quote.
             tool_calls.append(
                 ToolCall(
                     id=str(getattr(item, "call_id", None) or getattr(item, "id", "")),
                     name=str(getattr(item, "name", "")),
-                    arguments=args,
+                    arguments=tool_arguments(getattr(item, "arguments", None)),
                 )
             )
         elif kind == "message":
@@ -382,12 +378,9 @@ def parse_response(response: Any) -> ProviderTurn:
     tool_calls: list[ToolCall] = []
     for tc in getattr(message, "tool_calls", None) or []:
         fn = tc.function
-        raw_args = fn.arguments
-        try:
-            args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args or {})
-        except json.JSONDecodeError:
-            args = {"_unparsed": raw_args}
-        tool_calls.append(ToolCall(id=str(tc.id), name=str(fn.name), arguments=args))
+        tool_calls.append(
+            ToolCall(id=str(tc.id), name=str(fn.name), arguments=tool_arguments(fn.arguments))
+        )
     usage = getattr(response, "usage", None)
     # OpenAI's own Chat Completions returns no reasoning text, only a count of the tokens it
     # spent on it. DeepSeek, vLLM's reasoning parsers, llama.cpp, LM Studio and xAI put the

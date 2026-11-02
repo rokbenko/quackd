@@ -36,6 +36,7 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
     picture_parts,
+    tool_arguments,
 )
 from quackd.agent.providers.catalogue import default_model_for, find_model
 
@@ -174,8 +175,11 @@ def parse_response(response: Any) -> ProviderTurn:
     for block in response.content:
         kind = getattr(block, "type", None)
         if kind == "tool_use":
-            args = block.input if isinstance(block.input, dict) else dict(block.input)
-            tool_calls.append(ToolCall(id=str(block.id), name=str(block.name), arguments=args))
+            tool_calls.append(
+                ToolCall(
+                    id=str(block.id), name=str(block.name), arguments=tool_arguments(block.input)
+                )
+            )
         elif kind == "text":
             texts.append(block.text)
         elif kind == "thinking":

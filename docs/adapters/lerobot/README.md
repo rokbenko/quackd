@@ -2008,9 +2008,13 @@ The order below is the whole of the feature, and none of it is a step you can sk
    folding to its rest pose with a pencil still in the jaws drives that pencil into the bench,
    and the person who put it there is the one who should take it out. That wait is bounded at
    **120 seconds**, since a run has to end even when the room is empty.
-7. **Then the fold.** Enter sends `gripper(open=true)` through the logged transport, so it is
-   in the record like every other intent, and then the rest move folds the arm and torque drops
-   at the fold exactly as it would have without the flag.
+7. **Then the fold.** Enter drives the gripper all the way open, every send of it through the
+   logged transport, so it is in the record like every other intent. A gripper that cannot get
+   there is said out loud, and the arm stays where it is, because you have just been told to
+   reach in. Then, however the question ended, quackd says it is about to fold and gives your
+   hands 3 seconds. A Ctrl-C or `q` during the opening, those seconds or the fold holds the arm
+   where it is, with nothing released. Otherwise the rest move folds the arm and torque drops at
+   the fold exactly as it would have without the flag.
 
 What the person at the arm is told, in order, captured from a `--by-hand` run on `lerobot:mock`
 in which the arm was placed at `shoulder_lift` -20, `elbow_flex` 40, `wrist_flex` 15 with the
@@ -2023,11 +2027,14 @@ press Enter
 holding the pose you set, you can let go. It is at elbow_flex 40, gripper 35,
 shoulder_lift -20, shoulder_pan 0, wrist_flex 15, wrist_roll 0
 the run is over and the arm is holding where it ended. Take hold of whatever is in the
-gripper and press Enter, and the gripper opens before the arm folds up. Leave it and
-the arm folds up with the gripper shut
+gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
+so take your hands away as soon as it is open. Leave it and the arm folds up with the
+gripper shut
+folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q
+stops it before it moves
 ```
 
-The middle line reads the arm back rather than repeating what it was told to hold, which is how
+The second line reads the arm back rather than repeating what it was told to hold, which is how
 you find out that the wrist sagged two degrees as it took the weight. The same run in the
 transcript, where every stage is a `hand` event, with the model's side of each turn, the
 verdict, the declaration and the `asked` record of each question left out:
@@ -2041,7 +2048,8 @@ verdict, the declaration and the `asked` record of each question left out:
 ✓  result  report_state ok: shoulder_pan 0, shoulder_lift -20, elbow_flex 40, wrist_flex 15, wrist_roll 0, gripper 35; torque on; hottest shoulder_pan 30°C; holding nothing (0.0 s, 0 intents)
 →  send    stop
 →  send    gripper(open=true)
-·  hand    unloaded: opening the gripper
+·  hand    unloaded: the gripper is open
+·  note    folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
 ·  note    moving to the rest pose
 ·  note    at the rest pose
 ```
@@ -2110,8 +2118,9 @@ left out):
 **Ctrl-C in the second wait means "skip this and finish"**, not "abandon the arm". The gripper
 stays shut, the stage is recorded as skipped, and the rest of the teardown runs anyway, which
 is the difference between a run that ends with the arm folded and a record written and one that
-leaves an energised arm and no transcript. A third press lands somewhere without that guard and
-quits at once:
+leaves an energised arm and no transcript. The 3 seconds still follow, and a press in them or in
+the fold holds the arm where it is. A third Ctrl-C lands somewhere without that guard and quits at
+once:
 
 ```
 ·  hand    skipped: interrupted while waiting

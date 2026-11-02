@@ -2,6 +2,10 @@
 
 **Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a stop asked for from beside a verb ends `move`, `go_to`, `search_scan` and `approach_and`, not `watch` alone) and [ADR-0012](0012-safety-executor.md) (the executor can end every verb moving the body for a newer command, and refuses one admitted before it that has not started) · Implemented in `quackd/verbs/core.py` (`_twist`, `_Interrupted`, `_ended_by`, `move`, `search_scan`, `approach_and`), `quackd/verbs/registry.py` (`STOP_ENDED`), `quackd/safety.py` (`Executor.preempt`, `Preempted`, `_run_verb`, `_run_admitted`, `_record`, `context`) and `adapters/moss/src/quackd_moss/verbs.py` (`_braked`) · Documented in [docs/guides/drive.md](../guides/drive.md#one-mover-at-a-time) and [docs/guides/mcp.md](../guides/mcp.md)
 
+**Amended 2026-11-02:** the arm's `move_joints`, `gripper` and `place` read the stop beside them
+now, and mark a braked result the same way. Their loop sends a fresh goal every tenth of a second,
+so a stop held the arm for one tick, as it once held `move`, and an MCP pilot was told it had worked.
+
 ## Context
 
 The executor counts every stop asked for, from any caller, and gives each verb a context whose

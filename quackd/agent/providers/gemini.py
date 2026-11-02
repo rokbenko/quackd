@@ -25,6 +25,7 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
     picture_parts,
+    tool_arguments,
 )
 from quackd.agent.providers.catalogue import KEY_FALLBACKS, default_model_for
 
@@ -126,7 +127,6 @@ def parse_response(response: Any) -> ProviderTurn:
     for i, part in enumerate(parts):
         fc = getattr(part, "function_call", None)
         if fc is not None and getattr(fc, "name", None):
-            args = dict(getattr(fc, "args", None) or {})
             # Gemini 3 signs the call; the signature rides on the part, not on the call, and
             # the next request is refused unless it comes back on the same function_call
             sig = getattr(part, "thought_signature", None)
@@ -134,7 +134,7 @@ def parse_response(response: Any) -> ProviderTurn:
                 ToolCall(
                     id=f"gemini-{i}",
                     name=str(fc.name),
-                    arguments=args,
+                    arguments=tool_arguments(getattr(fc, "args", None)),
                     signature=base64.b64encode(sig).decode() if sig else "",
                 )
             )

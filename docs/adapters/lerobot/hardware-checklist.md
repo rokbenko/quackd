@@ -30,7 +30,9 @@ about to move.
    voltage, so neither can warn you: the wrong supply is either an arm that cannot hold
    itself up or an arm with more torque than you were expecting.
 2. **Clear the whole sweep**, not the footprint. Take anything fragile out of the gripper and
-   off the desk within arm's length, and keep hands out of the volume from here on.
+   off the desk within arm's length, and keep hands out of the volume from here on. Clamp the base
+   to the desk as well: an SO-101 is light for its reach, so a quick move can tip a base nothing is
+   holding.
 3. **Fit a switch you can reach.** There is no e-stop on an SO-101 and quackd cannot give it
    one: cutting the servo supply is the only thing that stops this arm in every case,
    including the one where the controlling process has died with a goal still standing. Put
@@ -340,7 +342,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    | with several, every url carries `?name=` and the names are unique | the name is what the model, a pick policy's observation and `frames/NNNN-<name>.png` tell the views apart by |
    | an index may not repeat | two entries for one camera is a typo, not a setup |
    | the **first** url is the primary | it is the camera `--fov-deg` describes, the one the `camera:` detections line reports, and the only one the verbs that steer by sight read: they run at 10 Hz, and fetching every camera there would blow the deadman window |
-   | a camera that stalls later costs its own picture and nothing else | `report_state` and `doctor` then name which one, in a `camera <name>` row each |
+   | a camera that stalls later costs its own picture and nothing else | `report_state` then says `CAMERA DOWN: <name>`, and `doctor` gives each one a `camera <name>` row |
    | if the **primary** is the one that died, the others still reach the model and the detections line reports nothing seen | a bearing read off a different lens would point somewhere else |
    | a second camera that will not open refuses before the arm is energised | and it lets go of the first, so a wrong index still costs you nothing but the message |
 
@@ -634,14 +636,18 @@ stopped
 
     ```
     the run is over and the arm is holding where it ended. Take hold of whatever is in the
-    gripper and press Enter, and the gripper opens before the arm folds up. Leave it and
-    the arm folds up with the gripper shut
+    gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
+    so take your hands away as soon as it is open. Leave it and the arm folds up with the
+    gripper shut
     ```
 
-    Take hold of what is in the jaws first and then press Enter: the gripper opens while you
-    have it, and only then does the arm fold. That question stands for two minutes and then
-    answers itself by leaving the gripper shut, so an arm nobody came back to folds up holding
-    what it was given rather than dropping it on the bench.
+    Take hold of what is in the jaws first and then press Enter: the gripper opens all the way
+    while you have it, about 2 seconds from shut at the default step cap, and a line then says
+    the arm folds in 3 seconds. Take your hands away in those seconds, and a Ctrl-C or `q` in them
+    or in the fold holds the arm where it is. A gripper that cannot open is said out loud, and the
+    arm stays where it is, since you are being told to reach in. That question stands for two
+    minutes and then answers itself by leaving the gripper shut, so an arm nobody came back to
+    folds up holding what it was given rather than dropping it on the bench.
 
     Once that has worked, do it again with a task that moves: a pencil in the gripper, the arm
     set down on the paper, and a goal short enough to read in one line. That is the second of
