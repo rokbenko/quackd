@@ -34,7 +34,15 @@ from quackd.adapters.base import CONNECTING_TAKES_TORQUE_OFF
 from quackd.duckfile.schema import DEFAULT_SEGMENT_S, INSTRUCTION_MAX_CHARS, instruction_line
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import send_or_fail
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
+    NoParams,
+    Precondition,
+    Verb,
+    VerbContext,
+    VerbResult,
+)
 
 JOINTS: tuple[str, ...] = (
     "shoulder_pan",
@@ -58,8 +66,15 @@ STALL_TICKS = 5
 STALL_DEG = 0.5
 """No joint moved this far for this many ticks, and it is not going to."""
 GRIPPER_S = 6.0
-"""How long to give the gripper. The step cap applies to its 0..100 range too, so a full
-open takes 100 divided by the step, times the tick."""
+"""The least time to give the gripper. The step cap applies to its 0..100 range too, so a full
+open takes 100 divided by the step, times the tick, and a lowered cap needs longer than this
+(`gripper_budget_s`)."""
+GRIPPER_TICK_SLACK = 3.0
+"""How many of `TICK_S` to allow for each send of a full open or close. A tick is a sleep and then
+the bus's time, a send and the reads behind it, which nothing here can know before it has run."""
+GRIPPER_TIMEOUT_S = 60.0
+"""The executor's timeout for `gripper`, which `gripper_budget_s` ends inside. Long, because a
+gripper that has stopped moving is called stalled within a few ticks whatever this says."""
 
 MOVE_MIN_S = 0.2
 MOVE_MAX_S = 12.0
@@ -486,6 +501,19 @@ def move_budget_s(distance: float, duration_s: float, step_deg: float | None) ->
     return min(max(duration_s, cap_s) + MOVE_SETTLE_S, MOVE_JOINTS_TIMEOUT_S - MOVE_HEADROOM_S)
 
 
+def gripper_budget_s(step_deg: float | None) -> float:
+    """How long a full open or close is watched: `GRIPPER_S`, or the whole range at the step cap,
+    with the bus's time (`GRIPPER_TICK_SLACK`) and a settle, where a lowered cap
+    (`QUACKD_LEROBOT_MAX_STEP_DEG`) makes that longer. It was `GRIPPER_S` alone, so at a cap of 1 a
+    gripper in good order stopped part of the way and said it had run out of time. Ends inside the
+    executor's timeout, as a move's does."""
+    if not step_deg or step_deg <= 0:
+        return GRIPPER_S
+    sends = (GRIPPER_OPEN - GRIPPER_CLOSED) / step_deg
+    whole = sends * TICK_S * GRIPPER_TICK_SLACK + MOVE_SETTLE_S
+    return min(max(GRIPPER_S, whole), GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S)
+
+
 async def _drive(
     ctx: VerbContext,
     goal: dict[str, float],
@@ -514,9 +542,14 @@ async def _drive(
     found when the ramp ends, not before; what it pushes with meanwhile is what the step cap
     allows, the same as it always was.
 
+    It also ends when it is told to from beside it (`VerbContext.interrupted`), a `stop` from
+    a second MCP call or a run's minutes running out, and it looks before every send. Each tick
+    is a fresh goal, so a stop that held the arm lasted until the next tick carried it on to
+    where it was going, with the pilot told the brake had worked.
+
     Returns the last joint reading, the last state, how it ended (`arrived`, `stalled`,
-    `timeout` or `refused`) and a reason when it did not arrive. A failure stops the arm
-    first: `stop` holds the present position and deliberately leaves the gripper's goal
+    `timeout`, `refused` or `ended`) and a reason when it did not arrive. A failure stops the
+    arm first: `stop` holds the present position and deliberately leaves the gripper's goal
     alone, so stopping mid-move never drops what is held."""
     started = ctx.transport.now()
     stall = _stall_threshold(ctx)
@@ -526,6 +559,9 @@ async def _drive(
     state: DuckState | None = None
     still = 0
     while (elapsed := ctx.transport.now() - started) < budget_s:
+        if (told := ctx.interrupted()) is not None:
+            await ctx.transport.stop()
+            return joints, state, "ended", told
         share = min(1.0, elapsed / ramp_s) if ramping else 1.0
         target = ramp_target(start or {}, goal, share)
         if (fail := await send_or_fail(ctx, intent_for(target))) is not None:
@@ -552,6 +588,16 @@ async def _drive(
             )
     await ctx.transport.stop()
     return joints, state, "timeout", f"{shortfall(goal, joints)} when the time ran out"
+
+
+def _told_to_end(how: str, why: str | None) -> dict[str, Any]:
+    """What a verb's result carries when `_drive` ended it from beside it, as the core verbs'
+    do (`quackd.verbs.core._ended_by`). `STOP_ENDED` is what `abort_when`'s count of failures in
+    a row passes over: the brake working is neither the verb's failure nor the pilot's. A budget
+    that ran out is no stop, and stays one."""
+    if how != "ended":
+        return {}
+    return {"interrupted": why, **({"ended_by": STOP_ENDED} if why == STOPPED else {})}
 
 
 # ── the rest pose, shared by both backends ──────────────────────────────────────────────
@@ -1291,7 +1337,7 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     whole = all(abs(goal[joint] - begin) < RAMP_RESOLUTION for joint, begin in start.items())
     distance = max((abs(goal[joint] - begin) for joint, begin in start.items()), default=0.0)
     step = ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
-    joints, _state, _how, why = await _drive(
+    joints, _state, how, why = await _drive(
         ctx,
         goal,
         lambda target: Intent.joint(target, p.duration_s),
@@ -1301,7 +1347,9 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
         ramp_s=0.0 if whole else p.duration_s,
     )
     if why is not None:
-        return VerbResult.fail(f"move_joints: {why}", goal=goal, joints=joints)
+        return VerbResult.fail(
+            f"move_joints: {why}", goal=goal, joints=joints, **_told_to_end(how, why)
+        )
     return VerbResult.success(
         "moved " + ", ".join(f"{k}={joints.get(k, v):.0f}" for k, v in goal.items()),
         goal=goal,
@@ -1324,7 +1372,9 @@ async def _drive_gripper(
         ctx,
         goal,
         lambda _target: Intent.gripper(open_),
-        budget_s=GRIPPER_S,
+        budget_s=gripper_budget_s(
+            ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
+        ),
         tolerance=lambda _: GRIPPER_TOL,
     )
     return joints.get("gripper"), state, how, why
@@ -1335,7 +1385,12 @@ async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
     where = "" if position is None else f" (stopped at {position:.0f}/100)"
     if p.open:
         if how != "arrived":
-            return VerbResult.fail(f"gripper did not open: {why}", open=True, position=position)
+            return VerbResult.fail(
+                f"gripper did not open: {why}",
+                open=True,
+                position=position,
+                **_told_to_end(how, why),
+            )
         return VerbResult.success(f"gripper open{where}", open=True, position=position)
     # closing on something is the one move that is supposed to stop short
     holding = bool(state is not None and state.holding)
@@ -1345,7 +1400,11 @@ async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
             f"gripper closed {grasped}{where}", open=False, position=position, holding=holding
         )
     return VerbResult.fail(
-        f"gripper did not close: {why}", open=False, position=position, holding=holding
+        f"gripper did not close: {why}",
+        open=False,
+        position=position,
+        holding=holding,
+        **_told_to_end(how, why),
     )
 
 
@@ -1610,7 +1669,9 @@ async def _manipulate_polled(
 async def place(ctx: VerbContext, _: NoParams) -> VerbResult:
     position, _state, how, why = await _drive_gripper(ctx, open_=True)
     if how != "arrived":
-        return VerbResult.fail(f"place: the gripper did not open: {why}", position=position)
+        return VerbResult.fail(
+            f"place: the gripper did not open: {why}", position=position, **_told_to_end(how, why)
+        )
     return VerbResult.success("placed: gripper opened where the arm is", position=position)
 
 
@@ -1635,13 +1696,19 @@ def lerobot_verbs(*, policy: bool) -> dict[str, Verb]:
             timeout_s=MOVE_JOINTS_TIMEOUT_S,
             done_condition="every joint given is within a few degrees of its goal",
         ),
-        Verb("gripper", "Open or close the gripper.", gripper, GripperParams, timeout_s=10),
+        Verb(
+            "gripper",
+            "Open or close the gripper.",
+            gripper,
+            GripperParams,
+            timeout_s=GRIPPER_TIMEOUT_S,
+        ),
         Verb(
             "place",
             "Release what is held by opening the gripper where the arm is.",
             place,
             NoParams,
-            timeout_s=10,
+            timeout_s=GRIPPER_TIMEOUT_S,
         ),
     ]
     if policy:

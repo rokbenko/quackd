@@ -29,7 +29,7 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, TypeVar
 
 from quackd.adapters.base import HandResult, RestResult, let_go_if_any
 
@@ -55,6 +55,7 @@ class Person(Protocol):
 
 
 Hook = Callable[..., None]
+T = TypeVar("T")
 
 
 def _nothing(*_args: Any, **_kwargs: Any) -> None:
@@ -260,7 +261,7 @@ async def ask(
     Only a bare Enter, read after the question was put, is a yes (`deliberate`): every question
     here moves the arm or drops it, so a line with anything typed on it is a no, `n` the
     commonest, and an Enter pressed before anybody could have read the question is passed by.
-    A press of the kill switch is never a yes either, though `q` arrives with an Enter. The wait
+    A press of the kill switch is never a yes either, nor an Enter close behind a `q`. The wait
     watches a fresh key press rather than the abort flag (`until_abort=False`): the flag is set
     on every run a person ended, which are the runs most likely to have missed their fold, and
     watching it would skip the question on exactly those. A Ctrl-C that reaches here as an
@@ -326,10 +327,12 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
 
 
 async def fold_unless_stopped(
-    fold: Callable[[], Awaitable[RestResult | None]],
+    fold: Callable[[], Awaitable[T]],
     stopped: Callable[[], Awaitable[Any]] | None,
-) -> RestResult | None:
+) -> T:
     """Fold, unless the person stops it with a fresh Ctrl-C or `q` first: then `FoldStopped`.
+    Whatever else a person standing at the arm may stop goes through here too: the count before
+    a fold, and the gripper opening at the end of a `--by-hand` run.
 
     The fold is the arm's own rest move, which runs until it arrives, stalls or runs out of
     time, and never looks at the kill switch: in a teardown the abort flag is already set and

@@ -925,6 +925,94 @@ async def test_openai_bad_json_arguments_do_not_crash() -> None:
     assert "_unparsed" in turn.tool_calls[0].arguments
 
 
+NOT_AN_OBJECT = ["[1, 2]", '"text"', "42", "true", "1.5", "[]"]
+
+
+@pytest.mark.parametrize("raw", NOT_AN_OBJECT)
+async def test_arguments_that_are_not_an_object_reach_the_gate_on_chat(raw: str) -> None:
+    """JSON, and not the object a tool's arguments have to be, was a pydantic error out of
+    `ToolCall`: no `ProviderError`, no retry, and the run ended on a traceback's words because one
+    model sent one odd call. Invalid JSON already went to the params gate, which tells the pilot
+    what was wrong and lets it try again, and this is the same mistake."""
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("walk", raw)))
+    turn = await p.step("S", history()[:1], TOOLS)
+    assert turn.tool_calls[0].arguments == {"_unparsed": raw}
+
+
+@pytest.mark.parametrize("raw", NOT_AN_OBJECT)
+def test_arguments_that_are_not_an_object_reach_the_gate_on_responses(raw: str) -> None:
+    turn = parse_responses(responses_result("walk", raw))
+    assert turn.tool_calls[0].arguments == {"_unparsed": raw}
+
+
+async def test_a_call_with_no_arguments_is_a_call_with_none() -> None:
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", None)))  # type: ignore[arg-type]
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", "{}")))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
+
+
+@pytest.mark.parametrize("raw", ["", "  ", "null"])
+async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaults(
+    raw: str,
+) -> None:
+    """A turn cut off before its arguments comes as a blank, and running the verb with its defaults
+    opened the arm's gripper on nothing the model said. The gate refuses it, as it always did."""
+    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("gripper", raw)))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
+    assert parse_responses(responses_result("gripper", raw)).tool_calls[0].arguments == {
+        "_unparsed": raw
+    }
+
+
+@pytest.mark.parametrize("given", [[1, 2], "text", 42])
+async def test_anthropic_and_gemini_take_the_same_road(given: Any) -> None:
+    """Their SDKs hand over a parsed `input` and `args`. They say that is an object, and a
+    gateway in front of them promised nothing."""
+    block = NS(type="tool_use", id="toolu_9", name="walk", input=given)
+    claude = AnthropicProvider(client=FakeAnthropic(anthropic_response(block)))
+    assert (await claude.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {
+        "_unparsed": given
+    }
+
+    part = NS(function_call=NS(name="walk", args=given), thought_signature=None, text=None)
+    answer = NS(
+        candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
+        usage_metadata=NS(prompt_token_count=1, candidates_token_count=1),
+    )
+    gemini = GeminiProvider(client=FakeGemini(answer))
+    assert (await gemini.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {
+        "_unparsed": given
+    }
+
+
+@pytest.mark.parametrize(("given", "sent"), [([1, 2], {"_unparsed": [1, 2]}), (None, {})])
+async def test_anthropic_sends_back_an_object_on_the_next_turn(given: Any, sent: Any) -> None:
+    """It replays its own blocks as they came, and the API refuses a `tool_use` whose input is no
+    object, so the run ended a turn later than it used to. Every other provider renders the call
+    from what was parsed, and an object is left as it was: the block goes back to the byte."""
+    block = NS(type="tool_use", id="toolu_9", name="walk", input=given)
+    block.model_dump = lambda: {"type": "tool_use", "id": "toolu_9", "name": "walk", "input": given}
+    claude = AnthropicProvider(client=FakeAnthropic(anthropic_response(block)))
+    turn = await claude.step("S", history()[:1], TOOLS)
+    assert turn.raw[0]["input"] == sent
+
+    exchange = Exchange(
+        observation=Observation(text="o"),
+        decision=Decision(tool_call=turn.tool_calls[0], raw=turn.raw),
+        result_text="refused",
+    )
+    replayed = a_messages([exchange])
+    back = next(m for m in replayed if m["role"] == "assistant")
+    assert back["content"][0]["input"] == sent
+
+    fine = {"type": "tool_use", "id": "toolu_1", "name": "walk", "input": {"vx": 0.1}}
+    good = NS(type="tool_use", id="toolu_1", name="walk", input={"vx": 0.1})
+    good.model_dump = lambda: dict(fine)
+    claude = AnthropicProvider(client=FakeAnthropic(anthropic_response(good)))
+    assert (await claude.step("S", history()[:1], TOOLS)).raw == [fine]
+
+
 def test_openai_history_without_images_has_no_extra_user_turn() -> None:
     ex = Exchange(
         observation=Observation(text="o"),

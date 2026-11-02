@@ -48,10 +48,9 @@ for a moment. None of this has run on an arm yet, and `e171` to `e179` are what 
 
 After the Enter that starts a by-hand run, keep a hand on a link until it prints `you can let go`:
 torque comes back on under your hand, and an arm it refuses to take hold of stays limp. At the end
-of such a run the last question says the gripper opens before the arm folds. On `lerobot:real` Enter
-sends the gripper one command, which the step cap holds to a few units of its 100, and the fold
-starts at once with no count. So clear your hands before you press Enter, and take what the jaws
-hold out by hand, at that question or once the arm is limp at its rest pose.
+of such a run, Enter at the last question opens the gripper all the way, with whatever it holds in
+your hand, and 3 seconds later the arm folds. Take your hands away in those seconds. A Ctrl-C or `q`
+holds it where it is, and none of this has met an arm yet.
 
 118 of these files give the pilot a part to play, a feeling to show or a question to answer with
 its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,
@@ -190,10 +189,10 @@ arm then pushes less.
 `e191` to `e196` are the red team's: a camera pulled mid-run, a chat trying to load a wider file
 past `--lock-duckfile`, the brake after the budget, a false note in a robot's memory, the sign of
 `e122` handed over as a task picture, and the one to read before `e145`. Over MCP a `stop` sent
-beside a running `move_joints` is sent and does not end it: on the arm's twin it answered
-`stopped (velocity zeroed)`, and the arm carried on to its goal
-([guides/mcp.md](../../guides/mcp.md)). In a chat the power switch is the stop, and in a terminal
-`quackd drive`'s Enter ends the move (`e186`).
+beside a running `move_joints` ends it where it is, and the call that asked for the move comes back
+saying so ([guides/mcp.md](../../guides/mcp.md)). That is `e196`, and it has run on the arm's twin
+and not on the arm. A chat still takes its time to send one, so in a chat the power switch is the
+stop, and in a terminal `quackd drive`'s Enter ends the move (`e186`).
 
 `e126` flies a stand-in for a model, `e126/monkey.py`, which answers every turn with a random call:
 verbs the run offered and verbs it did not, joints that do not exist, angles past every travel, NaN
@@ -201,7 +200,8 @@ and strings where numbers go. It runs on the mock or the twin and never on the a
 quackd 0.30.0, 1000 turns of seed 1 on `lerobot:mock` came to about 860 calls stopped at a gate,
 nearly all at `params` and `allowlist`, with none outside the contract and none past a joint's
 travel. The seed does not make a run repeat exactly, so rerun it rather than quote these. It also
-found that a `stop` sent with junk arguments is refused at `params` and stops nothing.
+found that a `stop` sent with junk arguments was refused at `params` and stopped nothing, and that
+arguments that were no object ended the run. Neither does now.
 
 `e197` and `e198` hand the arm to a scripted policy, which needs no torch, `e199` sets the arm
 beside its twin joint by joint, `e200` asks whether a slow move is smooth, and `e201` times the

@@ -885,15 +885,15 @@ class LeRobotReal:
         whole, so neither thread reads it half written."""
         self._wedged_by: asyncio.Task[Any] | None = None
         """The task a cancellation took off `_wedged`'s call, or None when the call ran out its
-        time, so a stop can tell a policy segment's own call still on the wire from a bus that
-        stopped answering (`_segment_call`)."""
+        time, so a stop can tell a call it cut short, still on the wire, from a bus that stopped
+        answering (`_cancelled_call`)."""
         self._wedged_spent = 0.0
         """The bus's reading (`_busy`) at which `_wedged`'s call would have spent its budget had
         nothing cancelled it, which is how `_call` judges every call's. While that call is out
         the bus is its own and the reading climbs with the loop's clock, so the stamps say
         whether it is still inside its time however late the loop looks, and once its worker is
-        back its closed stamp says it is on no wire (`_segment_call`). The longest anything
-        waits for a segment's call still on the wire."""
+        back its closed stamp says it is on no wire (`_cancelled_call`). The longest anything
+        waits for a cancelled call still on the wire."""
         self._policy_task: asyncio.Task[SegmentEnd] | None = None
         self._policy_name = "idle"
         self._policy_error: str | None = None
@@ -1204,11 +1204,11 @@ class LeRobotReal:
         Every call is timed on `perf_counter`, the wait for the lock included, however it ends
         (`Timing`, the state's `timing.bus_call`).
 
-        A call a policy segment was cancelled in the middle of is waited for before the check,
-        here and once the lock is this call's, inside this call's own budget, as a call ahead
-        of it on the lock would be (`_outwait_segment_call`), rather than refused on: it is the
-        segment's own read or send, and the stop that cancelled it is no bus that stopped
-        answering. That call holds the bus while it is out, so waiting for it spends this
+        A call something was cancelled in the middle of is waited for before the check, here
+        and once the lock is this call's, inside this call's own budget, as a call ahead of it
+        on the lock would be (`_outwait_cancelled_call`), rather than refused on: it is that
+        task's own read or send, and what cancelled it is no bus that stopped answering. That
+        call holds the bus while it is out, so waiting for it spends this
         call's budget as waiting behind any call on the bus does, and a call whose budget it
         spent never goes out."""
         loop = asyncio.get_running_loop()
@@ -1223,10 +1223,10 @@ class LeRobotReal:
             now = loop.time()
             return now + budget - (self._busy(now) - bus_asked)
 
-        await self._outwait_segment_call(budget_end())
+        await self._outwait_cancelled_call(budget_end())
         self._refuse_if_wedged()
         if budget_end() <= loop.time():
-            # the segment's call it waited for spent its budget on the bus, and the loop's
+            # the cancelled call it waited for spent its budget on the bus, and the loop's
             # thread was busy past it until that call came back: it does not go out, as a call
             # that spent its budget queued on the lock does not, and nothing below would judge
             # it before the free lock handed it the bus
@@ -1261,8 +1261,8 @@ class LeRobotReal:
                 async with self._lock:
                     # a caller parked on the lock passed the check above before the call
                     # ahead of it wedged; the lock's release is what woke it, so ask again,
-                    # and wait out a segment's call as above
-                    await self._outwait_segment_call(budget_end())
+                    # and wait out a cancelled call as above
+                    await self._outwait_cancelled_call(budget_end())
                     self._refuse_if_wedged()
                     if spent:
                         # its budget ran out while it waited, and the lock reached it before
@@ -1327,18 +1327,24 @@ class LeRobotReal:
         self._wedged = None
         self.stop_error = None
 
-    def _segment_call(self) -> asyncio.Future[Any] | None:
-        """The call a policy segment was cancelled in the middle of, while its future is not
-        yet done and the bus's stamps say it is inside its own time, or None.
+    def _cancelled_call(self) -> asyncio.Future[Any] | None:
+        """The call something was cancelled in the middle of, while its future is not yet done
+        and the bus's stamps say it is inside its own time, or None.
 
-        Cancelling a segment, by a stop, the verb waiting on it or the next `do`, leaves the
-        call it was in on the wire, which `_call` files as a wedge. That thread is the
-        segment's own (`_wedged_by`), and on an arm that answers it comes back at once, so
-        whatever lands behind it, the stop's own hold, the executor's read before a verb or a
-        heartbeat, waits for it as it would have waited for it on the lock
-        (`_outwait_segment_call`), rather than be refused. Past its own budget it is what it
-        would have been had nothing cancelled it, a bus that stopped answering, and so is a
-        call that ran out its time or one anything else left: none of those is waited on.
+        Cancelling a policy segment, by a stop, the verb waiting on it or the next `do`, or a
+        verb or a fold, by a press, an abort or the executor's clock, leaves the call it was in
+        on the wire, which `_call` files as a wedge. That thread is the cancelled task's own
+        (`_wedged_by`), and on an arm that answers it comes back at once, so whatever lands
+        behind it, the stop's own hold, the executor's read before a verb or a heartbeat, waits
+        for it as it would have waited for it on the lock (`_outwait_cancelled_call`), rather than
+        be refused. Past its own budget it is what it would have been had nothing cancelled it,
+        a bus that stopped answering, and so is a call that ran out its time: neither is waited
+        on.
+
+        Only a segment's used to be. A press on a move or a fold, with one of its reads out,
+        which is a fair share of any tick, had its stop refused on that read while the abort said
+        a stop was sent, and the close in the same breath told somebody who had just stopped the
+        arm to hold it and cut its power, over an arm that was fine and holding.
 
         Judged by the stamps `_call` judges every call by (`_bus`), never by when the loop
         looks or by the future. The worker closes its call's stamp as it comes back, on the
@@ -1351,7 +1357,7 @@ class LeRobotReal:
         (`_wedged_spent`), which is when the loop's clock says it is, since the bus is its own
         while it is out."""
         left, by = self._wedged, self._wedged_by
-        if left is None or left.done() or by is None or by.get_name() != POLICY_TASK:
+        if left is None or left.done() or by is None:
             return None
         if self._bus[1] is None:
             return left
@@ -1359,19 +1365,19 @@ class LeRobotReal:
             return None
         return left
 
-    async def _outwait_segment_call(self, until: float | None = None) -> None:
-        """Wait for `_segment_call` to come back, no longer than its own budget, which is when
+    async def _outwait_cancelled_call(self, until: float | None = None) -> None:
+        """Wait for `_cancelled_call` to come back, no longer than its own budget, which is when
         everything behind it would have been refused had nothing cancelled it, and no longer
         than `until`, the waiting call's own, on the event loop's clock. So an arm that stopped
         answering under it is found no later than it was.
 
-        Every wake is judged again by the stamps (`_segment_call`), not by what ended the wait:
+        Every wake is judged again by the stamps (`_cancelled_call`), not by what ended the wait:
         a wait the loop ran late, or woke early (gh-88494), finds a call that is back and waits
         the turn its future needs, and finds one still out past its budget refused. A call
         whose worker is back is waited for with no deadline, since its future is done on the
         loop's next turn however late that turn comes."""
         loop = asyncio.get_running_loop()
-        while (left := self._segment_call()) is not None:
+        while (left := self._cancelled_call()) is not None:
             if self._bus[1] is None:
                 await asyncio.wait({left})
                 return
@@ -2720,12 +2726,12 @@ class LeRobotReal:
         verb moves the arm under, even where that `finally` did not get it back.
 
         A call a cancelled segment left on the wire is waited for first, no longer than its own
-        deadline (`_outwait_segment_call`), and the write itself waits for any call still out
+        deadline (`_outwait_cancelled_call`), and the write itself waits for any call still out
         after that (`_cap_back`): LeRobot reads the cap as a send goes out
         (`up.SO_ACTION_CLAMP`), and the policy's last goal must not go out under the verbs' cap,
         which on a policy faster than the verbs is the larger step."""
         if self._policy_cap_on:
-            await self._outwait_segment_call()
+            await self._outwait_cancelled_call()
             self._cap_back()
 
     def _cap_back(self) -> None:
@@ -2806,7 +2812,7 @@ class LeRobotReal:
 
         A segment cancelled in the middle of a bus call, here, by the verb waiting on it or by
         the `do` that was starting it, leaves that call's thread on the wire, and whatever
-        cancelled it waits for that call before it writes to the arm (`_segment_call`), rather
+        cancelled it waits for that call before it writes to the arm (`_cancelled_call`), rather
         than have its own hold refused on it. It is waited on
         whichever segment left it, because the stop that comes here may find the segment
         already gone, cancelled by its own verb or by the next `do`."""
@@ -2820,7 +2826,7 @@ class LeRobotReal:
                 self._policy_stopped_by = why
                 task.cancel()
                 await asyncio.wait({task})
-        await self._outwait_segment_call()
+        await self._outwait_cancelled_call()
         self._policy_name = "idle"
 
     async def _hold(self) -> None:
@@ -2935,18 +2941,19 @@ class LeRobotReal:
         beat that took its answer, and be found a whole period later. So a beat during a pick
         costs its loop one read of the arm.
 
-        A call a segment was cancelled in the middle of, by a stop, its own verb or the next
-        pick, is no wedge to this check while it is inside its own time (`_segment_call`): the
-        probe waits for it inside the probe's own deadline, as it would wait for it on the lock
+        A call something was cancelled in the middle of, a segment by a stop, its own verb or
+        the next pick, is no wedge to this check while it is inside its own time
+        (`_cancelled_call`): the probe waits for it inside the probe's own deadline, as it would
+        wait for it on the lock
         had nothing cancelled it. On an arm that answers it comes back at once, and failing on
         it would abort the run over an arm that is fine. An arm that died under it fails the
-        beat no later than the beat would have failed had nothing cancelled the segment."""
+        beat no later than the beat would have failed had nothing cancelled that call."""
         if self._closed:
             raise HeartbeatError(f"lerobot {self.label} transport is closed")
         if self._robot is None or not bool(self._robot.is_connected):
             raise HeartbeatError("the arm is not connected")
         wedged = self._wedged is not None and not self._wedged.done()
-        if wedged and self._segment_call() is None:
+        if wedged and self._cancelled_call() is None:
             raise HeartbeatError(self.stop_error or "a LeRobot call has not come back")
         try:
             await self._probe(trace=False)

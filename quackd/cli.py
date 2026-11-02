@@ -1598,7 +1598,7 @@ def _ask(question: str) -> bool:
     as it always was.
 
     Both branches tell the saved terminal what was typed, because neither of them printed it:
-    the question goes out raw and the answer is echoed by the terminal driver, so a tee on
+    the question goes out raw and the answer is echoed straight to the terminal, so a tee on
     quackd's own output sees the asking and not the answering. A run with `--yes` never
     reaches here, which is why a recorded question always means a person was really asked."""
     if _FRONT is not None:
@@ -1611,7 +1611,7 @@ def _ask(question: str) -> bool:
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
     answer = switch.ask(f"{question} [y/N]: ")
-    ui.note(f"{question} [y/N]: {answer.strip() or '(Enter)'}")
+    ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 
 
@@ -2810,7 +2810,7 @@ def _run_impl(
                 ),
                 effort=effort,
             ),
-            hint="Ctrl-C or q stops the duck. Press it twice to quit at once."
+            hint="Ctrl-C or q stops the duck. Ctrl-C twice quits at once."
             if front is None
             else "Stop in the page stops the duck.",
         )
@@ -3075,7 +3075,7 @@ def _run_pilots_impl(
                     *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
                 ),
             ),
-            hint="Ctrl-C or q stops every robot. Press it twice to quit at once.",
+            hint="Ctrl-C or q stops every robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -6587,10 +6587,13 @@ def _can_prompt() -> bool:
     Only a console has a console mode, so on Windows that is asked as well.
 
     Behind the page it is never one, whatever stdin is: the page's lines arrive there, and the
-    page puts a run's questions itself (`_someone_to_ask`)."""
+    page puts a run's questions itself (`_someone_to_ask`). Nor from a terminal's background, where
+    reading it stops the whole process."""
     if _FRONT is not None:
         return False
-    return _is_a_console(sys.stdin)
+    from quackd.keys import in_the_background
+
+    return _is_a_console(sys.stdin) and not in_the_background(sys.stdin)
 
 
 def _can_draw_a_prompt() -> bool:
@@ -6602,19 +6605,9 @@ def _can_draw_a_prompt() -> bool:
 
 
 def _is_a_console(stream: Any) -> bool:
-    if stream is None or not stream.isatty():
-        return False
-    if sys.platform == "win32":
-        import ctypes
-        import msvcrt
+    from quackd.keys import is_a_console
 
-        try:
-            handle = msvcrt.get_osfhandle(stream.fileno())
-        except (OSError, ValueError):
-            return False
-        mode = ctypes.c_ulong()
-        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
-    return True
+    return is_a_console(stream)
 
 
 def _rest_pose_text(pose: dict[str, float]) -> Any:

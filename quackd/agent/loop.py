@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import functools
 import random
 import re
@@ -88,6 +89,8 @@ from quackd.perception import detector_for, lens_of
 from quackd.perception.base import Detection, Detector, detect_off_loop, detect_times
 from quackd.release import (
     FOLD_STOPPED,
+    FOLDING_IN,
+    HANDS_AWAY_S,
     FoldStopped,
     cancel_and_wait,
     fold_unless_stopped,
@@ -109,7 +112,6 @@ from quackd.safety import (
 from quackd.space.places import PlaceStore, places_line
 from quackd.space.pose import where_record
 from quackd.transport.base import (
-    Ack,
     CameraFrame,
     DuckState,
     DuckTransport,
@@ -120,6 +122,7 @@ from quackd.transport.base import (
 )
 from quackd.verbs.places import view_record
 from quackd.verbs.registry import (
+    VerbNotFound,
     VerbRegistry,
     VerbResult,
     default_registry,
@@ -730,6 +733,12 @@ class AgentLoop:
         self.billed_calls = 0
         """How many calls were costed at what the vendor said it billed rather than at a rate.
         Written into the summary only when there was one."""
+        self._press_watch: asyncio.Future[Any] | None = None
+        self._fold_watch: Callable[[], Awaitable[Any]] | None = None
+        """What hears a fresh press from the hand-back to the end of the fold, once somebody has
+        been asked about the gripper (`_watch_for_a_press`)."""
+        self._no_fold = False
+        """The hand-back left the arm where it is: a press, or a gripper that would not open."""
         self._handed_over = False
         """Somebody answered the invitation to place this arm, so the gripper may be holding
         whatever they put in it.
@@ -1262,18 +1271,68 @@ class AgentLoop:
         and is no reason to leave an arm unfolded, so only a person's stop counts, the kill
         switch's or the page's Stop button (`_pressed_during_the_fold`). The pause has been
         waited out just before this, and is not waited out again inside the race, where the
-        wait would swallow the cancellation."""
-        if self.executor.abort.is_set() or self.cfg.dry_run:
-            return await self._rest()
+        wait would swallow the cancellation.
+
+        A run that handed the arm to somebody has them at the jaws at this point, whichever way
+        it ended, so there a fresh press stops the fold even after a press ended the run, a later
+        Ctrl-C does too rather than quitting, and a hand-back that held the arm means no fold."""
         try:
-            return await fold_unless_stopped(
-                functools.partial(self._rest, pause=False), self._pressed_during_the_fold
-            )
-        except FoldStopped:
-            with contextlib.suppress(Exception):
-                await self.executor.logged_transport().stop()
+            if self._no_fold:
+                return None
+            watch = self._fold_watch
+            if watch is None:
+                if self.executor.abort.is_set() or self.cfg.dry_run:
+                    return await self._rest()
+                watch = self._pressed_during_the_fold
+            try:
+                return await fold_unless_stopped(functools.partial(self._rest, pause=False), watch)
+            except FoldStopped:
+                pass
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                if self._fold_watch is None:
+                    raise
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                await self._unbroken(self.executor.logged_transport().stop())
             self._note(FOLD_STOPPED)
             return None
+        finally:
+            if self._press_watch is not None:
+                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                    await cancel_and_wait(self._press_watch)
+
+    def _what_a_press_cannot_end(self) -> tuple[type[BaseException], ...]:
+        """What the rest of a teardown carries on through. Anywhere else a later Ctrl-C quits at
+        once, as the panel says it does. Not once somebody has been asked about the gripper: a
+        hand near the jaws presses twice, and the second press landing on a stop, a read or the
+        close went straight past the close, `run_end` and the summary, and left an energised arm
+        with no record of what became of it."""
+        if self._fold_watch is None:
+            return (Exception,)
+        return (Exception, asyncio.CancelledError, KeyboardInterrupt)
+
+    async def _unbroken(self, step: Awaitable[T]) -> T:
+        """`step` to its end through a press, once somebody has been asked about the gripper, and
+        every step this is for has a deadline of its own. A press cut a close short where it
+        landed, on a camera's or a read, and swallowing that left the arm energised and connected,
+        with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up. The Ctrl-C after
+        this one still quits, through the event loop and past this, as the panel says it does."""
+        if self._fold_watch is None:
+            return await step
+        running = asyncio.ensure_future(step)
+        while not running.done():
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                await asyncio.wait({running})
+        return running.result()
+
+    def _watch_for_a_press(self, hand: HandOff) -> None:
+        """One watch from the end of the question to the end of the fold, counted from once. The
+        opening, the count and the fold each counting from where they began lost a press made in
+        between, and the arm folded under the hand that made it."""
+        stopped = getattr(hand, "stopped", None)
+        if stopped is None or self._press_watch is not None:
+            return
+        self._press_watch = asyncio.ensure_future(stopped())
+        self._fold_watch = functools.partial(asyncio.shield, self._press_watch)
 
     async def _pressed_during_the_fold(self) -> None:
         """Returns when a person's stop, the kill switch or the page's Stop button, sets the
@@ -1298,12 +1357,21 @@ class AgentLoop:
 
     HAND_IT_BACK = (
         "the run is over and the arm is holding where it ended. Take hold of whatever is in "
-        "the gripper and press Enter, and the gripper opens before the arm folds up. Leave it "
-        "and the arm folds up with the gripper shut"
+        "the gripper and press Enter: the gripper opens all the way, and "
+        f"{HANDS_AWAY_S:.0f} s later the arm folds up, so take your hands away as soon as it is "
+        "open. Leave it and the arm folds up with the gripper shut"
     )
     """Asked before the gripper opens, not after. An arm folding to its rest pose with a
     pencil still in the jaws can drive that pencil into the bench, and the person who put it
-    there is the one who should take it out."""
+    there is the one who should take it out. They are at the jaws when they answer, so it says
+    how long they have, and `FOLDING_IN` says it again as that time begins."""
+
+    NO_ANSWER_TYPED = (
+        "a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up"
+    )
+    HELD_BACK = "the arm was not folded and nothing was released: it is holding where it stopped"
+    """Said when a press stopped the hand-back: the gripper opening, or the count before the
+    fold. The close says what is left to do, from its own read of the arm."""
 
     RUN_STOPS = ", so the run stops here"
     """Where the lines for a refused take-hold say what became of the run, when the refusal is
@@ -1618,19 +1686,34 @@ class AgentLoop:
             with contextlib.suppress(Exception):
                 hand.say(said)
             return
+        # A record that cannot be written is no reason to fold under a hand with no word said:
+        # a disk that filled here went straight to the fold, gripper shut and nobody told.
+        with contextlib.suppress(Exception):
+            await self._unload(hand)
+        if not self._no_fold:
+            await self._hands_away(hand)
+
+    async def _unload(self, hand: HandOff) -> None:
+        """The question, and on Enter the gripper opening. Nothing here raises (`_hand_back`)."""
         try:
+            # deliberate: this Enter opens the jaws on whatever is in them. A `q` and the habit
+            # of an Enter behind it, or `n` and Enter, used to do it
             unloaded = await hand.wait(
-                self.HAND_IT_BACK, timeout_s=self.HAND_BACK_S, until_abort=False
+                self.HAND_IT_BACK, timeout_s=self.HAND_BACK_S, until_abort=False, deliberate=True
             )
         except (asyncio.CancelledError, KeyboardInterrupt):
             # A second Ctrl-C in this window used to raise through the whole teardown, which
             # skipped the rest move, the close, `run_end` and the summary. Here it means the
-            # gripper stays shut, and the rest of the teardown still runs. A third press lands
-            # somewhere without this guard and still quits at once.
+            # gripper stays shut, and the rest of the teardown still runs.
             self._emit("hand_off", stage="skipped", reason="interrupted while waiting")
             self._note("the gripper was left as it is, and the arm still folds up")
             return
-        self._ask_recorded("hand_off", self.HAND_IT_BACK, unloaded, hand)
+        finally:
+            # However the question ends somebody may be at the jaws, so from here to the end of
+            # the fold a fresh press holds the arm where it is, whichever way the run ended.
+            self._watch_for_a_press(hand)
+        with contextlib.suppress(Exception):
+            self._ask_recorded("hand_off", self.HAND_IT_BACK, unloaded, hand)
         if not unloaded:
             # why the wait ended, where the person can say (`_TerminalHandOff.ended`), for
             # `_offer_release`'s reason: this wait watches a fresh key press and not the abort
@@ -1643,27 +1726,97 @@ class AgentLoop:
             elif ended == "no keys":
                 self._emit("hand_off", stage="skipped", reason="no key could be read")
                 self._note("no key could be read, so the gripper stays shut and the arm folds up")
+            elif ended == "declined":
+                self._emit("hand_off", stage="skipped", reason="a line was typed")
+                self._note(self.NO_ANSWER_TYPED)
             else:
                 self._emit("hand_off", stage="skipped", reason="nobody answered")
                 self._note("nobody unloaded the gripper, so it stays shut and the arm folds up")
             return
-        # through the logged transport, so the record has the intent like every other one.
-        # Not through the executor: its abort is set on every run a person ended, and this runs
-        # on exactly those.
-        ack: Any = None
         try:
-            ack = await self.executor.logged_transport().send_intent(Intent.gripper(open=True))
-        except Exception as e:
-            ack = Ack(accepted=False, reason=f"{type(e).__name__}: {e}")
-        # The arm's backend answers a refusal rather than raising it, so a suppressed exception
-        # was never going to catch the failure that matters. Somebody is standing there with
-        # their hand out: a gripper that did not open has to be said out loud, not left to be
-        # discovered when the arm folds up with the pencil still in it.
-        if ack is not None and not getattr(ack, "accepted", True):
-            self._emit("hand_off", stage="stuck", reason=str(ack.reason or "the gripper refused"))
-            self._note(f"the gripper did not open: {ack.reason}; take what is in it by hand")
+            why = await fold_unless_stopped(self._open_the_gripper, self._fold_watch)
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            await self._hold_the_arm(hand, "a press stopped the gripper opening")
             return
-        self._emit("hand_off", stage="unloaded", reason="opening the gripper")
+        if why is None:
+            self._emit("hand_off", stage="unloaded", reason="the gripper is open")
+            return
+        # Somebody is standing there with their hand out: a gripper that did not open has to be
+        # said out loud, not left to be discovered when the arm folds up with the pencil still
+        # in it. And the arm stays where it is, since they have just been told to reach in.
+        self._no_fold = True
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
+            await self._unbroken(self.executor.logged_transport().stop())
+        said = (
+            f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
+            "where it stopped and does not fold"
+        )
+        with contextlib.suppress(Exception):
+            hand.say(said)
+        self._emit("hand_off", stage="stuck", reason=why)
+        self._note(said)
+
+    async def _open_the_gripper(self) -> str | None:
+        """Drive the gripper all the way open, or say why it did not get there.
+
+        By the arm's own `gripper` verb, which watches it arrive. One intent is one send, which
+        the step cap makes a few units of the hundred, so the question's promise was kept by a
+        gripper that barely moved and then folded with the pencil still in it. Through the
+        logged transport like every send, so the record has each one.
+
+        Not through the executor: its abort is set on every run a person ended, and this runs on
+        exactly those. Nor told to end by the run's minutes (`interrupted`), which may well be
+        spent by now and have nothing to say to somebody with a hand at the jaws. A body with no
+        such verb gets the one intent, which is all it can be asked for."""
+        try:
+            verb = self.executor.registry.get("gripper")
+        except VerbNotFound:
+            verb = None
+        try:
+            if verb is None:
+                ack = await self.executor.logged_transport().send_intent(Intent.gripper(open=True))
+                # a backend answers a refusal rather than raising it
+                return None if ack.accepted else str(ack.reason or "the gripper refused")
+            ctx = dataclasses.replace(
+                self.executor.context(name=verb.name), interrupted=lambda: None
+            )
+            result = await verb.execute(ctx, verb.params.model_validate({"open": True}))
+        except Exception as e:
+            return f"{type(e).__name__}: {e}"
+        return None if result.ok else result.summary.removeprefix("gripper did not open: ")
+
+    async def _hands_away(self, hand: HandOff) -> None:
+        """The count between the hand-back and the fold, on every way the question can end.
+
+        The fold used to start in the same breath as the Enter, with the hand that had just
+        taken the pencil still at the jaws, and at the end of a wait that ran out with nobody
+        told it was about to. `quackd robot release` has given the same hands the same seconds
+        since it first folded anything, and this says it in the same words. On the transport's
+        clock, which is the wall on a real arm."""
+        said = FOLDING_IN.format(name="the arm", seconds=HANDS_AWAY_S)
+        if getattr(hand, "ended", None) == "no keys":
+            said = said.replace(" or q", "")  # there is no reading it, and Ctrl-C is no key
+        # to them first: a record that cannot be written is no reason not to tell them
+        with contextlib.suppress(Exception):
+            hand.say(said)
+        with contextlib.suppress(Exception):
+            self._note(said)
+        try:
+            await fold_unless_stopped(
+                functools.partial(self.cfg.transport.sleep, HANDS_AWAY_S), self._fold_watch
+            )
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            await self._hold_the_arm(hand, "a press stopped the fold before it began")
+
+    async def _hold_the_arm(self, hand: HandOff, why: str) -> None:
+        """A press during the hand-back: the arm stays where it is, and nothing folds it."""
+        self._no_fold = True
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
+            await self._unbroken(self.executor.logged_transport().stop())
+        with contextlib.suppress(Exception):
+            hand.say(self.HELD_BACK)
+        self._emit("hand_off", stage="kept", reason=why)
+        self._note(self.HELD_BACK)
 
     async def _offer_release(self, parked: RestResult | None) -> None:
         """Ask the person at the terminal about an arm whose last rest move missed.
@@ -3036,6 +3189,17 @@ class AgentLoop:
                         break
                     continue
 
+                if call.name in DECLARE_NAMES and "_unparsed" in call.arguments:
+                    # a declaration whose words could not be read declares nothing: a list for
+                    # arguments used to end the run a success, for no reason at all
+                    last_verb = mine_verb = call.name
+                    last_result = mine_result = VerbResult.fail(
+                        f"invalid params for {call.name}: its arguments were not an object, so "
+                        "nothing was declared"
+                    )
+                    self._note(last_result.summary)
+                    continue
+
                 if call.name in DECLARE_NAMES:
                     outcome = "success" if call.name == "declare_success" else "failure"
                     reason = str(call.arguments.get("reason", ""))
@@ -3173,10 +3337,10 @@ class AgentLoop:
                 # torque off while they hold it, before the close keeps it on
                 await self._offer_release(folded)
             final_state: dict[str, Any] = {}
-            with contextlib.suppress(Exception):
-                final_state = (await cfg.transport.get_state()).model_dump()
-            with contextlib.suppress(Exception):
-                await cfg.transport.close()
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                await self._unbroken(cfg.transport.close())
             if note := getattr(cfg.transport, "close_note", None):
                 self._note(str(note))
             # The whole run, on the transcript's own clock, which started the instant the

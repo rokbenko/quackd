@@ -117,7 +117,7 @@ $ quackd run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake 
 | robot     lerobot:mock                                              |
 | detector  color_blob on this machine                                |
 | play      on, from --play                                           |
-+- Ctrl-C or q stops the duck. Press it twice to quit at once. -------+
++- Ctrl-C or q stops the duck. Ctrl-C twice quits at once. -----------+
 ```
 
 The row reads `on, from the task file`, `on, from --play` or `off, from --no-play`, and a run that

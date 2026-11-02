@@ -98,6 +98,8 @@ def _key(said: Iterable[str]) -> str:
 def _rendered(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}: {_rendered(v)}" for k, v in value.items()) + "}"
     return str(value).casefold()
 
 
@@ -203,7 +205,8 @@ class ExactLane:
 
     def _written(self, line: str) -> Matched | None:
         """A call written out as `name(key=value, ...)`, its values read as literals: numbers,
-        strings, true and false, and a bare word as the string it spells. Nothing is evaluated,
+        strings, true and false, a bare word as the string it spells, and a `{key: value}` of
+        those, which is how the arm's `move_joints` takes its positions. Nothing is evaluated,
         and anything else, a name it calls, an operator or a starred argument, is not a call
         this lane reads. The numbers are the person's own, and the executor validates and clamps
         them as it does anybody's."""
@@ -251,4 +254,14 @@ def _literal(node: ast.expr) -> Any:
         if lowered in ("true", "false"):
             return lowered == "true"
         return node.id
+    if isinstance(node, ast.Dict):
+        read: dict[str, Any] = {}
+        for key, value in zip(node.keys, node.values, strict=True):
+            # `{**more}` has no key here, and a key is a joint's name: text, written or bare
+            name = None if key is None else _literal(key)
+            shown = _literal(value)
+            if not isinstance(name, str) or shown is _NOT_LITERAL:
+                return _NOT_LITERAL
+            read[name] = shown
+        return read
     return _NOT_LITERAL

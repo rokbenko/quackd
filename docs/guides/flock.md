@@ -75,7 +75,7 @@ quackd run flock-hello --flock trio --llm fake
 | stored as  trio                                                        |
 | status     EXPERIMENTAL                                                |
 | memory     0 notes across 3 robots  --no-memory to run fresh           |
-+- Ctrl-C or q stops every robot. Press it twice to quit at once. -------+
++- Ctrl-C or q stops every robot. Ctrl-C twice quits at once. -----------+
 ```
 
 A task file's own `flock.members` plus `robots:` or `--robots` works too, with no registry in

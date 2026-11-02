@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from typing import Any
 
 import pytest
 from PIL import Image
+from pydantic import BaseModel, ConfigDict
 
 from quackd.adapters.factory import ADAPTER_NAMES, make_adapter
 from quackd.duckfile.parser import parse_duck_text
@@ -147,6 +149,97 @@ async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
     assert live.first_motion_at is None, "a read is not the robot moving"
     assert (await live.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
     assert live.first_motion_at is not None
+
+
+async def test_a_verb_that_refused_itself_is_never_the_robots_first_motion(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A verb past every gate can still send nothing: the arm's `move_joints` reads a goal off its
+    travel and answers with the range. The record said the robot had moved at that moment, and
+    the run's own numbers then counted a time to first motion for a body that had sat still."""
+
+    async def refuses(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        return VerbResult.fail("that is past the joint's travel")
+
+    async def only_stops(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.stop()
+        return VerbResult.fail("ended before it began")
+
+    async def bounced(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        return VerbResult.fail("the first send came back refused")
+
+    registry.register(Verb("reach", "moves the body", refuses))
+    registry.register(Verb("shy", "moves the body", only_stops))
+    registry.register(Verb("bounce", "moves the body", bounced))
+    allow = "reach, shy, bounce, walk"
+    ex, _ = logged(registry, MockTransport(refuse_kinds={"move"}), allow=allow)
+    assert not (await ex.run_verb("reach")).ok
+    assert not (await ex.run_verb("shy")).ok
+    assert not (await ex.run_verb("bounce")).ok
+    assert ex.first_motion_at is None and ex.first_motion_llm_calls is None
+
+    live, _ = logged(registry, MockTransport(), allow=allow)
+    live.budget = budget = Budget(Budgets())
+    budget.note_llm_call()
+    assert not (await live.run_verb("reach")).ok
+    budget.note_llm_call()
+    assert (await live.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
+    assert live.first_motion_at is not None
+    assert live.first_motion_llm_calls == 2, "the call that chose it included, the refusal's too"
+
+
+async def test_a_verb_that_moved_and_failed_is_still_the_first_motion(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """Whichever way it ends. And the time is when it was handed over, not when it came back:
+    the seconds to first motion are how long the body sat still, not how long the move took."""
+
+    async def stalls(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        await asyncio.sleep(0.05)
+        return VerbResult.fail("stalled")
+
+    async def breaks(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        raise RuntimeError("the bus went")
+
+    async def sits(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    registry.register(Verb("stalls", "moves the body", stalls))
+    registry.register(Verb("breaks", "moves the body", breaks))
+    registry.register(Verb("sits", "moves the body", sits, timeout_s=0.02))
+    allow = "stalls, breaks, sits"
+
+    ex, _ = logged(registry, MockTransport(), allow=allow)
+    before = time.monotonic()
+    assert not (await ex.run_verb("stalls")).ok
+    assert ex.first_motion_at is not None and ex.first_motion_at - before < 0.05
+
+    raised, _ = logged(registry, MockTransport(), allow=allow)
+    assert not (await raised.run_verb("breaks")).ok
+    assert raised.first_motion_at is not None, "it had sent a move before it raised"
+
+    timed_out, _ = logged(registry, MockTransport(), allow=allow)
+    assert not (await timed_out.run_verb("sits")).ok
+    assert timed_out.first_motion_at is None, "its clock ran out and it had sent nothing"
+
+
+async def test_a_verb_that_moves_some_other_way_still_counts_when_it_says_it_worked(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """Only `send_intent` is tallied, and a body's rest move or a skill goes through a method of
+    its own. A verb that answers ok is believed, or a run on such a body read as never moved."""
+
+    async def rests(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        return VerbResult.success("folded")
+
+    registry.register(Verb("rests", "moves the body", rests))
+    ex, _ = logged(registry, mock_transport, allow="rests")
+    assert (await ex.run_verb("rests")).ok
+    assert ex.first_motion_at is not None
 
 
 @pytest.mark.parametrize("adapter", ADAPTER_NAMES)
@@ -415,6 +508,53 @@ async def test_a_stop_that_never_left_is_not_reported_as_a_stop(
     assert not result.ok
     assert "could not be delivered" in result.summary
     assert "deadman" in result.summary
+
+
+@pytest.mark.parametrize("sent_with_it", [{"now": True}, {"_unparsed": "{not json"}])
+async def test_a_stop_is_never_refused_for_what_came_with_it(
+    registry: VerbRegistry, mock_transport: MockTransport, sent_with_it: dict[str, Any]
+) -> None:
+    """`stop` takes no arguments, and the moment somebody reaches for the brake is not the moment
+    to teach them that. A call with anything in it was refused at the `params` gate, past the
+    point where `stops` had counted it, so a verb beside it ended on a brake and no stop left
+    the transport at all. The record says what was ignored, and the pilot is not told off."""
+    ex, seen = logged(registry, mock_transport, allow="quack")
+    result = await ex.run_verb("stop", sent_with_it)
+    assert result.ok, result.summary
+    assert mock_transport.stops == 1
+    assert ("params", "ignored") in gates(seen)
+    assert ends(seen)[0]["outcome"] == "ok"
+
+
+async def test_only_a_stop_is_let_off_its_arguments(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    ex, seen = logged(registry, mock_transport, allow="walk")
+    result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2, "now": True})
+    assert not result.ok and "invalid params" in result.summary
+    assert ("params", "refused") in gates(seen)
+    assert mock_transport.intents_of("move") == []
+
+
+async def test_a_stop_that_cannot_run_without_its_arguments_is_still_refused(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A third party's `stop` may ask for something of its own, and there is nothing to run it
+    with then: the refusal is the answer, rather than a traceback out of the gate."""
+
+    class Hard(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        how: str
+
+    async def hard_stop(_ctx: VerbContext, p: Hard) -> VerbResult:
+        return VerbResult.success(f"stopped {p.how}")
+
+    registry.register(Verb("stop", "stops", hard_stop, Hard), replace=True)
+    ex, seen = logged(registry, mock_transport, allow="quack")
+    assert (await ex.run_verb("stop", {"how": "now"})).summary == "stopped now"
+    refused = await ex.run_verb("stop", {"now": True})
+    assert not refused.ok and "invalid params" in refused.summary
+    assert ("params", "refused") in gates(seen)
 
 
 # ── the log: the executor says what it decided and what it sent ─────────────────────────

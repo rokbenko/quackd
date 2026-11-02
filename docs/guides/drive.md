@@ -76,7 +76,8 @@ Every line goes through the lanes in this order, and the first that takes it win
    - each alias of those (`walk`, `walk_to`, `get_frame`);
    - the presets below.
 
-   A call written out, as `move(vx=0.2, duration_s=2)`, is read as literals and never
+   A call written out, as `move(vx=0.2, duration_s=2)` or the arm's
+   `move_joints(positions={"shoulder_pan": 20}, duration_s=2)`, is read as literals and never
    evaluated: a name it calls, an operator or a starred argument is not a call this lane reads.
    A verb whose one required parameter is a string takes the rest of the line, so `say good
    morning` is a call. The numbers you write are yours, and the executor validates and clamps

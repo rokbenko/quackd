@@ -1121,6 +1121,7 @@ async def test_on_moss_litter_a_stop_ends_the_missions_own_pick_and_the_arm_neve
 
 
 class _PersonReading:
+    unanswered = None
     """The CLI's kill switch as a person at the terminal is: `ask` blocks the loop's own thread
     until the line is typed (`quackd.safety.KillSwitch.ask`)."""
 

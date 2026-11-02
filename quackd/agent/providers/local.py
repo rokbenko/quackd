@@ -18,7 +18,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from quackd.agent.providers.base import ProviderError, ProviderTurn, ToolCall
+from quackd.agent.providers.base import ProviderError, ProviderTurn, ToolCall, tool_arguments
 from quackd.agent.providers.openai import OpenAIProvider, _quoted
 from quackd.host import HOST_ENV, host_of, netloc
 
@@ -133,15 +133,10 @@ def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
     name = next((obj[k] for k in _NAME_KEYS if isinstance(obj.get(k), str)), None)
     if name is None or name not in tool_names:
         return None
+    # Not `{}` for what cannot be read: that is a call with its defaults, and the arm's `gripper`
+    # opens by default, on nothing the model said.
     args: Any = next((obj[k] for k in _ARGS_KEYS if k in obj), {})
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except json.JSONDecodeError:
-            args = {}
-    if not isinstance(args, dict):
-        args = {}
-    return ToolCall(name=name, arguments=args)
+    return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
 def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:

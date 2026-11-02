@@ -24,10 +24,14 @@ import pytest
 from quackd.adapters.base import AdapterError, AdapterNotInstalled, RobotAdapter
 from quackd.adapters.factory import RobotSpec, describe, make_adapter, parse_robot_spec
 from quackd.duckfile.parser import load_duck, parse_duck_text
+from quackd.duckfile.schema import Budgets
 from quackd.duckfile.validate import validate_duck
+from quackd.log import EventLog
 from quackd.perception.color_blob import ColorBlobDetector
+from quackd.release import HANDS_AWAY_S, FoldStopped, fold_unless_stopped
 from quackd.safety import (
     Aborted,
+    Budget,
     ConfirmDenied,
     Executor,
     Heartbeat,
@@ -36,7 +40,7 @@ from quackd.safety import (
     deny_all,
 )
 from quackd.transport.base import HeartbeatError, Intent, TransportError, primary_of
-from quackd.verbs.registry import registry_from_manifest
+from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
 from quackd_lerobot import JOINTS, LeRobotAdapter, lerobot_manifest, make, published_travel
 from quackd_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
 from quackd_lerobot.real import (
@@ -67,6 +71,10 @@ from quackd_lerobot.real import (
 )
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
+    GRIPPER_OPEN,
+    GRIPPER_S,
+    GRIPPER_TIMEOUT_S,
+    GRIPPER_TOL,
     HOLD_NOT_CONFIRMED,
     IN_HAND_NOT_MOVED,
     LET_GO_AT_REST,
@@ -100,6 +108,7 @@ from quackd_lerobot.verbs import (
     MoveJointsParams,
     PickParams,
     at_rest,
+    gripper_budget_s,
     lerobot_verbs,
     move_budget_s,
     pick,
@@ -749,6 +758,112 @@ async def _paced(
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, max_step_deg=step, clock=clock))
     manifest = await adapter.connect()
     return adapter, _executor(adapter, manifest), clock
+
+
+async def _braked(
+    ex: Executor, arm: FakeArm, verb: str, params: dict[str, Any], *, sends: int = 5
+) -> tuple[VerbResult, list[dict[str, float]]]:
+    """A verb with `stop` asked for beside it through the same executor, once it has sent `sends`
+    goals, as a second MCP call would ask for it, and what the arm was sent from then on."""
+    sent = len(arm.actions)
+    running = asyncio.create_task(ex.run_verb(verb, params))
+    for _ in range(5000):
+        if len(arm.actions) >= sent + sends or running.done():
+            break
+        await asyncio.sleep(0.001)
+    assert not running.done(), "the verb ended before it could be braked"
+    braked = await ex.run_verb("stop")
+    assert braked.ok, braked.summary
+    after = len(arm.actions)
+    return await running, arm.actions[after:]
+
+
+async def test_a_stop_from_beside_a_move_ends_it_where_it_is() -> None:
+    """Over MCP a second call's `stop` answered `stopped (velocity zeroed)`, and the arm's next
+    tick sent the ramp's next goal: it held for a tenth of a second and went on to where the
+    pilot had first sent it. Seen on the arm's twin, with a pilot told the brake had worked."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    _adapter, ex, _clock = await _paced(arm)
+    goal = 60.0
+    result, after = await _braked(
+        ex, arm, "move_joints", {"positions": {"shoulder_pan": goal}, "duration_s": 5}
+    )
+    assert not result.ok
+    assert result.summary.startswith(f"move_joints: {STOPPED}"), result.summary
+    assert result.data["interrupted"] == STOPPED
+    assert result.data["ended_by"] == STOP_ENDED, "not a failure for `abort_when` to count"
+    where = result.data["joints"]["shoulder_pan"]
+    assert where < goal - MAX_STEP_DEG, "it was stopped well short"
+    assert all(abs(sent - where) <= MAX_STEP_DEG for sent in _sent(after, "shoulder_pan")), (
+        "and nothing sent after the stop carried it on"
+    )
+    assert arm.positions["shoulder_pan"] == pytest.approx(where, abs=MAX_STEP_DEG)
+
+
+@pytest.mark.parametrize(
+    ("verb", "params", "start", "said"),
+    [
+        ("gripper", {"open": True}, GRIPPER_CLOSED, "gripper did not open"),
+        ("gripper", {"open": False}, GRIPPER_OPEN, "gripper did not close"),
+    ],
+)
+async def test_a_stop_from_beside_the_gripper_ends_it_too(
+    verb: str, params: dict[str, Any], start: float, said: str
+) -> None:
+    """The same loop drives it, and it is the verb somebody with a finger in the jaws stops."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    _adapter, ex, _clock = await _paced(arm)
+    arm.positions["gripper"] = start
+    result, _after = await _braked(ex, arm, verb, params, sends=2)
+    assert not result.ok
+    assert result.summary.startswith(said) and STOPPED in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED
+    assert GRIPPER_CLOSED < arm.positions["gripper"] < GRIPPER_OPEN, "it stopped on the way"
+
+
+async def test_a_stop_from_beside_a_place_ends_it_with_the_jaws_part_open() -> None:
+    arm = FakeArm(step=MAX_STEP_DEG, object_in_jaws=True)
+    _adapter, ex, _clock = await _paced(arm)
+    assert (await ex.run_verb("gripper", {"open": False})).ok
+    gripped = arm.positions["gripper"]
+    result, _after = await _braked(ex, arm, "place", {}, sends=2)
+    assert not result.ok
+    assert result.summary.startswith(f"place: the gripper did not open: {STOPPED}"), result.summary
+    assert result.data["ended_by"] == STOP_ENDED
+    assert gripped < arm.positions["gripper"] < GRIPPER_OPEN, "it stopped on the way"
+
+
+async def test_a_budget_that_runs_out_mid_move_ends_it_and_is_a_failure() -> None:
+    """The other thing `interrupted` says. A run's minutes are the robot's, and a long move had
+    nothing to end it until its own time did. No stop was asked for, so it stays a failure."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    _adapter, ex, clock = await _paced(arm)
+    ex.budget = Budget(Budgets(max_minutes=0.01), now=clock.now)
+    ex.budget.start()
+    duration_s = 10
+    result = await ex.run_verb(
+        "move_joints", {"positions": {"shoulder_pan": 60}, "duration_s": duration_s}
+    )
+    assert not result.ok
+    assert "max_minutes" in result.data["interrupted"], result.summary
+    assert "ended_by" not in result.data
+    assert clock.t < duration_s, "it did not run on to the end of its ramp"
+
+
+async def test_a_move_refused_by_its_own_range_check_is_not_the_arms_first_motion() -> None:
+    arm = FakeArm(step=MAX_STEP_DEG)
+    adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, clock=SteppedClock()))
+    manifest = await adapter.connect()
+    seen: list[Any] = []
+    ex = _executor(adapter, manifest, event_log=EventLog(observers=[seen.append]))
+    sent = len(arm.actions)
+    off_its_travel = {"positions": {"shoulder_pan": 1000}, "duration_s": 2}
+    refused = await ex.run_verb("move_joints", off_its_travel)
+    assert not refused.ok and len(arm.actions) == sent
+    assert ex.first_motion_at is None
+    moved = await ex.run_verb("move_joints", {"positions": {"shoulder_pan": 5}, "duration_s": 1})
+    assert moved.ok, moved.summary
+    assert ex.first_motion_at is not None
 
 
 def _sent(actions: list[dict[str, float]], joint: str) -> list[float]:
@@ -1805,7 +1920,9 @@ async def test_a_caller_already_queued_on_the_lock_is_refused_when_the_call_ahea
         release.set()
 
 
-async def test_a_cancelled_call_wedges_like_a_timed_out_one() -> None:
+async def test_a_cancelled_call_keeps_the_bus_until_it_comes_back() -> None:
+    """Never two talkers on one bus. What lands behind a cancelled call waits for it, and goes out
+    once it is back, as it would have behind that call on the lock."""
     import threading
 
     release = threading.Event()
@@ -1818,10 +1935,39 @@ async def test_a_cancelled_call_wedges_like_a_timed_out_one() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    sent = len(arm.actions)
     try:
         assert transport.stop_error is not None
         assert adapter.stop_error is not None  # the core `stop` verb reads this one
-        assert not (await adapter.send_intent(Intent.gripper(True))).accepted
+        behind = asyncio.create_task(adapter.send_intent(Intent.gripper(True)))
+        await asyncio.sleep(0.05)
+        assert not behind.done() and len(arm.actions) == sent, "no second talker on the bus"
+    finally:
+        release.set()
+    assert (await behind).accepted
+    assert len(arm.actions) == sent + 1
+    assert transport.stop_error is None
+
+
+async def test_a_cancelled_call_past_its_deadline_is_a_bus_that_stopped_answering() -> None:
+    import threading
+
+    release = threading.Event()
+    arm = FakeArm()
+    timeout_s = 0.2
+    transport = LeRobotReal("COM5", robot=arm, timeout_s=timeout_s)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    task = asyncio.create_task(transport._call(lambda: release.wait(5.0)))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    sent = len(arm.actions)
+    try:
+        ack = await adapter.send_intent(Intent.gripper(True))
+        assert not ack.accepted and "has not come back" in str(ack.reason), ack
+        assert len(arm.actions) == sent
     finally:
         release.set()
 
@@ -4123,6 +4269,91 @@ def _by_hand_run(transport: LeRobotReal, hands: _Hands, runs: Any) -> Any:
         person=hands,
         runs_dir=runs,
     )
+
+
+@pytest.mark.parametrize("step", [MAX_STEP_DEG, 1.0])
+async def test_the_hand_back_opens_the_gripper_all_the_way_before_the_count(
+    step: float, tmp_path: Any
+) -> None:
+    """The question says the gripper opens. It sent one goal, which the step cap made a few units
+    of the hundred, and the fold began at once with the pencil in the jaws and a hand on the
+    pencil. A mock whose goals land at once could never show it. And at a lowered cap, which is
+    how the run sheet slows the arm for a first run, it takes as long as it takes."""
+    from quackd.agent.loop import run_duck
+
+    arm = FakeArm(step=step)
+    clock = SteppedClock()
+    rest = dict.fromkeys(JOINTS, 0.0)
+    rest["gripper"] = 40.0
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest, max_step_deg=step, clock=clock)
+    where: dict[str, float] = {}
+
+    def at_the_count(text: str) -> None:
+        if text.startswith("folding the arm"):
+            where.update(gripper=arm.positions["gripper"], at=clock.t)
+
+    hands = _Hands(arm, places={"gripper": GRIP_ON_OBJECT}, on_say=at_the_count)
+    real_fold = transport.go_to_rest
+    folded_at: list[float] = []
+
+    async def fold() -> Any:
+        folded_at.append(clock.t)
+        return await real_fold()
+
+    transport.go_to_rest = fold  # type: ignore[method-assign]
+    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    assert result.outcome == "success", result.reason
+    assert where["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, f"only {where['gripper']} of the way"
+    assert folded_at[-1] - where["at"] >= HANDS_AWAY_S, "and the hands got their seconds"
+    assert not any("did not open" in note for note in _notes(result.run_dir))
+
+
+def test_the_gripper_budget_ends_inside_the_executors_timeout() -> None:
+    """A full open at a lowered cap needs longer than `GRIPPER_S`, and the verb still has to end
+    on its own verdict, with where the jaws stopped, rather than on the executor's."""
+    verbs = lerobot_verbs(policy=False)
+    assert verbs["gripper"].timeout_s == GRIPPER_TIMEOUT_S
+    assert verbs["place"].timeout_s == GRIPPER_TIMEOUT_S
+    assert gripper_budget_s(None) == GRIPPER_S
+    assert gripper_budget_s(MAX_STEP_DEG) >= (GRIPPER_OPEN - GRIPPER_CLOSED) / MAX_STEP_DEG * TICK_S
+    for step in (0.05, 0.5, 1.0, 2.0, MAX_STEP_DEG, 30.0, 180.0):
+        assert GRIPPER_S <= gripper_budget_s(step) <= GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S
+
+
+class BusyClock(SteppedClock):
+    """A tick that takes longer than its sleep, as one does with a send and its reads on a bus."""
+
+    def __init__(self, bus_s: float) -> None:
+        super().__init__()
+        self.bus_s = bus_s
+
+    async def sleep(self, seconds: float) -> None:
+        await super().sleep(seconds + self.bus_s)
+
+
+async def test_the_gripper_is_given_the_bus_s_time_too() -> None:
+    """A budget of sleeps alone gave a real bus a few milliseconds a tick at a lowered cap, so a
+    gripper in good order ran out of time at 90 of its 100, and at the hand-back that says it
+    cannot open and leaves the arm where it is."""
+    arm = FakeArm(step=1.0)
+    clock = BusyClock(bus_s=TICK_S)
+    adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, max_step_deg=1.0, clock=clock))
+    manifest = await adapter.connect()
+    ex = _executor(adapter, manifest)
+    arm.positions["gripper"] = GRIPPER_CLOSED
+    opened = await ex.run_verb("gripper", {"open": True})
+    assert opened.ok, opened.summary
+
+
+async def test_the_gripper_opens_all_the_way_at_a_lowered_step_cap() -> None:
+    """At a cap of 1 a whole open is a hundred sends, past `GRIPPER_S`, and a gripper in good
+    order stopped part of the way saying it had run out of time."""
+    arm = FakeArm(step=1.0)
+    _adapter, ex, _clock = await _paced(arm, step=1.0)
+    arm.positions["gripper"] = GRIPPER_CLOSED
+    opened = await ex.run_verb("gripper", {"open": True})
+    assert opened.ok, opened.summary
+    assert arm.positions["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL
 
 
 def _notes(run_dir: Any) -> list[str]:
@@ -6846,6 +7077,103 @@ async def test_an_abort_while_a_pick_is_starting_still_gets_the_stop_to_the_arm(
     await adapter.close()
 
 
+async def test_a_press_with_a_read_on_the_bus_still_gets_the_stop_to_the_arm() -> None:
+    """A press cancels `move_joints` wherever it is, and a read or a send is on the bus for a fair
+    share of every tick. The executor's stop was then refused on that call, and the abort said a
+    stop was sent. It waits for the call now, as it always did behind a pick, and holds the arm."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    adapter, ex, _clock = await _paced(arm)
+    transport = adapter.transport
+    running = asyncio.create_task(
+        ex.run_verb("move_joints", {"positions": {"shoulder_pan": 60}, "duration_s": 5})
+    )
+    sent = len(arm.actions)
+    await _until(lambda: len(arm.actions) >= sent + 3)
+    stall["next"] = True
+    await _until(on_bus.is_set)
+    sent = len(arm.actions)
+    ex.abort.set()
+    await _until(lambda: transport._wedged is not None)
+    await asyncio.sleep(0.05)
+    answer.set()
+    with pytest.raises(Aborted):
+        await running
+    assert len(arm.actions) > sent and _whole_hold(arm.actions[-1]), arm.actions[sent:]
+    assert transport.stop_error is None, transport.stop_error
+    await adapter.close()
+
+
+async def test_a_fold_stopped_with_a_read_on_the_bus_does_not_say_cut_the_power() -> None:
+    """A press stops a fold wherever it is, and the close that follows read the arm in the same
+    breath. With the fold's read still on the bus that read was refused, so somebody who had just
+    stopped a fold was told quackd could not tell whether the arm was holding itself up, and to
+    hold it and cut its power, over an arm that was fine and holding."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    rest = {**dict.fromkeys(JOINTS, 0.0), "shoulder_lift": -60.0, "gripper": 40.0}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest, clock=SteppedClock())
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    arm.positions["shoulder_lift"] = 30.0
+    pressed = asyncio.Event()
+    folding = asyncio.create_task(fold_unless_stopped(adapter.go_to_rest, pressed.wait))
+    sent = len(arm.actions)
+    await _until(lambda: len(arm.actions) >= sent + 2)
+    stall["next"] = True
+    await _until(on_bus.is_set)
+    sent = len(arm.actions)
+    pressed.set()
+    with pytest.raises(FoldStopped):
+        await folding
+    held = asyncio.create_task(adapter.stop())
+    closed = asyncio.ensure_future(_close_after(held, adapter))
+    await asyncio.sleep(0.05)
+    answer.set()
+    await closed
+    assert len(arm.actions) > sent and _whole_hold(arm.actions[sent]), arm.actions[sent:]
+    note = str(transport.close_note)
+    assert "cannot tell" not in note and "not at its rest pose" in note, note
+    assert arm.torque is True, "kept, away from its pose"
+
+
+async def _close_after(first: asyncio.Task[Any], adapter: LeRobotAdapter) -> None:
+    await first
+    await adapter.close()
+
+
+async def test_a_press_on_a_read_the_arm_never_answers_is_refused_at_its_deadline() -> None:
+    """Waiting is for an arm that answers. One that died under a cancelled move is what it would
+    have been had nothing cancelled it, by the same deadline, and the stop says it did not go."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    timeout_s = 0.3
+    clock = SteppedClock()
+    transport = LeRobotReal("COM5", robot=arm, clock=clock, timeout_s=timeout_s)
+    adapter = LeRobotAdapter(transport)
+    manifest = await adapter.connect()
+    ex = _executor(adapter, manifest)
+    loop = asyncio.get_running_loop()
+    running = asyncio.create_task(
+        ex.run_verb("move_joints", {"positions": {"shoulder_pan": 60}, "duration_s": 5})
+    )
+    sent = len(arm.actions)
+    try:
+        await _until(lambda: len(arm.actions) >= sent + 2)
+        stall["next"] = True
+        await _until(on_bus.is_set)
+        out = loop.time()
+        ex.abort.set()
+        with pytest.raises(Aborted):
+            await running
+        assert loop.time() - out < timeout_s + timeout_s / 3, "the stop waited past the deadline"
+        assert transport.stop_error is not None and "has not come back" in transport.stop_error
+    finally:
+        answer.set()
+    await _until(lambda: transport._wedged is None or transport._wedged.done())
+    await adapter.close()
+
+
 async def test_a_segment_a_guard_ends_holds_the_arm_itself_with_no_verb_waiting() -> None:
     """A `do` from anywhere but `pick` has no verb to stop the arm after its segment, so the
     hold a guard ends it with is the segment's own."""
@@ -7332,7 +7660,7 @@ async def test_a_call_whose_budget_a_segment_s_call_spent_never_goes_out() -> No
         segment.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await segment
-        assert transport._segment_call() is not None, "the stop left no segment's call out"
+        assert transport._cancelled_call() is not None, "the stop left no segment's call out"
         waiting = asyncio.create_task(transport._call(beat))
         await asyncio.sleep(budget / 10)  # it waits for the segment's call
         # the segment's call comes back once the waiting call's budget is spent on the bus,
@@ -7348,7 +7676,7 @@ async def test_a_call_whose_budget_a_segment_s_call_spent_never_goes_out() -> No
         answer.set()
 
 
-async def _cancelled_segment_call(
+async def _cancelled_cancelled_call(
     transport: LeRobotReal,
 ) -> tuple[asyncio.Future[Any], threading.Event]:
     """File a policy segment's call the way a stop's cancel leaves one: a read made in the
@@ -7368,7 +7696,7 @@ async def _cancelled_segment_call(
     segment.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await segment
-    left = transport._segment_call()
+    left = transport._cancelled_call()
     assert left is not None, "the cancel left no segment's call out"
     return left, answer
 
@@ -7412,7 +7740,7 @@ async def test_a_segment_s_call_back_in_time_is_waited_for_however_late_the_loop
         sent.append("beat")
         return "beat"
 
-    left, answer = await _cancelled_segment_call(transport)
+    left, answer = await _cancelled_cancelled_call(transport)
     out = loop.time()
     try:
         waiting: asyncio.Task[Any] | None = None
@@ -7463,7 +7791,7 @@ async def test_a_segment_s_call_still_out_past_its_budget_is_refused_however_lat
         sent.append("beat")
         return "beat"
 
-    left, answer = await _cancelled_segment_call(transport)
+    left, answer = await _cancelled_cancelled_call(transport)
     try:
         waiting: asyncio.Task[Any] | None = None
         if behind == "a call already waiting":
@@ -7530,10 +7858,10 @@ async def test_a_wait_for_a_segment_s_call_that_is_cancelled_goes_up_and_leaves_
         segment.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await segment
-        left = transport._segment_call()
+        left = transport._cancelled_call()
         assert left is not None
     else:
-        left, answer = await _cancelled_segment_call(transport)
+        left, answer = await _cancelled_cancelled_call(transport)
     try:
         if where == "for its future's turn":
             # its first step runs after the call is back and before the loop marks it done,

@@ -12,7 +12,8 @@ Serve it in one terminal, run the task file in another, then count what got thro
     python monkey.py --port 8799 --seed 1
     python monkey.py --count runs
 
-With `--gibberish 0.05` one answer in twenty cannot be read as a turn at all, which ends the run.
+With `--gibberish 0.05` one answer in twenty has arguments that are no object or not JSON, which the
+params gate refuses and tells the pilot about, as it does any other bad call.
 
 Point it at the mock or at the arm's simulator, never at the arm: it is a monkey.
 """
@@ -75,8 +76,7 @@ def wild_arguments(rng: random.Random, name: str) -> dict[str, Any]:
 def answer(rng: random.Random, turn: int, body: dict[str, Any], gibberish: float) -> dict[str, Any]:
     """One chat completion. The verdict comes first and the calls that end a run are left out, so
     the monkey stays at the gates behind the verdict for as long as the budgets last. With a share
-    of `gibberish`, a call's arguments are not an object or not JSON, which is an answer quackd
-    cannot read as a turn, so the first one ends the run, and the arm is put down as at any end."""
+    of `gibberish`, a call's arguments are not an object or not JSON."""
     offered = [t["function"]["name"] for t in body.get("tools") or [] if t.get("function")]
     if turn == 1:
         name = "assess_task"
@@ -149,7 +149,7 @@ def tally(path: Path) -> int:
                 ran += 1
                 if record.get("name") not in allowed:
                     outside.append(str(record.get("name")))
-        elif kind == "gate" and record.get("outcome") != "allowed":
+        elif kind == "gate" and record.get("outcome") not in ("allowed", "ignored"):
             gates[record["gate"]] = gates.get(record["gate"], 0) + 1
         elif kind == "intent":
             sent[record["intent"]] = sent.get(record["intent"], 0) + 1
@@ -176,7 +176,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8799)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--count", type=Path, help="a run's transcript.jsonl, or its runs folder")
-    parser.add_argument("--gibberish", type=float, default=0.0, help="share of unreadable answers")
+    parser.add_argument("--gibberish", type=float, default=0.0, help="share of bad arguments")
     args = parser.parse_args()
     if args.count:
         return tally(args.count)
