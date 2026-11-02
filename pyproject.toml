@@ -40,8 +40,8 @@ dependencies = [
   "numpy>=1.26",
   "pillow>=10.3",
   # `quackd ui`'s QR code for a phone (quackd/webui/launch.py), and imported nowhere else: pure
-  # Python, about 350 KB, with nothing under it. Here rather than in the `ui` extra so that the
-  # code survives an upgrade that keeps Streamlit and forgets the extra.
+  # Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. Here rather than in the
+  # `ui` extra so that the code survives an upgrade that keeps Streamlit and forgets the extra.
   "segno>=1.6",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
@@ -201,7 +201,7 @@ dev = [
   # run it.
   "pyzmq>=26",
   # The oracle quackd/perception/blobs.py is held to (tests/test_color_blob_parity.py), and what
-  # reads the QR codes back (tests/test_webui_launch.py). Nothing quackd ships imports it.
+  # reads the QR codes back (tests/test_webui_launch.py). Nothing in a quackd wheel imports it.
   "opencv-python-headless>=4.9",
 ]
 

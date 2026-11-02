@@ -493,9 +493,9 @@ Also in scope:
   which no client of theirs sends, and which a browser sends on every POST and on any fetch across
   origins whose answer a script means to read. A page can still ask an HTTP daemon with no token
   for a frame it cannot read. A page on a name it rebinds to `127.0.0.1` is same-origin, so it sends
-  no `Origin` on a GET and can read a frame from one. A token closes that, and the camera daemon has
-  none: keep its tunnel to the machine you trust. Refusing an unfamiliar `Host` would close it too,
-  and would also refuse a proxy somebody put there on purpose, so it is not done.
+  no `Origin` on a GET and can read whatever that daemon answers to one. A token closes that, and
+  the camera daemon has none: keep its tunnel to the machine you trust. Refusing an unfamiliar `Host`
+  would close it too, and would also refuse a proxy somebody put there on purpose, so it is not done.
 - The recommended deployment for all of them is an ssh tunnel
   (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 -L 9873:127.0.0.1:9873 -L 9874:127.0.0.1:9874`,
   `-L 9875:127.0.0.1:9875` for a policy server on another machine, and

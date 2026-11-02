@@ -85,6 +85,8 @@ PROTOCOL = "quackd-toddlerbot-bridge"
 PROTOCOL_VERSION = 1
 JSONRPC_VERSION = "2.0"
 DEFAULT_PORT = 9873
+"""The Open Duck Mini takes 9871 for its bridge and 9872 for its camera daemon, and
+SECURITY.md tells people to tunnel that pair, so this robot starts after both."""
 MAX_LINE = 64 * 1024
 """The longest request line kept. Real requests are tiny and frames only go the other way, and with
 no limit a peer that never sent a newline could fill the memory of the process walking the robot."""
@@ -95,8 +97,6 @@ are no JSON and were skipped, and the body's line was then read as a command. An
 method, because a page on a name it rebinds to 127.0.0.1 is same-origin and sends `patch` or `A1`
 as written. No client of this daemon starts a connection with anything but a JSON object, which is
 what the `{` keeps out."""
-"""The Open Duck Mini takes 9871 for its bridge and 9872 for its camera daemon, and
-SECURITY.md tells people to tunnel that pair, so this robot starts after both."""
 TOKEN_ENV = "QUACKD_TODDLERBOT_TOKEN"
 
 CONTROL_HZ = 50.0

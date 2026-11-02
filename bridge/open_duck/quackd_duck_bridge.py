@@ -786,7 +786,7 @@ class Server(threading.Thread):
                 return
             # Nothing a peer sends may end the server's thread, token or no token: `7` is JSON
             # with no `.get`, a stray byte is a UnicodeDecodeError rather than a JSONDecodeError,
-            # a thousand brackets are a RecursionError, and any of them used to leave the duck
+            # a few thousand brackets are a RecursionError, and any of them used to leave the duck
             # torqued and unreachable.
             try:
                 msg = json.loads(line)

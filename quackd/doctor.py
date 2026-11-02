@@ -681,9 +681,9 @@ def _probe_together(urls: Sequence[str]) -> dict[str, tuple[str, str]]:
     """`_probe_models` for each of `urls`, all at once.
 
     A closed port on Windows takes its whole timeout to say so, for each address `localhost` has,
-    so five presets asked one after the other held the report for twelve seconds to learn that
-    nothing was running. Daemon threads rather than a pool, and a join that wakes: a Ctrl-C lands
-    at once and nothing waits for a probe on the way out."""
+    so four presets asked one after the other held the report for twelve seconds to learn that
+    nothing was running. Daemon threads rather than a pool, and a join that wakes: a Ctrl-C does not
+    wait for a probe, and nothing does on the way out."""
     answers: dict[str, tuple[str, str]] = {}
     raised: list[BaseException] = []
 
