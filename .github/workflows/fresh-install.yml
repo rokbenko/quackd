@@ -1,0 +1,86 @@
+name: fresh install
+
+# What somebody who installs quackd today gets, rather than what uv.lock holds. The lock's numpy and
+# Pillow stay old because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it,
+# so it resolves past both, and no other job here runs that combination. It keeps a schedule of its
+# own, off main's run, because what it answers to is other people's releases: one of them breaking
+# this should say so here, and should not stop a tag (RELEASING.md wants every job of main's run green).
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh:
+    name: py${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    env:
+      QUACKD_STRICT_SEEDS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: The newest of everything, with no lock
+        shell: bash
+        run: |
+          uv venv --python ${{ matrix.python }} fresh
+          python_in() { if [ -x fresh/bin/python ]; then echo fresh/bin/python; else echo fresh/Scripts/python.exe; fi; }
+          echo "PY=$(python_in)" >> "$GITHUB_ENV"
+          editable=(-e .)
+          for adapter in adapters/*/; do editable+=(-e "$adapter"); done
+          uv pip install --python "$(python_in)" "${editable[@]}" \
+            pytest pytest-asyncio pytest-xdist hatchling pyzmq opencv-python-headless
+      - name: Which versions this run is about
+        shell: bash
+        run: uv pip freeze --python "$PY" | grep -iE '^(numpy|pillow|pydantic|mcp|rich|typer|cryptography|segno)=='
+      - name: The whole suite on them
+        shell: bash
+        run: |
+          "$PY" -m pytest -n auto -m "not serial"
+      - name: The tests that hold a margin on a wall clock, on their own
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          "$PY" -m pytest -m serial
+
+  # pytest above imports the checkout, whatever is installed, so this is what an installed wheel does.
+  wheels:
+    name: built wheels · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Build every package
+        run: uv build --all-packages --out-dir dist
+      - name: A core and one robot, in a clean environment
+        shell: bash
+        run: |
+          uv venv --python 3.12 bare
+          python_in() { if [ -x bare/bin/python ]; then echo bare/bin/python; else echo bare/Scripts/python.exe; fi; }
+          echo "PY=$(python_in)" >> "$GITHUB_ENV"
+          uv pip install --python "$(python_in)" dist/quackd-*.whl dist/quackd_microduck-*.whl
+      - name: What a person runs first
+        shell: bash
+        run: |
+          set -euo pipefail
+          run() { "$PY" -c "from quackd.cli import main; main()" "$@"; }
+          run --version
+          run doctor
+          run list-verbs --robot microduck:sim2d
+          run validate ducks/hello-world.duck
+          mkdir first-run && cd first-run
+          run run hello-world --llm fake --robot microduck:sim2d --no-memory
