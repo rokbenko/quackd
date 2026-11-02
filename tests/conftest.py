@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
+import contextlib
 import faulthandler
 import functools
 import importlib
 import importlib.util
+import itertools
 import re
 import shutil
 import socket
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
 
+from quackd import doctor
 from quackd.duckfile.parser import load_duck
 from quackd.duckfile.schema import DuckFile
 from quackd.transport.mock import MockTransport
@@ -38,10 +41,93 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
     Unconfigure rather than sessionfinish, and a flush first: the failure report is printed
     inside sessionfinish, and `_exit` flushes nothing, so arming the timer any earlier
-    turned the one line that mattered into a lost buffer."""
+    turned the one line that mattered into a lost buffer.
+
+    Not in an xdist worker. A worker that has run its share unconfigures and then idles until the
+    last one finishes, so the timer fired there while the session was still healthy, dumped every
+    thread and read as a hang. Whatever a worker wedges on at its own exit cannot hold the run:
+    xdist gives each one ten seconds once the session is over, and then kills it."""
+    if hasattr(config, "workerinput"):
+        return
     sys.stdout.flush()
     sys.stderr.flush()
     faulthandler.dump_traceback_later(EXIT_GRACE_S, exit=True)
+
+
+SOCKETPAIR_ACCEPT_S = 5.0
+SOCKETPAIR_TRIES = 5
+
+
+def _socketpair_that_gives_up(
+    family: int = socket.AF_INET,
+    type: int = socket.SOCK_STREAM,
+    proto: int = 0,
+    *,
+    connect: Callable[[socket.socket, Any], None] = socket.socket.connect,
+) -> tuple[socket.socket, socket.socket]:
+    """`socket.socketpair` for Windows, with a limit on its wait.
+
+    Windows has no real one, so CPython connects two TCP sockets on loopback: a non-blocking
+    connect, then an `accept` with no timeout. A connect that fails after returning leaves that
+    `accept` waiting for good. It held a full run here with the listener on 65531 and the client
+    bound to 49152, the two ends of the ephemeral range, and no connection between them. Every
+    event loop makes one of these, so the hang lands in whichever test is next, and all a job's
+    limit says about it afterwards is that the job ran out of time."""
+    host = "::1" if family == socket.AF_INET6 else "127.0.0.1"
+    for _ in range(SOCKETPAIR_TRIES):
+        client = socket.socket(family, type, proto)
+        with socket.socket(family, type, proto) as listener:
+            listener.bind((host, 0))
+            listener.listen()
+            listener.settimeout(SOCKETPAIR_ACCEPT_S)
+            client.setblocking(False)
+            with contextlib.suppress(BlockingIOError, InterruptedError):
+                connect(client, listener.getsockname()[:2])
+            client.setblocking(True)
+            try:
+                server, _peer = listener.accept()
+            except TimeoutError:
+                client.close()
+                continue
+        # the same check CPython makes: this is the connection just made, not somebody else's
+        if server.getsockname() == client.getpeername() and (
+            client.getsockname() == server.getpeername()
+        ):
+            return server, client
+        server.close()
+        client.close()
+    raise OSError(f"no socket pair on {host} in {SOCKETPAIR_TRIES} tries")
+
+
+if sys.platform == "win32":
+    socket.socketpair = _socketpair_that_gives_up
+
+
+_SCRATCH_DIRS = itertools.count()
+
+
+def _scratch_dir(factory: pytest.TempPathFactory, name: str) -> Path:
+    """A new directory of a test's own, without `factory.mktemp`.
+
+    `mktemp` finds its next number by listing the whole base directory, which every earlier call
+    added to, so the fixtures below, asking five times per test, made each test slower than the
+    last. 8,000 tests that did nothing went from 2 minutes to over 45. These live in a folder of
+    their own and take their number from a counter, so nothing here is ever listed. A test's own
+    `tmp_path` still goes through `mktemp`, and with only those left in the base directory that
+    stays cheap."""
+    path = factory.getbasetemp() / "h" / f"{name}-{next(_SCRATCH_DIRS)}"
+    path.mkdir(mode=0o700, parents=True)
+    return path
+
+
+@pytest.fixture(autouse=True)
+def _no_model_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Doctor asks five local servers whether they are up. Whether any is running on the machine
+    the suite runs on is not what a test is about, and on Windows a closed port takes three
+    seconds to say so, for a test that merely runs `quackd doctor`. A test about the answer
+    replaces this with its own, and `test_doctor.py` holds the real probe for the tests about
+    the probe itself."""
+    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +137,7 @@ def _memory_in_tmp(
     """A test run must never write the developer's real `~/.quackd/memory`: every test that
     runs the CLI with memory on (the default) gets a throwaway directory instead. Not inside
     `tmp_path`: tests count the run directories they make there."""
-    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(tmp_path_factory.mktemp("quackd-memory")))
+    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(_scratch_dir(tmp_path_factory, "quackd-memory")))
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +147,9 @@ def _registry_in_tmp(
     """The same rule as memory, for the same reason: a test that registers a robot must never
     write the developer's real `~/.quackd/robots.json`, and a developer who has one must never
     be running a different suite from CI because a flock they made is lying there."""
-    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(tmp_path_factory.mktemp("quackd-registry")))
+    monkeypatch.setenv(
+        "QUACKD_REGISTRY_DIR", str(_scratch_dir(tmp_path_factory, "quackd-registry"))
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +158,7 @@ def _onboard_in_tmp(
 ) -> None:
     """The same rule again for `quackd onboard`: a test never writes a robot's directory, its
     keys above all, into the developer's real `~/.quackd/onboard`."""
-    monkeypatch.setenv("QUACKD_ONBOARD_DIR", str(tmp_path_factory.mktemp("quackd-onboard")))
+    monkeypatch.setenv("QUACKD_ONBOARD_DIR", str(_scratch_dir(tmp_path_factory, "quackd-onboard")))
 
 
 @pytest.fixture(autouse=True)
@@ -90,7 +178,7 @@ def _asset_cache_in_tmp(
     skips them — so this decides which machine they run on, not whether they download."""
     if any(request.node.get_closest_marker(m) for m in ("real_duck", "so101_model")):
         return
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(tmp_path_factory.mktemp("quackd-cache")))
+    monkeypatch.setenv("QUACKD_CACHE_DIR", str(_scratch_dir(tmp_path_factory, "quackd-cache")))
     monkeypatch.delenv("QUACKD_MICRODUCK_ASSETS", raising=False)
     monkeypatch.delenv("QUACKD_LEROBOT_SIM_ASSETS", raising=False)
 
@@ -104,7 +192,7 @@ def _lerobot_calibration_in_tmp(
     that arm's file there, so a test that went looking would read the lab arm's travel and
     pass or fail on what one arm happened to record. Every step of the search points into a
     throwaway directory instead, and a test that means to walk it sets its own."""
-    home = tmp_path_factory.mktemp("hf-home")
+    home = _scratch_dir(tmp_path_factory, "hf-home")
     monkeypatch.setenv("HF_LEROBOT_CALIBRATION", str(home / "lerobot" / "calibration"))
     monkeypatch.setenv("HF_LEROBOT_HOME", str(home / "lerobot"))
     monkeypatch.setenv("HF_HOME", str(home))
