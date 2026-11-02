@@ -9,15 +9,42 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-11-02
+
+0.30.0 is a cleanup. A default install is half the size, `quackd doctor` and `quackd --help` answer
+sooner, CI's test jobs take 5 to 11 minutes where Windows on 3.12 took 52, and four ways a stranger
+could stop, drive or exhaust a robot's daemon are closed. Nothing quackd's commands, verbs or MCP
+tools could do in 0.29.1 has gone.
+
+Run side by side with 0.29.1 on Windows, the help of every command, the MCP tools, every verb and
+duck, the detector's answers, `quackd doctor --json` and the events of scripted runs on seven bodies
+differ in two places: `quackd serve-mcp` has a new flag, `--lock-duckfile`, off by default, and
+doctor has one row fewer, the `opencv` a default install no longer has. Two warnings can also print:
+one on stderr, when a project's `.env` chose where a key from your shell would go, and one beside
+`quackd ui`'s address, off loopback.
+
+The one answer that can differ is on Apple Silicon and Linux on Arm. OpenCV there reads a few
+colours' saturation a step off from OpenCV on x86, and quackd now reads them the x86 way everywhere.
+No colour crosses the threshold of any target quackd ships, so only a target tuned by hand can see
+it, as Changed says.
+
+Some frames are slower. On one laptop at 640x480 a clean frame takes 7.8 ms where OpenCV took 5.0,
+one with camera noise 8.6 where it took 5.7, and one speckled with a target's colour 58 where it
+took 9. Stripes one pixel wide cost most: 366 ms where it took 24 for the slowest found here. The
+slowest found for OpenCV took 1,009 and takes 252 here, as Changed says.
+
+The bridge fixes are in files you copy to the robot, so a robot has them once you copy them again.
+They have run in the real daemons against fake bodies, and on no robot.
+
 ### Added
 
-- **`quackd serve-mcp --lock-duckfile`.** By default a contract the client loads replaces the one the
-  server started with, which is how a client moves on to its next task. An operator who started the
-  server to hold the model to one file can now say so, and `robot_load_duckfile` then refuses a file
-  that asks for more: a verb outside the allowlist, a confirm dropped, a budget raised, an abort
-  loosened, longer policy segments, wider instructions or a changed datasheet, each named in the
-  refusal. A file asking for no more still loads. It needs `--duckfile`, and it is for one robot, so
-  `--robots` and `--flock` refuse it. Off, nothing about a server has changed.
+- **`quackd serve-mcp --lock-duckfile`.** By default a contract the client loads replaces the one
+  the server started with, which is how a client moves on to its next task. An operator who started
+  the server to hold the model to one file can now say so, and `robot_load_duckfile` then refuses a
+  file that asks for more: a verb outside the allowlist, a confirm dropped, a budget raised, an
+  abort loosened, longer policy segments, wider instructions or a changed datasheet, each named in
+  the refusal. A file asking for no more still loads. It needs `--duckfile`, and it is for one
+  robot, so `--robots` and `--flock` refuse it. Off, nothing about a server has changed.
 - **quackd says so when a project's `.env` chose where your key goes.** A cloned project brings its
   `.env`, and running quackd there loads it. Where such a file sets `ANTHROPIC_BASE_URL`,
   `OPENAI_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `TYPESAFE_BASE_URL`, `HF_ENDPOINT`, `QUACKD_BASE_URL`
@@ -25,64 +52,77 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   names the variable and the host. Nothing is refused, stdout, `--json` and a run's saved terminal
   are as they were, and a gateway set that way on purpose works as it did. Exporting the address in
   your shell ends the line.
-- **`quackd ui` off loopback says the page is plain HTTP.** Anyone who can read that network's traffic
-  can read the token, so the line says to use a network you trust and `--new-token` if it was not.
-  Nothing about the page or a phone reaching it has changed.
+- **`quackd ui` off loopback says the page is plain HTTP.** Anyone who can read that network's
+  traffic can read the token, so the line says to use a network you trust and `--new-token` if it
+  was not. Nothing about the page or a phone reaching it has changed.
 
 ### Changed
 
 - **A default install is half the size, because OpenCV has left it.** `uv pip install quackd` went
-  from 230 MB to 118 MB on disk and from 30 s to 22 s on an empty cache on Windows, and the download
-  fell by 50 to 69% by platform, from 92.4 MB to 36.4 MB on Linux. Two things in the core used it,
-  and both are still here. The default detector does the same arithmetic with numpy
-  (`quackd/perception/blobs.py`), and `quackd ui`'s QR code for a phone comes from `segno`, a pure
-  Python wheel of about 350 KB with nothing under it. A detection on every target quackd ships is
-  the same to the last bit: `tests/test_color_blob_parity.py` holds every colour there is, 1,500
-  awkward masks and every field of `detect()` on simulator, noisy and saturated frames against OpenCV
-  itself, on 4.13 and on 5.0 and at the floors `pyproject.toml` allows. OpenCV on Apple Silicon
-  and Linux on Arm does not read every colour as it does on x86: 6,582 of the 16,777,216 come out a
-  saturation step lower, and quackd now gives the x86 answer on every machine. No colour crosses a
-  shipped target's threshold that way. A target tuned by hand on Arm can gain up to 1,158 colours if
-  its saturation floor is one of 11 values, and can gain or lose more in the last few columns of a
-  frame whose width 8 does not divide. On one Windows laptop a frame costs 2.7 ms where OpenCV took
-  1.6 at 256 pixels and 8.9 ms where it took 7.2 at 640x480, and the worst frames are quicker than
-  they were, 341 ms where it took 685 on a frame of nothing but saturated noise. `quackd doctor` has
-  one row fewer, `opencv`, in its table and in `--json`. `quackd[yolo]` brings the headless wheel
-  itself, because ultralytics brings the build that wants a display's libraries. LeRobot's `opencv://`
-  cameras get OpenCV from LeRobot as they always did, and the daemons under `bridge/` use the robot's
-  own.
+  from 230 MB to 118 MB on disk and from 30 s to 22.5 s on an empty cache on Windows, and the
+  download fell by 50 to 69% by platform, about 92 MB to 37 MB on Linux x86-64. Two things in the
+  core used it, and both are still here. The default detector does the same arithmetic with numpy
+  (`quackd/perception/blobs.py`), and `quackd ui`'s QR code for a phone comes from `segno`, pure
+  Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. A detection on every target
+  quackd ships is the same to the last bit: `tests/test_color_blob_parity.py` holds every colour
+  there is, every mask of a small size, 1,500 awkward masks and every field of `detect()` on
+  simulator, noisy and saturated frames against OpenCV itself, on 4.13 and on 5.0 and at the floors
+  `pyproject.toml` allows. OpenCV on Apple Silicon and Linux on Arm does not read every colour as it
+  does on x86: 6,582 of the 16,777,216 come out a saturation step lower, and quackd now gives the
+  x86 answer on every machine. No colour crosses a shipped target's threshold that way. A target
+  tuned by hand on those machines can gain up to 1,158 colours if its saturation floor is one of 11
+  values, and can gain or lose more in the last few columns of a frame whose width 8 does not
+  divide. `quackd doctor` has one row fewer, `opencv`, in its table and in `--json`. `quackd[yolo]`
+  brings the headless wheel itself, because ultralytics brings the build that wants a display's
+  libraries. LeRobot's `opencv://` cameras get OpenCV from LeRobot as they always did, and the
+  daemons under `bridge/` use the robot's own. A script of your own that imports `cv2` only because
+  quackd brought it has to install it now.
+- **What a frame costs has moved both ways.** On one Windows laptop, with seven targets, a clean
+  frame takes 0.9 ms where OpenCV took 1.1 at 256 pixels and 7.8 ms where it took 5.0 at 640x480,
+  and one with camera noise 8.6 where it took 5.7. A frame of about 20,000 tiny blobs or more is
+  quicker, because OpenCV hands each back as a Python object: 218 ms where it took 473 at 640x480 on
+  nothing but saturated noise, and 252 where it took 1,009 on seven colours with no pixel touching
+  its own, the slowest found for OpenCV. Fewer blobs can be slower: 1,200 squares of 8 pixels take
+  18 ms where they took 10. Many short runs of pixels on a row cost most here, because a mask and
+  its background are each labelled run by run, where OpenCV follows an edge in C: one colour
+  speckled over 60% of the frame takes 58 ms where it took 9, a checkerboard 73 where it took 9, a
+  fence of one pixel stripes 177 where it took 14, and two colours of such stripes 366 where they
+  took 24, the slowest found here.
 - **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
-  Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so five
+  Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so four
   presets held the report for twelve seconds to learn that nothing was running. It also read every
   installed package's file list up to four times, and now reads it once, only for an import name
   nothing here knows. A report on Windows went from 17.3 s to 6.6 s, measured beside 0.29.1 on the
-  same machine. The rows, their order and `--json` are as they were, and a Ctrl-C lands at once.
-  Linux refuses a closed port immediately, so expect less there. `tests/test_doctor_probes.py` holds
-  every probe to starting before any finishes, and failed before this change.
-- **`quackd --help` waits for less.** Help, `--version`, a bare `quackd` and the shell completing a
-  word no longer load numpy, asyncio, pydantic or YAML, which were most of what they waited for:
-  `--help` from 1.44 s to 0.82 s, `run --help` from 1.72 s to 1.12 s and `--version` from 1.17 s to
-  0.62 s, on the same machine. Every other command loads them before it starts, as it always has,
-  which matters beyond speed: on Windows a DLL loading behind a read pending on a pipe waits for the
-  next line, so nothing may first load them after a command has begun reading stdin.
-  `tests/test_cli_start.py` holds both halves, each in a fresh interpreter.
+  same machine. The rows, their order and `--json` are as they were, less that `opencv` row, and a
+  Ctrl-C does not wait for a probe. Linux refuses a closed port immediately, so expect less there.
+  `tests/test_doctor_probes.py` holds every probe to starting before any finishes, and failed before
+  this change.
+- **`quackd --help` waits for less.** `--help`, `-h`, `--version` or `-V` anywhere on the line, a
+  bare `quackd` and the shell completing a word no longer load numpy, asyncio, pydantic or YAML,
+  which were over a third of what they waited for: `--help` from 1.44 s to 0.82 s, `run --help` from
+  1.72 s to 1.12 s and `--version` from 1.17 s to 0.62 s, on the same machine. Any other command
+  line loads them before it starts, as it always has, which matters beyond speed: on Windows a DLL
+  loading behind a read pending on a pipe waits for the next line, so nothing may first load them
+  after a command has begun reading stdin. `tests/test_cli_start.py` holds both halves, each in a
+  fresh interpreter.
 
 ### Security
 
 - **One line could end the Open Duck bridge, token or no token.** `7`, `[]`, `null`, a stray byte, a
-  token that was not ASCII, or a thousand brackets each raised out of the only thread the server has,
-  which left the duck stopped, torqued and unreachable. None of them can now, and whatever one
-  client's bytes raise costs that client alone. A client that had not authenticated could also stop a
-  duck somebody else was walking, by saying `duck.command` and hanging up, and can no longer.
+  token that was not ASCII, or a few thousand brackets each raised out of the only thread the server
+  has, which left the duck stopped, torqued and unreachable. None of them can now, and whatever one
+  client's bytes raise costs that client alone. A client that had not authenticated could also stop
+  a duck somebody else was walking, by saying `duck.command` and hanging up, and can no longer.
 - **A web page could drive a robot through the ssh tunnel the docs recommend.** A page the operator
-  happens to visit can POST to `127.0.0.1`. On a daemon with no token, which is how the README starts
-  ToddlerBot's, that read its state and got `bot.stand` accepted: the headers are no JSON and were
+  happens to visit can POST to `127.0.0.1`, where the browser lets it. On a daemon with no token,
+  which is how `bridge/toddlerbot/README.md` starts ToddlerBot's, that asked for its state and got
+  `bot.stand` accepted, though the page never saw an answer: the headers are no JSON and were
   skipped, and the body's line was then read as a command. A MOSS bridge with no token took `/twist`
   and `/arm/cycle` the same way. The two line daemons now close a connection that opens with an HTTP
   request or an oversized line, which no client of theirs does, and the three HTTP daemons refuse a
-  request carrying `Origin`. No real client sends either, and a person opening a frame in a browser
-  tab still gets it. A token was always the fuller answer and still is: `SECURITY.md` says what a
-  page can still do to a daemon without one.
+  request carrying `Origin`. No client quackd ships sends either, and a person opening a frame in a
+  browser tab still gets it. A token was always the fuller answer where a daemon has one, and still
+  is: `SECURITY.md` says what a page can still do to a daemon without one.
 - **ToddlerBot's daemon read a line of any length.** A peer that never sent a newline could fill the
   memory of the process walking the robot. It reads at most 64 KiB of a line now, as the Open Duck
   bridge does, and throws the rest away.
@@ -91,39 +131,44 @@ These are files you copy to the robot, so a robot has them once you copy them ag
 
 ### Documentation
 
-- **`LAUNCH.md` has left the repository.** It was notes on how the project goes public, and its first
-  line said not to publish it. Nothing read it at run time, and the release steps no longer mention
-  it.
-- **A nightly job runs the suite on what a fresh install gets.** The lock's numpy and Pillow stay old
-  because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it, so it resolves
-  past both: numpy 2.5 and Pillow 13 where CI runs numpy 2.2 or 2.4 and Pillow 12. No job ran that
-  combination, and `.github/workflows/fresh-install.yml` does now, with built wheels in a clean
-  environment beside it. It keeps a schedule of its own so another project's release can say so there
-  without stopping a tag. The suite passes on those versions today: 7,669 passed and none failed.
+- **`LAUNCH.md` has left the repository.** It was notes on how the project goes public, and it
+  opened by saying not to publish it. Nothing read it at run time, and the release steps no longer
+  mention it.
+- **A nightly job runs the suite on what a fresh install gets.** The lock's numpy and Pillow stay
+  old because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it, so it
+  resolves past both: numpy 2.5, 2.4 on Python 3.11, and Pillow 13, where CI runs numpy 2.2 and
+  Pillow 12. No job ran the suite on that combination, and `.github/workflows/fresh-install.yml`
+  does now, with built wheels in a clean environment beside it. It keeps a schedule of its own so
+  another project's release can say so there without stopping a tag. Its first run, on this
+  release's code with OpenCV 5.0 as its oracle, passed on Ubuntu and Windows on both Pythons: 7,854
+  to 7,857 tests, and none failed.
 - **`uv.lock` is refreshed, from 112 known advisories to 52.** It ships to nobody, since a fresh
-  install resolves for itself and has none, so this is for a checkout and for CI. 39 of the 52 are
-  Pillow, which LeRobot holds under 13, and the rest are in `virtualenv`, `transformers`, `setuptools`
-  and `torch`. CI installs no provider SDK, so the new `openai` and `google-genai` were run for real
-  against a stand-in for each vendor's API, with `anthropic` beside them, and all eight requests they
-  sent were identical to the old versions'. `huggingface-hub` stays at 1.29.0, the version
-  `policy/endpoint_upstream_api.py` was read at. Python 3.11 and 3.12 lock one OpenCV and one numpy
-  now, and the nightly above is what runs the newest of each. One test used a nested `pytest.approx`,
-  which pytest 9.2 refuses, and compares point by point.
-- **CI's six test jobs take 6 to 10 minutes, where Windows on 3.12 took 52.** The suite's own fixtures
-  were most of the time. pytest's `tmp_path_factory.mktemp` lists the whole base directory on every
-  call to find its next number, and five autouse fixtures called it for every test, so each test cost
-  more than the one before: 8,000 tests that did nothing took 2 minutes 6 seconds without that and
-  had reached 86% when stopped at 45 minutes with it. That fix alone took Windows on 3.12 from 51:32
-  to 23:01, macOS on 3.12 from 33:41 to 23:18 and Ubuntu on 3.12 from 24:24 to 16:11. The six jobs
-  then run on every core a runner has (`pytest -n auto`, in `dev` now), which takes them to about 8,
-  10 and 6 minutes. Six tests that hold a margin on a wall clock, each of which has gone red under
-  load and passed alone, run after the rest on their own (`-m serial`). The jobs' limit is back down
-  from 60 minutes to 30, so a hang is called sooner. Three smaller things came with it: a test that
-  merely runs `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of
-  xdist's workers, where it fired in any that finished before the last, and on Windows the suite's
-  event loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and
-  held a whole run once as the ephemeral ports wrapped round. No quackd code changes, and no test
-  changes what it asserts.
+  install resolves for itself, so this is for a checkout and for CI. 39 of the 52 are Pillow, which
+  LeRobot holds under 13, so `quackd[lerobot]` gets them too, and the rest are in `virtualenv`,
+  `transformers`, `setuptools` and `torch`. A fresh `uv pip install quackd` with no extras had no
+  known advisory when audited on 1 November. CI installs no provider SDK, so the new `openai` and
+  `google-genai` were run for real against a stand-in for each vendor's API, with `anthropic` beside
+  them, and the paths and bodies of all eight requests they sent were identical to the old
+  versions'. Headers were not compared. `huggingface-hub` stays at 1.29.0, the version
+  `policy/endpoint_upstream_api.py` was read at. Python 3.11 and 3.12 lock one
+  `opencv-python-headless` and one numpy now, and the nightly above is what runs the newest of each.
+  One test used a nested `pytest.approx`, which pytest 9.2 refuses, and compares point by point.
+- **CI's six test jobs take 5 to 11 minutes, where Windows on 3.12 took 52.** On Windows the suite's
+  own fixtures were most of the time, and on macOS and Ubuntu a fifth to a third of it. pytest's
+  `tmp_path_factory.mktemp` lists the whole base directory on every call to find its next number,
+  and five autouse fixtures called it for every test, so each test cost more than the one before:
+  8,000 tests that did nothing took 2 minutes 6 seconds without that and had reached 86% when
+  stopped at 45 minutes with it. That fix alone took Windows on 3.12 from 51:32 to 23:01, macOS on
+  3.12 from 33:41 to 23:18 and Ubuntu on 3.12 from 24:24 to 16:11. The six jobs then run on every
+  core a runner has (`pytest -n auto`, in `dev` now), which takes them to about 8, 10 and 6 minutes.
+  Six tests that hold a margin on a wall clock, each of which has gone red under load and passed
+  alone, run after the rest on their own (`-m serial`). The jobs' limit is back down from 60 minutes
+  to 30, so a hang is called sooner. Three smaller things came with it: a test that merely runs
+  `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of xdist's
+  workers, where it fired in any that finished before the last, and on Windows the suite's event
+  loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and held
+  a whole run once as the ephemeral ports wrapped round. This part changes no quackd code, and the
+  one assertion it touches is xlerobot's turn rate, which now waits for the observation it reads.
 
 ## [0.29.1] — 2026-11-01
 
@@ -9125,7 +9170,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.29.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/rokbenko/quackd/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/rokbenko/quackd/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/rokbenko/quackd/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/rokbenko/quackd/compare/v0.27.0...v0.28.0
