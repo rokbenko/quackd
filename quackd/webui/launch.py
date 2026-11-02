@@ -38,7 +38,7 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 EVERY_NETWORK = ("0.0.0.0", "::", "")
@@ -144,27 +144,23 @@ def urls(bind: str, port: int, token_value: str | None) -> list[str]:
     return [f"http://{_url_host(host)}:{port}{tail}" for host in hosts]
 
 
-#: The quiet zone a scanner needs round a code, in modules, and what OpenCV draws of it already.
+#: The quiet zone a scanner needs round a code, in modules.
 QUIET_ZONE = 4
-OPENCV_BORDER = 2
 
 
 def _qr_modules(text: str) -> list[list[bool]]:
     """`text` as a QR code's modules, True where a module is dark, with the quiet zone a scanner
-    needs round it, error correction at level M. OpenCV, which quackd already depends on, draws
-    one pixel per module with two modules of quiet zone, so two more are added here."""
-    import cv2
+    needs round it, error correction at level M: M exactly, and never a Micro QR, which segno would
+    otherwise choose for a short text and a phone's camera may not read."""
+    import segno
 
-    params = cv2.QRCodeEncoder.Params()
-    params.correction_level = cv2.QRCodeEncoder_CORRECT_LEVEL_M
-    code = cv2.QRCodeEncoder.create(params).encode(text)
-    if code is None or code.size == 0:
-        raise ValueError(f"{len(text)} characters are more than one QR code holds")
-    margin = QUIET_ZONE - OPENCV_BORDER
-    width = int(code.shape[1]) + 2 * margin
-    light = [[False] * width for _ in range(margin)]
-    grid = cast("list[list[int]]", code.tolist())  # a code is always two-dimensional
-    rows = [[False] * margin + [int(p) == 0 for p in row] + [False] * margin for row in grid]
+    try:
+        code = segno.make(text, error="m", boost_error=False, micro=False)
+    except segno.DataOverflowError as e:
+        raise ValueError(f"{len(text)} characters are more than one QR code holds") from e
+    side = [False] * QUIET_ZONE
+    rows = [[*side, *(bool(module) for module in row), *side] for row in code.matrix]
+    light = [[False] * len(rows[0]) for _ in range(QUIET_ZONE)]
     return [*light, *rows, *[list(r) for r in light]]
 
 

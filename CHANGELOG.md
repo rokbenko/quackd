@@ -11,6 +11,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Changed
 
+- **A default install is half the size, because OpenCV has left it.** `uv pip install quackd` went
+  from 230 MB to 118 MB on disk and from 30 s to 22 s on an empty cache on Windows, and the download
+  fell by 50 to 69% by platform, from 92.4 MB to 36.4 MB on Linux. Two things in the core used it,
+  and both are still here. The default detector does the same arithmetic with numpy
+  (`quackd/perception/blobs.py`), and `quackd ui`'s QR code for a phone comes from `segno`, a pure
+  Python wheel of about 350 KB with nothing under it. A detection on every target quackd ships is
+  the same to the last bit: `tests/test_color_blob_parity.py` holds every colour there is, 1,500
+  awkward masks and every field of `detect()` on simulator, noisy and saturated frames against OpenCV
+  itself, on both versions CI locks and at the floors `pyproject.toml` allows. OpenCV on Apple Silicon
+  and Linux on Arm does not read every colour as it does on x86: 6,582 of the 16,777,216 come out a
+  saturation step lower, and quackd now gives the x86 answer on every machine. No colour crosses a
+  shipped target's threshold that way. A target tuned by hand on Arm can gain up to 1,158 colours if
+  its saturation floor is one of 11 values, and can gain or lose more in the last few columns of a
+  frame whose width 8 does not divide. On one Windows laptop a frame costs 2.7 ms where OpenCV took
+  1.6 at 256 pixels and 8.9 ms where it took 7.2 at 640x480, and the worst frames are quicker than
+  they were, 341 ms where it took 685 on a frame of nothing but saturated noise. `quackd doctor` has
+  one row fewer, `opencv`, in its table and in `--json`. `quackd[yolo]` brings the headless wheel
+  itself, because ultralytics brings the build that wants a display's libraries. LeRobot's `opencv://`
+  cameras get OpenCV from LeRobot as they always did, and the daemons under `bridge/` use the robot's
+  own.
 - **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
   Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so five
   presets held the report for twelve seconds to learn that nothing was running. It also read every

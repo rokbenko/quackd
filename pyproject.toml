@@ -39,7 +39,10 @@ dependencies = [
   "pyyaml>=6.0",
   "numpy>=1.26",
   "pillow>=10.3",
-  "opencv-python-headless>=4.9",
+  # `quackd ui`'s QR code for a phone (quackd/webui/launch.py), and imported nowhere else: pure
+  # Python, about 350 KB, with nothing under it. Here rather than in the `ui` extra so that the
+  # code survives an upgrade that keeps Streamlit and forgets the extra.
+  "segno>=1.6",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
   # Robot Passport signs and verifies with Ed25519 (quackd/passport/). mcp already brings it
@@ -90,7 +93,10 @@ decision = ["typesafe-sdk>=0.7,<1"]
 # for the same reason the robot simulators are.
 laya = ["laya>=0.3,<1"]
 all = ["anthropic>=1.0,<2", "openai>=1.66,<4", "google-genai>=1.0,<3"]
-yolo = ["ultralytics>=8.2"]
+# ultralytics brings `opencv-python`, the build that wants a display's libraries, and a headless
+# Linux box has none. The core's own headless wheel used to answer `import cv2` there, so the wheel
+# comes with this extra now that the core has no use for it.
+yolo = ["ultralytics>=8.2", "opencv-python-headless>=4.9"]
 live = ["pygame>=2.5"]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
 # onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
@@ -194,6 +200,9 @@ dev = [
   # or onnxruntime, and docs/adapters/status.md claims that test, so CI has to be able to
   # run it.
   "pyzmq>=26",
+  # The oracle quackd/perception/blobs.py is held to (tests/test_color_blob_parity.py), and what
+  # reads the QR codes back (tests/test_webui_launch.py). Nothing quackd ships imports it.
+  "opencv-python-headless>=4.9",
 ]
 
 [project.scripts]

@@ -99,6 +99,21 @@ jobs:
           PY
           ! ./bare/bin/quackd run hello-world --llm fake 2>err.txt
           grep -q "no robot adapter is installed" err.txt
+      - name: The core carries no OpenCV, and its detector and its QR code work without it
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! ./bare/bin/python -c "import cv2" 2>/dev/null
+          ./bare/bin/python - <<'PY'
+          from PIL import Image, ImageDraw
+          from quackd.perception.color_blob import ColorBlobDetector
+          from quackd.webui.launch import qr_lines
+          frame = Image.new("RGB", (256, 256), (90, 110, 90))
+          ImageDraw.Draw(frame).ellipse((100, 100, 150, 150), fill=(255, 140, 0))
+          found = ColorBlobDetector().detect(frame)
+          assert [d.label for d in found] == ["ball"], found
+          assert qr_lines("http://192.168.1.23:8501/?token=abc")
+          PY
       - name: One adapter installed is one adapter usable
         shell: bash
         run: |
