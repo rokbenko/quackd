@@ -4,15 +4,16 @@ It used to ask OpenCV, which is half of a default install on disk and most of it
 HSV conversion, a threshold, the outer contours of what passed, and each contour's area and box.
 These give the answers OpenCV gives on x86 to the last bit, its 8-bit HSV and its polygon areas
 included, and `tests/test_color_blob_parity.py` holds them to it against OpenCV itself. OpenCV on
-Arm reads a few saturations a step off from that. This reads them the x86 way on every machine,
-which moves no pixel across the threshold of any target quackd ships.
+Apple Silicon and Linux on Arm reads a few saturations a step off from that. This reads them the x86
+way on every machine, which moves no pixel across the threshold of any target quackd ships.
 
 Most of a frame matches no target, so the work goes where the pixels are. `Candidates` finds the
 ones bright and saturated enough for any target with cheap arithmetic, and does the exact conversion
-on those alone. `biggest_blobs` joins a target's pixels into blobs with array operations, so a noisy
-frame's tens of thousands of little runs cost array time, and walks the outline only of a blob whose
-box could hold the area asked for. That is why the worst frames, full of small blobs, are quicker
-here than through OpenCV, whose contours all come back as Python objects to be measured and sorted.
+on those alone. `biggest_blobs` joins a target's pixels into blobs and reads each blob's area off
+its runs, all with array operations and no walk round an outline. That is why a frame of tens of
+thousands of tiny blobs is quicker here than through OpenCV, whose contours all come back as Python
+objects to be measured and sorted. A frame of many short runs is slower here, since a mask and its
+background are labelled run by run, where OpenCV follows an edge in C.
 """
 
 from __future__ import annotations
@@ -25,9 +26,6 @@ _DIVISORS = np.arange(256, dtype=np.float64)
 _DIVISORS[0] = np.inf  # a value or a spread of 0 divides nothing: its tables stay 0
 _SATURATION_OVER = np.rint((255 << _SHIFT) / _DIVISORS).astype(np.int32)
 _HUE_OVER = np.rint((180 << _SHIFT) / (6.0 * _DIVISORS)).astype(np.int32)
-
-_AROUND = ((0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1))
-"""The eight neighbours of a pixel as (row, column), clockwise from the west."""
 
 
 def _hsv(
@@ -101,148 +99,124 @@ def _runs(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     height, width = mask.shape
     padded = np.zeros((height, width + 2), dtype=np.int8)
     padded[:, 1:-1] = mask
-    steps = padded[:, 1:] - padded[:, :-1]
-    rows, starts = np.nonzero(steps == 1)
-    stops = np.nonzero(steps == -1)[1]
-    return rows, starts, stops
+    rows, columns = np.nonzero(padded[:, 1:] != padded[:, :-1])
+    return rows[::2], columns[::2], columns[1::2]
 
 
-def _labels(rows: np.ndarray, starts: np.ndarray, stops: np.ndarray) -> np.ndarray:
-    """Which blob each run is in, by 8-connectivity, as the index of the blob's first run: runs on
-    adjacent rows that touch or meet at a corner are joined, then every run follows its parent up
-    until nothing changes."""
-    parent: np.ndarray = np.arange(rows.size, dtype=np.int64)
-    # One ascending key for (row, column): runs are in raster order, so both are sorted under it.
-    # A run on row r over [a, b) meets one on row r - 1 over [c, d) when c <= b and d >= a.
-    width = int(stops.max()) + 3
-    first = np.searchsorted(rows * width + stops, (rows - 1) * width + starts, side="left")
-    past = np.searchsorted(rows * width + starts, (rows - 1) * width + stops, side="right")
-    counts = np.maximum(past - first, 0)
+def _spread(firsts: np.ndarray, counts: np.ndarray) -> np.ndarray:
+    """`firsts[i]` and the `counts[i] - 1` numbers after it, for each i in turn."""
+    offsets = np.cumsum(counts) - counts
     total = int(counts.sum())
-    if not total:
-        return parent
-    lower = np.repeat(np.arange(rows.size, dtype=np.int64), counts)
-    offsets = np.concatenate(([0], np.cumsum(counts)[:-1]))
-    upper = np.arange(total, dtype=np.int64) - np.repeat(offsets, counts) + np.repeat(first, counts)
-    while True:
-        a, b = parent[lower], parent[upper]
-        apart = a != b
-        if not apart.any():
-            return parent
-        np.minimum.at(parent, np.maximum(a[apart], b[apart]), np.minimum(a[apart], b[apart]))
+    return np.arange(total, dtype=np.int64) - np.repeat(offsets, counts) + np.repeat(firsts, counts)
+
+
+def _meeting(
+    rows: np.ndarray, starts: np.ndarray, stops: np.ndarray, corners: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each pair of runs on adjacent rows that are joined, as the later run and the earlier. A run
+    on row r over [a, b) meets one on row r - 1 over [c, d) at a corner or better when c <= b and
+    d >= a, and shares a column with it when c < b and d > a."""
+    # One ascending key for (row, column): runs are in raster order, so both are sorted under it.
+    width = int(stops.max()) + 3
+    first = np.searchsorted(
+        rows * width + stops, (rows - 1) * width + starts, side="left" if corners else "right"
+    )
+    past = np.searchsorted(
+        rows * width + starts, (rows - 1) * width + stops, side="right" if corners else "left"
+    )
+    counts = np.maximum(past - first, 0)
+    return np.repeat(np.arange(rows.size, dtype=np.int64), counts), _spread(first, counts)
+
+
+def _firsts(count: int, later: np.ndarray, earlier: np.ndarray) -> np.ndarray:
+    """The first run of the blob each of `count` runs is in, given pairs that are joined. Each round
+    hooks every first still apart under the smallest it is paired with, flattens what it hooked, and
+    keeps only the pairs not yet together, so that rounds after the first touch few runs."""
+    parent: np.ndarray = np.arange(count, dtype=np.int64)
+    while later.size:
+        np.minimum.at(parent, later, earlier)
         while True:
-            followed = parent[parent]
-            if np.array_equal(followed, parent):
+            hooked = parent[later]
+            jumped = parent[hooked]
+            if np.array_equal(hooked, jumped):
                 break
-            parent = followed
-
-
-def _outline(rows: list[list[int]], row: int, column: int) -> list[tuple[int, int]]:
-    """The outer border of the blob whose raster-first pixel is at (row, column), walked clockwise
-    through pixel centres, in a grid with a border of zeros. A walk may pass a pixel twice, as a
-    line one pixel wide does, and ends where it would set off the same way again."""
-    start = (row, column)
-    look = 0  # the raster-first pixel has background to its west
-    path = [start]
-    first_step: tuple[int, int] | None = None
+            parent[later] = jumped
+        one, other = parent[later], parent[earlier]
+        apart = one != other
+        later, earlier = np.maximum(one[apart], other[apart]), np.minimum(one[apart], other[apart])
     while True:
-        for turn in range(8):
-            direction = (look + turn) % 8
-            next_row, next_column = row + _AROUND[direction][0], column + _AROUND[direction][1]
-            if rows[next_row][next_column]:
-                break
-        else:
-            return path  # a pixel on its own
-        if (row, column) == start and (next_row, next_column) == first_step:
-            path.pop()
-            return path
-        if first_step is None:
-            first_step = (next_row, next_column)
-        look = (direction + (6 if direction % 2 else 5)) % 8
-        row, column = next_row, next_column
-        path.append((row, column))
+        followed = parent[parent]
+        if np.array_equal(followed, parent):
+            return parent
+        parent = followed
 
 
-def _area(path: list[tuple[int, int]]) -> float:
-    """The polygon through the pixel centres of an outline, by the shoelace: a square of 2 x 2
-    pixels encloses 1, and one pixel, or a line of them, encloses 0."""
-    twice = 0
-    previous_y, previous_x = path[-1]
-    for y, x in path:
-        twice += previous_x * y - x * previous_y
-        previous_y, previous_x = y, x
-    return abs(twice) * 0.5
-
-
-def _encloses(path: list[tuple[int, int]], row: int, column: int) -> bool:
-    """Whether a pixel of another blob is inside an outline. It cannot be on it: two blobs share no
-    pixel, and an edge of an outline joins neighbours and so passes through none."""
-    inside = False
-    previous_y, previous_x = path[-1]
-    for y, x in path:
-        if (y > row) != (previous_y > row) and (
-            column < previous_x + (row - previous_y) * (x - previous_x) / (y - previous_y)
-        ):
-            inside = not inside
-        previous_y, previous_x = y, x
-    return inside
+def _filled(mask: np.ndarray) -> np.ndarray:
+    """The mask with what its blobs enclose set too: the background no 4-connected path leads out of
+    the frame from, and any blob in there with it, which is no outer contour."""
+    height, width = mask.shape
+    around = np.ones((height + 2, width + 2), dtype=np.int8)
+    around[1:-1, 1:-1] = 1 - mask
+    rows, starts, stops = _runs(around)
+    enclosed = _firsts(rows.size, *_meeting(rows, starts, stops, corners=False)) != 0
+    if not enclosed.any():  # run 0 is the row above the frame, so whatever joins it is outside
+        return mask
+    lengths = stops[enclosed] - starts[enclosed]
+    filled = mask.copy()
+    filled[np.repeat(rows[enclosed], lengths) - 1, _spread(starts[enclosed], lengths) - 1] = 1
+    return filled
 
 
 def biggest_blobs(
     mask: np.ndarray, keep: int | None, min_area: float = 0.0
 ) -> list[tuple[float, tuple[int, int, int, int]]]:
-    """(area, (x, y, width, height)) of up to `keep` blobs of a mask with at least `min_area`,
-    biggest first and all of them if `keep` is None: exactly what OpenCV's `findContours` with
-    `RETR_EXTERNAL`, sorted by `contourArea`, gives. A blob is 8-connected, a blob inside another's
-    hole is no outer contour, and among equal areas the one found last in raster order comes first,
-    because that is the order OpenCV hands them back in and its sort is stable."""
-    rows, starts, stops = _runs(mask)
-    if rows.size == 0 or keep == 0:
+    """(area, (x, y, width, height)) of up to `keep` blobs of a mask of 0s and 1s with at least
+    `min_area`, biggest first and all of them if `keep` is None: exactly what OpenCV's
+    `findContours` with `RETR_EXTERNAL`, sorted by `contourArea`, gives. A blob is 8-connected, a
+    blob inside another's hole is no outer contour, and among equal areas the one found last in
+    raster order comes first, because that is the order OpenCV hands them back in and its sort is
+    stable.
+
+    The area is of the polygon through the pixel centres of a blob's outer border, and takes no walk
+    round it. With what the blob encloses filled in, that polygon holds a whole 2 x 2 window of
+    pixels where all 4 are set, half of one where 3 are, and none of any other. A window with 3 or 4
+    set has a column set in both its rows, so it belongs to one pair of overlapping runs. A pair
+    sharing n columns holds n - 1 whole windows, and half of one at each end where the two do not
+    line up."""
+    if keep == 0 or not mask.any():
         return []
-    labels = _labels(rows, starts, stops)
-    firsts, inverse = np.unique(labels, return_inverse=True)
+    rows, starts, stops = _runs(_filled(mask))
+    later, earlier = _meeting(rows, starts, stops, corners=True)
+    firsts_of = _firsts(rows.size, later, earlier)
+    is_first = firsts_of == np.arange(rows.size)
+    firsts = np.flatnonzero(is_first)
+    blob_of = (np.cumsum(is_first) - 1)[firsts_of]
+
     lefts = np.full(firsts.size, mask.shape[1], dtype=np.int64)
     rights = np.zeros(firsts.size, dtype=np.int64)
     bottoms = np.zeros(firsts.size, dtype=np.int64)
-    np.minimum.at(lefts, inverse, starts)
-    np.maximum.at(rights, inverse, stops)
-    np.maximum.at(bottoms, inverse, rows)
+    np.minimum.at(lefts, blob_of, starts)
+    np.maximum.at(rights, blob_of, stops)
+    np.maximum.at(bottoms, blob_of, rows)
     tops = rows[firsts]
-    widths, heights = rights - lefts, bottoms - tops + 1
-    # the most a polygon through pixel centres can enclose in that box
-    bounds = (widths - 1) * (heights - 1)
-    worth_walking = np.flatnonzero(bounds >= min_area)
-    worth_walking = worth_walking[np.lexsort((firsts[worth_walking], bounds[worth_walking]))[::-1]]
 
-    found: list[tuple[float, int, list[tuple[int, int]], tuple[int, int, int, int]]] = []
-    best = -1.0
-    for index in worth_walking.tolist():
-        if keep == 1 and int(bounds[index]) < best:
-            break  # none further can beat this or tie it, and the biggest is never in a hole
-        top, left = int(tops[index]), int(lefts[index])
-        width, height = int(widths[index]), int(heights[index])
-        box = (left, top, width, height)
-        first = int(firsts[index])
-        if width == 1 or height == 1:
-            found.append((0.0, first, [(top, left), (top + height - 1, left + width - 1)], box))
-            best = max(best, 0.0)
-            continue
-        grid = np.zeros((height + 2, width + 2), dtype=np.uint8)
-        grid[1:-1, 1:-1] = mask[top : top + height, left : left + width]
-        walk = _outline(grid.tolist(), 1, int(starts[first]) - left + 1)
-        area = _area(walk)
-        path = [(y + top - 1, x + left - 1) for y, x in walk]
-        found.append((area, first, path, box))
-        best = max(best, area)
+    a, b, c, d = starts[later], stops[later], starts[earlier], stops[earlier]
+    shared = np.minimum(b, d) - np.maximum(a, c)
+    overlap = shared > 0
+    twice = 2 * (shared[overlap] - 1) + (a != c)[overlap] + (b != d)[overlap]
+    areas = 0.5 * np.bincount(blob_of[later[overlap]], weights=twice, minlength=firsts.size)
 
-    found.sort(key=lambda blob: (blob[0], blob[1]), reverse=True)
-    blobs: list[tuple[float, tuple[int, int, int, int]]] = []
-    outer: list[list[tuple[int, int]]] = []
-    for area, _first, path, box in found:
-        if area < min_area or any(_encloses(other, *path[0]) for other in outer):
-            continue
-        blobs.append((area, box))
-        outer.append(path)
-        if keep is not None and len(blobs) >= keep:
-            break
-    return blobs
+    order = np.lexsort((firsts, areas))[::-1]
+    order = order[areas[order] >= min_area][:keep]
+    return [
+        (
+            float(areas[blob]),
+            (
+                int(lefts[blob]),
+                int(tops[blob]),
+                int(rights[blob] - lefts[blob]),
+                int(bottoms[blob] - tops[blob] + 1),
+            ),
+        )
+        for blob in order.tolist()
+    ]
