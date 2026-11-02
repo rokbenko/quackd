@@ -1311,10 +1311,11 @@ class AgentLoop:
         return (Exception, asyncio.CancelledError, KeyboardInterrupt)
 
     async def _unbroken(self, step: Awaitable[T]) -> T:
-        """`step` to its end whatever is pressed meanwhile, once somebody has been asked about the
-        gripper, and every step this is for has a deadline of its own. A press cut a close short
-        where it landed, on a camera's or a read, and swallowing that left the arm energised and
-        connected, with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up."""
+        """`step` to its end through a press, once somebody has been asked about the gripper, and
+        every step this is for has a deadline of its own. A press cut a close short where it
+        landed, on a camera's or a read, and swallowing that left the arm energised and connected,
+        with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up. The Ctrl-C after
+        this one still quits, through the event loop and past this, as the panel says it does."""
         if self._fold_watch is None:
             return await step
         running = asyncio.ensure_future(step)

@@ -1598,7 +1598,7 @@ def _ask(question: str) -> bool:
     as it always was.
 
     Both branches tell the saved terminal what was typed, because neither of them printed it:
-    the question goes out raw and the answer is echoed by the terminal driver, so a tee on
+    the question goes out raw and the answer is echoed straight to the terminal, so a tee on
     quackd's own output sees the asking and not the answering. A run with `--yes` never
     reaches here, which is why a recorded question always means a person was really asked."""
     if _FRONT is not None:

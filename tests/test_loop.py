@@ -3632,6 +3632,34 @@ async def test_a_record_that_cannot_be_written_does_not_fold_under_the_hand(
     assert mock.joints["gripper"] == GRIPPER_OPEN, "and Enter still opened the jaws"
 
 
+async def test_a_disk_too_full_to_record_the_opening_holds_the_arm_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """Every send goes in the record, so with nowhere to write it the gripper stops at the first.
+    Nothing folds, and they are told why and what to do, on the one line that is not a record."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = MarkedPerson(mock, places=PLACED)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    real = loop.event_log.record
+    assert real is not None
+    full = False
+
+    def sink(event: Any) -> None:
+        nonlocal full
+        if event.data.get("question") == AgentLoop.HAND_IT_BACK:
+            full = True
+        if full:
+            raise OSError(28, "No space left on device")
+        real(event)
+
+    loop.event_log.record = sink
+    with contextlib.suppress(Exception):
+        await loop.run()
+    assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
+    said = [s for s in person.said if s.startswith("the gripper did not open")]
+    assert said and "take what is in it by hand" in said[0], person.said
+
+
 class ClockedPerson(ScriptedPerson):
     """A person whose every line is stamped with the robot's clock when it is said."""
 

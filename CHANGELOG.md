@@ -29,17 +29,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   nothing, and Backspace still edits what you type at a question. Arrow and function keys are no
   keys, and neither are Ctrl-D and Ctrl-Z. Those two used to end the keys, so a stray one took `q` away
   for the rest of the run, and on Linux and macOS Ctrl-Z stopped the whole process with the arm on its
-  last goal. At a console the key thread now ends with its run, where one left blocked on stdin went
-  on taking keys from whatever read the console next. And the panel at the head of a run says `Ctrl-C
-  twice quits at once`, since `q` twice never has.
+  last goal. Ctrl-S no longer freezes a run at its next line there either, with `q` frozen behind it.
+  At a console the key thread now ends with its run, where one left blocked on stdin went on taking
+  keys from whatever read the console next. And the panel at the head of a run says `Ctrl-C twice quits
+  at once`, since `q` twice never has.
 - **A `[y/N]` can always be got out of.** It waited on the loop's thread with no way to wake, so where
   the key thread had gone nothing could answer it, and on Windows Ctrl-C did nothing at any `[y/N]`
   until somebody answered it. A press answers no now, and so does the key thread ending.
-- **A key held down answers no question that moves or drops an arm.** An Enter has to stand alone now,
-  a quarter of a second of nothing either side of it. Enter auto-repeating from before the first
-  question answered each of them as soon as its half second was up, and could drop an arm on nobody
-  having read a word. A stray key from earlier in the run no longer makes the Enter after it a no:
-  only what was typed around the question counts.
+- **A key held down answers no question that moves or drops an arm.** A bare Enter has to stand alone
+  now to be a yes, with no other Enter within 0.45 s either side of it, which is the slowest key repeat
+  Windows can be set to, and a slower one cannot be told from somebody pressing it. Enter auto-repeating
+  from before the first question answered each of them as soon as its half second was up, and could
+  drop an arm on nobody having read a word. So press it once, and stop: pressing it again and again
+  answers once you stop and press it again. A line with something typed on it is a no at once, and
+  a stray key from earlier in the run no longer makes the Enter after it a no: only what was typed
+  around the question counts.
 - **A `stop` from beside a running arm move ends it.** Over MCP a second call's `stop` answered
   `stopped (velocity zeroed)`, and the next tick of `move_joints`, `gripper` or `place` sent a fresh goal,
   so the arm held for a tenth of a second and went on to where it was going, with the pilot told the

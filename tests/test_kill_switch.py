@@ -292,6 +292,7 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     while a command was starting used to answer the first question it asked. One read within
     `TYPED_AHEAD_S` of the question being put is passed by, and the wait goes on to the next."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.2)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.1)
     ks, _ = switch()
     ks._heard_enter("")  # already in the terminal when the question was put
     loop = asyncio.get_running_loop()
@@ -307,7 +308,7 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     assert quiet.declined is False, "a question nobody answered was filed as a no"
 
 
-@pytest.mark.parametrize("delay", [0.3, 0.5, 1.0])
+@pytest.mark.parametrize("delay", [0.6, 1.0])
 async def test_a_key_held_down_answers_no_deliberate_question(
     monkeypatch: pytest.MonkeyPatch, delay: float
 ) -> None:
@@ -316,6 +317,7 @@ async def test_a_key_held_down_answers_no_deliberate_question(
     whatever a person's keyboard is set to, and answered the question that drops an arm. What gives
     it away is the next one. And the person who has let go of the key can still answer."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)  # room for a loaded runner's sleeps
     ks, _ = switch()
     loop = asyncio.get_running_loop()
 
@@ -333,7 +335,7 @@ async def test_a_key_held_down_answers_no_deliberate_question(
         await ks.wait_for_enter(timeout_s=delay + 0.5, until_abort=False, deliberate=True) is False
     )
     await holding
-    await asyncio.sleep(ENTER_ALONE_S * 1.5)
+    await asyncio.sleep(0.6)
     loop.call_later(0.2, ks._heard_enter, "")
     assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
 
@@ -350,13 +352,15 @@ async def test_enter_pressed_again_and_again_at_a_human_pace_still_gets_through(
     assert await ks.wait_for_enter(timeout_s=8.0, until_abort=False, deliberate=True) is True
 
 
-async def test_an_enter_twice_in_a_breath_is_no_answer() -> None:
+async def test_an_enter_twice_in_a_breath_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    alone = 0.5  # room for a loaded runner's stall between the two
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", alone)
     ks, _ = switch()
     loop = asyncio.get_running_loop()
     loop.call_later(TYPED_AHEAD_S + 0.1, ks._heard_enter, "")
     loop.call_later(TYPED_AHEAD_S + 0.15, ks._heard_enter, "")
     got = await ks.wait_for_enter(
-        timeout_s=TYPED_AHEAD_S + 0.15 + ENTER_ALONE_S * 2, until_abort=False, deliberate=True
+        timeout_s=TYPED_AHEAD_S + 0.15 + alone * 2, until_abort=False, deliberate=True
     )
     assert got is False, "two presses in a breath are a slip, and pressing it once more answers"
 

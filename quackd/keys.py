@@ -27,6 +27,7 @@ import contextlib
 import importlib
 import os
 import select
+import signal
 import sys
 import threading
 from typing import Any, Protocol
@@ -135,9 +136,13 @@ class PosixKeys(_Echoing):
     this draws what has a use and nothing else: left to the terminal, an arrow key moved the cursor
     and the lines after it could be written over a question still standing. Ctrl-C is still a
     signal, and Ctrl-Z no longer is (`VSUSP`, and `VDSUSP` on macOS): it stopped the whole process,
-    with an arm on its last goal and nothing reading `q`. Put back by `close`, and at exit for a
-    run that never got there. A kill that gives Python no say, SIGTERM or Ctrl-\\, leaves it to the
-    shell waiting on it."""
+    with an arm on its last goal and nothing reading `q`. Nor does Ctrl-S stop the output (`IXON`),
+    which froze a run at its next line, and `q` with it. Enter stays the `\\r` it was sent as
+    (`ICRNL`), so a link that sends `\\r\\n` for one is seen to have sent one Enter.
+
+    Put back by `close`, at exit for a run that never got there, and on the signals that kill a
+    process with no exit (SIGTERM, SIGHUP, Ctrl-\\). A SIGKILL leaves it to the shell, which a
+    wrapper such as `uv run` stands in the way of, and then it is `stty sane`, typed unseen."""
 
     def __init__(self, fd: int) -> None:
         termios: Any = importlib.import_module("termios")  # no such module to type on Windows
@@ -148,6 +153,7 @@ class PosixKeys(_Echoing):
         self._termios = termios
         self._as_found = termios.tcgetattr(fd)
         mode = termios.tcgetattr(fd)
+        mode[0] &= ~(termios.IXON | termios.ICRNL)
         mode[3] &= ~(termios.ICANON | termios.ECHO)
         mode[6][termios.VMIN] = 1
         mode[6][termios.VTIME] = 0
@@ -158,6 +164,16 @@ class PosixKeys(_Echoing):
                     mode[6][getattr(termios, name)] = off
         termios.tcsetattr(fd, termios.TCSANOW, mode)
         atexit.register(self.close)
+        self._before: dict[int, Any] = {}
+        for name in ("SIGTERM", "SIGHUP", "SIGQUIT"):
+            with contextlib.suppress(ValueError):  # not the main thread, so nothing to catch it on
+                number = getattr(signal, name)
+                self._before[number] = signal.signal(number, self._killed)
+
+    def _killed(self, number: int, _frame: Any) -> None:
+        """Put the terminal back, and let the signal do what it was going to."""
+        self.close()
+        signal.raise_signal(number)
 
     def read(self) -> str:
         while not self._closed.is_set():
@@ -215,6 +231,9 @@ class PosixKeys(_Echoing):
             return
         self._closed.set()
         atexit.unregister(self.close)
+        for number, before in self._before.items():
+            with contextlib.suppress(ValueError):
+                signal.signal(number, before)
         if _behind_the_terminal(self._fd):  # the attempt would stop the process, and it is not ours
             return
         with contextlib.suppress(OSError, self._termios.error):

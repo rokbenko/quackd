@@ -1419,13 +1419,14 @@ still starting, used to answer the question that followed it before anybody coul
 one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
 arm and decides in half a second, and an Enter that comes too soon is passed by rather than
 taken, so a person who did mean it presses it again."""
-ENTER_ALONE_S = 0.25
-"""How long an Enter has to stand alone, with nothing read this long before it or after it, to
-answer a question that moves or drops an arm. A key held down is a stream of Enters, and its
-first repeat can come a second after the press, past any wait a person could be asked to sit
-through, so a wait before it proves nothing. What gives a held key away is the next Enter, a few
-dozen milliseconds behind. An answer takes this long to be sure of, which nobody notices, and
-somebody pressing it again and again at any human pace still gets through."""
+ENTER_ALONE_S = 0.45
+"""How long a bare Enter has to stand alone, with no other Enter this close before it or after it,
+to say yes to a question that moves or drops an arm. A key held down is a stream of Enters, and
+its first repeat can come a second after the press, past any wait a person could be asked to sit
+through, so a wait before it proves nothing. What gives a held key away is the next Enter, and
+this is longer than the slowest repeat Windows can be set to, 2.5 a second. A key set to repeat
+slower still cannot be told from somebody pressing it. An answer takes this long to be sure of,
+and somebody who stops and presses it once more gets through. A no needs no such care."""
 ENTER_BEHIND_Q_S = 2.0
 """How long after a `q` at a console an Enter is taken for the old habit of finishing the line,
 and answers nothing (`KillSwitch._watch_keys`). The press ends the run and the question that
@@ -1503,31 +1504,35 @@ class KillSwitch:
         that answers nothing is recorded too, since it is still the Enter before the next."""
         now = time.monotonic()
         with self._enters_lock:
-            self._enters.append(_Enter(now, now - self._last_enter, text.strip(), answers))
+            self._enters.append(_Enter(now, now - self._last_enter, text, answers))
             self._last_enter = now
         if answers:
             self._announce(self.entered)
 
     def _line_since(self, since: float) -> str | None:
-        """What was typed on the first line whose Enter was read at `since` or later and stands
-        alone (`ENTER_ALONE_S`), or None where no such Enter has been read yet. Enter held down
-        from before a question answered it the moment the question's half second was up."""
+        """What was typed on the first line read at `since` or later that says anything: one with
+        something on it, a no, as soon as it is read, or a bare one that stands alone
+        (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has been read yet.
+        Enter held down from before a question answered it the moment the question's half second
+        was up, and a no that had to stand alone could be lost, to the next bare Enter's yes."""
         now = time.monotonic()
         with self._enters_lock:
             enters = list(self._enters)
         for n, enter in enumerate(enters):
+            if not enter.answers or enter.at < since:
+                continue
             after = enters[n + 1].at if n + 1 < len(enters) else now
-            alone = enter.quiet >= ENTER_ALONE_S and after - enter.at >= ENTER_ALONE_S
-            if enter.answers and enter.at >= since and alone:
+            if enter.text or (enter.quiet >= ENTER_ALONE_S and after - enter.at >= ENTER_ALONE_S):
                 return enter.text
         return None
 
     def _fire(self, why: str) -> None:
-        self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
+        # the stop first and the words after: a line that cannot get out must not hold up the stop
         self.presses += 1
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self.abort.set)
             self._loop.call_soon_threadsafe(self.pressed.set)
+        self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
 
     def _on_sigint(self, _signum: int, _frame: Any) -> None:
         # The first Ctrl-C is the orderly one: it aborts, which cancels the running verb and
@@ -1574,9 +1579,11 @@ class KillSwitch:
                     if ch in ("\b", "\x7f"):
                         with self._enters_lock:
                             edited = typed if self._line_wanted.is_set() else line
-                            if edited:
+                            took = bool(edited)
+                            if took:
                                 edited.pop()
-                                keys.erase()
+                        if took:
+                            keys.erase()
                         continue
                     if ch == "\x03":  # Ctrl-C, should it land while the console is being read
                         self._fire("Ctrl-C")
@@ -1612,9 +1619,9 @@ class KillSwitch:
                         line.append(ch)
                 if pressed_q:
                     q_at = time.monotonic()
+                    self._fire("'q' pressed")
                     if keys is not None:
                         keys.newline()
-                    self._fire("'q' pressed")
         except Exception:
             self._announce(self.keys_ended)
             return
@@ -1641,6 +1648,10 @@ class KillSwitch:
             return ""
         thread = self._thread
         if thread is None or not thread.is_alive():
+            if self._keys is not None and not self._uninstalled:
+                # a console the key thread had out of its line mode, and nothing reading it now
+                self.unanswered = "(no key could be read: no)"
+                return ""
             return input(prompt)
         with self._asking:
             while not self._lines.empty():  # anything typed before the question was asked

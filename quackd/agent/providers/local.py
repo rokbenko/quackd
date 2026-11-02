@@ -135,8 +135,8 @@ def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
         return None
     # Not `{}` for what cannot be read: that is a call with its defaults, and the arm's `gripper`
     # opens by default, on nothing the model said.
-    args = tool_arguments(next((obj[k] for k in _ARGS_KEYS if k in obj), {}))
-    return ToolCall(name=name, arguments=args)
+    args: Any = next((obj[k] for k in _ARGS_KEYS if k in obj), {})
+    return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
 def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:

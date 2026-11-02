@@ -337,7 +337,7 @@ What you watched is kept as well, as `terminal.txt` in the run directory: the sc
 text with no colour codes in it, opening with the command that started the run and the version
 that ran it. It is the screen and not the record, so what `--no-log` takes off the terminal is
 missing from the file too, and the questions you were asked are in it with the answers you
-typed, which the terminal echoed and no view ever printed. It buffers from the first line and
+typed, which went straight to the terminal and no view ever printed. It buffers from the first line and
 moves into the directory the moment there is one, so a run refused before there is a directory
 leaves nothing behind to clean up.
 

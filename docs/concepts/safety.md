@@ -112,8 +112,8 @@ anybody answered.
 
 The questions and the answers are in `terminal.txt` too, and that file is the only place the
 answer survives in the words it was typed in. Neither half of the exchange goes through the
-view that keeps the file: the question is written out raw and the terminal itself echoes what
-you type, so both are put into `terminal.txt` deliberately rather than picked up off the
+view that keeps the file: the question is written out raw and what you type is echoed straight
+to the terminal, so both are put into `terminal.txt` deliberately rather than picked up off the
 screen. The record keeps a yes or a no; the file keeps what was typed.
 
 ## Heartbeat

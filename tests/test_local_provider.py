@@ -457,7 +457,7 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
     assert parse_tool_call_from_text(text, NAMES) is None
 
 
-@pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"'])
+@pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"', "null"])
 def test_arguments_it_cannot_read_are_kept_for_the_gate(args: str) -> None:
     """Not `{}`, which is the call with its defaults, and the arm's `gripper` opens by default, on
     nothing the model said. The gate refuses them and tells the pilot, as for every other vendor."""
