@@ -34,6 +34,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   so the arm held for a tenth of a second and went on to where it was going, with the pilot told the
   brake had worked. They end where they are now, say so, and are not counted as failures by
   `abort_when`. They also end when the run's minutes run out, which is a failure.
+- **A press with a call on the bus gets its stop to the arm.** Ctrl-C or `q` cancels a move or a fold
+  wherever it is, and a read or a send can be out on the bus when it does. The stop behind it was
+  refused on that call while the abort said one was sent, and the close in the same breath told
+  somebody who had just stopped the arm that quackd could not tell whether it was holding itself up,
+  and to cut its power. The arm's twin did it on most presses during a fold. What lands behind a
+  cancelled call now waits for it, no longer than that call's own deadline, as it always did behind a
+  policy segment.
 - **`stop` is never refused for what came with it.** It takes no arguments, and a call with any was
   refused at the `params` gate with nothing sent to the body. They are ignored now, and the record says
   so. A third party's `stop` that cannot run without its own arguments is still refused.

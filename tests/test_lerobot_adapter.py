@@ -28,7 +28,7 @@ from quackd.duckfile.schema import Budgets
 from quackd.duckfile.validate import validate_duck
 from quackd.log import EventLog
 from quackd.perception.color_blob import ColorBlobDetector
-from quackd.release import HANDS_AWAY_S
+from quackd.release import HANDS_AWAY_S, FoldStopped, fold_unless_stopped
 from quackd.safety import (
     Aborted,
     Budget,
@@ -1920,7 +1920,9 @@ async def test_a_caller_already_queued_on_the_lock_is_refused_when_the_call_ahea
         release.set()
 
 
-async def test_a_cancelled_call_wedges_like_a_timed_out_one() -> None:
+async def test_a_cancelled_call_keeps_the_bus_until_it_comes_back() -> None:
+    """Never two talkers on one bus. What lands behind a cancelled call waits for it, and goes out
+    once it is back, as it would have behind that call on the lock."""
     import threading
 
     release = threading.Event()
@@ -1933,10 +1935,39 @@ async def test_a_cancelled_call_wedges_like_a_timed_out_one() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    sent = len(arm.actions)
     try:
         assert transport.stop_error is not None
         assert adapter.stop_error is not None  # the core `stop` verb reads this one
-        assert not (await adapter.send_intent(Intent.gripper(True))).accepted
+        behind = asyncio.create_task(adapter.send_intent(Intent.gripper(True)))
+        await asyncio.sleep(0.05)
+        assert not behind.done() and len(arm.actions) == sent, "no second talker on the bus"
+    finally:
+        release.set()
+    assert (await behind).accepted
+    assert len(arm.actions) == sent + 1
+    assert transport.stop_error is None
+
+
+async def test_a_cancelled_call_past_its_deadline_is_a_bus_that_stopped_answering() -> None:
+    import threading
+
+    release = threading.Event()
+    arm = FakeArm()
+    timeout_s = 0.2
+    transport = LeRobotReal("COM5", robot=arm, timeout_s=timeout_s)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    task = asyncio.create_task(transport._call(lambda: release.wait(5.0)))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    sent = len(arm.actions)
+    try:
+        ack = await adapter.send_intent(Intent.gripper(True))
+        assert not ack.accepted and "has not come back" in str(ack.reason), ack
+        assert len(arm.actions) == sent
     finally:
         release.set()
 
@@ -7021,6 +7052,103 @@ async def test_an_abort_while_a_pick_is_starting_still_gets_the_stop_to_the_arm(
     await adapter.close()
 
 
+async def test_a_press_with_a_read_on_the_bus_still_gets_the_stop_to_the_arm() -> None:
+    """A press cancels `move_joints` wherever it is, and a read or a send is on the bus for a fair
+    share of every tick. The executor's stop was then refused on that call, and the abort said a
+    stop was sent. It waits for the call now, as it always did behind a pick, and holds the arm."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    adapter, ex, _clock = await _paced(arm)
+    transport = adapter.transport
+    running = asyncio.create_task(
+        ex.run_verb("move_joints", {"positions": {"shoulder_pan": 60}, "duration_s": 5})
+    )
+    sent = len(arm.actions)
+    await _until(lambda: len(arm.actions) >= sent + 3)
+    stall["next"] = True
+    await _until(on_bus.is_set)
+    sent = len(arm.actions)
+    ex.abort.set()
+    await _until(lambda: transport._wedged is not None)
+    await asyncio.sleep(0.05)
+    answer.set()
+    with pytest.raises(Aborted):
+        await running
+    assert len(arm.actions) > sent and _whole_hold(arm.actions[-1]), arm.actions[sent:]
+    assert transport.stop_error is None, transport.stop_error
+    await adapter.close()
+
+
+async def test_a_fold_stopped_with_a_read_on_the_bus_does_not_say_cut_the_power() -> None:
+    """A press stops a fold wherever it is, and the close that follows read the arm in the same
+    breath. With the fold's read still on the bus that read was refused, so somebody who had just
+    stopped a fold was told quackd could not tell whether the arm was holding itself up, and to
+    hold it and cut its power, over an arm that was fine and holding."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    rest = {**dict.fromkeys(JOINTS, 0.0), "shoulder_lift": -60.0, "gripper": 40.0}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest, clock=SteppedClock())
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    arm.positions["shoulder_lift"] = 30.0
+    pressed = asyncio.Event()
+    folding = asyncio.create_task(fold_unless_stopped(adapter.go_to_rest, pressed.wait))
+    sent = len(arm.actions)
+    await _until(lambda: len(arm.actions) >= sent + 2)
+    stall["next"] = True
+    await _until(on_bus.is_set)
+    sent = len(arm.actions)
+    pressed.set()
+    with pytest.raises(FoldStopped):
+        await folding
+    held = asyncio.create_task(adapter.stop())
+    closed = asyncio.ensure_future(_close_after(held, adapter))
+    await asyncio.sleep(0.05)
+    answer.set()
+    await closed
+    assert len(arm.actions) > sent and _whole_hold(arm.actions[sent]), arm.actions[sent:]
+    note = str(transport.close_note)
+    assert "cannot tell" not in note and "not at its rest pose" in note, note
+    assert arm.torque is True, "kept, away from its pose"
+
+
+async def _close_after(first: asyncio.Task[Any], adapter: LeRobotAdapter) -> None:
+    await first
+    await adapter.close()
+
+
+async def test_a_press_on_a_read_the_arm_never_answers_is_refused_at_its_deadline() -> None:
+    """Waiting is for an arm that answers. One that died under a cancelled move is what it would
+    have been had nothing cancelled it, by the same deadline, and the stop says it did not go."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    stall, on_bus, answer = _stalling(arm)
+    timeout_s = 0.3
+    clock = SteppedClock()
+    transport = LeRobotReal("COM5", robot=arm, clock=clock, timeout_s=timeout_s)
+    adapter = LeRobotAdapter(transport)
+    manifest = await adapter.connect()
+    ex = _executor(adapter, manifest)
+    loop = asyncio.get_running_loop()
+    running = asyncio.create_task(
+        ex.run_verb("move_joints", {"positions": {"shoulder_pan": 60}, "duration_s": 5})
+    )
+    sent = len(arm.actions)
+    try:
+        await _until(lambda: len(arm.actions) >= sent + 2)
+        stall["next"] = True
+        await _until(on_bus.is_set)
+        out = loop.time()
+        ex.abort.set()
+        with pytest.raises(Aborted):
+            await running
+        assert loop.time() - out < timeout_s + timeout_s / 3, "the stop waited past the deadline"
+        assert transport.stop_error is not None and "has not come back" in transport.stop_error
+    finally:
+        answer.set()
+    await _until(lambda: transport._wedged is None or transport._wedged.done())
+    await adapter.close()
+
+
 async def test_a_segment_a_guard_ends_holds_the_arm_itself_with_no_verb_waiting() -> None:
     """A `do` from anywhere but `pick` has no verb to stop the arm after its segment, so the
     hold a guard ends it with is the segment's own."""
@@ -7507,7 +7635,7 @@ async def test_a_call_whose_budget_a_segment_s_call_spent_never_goes_out() -> No
         segment.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await segment
-        assert transport._segment_call() is not None, "the stop left no segment's call out"
+        assert transport._cancelled_call() is not None, "the stop left no segment's call out"
         waiting = asyncio.create_task(transport._call(beat))
         await asyncio.sleep(budget / 10)  # it waits for the segment's call
         # the segment's call comes back once the waiting call's budget is spent on the bus,
@@ -7523,7 +7651,7 @@ async def test_a_call_whose_budget_a_segment_s_call_spent_never_goes_out() -> No
         answer.set()
 
 
-async def _cancelled_segment_call(
+async def _cancelled_cancelled_call(
     transport: LeRobotReal,
 ) -> tuple[asyncio.Future[Any], threading.Event]:
     """File a policy segment's call the way a stop's cancel leaves one: a read made in the
@@ -7543,7 +7671,7 @@ async def _cancelled_segment_call(
     segment.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await segment
-    left = transport._segment_call()
+    left = transport._cancelled_call()
     assert left is not None, "the cancel left no segment's call out"
     return left, answer
 
@@ -7587,7 +7715,7 @@ async def test_a_segment_s_call_back_in_time_is_waited_for_however_late_the_loop
         sent.append("beat")
         return "beat"
 
-    left, answer = await _cancelled_segment_call(transport)
+    left, answer = await _cancelled_cancelled_call(transport)
     out = loop.time()
     try:
         waiting: asyncio.Task[Any] | None = None
@@ -7638,7 +7766,7 @@ async def test_a_segment_s_call_still_out_past_its_budget_is_refused_however_lat
         sent.append("beat")
         return "beat"
 
-    left, answer = await _cancelled_segment_call(transport)
+    left, answer = await _cancelled_cancelled_call(transport)
     try:
         waiting: asyncio.Task[Any] | None = None
         if behind == "a call already waiting":
@@ -7705,10 +7833,10 @@ async def test_a_wait_for_a_segment_s_call_that_is_cancelled_goes_up_and_leaves_
         segment.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await segment
-        left = transport._segment_call()
+        left = transport._cancelled_call()
         assert left is not None
     else:
-        left, answer = await _cancelled_segment_call(transport)
+        left, answer = await _cancelled_cancelled_call(transport)
     try:
         if where == "for its future's turn":
             # its first step runs after the call is back and before the loop marks it done,
