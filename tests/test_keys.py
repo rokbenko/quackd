@@ -328,12 +328,14 @@ def _enters(*gaps: float) -> KillSwitch:
 def test_a_bare_enter_has_to_stand_alone_on_both_sides() -> None:
     alone = ENTER_ALONE_S * 1.1
     close = ENTER_ALONE_S * 0.9
-    assert _enters(alone)._line_since(0.0) == "", "one press, and nothing since"
-    assert _enters(alone, alone)._line_since(0.0) == ""
-    assert _enters(alone, close)._line_since(0.0) is None, "pressed twice"
-    assert _enters(close)._line_since(0.0) is None, "behind another"
-    assert _enters(*[close] * 20)._line_since(0.0) is None, "a key held down, however slow"
-    assert _enters(100.0, 0.03, 0.03, alone)._line_since(0.0) == "", "let go, and pressed again"
+    assert _enters(alone)._line_since(-math.inf) == "", "one press, and nothing since"
+    assert _enters(alone, alone)._line_since(-math.inf) == ""
+    assert _enters(alone, close)._line_since(-math.inf) is None, "pressed twice"
+    assert _enters(close)._line_since(-math.inf) is None, "behind another"
+    assert _enters(*[close] * 20)._line_since(-math.inf) is None, "a key held down, however slow"
+    assert _enters(100.0, 0.03, 0.03, alone)._line_since(-math.inf) == "", (
+        "let go, and pressed again"
+    )
 
 
 def test_the_slowest_repeat_windows_has_is_a_key_held_down() -> None:
@@ -348,7 +350,7 @@ def test_a_no_is_a_no_as_soon_as_it_is_read() -> None:
     now = time.monotonic()
     ks._enters.append(_Enter(now - 0.1, 100.0, "n", True))
     ks._enters.append(_Enter(now, 0.1, "", True))
-    assert ks._line_since(0.0) == "n"
+    assert ks._line_since(-math.inf) == "n"
 
 
 async def test_a_space_is_something_typed() -> None:
