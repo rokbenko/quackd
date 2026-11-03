@@ -10,8 +10,8 @@ e-stop, and nothing reports a battery, so no run will ever abort on a flat one. 
 ## Before you power anything
 
 1. **Put the cart on blocks** so the three wheels turn freely, and clear the full sweep of
-   both arms. Support anything an arm is holding: `stop` zeroes the wheels and leaves the
-   arms where they were, which is a hold under torque, not a brake.
+   both arms. Support anything an arm is holding: `stop` zeroes the wheels and holds the
+   arms where they read, which is a hold under torque, not a brake.
 2. **Know where the power station's switch is.** It is the only thing that stops everything,
    and it is not on the network.
 3. **Uncomment the host.** `XLerobotHost` and its client are commented out of upstream's own

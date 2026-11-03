@@ -206,6 +206,12 @@ where it would fold it. `Ctrl-\` where there is one, or closing the window, is w
 somebody who has to kill it. Anywhere else, the first rest move of a run with no hand-back
 included, a second press quits at once, on the terms of the paragraph above.
 
+Once a run has closed, a press changes nothing to the end of the process, so the verdict prints
+however many come. It is still somebody saying stop, so a success comes out as exit 130, and
+`quackd run a && quackd run b` does not go on to move an arm. What it can still end is a `run.gif`
+being made, which can take minutes on a long run and is left out, and a process still there 5 s
+after its close, which is stuck on something: that press ends it, and says so.
+
 **SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
 running, and the process dies where it is. Neither sends the robot a `stop`, so anything you
@@ -232,7 +238,8 @@ are its own.
   ends it before its next twist: `move`, `go_to`, `search_scan`, `approach_and`, the arm's
   `move_joints`, `gripper` and `place`, and what the other bodies bring that moves an arm, a head or
   a lift read it as quackd ships them, and so does an MCP session's `stop`. A skill the robot plays
-  out, a `kick` or a `grab`, is stopped from starting and not after that
+  out, a `kick` or a `grab`, is stopped from starting, and once it has gone out the verb stops
+  waiting on it and says the robot plays it out, since nothing on those robots ends one
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - **A person's own command is the verdict for its own call**, recorded as a person's from the
   keyboard, as a pipe's from a pipe or a file, and as a decision LLM's reading where the fast

@@ -103,13 +103,16 @@ EXTRAS = {
 # LLM that runs in this process, so it carries torch too, and the decision table below prints a
 # version for every row on a machine that is only reading the table. transformers is the half
 # of `quackd[lerobot-vla]` the arm's own extra lacks, the one a SmolVLA or a pi05 checkpoint
-# loads its tokenizer with in the policy server, and importing it costs seconds.
+# loads its tokenizer with in the policy server, and importing it costs seconds. ultralytics
+# brings torch too, and this table is read after the arm's close, with nothing moving and
+# maybe somebody still pressing Ctrl-C (`safety.AfterTheClose`).
 _METADATA_ONLY = {
     "lerobot": "lerobot",
     "scservo_sdk": "feetech-servo-sdk",
     "laya": "laya",
     "transformers": "transformers",
     "streamlit": "streamlit",
+    "ultralytics": "ultralytics",
 }
 
 CORE_MODULES = (

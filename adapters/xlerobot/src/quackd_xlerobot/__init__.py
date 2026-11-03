@@ -318,6 +318,12 @@ class XLerobotAdapter:
     async def stop(self) -> None:
         await self.transport.stop()
 
+    @property
+    def stop_left_going(self) -> tuple[str, ...]:
+        """The joints the last stop could not hold (`zmq_host._hold_the_arms`). Proxied since
+        the core `stop` verb reads it off what it was handed, which is this adapter."""
+        return tuple(str(j) for j in getattr(self.transport, "stop_left_going", ()) or ())
+
     async def go_to_rest(self) -> RestResult:
         """quackd keeps no rest pose for this cart, so there is nothing to drive it to: the
         wheels stop where the host's watchdog stopped them and the arms hold their last angles."""

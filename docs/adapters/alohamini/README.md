@@ -127,11 +127,15 @@ the lift's register, because the write that would zero it afterwards is commente
 first thing quackd says to this robot is a stop**. And `stop_base` writes with `num_retry=0` on
 a bus it shares with the lift, so quackd sends its stop more than once.
 
-A stop stops the base and the lift and leaves the arms' goals alone, as the watchdog does, since a
-hold built from an observation several cycles old moves an arm. From beside a verb it ends `lift`
+A stop stops the base and the lift at once, and then holds an arm on its way somewhere where it
+stands, which the watchdog does not do. A reading here takes a request and a reply, so that comes
+second, one request at a time, and the second answer after the stop began is the one used. The rules
+are the XLeRobot's: that reading within 200 ms, or the joint goes on to its goal and `stop` names it, once
+for each goal, or an arm under load would walk down a stop at a time, and never a gripper, which
+would open on what it holds. From beside a verb it ends `lift`
 before its next send, `home_arms` before the next arm's, and `move_joints` and `gripper` at once,
-and what those two answer says the arm or the gripper goes on to where it was sent. `gripper` has to
-say which way: `open` has no default.
+and what they answer says which of these it was. `gripper` has to say which way: `open` has no
+default. None of this has met a real arm.
 
 ## Units
 

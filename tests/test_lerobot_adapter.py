@@ -1624,7 +1624,9 @@ async def test_a_queued_call_the_loop_was_late_with_keeps_its_place_on_the_wire(
     assert transport._wedged is None and transport.stop_error is None
 
 
-async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_thread() -> None:
+async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The bus is the call ahead's from when it is handed to the worker pool: with every pool
     thread busy, a camera read or a frame being saved, it waits for one holding the bus, and
     goes out as soon as one frees. A queued call's budget stood still meanwhile, so it sat out
@@ -1634,9 +1636,10 @@ async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_
     transport = LeRobotReal("COM5", robot=FakeArm(), timeout_s=0.1)
     loop = asyncio.get_running_loop()
     budget = transport.timeout_s
-    loop.set_default_executor(ThreadPoolExecutor(1))
+    pool = ThreadPoolExecutor(1)
+    monkeypatch.setattr("quackd_lerobot.real._THREADS", pool)
     free = threading.Event()
-    elsewhere = loop.run_in_executor(None, free.wait, 5.0)  # the pool's one thread is busy
+    elsewhere = loop.run_in_executor(pool, free.wait, 5.0)  # the pool's one thread is busy
     sent: list[str] = []
 
     def sync_read() -> str:

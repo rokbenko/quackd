@@ -44,6 +44,21 @@ than a terminal needs and shorter than anybody presses Esc and then another key.
 GUARD_GONE_S = 1.0
 """How long a run's close waits for the guard it has just told to stand down, which is told once and
 has nothing to do but exit (`_Guard`)."""
+GUARD_UP_S = 1.0
+"""How long a run's start waits for its guard to be up, before the terminal leaves line mode. It
+takes a few dozen milliseconds, and a machine that needs longer goes on without the wait."""
+GUARD_WATCHES_S = 600.0
+"""How long a guard that lost its race goes on looking for the mode this process left (`_Guard`)."""
+GUARD_IDLE_S = 0.05
+"""How often it looks when it has heard no key, which costs nothing a machine can measure. A key can
+be read before it has seen it, since a shell is waiting for the same one, so hearing one cannot
+be all it looks for."""
+GUARD_LOOKS_S = 0.25
+"""How long it looks closely after a key, or after it wakes: long enough for the command that key
+may have started to be under way, and what it does the rest of the time is sleep."""
+GUARD_TICK_S = 0.002
+"""How often it looks while it looks closely. The mode it is after lasts as long as the command that
+runs in it, which can be a couple of milliseconds, and it gets another go at the next one."""
 ENTER = ("\r", "\n")
 BACKSPACE = ("\b", "\x7f")
 CTRL_C = "\x03"
@@ -172,14 +187,24 @@ class PosixKeys(_Echoing):
             for name in ("VSUSP", "VDSUSP"):
                 if hasattr(termios, name):
                     mode[6][getattr(termios, name)] = off
-        termios.tcsetattr(fd, termios.TCSANOW, mode)
         self._mode = mode
+        self._screen: int | None = None
+        self._guard: _Guard | None = None
         try:
             self._screen = _for_drawing(fd)
-            self._guard = _Guard.start(fd, self._as_found, termios.tcgetattr(fd))
+            # first, and up by the time this returns: a kill from here on finds a guard waiting, and
+            # one before the mode changes has nothing to put back
+            self._guard = _Guard.start(fd, self._as_found, mode)
+            termios.tcsetattr(fd, termios.TCSANOW, mode)
         except Exception:
             # the caller takes this for no console, with the terminal out of line mode for good
-            termios.tcsetattr(fd, termios.TCSANOW, self._as_found)
+            with contextlib.suppress(OSError, termios.error):
+                termios.tcsetattr(fd, termios.TCSANOW, self._as_found)
+            if self._guard is not None:
+                self._guard.stand_down()
+            if self._screen not in (None, fd):
+                with contextlib.suppress(OSError):
+                    os.close(self._screen)
             raise
         atexit.register(self.close)
         self._before: dict[int, Any] = {}
@@ -286,27 +311,72 @@ class _Guard:
     """A process that puts a terminal back if this one dies with no word said.
 
     Nothing in a process runs at a SIGKILL or a crash in native code, so this holds the read end of
-    a pipe whose write end the process alone holds (it does not pass to what quackd spawns, and
-    nothing in quackd forks without an exec), and the kernel closes that with the process. A close
-    says so down the pipe first, and the guard exits having touched nothing. It is in a session of
-    its own, so a Ctrl-C or a Ctrl-\\ at the terminal never reaches it, and with no terminal to
-    answer to it can change this one's mode from anywhere.
+    a pipe whose write end the process alone holds (it does not pass to what quackd spawns, and a
+    child forked with no exec lets go of it, `_let_go_of_the_words`), and the kernel closes that
+    with the process. A close says so down the pipe first, and the guard exits having touched
+    nothing. It is in a session of its own, so a Ctrl-C or a Ctrl-\\ at the terminal never reaches
+    it, and with no terminal to answer to it can change this one's mode from anywhere.
+
+    It is up before the terminal leaves line mode (`start`), since a shell could get there while it
+    started: 7 kills in 8 in a run's first moments under a wrapper. Now the kill finds a terminal
+    nothing has changed, or a guard already waiting.
 
     It puts the terminal back only as this process left it: anything else on it is somebody else's
     by then, a full-screen program in the shell's foreground above all, and not to be reset under
-    them. So it can lose a race: a shell that gets there first, in the first moments of a run, when
-    it is still starting, or on a machine with no CPU to spare, and then it is `stty sane` as ever.
+    them. So on a machine with no CPU to spare it can still come second, behind a wrapper such as
+    `uv run` and the shell behind that. Then bash has taken the mode it found for its own, readline
+    has asked for its own on top of that, and from here that looks like any prompt: the person types
+    unseen. So a guard that comes second does not leave. Bash runs the next command in the mode it
+    took, which is this process's, so the guard looks for that mode, closely after a key, puts
+    the terminal back under that command, and bash takes that for its own when the command ends:
+    a line or two typed unseen, where it was `stty sane` as ever. It gives up after
+    `GUARD_WATCHES_S`, or as soon as the terminal is as this process found it, or gone. Linux says
+    so by refusing to read the mode. macOS goes on answering for a terminal whose window has
+    closed, which stays readable with nothing to read, where a key somebody else has read is off
+    the terminal in a moment (`gone` in the script).
+
     Interpreter flags that skip the site packages and the environment, since it has to be up in
     milliseconds and nothing it needs is outside the standard library."""
 
     _SCRIPT = (
-        "import marshal, os, sys, termios\n"
+        "import fcntl, marshal, os, select, struct, sys, termios, time\n"
+        "as_found, left, ignored, watch_s, look_s, tick_s, idle_s = "
+        "marshal.loads(bytes.fromhex(sys.argv[2]))\n"
+        "try:\n"
+        "    os.write(1, b'.')\n"
+        "    os.close(1)\n"
+        "except OSError:\n"  # nobody is left to hear it, which the read below says as well
+        "    pass\n"
+        "def gone():\n"
+        "    for _ in range(2):\n"
+        "        if not select.select([0], [], [], 0)[0]:\n"
+        "            return False\n"
+        "        if struct.unpack('i', fcntl.ioctl(0, termios.FIONREAD, b'0000'))[0]:\n"
+        "            return False\n"
+        "        time.sleep(tick_s)\n"
+        "    return True\n"
         "if not os.read(int(sys.argv[1]), 1):\n"
-        "    as_found, left, ignored = marshal.loads(bytes.fromhex(sys.argv[2]))\n"
-        "    now = termios.tcgetattr(0)\n"
-        "    now[3] &= ~ignored\n"
-        "    if now == left:\n"
-        "        termios.tcsetattr(0, termios.TCSANOW, as_found)\n"
+        "    found = [*as_found[:3], as_found[3] & ~ignored, *as_found[4:]]\n"
+        "    until = time.monotonic() + watch_s\n"
+        "    closely = time.monotonic() + look_s\n"
+        "    try:\n"
+        "        while True:\n"
+        "            now = termios.tcgetattr(0)\n"
+        "            now[3] &= ~ignored\n"
+        "            if now == left:\n"
+        "                termios.tcsetattr(0, termios.TCSANOW, as_found)\n"
+        "                break\n"
+        "            clock = time.monotonic()\n"
+        "            if now == found or clock >= until:\n"
+        "                break\n"
+        "            if clock < closely:\n"
+        "                time.sleep(tick_s)\n"
+        "            elif select.select([0], [], [], min(idle_s, until - clock))[0]:\n"
+        "                if gone():\n"
+        "                    break\n"
+        "                closely = time.monotonic() + look_s\n"
+        "    except (OSError, termios.error):\n"  # the terminal has gone
+        "        pass\n"
     )
 
     def __init__(self, process: subprocess.Popen[bytes], word: int) -> None:
@@ -315,11 +385,14 @@ class _Guard:
 
     @classmethod
     def start(cls, fd: int, as_found: list[Any], left: list[Any]) -> _Guard | None:
-        """A guard over the terminal `fd`, or None where one will not start, which costs what
-        having none always cost: a kill leaves the terminal to whoever comes next."""
+        """A guard over the terminal `fd`, up, or None where one will not start, which costs what
+        having none always cost: a kill leaves the terminal to whoever comes next. `left` is the
+        mode it is to look for, which is the one the caller is about to set."""
         ignored = getattr(importlib.import_module("termios"), "PENDIN", 0)
         left = [*left[:3], left[3] & ~ignored, *left[4:]]
-        said = marshal.dumps((as_found, left, ignored)).hex()
+        said = marshal.dumps(
+            (as_found, left, ignored, GUARD_WATCHES_S, GUARD_LOOKS_S, GUARD_TICK_S, GUARD_IDLE_S)
+        ).hex()
         try:
             ears, word = os.pipe()  # no descriptors left is a process that can go on without one
         except OSError:
@@ -328,7 +401,7 @@ class _Guard:
             process = subprocess.Popen(
                 [sys.executable, "-I", "-S", "-c", cls._SCRIPT, str(ears), said],
                 stdin=fd,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 pass_fds=(ears,),
                 start_new_session=True,
@@ -338,19 +411,57 @@ class _Guard:
             return None
         finally:
             os.close(ears)
-        return cls(process, word)
+        _WORDS.add(word)
+        guard = cls(process, word)
+        if not guard._up():
+            guard.stand_down()
+            return None
+        return guard
+
+    def _up(self) -> bool:
+        """Whether it is up or may yet be, once it has had `GUARD_UP_S`. Only one that has ended
+        without a word is no guard: a machine too busy to start one in that time gets it late."""
+        heard = self._process.stdout
+        if heard is None:
+            return False
+        try:
+            ready, _, _ = select.select([heard], [], [], GUARD_UP_S)
+            return not ready or bool(os.read(heard.fileno(), 1))
+        except (OSError, ValueError):
+            return True
 
     def stand_down(self) -> None:
         with contextlib.suppress(OSError):
             os.write(self._word, b".")
         with contextlib.suppress(OSError):
             os.close(self._word)
+        _WORDS.discard(self._word)
+        if self._process.stdout is not None:
+            with contextlib.suppress(OSError):
+                self._process.stdout.close()
         try:
             self._process.wait(GUARD_GONE_S)
         except subprocess.TimeoutExpired:
             self._process.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
                 self._process.wait(GUARD_GONE_S)
+
+
+_WORDS: set[int] = set()
+"""The write end of every guard's pipe in this process."""
+
+
+def _let_go_of_the_words() -> None:
+    """In a child forked with no exec, a policy library's worker say, which would otherwise hold a
+    guard's pipe open past the death of the process it is guarding, however long it lived on."""
+    for word in _WORDS:
+        with contextlib.suppress(OSError):
+            os.close(word)
+    _WORDS.clear()
+
+
+if hasattr(os, "register_at_fork"):  # not on Windows, which has no guard
+    os.register_at_fork(after_in_child=_let_go_of_the_words)
 
 
 def _for_drawing(fd: int) -> int | None:

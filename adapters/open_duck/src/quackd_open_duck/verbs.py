@@ -19,7 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import SayParams, send_or_fail
+from quackd.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
 from quackd.verbs.registry import Precondition, Verb, VerbContext, VerbResult
 
 # Upstream's own runtime clamps, read from XBoxController (see upstream_api.py). quackd
@@ -207,7 +207,9 @@ async def gaze(ctx: VerbContext, p: OpenDuckGazeParams) -> VerbResult:
 async def express(ctx: VerbContext, p: ExpressParams) -> VerbResult:
     if (fail := await send_or_fail(ctx, Intent.do(f"antennas:{p.gesture}"))) is not None:
         return fail
-    await ctx.transport.sleep(EXPRESS_S)
+    if (why := await _waited_out(ctx, EXPRESS_S)) is not None:
+        stopped = f"the antennas play out the {p.gesture} they were sent"
+        return await _ended_by(ctx, "express", why, stopped, gesture=p.gesture)
     return VerbResult.success(f"antennas: {p.gesture}", gesture=p.gesture)
 
 

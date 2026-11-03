@@ -13,13 +13,16 @@ be deterministic rather than a race.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from collections.abc import Callable
 
 import pytest
 
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_xlerobot import XLerobotAdapter
+from quackd.verbs.core import stop as stop_verb
+from quackd.verbs.registry import NoParams, VerbContext
+from quackd_xlerobot import XLerobotAdapter, zmq_host
 from quackd_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
 from quackd_xlerobot.zmq_host import (
     CMD_PORT,
@@ -227,14 +230,10 @@ async def test_an_arm_command_commands_zero_base_velocity() -> None:
 
 
 async def test_stop_zeroes_the_wheels_and_holds_the_arms_where_they_are() -> None:
-    """Stop is a hold, never a collapse.
-
-    It zeroes the three wheels and leaves every arm goal exactly where it already was. It
-    deliberately does not re-command the arms from the latest observation: that reading can be
-    several cycles behind, nothing on the wire is timestamped, and sending a stale position to
-    a servo does not hold an arm, it moves one (ADR-0026). The hold is the servos keeping their
-    last goal under torque, and what makes that safe is that quackd never sends the disconnect
-    that would disable it."""
+    """Stop is a hold, never a collapse: the wheels zeroed and an arm that has arrived staying
+    there. A reading the client has not caught up on must not move it, which is the bug a fake
+    caught at this adapter's bring-up (ADR-0026), and what makes any of it safe is that quackd
+    never sends the disconnect that would disable torque."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
         await link.send_intent(Intent.joint({"left_arm_shoulder_pan": 33.0}, 0.2))
@@ -244,13 +243,186 @@ async def test_stop_zeroes_the_wheels_and_holds_the_arms_where_they_are() -> Non
 
         await link.stop()
         await _until(lambda: host.state["x.vel"] == 0.0)
-        # the arm stays where it was asked to go: stop must never move it, and a hold rebuilt
-        # from a reading that is a few cycles behind would do exactly that
+        # the arm stays where it was asked to go: a stop must not send it back to where the last
+        # reading had it before the goal landed
         assert host.state["left_arm_shoulder_pan.pos"] == pytest.approx(33.0)
         held = host.actions[-1]
         assert held["left_arm_shoulder_pan.pos"] == pytest.approx(33.0), "the goal still stands"
         assert all(v == 0.0 for k, v in held.items() if k.endswith(".vel")), "the wheels zeroed"
         assert "head_motor_1.pos" not in held, "quackd never commands the head, even to hold it"
+        await link.close()
+
+
+@pytest.fixture
+def _a_slow_machine_is_no_stale_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    """How long a stop looks for a reading is what these leave to the fake's own 30 Hz."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", 30.0)
+
+
+@pytest.mark.usefixtures("_a_slow_machine_is_no_stale_link")
+async def test_a_stop_holds_an_arm_on_its_way_where_it_reads() -> None:
+    """A stop that left the goal alone was a stop for the wheels: the arm finished its move, with
+    a person's hand in the way or not. The reading becomes the goal, and the goal stays that for
+    every send after it, since each one carries the whole desired action."""
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        key = "left_arm_shoulder_pan.pos"
+        await link.send_intent(Intent.joint({"left_arm_shoulder_pan": 80.0}, 2.0))
+        await _until(lambda: host.state[key] == 80.0)
+        host.slow = {key}
+        host.state[key] = 12.0
+
+        await link.stop()
+        await _until(lambda: host.actions[-1][key] == pytest.approx(12.0))
+        assert link.stop_left_going == ()
+        await link.send_intent(Intent.move(vx=0.1))
+        await _until(lambda: host.state["x.vel"] == pytest.approx(0.1))
+        assert host.actions[-1][key] == pytest.approx(12.0), "the old goal came back"
+        await link.close()
+
+
+class _Wire:
+    """A host that has published what it was given, and takes commands. No sockets, so what is read
+    when is what the test says."""
+
+    def __init__(self, *published: dict[str, float]) -> None:
+        self.published = list(published)
+        self.told: list[str] = []
+        self.said: list[dict[str, float]] = []
+
+    def open(self, host: str, cmd_port: int, obs_port: int) -> None: ...
+
+    def send(self, text: str) -> None:
+        self.told.append("send")
+        self.said.append(json.loads(text))
+
+    def recv(self, timeout_ms: int) -> str | None:
+        self.told.append("recv")
+        return json.dumps(self.published.pop(0)) if self.published else None
+
+    def close(self) -> None: ...
+
+
+async def test_a_stop_throws_away_a_reading_that_was_waiting_and_uses_the_next() -> None:
+    """The socket keeps the newest message however long it has sat there, and nothing on the wire
+    says how old it is. With the host stuck on a camera a stop read one half a second old, sent the
+    arm back as far as it had gone since, and said it was held. The next one to come in can be as
+    old, where the host stuck between reading its motors and publishing them, with the servo gone
+    on, so it is the one after that."""
+    key = "left_arm_elbow_flex.pos"
+    wire = _Wire({key: 3.0}, {key: 7.0}, {key: 12.0})
+    link = XLerobotZmq(client=wire)
+    link._desired[key] = 80.0
+    link._unheld.add(key)
+    await link.stop()
+    assert wire.said[-1][key] == pytest.approx(12.0)
+    assert link.stop_left_going == ()
+
+
+async def test_a_stop_that_finds_only_what_was_waiting_holds_nothing_and_says_so() -> None:
+    """A host that has stopped publishing, what it last sent still on its way."""
+    key = "left_arm_elbow_flex.pos"
+    wire = _Wire({key: 3.0}, {key: 7.0})
+    link = XLerobotZmq(client=wire)
+    link._desired[key] = 80.0
+    link._unheld.add(key)
+    await link.stop()
+    assert wire.said[-1][key] == pytest.approx(80.0), "a goal built from the old reading"
+    assert link.stop_left_going == ("left_arm_elbow_flex",)
+
+
+async def test_the_wheels_do_not_wait_on_a_reading() -> None:
+    """It can take a cycle of the host's to come, or never come. The base is 12 kg on a floor."""
+    key = "left_arm_elbow_flex.pos"
+    wire = _Wire()
+    link = XLerobotZmq(client=wire)
+    link._desired["x.vel"] = 0.2
+    link._desired[key] = 80.0
+    link._unheld.add(key)
+    await link.stop()
+    assert wire.told[0] == "send"
+    assert wire.said[0]["x.vel"] == 0.0
+
+
+@pytest.mark.usefixtures("_a_slow_machine_is_no_stale_link")
+async def test_a_stop_leaves_the_gripper_and_a_joint_nobody_sent_a_goal() -> None:
+    """What it reads would open a hand squeezing something against its goal, and every failed verb
+    ends in a stop. A joint with no goal from quackd is holding what its host holds it at."""
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        grip = "right_arm_gripper.pos"
+        other = "left_arm_gripper.pos"
+        await link.send_intent(Intent(kind="gripper", params={"open": False, "side": "right"}))
+        await link.send_intent(Intent.joint({"left_arm_gripper": 70.0}, 0.2))
+        await _until(lambda: host.state[grip] == GRIPPER_CLOSED)
+        await _until(lambda: host.state[other] == 70.0)
+        host.slow = {grip, other}
+        host.state[grip] = 31.0
+        host.state[other] = 41.0
+        await link.send_intent(Intent.joint({"left_arm_elbow_flex": 5.0}, 0.2))
+
+        await link.stop()
+        assert link.stop_left_going == ()
+        assert link._desired[grip] == GRIPPER_CLOSED, "the jaws were sent what they read"
+        assert link._desired[other] == pytest.approx(70.0)
+        assert "left_arm_wrist_flex.pos" not in link._desired
+        await link.close()
+
+
+@pytest.mark.usefixtures("_a_slow_machine_is_no_stale_link")
+async def test_a_joint_is_held_once_for_each_goal_it_is_sent() -> None:
+    """A servo under load reads below its goal, so sending it its reading lets it sink by that much,
+    and every failed verb ends in a stop: an arm held every time walks down a stop at a time."""
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        key = "right_arm_elbow_flex.pos"
+        await link.send_intent(Intent.joint({"right_arm_elbow_flex": 50.0}, 1.0))
+        await _until(lambda: host.state[key] == 50.0)
+        host.slow = {key}
+        host.state[key] = 20.0
+        await link.stop()
+        assert link._desired[key] == pytest.approx(20.0)
+
+        host.state[key] = 19.0  # it sinks
+        await link.stop()
+        assert link._desired[key] == pytest.approx(20.0), "a second stop walked it down"
+
+        # a new goal is a new move, which a stop has to be able to end
+        await link.send_intent(Intent.joint({"right_arm_elbow_flex": 90.0}, 1.0))
+        host.state[key] = 33.0
+        await link.stop()
+        assert link._desired[key] == pytest.approx(33.0)
+        await link.close()
+
+
+async def test_a_stop_with_no_reading_leaves_the_goal_says_so_and_holds_at_the_next_try(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pilot is told which joint goes on, and a stop asked for again holds it after all."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", 0.1)
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        key = "left_arm_wrist_flex.pos"
+        await link.send_intent(Intent.joint({"left_arm_wrist_flex": 60.0}, 1.0))
+        await _until(lambda: host.state[key] == 60.0)
+        host.slow = {key}
+        host.state[key] = 15.0
+        host.stop()  # it publishes nothing from here
+
+        ctx = VerbContext(transport=XLerobotAdapter(link))
+        answer = await stop_verb(ctx, NoParams())
+        assert answer.ok
+        assert "no recent reading to hold left_arm_wrist_flex from" in answer.summary
+        assert "it goes on to the goal sent" in answer.summary
+        assert answer.data["not_held"] == ["left_arm_wrist_flex"]
+        assert link._desired[key] == pytest.approx(60.0)
+        assert all(link._desired[k] == 0.0 for k in ("x.vel", "y.vel", "theta.vel"))
+
+        monkeypatch.setattr(zmq_host, "HOLD_READ_S", 30.0)
+        host.start()
+        await link.stop()
+        assert link.stop_left_going == ()
+        assert link._desired[key] == pytest.approx(15.0)
         await link.close()
 
 

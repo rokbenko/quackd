@@ -18,7 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import SayParams, _ended_by, send_or_fail
+from quackd.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
 from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd_huebot import upstream_api as up
 
@@ -184,7 +184,9 @@ async def _sit_toggle(ctx: VerbContext, want: Literal["sitting", "standing"]) ->
         )
     if (fail := await send_or_fail(ctx, Intent.do(SIT_TOGGLE))) is not None:
         return fail
-    await ctx.transport.sleep(2.0)
+    if (why := await _waited_out(ctx, 2.0)) is not None:
+        stopped = f"the robot plays out the toggle it was sent, on its way to {want}"
+        return await _ended_by(ctx, ("sit", "stand")[want == "standing"], why, stopped)
     state = await ctx.transport.get_state()
     if state.posture == want:
         return VerbResult.success(f"now {want}")
@@ -205,7 +207,9 @@ async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
     ack = await ctx.transport.send_intent(Intent.do(KICK_SKILLS[p.leg]))
     if not ack.accepted:
         return VerbResult.fail(f"kick missed or refused: {ack.reason or 'no reason given'}")
-    await ctx.transport.sleep(1.5)
+    if (why := await _waited_out(ctx, 1.5)) is not None:
+        stopped = f"the robot plays out the kick it was sent with its {p.leg} leg"
+        return await _ended_by(ctx, "kick", why, stopped)
     return VerbResult.success(f"kicked with {p.leg} leg")
 
 

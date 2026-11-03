@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import signal
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
@@ -1710,6 +1711,36 @@ def _warn(text: str) -> None:
         _FRONT.notice(text)
 
 
+def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
+    """The run's GIF, or none where somebody pressed Ctrl-C while it was made. Nothing else after
+    the end of a run hears a press (`KillSwitch.uninstall`), but a long run can be minutes of this,
+    with nothing moving, so it is the one thing a press still ends, and the verdict still prints."""
+    from quackd.safety import AfterTheClose
+
+    save: Callable[[Path], Path | None] = recorder.save_gif
+    before = signal.getsignal(signal.SIGINT)
+    try:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except ValueError:  # not the main thread, so nothing a press could reach
+        return save(path)
+    try:
+        try:
+            return save(path)
+        finally:
+            if isinstance(before, AfterTheClose):
+                before.took_its_time()
+            signal.signal(signal.SIGINT, before)
+    except KeyboardInterrupt:
+        if isinstance(before, AfterTheClose):
+            before.took_its_time()
+            AfterTheClose.heard += 1
+        signal.signal(signal.SIGINT, before)
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+        ui.err_console.print(Text("  run.gif was left out", style=ui.STYLES["muted"]))
+        return None
+
+
 def _frame_hook(recorder: Any, front: Front | None) -> Any:
     """The run's frame callback: the GIF recorder's, the page's, both, or none."""
     hooks = [
@@ -2880,7 +2911,7 @@ def _run_impl(
             return await loop.run()
         finally:
             _SWITCH = None
-            ks.uninstall()
+            ks.uninstall(nothing_left_to_stop=True)
 
     _ = run_duck  # imported for symmetry; AgentLoop is used directly so the kill switch can bind
     try:
@@ -2918,7 +2949,7 @@ def _run_impl(
         # after the status line rather than under it: Rich 13.7 refuses a second live region
         # on one console, and a long run can be a thousand frames to quantise
         with ui.spinner(f"encoding {len(recorder.frames)} frames into run.gif"):
-            gif_path = recorder.save_gif(result.run_dir / "run.gif")
+            gif_path = _gif_a_press_can_leave_out(recorder, result.run_dir / "run.gif")
         result.gif_path = gif_path
     if front is not None:
         front.finished(
@@ -3136,7 +3167,7 @@ def _run_pilots_impl(
                 play=play,
             )
         finally:
-            ks.uninstall()
+            ks.uninstall(nothing_left_to_stop=True)
 
     try:
         with status:
@@ -3438,7 +3469,7 @@ def _run_flock_impl(
         return
     finally:
         if "ks" in holder:
-            holder["ks"].uninstall()
+            holder["ks"].uninstall(nothing_left_to_stop=True)
         # a member's last event is the stop it was accepted for, and a pending burst is
         # only written by the next event that is not an intent: without this, never
         for pending in views.values():
@@ -3446,7 +3477,7 @@ def _run_flock_impl(
     if "rec" in holder:
         rec = holder["rec"]
         with ui.spinner(f"encoding {len(rec.frames)} frames into run.gif"):
-            result.gif_path = rec.save_gif(result.run_dir / "run.gif")
+            result.gif_path = _gif_a_press_can_leave_out(rec, result.run_dir / "run.gif")
     counters = [f"kicker {result.kicker}"]
     if result.spotter:
         counters.insert(0, f"spotter {result.spotter}")
@@ -5368,6 +5399,9 @@ def doctor(
             )
     finally:
         hands.finish()
+    from quackd.safety import AfterTheClose
+
+    AfterTheClose.not_stuck_yet()
     report.host = unusable or report.host
     render(ui.console, report)
     if not report.ok:
@@ -7655,7 +7689,7 @@ class _DoctorHands:
             with contextlib.suppress(Exception):
                 self._stop_check(None)
         if self.switch is not None:
-            self.switch.uninstall()
+            self.switch.uninstall(nothing_left_to_stop=True)
         self.switch = self.person = None
         self._stop_check = None
 
@@ -8029,7 +8063,7 @@ def robot_release(
             note = getattr(adapter, "close_note", None)
             return settled, str(note) if note else None
         finally:
-            switch.uninstall()
+            switch.uninstall(nothing_left_to_stop=True)
 
     try:
         settled, note = asyncio.run(release())
@@ -10180,6 +10214,12 @@ def main() -> None:
         _load_what_a_command_needs()
     try:
         app()
+    except SystemExit as e:
+        # read off the module where one was loaded, so a `--help` imports nothing for it
+        safety = sys.modules.get("quackd.safety")
+        if safety is None:
+            raise
+        raise SystemExit(safety.AfterTheClose.exit_code(e.code)) from None
     except BrokenPipeError:
         _leave_quietly()
     except OSError as e:

@@ -20,7 +20,7 @@ from PIL import Image
 import quackd.agent.loop as loop_module
 from quackd.adapters.base import AdapterError, RestResult
 from quackd.agent.images import load_task_images
-from quackd.agent.loop import STOP_BUTTON, AgentLoop, RunConfig, run_duck
+from quackd.agent.loop import KILL_SWITCH, STOP_BUTTON, AgentLoop, RunConfig, run_duck
 from quackd.agent.prompts import NOTHING_DETECTED_BEFORE_VERDICT
 from quackd.agent.providers import pricing
 from quackd.agent.providers.base import (
@@ -52,7 +52,7 @@ from quackd.release import (
     RELEASE_NOT_SENT,
 )
 from quackd.safety import Aborted
-from quackd.transport.base import CameraFrame, DuckState
+from quackd.transport.base import CameraFrame, DuckState, TransportError
 from quackd.transport.mock import MockTransport
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
@@ -3682,6 +3682,113 @@ async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(
     result = await loop.run()
     assert result.outcome == "aborted", result.reason
     assert "rest" in mock.sequence
+
+
+class _NoConnect(LeRobotMock):
+    """A body whose connect fails, or is cut off, with whatever it is told to."""
+
+    def __init__(self, failure: BaseException) -> None:
+        super().__init__(rest_pose=REST)
+        self.failure = failure
+        self.pressed: Callable[[], None] | None = None
+
+    async def connect(self) -> Any:
+        if self.pressed is not None:
+            self.pressed()
+        raise self.failure
+
+
+def _a_run_on(body: Any, tmp_path: Path) -> AgentLoop:
+    return AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider(script=[]),
+            transport=LeRobotAdapter(body),
+            runs_dir=tmp_path,
+        )
+    )
+
+
+def _end_of(loop: AgentLoop) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`run_end` from the transcript, and `summary.json`: the two that have to say the same."""
+    events = Transcript.read(loop.run_dir / "transcript.jsonl")
+    ends = [e for e in events if e["kind"] == "run_end"]
+    assert len(ends) == 1, ends
+    return ends[0], json.loads((loop.run_dir / "summary.json").read_text(encoding="utf-8"))
+
+
+async def test_a_connect_that_fails_leaves_an_end_to_the_record(tmp_path: Path) -> None:
+    """It left a directory with a transcript that stopped where it stopped, and no summary."""
+    loop = _a_run_on(_NoConnect(TransportError("no such port")), tmp_path)
+    with pytest.raises(TransportError, match="no such port"):
+        await loop.run()
+    end, summary = _end_of(loop)
+    assert summary["outcome"] == end["outcome"] == "error"
+    assert "no such port" in summary["reason"]
+    assert summary["steps"] == 0
+    assert summary["robot"] is None
+    assert summary["connect_s"] >= 0
+
+
+async def test_a_press_during_a_connect_that_then_fails_says_so_in_the_record(
+    tmp_path: Path,
+) -> None:
+    """Somebody stopped this run, and the only trace of that was the line on their screen."""
+    body = _NoConnect(TransportError("the bus lost a packet"))
+    loop = _a_run_on(body, tmp_path)
+    body.pressed = loop.executor.abort.set
+    with pytest.raises(TransportError, match="the bus lost a packet"):
+        await loop.run()
+    end, summary = _end_of(loop)
+    assert summary["outcome"] == end["outcome"] == "aborted"
+    assert KILL_SWITCH in summary["reason"]
+    assert "the bus lost a packet" in summary["reason"]
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt(), asyncio.CancelledError()])
+async def test_a_connect_cut_off_leaves_an_end_to_the_record_and_goes_on_up(
+    failure: BaseException, tmp_path: Path
+) -> None:
+    loop = _a_run_on(_NoConnect(failure), tmp_path)
+    with pytest.raises(type(failure)):
+        await loop.run()
+    _, summary = _end_of(loop)
+    assert summary["outcome"] == "aborted"
+    assert summary["reason"] == f"interrupted: {type(failure).__name__}"
+
+
+async def test_a_failure_between_the_connect_and_the_first_step_leaves_an_end_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The body is up by then, parked and closed on the way out, and the record names it."""
+    mock = LeRobotMock(rest_pose=REST)
+    loop = _a_run_on(mock, tmp_path)
+
+    def no_such_build(*_args: Any, **_kwargs: Any) -> Any:
+        raise AdapterError("this build has no such verb")
+
+    monkeypatch.setattr(loop_module, "registry_from_manifest", no_such_build)
+    loop.cfg.registry = None
+    with pytest.raises(AdapterError, match="this build has no such verb"):
+        await loop.run()
+    end, summary = _end_of(loop)
+    assert summary["outcome"] == end["outcome"] == "error"
+    assert "this build has no such verb" in summary["reason"]
+    assert summary["robot"] is not None, "it had connected, and it says to what"
+    assert mock.sequence[-1] == "close"
+
+
+async def test_a_record_that_will_not_write_leaves_the_failure_the_caller_is_owed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = _a_run_on(_NoConnect(TransportError("no such port")), tmp_path)
+
+    def full(_summary: Any) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(loop.transcript, "write_summary", full)
+    with pytest.raises(TransportError, match="no such port"):
+        await loop.run()
 
 
 def _pressed_at_the_placement_wait(person: Presser, loop: AgentLoop) -> None:

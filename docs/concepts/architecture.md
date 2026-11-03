@@ -222,7 +222,8 @@ with a deterministic referee on one lockstep clock ([guides/flock.md](../guides/
    velocity every 100 ms to feed the robot's deadman.
 5. **Record.** Every step above is a `LogEvent`, and `transcript.jsonl` is the sink that
    never turns off (every kind it writes is in the table below); `frames/` as the run goes and
-   `images/` once at the top of it; `summary.json` at the end; `terminal.txt`, everything that
+   `images/` once at the top of it; `summary.json` at the end, of a run that failed to connect or
+   was stopped while it did as well, whose `robot` is null; `terminal.txt`, everything that
    was on the terminal during the run as plain text, opening with the command that started it
    and the version that ran it;
    `run.gif` from the recorder on a `sim2d` or `microduck:mujoco` run (the arm's

@@ -13,6 +13,7 @@ import contextlib
 import io
 import math
 import os
+import signal
 import subprocess
 import sys
 import textwrap
@@ -24,6 +25,7 @@ from typing import Any
 
 import pytest
 
+from quackd import keys as keys_module
 from quackd.keys import (
     ESCAPE_GAP_S,
     POLL_S,
@@ -852,6 +854,7 @@ from quackd.safety import KillSwitch
 async def main():
     ks = KillSwitch(asyncio.Event())
     ks.install()
+    {before_ready}
     print("ready", ks._keys is not None, flush=True)
     await asyncio.wait_for(ks.pressed.wait(), timeout=20)
     print("pressed", flush=True)
@@ -861,12 +864,24 @@ asyncio.run(main())
 """
 
 
-def _at_a_terminal(finish: str, slave: int) -> subprocess.Popen[str]:
+FORK_A_WORKER = """__import__("warnings").simplefilter("ignore")
+    worker = os.fork()
+    if worker == 0:
+        __import__("time").sleep(60)
+        os._exit(0)
+    print("worker", worker, flush=True)"""
+
+
+def _at_a_terminal(finish: str, slave: int, *, before_ready: str = "pass") -> subprocess.Popen[str]:
     """A process whose stdin is the pty: a real switch, installed. It does not own the terminal,
     since macOS takes a terminal away from everybody as its owner exits, and then there is nothing
     left to read the settings of."""
     return subprocess.Popen(
-        [sys.executable, "-c", textwrap.dedent(CHILD).format(finish=finish)],
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(CHILD).format(finish=finish, before_ready=before_ready),
+        ],
         stdin=slave,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -962,6 +977,332 @@ def test_a_guard_leaves_alone_a_terminal_somebody_else_has_since_changed(pty_pai
         child.kill()
     time.sleep(1.0)  # what a guard takes to act on the pipe closing, were it going to
     assert _settings(slave) == theirs
+
+
+@posix_only
+def test_the_guard_is_up_before_the_terminal_leaves_line_mode(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A kill in a run's first moments under a wrapper left the terminal broken 7 times in 8: the
+    shell got there while the guard was still starting. Now such a kill finds a terminal nothing
+    has changed, or a guard already waiting."""
+    import termios
+
+    _, slave = pty_pair
+    order: list[str] = []
+    up, setting = keys_module._Guard._up, termios.tcsetattr
+
+    def was_up(self: Any) -> bool:
+        order.append("up")
+        return up(self)
+
+    def was_set(*args: Any) -> None:
+        order.append("mode")
+        setting(*args)
+
+    monkeypatch.setattr(keys_module._Guard, "_up", was_up)
+    monkeypatch.setattr(termios, "tcsetattr", was_set)
+    keys = PosixKeys(slave)
+    try:
+        assert order[:2] == ["up", "mode"]
+    finally:
+        keys.close()
+
+
+def _an_interpreter_that_takes(seconds: float, tmp_path: Path) -> str:
+    slow = tmp_path / "slow-python"
+    slow.write_text(f'#!/bin/sh\nsleep {seconds}\nexec "{sys.executable}" "$@"\n')
+    slow.chmod(0o755)
+    return str(slow)
+
+
+@posix_only
+def test_the_terminal_waits_for_a_guard_that_takes_its_time(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import termios
+
+    _, slave = pty_pair
+    setting = termios.tcsetattr
+    started = time.monotonic()
+    set_after: list[float] = []
+
+    def was_set(*args: Any) -> None:
+        set_after.append(time.monotonic() - started)
+        setting(*args)
+
+    monkeypatch.setattr(termios, "tcsetattr", was_set)
+    monkeypatch.setattr(sys, "executable", _an_interpreter_that_takes(0.4, tmp_path))
+    keys = PosixKeys(slave)
+    try:
+        assert set_after[0] >= 0.4, "the mode changed with no guard up yet"
+    finally:
+        keys.close()
+
+
+@posix_only
+def test_a_machine_too_busy_to_start_a_guard_in_time_gets_it_late(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A run does not wait on it for long, and the guard is still worth having when it comes."""
+    _, slave = pty_pair
+    before = _settings(slave)
+    monkeypatch.setattr(keys_module, "GUARD_UP_S", 0.05)
+    monkeypatch.setattr(sys, "executable", _an_interpreter_that_takes(2.0, tmp_path))
+    started = time.monotonic()
+    keys = PosixKeys(slave)
+    try:
+        assert time.monotonic() - started < 1.5
+        assert keys._guard is not None
+        assert _settings(slave) != before
+    finally:
+        keys.close()
+
+
+@posix_only
+def test_a_run_killed_the_moment_it_has_the_terminal_still_puts_it_back(pty_pair: Any) -> None:
+    _, slave = pty_pair
+    before = _settings(slave)
+    child = _at_a_terminal("ks.uninstall()", slave)
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "ready True"
+        child.kill()
+        child.wait(timeout=20)
+    finally:
+        child.kill()
+    assert _settled(slave, before) == before
+
+
+@posix_only
+def test_a_guard_that_ends_without_a_word_is_no_guard(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An odd interpreter, say. The keys work, and a close has nothing to stand down."""
+    _, slave = pty_pair
+    before = _settings(slave)
+    monkeypatch.setattr(sys, "executable", "/bin/false")
+    keys = PosixKeys(slave)
+    try:
+        assert keys._guard is None
+        assert _settings(slave) != before
+    finally:
+        keys.close()
+    assert _settings(slave) == before
+
+
+@posix_only
+def test_a_mode_that_will_not_set_stands_the_guard_down_with_the_terminal_as_it_was(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import termios
+
+    _, slave = pty_pair
+    before = _settings(slave)
+    stood_down: list[bool] = []
+    stand_down = keys_module._Guard.stand_down
+
+    def counted(self: Any) -> None:
+        stood_down.append(True)
+        stand_down(self)
+
+    def refuses(*_args: Any) -> None:
+        raise termios.error(25, "Inappropriate ioctl for device")
+
+    monkeypatch.setattr(keys_module._Guard, "stand_down", counted)
+    monkeypatch.setattr(termios, "tcsetattr", refuses)
+    with pytest.raises(termios.error):
+        PosixKeys(slave)
+    assert stood_down == [True], "a guard was left behind waiting on a pipe nobody will close"
+    assert _settings(slave) == before
+
+
+def _guard_that_lost(slave: int, *, watch_s: float | None = None) -> Any:
+    """A guard that has just woken with `theirs` on the terminal, a shell's by then, and what it
+    would put back and what it is looking for. Started from here, so that it is the terminal's
+    next mode and not the race itself that the test decides."""
+    import termios
+
+    as_found = termios.tcgetattr(slave)
+    left = termios.tcgetattr(slave)
+    left[3] &= ~(termios.ICANON | termios.ECHO)
+    left[6][termios.VMIN] = 1
+    left[6][termios.VTIME] = 0
+    theirs = [*left[:6], list(left[6])]
+    theirs[0] &= ~termios.ICRNL
+    guard = keys_module._Guard.start(slave, as_found, left)
+    assert guard is not None
+    termios.tcsetattr(slave, termios.TCSANOW, theirs)
+    os.close(guard._word)
+    keys_module._WORDS.discard(guard._word)
+    return guard, as_found, left, theirs
+
+
+@posix_only
+def test_a_guard_that_comes_second_puts_the_terminal_back_under_the_next_command(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a machine with no CPU to spare a wrapper and a shell could get there first. Bash took the
+    mode this process left for its own, every line typed after it went unseen, and it stayed that
+    way, because a guard that found readline's mode there left. Bash puts the mode it took back to
+    run the next command, and that is the moment: when the command ends bash takes this instead."""
+    import termios
+
+    master, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.05)
+    guard, as_found, left, theirs = _guard_that_lost(slave)
+    try:
+        time.sleep(0.4)  # past the close look it wakes with: from here it wants a key
+        assert termios.tcgetattr(slave) == theirs, "it reset a mode that was not its own"
+
+        os.write(master, b"l")
+        termios.tcsetattr(slave, termios.TCSANOW, left)  # readline hands back for the command
+        assert guard._process.wait(10) == 0
+        ignored = getattr(termios, "PENDIN", 0)
+        assert _settings(slave) == [*as_found[:3], as_found[3] & ~ignored, *as_found[4:]]
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_guard_that_comes_second_catches_a_command_that_lasts_no_time(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ls` holds that mode for a couple of milliseconds, so it looks closely from the key on, and
+    gets another go at the next command if it misses."""
+    import termios
+
+    master, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.05)
+    monkeypatch.setattr(keys_module, "GUARD_IDLE_S", 60.0)  # so only a key can bring it to look
+    guard, _, left, theirs = _guard_that_lost(slave)
+    try:
+        time.sleep(0.4)  # past the close look it wakes with
+        end = time.monotonic() + 20
+        while guard._process.poll() is None and time.monotonic() < end:
+            os.write(master, b"l")
+            termios.tcsetattr(slave, termios.TCSANOW, left)
+            time.sleep(0.03)
+            if guard._process.poll() is None:
+                termios.tcsetattr(slave, termios.TCSANOW, theirs)
+                time.sleep(0.15)  # past the look that key bought, for the next try to need a key
+        assert guard._process.poll() == 0, "it never caught the mode it was looking for"
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_guard_that_comes_second_leaves_a_terminal_somebody_has_put_right(
+    pty_pair: Any,
+) -> None:
+    """`stty sane`, typed unseen, or a shell that had it right all along: nothing left to do."""
+    import termios
+
+    master, slave = pty_pair
+    guard, as_found, _, _ = _guard_that_lost(slave)
+    try:
+        termios.tcsetattr(slave, termios.TCSANOW, as_found)
+        os.write(master, b"\n")
+        assert guard._process.wait(10) == 0
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_guard_that_comes_second_gives_up_and_leaves_the_terminal_as_it_is(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import termios
+
+    _, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_WATCHES_S", 0.2)
+    guard, _, _, theirs = _guard_that_lost(slave)
+    try:
+        assert guard._process.wait(10) == 0
+        assert termios.tcgetattr(slave) == theirs
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_guard_that_comes_second_catches_a_command_it_heard_no_key_for(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shell is waiting for the same key, and has often read it before the guard has seen it."""
+    import termios
+
+    _, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.01)
+    guard, _, left, _ = _guard_that_lost(slave)
+    try:
+        time.sleep(0.2)
+        termios.tcsetattr(slave, termios.TCSANOW, left)
+        assert guard._process.wait(10) == 0
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_key_somebody_else_has_read_is_no_terminal_gone(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It wakes on a key, and a shell has usually read that key by the time it looks: the terminal
+    was readable and has nothing to read, which is what one that has hung up looks like on macOS."""
+    import termios
+
+    master, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.01)
+    guard, _, left, _ = _guard_that_lost(slave)
+    try:
+        time.sleep(0.2)
+        for _ in range(30):
+            os.write(master, b"k")
+            os.read(slave, 1)
+            time.sleep(0.02)
+        assert guard._process.poll() is None, "it took a key that was read for a window that closed"
+        os.write(master, b"k")
+        os.read(slave, 1)
+        termios.tcsetattr(slave, termios.TCSANOW, left)
+        assert guard._process.wait(10) == 0
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_guard_that_comes_second_goes_with_its_terminal() -> None:
+    """A window that closes: no process may outlive it by ten minutes for nothing."""
+    import pty
+
+    master, slave = pty.openpty()
+    guard, _, _, _ = _guard_that_lost(slave)
+    try:
+        os.close(slave)
+        os.close(master)
+        assert guard._process.wait(10) == 0
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_child_forked_with_no_exec_does_not_keep_the_guard_asleep(pty_pair: Any) -> None:
+    """A policy library's worker, say: it held the pipe, so the kernel had nothing to close at a
+    SIGKILL until the worker ended as well, which an orphan need not do."""
+    _, slave = pty_pair
+    before = _settings(slave)
+    child = _at_a_terminal("ks.uninstall()", slave, before_ready=FORK_A_WORKER)
+    worker = 0
+    try:
+        assert child.stdout is not None
+        worker = int(child.stdout.readline().split()[1])
+        assert child.stdout.readline().strip() == "ready True"
+        child.kill()
+        child.wait(timeout=20)
+        assert _settled(slave, before) == before
+    finally:
+        child.kill()
+        if worker:
+            with contextlib.suppress(OSError):
+                os.kill(worker, signal.SIGKILL)
 
 
 @posix_only

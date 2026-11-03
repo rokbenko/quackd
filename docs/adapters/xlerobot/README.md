@@ -109,10 +109,18 @@ real, but it calls `stop_base()`, which zeroes the three wheels and nothing else
 arm and head servos keep holding their last goal. That is not an e-stop, not a torque limit and
 not a `robotd_deadman`, so `native` stays `none` and `extras.deadman_scope` says `base_only`.
 
-**A `stop` stops the wheels and leaves the arms' goals alone, as that watchdog does.** A hold built
-from an observation a few cycles old moves an arm rather than holding it. So a `stop` from beside
-`move_joints` or `gripper` ends the verb at once, and what it answers says the arm or the gripper
-goes on to where it was sent. `gripper` has to say which way: `open` has no default.
+**A `stop` stops the wheels and holds an arm on its way somewhere where it stands.** That watchdog
+leaves the arms alone, and so did a `stop` once, so an arm finished its move with a hand in the way
+or not. The wheels stop at once, and each joint sent a goal is then sent where it reads, on three
+rules. The reading has to be taken after the stop began, and nothing on the wire says when one was: the
+socket keeps a message however long it has sat there, and the host can stick between reading its
+motors and sending them. So what was waiting is thrown away, the first to come in is passed over, and
+the second is used, within 200 ms. The arm can step back by what it travelled since that reading.
+Failing that the joint goes on to its goal, and what `stop` answers names it. A joint is held once for each goal, or an arm
+under load would walk down a stop at a time. And a gripper is never held, or it would open on what it
+holds: it goes on to where it was sent, and `gripper` has to say which way, since `open` has no
+default. A `stop` from beside `move_joints` or `gripper` ends the verb at once and says which of these
+it was. None of this has met a real arm.
 
 ## Units, and the two that are easy to get wrong
 

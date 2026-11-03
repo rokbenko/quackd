@@ -4,7 +4,7 @@
   "outcome": "success",
   "kicker": "duck-2",
   "ball_displacement_m": 0.69,
-  "bus_messages": 42,
+  "bus_messages": 43,
   "auctions": 1
  },
  "bus": [
@@ -147,6 +147,10 @@
   [
    "HB",
    "duck-1"
+  ],
+  [
+   "HB",
+   "duck-2"
   ],
   [
    "HB",

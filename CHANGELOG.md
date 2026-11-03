@@ -9,6 +9,77 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `stop` holds an arm on the XLeRobot and the AlohaMini where it stands.** It stopped the wheels, and
+  the lift, and left arm goals alone, so an arm on its way somewhere got there with a hand in the way or
+  not, and the answer said so. The wheels and the lift still stop at once. Each joint sent a goal is then
+  sent where it reads, on three rules, since a stop that moves an arm is what this is all against. Only
+  a reading taken after the stop began counts, so what was waiting is thrown away and the first to come
+  in is passed over, as a host can stick between reading its motors and sending them. With no second
+  one inside 200 ms that joint goes on to its goal and the answer names it. A joint is held once for
+  each goal, or an arm under load would walk down a stop at a time. And a gripper is never held, or
+  it would open on what it holds. What changes for you, under the safety rule: on those two bodies a
+  `stop` now moves an arm, by what it travelled since that reading, and a `stop` beside `move_joints`
+  says the arm `is held where it stood`. The host's own watchdog still leaves the arms alone.
+- **`kick`, `sit` and `stand` on the Microduck and the Huebot, `grab` on the Microduck and `express` on the
+  Open Duck Mini hear a `stop` once they have sent.** They went on waiting and answered as if nothing had
+  happened, `kicked` included. Now they end at once, marked as a stop so `abort_when` does not count them,
+  and say the robot plays out what it was sent, since a stop ends no skill on those robots.
+- **A bus call that never comes back no longer holds the process.** The close, the record and the summary
+  were done by then, and the verdict had not printed: asyncio's pool and the exit both wait for their
+  threads, and on Windows nothing but closing the window ended it. The SO-101's bus and camera calls run
+  on threads no exit waits for now, so the verdict prints and the process is gone in under 3 s, in a real
+  console with every bus call hanging. So that the exit cannot cut off the one call that takes torque
+  off, a close waits up to 15 s for it, where it waited 5 s and left the rest to the exit, and if it
+  raises or does not come back the close now says `its disconnect did not finish`, and to hold the arm.
+- **A run that ends before it begins keeps a record.** A connect that failed, a press during one, and
+  anything between the connect and the first step left a run folder with no end to it. Each writes
+  `run_end` and `summary.json` now: `error`, or `aborted` with `kill switch; ...` where somebody pressed,
+  and `robot` is null where the connect never answered.
+- **A press after a run has closed loses nothing.** One could lose the verdict, 1 time in 6 with somebody
+  still pressing, though the record was written, and on Windows 6 times in 6 it ended the process with
+  `0xC000013A`. From the close to the end of the process a press changes nothing now, in `quackd robot
+  release` and `quackd doctor` as well, and what they print comes. It is still somebody saying stop, so a
+  success comes out as exit 130, and `quackd run a && quackd run b` does not go on to move an arm. A
+  process still there 5 s after its close is stuck on something, and the next press ends it and says so.
+  A press also leaves out a `run.gif` being made, which can take minutes on a long run.
+- **The guard on a terminal is up before the terminal changes.** A SIGKILL in a run's first moments under
+  a wrapper left it broken, 16 times in 24 under a real `bash`, and it is 0 in 24 now. On a machine with no
+  CPU to spare a guard could come second and leave, and that stayed broken until somebody typed `stty sane`
+  unseen: 4 times in 12 in a container held to one CPU by eight busy loops, and 0 in 12 now. A guard that
+  comes second stays for up to ten minutes and puts the terminal back under a command run there, so what
+  is typed at that prompt may go unseen for a line or two. Nor does a child forked with no exec keep it
+  asleep any more.
+
+### Known limitations
+
+- **None of the fixes above has met a robot.** They ran on the mocks and the fake hosts, in a real Windows
+  console, and on Linux under a real `bash`. The arm owes what 0.30.2 lists, and the XLeRobot and the
+  AlohaMini have now to show that a hold from a reading stops an arm as it should.
+- **A hold on the XLeRobot and the AlohaMini is only as good as the reading.** Nothing on those wires says
+  when a reading was taken, so a link holding a backlog of large frames can still hand over an old one,
+  and the arm steps back by what it travelled since. Nobody has measured a real host's stalls.
+- **On Windows an exit stuck on a thread still takes closing the window,** since a thread's join hears no
+  signal there. The SO-101's bus and camera calls no longer wait there, and a press gets out of
+  asyncio's wait, so it takes a call on a pool of quackd's own that never comes back, a policy's worker
+  above all.
+- **A guard can still come second often enough to be seen, with the run pinned to one busy CPU.** With
+  six busy loops on that CPU, the first command after a kill ran broken 14 times in 32, against 21 before,
+  and none at the fourth, where 6 of 32 were still broken at the fifth before. What it has not reached
+  in its ten minutes is still `stty sane`, typed unseen.
+- **A key set to repeat slower than once every 2 s still cannot be told from somebody pressing it,** as
+  0.30.2 says.
+
+### Documentation
+
+- **Thirteen new experiments on the SO-101's run sheet, `e208` to `e220`,** for what 0.30.1, 0.30.2 and this
+  release changed between a person and a moving arm, with what each should print quoted from a rehearsal:
+  Ctrl-C through the end of a by-hand run and through its first fold, during a connect, with the arm in your
+  hands, in `quackd robot release` and in `quackd doctor`, Enter held down and a word typed at the question
+  that opens the jaws, a stand-in model that sends `gripper` with nothing, a `stop` over MCP on a clock,
+  keys that mean nothing, and, on Linux or macOS with no arm, a terminal after a SIGKILL.
+
 ## [0.30.2] — 2026-11-03
 
 0.30.2 fixes what 0.30.1 shipped knowing about, and what a review of those fixes found. What changes for

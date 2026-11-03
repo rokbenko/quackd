@@ -14,6 +14,7 @@ import asyncio
 import gc
 import io
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -21,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from quackd.safety import ENTER_TOO_SOON, TYPED_AHEAD_S, KillSwitch
+from quackd.safety import ENTER_TOO_SOON, TYPED_AHEAD_S, AfterTheClose, KillSwitch
 
 
 def switch() -> tuple[KillSwitch, list[str]]:
@@ -489,6 +490,124 @@ async def test_uninstalling_stops_looking_for_a_signal() -> None:
     assert looking.cancelled()
     ks._look_for_a_signal()
     assert ks._looking is looking, "nothing is set going again once it is out"
+
+
+async def test_a_press_past_the_end_of_a_command_changes_nothing_and_is_remembered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A person still pressing cannot tell the end of a run from its last moments, and one past the
+    switch raised through the printing of the verdict. It is still somebody saying stop, so a
+    success is not what the process says it came to (`exit_code`)."""
+    monkeypatch.setattr(AfterTheClose, "heard", 0)
+    before = signal.getsignal(signal.SIGINT)
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    ks.uninstall(nothing_left_to_stop=True)
+    try:
+        assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose)
+        assert AfterTheClose.exit_code(0) == 0
+        signal.raise_signal(signal.SIGINT)
+        await asyncio.sleep(0)
+        assert ks.presses == 0, "a press of the switch's, with the switch gone"
+        assert AfterTheClose.heard == 1
+    finally:
+        signal.signal(signal.SIGINT, before)
+    assert AfterTheClose.exit_code(0) == 130
+    assert AfterTheClose.exit_code(None) == 130
+    assert AfterTheClose.exit_code(1) == 1, "what went wrong still says what went wrong"
+
+
+def _a_process(script: str, *, limit_s: float = 60.0) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=limit_s
+    )
+
+
+def test_a_press_as_the_interpreter_ends_leaves_the_exit_code_alone() -> None:
+    """On Windows one past the handler ended the process with `0xC000013A`, whatever the run had
+    come to, 6 times in 6, because the interpreter puts back the default for a handler it installed
+    as it ends. It leaves one set to ignore where it is, and `atexit` is the last moment to say so.
+    The first callback here runs before the one the close registered, and the second after it."""
+    done = _a_process(
+        "import asyncio, atexit, signal, sys\n"
+        "from quackd.safety import KillSwitch\n"
+        "at_the_end = lambda: print('last', signal.getsignal(signal.SIGINT) == signal.SIG_IGN)\n"
+        "atexit.register(at_the_end)\n"
+        "async def main():\n"
+        "    ks = KillSwitch(asyncio.Event())\n"
+        "    ks.install(keys=False)\n"
+        "    ks.uninstall(nothing_left_to_stop=True)\n"
+        "asyncio.run(main())\n"
+        "atexit.register(signal.raise_signal, signal.SIGINT)\n"
+        "signal.raise_signal(signal.SIGINT)\n"
+        "print('the verdict', flush=True)\n"
+        "sys.exit(7)\n"
+    )
+    assert done.returncode == 7, done.stderr
+    assert done.stdout.split() == ["the", "verdict", "last", "True"]
+
+
+async def test_a_command_with_more_to_say_is_not_taken_for_stuck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Doctor's table can take seconds after the arm's close, and its report is what says what
+    became of the torque, so the clock starts again as it gets there."""
+    after = AfterTheClose()
+    after.since = 0.0
+    before = signal.signal(signal.SIGINT, after)
+    try:
+        AfterTheClose.not_stuck_yet()
+    finally:
+        signal.signal(signal.SIGINT, before)
+    assert after.since > 0.0
+
+
+def test_a_press_once_a_process_has_outstayed_its_close_ends_it() -> None:
+    """A call on another body that never came back holds asyncio's pool and the exit, and with every
+    press doing nothing that left `kill`. The record is written by then."""
+    done = _a_process(
+        "import asyncio, signal, sys\n"
+        "import quackd.safety as safety\n"
+        "safety.OUTSTAYED_S = 0.0\n"
+        "async def main():\n"
+        "    ks = safety.KillSwitch(asyncio.Event())\n"
+        "    ks.install(keys=False)\n"
+        "    ks.uninstall(nothing_left_to_stop=True)\n"
+        "asyncio.run(main())\n"
+        "print('saying how it went', flush=True)\n"
+        "signal.raise_signal(signal.SIGINT)\n"
+        "print('got past it', flush=True)\n"
+    )
+    assert done.returncode == 130, done.stderr
+    assert done.stdout.strip() == "saying how it went"
+    assert "this Ctrl-C ended it" in " ".join(done.stderr.split())
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a thread's join hears no signal on Windows")
+def test_a_press_gets_out_of_a_join_on_a_call_that_never_came_back() -> None:
+    """All of it for real: `asyncio.run` waiting on its pool for a call stuck in a thread, and a
+    Ctrl-C from outside. A later press does it, the first having come too soon to know it was stuck.
+    """
+    done = _a_process(
+        "import asyncio, os, signal, threading, time\n"
+        "import quackd.safety as safety\n"
+        "safety.OUTSTAYED_S = 0.5\n"
+        "def presses():\n"
+        "    for _ in range(40):\n"
+        "        time.sleep(0.25)\n"
+        "        os.kill(os.getpid(), signal.SIGINT)\n"
+        "async def main():\n"
+        "    ks = safety.KillSwitch(asyncio.Event())\n"
+        "    ks.install(keys=False)\n"
+        "    ks.uninstall(nothing_left_to_stop=True)\n"
+        "    asyncio.get_running_loop().run_in_executor(None, threading.Event().wait)\n"
+        "    await asyncio.sleep(0)\n"
+        "threading.Thread(target=presses, daemon=True).start()\n"
+        "asyncio.run(main())\n"
+        "print('never', flush=True)\n"
+    )
+    assert done.returncode == 130, done.stderr
+    assert "never" not in done.stdout
 
 
 async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:

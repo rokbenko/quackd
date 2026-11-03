@@ -9,13 +9,15 @@ its fail-safe is a Python process that may have exited.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+import time
 from collections.abc import Callable
 
 import pytest
 
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_alohamini import AlohaMiniAdapter
+from quackd_alohamini import AlohaMiniAdapter, zmq_host
 from quackd_alohamini.zmq_host import (
     LIFT_HEIGHT_KEY,
     LIFT_VEL_KEY,
@@ -127,10 +129,14 @@ async def test_connect_stops_before_it_does_anything_else() -> None:
         await link.close()
 
 
-async def test_stop_holds_the_arms_where_they_were_asked_to_go() -> None:
+async def test_stop_holds_the_arms_where_they_were_asked_to_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The base has to be moving when the stop arrives, or the velocity half of this proves
     nothing: every payload carries all three velocity keys, so a joint command on its own
-    already leaves them at zero and the assertion would be true before `stop` was sent."""
+    already leaves them at zero and the assertion would be true before `stop` was sent. And an
+    arm that has arrived stays there."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", 30.0)  # a slow test is no silent host
     with FakeAlohaMiniHost(watchdog_s=10.0) as host:
         link = await _connected(host)
         await _lands(link, host, Intent.joint({"arm_left_shoulder_pan": 25.0}, 0.2))
@@ -144,6 +150,170 @@ async def test_stop_holds_the_arms_where_they_were_asked_to_go() -> None:
         assert host.state["arm_left_shoulder_pan.pos"] == pytest.approx(25.0)
         assert host.actions[-1]["arm_left_shoulder_pan.pos"] == pytest.approx(25.0)
         await link.close()
+
+
+@pytest.fixture
+def _a_slow_machine_is_no_silent_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """How long a stop looks for a reading is what these leave to the fake's own 30 Hz."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", 30.0)
+
+
+@pytest.mark.usefixtures("_a_slow_machine_is_no_silent_host")
+async def test_a_stop_holds_an_arm_on_its_way_where_it_reads() -> None:
+    """A stop that left the goal alone was a stop for the base: the arm finished its move, with a
+    person's hand in the way or not. It is held once for each goal, since a servo under load reads
+    below its goal and every failed verb ends in a stop, and never a gripper, which would open on
+    what it holds. A new goal is a new move for a stop to end."""
+    with FakeAlohaMiniHost(watchdog_s=10.0) as host:
+        link = await _connected(host)
+        key = "arm_left_elbow_flex.pos"
+        grip = "arm_right_gripper.pos"
+        await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 80.0}, 2.0))
+        await _lands(link, host, Intent(kind="gripper", params={"open": False, "side": "right"}))
+        closed = host.state[grip]
+        await _lands(link, host, Intent.joint({"arm_left_gripper": 70.0}, 0.2))
+        host.slow = {key, grip, "arm_left_gripper.pos"}
+        host.state[key] = 12.0
+        host.state[grip] = closed + 40.0
+        host.state["arm_left_gripper.pos"] = 41.0
+
+        await link.stop()
+        assert link.stop_left_going == ()
+        await _until(lambda: host.actions[-1].get(key) == pytest.approx(12.0))
+        assert host.actions[-1][grip] == pytest.approx(closed), "the jaws were sent what they read"
+        assert host.actions[-1]["arm_left_gripper.pos"] == pytest.approx(70.0)
+
+        host.state[key] = 11.0  # it sinks
+        await link.stop()
+        assert link._arm_goals[key] == pytest.approx(12.0), "a second stop walked it down"
+
+        await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 90.0}, 1.0))
+        host.state[key] = 33.0
+        await link.stop()
+        assert link._arm_goals[key] == pytest.approx(33.0)
+        await link.close()
+
+
+@pytest.mark.usefixtures("_a_slow_machine_is_no_silent_host")
+async def test_a_stop_holds_at_its_own_speed_and_leaves_no_replies_behind() -> None:
+    """It asked again every 20 ms a host that answers one request a cycle, so the answer came back
+    under an older token, most stops held nothing, and every reply it left behind made each read
+    after it an older reading than the last, marked fresh. On the fake's own 30 Hz, the host's."""
+    with FakeAlohaMiniHost(watchdog_s=10.0) as host:
+        link = await _connected(host)
+        key = "arm_left_elbow_flex.pos"
+        for n in range(6):
+            await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 80.0 + n}, 2.0))
+            host.slow = {key}
+            host.state[key] = float(n)
+            await link.stop()
+            assert link.stop_left_going == (), "the stop had no reading to hold from"
+            assert link._arm_goals[key] == pytest.approx(float(n))
+            host.slow = set()
+
+        host.slow = {key}
+        host.state[key] = 55.0
+        assert await link._pump(5000)
+        assert link._state[key] == pytest.approx(55.0), "a reply left behind answered this request"
+        await link.close()
+
+
+class _Late:
+    """A host with replies already waiting, behind its time. No sockets, so what is read when is
+    what the test says. It answers the request it is sent only once those have been read."""
+
+    def __init__(self, *waiting: tuple[bytes, float]) -> None:
+        self.waiting = list(waiting)
+        self.asked: list[bytes] = []
+        self.said: list[dict[str, float]] = []
+        self.next_reading = 12.0
+
+    def open(self, host: str, cmd_port: int, obs_port: int) -> None: ...
+
+    def send(self, text: str) -> None:
+        self.said.append(json.loads(text))
+
+    def _reply(self, token: bytes, reading: float) -> list[bytes]:
+        return [token, json.dumps({"arm_left_elbow_flex.pos": reading}).encode()]
+
+    def request(self, token: bytes, timeout_ms: int) -> list[bytes] | None:
+        self.asked.append(token)
+        self.waiting.append((token, self.next_reading))
+        self.next_reading += 10.0
+        return self.answer(timeout_ms)
+
+    def answer(self, timeout_ms: int) -> list[bytes] | None:
+        return self._reply(*self.waiting.pop(0)) if self.waiting else None
+
+    def close(self) -> None: ...
+
+
+async def test_a_stop_reads_down_to_the_answer_to_its_own_request() -> None:
+    """A DEALER keeps a reply that came in behind its time, so a stop's first read can be the answer
+    to an earlier request, however old: no goal is built from it, and nothing more is asked until it
+    has its answer. That answer can be as old, where the host stuck between reading its motors and
+    answering, with the servo gone on, so it is the answer after that."""
+    key = "arm_left_elbow_flex.pos"
+    host = _Late((b"1", 3.0), (b"2", 4.0))
+    link = AlohaMiniZmq(client=host)
+    link._token = 2
+    link._arm_goals[key] = 80.0
+    link._unheld.add(key)
+    await link.stop()
+    assert host.asked == [b"3", b"4"], "asking again leaves replies behind"
+    assert link._arm_goals[key] == pytest.approx(22.0)
+    assert link.stop_left_going == ()
+
+
+async def test_a_read_reads_past_replies_behind_their_time() -> None:
+    """Each read asks once and takes one, so a reply left behind by a host that stalled made every
+    read for the rest of the session that much older than it said."""
+    host = _Late((b"1", 3.0), (b"2", 4.0))
+    link = AlohaMiniZmq(client=host)
+    link._token = 2
+    assert await link._pump(5)
+    assert link._state["arm_left_elbow_flex.pos"] == pytest.approx(12.0)
+
+
+async def test_a_stop_with_no_answer_stops_the_base_and_leaves_the_goal_and_says_so() -> None:
+    """A goal built from an old reading is a move of its own (ADR-0026), and a reading takes a
+    round trip here. So the wheels and the lift go first, the wait is short, that joint goes on,
+    and the pilot is told which."""
+
+    class Silent:
+        """A host that takes commands and has stopped answering."""
+
+        def __init__(self) -> None:
+            self.told: list[str] = []
+
+        def open(self, host: str, cmd_port: int, obs_port: int) -> None: ...
+
+        def send(self, text: str) -> None:
+            self.told.append(f"send {text}")
+
+        def request(self, token: bytes, timeout_ms: int) -> None:
+            self.told.append("ask")
+
+        def answer(self, timeout_ms: int) -> None:
+            self.told.append("listen")
+
+        def close(self) -> None: ...
+
+    silent = Silent()
+    link = AlohaMiniZmq(client=silent)
+    link._arm_goals["arm_left_elbow_flex.pos"] = 80.0
+    link._unheld.add("arm_left_elbow_flex.pos")
+    link._vel["x.vel"] = 0.2
+    link._state["arm_left_elbow_flex.pos"] = 12.0  # known, and from before the silence
+    started = time.monotonic()
+    await link.stop()
+    assert time.monotonic() - started < 2.0
+    assert silent.told[0].startswith("send "), "the wheels waited on a reading"
+    first = json.loads(silent.told[0].removeprefix("send "))
+    assert first["x.vel"] == 0.0 and first[LIFT_VEL_KEY] == 0
+    assert silent.told.count("ask") == 1
+    assert link.stop_left_going == ("arm_left_elbow_flex",)
+    assert link._arm_goals["arm_left_elbow_flex.pos"] == pytest.approx(80.0)
 
 
 async def test_stop_is_safe_when_the_host_has_already_gone() -> None:

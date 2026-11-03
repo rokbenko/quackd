@@ -560,6 +560,10 @@ class LeRobotSim(LeRobotReal):
         recorded = {joint: settled.get(joint, value) for joint, value in recorded.items()}
         return reachable_rest_goal(recorded, self.joint_range_deg)[0], recorded
 
+    RELEASE_NOT_KNOWN = (
+        "the close was letting go of the simulated arm and its disconnect did not finish"
+    )
+
     def _torque_left_on(self, why: str) -> str:
         return SIM_TORQUE_LEFT_ON.format(why=why)
 

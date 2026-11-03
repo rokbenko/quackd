@@ -466,6 +466,17 @@ async def stop(ctx: VerbContext, _: NoParams) -> VerbResult:
             f"{'it' if one else 'them'}",
             not_held=skipped,
         )
+    # A body that could not hold what was still moving, for want of a recent reading of it (the
+    # XLeRobot's and the AlohaMini's arms), and whose stop stopped the rest.
+    going = [str(j) for j in getattr(ctx.transport, "stop_left_going", ()) or ()]
+    if going:
+        one = len(going) == 1
+        named = going[0] if one else ", ".join(going[:-1]) + " and " + going[-1]
+        return VerbResult.success(
+            f"stopped (velocity zeroed); there is no recent reading to hold {named} from, so "
+            f"{'it goes' if one else 'they go'} on to the goal sent",
+            not_held=going,
+        )
     return VerbResult.success("stopped (velocity zeroed)")
 
 

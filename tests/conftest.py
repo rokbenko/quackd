@@ -10,6 +10,7 @@ import importlib.util
 import itertools
 import re
 import shutil
+import signal
 import socket
 import sys
 from collections.abc import Callable, Iterator
@@ -29,6 +30,17 @@ REPO = Path(__file__).resolve().parents[1]
 DUCKS = REPO / "ducks"
 
 EXIT_GRACE_S = 120
+
+
+@pytest.fixture(autouse=True)
+def _a_press_as_it_was() -> Iterator[None]:
+    """A command leaves a Ctrl-C ignored to the end of its process (`KillSwitch.uninstall`), and
+    the process a test runs one in goes on to the next test."""
+    before = signal.getsignal(signal.SIGINT)
+    yield
+    if before is not None and signal.getsignal(signal.SIGINT) is not before:
+        with contextlib.suppress(ValueError):  # not the main thread
+            signal.signal(signal.SIGINT, before)
 
 
 @pytest.hookimpl(trylast=True)

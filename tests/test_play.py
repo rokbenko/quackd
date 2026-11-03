@@ -856,6 +856,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
             "e187/out-of-time",
             "e193/two-steps",
             "e194/as-far-as-your-notes-say",
+            "e215/hold-on",
         ),
         "are cut short by a person, as the experiment plans": (
             "e081/too-slow",

@@ -14,7 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import SayParams, _ended_by, send_or_fail
+from quackd.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
 from quackd.verbs.explore import ExploreSpec, explore_verb, find_verb
 from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd.verbs.watch import HeadSpec, watch_verb
@@ -205,7 +205,9 @@ async def _sit_toggle(ctx: VerbContext, want: Literal["sitting", "standing"]) ->
         )
     if (fail := await send_or_fail(ctx, Intent.do("sit_toggle"))) is not None:
         return fail
-    await ctx.transport.sleep(2.0)
+    if (why := await _waited_out(ctx, 2.0)) is not None:
+        stopped = f"the robot plays out the toggle it was sent, on its way to {want}"
+        return await _ended_by(ctx, ("sit", "stand")[want == "standing"], why, stopped)
     state = await ctx.transport.get_state()
     if state.posture == want:
         return VerbResult.success(f"now {want}")
@@ -227,7 +229,9 @@ async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
     ack = await ctx.transport.send_intent(Intent.do(skill))
     if not ack.accepted:
         return VerbResult.fail(f"kick missed or refused: {ack.reason or 'no reason given'}")
-    await ctx.transport.sleep(1.5)
+    if (why := await _waited_out(ctx, 1.5)) is not None:
+        stopped = f"the robot plays out the kick it was sent with its {p.leg} leg"
+        return await _ended_by(ctx, "kick", why, stopped, ball_moved_m=None)
     state = await ctx.transport.get_state()
     moved = state.extras.get("last_kick_ball_moved_m")
     if moved is not None:
@@ -240,7 +244,9 @@ async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
 async def grab(ctx: VerbContext, _: NoParams) -> VerbResult:
     if (fail := await send_or_fail(ctx, Intent.do("ground_pick"))) is not None:
         return fail
-    await ctx.transport.sleep(3.0)
+    if (why := await _waited_out(ctx, 3.0)) is not None:
+        stopped = "the robot plays out the scoop it was sent, and nothing has read the beak"
+        return await _ended_by(ctx, "grab", why, stopped)
     state = await ctx.transport.get_state()
     if state.holding:
         return VerbResult.success("scooped something up — it is in the beak", holding=True)

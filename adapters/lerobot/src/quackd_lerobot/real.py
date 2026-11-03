@@ -67,6 +67,7 @@ import numpy as np
 from PIL import Image
 
 from quackd.adapters.base import AdapterError, AdapterNotInstalled, HandResult, RestResult
+from quackd.adapters.threads import DaemonThreads
 from quackd.transport.base import (
     Ack,
     CameraFrame,
@@ -135,6 +136,14 @@ from quackd_lerobot.verbs import (
 )
 
 STATUS = "LeRobot names verified at a pinned commit; one SO-101 driven on 2026-09-15"
+_THREADS = DaemonThreads("quackd-lerobot")
+"""Where every call that can hang runs, the bus's and the cameras'. Not asyncio's pool, which
+`asyncio.run` and the exit both join: a call that never came back held a run that had finished,
+and on Windows only closing the window ended it (`quackd.adapters.threads`)."""
+DISCONNECT_S = 15.0
+"""How long a close waits for the disconnect that takes torque off. Its thread is a daemon, so the
+exit would otherwise cut it off with some motors let go and some not. Six writes with every retry
+take a second or two, so a bus that needs this long is a bus to say something about."""
 POLICY_HZ = 10.0
 """The rate a `PolicyLike` object runs at, since it declares none: the verbs' own tick
 (`verbs.TICK_S`), so its step cap per send is the verbs' own too (`policy.loop.speed_cap`)."""
@@ -777,6 +786,13 @@ class WallClock:
                 return
 
 
+TORQUE_RELEASE_NOT_KNOWN = (
+    "the close was letting go of the arm and its disconnect did not finish, so some motors may "
+    "have torque and some not: hold it, and cut its power to be sure"
+)
+"""What a close says of a disconnect that raised or never came back, with torque coming off."""
+
+
 class LeRobotReal:
     name = "real"
     label = "real"
@@ -1273,7 +1289,7 @@ class LeRobotReal:
                     # unrun left open is closed into the total first
                     now = loop.time()
                     self._bus = (self._busy(now), now)
-                    pending = loop.run_in_executor(None, stamped, now)
+                    pending = loop.run_in_executor(_THREADS, stamped, now)
                     answer = await asyncio.shield(pending)
                     if spent:
                         # it came back after its budget, and reached this task before the
@@ -1790,8 +1806,9 @@ class LeRobotReal:
         every later call until it returns, so a webcam whose open or release takes a few
         seconds (routine on Windows) would have refused the arm's own disconnect and left
         torque on. A camera that hangs here is simply abandoned, and says so."""
+        loop = asyncio.get_running_loop()
         try:
-            return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout_s)
+            return await asyncio.wait_for(loop.run_in_executor(_THREADS, fn, *args), timeout_s)
         except TimeoutError:
             raise TimeoutError(
                 f"{getattr(fn, '__name__', 'the call')}() did not return within {timeout_s:g} s"
@@ -2078,10 +2095,19 @@ class LeRobotReal:
             # the seam did not take, so the disconnect below releases torque after all. Saying
             # the arm is being held when it is about to be let go is worse than saying nothing.
             self.close_note = TORQUE_COULD_NOT_BE_KEPT.format(why=why)
+        # a close after a close finds the port shut, and that is no release going wrong
+        connected = self._port_is_open()
         disconnected = False
         with contextlib.suppress(Exception):
-            await self._call(self._robot.disconnect, deadline_s=5.0)  # up.SO_DISCONNECT_TORQUE
+            await self._call(
+                self._robot.disconnect, deadline_s=DISCONNECT_S
+            )  # up.SO_DISCONNECT_TORQUE
             disconnected = True
+        if why is None and connected and not disconnected and releases is not False:
+            # that was the call that lets go of the arm, and it raised or never came back, so
+            # some motors may have let go and some not, and every other line here is about an
+            # arm the close knows the state of
+            self.close_note = self.RELEASE_NOT_KNOWN
         if why is None and self._release_refused and disconnected and releases is not False:
             # only once the disconnect came back, because its `Torque_Enable` 0 writes raise on
             # a bus that lost them, and "the close took torque off" is a thing to say only of a
@@ -2095,6 +2121,17 @@ class LeRobotReal:
         if self.rest_pose is None:
             return TORQUE_LEFT_ON_WITHOUT_A_POSE.format(name=self.registered_name or UNNAMED)
         return torque_left_on(why, self.registered_name)
+
+    RELEASE_NOT_KNOWN = TORQUE_RELEASE_NOT_KNOWN
+    """What the close says of a release that raised or did not come back, which the simulator words
+    for a simulated arm."""
+
+    def _port_is_open(self) -> bool:
+        """Whether the follower says it is connected. True where it will not say, so a release
+        that went wrong on an odd one is still said of."""
+        with contextlib.suppress(Exception):
+            return bool(self._robot.is_connected)
+        return True
 
     KEEPS_TORQUE_WITHOUT_A_POSE = True
     """Whether the close keeps the torque of an arm with no rest pose recorded. True for an arm on
@@ -2260,7 +2297,9 @@ class LeRobotReal:
             if camera is None:
                 continue
             try:
-                obs[name] = await asyncio.to_thread(camera.read_latest)
+                obs[name] = await asyncio.get_running_loop().run_in_executor(
+                    _THREADS, camera.read_latest
+                )
             except Exception as e:
                 self.camera_errors[name] = f"{type(e).__name__}: {e}"
                 return f"the {name} camera gave no frame ({self.camera_errors[name]})"
@@ -2282,7 +2321,7 @@ class LeRobotReal:
         if camera is None:
             return None
         try:
-            frame = await asyncio.to_thread(camera.read_latest)
+            frame = await asyncio.get_running_loop().run_in_executor(_THREADS, camera.read_latest)
             image = Image.fromarray(np.asarray(frame))  # up.CAMERA_COLOR_MODE_DEFAULT: RGB
         except Exception as e:
             self.camera_errors[name] = f"{type(e).__name__}: {e}"
