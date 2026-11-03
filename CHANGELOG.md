@@ -9,6 +9,75 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **Somebody at the arm no longer quits past its close by pressing again.** A third Ctrl-C at the end
+  of a `--by-hand` run, or at the questions over a fold that missed, raised through whatever it landed
+  on and past the close, `run_end` and the summary, and left an energised arm with nothing said of it.
+  So did a second one past the stop in `quackd robot release`. From the first of those questions to the
+  end of the run, from the moment `quackd robot release` has connected the arm, and from the fold in
+  `quackd doctor`, a Ctrl-C now does what `q` does and no more, however often it comes. Everything
+  there ends on a press or has a deadline of its own. Anywhere else in a run, Ctrl-C twice quits at
+  once, as the panel says. What changes for you, under the safety rule: there a Ctrl-C no longer gets
+  you out at once, and `Ctrl-\` where there is one, or closing the window, does.
+- **A terminal survives a kill nothing can catch.** A SIGKILL or a crash in native code left it out of
+  its line mode and echoing nothing, and under a wrapper such as `uv run`, which exits normally, no
+  shell put it back, so what was typed next went unseen until somebody typed `stty sane`, unseen. A
+  small process of its own now puts it back, and only if the terminal is still as the run left it, so
+  a program that has taken it over since is left alone.
+- **`q` goes on working after a SIGSTOP from outside and an `fg`.** A shell that left the terminal
+  reading lines there left `q` doing nothing until somebody pressed Enter, under every line that says
+  it needs none. The key thread now takes the terminal back out of line mode, and leaves it alone
+  while the process is in its background.
+- **What is typed shows on a terminal opened only to read,** as `< /dev/tty` opens it. Every key
+  worked there and nothing typed reached the screen, a question's answer included.
+- **A key set to repeat slowly no longer answers a question that moves or drops an arm.** A bare Enter
+  had to stand 0.45 s clear on either side of it, so a key repeating once a second answered the first
+  such question it met. It now has to come 2 s after the Enter before it as well, and still stand
+  0.45 s clear after it, so one press answers as quickly as it did. Pressing it again and again answers
+  once you stop and press it again, as before, only later, and the first Enter passed by now says so:
+  `that Enter answered nothing, because it came too soon after the question or too close to another:
+  take your finger off it, wait 2 s and press it once`.
+- **A gripper call has to say which way.** `gripper` on the SO-101, the XLeRobot and the AlohaMini
+  took `open` with a default of true, and the ToddlerBot's `grip` took `close`, so a model's call with
+  no arguments, or a vendor's `null`, opened the arm's jaws on whatever was in them. It is refused at
+  the `params` gate now and goes back to the pilot to correct, with nothing sent. What changes for you,
+  under the safety rule: a script or a client that sends `gripper` with nothing has to name `open`.
+- **A `stop` from beside a verb is heard on the other bodies too.** The AlohaMini's `lift` sent its
+  target again on the next tick, and its `home_arms` sent the second arm off, and the ToddlerBot's
+  `search_scan` looked again, and each of those undid the stop. They end where they are now. The
+  XLeRobot's and the AlohaMini's `move_joints` and `gripper`, the ToddlerBot's `look`, `stand`,
+  `perform` and `grip`, and `stand_up` on the Microduck and the Huebot went on waiting and answered as
+  though nothing had happened, `performed` for a motion the stop had ended. They end at once now and
+  say so, marked the way the arm's are, so `abort_when` does not count them as failures. On the
+  XLeRobot and the AlohaMini the answer says the arm goes on to the goal it was sent, since a stop on
+  those bodies leaves arm goals alone.
+- **The status line says what a run is doing once it has been stopped, and who a question waits on.**
+  After a Ctrl-C or `q` it went on saying `waiting on` the model nobody was waiting for, and the
+  cancelled call and the verb then wrote over `stopping the robot`. And under a question it said
+  `finishing`, counting up, where it now says `waiting for you`.
+
+### Known limitations
+
+- **None of the fixes above has met a robot.** They ran on the mocks, in a real Windows console, and
+  on Linux under a real `bash`. The SO-101 still owes what 0.30.1 lists, and now also a few presses
+  in a row during its close.
+- **A key set to repeat slower than once every 2 s still cannot be told from somebody pressing it.** A
+  terminal says nothing of a key coming up, so nothing that reads one can do better by timing. Windows'
+  keyboard settings go no slower than 2.5 a second, and its accessibility settings can go far slower.
+- **A `stop` leaves the XLeRobot's and the AlohaMini's arm goals alone,** as their hosts' own stop does,
+  because a goal built from an observation a few cycles old moves an arm rather than holding it. So an
+  arm on those bodies finishes the move it was sent.
+- **`kick`, `grab`, `sit` and `stand` on the Microduck and the Huebot, and `express` on the Open Duck
+  Mini, do not read a stop beside them.** Each hands the robot one skill and sends nothing after it,
+  so nothing undoes the stop, and what comes back is read from the robot afterwards.
+
+### Documentation
+
+- **`RELEASING.md` says what a `uvx` refusing straight after an upload means.** After 0.30.1's upload
+  every simple index said 2 files and `uvx` from an empty cache still found no solution for about five
+  minutes, because the poll asks the origin and a client with an empty cache takes what the CDN holds.
+
 ## [0.30.1] — 2026-11-02
 
 0.30.1 fixes what going through the SO-101's examples against 0.30.0 found, most of it between a person

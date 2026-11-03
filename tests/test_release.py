@@ -260,6 +260,21 @@ async def test_the_release_where_it_stands_is_the_second_door() -> None:
     assert "the arm is in your hands, so put it down" in (settled.said or "")
 
 
+async def test_two_questions_over_an_arm_keep_every_press_short_of_quitting() -> None:
+    """Somebody is at the arm from the first question on, and the third Ctrl-C used to go past the
+    close with the arm energised and nothing said of it (`KillSwitch.stay_to_the_close`)."""
+    told: list[str] = []
+    person, arm = Person(False), Arm()
+    person.stay_to_the_close = lambda: told.append(f"after {len(person.asked)} questions")  # type: ignore[attr-defined]
+    fold, _made = _folds(MISSED)
+
+    async def stop() -> None:
+        return None
+
+    await settle_missed_fold(arm, person, MISSED, fold=fold, stop=stop)
+    assert told == ["after 0 questions"]
+
+
 # ── settle_missed_fold ────────────────────────────────────────────────────────────────
 
 

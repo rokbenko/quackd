@@ -464,6 +464,11 @@ async def settle_missed_fold(
     (`RestResult.limp`): `LIMP_AFTER_A_MISS` says so instead, and `kept`."""
     if missed.limp:
         return _limp(missed, event=event, note=note)
+    # somebody is at the arm from here on, so a Ctrl-C is a press and quits nothing, or the third
+    # of them went past the close with the arm energised and nothing said of it
+    stay = getattr(person, "stay_to_the_close", None)
+    if stay is not None:
+        stay()
     first = CLEAR_THE_WAY.format(why=missed.reason, seconds=CLEAR_THE_WAY_S)
     answer = await ask(person, first, CLEAR_THE_WAY_S, asked=asked)
     if answer != ENTER:

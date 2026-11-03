@@ -279,7 +279,7 @@ naming it in sentences nobody needs.
 | `report_state` | core | joint positions in degrees, whether torque is on, each servo's temperature, whether something is held, and a clause for any joint that reads more than 2 degrees past its travel |
 | `stop` | core | hold: the present position becomes the goal of every body joint inside its travel. Never limp (see Safety) |
 | `move_joints(positions, duration_s)` | extension | goal angles for one or more of the six joints, walked there across `duration_s` seconds one goal a tick at 10 Hz, then re-sent until the measurement arrives; the step cap is the ceiling on speed, and a joint that stops short is a failure |
-| `gripper(open)` | extension | open or close the gripper, and report where it stopped |
+| `gripper(open)` | extension | open or close the gripper, and report where it stopped. `open` has no default: a call that does not say which way is refused, since opening lets go of what it holds |
 | `place` | extension | open the gripper where the arm is; needs `holding` |
 | `pick(target, max_s)` | extension, **confirm** | one skill intent; the arm's learned policy runs its own observe/act loop at its own rate until something is held or the time is up, told a target held to the one line of plain text `manipulate`'s instruction is |
 | `manipulate(instruction)` | extension, **confirm** | one skill intent. The arm's learned policy is told one short subtask and runs for one segment, which ends on its time, its chunks or the arm no longer moving. It never says the task is done: the pilot looks at the arm to judge |
@@ -2011,8 +2011,8 @@ The order below is the whole of the feature, and none of it is a step you can sk
    and the person who put it there is the one who should take it out. That wait is bounded at
    **120 seconds**, since a run has to end even when the room is empty.
 7. **Then the fold.** Only a bare Enter is a yes: a line with anything typed on it is a no, and
-   an Enter close behind a `q`, too soon to have read the question, or from a key held down, is
-   passed by. It drives the
+   an Enter close behind a `q`, too soon to have read the question, within 2 seconds of the last
+   one, or from a key held down, is passed by, and the first one passed by says so. It drives the
    gripper all the way open, every send of it through the logged transport, so it is in the record
    like every other intent. A gripper that cannot get
    there is said out loud, and the arm stays where it is, because you have just been told to
@@ -2124,8 +2124,8 @@ left out):
 stays shut, the stage is recorded as skipped, and the rest of the teardown runs anyway, which
 is the difference between a run that ends with the arm folded and a record written and one that
 leaves an energised arm and no transcript. The 3 seconds still follow, and a press in them or in
-the fold holds the arm where it is, with the close and the record still to come. Keep pressing
-Ctrl-C after that and quackd can still quit without them, with the arm holding:
+the fold holds the arm where it is, with the close and the record still to come, and from the
+question to the close no press quits, however many there are:
 
 ```
 ·  hand    skipped: interrupted while waiting

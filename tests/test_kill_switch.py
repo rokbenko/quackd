@@ -13,13 +13,14 @@ from __future__ import annotations
 import asyncio
 import gc
 import io
+import signal
 import sys
 import time
 from typing import Any
 
 import pytest
 
-from quackd.safety import ENTER_ALONE_S, TYPED_AHEAD_S, KillSwitch
+from quackd.safety import ENTER_TOO_SOON, TYPED_AHEAD_S, KillSwitch
 
 
 def switch() -> tuple[KillSwitch, list[str]]:
@@ -293,6 +294,7 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     `TYPED_AHEAD_S` of the question being put is passed by, and the wait goes on to the next."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.2)
     monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.1)
+    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.1)
     ks, _ = switch()
     ks._heard_enter("")  # already in the terminal when the question was put
     loop = asyncio.get_running_loop()
@@ -318,6 +320,7 @@ async def test_a_key_held_down_answers_no_deliberate_question(
     it away is the next one. And the person who has let go of the key can still answer."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
     monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)  # room for a loaded runner's sleeps
+    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.5)
     ks, _ = switch()
     loop = asyncio.get_running_loop()
 
@@ -340,16 +343,97 @@ async def test_a_key_held_down_answers_no_deliberate_question(
     assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
 
 
-async def test_enter_pressed_again_and_again_at_a_human_pace_still_gets_through() -> None:
-    """A question that took only an Enter out of a long quiet would lock out the person pressing
-    it because nothing seemed to happen."""
+async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_stopping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It takes quiet before it to be an answer, so somebody pressing it because nothing seemed to
+    happen would be locked out with no idea why. They are told, once, and the next press after
+    they stop answers."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.05)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.15)
+    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.6)
     ks, _ = switch()
     loop = asyncio.get_running_loop()
-    pace = ENTER_ALONE_S * 1.4
+    told: list[str] = []
     ks._heard_enter("")  # they began before the question was up
-    for n in range(1, 8):
-        loop.call_later(TYPED_AHEAD_S + n * pace, ks._heard_enter, "")
-    assert await ks.wait_for_enter(timeout_s=8.0, until_abort=False, deliberate=True) is True
+    for n in range(1, 5):
+        loop.call_later(0.05 + n * 0.1, ks._heard_enter, "")
+    loop.call_later(0.05 + 4 * 0.1 + 0.8, ks._heard_enter, "")  # they stopped, then pressed once
+    got = await ks.wait_for_enter(
+        timeout_s=20.0, until_abort=False, deliberate=True, said=told.append
+    )
+    assert got is True
+    assert told == [ENTER_TOO_SOON], "said once a wait, at the first it passes by"
+
+
+async def test_the_terminal_says_when_it_passes_an_enter_by(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The person at the terminal is who has to be told, and nobody else reads this."""
+    from quackd.cli import _TerminalHandOff
+
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.1)
+    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.3)
+    ks, _ = switch()
+    hand = _TerminalHandOff()
+    hand.bind(ks)
+    said: list[str] = []
+    monkeypatch.setattr(hand, "say", said.append)
+    loop = asyncio.get_running_loop()
+    loop.call_later(0.05, ks._heard_enter, "")
+    loop.call_later(0.1, ks._heard_enter, "")
+    came = await hand.wait("open?", timeout_s=0.25, until_abort=False, deliberate=True)
+    assert came is False
+    assert said == ["open?", ENTER_TOO_SOON]
+
+
+async def test_an_answer_that_came_in_time_is_told_nothing() -> None:
+    ks, _ = switch()
+    told: list[str] = []
+    asyncio.get_running_loop().call_later(TYPED_AHEAD_S + 0.1, ks._heard_enter, "")
+    got = await ks.wait_for_enter(
+        timeout_s=20.0, until_abort=False, deliberate=True, said=told.append
+    )
+    assert got is True
+    assert told == []
+
+
+async def test_a_press_told_to_stay_quits_nothing_however_often_it_comes() -> None:
+    """The first Ctrl-C hands the signal back, so the next reach the event loop's handler, and the
+    third raises past everything the teardown guards. Somebody at the jaws of an arm presses
+    again and again, and the close and the record have to come all the same."""
+    before = signal.getsignal(signal.SIGINT)
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    try:
+        signal.raise_signal(signal.SIGINT)
+        assert ks.presses == 1
+        ks.stay_to_the_close()
+        for _ in range(6):
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.sleep(0)
+        assert ks.presses == 7, "each one is still a press, for whatever is watching for one"
+        assert ks.abort.is_set()
+        ks.stay_to_the_close()  # twice is once
+        signal.raise_signal(signal.SIGINT)
+        assert ks.presses == 8
+    finally:
+        ks.uninstall()
+    assert signal.getsignal(signal.SIGINT) is before, "and it is put back as the switch found it"
+
+
+async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:
+    before = signal.getsignal(signal.SIGINT)
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    try:
+        ks.stay_to_the_close()
+        signal.raise_signal(signal.SIGINT)
+        assert ks.presses == 1
+    finally:
+        ks.uninstall()
+    assert signal.getsignal(signal.SIGINT) is before
 
 
 async def test_an_enter_twice_in_a_breath_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:

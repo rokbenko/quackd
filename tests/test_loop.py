@@ -3336,6 +3336,21 @@ async def test_an_arm_that_slipped_as_torque_came_on_is_not_run_from(tmp_path: P
     assert not any("limp" in note for note in notes), "torque came on; nothing is limp"
 
 
+async def test_somebody_asked_about_the_gripper_is_at_the_arm_to_the_close(
+    tmp_path: Path,
+) -> None:
+    """From the question on a Ctrl-C quits nothing (`KillSwitch.stay_to_the_close`), so it is told
+    before the question is put, and on a run with no hand-back, whose second press quits at once
+    as the panel says, it is never told at all."""
+    mock = LeRobotMock(rest_pose=REST)
+    told: list[int] = []
+    person = ScriptedPerson(mock, places=PLACED, answers=[True, False])
+    person.stay_to_the_close = lambda: told.append(person.waits)  # type: ignore[attr-defined]
+    result = await run_duck(_by_hand(mock, person, tmp_path))
+    assert result.outcome == "success", result.reason
+    assert told == [1], "told once, after the question that starts the run and before the last"
+
+
 async def test_nobody_answers_the_hand_back_so_the_gripper_stays_shut(tmp_path: Path) -> None:
     """The run is over, the arm is holding where the pilot left it, and the person who put
     something in the gripper is not in the room. The ask is bounded for exactly this: a run

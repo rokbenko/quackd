@@ -352,8 +352,11 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   `go_to`, `search_scan` and `approach_and` read it as quackd ships them. Each comes back failed,
   saying why, and for a walk or a scan how far it got, and `abort_when` does not count it as a
   failure. MOSS's own verbs read it too, and so do the arm's `move_joints`, `gripper` and `place`,
-  and each is marked the same way. A verb another adapter brings may not read it yet, the
-  ToddlerBot's own `search_scan` among them: the stop is still sent, and the verb is not ended by it
+  and what the XLeRobot, the AlohaMini and the ToddlerBot bring, and `stand_up` on the Microduck and
+  the Huebot, and each is marked the same way. On the XLeRobot and the AlohaMini the arm then goes on
+  to the goal it was sent, since their stop leaves arm goals alone, and the answer says so. A skill
+  the robot plays out with nothing sent after it, a `kick` or a `grab`, does not read it: the stop is
+  still sent, and the verb is not ended by it
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - Every robot connects at startup, in the order given; if one cannot, the server stops
   and disconnects the ones that did, rather than fronting a flock with a hole in it.

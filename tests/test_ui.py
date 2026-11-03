@@ -301,6 +301,42 @@ def test_the_status_line_follows_a_run_through_its_phases() -> None:
         assert expected in status.__rich__().plain, event.kind
 
 
+def test_the_status_line_says_stopping_from_a_press_until_the_run_finishes() -> None:
+    """The kill switch says nothing to the event stream, so the line went on saying `waiting on` a
+    model nobody was waiting for now, and the cancelled call and the verb then wrote over it."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("llm_request", 0.0, {"provider": "openai", "model": "gpt-6-sol"}))
+    assert "waiting on openai" in status.__rich__().plain
+    status.stopping()
+    for event in (
+        LogEvent("llm", 0.0, {"provider": "openai", "error": "cancelled"}),
+        LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}),
+        LogEvent("observation", 0.0, {"text": "[step 3/40 · llm calls 3/40, 0.1/5 min]"}),
+        LogEvent("note", 0.0, {"text": "moving to the rest pose"}),
+    ):
+        status.sink(event)
+        assert "stopping the robot" in status.__rich__().plain, event.kind
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "aborted"}))
+    assert "finishing" in status.__rich__().plain
+
+
+def test_the_status_line_says_who_a_question_waits_on_and_goes_back_after() -> None:
+    """It said `finishing` or `stopping the robot`, counting up, under a question wanting Enter."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "success"}))
+    with status.asking():
+        assert "waiting for you" in status.__rich__().plain
+    assert "finishing" in status.__rich__().plain
+    status.stopping()
+    with status, ui.asking_a_person():
+        assert "waiting for you" in status.__rich__().plain
+    assert "stopping the robot" in status.__rich__().plain
+    with ui.asking_a_person():  # with no status line up, it is nothing at all
+        pass
+
+
 def test_a_status_line_that_cannot_draw_never_counts_as_a_dropped_event() -> None:
     """It is decoration. The count is what the run could not *show*, and what shows things
     is the log."""

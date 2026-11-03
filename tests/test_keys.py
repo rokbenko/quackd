@@ -32,7 +32,14 @@ from quackd.keys import (
     console_keys,
     is_a_console,
 )
-from quackd.safety import ASK_POLL_S, ENTER_ALONE_S, TYPED_AHEAD_S, KillSwitch, _Enter
+from quackd.safety import (
+    ASK_POLL_S,
+    ENTER_ALONE_S,
+    ENTER_QUIET_S,
+    TYPED_AHEAD_S,
+    KillSwitch,
+    _Enter,
+)
 
 
 class FakeConsole:
@@ -325,22 +332,59 @@ def _enters(*gaps: float) -> KillSwitch:
     return ks
 
 
-def test_a_bare_enter_has_to_stand_alone_on_both_sides() -> None:
+def test_a_bare_enter_has_to_come_after_quiet_and_stand_alone() -> None:
+    quiet = ENTER_QUIET_S * 1.1
     alone = ENTER_ALONE_S * 1.1
     close = ENTER_ALONE_S * 0.9
-    assert _enters(alone)._line_since(-math.inf) == "", "one press, and nothing since"
-    assert _enters(alone, alone)._line_since(-math.inf) == ""
-    assert _enters(alone, close)._line_since(-math.inf) is None, "pressed twice"
+    assert _enters(quiet)._line_since(-math.inf) == "", "one press, and nothing since"
+    assert _enters(quiet, alone)._line_since(-math.inf) == ""
+    assert _enters(quiet, close)._line_since(-math.inf) is None, "pressed twice"
     assert _enters(close)._line_since(-math.inf) is None, "behind another"
-    assert _enters(*[close] * 20)._line_since(-math.inf) is None, "a key held down, however slow"
-    assert _enters(100.0, 0.03, 0.03, alone)._line_since(-math.inf) == "", (
+    assert _enters(*[close] * 20)._line_since(-math.inf) is None, "a key held down"
+    assert _enters(100.0, 0.03, 0.03, quiet)._line_since(-math.inf) == "", (
         "let go, and pressed again"
     )
 
 
+@pytest.mark.parametrize("repeat", [0.6, 1.0, 1.8])
+def test_a_key_set_to_repeat_slowly_is_still_a_key_held_down(repeat: float) -> None:
+    """Each of these stands alone for longer than `ENTER_ALONE_S`, so all that gives it away is the
+    Enter before it, and the question that drops an arm was answered by the second of them."""
+    assert repeat < ENTER_QUIET_S
+    assert _enters(*[repeat] * 20)._line_since(-math.inf) is None
+
+
 def test_the_slowest_repeat_windows_has_is_a_key_held_down() -> None:
     """SPI_SETKEYBOARDSPEED's slowest is about 2.5 repetitions a second."""
-    assert ENTER_ALONE_S > 1 / 2.5
+    assert ENTER_QUIET_S > 1 / 2.5
+
+
+def test_an_enter_is_passed_by_for_good_only_when_nothing_can_make_it_an_answer() -> None:
+    """What a person is told of. One still standing alone may yet be the answer, and telling them
+    it was not would have them press again and spoil it."""
+    quiet = ENTER_QUIET_S * 1.1
+    close = ENTER_ALONE_S * 0.9
+    assert not _enters(quiet)._passed_by(-math.inf), "still waiting to be sure of"
+    assert _enters(quiet, close)._passed_by(-math.inf), "another close behind it"
+    assert not _enters(quiet, ENTER_QUIET_S * 1.1)._passed_by(-math.inf), "two, each after quiet"
+    assert _enters(close)._passed_by(-math.inf), "too close behind another"
+    assert not _enters()._passed_by(-math.inf), "no Enter at all"
+    typed = KillSwitch(asyncio.Event())
+    typed._enters.append(_Enter(time.monotonic(), 0.01, "n", True))
+    assert not typed._passed_by(-math.inf), "a line with something on it is a no, and answers"
+    habit = KillSwitch(asyncio.Event())
+    habit._enters.append(_Enter(time.monotonic(), 0.01, "", False))
+    assert not habit._passed_by(-math.inf), "one behind a `q` answers nothing and was asked nothing"
+
+
+def test_an_enter_as_a_question_goes_up_is_passed_by_as_too_soon() -> None:
+    asked = time.monotonic()
+    ks = KillSwitch(asyncio.Event())
+    ks._enters.append(_Enter(asked + TYPED_AHEAD_S * 0.5, ENTER_QUIET_S * 2, "", True))
+    assert ks._passed_by(asked)
+    before = KillSwitch(asyncio.Event())
+    before._enters.append(_Enter(asked - 1.0, ENTER_QUIET_S * 2, "", True))
+    assert not before._passed_by(asked), "from before the question, so said to no question"
 
 
 def test_a_no_is_a_no_as_soon_as_it_is_read() -> None:
@@ -869,6 +913,164 @@ def test_a_run_killed_with_no_exit_still_puts_the_terminal_back(pty_pair: Any) -
     finally:
         child.kill()
     assert _settings(slave) == before
+
+
+def _settled(slave: int, wanted: list[Any]) -> list[Any]:
+    """The terminal's settings, once they are `wanted` or it is clear they will not be."""
+    end = time.monotonic() + 20
+    while (found := _settings(slave)) != wanted and time.monotonic() < end:
+        time.sleep(0.02)
+    return found
+
+
+@posix_only
+def test_a_run_killed_outright_still_puts_the_terminal_back(pty_pair: Any) -> None:
+    """A SIGKILL runs nothing in the process, and under a wrapper such as `uv run` no shell puts it
+    back either: what is typed next goes unseen until somebody types `stty sane`, unseen."""
+    _, slave = pty_pair
+    before = _settings(slave)
+    child = _at_a_terminal("ks.uninstall()", slave)
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "ready True"
+        assert _settings(slave) != before, "it had the terminal out of its line mode"
+        child.kill()
+        child.wait(timeout=20)
+    finally:
+        child.kill()
+    assert _settled(slave, before) == before
+
+
+@posix_only
+def test_a_guard_leaves_alone_a_terminal_somebody_else_has_since_changed(pty_pair: Any) -> None:
+    """A program in the shell's foreground has the terminal the way it wants it by then, and going
+    back to the mode this run found would break it under them."""
+    import termios
+
+    _, slave = pty_pair
+    child = _at_a_terminal("ks.uninstall()", slave)
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "ready True"
+        theirs = termios.tcgetattr(slave)
+        theirs[3] &= ~termios.ISIG
+        termios.tcsetattr(slave, termios.TCSANOW, theirs)
+        theirs = _settings(slave)
+        child.kill()
+        child.wait(timeout=20)
+    finally:
+        child.kill()
+    time.sleep(1.0)  # what a guard takes to act on the pipe closing, were it going to
+    assert _settings(slave) == theirs
+
+
+@posix_only
+def test_a_run_that_closes_stands_its_guard_down(pty_pair: Any) -> None:
+    """It says so down the pipe and is gone, and what the mode does after that is not its affair."""
+    import termios
+
+    _, slave = pty_pair
+    before = _settings(slave)
+    keys = PosixKeys(slave)
+    guard = keys._guard
+    assert guard is not None
+    keys.close()
+    assert guard._process.poll() is not None, "a guard outlived the run it was guarding"
+    assert _settings(slave) == before
+    keys.close()  # and again, from the signal or `atexit` that gets there second
+    changed = termios.tcgetattr(slave)
+    changed[3] &= ~termios.ISIG
+    termios.tcsetattr(slave, termios.TCSANOW, changed)
+    time.sleep(0.2)
+    assert _settings(slave) != before, "a guard stood down put the terminal back all the same"
+
+
+@posix_only
+def test_a_guard_that_will_not_start_costs_nothing_but_the_guard(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, slave = pty_pair
+    before = _settings(slave)
+    monkeypatch.setattr(sys, "executable", "")
+    keys = PosixKeys(slave)
+    assert keys._guard is None
+    keys.close()
+    assert _settings(slave) == before
+
+
+@posix_only
+def test_a_terminal_put_back_in_lines_under_a_run_is_taken_out_again(pty_pair: Any) -> None:
+    """A SIGSTOP from outside and an `fg` leave the terminal as the shell wants it, reading lines:
+    `q` then did nothing until somebody pressed Enter, under every line that promises it does."""
+    import termios
+
+    master, slave = pty_pair
+    before = termios.tcgetattr(slave)
+    keys = PosixKeys(slave)
+    read: list[str] = []
+    reading = threading.Thread(target=lambda: read.append(keys.read()), daemon=True)
+    reading.start()
+    try:
+        termios.tcsetattr(slave, termios.TCSANOW, before)  # as the shell leaves it behind an `fg`
+        end = time.monotonic() + 20
+        while _lflag(slave) & termios.ICANON and time.monotonic() < end:
+            time.sleep(0.01)
+        assert not _lflag(slave) & termios.ICANON, "still reading lines"
+        assert not _lflag(slave) & termios.ECHO
+        os.write(master, b"q")
+        reading.join(20)
+        assert read == ["q"], "the key still took an Enter"
+    finally:
+        keys.close()
+        reading.join(5)
+
+
+@posix_only
+def test_the_mode_is_not_taken_back_from_the_background_or_after_a_close(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changing a terminal's mode from its background stops the whole process, robot and all. And
+    a close has put the terminal back for good: one last look must not undo that."""
+    import termios
+
+    _, slave = pty_pair
+    before = termios.tcgetattr(slave)
+    keys = PosixKeys(slave)
+    termios.tcsetattr(slave, termios.TCSANOW, before)
+    monkeypatch.setattr("quackd.keys._behind_the_terminal", lambda _fd: True)
+    keys._keep_the_mode()
+    assert _lflag(slave) & termios.ICANON, "it changed the mode from behind the terminal"
+    monkeypatch.undo()
+    keys._keep_the_mode()
+    assert not _lflag(slave) & termios.ICANON
+    keys.close()
+    assert _lflag(slave) & termios.ICANON
+    keys._keep_the_mode()
+    assert _lflag(slave) & termios.ICANON, "the look after a close took the terminal back"
+
+
+@posix_only
+def test_a_terminal_opened_only_to_read_still_shows_what_is_typed() -> None:
+    """`< /dev/tty` opens it that way. Every key still worked, and nothing typed at a question
+    reached the screen, since this drew on the same descriptor it read."""
+    import pty
+
+    master, slave = pty.openpty()
+    only_reads = os.open(os.ttyname(slave), os.O_RDONLY | os.O_NOCTTY)
+    keys = PosixKeys(only_reads)
+    try:
+        os.write(master, b"x\r")
+        assert [keys.read(), keys.read()] == ["x", "\r"]
+        drawn = b""
+        wanted = b"x\r\n"
+        while len(drawn) < len(wanted):
+            drawn += os.read(master, 64)
+        assert drawn == wanted
+    finally:
+        keys.close()
+        os.close(only_reads)
+        os.close(slave)
+        os.close(master)
 
 
 @posix_only

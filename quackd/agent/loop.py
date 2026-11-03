@@ -1274,8 +1274,9 @@ class AgentLoop:
         wait would swallow the cancellation.
 
         A run that handed the arm to somebody has them at the jaws at this point, whichever way
-        it ended, so there a fresh press stops the fold even after a press ended the run, a later
-        Ctrl-C does too rather than quitting, and a hand-back that held the arm means no fold."""
+        it ended, so there a fresh press stops the fold even after a press ended the run, every
+        Ctrl-C does too rather than quitting (`_stay_to_the_close`), and a hand-back that held the
+        arm means no fold."""
         try:
             if self._no_fold:
                 return None
@@ -1305,7 +1306,8 @@ class AgentLoop:
         once, as the panel says it does. Not once somebody has been asked about the gripper: a
         hand near the jaws presses twice, and the second press landing on a stop, a read or the
         close went straight past the close, `run_end` and the summary, and left an energised arm
-        with no record of what became of it."""
+        with no record of what became of it. A press no longer reaches here as an interrupt from
+        then on (`_stay_to_the_close`), and this is for a loop off the main thread, where it can."""
         if self._fold_watch is None:
             return (Exception,)
         return (Exception, asyncio.CancelledError, KeyboardInterrupt)
@@ -1314,8 +1316,7 @@ class AgentLoop:
         """`step` to its end through a press, once somebody has been asked about the gripper, and
         every step this is for has a deadline of its own. A press cut a close short where it
         landed, on a camera's or a read, and swallowing that left the arm energised and connected,
-        with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up. The Ctrl-C after
-        this one still quits, through the event loop and past this, as the panel says it does."""
+        with `SUCCESS` on the panel and nobody told. Anywhere else it goes on up."""
         if self._fold_watch is None:
             return await step
         running = asyncio.ensure_future(step)
@@ -1323,6 +1324,14 @@ class AgentLoop:
             with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
                 await asyncio.wait({running})
         return running.result()
+
+    def _stay_to_the_close(self, hand: HandOff) -> None:
+        """Somebody is at the arm, so from here on a Ctrl-C is a press like `q` and quits nothing
+        (`KillSwitch.stay_to_the_close`). The third used to quit, through the event loop and past
+        everything this teardown guards, with the arm energised and nothing on the record."""
+        stay = getattr(hand, "stay_to_the_close", None)
+        if stay is not None:
+            stay()
 
     def _watch_for_a_press(self, hand: HandOff) -> None:
         """One watch from the end of the question to the end of the fold, counted from once. The
@@ -1670,6 +1679,7 @@ class AgentLoop:
         hand = self.cfg.hand_off
         if hand is None or self.cfg.dry_run:
             return
+        self._stay_to_the_close(hand)
         if getattr(self.cfg.transport, "in_hand", None) is True:
             refused = self._not_taken or getattr(self.cfg.transport, "refused_hold", None)
             known = refused if isinstance(refused, HandResult) else None

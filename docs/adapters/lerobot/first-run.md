@@ -1261,7 +1261,8 @@ skipped the rest move, the close, the run's own end record and the summary, and 
 energised arm holding a pencil with nothing written down about the run that put it there. The
 arm still gives you 3 seconds before it folds, and a Ctrl-C or `q` in them or in the fold holds
 it where it is, with nothing released, and the close, the end record and the summary still come.
-Keep pressing Ctrl-C after that and quackd can still quit without them, with the arm holding.
+Keep pressing Ctrl-C and nothing changes: from that question to the close no press quits, so
+they always come. `Ctrl-\` where there is one, or closing the window, is what kills it.
 
 Section 07's [two questions](#what-a-run-then-does-with-it), after a fold back to the rest pose
 that missed, open one more window, an exception of the same kind. **During the second fold**,
@@ -1271,8 +1272,8 @@ still on its way, keeps torque on, and says
 `the fold was stopped where it was, and nothing was released: torque is as the fold left it`.
 The run then closes as it would have, with the close's own line after that one, and still writes
 its end record and its summary. A Ctrl-C or `q` at either question ends that question without an
-Enter, which keeps torque on too. A third press lands somewhere without that guard and still
-quits at once. None of this has been tried on a real arm.
+Enter, which keeps torque on too. From the first question to the close no press quits, however
+many there are. None of this has been tried on a real arm.
 
 > [!CAUTION]
 > If any of these five surprises you, stop. Cut power and read

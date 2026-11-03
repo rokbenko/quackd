@@ -2966,6 +2966,82 @@ def test_doctor_json_over_an_arm_with_no_rest_pose_promises_no_question(
     assert arm.torque is True and arm.torque_disabled == 0
 
 
+def test_a_press_says_stopping_on_the_status_line_of_a_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kill switch says nothing to the event stream, so it is told directly, and first: what
+    it prints draws the line under it, and the old words were drawn once more."""
+    from rich.console import Console
+
+    from quackd.safety import KillSwitch
+    from quackd.ui import RunStatus
+
+    order: list[str] = []
+    stopping = RunStatus.stopping
+    install = KillSwitch.install
+    printing = Console.print
+
+    def says(self: RunStatus) -> None:
+        order.append("stopping")
+        stopping(self)
+
+    def prints(self: Console, *objects: Any, **kwargs: Any) -> None:
+        if "kill switch" in " ".join(str(o) for o in objects):
+            order.append("printed")
+        printing(self, *objects, **kwargs)
+
+    def pressed_at_once(self: KillSwitch, *, keys: bool = True) -> None:
+        install(self, keys=False)
+        self._fire("test")
+
+    monkeypatch.setattr(RunStatus, "stopping", says)
+    monkeypatch.setattr(Console, "print", prints)
+    monkeypatch.setattr(KillSwitch, "install", pressed_at_once)
+    runner.invoke(
+        app,
+        [
+            "run",
+            "hello-world",
+            "--robot",
+            "microduck:mock",
+            "--no-gif",
+            "--no-memory",
+            "--runs-dir",
+            str(tmp_path),
+        ],
+    )
+    assert order[:2] == ["stopping", "printed"]
+
+
+def test_a_press_stays_from_the_connect_of_a_release_and_from_a_fold_of_doctors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Somebody is at the arm in both, so no press quits past the close that says what became of
+    its torque. Before the arm has connected one still can, since a connect is what it would be
+    leaving, and doctor reaches a fold only once it has read the rest."""
+    from quackd.safety import KillSwitch
+    from tests.test_lerobot_adapter import FakeArm
+
+    connected: list[bool] = []
+    stay = KillSwitch.stay_to_the_close
+
+    def told(self: KillSwitch) -> None:
+        connected.append(True)
+        stay(self)
+
+    monkeypatch.setattr(KillSwitch, "stay_to_the_close", told)
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-s", off=20.0)
+    released = _release(reg, "arm-s", "--yes")
+    assert "folding arm-s to its rest pose" in " ".join(released.output.split()), released.output
+    assert connected == [True], released.output
+    connected.clear()
+    probed = runner.invoke(app, ["doctor", "--robot", "arm-s", "--registry-dir", str(reg)])
+    assert "folding arm-s to its rest pose" in " ".join(probed.output.split()), probed.output
+    assert connected == [True], probed.output
+
+
 def test_doctor_puts_the_ctrl_c_handler_back_before_its_event_loop_closes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

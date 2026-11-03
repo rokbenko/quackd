@@ -109,6 +109,11 @@ real, but it calls `stop_base()`, which zeroes the three wheels and nothing else
 arm and head servos keep holding their last goal. That is not an e-stop, not a torque limit and
 not a `robotd_deadman`, so `native` stays `none` and `extras.deadman_scope` says `base_only`.
 
+**A `stop` stops the wheels and leaves the arms' goals alone, as that watchdog does.** A hold built
+from an observation a few cycles old moves an arm rather than holding it. So a `stop` from beside
+`move_joints` or `gripper` ends the verb at once, and what it answers says the arm or the gripper
+goes on to where it was sent. `gripper` has to say which way: `open` has no default.
+
 ## Units, and the two that are easy to get wrong
 
 - **`theta.vel` on the wire is degrees per second.** quackd's `wz` is rad/s, so the adapter

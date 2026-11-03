@@ -1477,9 +1477,10 @@ class _TerminalHandOff:
         # press is counted on the signal's own thread before the loop is told of it, so one
         # that ended this wait has always been counted by the time it returns
         presses = self.switch.presses
-        came = await self.switch.wait_for_enter(
-            timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate
-        )
+        with ui.asking_a_person():
+            came = await self.switch.wait_for_enter(
+                timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate, said=self.say
+            )
         if came:
             self.ended = "enter"
         elif self.switch.presses > presses:
@@ -1498,6 +1499,11 @@ class _TerminalHandOff:
         ui.note(self.WAIT_ENDED[self.ended])
         return came
 
+    def stay_to_the_close(self) -> None:
+        """From here on a Ctrl-C is a press like `q` and quits nothing (`KillSwitch`)."""
+        if self.switch is not None:
+            self.switch.stay_to_the_close()
+
     def stopped(self) -> Awaitable[None]:
         """What returns when the kill switch fires from now on: a fresh Ctrl-C or `q`.
 
@@ -1507,8 +1513,9 @@ class _TerminalHandOff:
         called rather than when what it returns first runs: the fold is started straight after,
         and a press made as it starts used to fall in between and be taken for an old one. After
         the switch's first press, SIGINT goes back to the event loop's own handler, and every
-        later Ctrl-C reaches the fold as a cancellation instead, which its caller catches; `q`
-        reaches the switch every time, so this is what hears it."""
+        later Ctrl-C reaches the fold as a cancellation instead, which its caller catches, unless
+        a press has been told to stay (`stay_to_the_close`); `q` reaches the switch every time, so
+        this is what hears it."""
         if self.switch is None:  # `bind` runs before anything is folded, so a bug if hit
             raise RuntimeError("the hand-off has no kill switch to watch")
         switch = self.switch
@@ -2819,6 +2826,7 @@ def _run_impl(
     def killed(msg: str) -> None:
         """Always printed, unlike `log`, which is --verbose only. Someone who has just hit
         Ctrl-C on a walking robot needs to see that it registered."""
+        status.stopping()  # first, or the line printed here draws the old words under it
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     ran: list[Any] = []
@@ -3080,6 +3088,7 @@ def _run_pilots_impl(
     )
 
     def killed(msg: str) -> None:
+        status.stopping()
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     async def main() -> Any:
@@ -3344,8 +3353,12 @@ def _run_flock_impl(
     ui.install_logging()
     holder: dict[str, Any] = {}
 
+    def killed(msg: str) -> None:
+        status.stopping()
+        log(msg)
+
     def on_ready(transport0: Any, coordinator: Any) -> None:
-        ks = KillSwitch(coordinator.abort, log=log)
+        ks = KillSwitch(coordinator.abort, log=killed)
         ks.install()
         holder["ks"] = ks
         if not gif:
@@ -7655,6 +7668,7 @@ class _DoctorHands:
         if self.pressed():
             # a Ctrl-C or `q` while the arm connected or was read: nothing moves after one
             return RestResult("refused", "stopped before the fold: nothing was moved")
+        person.stay_to_the_close()
         with ui.pause_status():
             ui.err_console.print(
                 Text(
@@ -7966,6 +7980,9 @@ def robot_release(
             finally:
                 if callable(stop_check):
                     stop_check(None)
+            # The arm answers now and there is somebody at it, so no press quits from here to the
+            # close, which is what says what became of its torque.
+            person.stay_to_the_close()
             settled: Settled | None = None
             try:
                 settled = await settle(person, lambda: switch.presses)

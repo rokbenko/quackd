@@ -194,9 +194,12 @@ The two questions over a missed fold are the other. A press
 at either of them keeps torque on, and so does one during the fold the first of them asked for,
 which stops that fold at most a step cap past where you pressed (5 degrees by default). One
 landing on the release that Enter at the second sends is caught as well. Either way the teardown
-still closes the transport and writes `run_end` and the summary. Each guard buys the press that
-lands on it and no more, so a press landing anywhere else, the first rest move included, quits
-at once, on the terms of the paragraph above.
+still closes the transport and writes `run_end` and the summary. From the first of those questions
+to the close no press quits, however many come, since somebody is at the arm and everything there
+ends on a press or has a deadline of its own. `quackd robot release` holds to the same once it has
+connected the arm, and `quackd doctor` from its fold. `Ctrl-\` where there is one, or closing the
+window, is what is left for somebody who has to kill it. Before those questions, the first rest
+move included, a second press quits at once, on the terms of the paragraph above.
 
 **SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
@@ -221,9 +224,9 @@ are its own.
   before it folds and lets go of it.
 - **A newer command ends the verb it finds moving** (`preempted`), and waits for it to stop, and
   for a brake still on its way, before it sends anything. A stop asked for from beside a verb
-  ends it before its next twist: `move`, `go_to`, `search_scan`, `approach_and` and the arm's
-  `move_joints`, `gripper` and `place` read it as quackd ships them, and so does an MCP session's
-  `stop`
+  ends it before its next twist: `move`, `go_to`, `search_scan`, `approach_and`, the arm's
+  `move_joints`, `gripper` and `place`, and what the other bodies bring that waits on a move read
+  it as quackd ships them, and so does an MCP session's `stop`
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - **A person's own command is the verdict for its own call**, recorded as a person's from the
   keyboard, as a pipe's from a pipe or a file, and as a decision LLM's reading where the fast

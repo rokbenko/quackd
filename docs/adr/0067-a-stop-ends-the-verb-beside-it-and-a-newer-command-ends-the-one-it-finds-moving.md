@@ -6,6 +6,10 @@
 now, and mark a braked result the same way. Their loop sends a fresh goal every tenth of a second,
 so a stop held the arm for one tick, as it once held `move`, and an MCP pilot was told it had worked.
 
+**Amended 2026-11-03:** so does what the XLeRobot, the AlohaMini and the ToddlerBot bring that waits
+on a move, the ToddlerBot's own `search_scan` among them, and `stand_up` on the Microduck and the
+Huebot. A skill the robot plays out with nothing sent after it, a `kick` or a `grab`, does not.
+
 ## Context
 
 The executor counts every stop asked for, from any caller, and gives each verb a context whose

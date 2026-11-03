@@ -198,6 +198,19 @@ async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data:
     return VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data)
 
 
+async def _waited_out(ctx: VerbContext, seconds: float) -> str | None:
+    """`seconds` on the body's clock for a verb that has sent what it sends and is waiting on it, or
+    why it was told to end before they were up (`VerbContext.interrupted`), looked at every tick.
+    A wait that heard nothing reported the move it was waiting on as done, with a stop sent beside
+    it, and a verb with another goal to send after the wait sent it, which undid the stop."""
+    slices = max(1, round(seconds / TICK_S))
+    for _ in range(slices):
+        if (why := ctx.interrupted()) is not None:
+            return why
+        await ctx.transport.sleep(seconds / slices)
+    return ctx.interrupted()
+
+
 def _head_fade_s(ctx: VerbContext) -> float:
     """How long the body's head takes to let go of a glance of its own once a look arrives
     (`head_fade_s`), or 0 on a body whose head moves only when it is asked to."""
