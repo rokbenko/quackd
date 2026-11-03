@@ -15,6 +15,7 @@ import gc
 import io
 import signal
 import sys
+import threading
 import time
 from typing import Any
 
@@ -451,6 +452,43 @@ async def test_a_line_that_cannot_get_out_raises_nothing_into_what_the_signal_in
     await asyncio.sleep(0)
     assert ks.presses == 1
     assert ks.abort.is_set(), "and the stop went first"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no pthread_kill on Windows")
+async def test_a_signal_that_interrupted_nothing_is_acted_on_all_the_same() -> None:
+    """What a signal does landing in the instant before the event loop goes to sleep. Delivered to
+    another thread it does the same every time: it sets the flag and wakes nobody, and Python runs
+    the handler only when the main thread next wakes. A SIGTERM sat for twenty seconds that way."""
+    heard = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    before = signal.signal(signal.SIGUSR1, lambda *_: loop.call_soon(heard.set))
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    try:
+        # no timer of the loop's own is due before the wait gives up, so it is asleep by then
+        started = time.perf_counter()
+        threading.Thread(target=_signal_once_the_loop_sleeps, daemon=True).start()
+        await asyncio.wait_for(heard.wait(), timeout=30)
+        assert time.perf_counter() - started < 10, "it waited for the timeout's own timer"
+    finally:
+        ks.uninstall()
+        signal.signal(signal.SIGUSR1, before)
+
+
+def _signal_once_the_loop_sleeps() -> None:
+    time.sleep(0.5)
+    signal.pthread_kill(threading.get_ident(), signal.SIGUSR1)
+
+
+async def test_uninstalling_stops_looking_for_a_signal() -> None:
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    looking = ks._looking
+    assert looking is not None
+    ks.uninstall()
+    assert looking.cancelled()
+    ks._look_for_a_signal()
+    assert ks._looking is looking, "nothing is set going again once it is out"
 
 
 async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:

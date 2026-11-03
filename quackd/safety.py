@@ -1459,6 +1459,11 @@ press of it, and one taken costs what was in the jaws."""
 ASK_POLL_S = 0.05
 """How often a question put on the loop's thread looks for what else may have ended it
 (`KillSwitch.ask`). An untimed wait there cannot be interrupted on Windows, Ctrl-C included."""
+SIGNAL_LOOK_S = 0.25
+"""The longest a signal waits to be acted on (`KillSwitch._look_for_a_signal`). Python acts on one
+on the main thread between bytecodes, so one landing in the instant before the event loop goes to
+sleep interrupts nothing: a Ctrl-C or a SIGTERM waited for the loop's next timer, however far off,
+and under load that was seen at twenty seconds."""
 
 
 class _Enter(NamedTuple):
@@ -1519,6 +1524,7 @@ class KillSwitch:
         self._line: list[str] = []
         """What has been typed since the last Enter, under the lock."""
         self._last_key = -math.inf
+        self._looking: asyncio.TimerHandle | None = None
         self.unanswered: str | None = None
         """Why the last `ask` came back with no line anybody typed, or None where one did."""
 
@@ -1830,10 +1836,16 @@ class KillSwitch:
             # alone, is passed by, and the wait goes on for the next.
             self.entered.clear()
 
+    def _look_for_a_signal(self) -> None:
+        """Nothing to do but wake: Python runs a signal's handler on the way back to sleep."""
+        if self._loop is not None and not self._uninstalled:
+            self._looking = self._loop.call_later(SIGNAL_LOOK_S, self._look_for_a_signal)
+
     def install(self, *, keys: bool = True) -> None:
         self._loop = asyncio.get_running_loop()
         with contextlib.suppress(ValueError):  # not the main thread
             self._previous = signal.signal(signal.SIGINT, self._on_sigint)
+        self._look_for_a_signal()
         if (
             keys
             and sys.stdin is not None
@@ -1861,6 +1873,8 @@ class KillSwitch:
 
     def uninstall(self) -> None:
         self._restore()
+        self._uninstalled = True
+        if self._looking is not None:
+            self._looking.cancel()
         if self._keys is not None:
-            self._uninstalled = True
             self._keys.close()

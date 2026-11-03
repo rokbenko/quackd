@@ -33,6 +33,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   reading lines there left `q` doing nothing until somebody pressed Enter, under every line that says
   it needs none. The key thread now takes the terminal back out of line mode, and leaves it alone
   while the process is in its background.
+- **A Ctrl-C or a SIGTERM no longer waits for the event loop's next timer.** Landing in the instant
+  before the loop went to sleep it interrupted nothing, and sat for however long the loop meant to
+  sleep. Seen at 20 seconds, under load on Linux. It is acted on within a quarter of a second now.
 - **What is typed shows on a terminal opened only to read,** as `< /dev/tty` opens it. Every key
   worked there and nothing typed reached the screen, a question's answer included.
 - **A key set to repeat slowly no longer answers a question that moves or drops an arm.** A bare Enter
