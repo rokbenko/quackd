@@ -9275,10 +9275,15 @@ def _onboard_file(home: Any) -> Any:
 
 
 def _onboard_manifest(robot: Any) -> Any:
-    """The manifest of the body quackd drives for this robot, or None for one it only talks for."""
-    from quackd.onboard.facts import manifest_of
+    """The manifest of the body quackd drives for this robot, or None for one it only talks for.
+    One this computer cannot read stops here, since signing needs what it supplies."""
+    from quackd.onboard.facts import manifest_of, why_unread
 
-    return manifest_of(robot)
+    try:
+        return manifest_of(robot)
+    except Exception as e:  # a third party's adapter can raise anything
+        _fail(f"the body robot.yaml names cannot be read here: {ui.printable(why_unread(e))}")
+        return None
 
 
 def _brain_key_variable(llm: str | None) -> str | None:
@@ -9407,7 +9412,11 @@ def onboard(
         if key:
             wizard.write_key_file(home.robot_env, variable, key)
     manifest = _onboard_manifest(robot)
-    why = wizard.needs_signing(home, robot, facts.passport(), manifest=manifest)
+    try:
+        why = wizard.needs_signing(home, robot, facts.passport(), manifest=manifest)
+    except ValueError as e:  # a passport refuses what the manifest or the file says
+        _fail(ui.printable(str(e)))
+        return
     if why is None:
         ui.console.print(_ok_line("its passport is signed and current"))
     else:
@@ -9468,6 +9477,7 @@ def onboard_sign(
     home = _onboard_home(directory)
     _chosen, facts = _onboard_board(board, home)
     robot = _onboard_file(home)
+    manifest = _onboard_manifest(robot)
     try:
         signed = wizard.sign(
             home,
@@ -9476,7 +9486,7 @@ def onboard_sign(
             ask=_Prompts(False),
             passphrase_file=passphrase_file,
             days=days,
-            manifest=_onboard_manifest(robot),
+            manifest=manifest,
         )
     except Exception as e:  # a wrong passphrase above all
         _fail(str(e))
@@ -9500,7 +9510,11 @@ def onboard_show(
     if not home.passport_jws.exists():
         _fail("this robot has no signed passport yet", hint="run quackd onboard")
         return
-    token = home.passport_jws.read_text(encoding="utf-8").strip()
+    try:
+        token = home.passport_jws.read_text(encoding="utf-8").strip()
+    except UnicodeError:  # strict: --jws prints what it read, and a script publishes that
+        _fail("its passport does not check out: passport.jws is not text")
+        return
     if as_jws:
         print(token)
         return
@@ -9560,7 +9574,6 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
     """The service's status as a person reads it: the passport and what is not signed yet, the
     board and brain, the radio and every robot it hears, the sessions, the run, the last
     meetings."""
-    from quackd.adapters.base import AdapterError
     from quackd.onboard import config, wizard
 
     passport = reply.get("passport", {})
@@ -9575,12 +9588,15 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
             else Text(f"OFF: {passport.get('why')}", style=ui.STYLES["warn"]),
         )
     ]
-    with contextlib.suppress(config.FileError, OSError, ValueError, AdapterError):
+    with contextlib.suppress(config.FileError, OSError, ValueError):
         robot = config.load(home.robot_yaml)
-        why = wizard.needs_signing(home, robot, board, manifest=_onboard_manifest(robot))
+        why, trouble = wizard.signing_state(home, robot, board)
         if why is not None and passport.get("ok"):
-            said = f"{why}, so other robots still see what was signed: quackd onboard sign"
+            sign = ": quackd onboard sign" if trouble is None else ""
+            said = f"{why}, so other robots still see what was signed{sign}"
             rows.append(("unsigned", Text(said, style=ui.STYLES["warn"])))
+        if trouble is not None:
+            rows.append(("robot.yaml", Text(ui.printable(trouble), style=ui.STYLES["warn"])))
     if reply.get("file_problem"):
         problem = ui.printable(str(reply["file_problem"]))
         rows.append(("robot.yaml", Text(problem, style=ui.STYLES["warn"])))

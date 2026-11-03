@@ -509,7 +509,7 @@ class SimRadio:
         # a scan that misses a file being replaced hears the next advert, but a dial has no
         # next one: a radio that is there writes again within a tick, so look until then
         while record is None and loop.time() < looking:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(min(0.05, looking - loop.time()))
             record = read_radio(self.options.air, token)
         if record is None:
             raise ConnectionError(f"nothing is advertising at {address} now")

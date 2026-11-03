@@ -16,7 +16,7 @@ from typing import Any
 from quackd.adapters.manifest import RobotManifest
 from quackd.adapters.passport import passport_from_manifest
 from quackd.onboard.config import RobotFile
-from quackd.passport import strict
+from quackd.passport import PassportError, strict
 from quackd.passport.document import VERSION, Reading, validate
 
 #: Members that change with every signature and say nothing a person edited.
@@ -34,6 +34,24 @@ def manifest_of(file: RobotFile) -> RobotManifest | None:
     return describe(parse_robot_spec(file.robot.adapter))
 
 
+def why_unread(error: Exception) -> str:
+    """Why a body could not be read, as a person reads it. quackd's own refusals are written for
+    one. Anything else is a third party's adapter failing, whose type is half of what it says."""
+    from quackd.adapters.base import AdapterError
+
+    said = str(error)
+    if isinstance(error, AdapterError | PassportError) and said:
+        return said
+    return f"{type(error).__name__}: {said}" if said else type(error).__name__
+
+
+def _owner(file: RobotFile, owner_did: str) -> dict[str, str]:
+    owner = {"id": owner_did, "label": file.passport.owner.label}
+    if file.passport.owner.contact:
+        owner["contact"] = file.passport.owner.contact
+    return owner
+
+
 def passport_document(
     file: RobotFile,
     *,
@@ -46,9 +64,7 @@ def passport_document(
 ) -> dict[str, Any]:
     """The 1.0 passport for this robot, as its owner will sign it (spec 2)."""
     section = file.passport
-    owner = {"id": owner_did, "label": section.owner.label}
-    if section.owner.contact:
-        owner["contact"] = section.owner.contact
+    owner = _owner(file, owner_did)
     if manifest is not None:
         doc = passport_from_manifest(
             manifest,
@@ -121,6 +137,19 @@ def _body(file: RobotFile) -> dict[str, Any]:
 
 def _moment(when: datetime) -> str:
     return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def file_changes(file: RobotFile, signed: Reading, *, board: Mapping[str, str]) -> list[str]:
+    """The members robot.yaml alone decides that it now says differently from the passport its
+    owner signed, for when no passport can be built to compare: a body that cannot be read, or a
+    file or manifest a passport refuses. It asks nothing of the rest of the file."""
+    now = {
+        "board": dict(board),
+        "maker": file.passport.maker.model_dump(exclude_none=True),
+        "name": file.passport.name,
+        "owner": _owner(file, signed.owner_id),
+    }
+    return [name for name, value in now.items() if value != signed.document.get(name)]
 
 
 def unsigned_changes(

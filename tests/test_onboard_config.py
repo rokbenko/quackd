@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from quackd.adapters.factory import parse_robot_spec
 from quackd.agent.providers.fake import STRATEGIES
 from quackd.onboard import config, facts
 from quackd.onboard.body import VERBS, described_manifest
@@ -22,6 +23,14 @@ from tests.passport_helpers import OWNER, A
 DEMO = Path(__file__).resolve().parents[1] / "quackd" / "onboard" / "demo"
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
 NOW = datetime.now(UTC).replace(microsecond=0)
+
+
+def test_the_body_robot_yaml_shows_as_its_example_is_one_quackd_has() -> None:
+    """A person uncomments it, and a backend its adapter does not have is refused at signing."""
+    assert f"#   adapter: {config.ADAPTER_EXAMPLE}\n" in template()
+    assert parse_robot_spec(config.ADAPTER_EXAMPLE).backend
+    with pytest.raises(config.FileError, match=config.ADAPTER_EXAMPLE):
+        config.loads(template(adapter="no-backend"))
 
 
 def template(**overrides: object) -> str:

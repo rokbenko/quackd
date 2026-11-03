@@ -212,7 +212,7 @@ class Service:
         self.file: RobotFile = config.load(home.robot_yaml)
         self.robot_key = read_robot_key(home.robot_key)
         self.token = (
-            home.passport_jws.read_text(encoding="utf-8").strip()
+            home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
             if home.passport_jws.exists()
             else None
         )
@@ -625,7 +625,7 @@ class Service:
         self.file_problem = None
         # a passport signed again since start: served from now on, and in every new hello
         if self.home.passport_jws.exists():
-            token = self.home.passport_jws.read_text(encoding="utf-8").strip()
+            token = self.home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
             check = check_board(check_own_passport(token, self.robot_key.did), self.facts)
             if check.ok and check.reading is not None and token != self.token:
                 self.token, self.check = token, check
@@ -698,6 +698,17 @@ class Service:
             write_private(self.home.status_json, json.dumps(self.status(), default=str) + "\n")
 
 
+def _adapter_found(board: Any) -> str | None:
+    """The adapter `board` found fit, which is the one preflight checks, or None for the radio's
+    own default: a third party's board that cannot say is no reason to stop a robot that can
+    still meet others over its LAN."""
+    try:
+        found = board.radio()
+        return found.adapter if found.ok else None
+    except Exception:
+        return None
+
+
 def _browser(log: Callable[[str], None]) -> Any:
     """The DNS-SD browse that finds other robots' LAN records by beacon id, or None without
     zeroconf, when robots near are met over a link."""
@@ -766,15 +777,16 @@ def serve(
                 rotate_s=rotate_s,
                 log=log,
             )
+        kind = radio or chosen.radio_kind
         return board_side(
-            radio_kind=radio or chosen.radio_kind,
+            radio_kind=kind,
             instance=file.passport.name,
             browser=_browser(log),
             policy=policy,
             rotate_s=rotate_s,
             log=log,
             advertise=file.radio.advertise,
-            adapter=chosen.radio().adapter,
+            adapter=_adapter_found(chosen) if kind == "bluez" else None,
         )
 
     home.ensure()
