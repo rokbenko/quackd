@@ -33,6 +33,7 @@ from quackd_huebot import verbs as huebot_verbs
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import LeRobotMock
 from quackd_microduck import verbs as microduck_verbs
+from quackd_open_duck import verbs as open_duck_verbs
 from quackd_toddlerbot import ToddlerBotAdapter
 from quackd_toddlerbot.mock import ToddlerBotMock
 from quackd_xlerobot import XLerobotAdapter
@@ -144,18 +145,23 @@ async def test_a_stop_ends_a_sweep_of_the_head_before_its_next_look() -> None:
     assert "look" not in after, f"the sweep looked again after the stop: {after}"
 
 
-async def test_an_arm_this_body_stop_leaves_alone_says_it_goes_on() -> None:
-    """These bodies' `stop` leaves the arm's goals where they are, and the reply must not read as an
-    arm that stopped: the goal it was sent is still where it is going."""
-    result, _ = await _braked(
-        _xlerobot(), "move_joints", {"positions": {"right_arm_elbow_flex": 30}}
-    )
-    assert "goes on to the goal it was sent" in result.summary
-    assert result.data["base_stopped"] is True
-    result, _ = await _braked(
-        _aloha(), "move_joints", {"arm": "left", "positions": {"shoulder_pan": 10}}
-    )
-    assert "goes on to the goal it was sent" in result.summary
+async def test_an_arm_a_stop_could_not_hold_says_it_goes_on_and_one_it_held_says_that() -> None:
+    """These bodies hold an arm from a recent reading, or have none to hold it from. The reply says
+    which it was (`zmq_host._hold_the_arms`), and it must not read as an arm that stopped when the
+    goal it was sent is still where it is going."""
+    for body, params in (
+        (_xlerobot, {"positions": {"right_arm_elbow_flex": 30}}),
+        (_aloha, {"arm": "left", "positions": {"shoulder_pan": 10}}),
+    ):
+        result, _ = await _braked(body(), "move_joints", params)
+        assert "the arm is held where it stood" in result.summary, result.summary
+        assert result.data["base_stopped"] is True
+
+        adapter = body()
+        adapter.transport.stop_left_going = ("the_joint",)
+        result, _ = await _braked(adapter, "move_joints", params)
+        assert "goes on to the goal it was sent" in result.summary, result.summary
+        assert "no recent reading" in result.summary
 
 
 async def test_home_arms_sends_the_second_arm_nowhere_after_a_stop() -> None:
@@ -163,6 +169,7 @@ async def test_home_arms_sends_the_second_arm_nowhere_after_a_stop() -> None:
     adapter = AlohaMiniAdapter(mock)
     result, after = await _braked(adapter, "home_arms", {})
     assert result.data["arms_sent"] == 1
+    assert "the left arm is held where it stood and no arm was sent after it" in result.summary
     assert "joint" not in after
     assert [intent.kind for intent in mock.intents].count("joint") == 1
 
@@ -254,6 +261,107 @@ async def test_a_stop_ends_the_wait_for_a_robot_to_get_up(stand_up: Any) -> None
     assert result.summary.startswith(f"stand_up: {STOPPED}"), result.summary
     assert result.data["ended_by"] == STOP_ENDED
     assert body.stops == 1 and body.slept < 2, "it waited on after the stop"
+
+
+class _Standing:
+    """A robot a skill has gone out to, which plays it out whatever it is sent after. The only
+    thing asked of it is whether anything more goes out and how long the verb waits."""
+
+    def __init__(self, posture: str = "standing") -> None:
+        self.posture = posture
+        self.sent: list[Intent] = []
+        self.stops = 0
+        self.slept = 0.0
+
+    def now(self) -> float:
+        return self.slept
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept += seconds
+
+    async def stop(self) -> None:
+        self.stops += 1
+
+    async def get_state(self) -> DuckState:
+        return DuckState(posture=self.posture)
+
+    async def send_intent(self, intent: Intent) -> Any:
+        self.sent.append(intent)
+        return SimpleNamespace(accepted=True, reason=None)
+
+
+SKILLS = [
+    pytest.param(
+        microduck_verbs.kick, microduck_verbs.KickParams(leg="left"), "kick", 1.5, id="micro-kick"
+    ),
+    pytest.param(microduck_verbs.grab, NoParams(), "grab", 3.0, id="micro-grab"),
+    pytest.param(microduck_verbs.sit, NoParams(), "sit", 2.0, id="micro-sit"),
+    pytest.param(
+        huebot_verbs.kick, huebot_verbs.KickParams(leg="right"), "kick", 1.5, id="hue-kick"
+    ),
+    pytest.param(huebot_verbs.sit, NoParams(), "sit", 2.0, id="hue-sit"),
+    pytest.param(
+        open_duck_verbs.express,
+        open_duck_verbs.ExpressParams(gesture="wiggle"),
+        "express",
+        1.0,
+        id="open-express",
+    ),
+]
+
+
+@pytest.mark.parametrize(("verb", "params", "name", "takes"), SKILLS)
+async def test_a_stop_ends_the_wait_on_a_skill_and_says_the_robot_plays_it_out(
+    verb: Any, params: Any, name: str, takes: float
+) -> None:
+    """Each sends one skill and waits on it, and a stop beside it was answered when the time was up,
+    `kicked` included. A stop does not end a skill on these robots (zero velocity, and not limp), so
+    the answer says it plays out rather than that it stopped."""
+    body = _Standing()
+    ctx = VerbContext(
+        transport=body,  # type: ignore[arg-type]
+        interrupted=lambda: STOPPED if body.slept > 0 else None,
+    )
+    result = await verb(ctx, params)
+    assert not result.ok
+    assert result.summary.startswith(f"{name}: {STOPPED}"), result.summary
+    assert "play" in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED
+    assert body.slept < takes / 2, "it waited on after the stop"
+    assert body.stops == 1
+    assert len(body.sent) == 1, f"it sent something after the skill: {body.sent}"
+
+
+@pytest.mark.parametrize("stand", [microduck_verbs.stand, huebot_verbs.stand], ids=["micro", "hue"])
+async def test_a_stop_ends_the_wait_on_a_duck_that_was_told_to_stand(stand: Any) -> None:
+    body = _Standing("sitting")
+    ctx = VerbContext(
+        transport=body,  # type: ignore[arg-type]
+        interrupted=lambda: STOPPED if body.slept > 0 else None,
+    )
+    result = await stand(ctx, NoParams())
+    assert result.summary.startswith(f"stand: {STOPPED}"), result.summary
+    assert "on its way to standing" in result.summary, result.summary
+
+
+async def test_a_skill_the_runs_minutes_end_is_a_failure_and_no_stop() -> None:
+    """The other thing `interrupted` says: `abort_when` still counts it, as it does on an arm."""
+    body = _Standing()
+    ctx = VerbContext(
+        transport=body,  # type: ignore[arg-type]
+        interrupted=lambda: "max_minutes (1) reached" if body.slept > 0 else None,
+    )
+    result = await microduck_verbs.kick(ctx, microduck_verbs.KickParams(leg="left"))
+    assert result.summary.startswith("kick: max_minutes (1) reached"), result.summary
+    assert "ended_by" not in result.data
+
+
+async def test_a_skill_nothing_ends_takes_its_time_and_reads_the_body_after() -> None:
+    body = _Standing()
+    ctx = VerbContext(transport=body)  # type: ignore[arg-type]
+    result = await microduck_verbs.kick(ctx, microduck_verbs.KickParams(leg="left"))
+    assert result.ok, result.summary
+    assert body.slept == pytest.approx(1.5)
 
 
 # ── a gripper says which way ──

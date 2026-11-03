@@ -1865,14 +1865,23 @@ class KillSwitch:
             # in somebody's hands.
             self.keys_ended.set()
 
-    def _restore(self) -> None:
+    def _restore(self, *, nothing_left_to_stop: bool = False) -> None:
         if self._previous is not None:
             with contextlib.suppress(ValueError):
-                signal.signal(signal.SIGINT, self._previous)
+                signal.signal(
+                    signal.SIGINT, signal.SIG_IGN if nothing_left_to_stop else self._previous
+                )
             self._previous = None
 
-    def uninstall(self) -> None:
-        self._restore()
+    def uninstall(self, *, nothing_left_to_stop: bool = False) -> None:
+        """`nothing_left_to_stop` is for a command with nothing after its body but saying how it
+        went. A person still pressing has no way to tell the end of a run from its last moments,
+        and a press past this used to raise through the printing of the verdict, or on Windows to
+        end the process in the middle of its exit with the run's own exit code lost. So a press
+        does nothing from here to the end of the process: the handler changes in one step, with no
+        moment for one to land in, and the interpreter leaves one set to ignore where it found
+        it as it ends."""
+        self._restore(nothing_left_to_stop=nothing_left_to_stop)
         self._uninstalled = True
         if self._looking is not None:
             self._looking.cancel()

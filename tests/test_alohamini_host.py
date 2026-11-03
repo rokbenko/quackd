@@ -9,13 +9,15 @@ its fail-safe is a Python process that may have exited.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+import time
 from collections.abc import Callable
 
 import pytest
 
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_alohamini import AlohaMiniAdapter
+from quackd_alohamini import AlohaMiniAdapter, zmq_host
 from quackd_alohamini.zmq_host import (
     LIFT_HEIGHT_KEY,
     LIFT_VEL_KEY,
@@ -127,10 +129,14 @@ async def test_connect_stops_before_it_does_anything_else() -> None:
         await link.close()
 
 
-async def test_stop_holds_the_arms_where_they_were_asked_to_go() -> None:
+async def test_stop_holds_the_arms_where_they_were_asked_to_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The base has to be moving when the stop arrives, or the velocity half of this proves
     nothing: every payload carries all three velocity keys, so a joint command on its own
-    already leaves them at zero and the assertion would be true before `stop` was sent."""
+    already leaves them at zero and the assertion would be true before `stop` was sent. And an
+    arm that has arrived stays there."""
+    monkeypatch.setattr(zmq_host, "HOLD_FRESH_MS", 60_000.0)  # a slow test is no stale link
     with FakeAlohaMiniHost(watchdog_s=10.0) as host:
         link = await _connected(host)
         await _lands(link, host, Intent.joint({"arm_left_shoulder_pan": 25.0}, 0.2))
@@ -143,6 +149,101 @@ async def test_stop_holds_the_arms_where_they_were_asked_to_go() -> None:
         assert all(host.state[k] == 0.0 for k in VEL_KEYS), "the stop zeroed the base"
         assert host.state["arm_left_shoulder_pan.pos"] == pytest.approx(25.0)
         assert host.actions[-1]["arm_left_shoulder_pan.pos"] == pytest.approx(25.0)
+        await link.close()
+
+
+async def test_a_stop_holds_an_arm_on_its_way_where_it_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop that left the goal alone was a stop for the base: the arm finished its move, with a
+    person's hand in the way or not. It is held once for each goal, since a servo under load reads
+    below its goal and every failed verb ends in a stop, and never a gripper, which would open on
+    what it holds. A new goal is a new move for a stop to end."""
+    monkeypatch.setattr(zmq_host, "HOLD_FRESH_MS", 60_000.0)
+    with FakeAlohaMiniHost(watchdog_s=10.0) as host:
+        link = await _connected(host)
+        key = "arm_left_elbow_flex.pos"
+        grip = "arm_right_gripper.pos"
+        await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 80.0}, 2.0))
+        await _lands(link, host, Intent(kind="gripper", params={"open": False, "side": "right"}))
+        closed = host.state[grip]
+        await _lands(link, host, Intent.joint({"arm_left_gripper": 70.0}, 0.2))
+        host.slow = {key, grip, "arm_left_gripper.pos"}
+        host.state[key] = 12.0
+        host.state[grip] = closed + 40.0
+        host.state["arm_left_gripper.pos"] = 41.0
+
+        await link.stop()
+        assert link.stop_left_going == ()
+        await _until(lambda: host.actions[-1].get(key) == pytest.approx(12.0))
+        assert host.actions[-1][grip] == pytest.approx(closed), "the jaws were sent what they read"
+        assert host.actions[-1]["arm_left_gripper.pos"] == pytest.approx(70.0)
+
+        host.state[key] = 11.0  # it sinks
+        await link.stop()
+        assert link._arm_goals[key] == pytest.approx(12.0), "a second stop walked it down"
+
+        await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 90.0}, 1.0))
+        host.state[key] = 33.0
+        await link.stop()
+        assert link._arm_goals[key] == pytest.approx(33.0)
+        await link.close()
+
+
+async def test_a_stop_with_no_answer_stops_the_base_and_leaves_the_goal_and_says_so() -> None:
+    """A goal built from an old reading is a move of its own (ADR-0026), and a reading takes a
+    round trip here. So the wheels and the lift go first, the wait is short, that joint goes on,
+    and the pilot is told which."""
+
+    class Silent:
+        """A host that takes commands and has stopped answering."""
+
+        def __init__(self) -> None:
+            self.told: list[str] = []
+
+        def open(self, host: str, cmd_port: int, obs_port: int) -> None: ...
+
+        def send(self, text: str) -> None:
+            self.told.append(f"send {text}")
+
+        def request(self, token: bytes, timeout_ms: int) -> None:
+            self.told.append("ask")
+
+        def close(self) -> None: ...
+
+    silent = Silent()
+    link = AlohaMiniZmq(client=silent)
+    link._arm_goals["arm_left_elbow_flex.pos"] = 80.0
+    link._unheld.add("arm_left_elbow_flex.pos")
+    link._vel["x.vel"] = 0.2
+    link._state["arm_left_elbow_flex.pos"] = 12.0  # known, and from before the silence
+    started = time.monotonic()
+    await link.stop()
+    assert time.monotonic() - started < 2.0
+    assert silent.told[0].startswith("send "), "the wheels waited on a reading"
+    first = json.loads(silent.told[0].removeprefix("send "))
+    assert first["x.vel"] == 0.0 and first[LIFT_VEL_KEY] == 0
+    assert "ask" in silent.told
+    assert link.stop_left_going == ("arm_left_elbow_flex",)
+    assert link._arm_goals["arm_left_elbow_flex.pos"] == pytest.approx(80.0)
+
+
+async def test_the_answer_to_an_earlier_request_is_no_reading_to_hold_from() -> None:
+    """A DEALER keeps a reply that came in behind its time, so the next request reads it: older by
+    however long the host was away. It is still a reading, and no hold is built from it."""
+    with FakeAlohaMiniHost(watchdog_s=10.0) as host:
+        link = await _connected(host)
+        host.stop()  # by hand from here, so which request it answers is known
+        answered = link._answered_at
+        assert not await link._pump(1), "the host answered with nobody pumping it"
+        host.pump()  # it answers the request that timed out
+        before = link.sequence
+        for _ in range(200):
+            await link._pump(10)
+            if link.sequence > before:
+                break
+        assert link.sequence > before, "the reply never came"
+        assert link._answered_at == answered, "an old reply passed for the answer to this request"
         await link.close()
 
 

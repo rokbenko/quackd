@@ -67,6 +67,7 @@ import numpy as np
 from PIL import Image
 
 from quackd.adapters.base import AdapterError, AdapterNotInstalled, HandResult, RestResult
+from quackd.adapters.threads import DaemonThreads
 from quackd.transport.base import (
     Ack,
     CameraFrame,
@@ -135,6 +136,10 @@ from quackd_lerobot.verbs import (
 )
 
 STATUS = "LeRobot names verified at a pinned commit; one SO-101 driven on 2026-09-15"
+_THREADS = DaemonThreads("quackd-lerobot")
+"""Where every call that can hang runs, the bus's and the cameras'. Not asyncio's pool, which
+`asyncio.run` and the exit both join: a call that never came back held a run that had finished,
+and on Windows only closing the window ended it (`quackd.adapters.threads`)."""
 POLICY_HZ = 10.0
 """The rate a `PolicyLike` object runs at, since it declares none: the verbs' own tick
 (`verbs.TICK_S`), so its step cap per send is the verbs' own too (`policy.loop.speed_cap`)."""
@@ -1273,7 +1278,7 @@ class LeRobotReal:
                     # unrun left open is closed into the total first
                     now = loop.time()
                     self._bus = (self._busy(now), now)
-                    pending = loop.run_in_executor(None, stamped, now)
+                    pending = loop.run_in_executor(_THREADS, stamped, now)
                     answer = await asyncio.shield(pending)
                     if spent:
                         # it came back after its budget, and reached this task before the
@@ -1790,8 +1795,9 @@ class LeRobotReal:
         every later call until it returns, so a webcam whose open or release takes a few
         seconds (routine on Windows) would have refused the arm's own disconnect and left
         torque on. A camera that hangs here is simply abandoned, and says so."""
+        loop = asyncio.get_running_loop()
         try:
-            return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout_s)
+            return await asyncio.wait_for(loop.run_in_executor(_THREADS, fn, *args), timeout_s)
         except TimeoutError:
             raise TimeoutError(
                 f"{getattr(fn, '__name__', 'the call')}() did not return within {timeout_s:g} s"
@@ -2260,7 +2266,9 @@ class LeRobotReal:
             if camera is None:
                 continue
             try:
-                obs[name] = await asyncio.to_thread(camera.read_latest)
+                obs[name] = await asyncio.get_running_loop().run_in_executor(
+                    _THREADS, camera.read_latest
+                )
             except Exception as e:
                 self.camera_errors[name] = f"{type(e).__name__}: {e}"
                 return f"the {name} camera gave no frame ({self.camera_errors[name]})"
@@ -2282,7 +2290,7 @@ class LeRobotReal:
         if camera is None:
             return None
         try:
-            frame = await asyncio.to_thread(camera.read_latest)
+            frame = await asyncio.get_running_loop().run_in_executor(_THREADS, camera.read_latest)
             image = Image.fromarray(np.asarray(frame))  # up.CAMERA_COLOR_MODE_DEFAULT: RGB
         except Exception as e:
             self.camera_errors[name] = f"{type(e).__name__}: {e}"

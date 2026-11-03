@@ -1621,7 +1621,9 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   a half-duplex bus, so the transport refuses every later call until that thread comes back
   rather than starting a second one. The arm holds its goal meanwhile. A call a press or a stop
   cut short leaves its thread there too, and what comes behind it waits for it, no longer than
-  that call's own deadline, because on an arm that answers it comes back at once.
+  that call's own deadline, because on an arm that answers it comes back at once. Nothing waits
+  for one that never does once the run has closed: the bus and the cameras run on threads an exit
+  does not join, so the verdict prints and the process ends.
 - **Torque is released only where the arm is known to be at its recorded rest pose, unless a
   person holding it asks.** `disconnect()` disables it where LeRobot's config asks, which is
   LeRobot's default, and quackd asks for it over an arm at rest, because an arm at rest should

@@ -142,14 +142,22 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     every action (`upstream_api.SEND_ACTION_ALWAYS_WRITES_BASE`). That is upstream's design
     and it is safe, but it means this verb stops a driving base, so the result says so.
 
-    A stop from beside it ends the wait and says what it did. This robot's stop leaves the arm's
-    goals alone (`zmq_host`), so the arm goes on to this one, and "moved" was all anybody heard.
+    A stop from beside it ends the wait and says what became of the arm, which it holds where it
+    stands where a recent reading says where that is (`zmq_host`). "moved" was all anybody heard.
     """
     intent = Intent.joint(dict(p.positions), p.duration_s)
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
     if (why := await _waited_out(ctx, p.duration_s)) is not None:
-        stopped = "the wheels are stopped and the arm goes on to the goal it was sent"
+        # asked here as well as in `_ended_by`: a stop that had no recent reading tries again, and
+        # the words have to be about the last one
+        await ctx.transport.stop()
+        going = getattr(ctx.transport, "stop_left_going", ())
+        stopped = "the wheels are stopped and the arm " + (
+            "goes on to the goal it was sent, with no recent reading to hold it from"
+            if going
+            else "is held where it stood"
+        )
         return await _ended_by(
             ctx, "move_joints", why, stopped, goal=dict(p.positions), base_stopped=True
         )

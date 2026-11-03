@@ -2,6 +2,14 @@
 
 **Status:** accepted · **Date:** 2026-09-04 · Extends ADR-0017, ADR-0022 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/xlerobot/README.md))
 
+**Amended 2026-11-03, for 0.30.3:** a `stop` holds an arm on its way somewhere, which this record
+decided against below. Leaving the goals alone was a stop for the wheels only, so an arm finished
+its move with a person's hand in the way or not. What the fake caught still rules how: the client
+reads the newest observation first and uses none older than 100 ms, so a reading that has not caught
+up leaves the goal alone and says so. Each joint is held once for each goal it is sent, or an arm
+under load would walk down a stop at a time, and a gripper never is, or it would open on what it
+holds. The host's own watchdog still stops the wheels and nothing else.
+
 ## Context
 
 The XLeRobot is a dual-arm mobile manipulator built from LeRobot-ecosystem parts bolted to an

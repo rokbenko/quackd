@@ -1186,8 +1186,8 @@ class AgentLoop:
 
         The order is the finally's order for the same reasons: stop holds the body where it is,
         the rest move is the only window in which putting it down changes whether it falls, and
-        the close is what releases torque. The transcript is closed too, since the run that
-        would have closed it never started."""
+        the close is what releases torque. The record's end is the caller's, which has the
+        failure (`_record_a_run_that_never_began`)."""
         cfg = self.cfg
         with contextlib.suppress(Exception):
             await cfg.transport.stop()
@@ -1198,8 +1198,6 @@ class AgentLoop:
         if note := getattr(cfg.transport, "close_note", None):
             with contextlib.suppress(Exception):
                 self._note(str(note))
-        with contextlib.suppress(Exception):
-            self.transcript.close()
 
     async def _wait_out_pause(self) -> None:
         """Hold still until a pause granted to a robot met is over, before a move that reaches
@@ -2659,6 +2657,134 @@ class AgentLoop:
     ) -> str | None:
         return fall_blind_warning(registry, allow, state)
 
+    def _summary_of_the_run(
+        self,
+        *,
+        outcome: str,
+        reason: str,
+        connect_s: float,
+        final_state: Mapping[str, Any],
+        manifest: RobotManifest | None,
+        stepper: Stepper | None,
+    ) -> dict[str, Any]:
+        """What `run_end` carries and `summary.json` holds, however the run ended."""
+        cfg = self.cfg
+        # The whole run, on the transcript's own clock, which started the instant the
+        # record opened rather than when the budget did. Read once so `ended_at`,
+        # `wall_s` and `run_end.t` are three spellings of one number.
+        wall_s = round(self.transcript.elapsed_s, 3)
+        return {
+            "duck": self.fm.name,
+            "run_name": cfg.run_name,
+            "command": command_line(),
+            "version": __version__,
+            "outcome": outcome,
+            "reason": reason,
+            "steps": self.budget.steps,
+            "llm_calls": self.budget.llm_calls,
+            # Three clocks that were one, and they answer different questions. `elapsed_s`
+            # is the budget's: it starts after `run_start`, restarts after a `--by-hand`
+            # handover, and on a simulator it is the simulator's own time, which is what
+            # `max_minutes` is checked against and all it is. `wall_s` is the run as
+            # somebody standing next to the robot experienced it, connect and teardown
+            # included. `llm_latency_s` is how much of that was spent waiting on the
+            # model, which on the arm was 62.1 seconds of 78.8 and had to be added up by
+            # hand to say so.
+            "elapsed_s": round(self.budget.elapsed_s, 2),
+            "started_at": self.transcript.started_at_iso,
+            "ended_at": self.transcript.ended_at_iso(wall_s),
+            "wall_s": wall_s,
+            "connect_s": connect_s,
+            "llm_latency_s": round(self.llm_latency_s, 3),
+            # The typical call and the bad one beside the total, by nearest rank over the
+            # calls that answered, only where one did, so a run that never asked the model
+            # anything says nothing it did not measure (`quackd.latency`).
+            **{
+                f"llm_latency_{figure}_s": seconds
+                for figure, seconds in (spread(self.llm_answered_s) or {}).items()
+            },
+            # How long the robot took to do anything at all, on this record's clock with the
+            # connect in it, and after how many model calls: null where nothing moved, a dry
+            # run among them, since it hands nothing over (`Executor.first_motion_at`).
+            "first_motion_s": (
+                self.transcript.at(moved)
+                if (moved := self.executor.first_motion_at) is not None
+                else None
+            ),
+            "first_motion_llm_calls": self.executor.first_motion_llm_calls,
+            # the tries asked again after the API could not answer a turn, and the seconds
+            # waited before asking, only where the run waited at all (ADR-0059): a wait a
+            # stop ended has seconds and no try
+            **(
+                {
+                    "llm_retries": self.llm_retries,
+                    "llm_retry_wait_s": round(self.llm_retry_wait_s, 3),
+                }
+                if self.llm_retries or self.llm_retry_wait_s
+                else {}
+            ),
+            "usage": self.usage.model_dump(),
+            # What it cost and what it was costed at. `cost_usd` is the model only: the
+            # stepper bills separately and keeps its figure in its own block below.
+            "price": self.price.record() if self.price is not None else None,
+            "cost_usd": self.cost_usd,
+            # how many of the calls in `cost_usd` were the vendor's own bill rather than
+            # the rate above times their tokens, only where any were
+            **({"billed_calls": self.billed_calls} if self.billed_calls else {}),
+            "provider": cfg.provider.name,
+            "model": cfg.provider.model,
+            "transport": backend_name(cfg.transport),
+            "robot": manifest.id if manifest is not None else None,
+            "dry_run": cfg.dry_run,
+            "final_state": final_state,
+            # what a view could not show. The record has every one of them; a console
+            # that swallowed a hundred events used to leave no sign anywhere.
+            "log_dropped": self.event_log.dropped,
+            # only when there was one, so every summary written before the stepper
+            # existed, and every run that does not ask for one, stays byte for byte
+            # what it was. `watch`'s own block rides in it, its bill folded into the totals.
+            **({"decision": block} if (block := self._decision_summary(stepper)) else {}),
+            # and the arm's policy by the same rule: what it is, what its segments
+            # counted and the round trips to its server, never an action it sent
+            **({"policy": block} if (block := self._policy("policy_record")) else {}),
+        }
+
+    def _record_a_run_that_never_began(
+        self,
+        failure: BaseException,
+        *,
+        connect_s: float,
+        manifest: RobotManifest | None = None,
+    ) -> None:
+        """`run_end` and the summary of a run that ended before its own `finally` existed: a connect
+        that failed, or anything between the connect and the first step. They left a directory with
+        no end to it, so a run a person stopped while the arm connected, whose connect then failed,
+        said nowhere that they had. Nothing in here may raise, because whatever brought us here is
+        the error the caller is owed."""
+        if isinstance(failure, Aborted):
+            outcome, reason = "aborted", str(failure)
+        elif not isinstance(failure, Exception):
+            outcome, reason = "aborted", f"interrupted: {type(failure).__name__}"
+        else:
+            outcome, reason = "error", f"{type(failure).__name__}: {failure}"
+            if self.executor.abort.is_set():
+                outcome, reason = "aborted", f"{self._abort_reason()}; {reason}"
+        with contextlib.suppress(Exception):  # a disk that filled is no reason to hide it
+            summary = self._summary_of_the_run(
+                outcome=outcome,
+                reason=reason,
+                connect_s=connect_s,
+                final_state={},
+                manifest=manifest,
+                stepper=None,
+            )
+            self.summary = summary
+            self._emit("run_end", **summary)
+            if self.cfg.summary_file:
+                self.transcript.write_summary(summary)
+        with contextlib.suppress(Exception):
+            self.transcript.close()
+
     async def run(self) -> RunResult:
         cfg = self.cfg
         # The pilot's client asks what it asks before its first request while the robot
@@ -2680,23 +2806,28 @@ class AgentLoop:
             stop_check(self.executor.abort.is_set)
         try:
             connected = await cfg.transport.connect()
+        except BaseException as e:
+            self._record_a_run_that_never_began(
+                e, connect_s=round(time.perf_counter() - connect_started, 3)
+            )
+            raise
         finally:
             if callable(stop_check):
                 stop_check(None)
+        connect_s = round(time.perf_counter() - connect_started, 3)
+        manifest = connected if isinstance(connected, RobotManifest) else None
         # Everything from here to the first step can raise: a task that needs a verb this
         # build does not have, a person who would not confirm they were watching, a state
         # read that timed out. The arm is connected and holding by then, and the run's own
         # `finally` does not exist yet, so a failure in this window used to exit with the
         # arm energised, away from any pose anybody chose, and nothing said about it.
         try:
-            connect_s = round(time.perf_counter() - connect_started, 3)
             # What the body had to do to get connected, in its own words: a connect it tried
             # again after the bus lost a packet (the LeRobot arm's `connect_notes`). The body
             # logged each one as it happened; this is what puts them in the run's record, so a
             # joint whose cable drops a packet every session shows up across transcripts.
             for note in getattr(cfg.transport, "connect_notes", ()) or ():
                 self._note(str(note))
-            manifest = connected if isinstance(connected, RobotManifest) else None
             if manifest is not None:
                 # a v2 task file corrects the body's own sheet for the build in front of it, and it
                 # does so here, before anything reads a manifest: the executor, the detector, the
@@ -2980,8 +3111,9 @@ class AgentLoop:
 
             self.budget.start()
             self.heartbeat.start()
-        except BaseException:
+        except BaseException as e:
             await self._park_before_the_run_began()
+            self._record_a_run_that_never_began(e, connect_s=connect_s, manifest=manifest)
             raise
         try:
             # a run starts from the pose it will end at, so what the pilot improvises from is
@@ -3401,85 +3533,14 @@ class AgentLoop:
                 await self._unbroken(cfg.transport.close())
             if note := getattr(cfg.transport, "close_note", None):
                 self._note(str(note))
-            # The whole run, on the transcript's own clock, which started the instant the
-            # record opened rather than when the budget did. Read once so `ended_at`,
-            # `wall_s` and `run_end.t` are three spellings of one number.
-            wall_s = round(self.transcript.elapsed_s, 3)
-            summary = {
-                "duck": self.fm.name,
-                "run_name": cfg.run_name,
-                "command": command_line(),
-                "version": __version__,
-                "outcome": outcome,
-                "reason": reason,
-                "steps": self.budget.steps,
-                "llm_calls": self.budget.llm_calls,
-                # Three clocks that were one, and they answer different questions. `elapsed_s`
-                # is the budget's: it starts after `run_start`, restarts after a `--by-hand`
-                # handover, and on a simulator it is the simulator's own time, which is what
-                # `max_minutes` is checked against and all it is. `wall_s` is the run as
-                # somebody standing next to the robot experienced it, connect and teardown
-                # included. `llm_latency_s` is how much of that was spent waiting on the
-                # model, which on the arm was 62.1 seconds of 78.8 and had to be added up by
-                # hand to say so.
-                "elapsed_s": round(self.budget.elapsed_s, 2),
-                "started_at": self.transcript.started_at_iso,
-                "ended_at": self.transcript.ended_at_iso(wall_s),
-                "wall_s": wall_s,
-                "connect_s": connect_s,
-                "llm_latency_s": round(self.llm_latency_s, 3),
-                # The typical call and the bad one beside the total, by nearest rank over the
-                # calls that answered, only where one did, so a run that never asked the model
-                # anything says nothing it did not measure (`quackd.latency`).
-                **{
-                    f"llm_latency_{figure}_s": seconds
-                    for figure, seconds in (spread(self.llm_answered_s) or {}).items()
-                },
-                # How long the robot took to do anything at all, on this record's clock with the
-                # connect in it, and after how many model calls: null where nothing moved, a dry
-                # run among them, since it hands nothing over (`Executor.first_motion_at`).
-                "first_motion_s": (
-                    self.transcript.at(moved)
-                    if (moved := self.executor.first_motion_at) is not None
-                    else None
-                ),
-                "first_motion_llm_calls": self.executor.first_motion_llm_calls,
-                # the tries asked again after the API could not answer a turn, and the seconds
-                # waited before asking, only where the run waited at all (ADR-0059): a wait a
-                # stop ended has seconds and no try
-                **(
-                    {
-                        "llm_retries": self.llm_retries,
-                        "llm_retry_wait_s": round(self.llm_retry_wait_s, 3),
-                    }
-                    if self.llm_retries or self.llm_retry_wait_s
-                    else {}
-                ),
-                "usage": self.usage.model_dump(),
-                # What it cost and what it was costed at. `cost_usd` is the model only: the
-                # stepper bills separately and keeps its figure in its own block below.
-                "price": self.price.record() if self.price is not None else None,
-                "cost_usd": self.cost_usd,
-                # how many of the calls in `cost_usd` were the vendor's own bill rather than
-                # the rate above times their tokens, only where any were
-                **({"billed_calls": self.billed_calls} if self.billed_calls else {}),
-                "provider": cfg.provider.name,
-                "model": cfg.provider.model,
-                "transport": backend_name(cfg.transport),
-                "robot": manifest.id if manifest is not None else None,
-                "dry_run": cfg.dry_run,
-                "final_state": final_state,
-                # what a view could not show. The record has every one of them; a console
-                # that swallowed a hundred events used to leave no sign anywhere.
-                "log_dropped": self.event_log.dropped,
-                # only when there was one, so every summary written before the stepper
-                # existed, and every run that does not ask for one, stays byte for byte
-                # what it was. `watch`'s own block rides in it, its bill folded into the totals.
-                **({"decision": block} if (block := self._decision_summary(stepper)) else {}),
-                # and the arm's policy by the same rule: what it is, what its segments
-                # counted and the round trips to its server, never an action it sent
-                **({"policy": block} if (block := self._policy("policy_record")) else {}),
-            }
+            summary = self._summary_of_the_run(
+                outcome=outcome,
+                reason=reason,
+                connect_s=connect_s,
+                final_state=final_state,
+                manifest=manifest,
+                stepper=stepper,
+            )
             # the only unguarded statements in this teardown used to be these three, so a
             # disk that filled at `run_end` skipped summary.json, leaked the file handle,
             # skipped the episode, and replaced the run's real exception with an OSError

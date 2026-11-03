@@ -102,6 +102,9 @@ class FakeAlohaMiniHost:
         # home() ran and left full-speed descent in the register with no zero after it
         self.lift_goal_velocity: int = HOME_DESCENT_VELOCITY if calibrated else 0
         self.actions: list[dict[str, Any]] = []
+        self.slow: set[str] = set()
+        """State keys a goal does not land on at once: a servo takes its time, and a test says
+        where one has got to by writing `state`."""
         self.rejected: list[dict[str, Any]] = []
         """Payloads that raised, exactly as the host's `except Exception` swallows them."""
         self.watchdog_trips = 0
@@ -131,7 +134,12 @@ class FakeAlohaMiniHost:
             self.lift_goal_velocity = int(max(-V_MAX, min(V_MAX, int(action[LIFT_VEL_KEY]))))
 
         for key, value in action.items():
-            if key.endswith(".pos") and key in self.state and self.arm_torque:
+            if (
+                key.endswith(".pos")
+                and key in self.state
+                and self.arm_torque
+                and key not in self.slow
+            ):
                 self.state[key] = float(value)
         for key in VEL_KEYS:
             self.state[key] = vel[key]

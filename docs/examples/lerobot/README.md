@@ -1,10 +1,11 @@
 # Shoot-day examples for the SO-101 arm
 
-One folder per experiment on the run sheet that has a file of its own, `e001` to `e207`. The 23 that
+One folder per experiment on the run sheet that has a file of its own, `e001` to `e220`. The 34 that
 have none are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
-`e203` and `e205` to `e207`. `e126` holds a stand-in for a model beside its task file, and `e201` a
-script and two pictures to print and no task file at all. The others hold the task file for that
+`e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for a model beside
+their task files, `e216` a script and no task file, and `e201` a script and two pictures to print
+and no task file either. The others hold the task file for that
 experiment, or one per variant, and any picture it hands the model with `--image`, except four
 that are yours to supply: the bill and the star count of `e106` and the two video thumbnails of
 `e111`. Save them beside their files as `bill.png`, `stars.png`, `thumb-a.png` and `thumb-b.png`
@@ -76,7 +77,7 @@ September, are among the 118 and no longer read what they read that day, and the
 rehearsal below ran the five `e004` files as they read before.
 
 The aim is that 90 to 95 percent of these files run as asked on the arm. By the run sheet's own
-expectations 208 of the 246, 85 percent, should, short of the aim, and the other 38 are meant to
+expectations 208 of the 247, 84 percent, should, short of the aim, and the other 39 are meant to
 fall short: the sheet expects the arm not to do what they ask, and in most of them the miss is the
 point. An entry that hedges, or expects some of a set to fall short without saying which, as the
 idioms of `e079` do, counts as running. Eleven meet a limit of the arm or of how quackd drives it:
@@ -86,11 +87,12 @@ the tower of `e100` and the tangled cable of `e109`. Four meet the seconds each 
 the act of `e037`, asked for at once, the metronome of `e045`, which asks for a tick a second, the
 red light of `e096`, which catches the arm still moving every round, and the fly of `e113`, gone
 before each swing lands. Two ask for two things at the same time, the pat and rub of `e062` and the
-wave and count of `e070`, which the sheet expects one after the other or not at all. Eight end on
+wave and count of `e070`, which the sheet expects one after the other or not at all. Nine end on
 one of quackd's own limits: a range the validator refuses in `e084/give-110`, the step budget of
 `e120`, partway through its waves, the three refusals that end `e170`, the budgets of `e187`, the
-two steps `e193` spends on purpose, the range `e194` is refused whatever its note says, and the
-budgets the monkey of `e126` runs into. Eight are cut short by a person, as the experiment plans:
+two steps `e193` spends on purpose, the range `e194` is refused whatever its note says, the
+budgets the monkey of `e126` runs into, and the two calls `e215` is refused, which leave its
+stand-in nothing else to do. Eight are cut short by a person, as the experiment plans:
 the hand of `e081`, gone before the high five lands, a cable pulled in `e116` and Ctrl-C in `e117`,
 both partway through the raise they ask for, a confirm declined in `e121`, the supply cut in
 `e166`, a second press in `e180`, a press in `e182` while the model thinks, and a hand in `e183`
@@ -105,7 +107,7 @@ disown a part.
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
 any model. Each file opens with a comment carrying its first command. Check them all against the
-arm's manifest before a session, which should say `246 files valid`:
+arm's manifest before a session, which should say `247 files valid`:
 
 ```bash
 quackd validate "docs/examples/lerobot/*/*.duck" --robot lerobot:real
@@ -218,3 +220,27 @@ missed fold and each left unanswered, Ctrl-C mid-move, during a fold, in a perso
 a model call, a second press, the dry run and the policies, and `--lock-duckfile` and the budget's
 brake over MCP. That says the commands are right and the lines they quote are real. It says nothing
 about the arm.
+
+## The files added for quackd 0.30.3
+
+`e208` to `e220` came on 3 November 2026, for what 0.30.1, 0.30.2 and 0.30.3 changed between a
+person and a moving arm, and none of them has run on an arm. Eleven of them run the bundled
+`lerobot-lookout` with `--llm fake`, or a command, so they cost no key, and `e219` uses the raise of
+`e180`, whose run a model flies.
+
+`e208` to `e212` press Ctrl-C at the moments that used to go past the close: again and again through
+the end of a by-hand run, during the fold it starts with, while the arm connects, during a connect
+that fails, which is the one that leaves a record only since 0.30.3, and twice with the arm in your
+hands. `e213` and `e214` are the question that opens the jaws: Enter held down answers nothing, and
+a word typed at it is a no. `e215` flies a stand-in for a model, `e215/lazy_pilot.py`, that sends
+`gripper` with nothing, which is refused at `params` where it used to open the jaws. `e216` sends a
+`stop` beside a move over MCP from a page of Python, on a clock, which `e196` has to ask a chat to do.
+`e217` and `e218` press through `quackd robot release` and `quackd doctor`. `e219` tries the keys that
+mean nothing. `e220` is optional and needs Linux or macOS and no arm: whether a SIGKILL leaves the
+terminal usable.
+
+How they were checked, on the commit that became 0.30.3. `e208` to `e214` and `e217` to `e219` ran on
+`lerobot:mock` or the real backend over a stand-in arm, in a real Windows console with the presses
+made as the sheet says, and what the sheet quotes is what that printed. `e215` ran on the mock with
+its stand-in serving, and `e216` on the arm's twin, whose clock runs fast, so with `--after 0.2`. `e220`
+ran in Docker under a real `bash`, and the sentence about a hand on the arm in each has met no hand.

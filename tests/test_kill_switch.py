@@ -14,6 +14,7 @@ import asyncio
 import gc
 import io
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -489,6 +490,47 @@ async def test_uninstalling_stops_looking_for_a_signal() -> None:
     assert looking.cancelled()
     ks._look_for_a_signal()
     assert ks._looking is looking, "nothing is set going again once it is out"
+
+
+async def test_a_press_past_the_end_of_a_command_does_nothing_at_all() -> None:
+    """A person still pressing cannot tell the end of a run from its last moments, and one past the
+    switch raised through the printing of the verdict. Not a press either: nothing is left to
+    stop, and whatever might be watching has stopped."""
+    before = signal.getsignal(signal.SIGINT)
+    ks = KillSwitch(asyncio.Event())
+    ks.install(keys=False)
+    ks.uninstall(nothing_left_to_stop=True)
+    try:
+        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+        signal.raise_signal(signal.SIGINT)
+        await asyncio.sleep(0)
+        assert ks.presses == 0
+    finally:
+        signal.signal(signal.SIGINT, before)
+
+
+def test_a_press_as_the_interpreter_ends_leaves_the_exit_code_alone() -> None:
+    """On Windows one past the handler ended the process with `0xC000013A`, whatever the run had
+    come to, 6 times in 6, because the interpreter puts a handler it installed back as it ends.
+    It leaves one set to ignore where it is. `atexit` is the last moment Python can press in."""
+    script = (
+        "import asyncio, atexit, signal, sys\n"
+        "from quackd.safety import KillSwitch\n"
+        "async def main():\n"
+        "    ks = KillSwitch(asyncio.Event())\n"
+        "    ks.install(keys=False)\n"
+        "    ks.uninstall(nothing_left_to_stop=True)\n"
+        "asyncio.run(main())\n"
+        "atexit.register(signal.raise_signal, signal.SIGINT)\n"
+        "signal.raise_signal(signal.SIGINT)\n"
+        "print('the verdict', flush=True)\n"
+        "sys.exit(7)\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    assert done.returncode == 7, done.stderr
+    assert done.stdout.strip() == "the verdict"
 
 
 async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:

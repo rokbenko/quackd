@@ -196,16 +196,26 @@ def alohamini_conditions() -> dict[str, Precondition]:
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
 
 
+async def _after_a_stop(ctx: VerbContext) -> str:
+    """What became of an arm a stop from beside its verb reached, in the words of the last stop:
+    asked here as well as in `_ended_by`, since one that had no recent reading to hold it from
+    tries again (`zmq_host._hold_the_arms`)."""
+    await ctx.transport.stop()
+    if getattr(ctx.transport, "stop_left_going", ()):
+        return "goes on to the goal it was sent, with no recent reading to hold it from"
+    return "is held where it stood"
+
+
 async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     """Absolute joint goals for one arm. Also stops the base, as upstream does. A stop from beside
-    it ends the wait and says what it did: this robot's stop leaves the arms' goals alone
-    (`zmq_host`), so the arm goes on to this one."""
+    it ends the wait and says what became of the arm, which it holds where it stands where a
+    recent reading says where that is (`zmq_host`)."""
     goals = {f"arm_{p.arm}_{joint}": value for joint, value in p.positions.items()}
     intent = Intent.joint(goals, p.duration_s)
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
     if (why := await _waited_out(ctx, p.duration_s)) is not None:
-        stopped = "the base and the lift are stopped and the arm goes on to the goal it was sent"
+        stopped = "the base and the lift are stopped and the arm " + (await _after_a_stop(ctx))
         return await _ended_by(
             ctx, "move_joints", why, stopped, arm=p.arm, goal=dict(p.positions), base_stopped=True
         )
@@ -285,8 +295,7 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
 
 async def home_arms(ctx: VerbContext, _: NoParams) -> VerbResult:
     """Return both arms to their rest pose, one arm at a time. A stop from beside it ends it before
-    the next arm's goal: this robot's stop leaves the goals alone, so the arm already sent goes on
-    to rest, and the other used to set off after the stop."""
+    the next arm's goal: the other used to set off after the stop."""
     for n, arm in enumerate(ARMS, 1):
         goals = {
             f"arm_{arm}_{joint}": 0.0 for joint in ("shoulder_pan", "shoulder_lift", "elbow_flex")
@@ -294,7 +303,7 @@ async def home_arms(ctx: VerbContext, _: NoParams) -> VerbResult:
         if (fail := await send_or_fail(ctx, Intent.joint(goals, 2.0))) is not None:
             return fail
         if (why := await _waited_out(ctx, 2.0)) is not None:
-            stopped = f"the {arm} arm goes on to rest and no arm was sent after it"
+            stopped = f"the {arm} arm {await _after_a_stop(ctx)} and no arm was sent after it"
             return await _ended_by(ctx, "home_arms", why, stopped, arms_sent=n)
     return VerbResult.success("both arms returned to rest")
 

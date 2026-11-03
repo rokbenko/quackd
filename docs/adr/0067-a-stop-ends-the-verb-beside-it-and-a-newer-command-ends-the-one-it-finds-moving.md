@@ -12,6 +12,12 @@ Huebot. A skill the robot plays out with nothing sent after it, a `kick` or a `g
 it has sent. And the gate that kept a composite's call from starting once a stop had overtaken it
 now does the same for every call that moves the body, while it reads the body's state.
 
+**Amended 2026-11-03, for 0.30.3:** a skill the robot plays out reads it too, once it has sent:
+`kick`, `sit` and `stand` on the Microduck and the Huebot, `grab` on the Microduck, `express` on the
+Open Duck Mini. The robot still plays it out, since a stop ends no skill on those robots, and the
+answer says so. And on the XLeRobot and the AlohaMini a stop now holds an arm on its way somewhere,
+from a recent reading ([ADR-0026](0026-xlerobot.md)).
+
 ## Context
 
 The executor counts every stop asked for, from any caller, and gives each verb a context whose

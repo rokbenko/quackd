@@ -67,6 +67,16 @@ POLL_MS = 200
 CONNECT_TIMEOUT_S = 5.0
 CALL_TIMEOUT_S = 3.0
 STOP_REPEATS = 3
+HOLD_FRESH_MS = 100.0
+"""How old a reading of an arm may be for a stop to make it the arm's goal: three of the host's
+cycles. The arm steps back by what it travelled since that reading, which is a hold. From an
+older one it could be a move of its own, and nothing on the wire says how old a reading really
+is."""
+HOLD_READ_S = 0.1
+"""How long a stop may look for that reading, after the wheels and the lift are stopped: a
+request and its reply, and the host answers one request a cycle. Inside `HOLD_FRESH_MS`, or
+what it found would be too old on arrival."""
+HOLD_READ_POLL_MS = 20
 """`stop_base` writes with num_retry=0 and shares a bus with the lift, so one lost serial
 packet loses the stop. Saying it more than once is cheap."""
 
@@ -180,6 +190,14 @@ class AlohaMiniZmq:
         self._state: dict[str, float] = {}
         self._frames: dict[str, bytes] = {}
         self._rx_at: float | None = None
+        self._answered_at: float | None = None
+        """When the host last answered the request just sent. Any later than `_rx_at` it never
+        is, and earlier wherever a reply came in behind its time: a DEALER keeps those, so the
+        one read can be the answer to an earlier request, and `_hold_the_arms` needs this one."""
+        self._unheld: set[str] = set()
+        """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
+        self.stop_left_going: tuple[str, ...] = ()
+        """The joints the last stop could not hold, for want of a recent reading."""
         self.camera_available = False
         self.cameras: tuple[str, ...] = ()
         self.arms_available = True
@@ -281,6 +299,8 @@ class AlohaMiniZmq:
         self.arm_torque = bool(observation.get("quackd_arm_torque", False))
         self.calibrated = bool(observation.get("quackd_calibrated", True))
         self._rx_at = time.monotonic()
+        if parts[0] == str(self._token).encode("ascii"):
+            self._answered_at = self._rx_at
         self.sequence += 1
         return True
 
@@ -393,7 +413,7 @@ class AlohaMiniZmq:
                 # quackd speaks rad/s, this wire is deg/s
                 self._vel["theta.vel"] = math.degrees(float(p.get("wz", 0.0)))
             case "stop":
-                self._halt()
+                await self._stopping()
             case "pose":
                 target = p.get("lift_height_mm")
                 if target is None:
@@ -409,6 +429,7 @@ class AlohaMiniZmq:
                 if unknown:
                     return Ack(accepted=False, reason=f"unknown joints {unknown}")
                 self._arm_goals.update({f"{k}.pos": v for k, v in goals.items()})
+                self._unheld.update(f"{k}.pos" for k in goals if not k.endswith("gripper"))
                 self._zero_base()
             case "gripper":
                 if not self.arm_torque:
@@ -445,18 +466,52 @@ class AlohaMiniZmq:
             self._vel[key] = 0.0
 
     def _halt(self) -> None:
-        """Zero the wheels, zero the lift, and leave every arm goal exactly where it was.
-
-        The arm goals already in `_arm_goals` are what quackd last asked for, so leaving them
-        alone is the hold. Rebuilding one from the latest observation would be building it from
-        a reading several cycles old, and a stale position sent to a servo moves an arm rather
-        than holding it."""
+        """Zero the wheels and zero the lift."""
         self._zero_base()
         self._lift_target_mm = None  # so `_payload` emits the lift velocity zero
 
+    async def _stopping(self) -> None:
+        """The wheels and the lift, at once, and then the arms where they stand.
+
+        A stop that left the goals alone was a stop only for the base: an arm on its way
+        somewhere got there, with a person's hand in the way or not. A reading here takes a
+        request and a reply, so the base does not wait on it."""
+        self._halt()
+        if self._unheld:
+            with contextlib.suppress(Exception):
+                await self._send()
+            with contextlib.suppress(Exception):
+                async with asyncio.timeout(HOLD_READ_S):
+                    asked = time.monotonic()
+                    while (self._answered_at or asked) <= asked:
+                        await self._pump(HOLD_READ_POLL_MS)
+        self._hold_the_arms()
+
+    def _hold_the_arms(self) -> None:
+        """The reading becomes the goal, under three rules, each of which is about a stop that
+        would otherwise move an arm.
+
+        A reading older than `HOLD_FRESH_MS` is not used (ADR-0026: a fake host caught a stop
+        built from an observation that had not caught up, which sent the arm back to zero).
+        That joint goes on to the goal it was sent, the transport says so, and the next stop
+        tries again.
+
+        A joint is held once for each goal it is sent. A servo under load reads below its goal,
+        so sending it its reading lets it sink by that much, and every failed verb ends in a
+        stop: held every time, an arm carrying something would walk down a stop at a time.
+
+        A gripper is never held: sending it what it reads would open a hand that is squeezing
+        something against its goal, so the goal it has stands."""
+        answered = self._answered_at
+        if answered is not None and (time.monotonic() - answered) * 1000.0 <= HOLD_FRESH_MS:
+            for key in self._unheld & set(self._state):
+                self._arm_goals[key] = self._state[key]
+            self._unheld -= set(self._state)
+        self.stop_left_going = tuple(sorted(k.removesuffix(".pos") for k in self._unheld))
+
     async def stop(self) -> None:
         """Safe to call at any time, including when the link has already gone."""
-        self._halt()
+        await self._stopping()
         if self._link is None:
             return
         for _ in range(STOP_REPEATS):

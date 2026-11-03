@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import re
+import signal
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -2889,6 +2890,86 @@ def test_a_release_whose_fold_found_the_servos_limp_puts_no_question(
     assert "and its last read finds torque off on" in flat, flat
     assert "it is holding itself up where it stopped" not in flat, flat
     assert "torque was left on" not in flat and "torque stays on" not in flat, flat
+
+
+def test_a_press_past_the_end_of_a_run_loses_no_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The record was on disk and the panel was not: 1 time in 6 with somebody still pressing as a
+    run ended, and the exit code was the press's."""
+    from quackd import cli
+
+    printed = cli._print_outcome
+
+    def pressed_then_printed(*args: Any, **kwargs: Any) -> None:
+        signal.raise_signal(signal.SIGINT)
+        printed(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "_print_outcome", pressed_then_printed)
+    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-gif"]
+    result = runner.invoke(app, [*task, "--runs-dir", str(tmp_path)])
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert "steps" in result.output, result.output
+    assert list(tmp_path.glob("*/summary.json"))
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "hello-world", "--robot", "microduck:mock", "--no-gif"],
+        ["run", "flock-hello", "--no-gif"],
+        ["run", "flock-kick", "--no-gif"],
+    ],
+    ids=["run", "pilot-flock", "coordinator-flock"],
+)
+def test_a_run_leaves_a_press_doing_nothing_as_it_ends(argv: list[str], tmp_path: Path) -> None:
+    result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(tmp_path)])
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+
+
+def test_a_release_and_a_doctor_leave_a_press_doing_nothing_as_they_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What they print last is what became of the torque, which is the one thing not to lose."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    reg = _real_arm(monkeypatch, tmp_path, FakeArm(step=5.0), "arm-p", off=10.0)
+    before = signal.getsignal(signal.SIGINT)
+    result = _release(reg, "arm-p", "--yes")
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+    signal.signal(signal.SIGINT, before)
+    result = runner.invoke(app, ["doctor", "--robot", "arm-p", "--registry-dir", str(reg)])
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+
+
+def test_a_press_while_the_gif_is_made_leaves_out_the_gif_and_keeps_the_verdict(
+    tmp_path: Path,
+) -> None:
+    """It can be minutes on a long run, so it is the one thing a press still ends after the run."""
+    from quackd import cli
+
+    class Pressed:
+        def save_gif(self, path: Path) -> Path:
+            path.write_bytes(b"half a gif")
+            signal.raise_signal(signal.SIGINT)
+            raise AssertionError("the press did not end it")
+
+    class Finished:
+        def save_gif(self, path: Path) -> Path:
+            path.write_bytes(b"a gif")
+            return path
+
+    before = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        half = tmp_path / "half.gif"
+        assert cli._gif_a_press_can_leave_out(Pressed(), half) is None
+        assert not half.exists(), "half a picture was left where the whole one goes"
+        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, "a press means nothing again"
+        whole = tmp_path / "whole.gif"
+        assert cli._gif_a_press_can_leave_out(Finished(), whole) == whole
+        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGINT, before)
 
 
 def _pressed_while_connecting(tty: Any) -> Any:

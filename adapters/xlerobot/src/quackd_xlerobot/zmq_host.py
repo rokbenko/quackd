@@ -54,6 +54,13 @@ observation is this old the host has already stopped the base, so this is the mo
 cached reading stops being a reading. A number spelled twice can disagree with itself."""
 """The host's own watchdog window: by now it has already stopped the base."""
 POLL_MS = 50
+HOLD_FRESH_MS = 100.0
+"""How old a reading of an arm may be for a stop to make it the arm's goal: three of the host's
+cycles. The arm steps back by what it travelled since that reading, which is a hold. From an
+older one it could be a move of its own, and nothing on the wire says how old a reading really
+is."""
+HOLD_READ_S = 0.2
+"""How long a stop may spend looking for that reading, on a link that has stopped answering."""
 CONNECT_TIMEOUT_S = 5.0
 CALL_TIMEOUT_S = 2.0
 
@@ -181,6 +188,10 @@ class XLerobotZmq:
         self.camera_key: str | None = None
         self.holding: dict[str, bool] = dict.fromkeys(ARMS, False)
         self.post_sleep: Any = None
+        self._unheld: set[str] = set()
+        """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
+        self.stop_left_going: tuple[str, ...] = ()
+        """The joints the last stop could not hold, for want of a recent reading."""
 
     # ── the link ────────────────────────────────────────────────────────────────────
 
@@ -355,13 +366,14 @@ class XLerobotZmq:
                 # quackd speaks rad/s, the wire is deg/s (upstream_api.THETA_VEL_IS_DEGPS)
                 self._desired["theta.vel"] = math.degrees(float(p.get("wz", 0.0)))
             case "stop":
-                self._halt()
+                await self._stopping()
             case "joint":
                 goals = {str(k): float(v) for k, v in dict(p.get("positions", {})).items()}
                 unknown = sorted(set(goals) - set(JOINTS))
                 if unknown:
                     return Ack(accepted=False, reason=f"unknown joints {unknown}")
                 self._desired.update({f"{k}.pos": v for k, v in goals.items()})
+                self._unheld.update(f"{k}.pos" for k in goals if not k.endswith("gripper"))
                 self._halt_base()  # upstream writes the wheels on every action
             case "gripper":
                 open_ = bool(p.get("open", True))
@@ -398,19 +410,43 @@ class XLerobotZmq:
         for key in _VEL_KEYS:
             self._desired[key] = 0.0
 
-    def _halt(self) -> None:
-        """Stop zeroes the wheels and leaves every arm goal exactly where it already was.
+    async def _stopping(self) -> None:
+        """Stop zeroes the wheels and holds the arm where it stands.
 
-        It deliberately does NOT re-command the arms from the latest observation. That reading
-        can be a few cycles behind - the host publishes at 30 Hz and nothing on the wire is
-        timestamped - so a "hold" built from it can be a stale position, and sending a stale
-        position to a servo does not hold an arm, it moves one. The goals already in
-        `_desired` are what quackd last asked for, so leaving them alone is the real hold.
-
-        This matches upstream, whose own `stop_base` writes the three wheels and nothing else
-        and leaves the arms holding under torque. quackd never sends the disconnect that would
+        A stop that left the goals alone was a stop only for the wheels: an arm on its way
+        somewhere got there, with a person's hand in the way or not, as upstream's `stop_base`
+        lets it. So each joint with a goal no stop has held since is sent where it reads, as
+        the SO-101's stop does (`_hold_the_arms`). quackd never sends the disconnect that would
         disable torque and drop whatever is held."""
+        if self._unheld:
+            # nothing on this wire waits: only the newest observation is kept, and it is taken
+            # or there is none
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(self._pump(0), HOLD_READ_S)
         self._halt_base()
+        self._hold_the_arms()
+
+    def _hold_the_arms(self) -> None:
+        """The reading becomes the goal, under three rules, each of which is about a stop that
+        would otherwise move an arm.
+
+        A reading older than `HOLD_FRESH_MS` is not used (ADR-0026: a fake host caught a stop
+        built from an observation that had not caught up, which sent the arm back to zero).
+        That joint goes on to the goal it was sent, the transport says so, and the next stop
+        tries again.
+
+        A joint is held once for each goal it is sent. A servo under load reads below its goal,
+        so sending it its reading lets it sink by that much, and every failed verb ends in a
+        stop: held every time, an arm carrying something would walk down a stop at a time.
+
+        A gripper is never held: sending it what it reads would open a hand that is squeezing
+        something against its goal. The goal it has stands, as on the SO-101, and the head has
+        no goal here unless a verb sent it one."""
+        if self._stale_ms() <= HOLD_FRESH_MS:
+            for key in self._unheld & set(self._state):
+                self._desired[key] = self._state[key]
+            self._unheld -= set(self._state)
+        self.stop_left_going = tuple(sorted(k.removesuffix(".pos") for k in self._unheld))
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self._connected:
@@ -430,7 +466,7 @@ class XLerobotZmq:
     async def stop(self) -> None:
         """Safe to call many times, from anywhere, at any time - including when the link is
         already gone, which is exactly when the executor calls it."""
-        self._halt()
+        await self._stopping()
         if self._link is None:
             return
         try:

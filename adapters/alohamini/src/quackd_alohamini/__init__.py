@@ -293,6 +293,12 @@ class AlohaMiniAdapter:
     async def stop(self) -> None:
         await self.transport.stop()
 
+    @property
+    def stop_left_going(self) -> tuple[str, ...]:
+        """The joints the last stop could not hold (`zmq_host._hold_the_arms`). Proxied since
+        the core `stop` verb reads it off what it was handed, which is this adapter."""
+        return tuple(str(j) for j in getattr(self.transport, "stop_left_going", ()) or ())
+
     async def go_to_rest(self) -> RestResult:
         """This is not a body quackd parks: make() refuses a rest pose for it, so there is
         nothing here to drive to."""

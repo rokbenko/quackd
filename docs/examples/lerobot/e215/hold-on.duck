@@ -1,0 +1,24 @@
+# SO-101 run sheet. E215: A gripper call that says nothing.
+# Serve e215/lazy_pilot.py in a second terminal, then run this from the root of this checkout, against the arm registered as arm-01:
+#   quackd run docs/examples/lerobot/e215/hold-on.duck --robot arm-01 --by-hand --llm local:lazy --base-url http://127.0.0.1:8800/v1 --no-vision --max-steps 6 --no-memory
+---
+duck: 1
+name: e215-hold-on
+description: "Hold on to what the jaws hold, flown by a stand-in that never says which way they go."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, gripper, stop]
+  confirm: []
+budgets:
+  max_steps: 6
+  max_minutes: 3
+  max_llm_calls: 8
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said clearly why you could not."
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Hold on to what the jaws hold. Do not open them.
