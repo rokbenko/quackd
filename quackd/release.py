@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Awaitable, Callable
+import functools
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, TypeVar
 
@@ -265,9 +266,10 @@ async def ask(
     watches a fresh key press rather than the abort flag (`until_abort=False`): the flag is set
     on every run a person ended, which are the runs most likely to have missed their fold, and
     watching it would skip the question on exactly those. A Ctrl-C that reaches here as an
-    interrupt rather than through the switch, which is every one after the first, ends the wait
-    too, and is caught: it means "skip this", and whatever comes after the question, a close
-    above all, still has to happen. Never raises.
+    interrupt rather than through the switch, which is one after the first where a press has not
+    been told to stay (`KillSwitch.stay_to_the_close`), ends the wait too, and is caught: it
+    means "skip this", and whatever comes after the question, a close above all, still has to
+    happen. Never raises.
 
     `asked(question, agreed)` is called once the wait answers, and not when an interrupt ended
     it, so the record holds the exchanges a person actually had."""
@@ -298,10 +300,10 @@ def kept_at_a_wait(why: str, *, event: Hook = _nothing, note: Hook = _nothing) -
 
 
 STOPPED_FOLD_S = 2.0
-"""How long a fold already told to stop is still waited for when the call that stopped it is
-cancelled as well. A cancelled fold raises at its next await, a bus call's or a tick's, so in
-practice it is gone at once; the bound is for one that would not go, and it keeps a cancellation
-from being held up for ever by something this module did not write."""
+"""How long a fold told to stop is waited for. A cancelled fold raises at its next await, a bus
+call's or a tick's, so in practice it is gone at once; the bound is for one that would not go, and
+it keeps a teardown a press can no longer quit from being held up for ever by something this
+module did not write (`KillSwitch.stay_to_the_close`)."""
 
 
 async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
@@ -310,20 +312,36 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
     `asyncio.wait` rather than awaiting each: it raises nothing a task raised. A cancellation of
     the task doing the waiting, a later Ctrl-C, does not end the wait at once: the tasks have
     been told to stop, and a fold left to finish on its own would go on sending goals behind
-    whatever comes next, so they are waited out a little longer (`STOPPED_FOLD_S`) before the
-    cancellation goes on up. What a task raised is read, so one that failed as it was stopped is
-    not reported later as an exception nobody retrieved."""
+    whatever comes next, so they are waited out a little longer before the cancellation goes on
+    up. No wait here outlasts `STOPPED_FOLD_S`. What a task raised is read, so one that failed as
+    it was stopped is not reported later as an exception nobody retrieved."""
     for task in tasks:
         task.cancel()
     try:
-        await asyncio.wait(tasks)
+        await asyncio.wait(tasks, timeout=STOPPED_FOLD_S)
     except asyncio.CancelledError:
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait(tasks, timeout=STOPPED_FOLD_S)
         raise
     for task in tasks:
-        if not task.cancelled():
+        if task.done() and not task.cancelled():
             task.exception()
+
+
+@contextlib.asynccontextmanager
+async def one_watch(person: Any) -> AsyncIterator[Callable[[], Awaitable[Any]] | None]:
+    """A press watched for once across what a person may stop in turn: a count and then a fold.
+    Each counting presses from where it began lost one made in between, and the arm folded under
+    the hand that made it. What it yields is `fold_unless_stopped`'s `stopped`."""
+    stopped = getattr(person, "stopped", None)
+    if stopped is None:
+        yield None
+        return
+    watch = asyncio.ensure_future(stopped())
+    try:
+        yield functools.partial(asyncio.shield, watch)
+    finally:
+        await cancel_and_wait(watch)
 
 
 async def fold_unless_stopped(
@@ -342,7 +360,7 @@ async def fold_unless_stopped(
     one step cap from where the arm was, so that is as far as it goes on.
 
     The fold task never outlives this call. If the task awaiting it is cancelled, which is what
-    a later Ctrl-C does once the switch has handed the signal back, the fold is cancelled and
+    a later Ctrl-C does where the switch has handed the signal back, the fold is cancelled and
     waited for before the cancellation goes on up: a fold left running would go on sending goals
     while the close decides whether to let go. A `stopped` that fails is no stop, and the fold
     then goes on alone. A person with no `stopped` (a stand-in, a terminal that cannot say) gets
@@ -372,18 +390,26 @@ async def fold_unless_stopped(
 
 
 async def release_where_it_stands(
-    transport: Any, *, event: Hook = _nothing, note: Hook = _nothing
+    transport: Any,
+    *,
+    event: Hook = _nothing,
+    note: Hook = _nothing,
+    stopped: Callable[[], Awaitable[Any]] | None = None,
 ) -> Settled:
     """Take torque off wherever the arm stands, into the hands of a person who pressed Enter.
 
-    The second door (`let_go_if_any(..., anywhere=True)`), read back as it always is, and a
-    Ctrl-C landing on it told apart by the arm's own backend: before the release went out, on the
-    read it begins with, nothing was sent (`in_hand` still False), and after it part of the arm
-    may already be limp. A body that does not say gets the limp reading, which is the one that
-    never drops an arm. Never raises."""
+    The second door (`let_go_if_any(..., anywhere=True)`), read back as it always is, and a press
+    landing on it told apart by the arm's own backend: before the release went out, on the read
+    it begins with, nothing was sent (`in_hand` still False), and after it part of the arm may
+    already be limp. `stopped` is that press, raced against the release: it reaches here no other
+    way once a press has been told to stay, and the person who changed their mind about dropping
+    an arm read that it had stopped as the arm went limp. A body that does not say gets the limp
+    reading, which is the one that never drops an arm. Never raises."""
     try:
-        released = await let_go_if_any(transport, anywhere=True)
-    except (asyncio.CancelledError, KeyboardInterrupt):
+        released = await fold_unless_stopped(
+            functools.partial(let_go_if_any, transport, anywhere=True), stopped
+        )
+    except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
         if getattr(transport, "in_hand", None) is False:
             event(stage="kept", reason=NOT_SENT)
             note(RELEASE_NOT_SENT)
@@ -520,5 +546,7 @@ async def settle_missed_fold(
     if answer != ENTER:
         kept_at_a_wait(answer, event=event, note=note)
         return Settled("kept", answer, asked="drop", fold=again)
-    settled = await release_where_it_stands(transport, event=event, note=note)
+    settled = await release_where_it_stands(
+        transport, event=event, note=note, stopped=getattr(person, "stopped", None)
+    )
     return replace(settled, asked="drop", fold=again)

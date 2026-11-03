@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import SayParams, _ended_by, send_or_fail
 from quackd.verbs.explore import ExploreSpec, explore_verb, find_verb
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd.verbs.watch import HeadSpec, watch_verb
 from quackd_microduck import upstream_api as up
 
@@ -313,8 +313,9 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     while True:
         await ctx.transport.sleep(STAND_UP_POLL_S)
         waited += STAND_UP_POLL_S
-        if (why := ctx.interrupted()) is not None:
-            return await _ended_by(ctx, "stand_up", why, "this stopped waiting for it to get up")
+        if ctx.interrupted() == STOPPED:
+            what = "this stopped waiting for it to get up"
+            return await _ended_by(ctx, "stand_up", STOPPED, what)
         state = await ctx.transport.get_state()
         if _blind(state):
             # Reporting "upright" here is how a face-down duck used to pass: nothing was

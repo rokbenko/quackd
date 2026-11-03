@@ -3013,6 +3013,100 @@ def test_a_press_says_stopping_on_the_status_line_of_a_run(
     assert order[:2] == ["stopping", "printed"]
 
 
+def _switch_told_to_stay(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Each time a kill switch is told a press stays, with whether it was installed by then."""
+    from quackd.safety import KillSwitch
+
+    told: list[bool] = []
+    stay = KillSwitch.stay_to_the_close
+
+    def telling(self: KillSwitch) -> None:
+        told.append(self._loop is not None)
+        stay(self)
+
+    monkeypatch.setattr(KillSwitch, "stay_to_the_close", telling)
+    return told
+
+
+def test_a_by_hand_run_stays_from_the_start_and_its_panel_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second press landing on the teardown's first stop went past the question, the fold, the
+    close and the record, with the arm energised and its jaws shut, and that is the commonest way
+    to press twice: at the moment the first one seems to have done nothing."""
+    from quackd.safety import KillSwitch
+
+    async def pressed(self: KillSwitch, *, timeout_s: float | None = None, **_: Any) -> bool:
+        return True
+
+    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr(KillSwitch, "wait_for_enter", pressed)
+    told = _switch_told_to_stay(monkeypatch)
+    reg = _arm_registry(tmp_path, rest_pose=True)
+    argv = ["run", "lerobot-lookout", "--llm", "fake", "--robot", "arm-01", "--no-gif"]
+    argv += ["--registry-dir", str(reg), "--runs-dir", str(tmp_path / "runs"), "--no-memory"]
+    held = runner.invoke(app, [*argv, "--by-hand"])
+    said = " ".join(held.output.split())
+    assert told == [True], held.output
+    assert "However often you press, the run ends properly" in said
+    assert "Ctrl-C twice quits at once" not in said
+    told.clear()
+    plain = runner.invoke(app, argv)
+    assert told == [], "a run with nobody at the arm still quits on a second press"
+    assert "Ctrl-C twice quits at once" in " ".join(plain.output.split())
+
+
+def test_doctor_with_no_pose_to_fold_to_stays_for_its_own_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It asks somebody holding the arm whether to drop it, and the press after the one that ended
+    the question went past the disconnect, with no report and no word about the torque."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    told = _switch_told_to_stay(monkeypatch)
+    _a_terminal(monkeypatch, {})
+    reg = _real_arm(monkeypatch, tmp_path, FakeArm(), "arm-n")
+    result = runner.invoke(app, ["doctor", "--robot", "arm-n", "--registry-dir", str(reg)])
+    assert told == [True], result.output
+
+
+def test_a_press_between_a_releases_count_and_its_fold_stops_the_fold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The line about the fold is printed between the two, and each counting presses from where it
+    began lost one made there: `kill switch pressed`, and the arm folded under the hand."""
+    from rich.console import Console
+
+    from quackd.safety import KillSwitch
+    from tests.test_lerobot_adapter import FakeArm
+
+    switches: list[KillSwitch] = []
+    install = KillSwitch.install
+    printing = Console.print
+
+    def installing(self: KillSwitch, *, keys: bool = True) -> None:
+        switches.append(self)
+        install(self, keys=False)
+
+    def prints(self: Console, *objects: Any, **kwargs: Any) -> None:
+        printing(self, *objects, **kwargs)
+        if "keep your hands out of its way" in " ".join(str(o) for o in objects):
+            switches[0]._fire("test")
+
+    monkeypatch.setattr(KillSwitch, "install", installing)
+    monkeypatch.setattr(Console, "print", prints)
+    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-p", off=20.0)
+    sent = len(arm.actions)
+    result = _release(reg, "arm-p", "--yes")
+    said = " ".join(result.output.split())
+    assert "the fold was stopped where it was" in said, result.output
+    assert arm.torque_disabled == 0, "nothing was released"
+    assert len(arm.actions) <= sent + 1, "the fold went on past the press"
+
+
 def test_a_press_stays_from_the_connect_of_a_release_and_from_a_fold_of_doctors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

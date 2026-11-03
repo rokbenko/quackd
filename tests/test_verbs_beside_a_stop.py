@@ -17,7 +17,7 @@ import pytest
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor, allow_all
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import TICK_S, _waited_out
+from quackd.verbs.core import TICK_S, _waited_out, send_or_fail
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -104,7 +104,7 @@ CASES = [
     pytest.param(_aloha, "home_arms", {}, id="aloha-home"),
     pytest.param(_toddlerbot, "look", {"yaw_deg": 30}, id="toddler-look"),
     pytest.param(_toddlerbot, "perform", {"motion": "kneel"}, id="toddler-perform"),
-    pytest.param(_toddlerbot, "grip", {"close": True}, id="toddler-grip"),
+    pytest.param(_toddlerbot, "grip", {"close": False}, id="toddler-grip"),
 ]
 
 
@@ -264,7 +264,6 @@ async def test_a_stop_ends_the_wait_for_a_robot_to_get_up(stand_up: Any) -> None
         pytest.param(lambda: LeRobotAdapter(LeRobotMock()), "gripper", "open", id="so101"),
         pytest.param(_xlerobot, "gripper", "open", id="xlerobot"),
         pytest.param(_aloha, "gripper", "open", id="alohamini"),
-        pytest.param(_toddlerbot, "grip", "close", id="toddlerbot"),
     ],
 )
 async def test_a_gripper_call_that_does_not_say_which_way_moves_nothing(
@@ -282,3 +281,122 @@ async def test_a_gripper_call_that_does_not_say_which_way_moves_nothing(
     assert field in refused.summary, refused.summary
     assert list(getattr(mock, "intents", ())) == sent, "something was sent"
     assert dict(getattr(mock, "joints", {})) == joints, "something moved"
+
+
+# ── a stop that comes before the verb has sent anything ──
+
+
+@pytest.mark.parametrize(
+    ("body", "verb", "params"),
+    [
+        pytest.param(_xlerobot, "gripper", {"open": True}, id="xl-gripper"),
+        pytest.param(_aloha, "gripper", {"open": True}, id="aloha-gripper"),
+        pytest.param(_aloha, "lift", {"height_mm": 400}, id="aloha-lift"),
+        pytest.param(_toddlerbot, "perform", {"motion": "kneel"}, id="toddler-perform"),
+    ],
+)
+async def test_a_stop_while_a_verb_reads_the_state_keeps_it_from_starting(
+    body: Any, verb: str, params: dict[str, Any]
+) -> None:
+    """Over MCP a `stop` can land while the next call reads the body's state on its way in. These
+    verbs send first and look after, so `gripper(open=true)` opened the jaws after the brake."""
+    adapter = body()
+    ex = await _executor(adapter)
+    mock = adapter.transport
+    reading = mock.get_state
+    stopped: list[int] = []
+
+    async def read() -> Any:
+        if not stopped:
+            stopped.append(len(mock.intents))
+            braked = await asyncio.create_task(ex.run_verb("stop"))
+            assert braked.ok, braked.summary
+            stopped.append(len(mock.intents))
+        return await reading()
+
+    mock.get_state = read
+    result = await ex.run_verb(verb, params)
+    assert not result.ok, result.summary
+    assert result.summary == f"{verb} did not start: {STOPPED}"
+    assert result.data["ended_by"] == STOP_ENDED
+    assert len(mock.intents) == stopped[-1], "something was sent after the stop"
+
+
+async def test_a_call_after_a_stop_has_finished_still_runs() -> None:
+    adapter = _xlerobot()
+    ex = await _executor(adapter)
+    assert (await ex.run_verb("stop")).ok
+    assert (await ex.run_verb("gripper", {"open": False})).ok
+
+
+async def test_nothing_goes_out_through_send_or_fail_after_a_stop() -> None:
+    """For a verb that reads something itself before it sends, past where the executor can see."""
+    adapter = _xlerobot()
+    await adapter.connect()
+    mock = adapter.transport
+    ctx = VerbContext(transport=adapter, interrupted=lambda: STOPPED)
+    sent = list(mock.intents)
+    result = await send_or_fail(ctx, Intent.joint({"right_arm_elbow_flex": 10.0}, 1.0))
+    assert result is not None and not result.ok
+    assert result.data["ended_by"] == STOP_ENDED
+    assert [i.kind for i in mock.intents[len(sent) :]] == ["stop"], "only the stop itself"
+
+
+# ── what a motion a person did not stop is left to do ──
+
+
+@pytest.mark.parametrize(
+    ("verb", "params"), [("perform", {"motion": "kneel"}), ("stand", {})], ids=["perform", "stand"]
+)
+async def test_the_runs_minutes_do_not_cut_a_motion_short(
+    verb: str, params: dict[str, Any]
+) -> None:
+    """A humanoid with no way up from the floor holds where it is on a stop, which is for a person
+    to choose. A budget that ran out while it knelt ended the kneel."""
+    adapter = _toddlerbot()
+    await adapter.connect()
+    stops: list[int] = []
+    mock = adapter.transport
+    stopping = mock.stop
+
+    async def counted() -> None:
+        stops.append(1)
+        await stopping()
+
+    mock.stop = counted
+    registry = registry_from_manifest(adapter.manifest, adapter)
+
+    def spent_once_it_has_started() -> str | None:
+        return "max_minutes (1) exceeded" if mock.intents else None
+
+    ctx = VerbContext(transport=adapter, interrupted=spent_once_it_has_started)
+    the_verb = registry.get(verb)
+    result = await the_verb.execute(ctx, the_verb.params.model_validate(params))
+    assert "max_minutes" not in result.summary, result.summary
+    assert stops == [], "it was stopped for the run's minutes"
+
+
+# ── `approach_and`, whose `then` says nothing ──
+
+
+async def test_approach_and_refuses_a_then_that_needs_arguments_before_it_walks() -> None:
+    """It walked the whole way and was then refused, with nothing the pilot could correct through a
+    verb that carries no arguments."""
+    adapter = _xlerobot()
+    ex = await _executor(adapter)
+    mock = adapter.transport
+    sent = len(mock.intents)
+    result = await ex.run_verb("approach_and", {"target": "ball", "then": "gripper"})
+    assert not result.ok
+    assert "cannot end in gripper" in result.summary, result.summary
+    assert "go_to" in result.summary and "twist" not in [i.kind for i in mock.intents[sent:]]
+
+
+async def test_approach_and_can_still_end_in_what_takes_nothing() -> None:
+    """ToddlerBot's `grip` closes by default, which drops nothing, and stays as it was."""
+    adapter = _toddlerbot()
+    ex = await _executor(adapter)
+    assert ex._takes_no_arguments("grip") is True
+    assert ex._takes_no_arguments("report_state") is True
+    assert ex._takes_no_arguments("no-such-verb") is True, "for the gates to refuse, as ever"
+    assert ex._takes_no_arguments("perform") is False

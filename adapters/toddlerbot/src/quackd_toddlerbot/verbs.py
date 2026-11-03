@@ -33,7 +33,7 @@ from quackd.verbs.core import (
     gaze_sweep_yaws,
     send_or_fail,
 )
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 
 #: The motions that ship as keyframes in the repository, and therefore the only motion that
 #: works with no downloads at all (`upstream_api.MOTION_KEYFRAMES`).
@@ -126,12 +126,7 @@ class GripParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     side: Literal["left", "right", "both"] = Field(default="right")
-    close: bool = Field(
-        ...,
-        description=(
-            "True closes the gripper, False opens it. Say which: opening lets go of what it holds."
-        ),
-    )
+    close: bool = Field(default=True, description="True closes the gripper, False opens it.")
 
 
 # ── preconditions the manifest references by name ───────────────────────────────────────
@@ -243,8 +238,8 @@ async def stand(ctx: VerbContext, _: NoParams) -> VerbResult:
     t0 = ctx.transport.now()
     while ctx.transport.now() - t0 < STAND_TIMEOUT_S:
         await ctx.transport.sleep(0.2)
-        if (why := ctx.interrupted()) is not None:
-            return await _ended_by(ctx, "stand", why, HOLDS)
+        if ctx.interrupted() == STOPPED:
+            return await _ended_by(ctx, "stand", STOPPED, HOLDS)
         state = await ctx.transport.get_state()
         if state.fallen:
             await ctx.transport.stop()
@@ -265,9 +260,11 @@ async def perform(ctx: VerbContext, p: PerformParams) -> VerbResult:
     t0 = ctx.transport.now()
     while ctx.transport.now() - t0 < PERFORM_TIMEOUT_S:
         await ctx.transport.sleep(0.25)
-        # read before `moving`, which a stop makes false: "performed" was the answer to a brake
-        if (why := ctx.interrupted()) is not None:
-            return await _ended_by(ctx, "perform", why, HOLDS, motion=p.motion)
+        # read before `moving`, which a stop makes false: "performed" was the answer to a brake.
+        # Only a person's stop: the run's minutes running out do not cut a motion short on a body
+        # with no way up from the floor
+        if ctx.interrupted() == STOPPED:
+            return await _ended_by(ctx, "perform", STOPPED, HOLDS, motion=p.motion)
         state = await ctx.transport.get_state()
         if state.fallen:
             await ctx.transport.stop()

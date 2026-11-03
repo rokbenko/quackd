@@ -182,24 +182,25 @@ the safe direction, and it is written up under "A LeRobot arm" below because it 
 exit. In 0.14 and before the arm was built asking that disconnect for the release, so it could
 fall instead.
 
-There are two places where that is not what happens. A `--by-hand` run ends by asking whether
-to open the gripper before the arm folds up, and a second press landing on *that* wait is
-caught rather than let through, because it means "skip the question" and not "abandon the arm
-energised with no record written". The gripper is left exactly as the run left it, the arm is
-still folded to its recorded rest pose, the transport is still closed, and the record still
-ends with a `run_end` and a summary. A press in the 3 seconds that follow the question, however it
-ended, or in the fold after them, holds the arm where it is with nothing released, on a run a press
-ended too, because somebody may be at the jaws.
+There are two places where that is not what happens. No press quits a `--by-hand` run at all,
+from its start to its close, because somebody is at the arm, and its panel says so. It ends by
+asking whether to open the gripper before the arm folds up, and a press at *that* wait means
+"skip the question" and not "abandon the arm energised with no record written". The gripper is left
+exactly as the run left it, the arm is still folded to its recorded rest pose, the transport is
+still closed, and the record still ends with a `run_end` and a summary. A press in the 3 seconds
+that follow the question, however it ended, or in the fold after them, holds the arm where it is
+with nothing released, on a run a press ended too, because somebody may be at the jaws.
 The two questions over a missed fold are the other. A press
 at either of them keeps torque on, and so does one during the fold the first of them asked for,
 which stops that fold at most a step cap past where you pressed (5 degrees by default). One
-landing on the release that Enter at the second sends is caught as well. Either way the teardown
-still closes the transport and writes `run_end` and the summary. From the first of those questions
-to the close no press quits, however many come, since somebody is at the arm and everything there
-ends on a press or has a deadline of its own. `quackd robot release` holds to the same once it has
-connected the arm, and `quackd doctor` from its fold. `Ctrl-\` where there is one, or closing the
-window, is what is left for somebody who has to kill it. Before those questions, the first rest
-move included, a second press quits at once, on the terms of the paragraph above.
+landing on the release that Enter at the second sends stops it if its torque write has not gone
+out, and says which it was. Either way the teardown still closes the transport and writes `run_end`
+and the summary. From the first of those questions to the close no press quits, however many come,
+since somebody is at the arm and everything there ends on a press or has a deadline of its own.
+`quackd robot release` holds to the same once it has connected the arm, and `quackd doctor` from
+where it would fold it. `Ctrl-\` where there is one, or closing the window, is what is left for
+somebody who has to kill it. Anywhere else, the first rest move of a run with no hand-back
+included, a second press quits at once, on the terms of the paragraph above.
 
 **SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
@@ -225,8 +226,9 @@ are its own.
 - **A newer command ends the verb it finds moving** (`preempted`), and waits for it to stop, and
   for a brake still on its way, before it sends anything. A stop asked for from beside a verb
   ends it before its next twist: `move`, `go_to`, `search_scan`, `approach_and`, the arm's
-  `move_joints`, `gripper` and `place`, and what the other bodies bring that waits on a move read
-  it as quackd ships them, and so does an MCP session's `stop`
+  `move_joints`, `gripper` and `place`, and what the other bodies bring that moves an arm, a head or
+  a lift read it as quackd ships them, and so does an MCP session's `stop`. A skill the robot plays
+  out, a `kick` or a `grab`, is stopped from starting and not after that
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - **A person's own command is the verdict for its own call**, recorded as a person's from the
   keyboard, as a pipe's from a pipe or a file, and as a decision LLM's reading where the fast

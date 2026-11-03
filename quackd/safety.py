@@ -564,6 +564,7 @@ class Executor:
             transport=self.logged_transport(),
             detector=self.detector,
             dry_run=self.dry_run,
+            takes_no_arguments=self._takes_no_arguments,
             # a verb's own log line is a `note` as well, so it is not the one thing the log
             # cannot see. Not the executor's own arrows: those would double `verb_start`.
             log=self._note,
@@ -611,6 +612,17 @@ class Executor:
             raise Aborted(f"{reason}; the verb stopped where it stood")
 
         return abort_when
+
+    def _takes_no_arguments(self, name: str) -> bool:
+        """`VerbContext.takes_no_arguments`. A verb that does not exist is for the gates that
+        refuse it to say so."""
+        try:
+            self.registry.get(name).params.model_validate({})
+        except VerbNotFound:
+            return True
+        except ValidationError:
+            return False
+        return True
 
     def _interruption(self, stops_then: int) -> Callable[[], str | None]:
         """`VerbContext.interrupted` for a verb beginning now: `STOPPED` once a `stop` has been
@@ -845,9 +857,9 @@ class Executor:
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
 
-        # before a person is asked anything: a composite's call a stop has overtaken is not going
-        # to start, and a question about it would be answered for nothing
-        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+        # before a person is asked anything: a call a stop has overtaken is not going to start,
+        # and a question about it would be answered for nothing
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
 
         if self.needs_confirm(verb):
@@ -1031,9 +1043,9 @@ class Executor:
         if self.abort.is_set() and canonical != "stop":
             self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
             raise Aborted("run aborted")
-        # and a composite's call that a stop sent while it read the body's state has overtaken,
-        # for the reason the gate before the confirm gives (`_overtaken`)
-        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+        # and a call that a stop sent while it read the body's state has overtaken, for the reason
+        # the gate before the confirm gives (`_overtaken`)
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
         try:
             self._check_abort_conditions(state)
@@ -1304,13 +1316,14 @@ class Executor:
     def _overtaken(
         self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
     ) -> VerbResult | None:
-        """The result of a composite's call that would move the body and that a stop has
-        overtaken, or None. It answers to the stops its composite answers to (`context`), so a
-        stop sent between two of the composite's calls, or while this one waited on its gates or
-        read the body's state, is the brake pulled on the whole of it. A verb that polls for it
-        would end at its first check, but a kick or a scoop sends its one intent without looking,
-        so it is ended here, before it sends anything. A call that only looks or speaks runs, as
-        it runs beside a pause or a newer command."""
+        """The result of a call that would move the body and that a stop has overtaken, or None.
+        A stop that came while it waited on its gates or read the body's state, as a second MCP
+        call does, ends it. A composite's call answers to the stops its composite answers to
+        (`context`), so a stop sent between two of the composite's calls is the brake pulled on the
+        whole of it. A verb that polls for it would end at its first check, but a kick or a scoop
+        or a gripper sends its one intent without looking, so it is ended here, before it sends
+        anything. A call that only looks or speaks runs, as it runs beside a pause or a newer
+        command."""
         if (
             stops is None
             or self.stops == stops
@@ -1418,7 +1431,7 @@ terminal the moment it starts, and an Enter pressed twice, or pressed while the 
 still starting, used to answer the question that followed it before anybody could have read it:
 one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
 arm and decides in half a second, and an Enter that comes too soon is passed by rather than
-taken, so a person who did mean it presses it again."""
+taken, so a person who did mean it presses it again, and is told when (`ENTER_TOO_SOON`)."""
 ENTER_ALONE_S = 0.45
 """How long a bare Enter has to stand with no other Enter behind it to say yes to a question that
 moves or drops an arm. A key pressed and held is a stream of Enters, and its first repeat can come
@@ -1574,11 +1587,11 @@ class KillSwitch:
     def stay_to_the_close(self) -> None:
         """From here to `uninstall` a Ctrl-C does what `q` does and nothing else.
 
-        For a run that has somebody at the arm: from the question about its gripper or about a fold
-        that missed, on to the close. A hand near the jaws presses again and again, and a press
-        past the second used to raise through whatever it landed on, past the close, `run_end` and
-        the summary, and left an energised arm with no record of what became of it. Everything from
-        here ends on a press or has a deadline of its own, so quackd goes on being quick to leave.
+        For a run that has somebody at the arm: all of a `--by-hand` run, and any other from the
+        question about a fold that missed on to the close. A hand near the jaws presses again and
+        again, and a press past the first used to raise through whatever it landed on, past the
+        close, `run_end` and the summary, and left an energised arm with no record of what became
+        of it. Everything from here ends on a press or has a deadline of its own.
         `Ctrl-\\` where there is one, or closing the window, is what is left for somebody who has
         to kill it, and the power switch for the arm."""
         with contextlib.suppress(ValueError):  # not the main thread, so nothing to catch it on

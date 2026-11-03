@@ -281,15 +281,18 @@ class _Guard:
     """A process that puts a terminal back if this one dies with no word said.
 
     Nothing in a process runs at a SIGKILL or a crash in native code, so this holds the read end of
-    a pipe nothing else has the write end of, and the kernel closes that with the process. A close
+    a pipe whose write end the process alone holds (it does not pass to what quackd spawns, and
+    nothing in quackd forks without an exec), and the kernel closes that with the process. A close
     says so down the pipe first, and the guard exits having touched nothing. It is in a session of
     its own, so a Ctrl-C or a Ctrl-\\ at the terminal never reaches it, and with no terminal to
     answer to it can change this one's mode from anywhere.
 
     It puts the terminal back only as this process left it: anything else on it is somebody else's
     by then, a full-screen program in the shell's foreground above all, and not to be reset under
-    them. Interpreter flags that skip the site packages and the environment, since it has to be up
-    in milliseconds and nothing it needs is outside the standard library."""
+    them. So it can lose a race: a shell that gets there first, in the first moments of a run, when
+    it is still starting, or on a machine with no CPU to spare, and then it is `stty sane` as ever.
+    Interpreter flags that skip the site packages and the environment, since it has to be up in
+    milliseconds and nothing it needs is outside the standard library."""
 
     _SCRIPT = (
         "import marshal, os, sys, termios\n"
@@ -322,7 +325,7 @@ class _Guard:
                 pass_fds=(ears,),
                 start_new_session=True,
             )
-        except (OSError, ValueError, subprocess.SubprocessError):
+        except Exception:  # an odd interpreter's `sys.executable` is a TypeError, say
             os.close(word)
             return None
         finally:
@@ -353,7 +356,7 @@ def _for_drawing(fd: int) -> int | None:
         if fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDONLY:
             return fd
         return os.open(os.ttyname(fd), os.O_WRONLY | os.O_NOCTTY)
-    except OSError:
+    except (OSError, ValueError):
         return None
 
 

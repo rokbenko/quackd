@@ -2012,7 +2012,7 @@ The order below is the whole of the feature, and none of it is a step you can sk
    **120 seconds**, since a run has to end even when the room is empty.
 7. **Then the fold.** Only a bare Enter is a yes: a line with anything typed on it is a no, and
    an Enter close behind a `q`, too soon to have read the question, within 2 seconds of the last
-   one, or from a key held down, is passed by, and the first one passed by says so. It drives the
+   one, or from a key held down, is passed by, and all but the first of those says so. It drives the
    gripper all the way open, every send of it through the logged transport, so it is in the record
    like every other intent. A gripper that cannot get
    there is said out loud, and the arm stays where it is, because you have just been told to
@@ -2124,8 +2124,8 @@ left out):
 stays shut, the stage is recorded as skipped, and the rest of the teardown runs anyway, which
 is the difference between a run that ends with the arm folded and a record written and one that
 leaves an energised arm and no transcript. The 3 seconds still follow, and a press in them or in
-the fold holds the arm where it is, with the close and the record still to come, and from the
-question to the close no press quits, however many there are:
+the fold holds the arm where it is, with the close and the record still to come, and no press
+quits a `--by-hand` run, however many there are:
 
 ```
 ·  hand    skipped: interrupted while waiting

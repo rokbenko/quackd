@@ -10,6 +10,7 @@ past the close that has to follow it."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import replace
 from typing import Any
 
@@ -29,11 +30,15 @@ from quackd.release import (
     NO_KEYS,
     NOBODY,
     NOT_SENT,
+    RELEASE_INTERRUPTED,
+    RELEASE_NOT_SENT,
     TORQUE_READS_OFF,
     WAIT_INTERRUPTED,
     FoldStopped,
     ask,
+    cancel_and_wait,
     fold_unless_stopped,
+    one_watch,
     release_where_it_stands,
     settle_missed_fold,
 )
@@ -258,6 +263,148 @@ async def test_the_release_where_it_stands_is_the_second_door() -> None:
     assert arm.calls == [{"anywhere": True}], arm.calls
     assert settled.how == "released" and settled.released is arm.released
     assert "the arm is in your hands, so put it down" in (settled.said or "")
+
+
+def _pressed_once_the_release_begins(began: asyncio.Event) -> Any:
+    async def press() -> None:
+        await began.wait()
+
+    return lambda: press()
+
+
+async def test_a_press_stops_a_drop_whose_torque_write_has_not_gone_out() -> None:
+    """Enter at the question that says the arm will drop, and then a change of mind. The release
+    reads first, and with a Ctrl-C no longer cancelling anything nothing heard the press: the
+    person read that the robot was stopping as the arm went limp."""
+    events: list[dict[str, Any]] = []
+    began = asyncio.Event()
+
+    class ReadingFirst(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            began.set()
+            await asyncio.sleep(30)  # the read it begins with, on a bus that is slow today
+            return await super().let_go(**kw)
+
+    arm = ReadingFirst()
+    settled = await release_where_it_stands(
+        arm,
+        event=lambda **d: events.append(d),
+        stopped=_pressed_once_the_release_begins(began),
+    )
+    assert arm.calls == [] and arm.in_hand is False, "the torque write went out"
+    assert settled.how == "kept"
+    assert settled.said == RELEASE_NOT_SENT
+    assert [e["stage"] for e in events] == ["kept"]
+
+
+async def test_a_press_after_the_write_has_gone_out_says_it_may_be_limp() -> None:
+    began = asyncio.Event()
+
+    class WroteThenRead(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            self.in_hand = True
+            began.set()
+            await asyncio.sleep(30)
+            return self.released
+
+    settled = await release_where_it_stands(
+        WroteThenRead(), stopped=_pressed_once_the_release_begins(began)
+    )
+    assert settled.how == "interrupted"
+    assert settled.said == RELEASE_INTERRUPTED
+
+
+async def test_the_drop_at_the_second_question_hears_a_press() -> None:
+    """Through the two questions, the way a run and `quackd robot release` come to it."""
+
+    class Stopping(Person):
+        def __init__(self, *answers: bool) -> None:
+            super().__init__(*answers)
+            self.began = asyncio.Event()
+
+        def stopped(self) -> Any:
+            return _pressed_once_the_release_begins(self.began)()
+
+    person = Stopping(True)
+
+    class ReadingFirst(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            person.began.set()
+            await asyncio.sleep(30)
+            return await super().let_go(**kw)
+
+    arm = ReadingFirst()
+    fold, _made = _folds(MISSED)
+
+    async def stop() -> None:
+        return None
+
+    settled = await settle_missed_fold(arm, person, MISSED, fold=fold, stop=stop)
+    assert settled.how == "kept" and arm.calls == [], "the arm went limp after the press"
+
+
+async def test_one_watch_hears_a_press_made_between_what_it_watches() -> None:
+    """The count and then the fold, with a line printed in between. Each counting presses from where
+    it began took one made there for an old one, and the arm folded under the hand that made it."""
+
+    class Pressing(Person):
+        def __init__(self) -> None:
+            super().__init__(True)
+            self.presses = 0
+            self.pressed = asyncio.Event()
+
+        def stopped(self) -> Any:
+            presses = self.presses
+
+            async def fresh() -> None:
+                while self.presses == presses:
+                    self.pressed.clear()
+                    await self.pressed.wait()
+
+            return fresh()
+
+    person = Pressing()
+    moved: list[str] = []
+
+    async def fold() -> str:
+        await asyncio.sleep(0.2)  # the read a real fold begins with, and it goes on the bus
+        moved.append("the fold ran on")
+        return "arrived"
+
+    async with one_watch(person) as stopped:
+        assert await fold_unless_stopped(_nothing, stopped) is None
+        person.presses += 1  # in between: nothing is racing a press just now
+        person.pressed.set()
+        with pytest.raises(FoldStopped):
+            await fold_unless_stopped(fold, stopped)
+    assert moved == [], "the fold moved after the press"
+
+
+async def test_one_watch_of_a_person_who_cannot_say_watches_nothing() -> None:
+    async with one_watch(object()) as stopped:
+        assert stopped is None
+
+
+async def test_a_fold_that_will_not_go_does_not_hold_up_what_comes_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A press can no longer quit past it (`KillSwitch.stay_to_the_close`), so nothing else would
+    end the wait. No fold quackd ships ignores a cancellation: this is for a third party's."""
+    monkeypatch.setattr("quackd.release.STOPPED_FOLD_S", 0.05)
+    let_go = asyncio.Event()
+
+    async def stubborn() -> None:
+        while not let_go.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await let_go.wait()
+
+    task = asyncio.ensure_future(stubborn())
+    await asyncio.sleep(0)
+    try:
+        await asyncio.wait_for(cancel_and_wait(task), timeout=10)
+    finally:
+        let_go.set()
+        await task
 
 
 async def test_two_questions_over_an_arm_keep_every_press_short_of_quitting() -> None:

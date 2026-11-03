@@ -128,7 +128,11 @@ class ApproachAndParams(BaseModel):
 
 
 async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
-    """Send an intent; return a failure result if the robot refused it."""
+    """Send an intent; return a failure result if the robot refused it, or if the verb has been
+    told to end (`VerbContext.interrupted`), when nothing goes out. A stop that came while a verb
+    read the body's state was followed by the goal that verb went on to send."""
+    if (why := ctx.interrupted()) is not None:
+        return await _ended_by(ctx, intent.kind, why, "nothing more was sent")
     ack = await ctx.transport.send_intent(intent)
     if not ack.accepted:
         return VerbResult.fail(f"{intent.kind} refused: {ack.reason or 'no reason given'}")
@@ -879,6 +883,13 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
 async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
     if ctx.run_verb is None:
         return VerbResult.fail("approach_and needs an executor")
+    if not ctx.takes_no_arguments(p.then):
+        # `then` carries no arguments, so a verb that needs some would be refused after the walk,
+        # with nothing the pilot could correct through this verb
+        return VerbResult.fail(
+            f"approach_and cannot end in {p.then}, which needs arguments that `then` has no way "
+            f"to give it: call go_to, then {p.then}"
+        )
     first = await ctx.run_verb("go_to", {"target": p.target, "stop_distance": p.stop_distance})
     if not first.ok:
         return first

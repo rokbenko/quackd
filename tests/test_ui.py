@@ -13,6 +13,7 @@ nothing that drives the terminal they read it in, and a word about itself if it 
 from __future__ import annotations
 
 import io
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -335,6 +336,45 @@ def test_the_status_line_says_who_a_question_waits_on_and_goes_back_after() -> N
     assert "stopping the robot" in status.__rich__().plain
     with ui.asking_a_person():  # with no status line up, it is nothing at all
         pass
+
+
+def test_a_press_at_a_question_leaves_the_line_saying_stopping() -> None:
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "success"}))
+    with status.asking():
+        status.stopping()
+    assert "stopping the robot" in status.__rich__().plain
+
+
+def test_a_stop_from_the_page_holds_the_line_too() -> None:
+    """The page's Stop reaches the line as a note, and the cancelled call and the verb then wrote
+    over it just the same."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("note", 0.0, {"text": "kill switch: the page's Stop"}))
+    status.sink(LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}))
+    status.sink(LogEvent("llm", 0.0, {"provider": "openai", "error": "cancelled"}))
+    assert "stopping the robot" in status.__rich__().plain
+
+
+def test_a_ctrl_c_landing_inside_an_update_does_not_wait_on_its_own_thread() -> None:
+    """The handler says `stopping` on the thread it interrupted, which may be inside `update` with
+    the line's lock held. On a plain lock that was the event loop's thread waiting on itself, with
+    no stop, no fold and no close, and nothing but killing it to end it."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    done: list[bool] = []
+
+    def inside_an_update() -> None:
+        with status._lock:
+            status.stopping()
+        done.append(True)
+
+    thread = threading.Thread(target=inside_an_update, daemon=True)
+    thread.start()
+    thread.join(10)
+    assert done == [True], "the handler waited on the lock its own thread held"
 
 
 def test_a_status_line_that_cannot_draw_never_counts_as_a_dropped_event() -> None:

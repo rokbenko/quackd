@@ -8,7 +8,9 @@ so a stop held the arm for one tick, as it once held `move`, and an MCP pilot wa
 
 **Amended 2026-11-03:** so does what the XLeRobot, the AlohaMini and the ToddlerBot bring that waits
 on a move, the ToddlerBot's own `search_scan` among them, and `stand_up` on the Microduck and the
-Huebot. A skill the robot plays out with nothing sent after it, a `kick` or a `grab`, does not.
+Huebot. A skill the robot plays out with nothing sent after it, a `kick` or a `grab`, does not, once
+it has sent. And what decision 8's gate did for a composite's calls it does for every call that
+moves the body: a stop that overtakes one while it reads the body's state keeps it from starting.
 
 ## Context
 

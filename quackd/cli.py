@@ -2817,9 +2817,11 @@ def _run_impl(
                 ),
                 effort=effort,
             ),
-            hint="Ctrl-C or q stops the duck. Ctrl-C twice quits at once."
-            if front is None
-            else "Stop in the page stops the duck.",
+            hint="Stop in the page stops the duck."
+            if front is not None
+            else "Ctrl-C or q stops the duck. However often you press, the run ends properly."
+            if by_hand
+            else "Ctrl-C or q stops the duck. Ctrl-C twice quits at once.",
         )
     )
 
@@ -2861,6 +2863,10 @@ def _run_impl(
         if person is not None and person is not hand_off:
             person.bind(ks)
         ks.install()
+        if hand_off is not None:
+            # somebody is at this arm from its first move to its last, and a second press landing
+            # on the teardown's first stop went past the question, the fold and the close
+            ks.stay_to_the_close()
         _SWITCH = ks
         try:
             return await loop.run()
@@ -7660,15 +7666,19 @@ class _DoctorHands:
             HANDS_AWAY_S,
             FoldStopped,
             fold_unless_stopped,
+            one_watch,
         )
 
         person = self.person
+        if person is not None:
+            # somebody is at the arm from here on, whatever is asked of them, and the close is what
+            # says what became of its torque
+            person.stay_to_the_close()
         if person is None or getattr(adapter, "rest_pose", None) is None:
             return await go_to_rest_if_any(adapter)
         if self.pressed():
             # a Ctrl-C or `q` while the arm connected or was read: nothing moves after one
             return RestResult("refused", "stopped before the fold: nothing was moved")
-        person.stay_to_the_close()
         with ui.pause_status():
             ui.err_console.print(
                 Text(
@@ -7676,20 +7686,19 @@ class _DoctorHands:
                     style=ui.STYLES["warn"],
                 )
             )
-            try:
-                await fold_unless_stopped(_hands_away, person.stopped)
-            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                return RestResult("refused", "stopped before the fold: nothing was moved")
-            try:
-                parked = await fold_unless_stopped(
-                    lambda: go_to_rest_if_any(adapter), person.stopped
-                )
-                return parked if parked is not None else RestResult.none()
-            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
-                    # held where the stopped fold left it, a step cap on at most
-                    await adapter.stop()
-                return RestResult("refused", FOLD_STOPPED)
+            async with one_watch(person) as stopped:
+                try:
+                    await fold_unless_stopped(_hands_away, stopped)
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    return RestResult("refused", "stopped before the fold: nothing was moved")
+                try:
+                    parked = await fold_unless_stopped(lambda: go_to_rest_if_any(adapter), stopped)
+                    return parked if parked is not None else RestResult.none()
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                        # held where the stopped fold left it, a step cap on at most
+                        await adapter.stop()
+                    return RestResult("refused", FOLD_STOPPED)
 
     async def before_close(self, adapter: Any) -> None:
         """Over an arm whose close keeps its torque, ask whether to drop it instead. Not after a
@@ -7703,7 +7712,7 @@ class _DoctorHands:
         question = DROP_UNPOSED.format(name=self.label, seconds=ENTER_DROPS_S)
         with ui.pause_status():
             if await ask(person, question, ENTER_DROPS_S) == ENTER:
-                settled = await release_where_it_stands(adapter)
+                settled = await release_where_it_stands(adapter, stopped=person.stopped)
                 if settled.said:
                     ui.err_console.print(_warn_line(settled.said))
 
@@ -7769,6 +7778,7 @@ def robot_release(
         Settled,
         ask,
         fold_unless_stopped,
+        one_watch,
         release_where_it_stands,
         settle_missed_fold,
     )
@@ -7888,30 +7898,37 @@ def robot_release(
         if rest is None:
             # nothing to fold to: the simulator's arm, or a real one after Enter at the question
             # that said it drops
-            return await release_where_it_stands(adapter)
-        if not simulated:
-            # The hands that supported the arm through the connect come away before it moves:
-            # the fold used to start a few milliseconds after the connect, under them. The
-            # countdown is raced against a press the way the fold is, and one stops the command
-            # with nothing moved.
-            ui.err_console.print(
-                Text(FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S), style=ui.STYLES["warn"])
+            return await release_where_it_stands(adapter, stopped=person.stopped)
+        async with one_watch(person) as stopped:
+            if not simulated:
+                # The hands that supported the arm through the connect come away before it moves:
+                # the fold used to start a few milliseconds after the connect, under them. The
+                # countdown is raced against a press the way the fold is, and one stops the command
+                # with nothing moved.
+                ui.err_console.print(
+                    Text(
+                        FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S),
+                        style=ui.STYLES["warn"],
+                    )
+                )
+                try:
+                    await fold_unless_stopped(hands_away, stopped)
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    return Settled("kept", "stopped before the fold", said=stopped_before)
+            ui.console.print(
+                Text(
+                    f"folding {name} to its rest pose: keep your hands out of its way",
+                    style=muted,
+                )
             )
             try:
-                await fold_unless_stopped(hands_away, person.stopped)
+                first = await fold_unless_stopped(fold, stopped)
             except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                return Settled("kept", "stopped before the fold", said=stopped_before)
-        ui.console.print(
-            Text(f"folding {name} to its rest pose: keep your hands out of its way", style=muted)
-        )
-        try:
-            first = await fold_unless_stopped(fold, person.stopped)
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-            with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
-                # holds the arm where the cancelled fold left it, a step cap on at most, and a
-                # second press landing here is caught too, so the close still comes
-                await adapter.stop()
-            return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
+                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                    # holds the arm where the cancelled fold left it, a step cap on at most, and a
+                    # second press landing here is caught too, so the close still comes
+                    await adapter.stop()
+                return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
         if first is not None and first.note:
             # what the body has to say about the pose it parked in, once, as a run says it
             ui.console.print(Text(first.note, style=muted))

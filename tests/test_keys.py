@@ -986,12 +986,16 @@ def test_a_run_that_closes_stands_its_guard_down(pty_pair: Any) -> None:
 
 
 @posix_only
+@pytest.mark.parametrize("executable", ["", None])
 def test_a_guard_that_will_not_start_costs_nothing_but_the_guard(
-    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch, executable: str | None
 ) -> None:
+    """Python leaves `sys.executable` empty or None where it cannot tell, an embedding host's above
+    all. Raised here it was swallowed as no console at all, with the terminal already out of line
+    mode and nothing left to put it back."""
     _, slave = pty_pair
     before = _settings(slave)
-    monkeypatch.setattr(sys, "executable", "")
+    monkeypatch.setattr(sys, "executable", executable)
     keys = PosixKeys(slave)
     assert keys._guard is None
     keys.close()

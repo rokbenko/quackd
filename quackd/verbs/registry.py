@@ -84,6 +84,9 @@ class VerbContext:
     asked with `--decision-frames` (`quackd.agent.decision.eyes`). None on every other run, and
     then `watch` refuses before it sends anything. Still not the pilot: it answers two closed
     questions about one frame and nothing else (ADR-0054)."""
+    takes_no_arguments: Callable[[str], bool] = lambda _verb: True
+    """Whether a verb can be called with nothing said, for a composite that has nothing to say to
+    it: `approach_and`, which walks first and would otherwise find out at the end of the walk."""
     interrupted: Callable[[], str | None] = lambda: None
     """Why a verb that runs for a while should end now, or None while nothing says so: the run's
     time budget spent, in the budget's own words, or a `stop` run since the verb began, as

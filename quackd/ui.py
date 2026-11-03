@@ -781,7 +781,10 @@ class RunStatus:
     ) -> None:
         self.console = target if target is not None else err_console
         self._clock = clock
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        """Reentrant, because the kill switch's handler says `stopping` on the thread it interrupts,
+        which may be inside `update` with this held, and a Ctrl-C that waited on its own thread
+        would leave the robot with no stop at all."""
         self._step = ""
         self._text = "starting"
         self._since = clock()
@@ -847,7 +850,7 @@ class RunStatus:
         try:
             yield
         finally:
-            self.update(before)
+            self.update("stopping the robot" if self._stopping else before)
 
     # ── being on screen ─────────────────────────────────────────────────────────────
 
@@ -931,7 +934,7 @@ class RunStatus:
             if data.get("how") == "released":
                 self.update("waiting for you to place the arm")
         elif kind == "note" and str(data.get("text") or "").startswith("kill switch"):
-            self.update("stopping the robot")
+            self.stopping()
         elif kind in ("declare", "member_end", "run_end"):
             self.update("finishing")
         else:

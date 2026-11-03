@@ -354,9 +354,10 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   failure. MOSS's own verbs read it too, and so do the arm's `move_joints`, `gripper` and `place`,
   and what the XLeRobot, the AlohaMini and the ToddlerBot bring, and `stand_up` on the Microduck and
   the Huebot, and each is marked the same way. On the XLeRobot and the AlohaMini the arm then goes on
-  to the goal it was sent, since their stop leaves arm goals alone, and the answer says so. A skill
-  the robot plays out with nothing sent after it, a `kick` or a `grab`, does not read it: the stop is
-  still sent, and the verb is not ended by it
+  to the goal it was sent, since their stop leaves arm goals alone, and the answer says so. A verb
+  that moves the body does not start at all once a stop has overtaken it, which it can while it reads
+  the body's state. Once it has sent, a skill the robot plays out with nothing sent after it, a `kick`
+  or a `grab`, does not read it: the stop is still sent, and the verb is not ended by it
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - Every robot connects at startup, in the order given; if one cannot, the server stops
   and disconnects the ones that did, rather than fronting a flock with a hole in it.

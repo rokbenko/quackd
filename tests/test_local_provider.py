@@ -459,8 +459,8 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
 
 @pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"', "null"])
 def test_arguments_it_cannot_read_are_kept_for_the_gate(args: str) -> None:
-    """Not `{}`, which is the call with its defaults, and the arm's `gripper` opens by default, on
-    nothing the model said. The gate refuses them and tells the pilot, as for every other vendor."""
+    """Not `{}`, which is the call with its defaults, on nothing the model said. The gate refuses
+    them and tells the pilot, as for every other vendor."""
     call = parse_tool_call_from_text(f'{{"name": "walk_to", "arguments": {args}}}', NAMES)
     assert call is not None and list(call.arguments) == ["_unparsed"], call
 

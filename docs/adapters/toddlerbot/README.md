@@ -125,7 +125,6 @@ The core verbs come from the registry. These four are the robot's own.
 | `move`, `go_to`, `approach_and` | present only when the daemon reports a walk checkpoint staged, which a fresh install has not got |
 
 A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has.
-`grip`, on the builds with hands, has to say which way: `close` has no default.
 
 ## The motions, and which ones quackd offers
 
