@@ -120,7 +120,8 @@ before.
   An arm of Rok's own arrived on 2026-10-30, and `e166` to `e181` in
   [docs/examples/lerobot](docs/examples/lerobot/README.md) put these bench steps on the run sheet.
   The gripper opening all the way at the end of a `--by-hand` run, the count after it, and `q` with
-  no Enter behind it are owed by the arm as well.
+  no Enter behind it are owed by the arm as well, and so, for 0.30.2, is a press again and again
+  through the end of such a run, and one during the fold it starts with, which should stop it there.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a
