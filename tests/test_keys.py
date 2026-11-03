@@ -1158,7 +1158,8 @@ def test_a_guard_that_comes_second_puts_the_terminal_back_under_the_next_command
         os.write(master, b"l")
         termios.tcsetattr(slave, termios.TCSANOW, left)  # readline hands back for the command
         assert guard._process.wait(10) == 0
-        assert termios.tcgetattr(slave) == as_found
+        ignored = getattr(termios, "PENDIN", 0)
+        assert _settings(slave) == [*as_found[:3], as_found[3] & ~ignored, *as_found[4:]]
     finally:
         guard._process.kill()
 
@@ -1218,6 +1219,32 @@ def test_a_guard_that_comes_second_gives_up_and_leaves_the_terminal_as_it_is(
     try:
         assert guard._process.wait(10) == 0
         assert termios.tcgetattr(slave) == theirs
+    finally:
+        guard._process.kill()
+
+
+@posix_only
+def test_a_key_somebody_else_has_read_is_no_terminal_gone(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It wakes on a key, and a shell has usually read that key by the time it looks: the terminal
+    was readable and has nothing to read, which is what one that has hung up looks like on macOS."""
+    import termios
+
+    master, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.01)
+    guard, _, left, _ = _guard_that_lost(slave)
+    try:
+        time.sleep(0.2)
+        for _ in range(30):
+            os.write(master, b"k")
+            os.read(slave, 1)
+            time.sleep(0.02)
+        assert guard._process.poll() is None, "it took a key that was read for a window that closed"
+        os.write(master, b"k")
+        os.read(slave, 1)
+        termios.tcsetattr(slave, termios.TCSANOW, left)
+        assert guard._process.wait(10) == 0
     finally:
         guard._process.kill()
 

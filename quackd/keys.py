@@ -326,13 +326,16 @@ class _Guard:
     took, which is this process's, so the guard waits for a key, looks closely for that mode, puts
     the terminal back under that command, and bash takes that for its own when the command ends:
     a line or two typed unseen, where it was `stty sane` as ever. It gives up after
-    `GUARD_WATCHES_S`, or as soon as the terminal is as this process found it, or gone.
+    `GUARD_WATCHES_S`, or as soon as the terminal is as this process found it, or gone. Linux says
+    so by refusing to read the mode. macOS goes on answering for a terminal whose window has
+    closed, which stays readable with nothing to read, where a key somebody else has read is off
+    the terminal in a moment (`gone` in the script).
 
     Interpreter flags that skip the site packages and the environment, since it has to be up in
     milliseconds and nothing it needs is outside the standard library."""
 
     _SCRIPT = (
-        "import marshal, os, select, sys, termios, time\n"
+        "import fcntl, marshal, os, select, struct, sys, termios, time\n"
         "as_found, left, ignored, watch_s, look_s, tick_s = "
         "marshal.loads(bytes.fromhex(sys.argv[2]))\n"
         "try:\n"
@@ -340,6 +343,14 @@ class _Guard:
         "    os.close(1)\n"
         "except OSError:\n"  # nobody is left to hear it, which the read below says as well
         "    pass\n"
+        "def gone():\n"
+        "    for _ in range(2):\n"
+        "        if not select.select([0], [], [], 0)[0]:\n"
+        "            return False\n"
+        "        if struct.unpack('i', fcntl.ioctl(0, termios.FIONREAD, b'0000'))[0]:\n"
+        "            return False\n"
+        "        time.sleep(tick_s)\n"
+        "    return True\n"
         "if not os.read(int(sys.argv[1]), 1):\n"
         "    found = [*as_found[:3], as_found[3] & ~ignored, *as_found[4:]]\n"
         "    until = time.monotonic() + watch_s\n"
@@ -357,6 +368,8 @@ class _Guard:
         "            if clock < closely:\n"
         "                time.sleep(tick_s)\n"
         "            elif select.select([0], [], [], until - clock)[0]:\n"
+        "                if gone():\n"
+        "                    break\n"
         "                closely = time.monotonic() + look_s\n"
         "    except (OSError, termios.error):\n"  # the terminal has gone
         "        pass\n"
