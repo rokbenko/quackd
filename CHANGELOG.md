@@ -9,6 +9,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.30.2] — 2026-11-03
+
+0.30.2 fixes what 0.30.1 shipped knowing about, and what a review of those fixes found. What changes for
+you, under the safety rule: no press quits a `--by-hand` run now, and a fresh one stops whatever is moving
+instead, `gripper` has to say which way it goes, and an Enter within 2 s of the last one answers nothing,
+and says so. None of it has met a robot.
+
 ### Fixed
 
 - **Somebody at the arm no longer quits past its close by pressing again.** A second Ctrl-C landing
@@ -9365,7 +9372,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.2...HEAD
+[0.30.2]: https://github.com/rokbenko/quackd/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/rokbenko/quackd/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/rokbenko/quackd/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/rokbenko/quackd/compare/v0.29.0...v0.29.1
