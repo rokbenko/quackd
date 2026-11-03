@@ -13,6 +13,7 @@ import re
 import threading
 import time
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pprint import pformat
 from types import SimpleNamespace
 from typing import Any
@@ -22,7 +23,6 @@ import pytest
 
 from quackd.adapters.base import AdapterError, AdapterNotInstalled, RobotAdapter
 from quackd.adapters.factory import RobotSpec, describe, make_adapter, parse_robot_spec
-from quackd.adapters.threads import DaemonThreads
 from quackd.duckfile.parser import load_duck, parse_duck_text
 from quackd.duckfile.schema import Budgets
 from quackd.duckfile.validate import validate_duck
@@ -1636,7 +1636,7 @@ async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_
     transport = LeRobotReal("COM5", robot=FakeArm(), timeout_s=0.1)
     loop = asyncio.get_running_loop()
     budget = transport.timeout_s
-    pool = DaemonThreads("one", max_workers=1)
+    pool = ThreadPoolExecutor(1)
     monkeypatch.setattr("quackd_lerobot.real._THREADS", pool)
     free = threading.Event()
     elsewhere = loop.run_in_executor(pool, free.wait, 5.0)  # the pool's one thread is busy

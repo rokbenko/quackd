@@ -54,13 +54,11 @@ observation is this old the host has already stopped the base, so this is the mo
 cached reading stops being a reading. A number spelled twice can disagree with itself."""
 """The host's own watchdog window: by now it has already stopped the base."""
 POLL_MS = 50
-HOLD_FRESH_MS = 100.0
-"""How old a reading of an arm may be for a stop to make it the arm's goal: three of the host's
-cycles. The arm steps back by what it travelled since that reading, which is a hold. From an
-older one it could be a move of its own, and nothing on the wire says how old a reading really
-is."""
 HOLD_READ_S = 0.2
-"""How long a stop may spend looking for that reading, on a link that has stopped answering."""
+"""How long a stop looks for a reading from after it began, once the wheels are stopped: six of the
+host's cycles at 30 Hz. The arm goes on meanwhile, and past this it goes on to its goal, since a
+host that has stopped publishing leaves nothing to say where the arm is."""
+HOLD_READ_POLL_MS = 20
 CONNECT_TIMEOUT_S = 5.0
 CALL_TIMEOUT_S = 2.0
 
@@ -416,23 +414,39 @@ class XLerobotZmq:
         A stop that left the goals alone was a stop only for the wheels: an arm on its way
         somewhere got there, with a person's hand in the way or not, as upstream's `stop_base`
         lets it. So each joint with a goal no stop has held since is sent where it reads, as
-        the SO-101's stop does (`_hold_the_arms`). quackd never sends the disconnect that would
+        the SO-101's stop does (`_hold_the_arms`). A reading takes up to a cycle of the host's to
+        come, so the wheels do not wait on it. quackd never sends the disconnect that would
         disable torque and drop whatever is held."""
-        if self._unheld:
-            # nothing on this wire waits: only the newest observation is kept, and it is taken
-            # or there is none
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._pump(0), HOLD_READ_S)
         self._halt_base()
-        self._hold_the_arms()
+        fresh = False
+        if self._unheld:
+            with contextlib.suppress(Exception):
+                await self._call(self._send_locked, dict(self._desired))
+            fresh = await self._reading_from_now_on()
+        self._hold_the_arms(fresh)
 
-    def _hold_the_arms(self) -> None:
+    async def _reading_from_now_on(self) -> bool:
+        """Whether a reading published after this began has come in. The socket keeps the newest
+        message however long it has sat there, and nothing on the wire says how old it is, so
+        what is waiting is thrown away and only the next one counts. A heartbeat that takes one
+        first leaves the one after, a cycle later."""
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(HOLD_READ_S):
+                await self._call(self._recv_locked, 0)
+                while not await self._pump(HOLD_READ_POLL_MS):
+                    pass
+                return True
+        return False
+
+    def _hold_the_arms(self, fresh: bool) -> None:
         """The reading becomes the goal, under three rules, each of which is about a stop that
         would otherwise move an arm.
 
-        A reading older than `HOLD_FRESH_MS` is not used (ADR-0026: a fake host caught a stop
-        built from an observation that had not caught up, which sent the arm back to zero).
-        That joint goes on to the goal it was sent, the transport says so, and the next stop
+        Only a reading from after the stop began is used (`fresh`), since a goal built from an
+        older one is a move of its own: a fake host caught a stop built from an observation that
+        had not caught up, which sent the arm back to zero (ADR-0026), and one that had sat unread
+        while the host stalled sent an arm back as far as it had travelled in the stall. Failing
+        that, the joint goes on to the goal it was sent, the transport says so, and the next stop
         tries again.
 
         A joint is held once for each goal it is sent. A servo under load reads below its goal,
@@ -442,7 +456,7 @@ class XLerobotZmq:
         A gripper is never held: sending it what it reads would open a hand that is squeezing
         something against its goal. The goal it has stands, as on the SO-101, and the head has
         no goal here unless a verb sent it one."""
-        if self._stale_ms() <= HOLD_FRESH_MS:
+        if fresh:
             for key in self._unheld & set(self._state):
                 self._desired[key] = self._state[key]
             self._unheld -= set(self._state)

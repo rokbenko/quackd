@@ -140,6 +140,10 @@ _THREADS = DaemonThreads("quackd-lerobot")
 """Where every call that can hang runs, the bus's and the cameras'. Not asyncio's pool, which
 `asyncio.run` and the exit both join: a call that never came back held a run that had finished,
 and on Windows only closing the window ended it (`quackd.adapters.threads`)."""
+DISCONNECT_S = 15.0
+"""How long a close waits for the disconnect that takes torque off. Its thread is a daemon, so the
+exit would otherwise cut it off with some motors let go and some not. Six writes with every retry
+take a second or two, so a bus that needs this long is a bus to say something about."""
 POLICY_HZ = 10.0
 """The rate a `PolicyLike` object runs at, since it declares none: the verbs' own tick
 (`verbs.TICK_S`), so its step cap per send is the verbs' own too (`policy.loop.speed_cap`)."""
@@ -780,6 +784,13 @@ class WallClock:
             await asyncio.sleep(left - FINISH_S if left > FINISH_S else 0)
             if time.perf_counter() >= due:
                 return
+
+
+TORQUE_RELEASE_NOT_KNOWN = (
+    "the close was letting go of the arm and its disconnect did not finish, so some motors may "
+    "have torque and some not: hold it, and cut its power to be sure"
+)
+"""What a close says of a disconnect that raised or never came back, with torque coming off."""
 
 
 class LeRobotReal:
@@ -2086,8 +2097,15 @@ class LeRobotReal:
             self.close_note = TORQUE_COULD_NOT_BE_KEPT.format(why=why)
         disconnected = False
         with contextlib.suppress(Exception):
-            await self._call(self._robot.disconnect, deadline_s=5.0)  # up.SO_DISCONNECT_TORQUE
+            await self._call(
+                self._robot.disconnect, deadline_s=DISCONNECT_S
+            )  # up.SO_DISCONNECT_TORQUE
             disconnected = True
+        if why is None and not disconnected and releases is not False:
+            # that was the call that lets go of the arm, and it raised or never came back, so
+            # some motors may have let go and some not, and every other line here is about an
+            # arm the close knows the state of
+            self.close_note = TORQUE_RELEASE_NOT_KNOWN
         if why is None and self._release_refused and disconnected and releases is not False:
             # only once the disconnect came back, because its `Torque_Enable` 0 writes raise on
             # a bus that lost them, and "the close took torque off" is a thing to say only of a

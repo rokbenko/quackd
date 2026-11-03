@@ -20,6 +20,7 @@ from quackd import __version__
 from quackd import cli as cli_mod
 from quackd.agent.providers.factory import CLOUD_NAMES, default_model_for, model_ids
 from quackd.cli import EXIT_INFEASIBLE, app
+from quackd.safety import AfterTheClose
 from quackd_lerobot.verbs import JOINTS as JOINT_NAMES
 
 from .conftest import DUCKS
@@ -2892,6 +2893,29 @@ def test_a_release_whose_fold_found_the_servos_limp_puts_no_question(
     assert "torque was left on" not in flat and "torque stays on" not in flat, flat
 
 
+@pytest.mark.parametrize(
+    ("heard", "code", "comes_to"),
+    [(0, 0, 0), (1, 0, 130), (1, 1, 1), (0, 3, 3)],
+    ids=["no-press", "press-after-a-success", "press-after-a-failure", "no-press-a-failure"],
+)
+def test_a_press_after_the_close_stops_what_is_chained_to_a_success(
+    heard: int, code: int, comes_to: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`quackd run a && quackd run b` must not go on to move an arm after somebody pressed Ctrl-C.
+    What the run came to is on its panel either way."""
+    from quackd import cli
+
+    def finished() -> None:
+        raise SystemExit(code)
+
+    monkeypatch.setattr(AfterTheClose, "heard", heard)
+    monkeypatch.setattr(cli, "app", finished)
+    monkeypatch.setattr(sys, "argv", ["quackd", "--help"])
+    with pytest.raises(SystemExit) as ended:
+        cli.main()
+    assert ended.value.code == comes_to
+
+
 def test_a_press_past_the_end_of_a_run_loses_no_verdict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2924,7 +2948,7 @@ def test_a_press_past_the_end_of_a_run_loses_no_verdict(
 )
 def test_a_run_leaves_a_press_doing_nothing_as_it_ends(argv: list[str], tmp_path: Path) -> None:
     result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(tmp_path)])
-    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+    assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose), result.output
 
 
 def test_a_release_and_a_doctor_leave_a_press_doing_nothing_as_they_end(
@@ -2936,14 +2960,14 @@ def test_a_release_and_a_doctor_leave_a_press_doing_nothing_as_they_end(
     reg = _real_arm(monkeypatch, tmp_path, FakeArm(step=5.0), "arm-p", off=10.0)
     before = signal.getsignal(signal.SIGINT)
     result = _release(reg, "arm-p", "--yes")
-    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+    assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose), result.output
     signal.signal(signal.SIGINT, before)
     result = runner.invoke(app, ["doctor", "--robot", "arm-p", "--registry-dir", str(reg)])
-    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, result.output
+    assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose), result.output
 
 
 def test_a_press_while_the_gif_is_made_leaves_out_the_gif_and_keeps_the_verdict(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """It can be minutes on a long run, so it is the one thing a press still ends after the run."""
     from quackd import cli
@@ -2959,15 +2983,24 @@ def test_a_press_while_the_gif_is_made_leaves_out_the_gif_and_keeps_the_verdict(
             path.write_bytes(b"a gif")
             return path
 
-    before = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    monkeypatch.setattr(AfterTheClose, "heard", 0)
+    after = AfterTheClose()
+    after.since = 0.0  # a long way back: the picture is what took the time
+    before = signal.signal(signal.SIGINT, after)
     try:
+        whole = tmp_path / "whole.gif"
+        assert cli._gif_a_press_can_leave_out(Finished(), whole) == whole
+        assert signal.getsignal(signal.SIGINT) is after
+        assert after.since > 0.0, "the time it took looks like a process stuck on something"
+        assert AfterTheClose.heard == 0
+
+        after.since = 0.0
         half = tmp_path / "half.gif"
         assert cli._gif_a_press_can_leave_out(Pressed(), half) is None
         assert not half.exists(), "half a picture was left where the whole one goes"
-        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN, "a press means nothing again"
-        whole = tmp_path / "whole.gif"
-        assert cli._gif_a_press_can_leave_out(Finished(), whole) == whole
-        assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+        assert signal.getsignal(signal.SIGINT) is after, "a press means nothing again"
+        assert after.since > 0.0
+        assert AfterTheClose.heard == 1, "it is still somebody saying stop"
     finally:
         signal.signal(signal.SIGINT, before)
 
@@ -3265,7 +3298,7 @@ def test_doctor_takes_its_ctrl_c_handler_out_before_its_event_loop_closes(
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-h", off=20.0)
     result = runner.invoke(app, ["doctor", "--robot", "arm-h", "--registry-dir", str(reg)])
     assert "folding arm-h to its rest pose" in " ".join(result.output.split()), result.output
-    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+    assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose)
 
 
 def test_a_press_while_an_arm_with_no_rest_pose_connects_keeps_it_powered_and_says_so(

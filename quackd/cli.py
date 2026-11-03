@@ -1715,6 +1715,8 @@ def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
     """The run's GIF, or none where somebody pressed Ctrl-C while it was made. Nothing else after
     the end of a run hears a press (`KillSwitch.uninstall`), but a long run can be minutes of this,
     with nothing moving, so it is the one thing a press still ends, and the verdict still prints."""
+    from quackd.safety import AfterTheClose
+
     save: Callable[[Path], Path | None] = recorder.save_gif
     before = signal.getsignal(signal.SIGINT)
     try:
@@ -1726,8 +1728,13 @@ def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
             return save(path)
         finally:
             signal.signal(signal.SIGINT, before)
+            if isinstance(before, AfterTheClose):
+                before.took_its_time()
     except KeyboardInterrupt:
         signal.signal(signal.SIGINT, before)
+        if isinstance(before, AfterTheClose):
+            before.took_its_time()
+            AfterTheClose.heard += 1
         with contextlib.suppress(OSError):
             path.unlink(missing_ok=True)
         ui.err_console.print(Text("  run.gif was left out", style=ui.STYLES["muted"]))
@@ -10204,6 +10211,12 @@ def main() -> None:
         _load_what_a_command_needs()
     try:
         app()
+    except SystemExit as e:
+        # read off the module where one was loaded, so a `--help` imports nothing for it
+        safety = sys.modules.get("quackd.safety")
+        if safety is None:
+            raise
+        raise SystemExit(safety.AfterTheClose.exit_code(e.code)) from None
     except BrokenPipeError:
         _leave_quietly()
     except OSError as e:

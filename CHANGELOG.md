@@ -13,31 +13,36 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **A `stop` holds an arm on the XLeRobot and the AlohaMini where it stands.** It stopped the wheels, and
   the lift, and left arm goals alone, so an arm on its way somewhere got there with a hand in the way or
-  not, and the answer said so. Each joint sent a goal is now sent where it reads, on three rules, since a
-  stop that moves an arm is what this is all against. A reading older than 100 ms is not used, because
-  it could be a move of its own: that joint goes on to its goal and the answer names it. A joint is
-  held once for each goal, or an arm under load would walk down a stop at a time. And a gripper is never
-  held, or it would open on what it holds. What changes for you, under the safety rule: on those two
-  bodies a `stop` now moves an arm, by what it travelled since the reading, and a `stop` beside
-  `move_joints` says the arm `is held where it stood`. The host's own watchdog still leaves the arms alone.
+  not, and the answer said so. The wheels and the lift still stop at once. Each joint sent a goal is then
+  sent where it reads, on three rules, since a stop that moves an arm is what this is all against. Only
+  a reading from after the stop began counts, so what was waiting in the socket is thrown away, and
+  with none inside 200 ms that joint goes on to its goal and the answer names it. A joint is held once
+  for each goal, or an arm under load would walk down a stop at a time. And a gripper is never held, or
+  it would open on what it holds. What changes for you, under the safety rule: on those two bodies a
+  `stop` now moves an arm, by what it travelled since that reading, and a `stop` beside `move_joints`
+  says the arm `is held where it stood`. The host's own watchdog still leaves the arms alone.
 - **`kick`, `sit` and `stand` on the Microduck and the Huebot, `grab` on the Microduck and `express` on the
   Open Duck Mini hear a `stop` once they have sent.** They went on waiting and answered as if nothing had
   happened, `kicked` included. Now they end at once, marked as a stop so `abort_when` does not count them,
   and say the robot plays out what it was sent, since a stop ends no skill on those robots.
 - **A bus call that never comes back no longer holds the process.** The close, the record and the summary
   were done by then, and the verdict had not printed: asyncio's pool and the exit both wait for their
-  threads, and on Windows nothing but closing the window ended it. The SO-101's bus, its cameras and a
-  policy's worker run on threads no exit waits for now, so the verdict prints and the process is gone
-  in under 3 s, in a real console with every bus call hanging.
+  threads, and on Windows nothing but closing the window ended it. The SO-101's bus and camera calls run
+  on threads no exit waits for now, so the verdict prints and the process is gone in under 3 s, in a real
+  console with every bus call hanging. So that the exit cannot cut off the one call that takes torque
+  off, a close waits up to 15 s for it, where it waited 5 s and left the rest to the exit, and if it
+  raises or does not come back the close now says `its disconnect did not finish`, and to hold the arm.
 - **A run that ends before it begins keeps a record.** A connect that failed, a press during one, and
   anything between the connect and the first step left a run folder with no end to it. Each writes
   `run_end` and `summary.json` now: `error`, or `aborted` with `kill switch; ...` where somebody pressed,
   and `robot` is null where the connect never answered.
-- **A press after a run has closed changes nothing.** One could lose the verdict, 1 time in 6 with somebody
+- **A press after a run has closed loses nothing.** One could lose the verdict, 1 time in 6 with somebody
   still pressing, though the record was written, and on Windows 6 times in 6 it ended the process with
-  `0xC000013A` in place of the run's own exit code. From the close to the end of the process a press does
-  nothing now, in `quackd robot release` and `quackd doctor` as well. It still leaves out a `run.gif`
-  being made, which can take minutes on a long run.
+  `0xC000013A`. From the close to the end of the process a press changes nothing now, in `quackd robot
+  release` and `quackd doctor` as well, and what they print comes. It is still somebody saying stop, so a
+  success comes out as exit 130, and `quackd run a && quackd run b` does not go on to move an arm. A
+  process still there 5 s after its close is stuck on something, and the next press ends it and says so.
+  A press also leaves out a `run.gif` being made, which can take minutes on a long run.
 - **The guard on a terminal is up before the terminal changes.** A SIGKILL in a run's first moments under
   a wrapper left it broken, 16 times in 24 under a real `bash`, and it is 0 in 24 now. On a machine with no
   CPU to spare a guard could come second and leave, and that stayed broken until somebody typed `stty sane`
@@ -51,6 +56,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **None of the fixes above has met a robot.** They ran on the mocks and the fake hosts, in a real Windows
   console, and on Linux under a real `bash`. The arm owes what 0.30.2 lists, and the XLeRobot and the
   AlohaMini have now to show that a hold from a reading stops an arm as it should.
+- **On Windows an exit stuck on a thread still takes closing the window,** since a thread's join hears no
+  signal there. The SO-101's bus and camera calls no longer wait there, and a press gets out of
+  asyncio's wait, so it takes a call on a pool of quackd's own that never comes back, a policy's worker
+  above all.
 - **A guard can still come second often enough to be seen, with the run pinned to one busy CPU.** With
   six busy loops on that CPU, the first command after a kill ran broken 20 times in 32, against 21 before,
   and by the fifth command it was 2, against 6. It looks every 2 ms, and on a CPU that busy it does not

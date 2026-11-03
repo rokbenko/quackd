@@ -38,6 +38,7 @@ class Server:
         self.lock = threading.Lock()
         self.answers: dict[int, dict[str, Any]] = {}
         self.arrived = threading.Condition()
+        self.gone = False
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
@@ -48,6 +49,9 @@ class Server:
                 with self.arrived:
                     self.answers[message["id"]] = message
                     self.arrived.notify_all()
+        with self.arrived:
+            self.gone = True
+            self.arrived.notify_all()
 
     def _write(self, message: dict[str, Any]) -> None:
         assert self.process.stdin is not None
@@ -66,6 +70,8 @@ class Server:
         end = time.monotonic() + limit_s
         with self.arrived:
             while number not in self.answers:
+                if self.gone:
+                    raise SystemExit("the server has ended: what it said is above")
                 left = end - time.monotonic()
                 if left <= 0:
                     raise TimeoutError(f"{method} did not answer in {limit_s:g} s")

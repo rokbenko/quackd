@@ -98,7 +98,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from quackd.adapters.threads import DaemonThreads
 from quackd_lerobot.policy.runner import Chunk, Features, Observation, PolicyRunner
 from quackd_lerobot.verbs import (
     JOINTS,
@@ -449,7 +448,7 @@ class PolicyLoop:
         self.first_chunk_s = FIRST_CHUNK_S
         self.reset_s = RESET_S
         self.instruction = ""
-        self._executor: DaemonThreads | None = None
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
         self._inflight: _Request | None = None
         self.declared_s = 0.0
         """The latency the runner declared at the last segment's start, in seconds."""
@@ -468,8 +467,9 @@ class PolicyLoop:
     def _submit(self, fn: Callable[..., T], *args: Any) -> concurrent.futures.Future[T]:
         """Run `fn` on the runner's single worker, made the first time it is needed."""
         if self._executor is None:
-            # a daemon: a policy that never answers must not hold a run that has ended
-            self._executor = DaemonThreads(WORKER, max_workers=1)
+            self._executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=WORKER
+            )
         return self._executor.submit(fn, *args)
 
     @staticmethod

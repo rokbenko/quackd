@@ -4,11 +4,12 @@
 
 **Amended 2026-11-03, for 0.30.3:** a `stop` holds an arm on its way somewhere, which this record
 decided against below. Leaving the goals alone was a stop for the wheels only, so an arm finished
-its move with a person's hand in the way or not. What the fake caught still rules how: the client
-reads the newest observation first and uses none older than 100 ms, so a reading that has not caught
-up leaves the goal alone and says so. Each joint is held once for each goal it is sent, or an arm
-under load would walk down a stop at a time, and a gripper never is, or it would open on what it
-holds. The host's own watchdog still stops the wheels and nothing else.
+its move with a person's hand in the way or not. What the fake caught still rules how: the wheels
+stop first, the client throws away the observation that was waiting, however new it looks, and uses
+only one that arrives after that, within 200 ms. Failing that the goal stands, and the answer says
+so. Each joint is held once for each goal it is sent, or an arm under load would walk down a stop at
+a time, and a gripper never is, or it would open on what it holds. The host's own watchdog still
+stops the wheels and nothing else.
 
 ## Context
 

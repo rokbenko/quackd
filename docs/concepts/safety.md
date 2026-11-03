@@ -206,9 +206,11 @@ where it would fold it. `Ctrl-\` where there is one, or closing the window, is w
 somebody who has to kill it. Anywhere else, the first rest move of a run with no hand-back
 included, a second press quits at once, on the terms of the paragraph above.
 
-Once a run has closed, a press does nothing at all to the end of the process, so the verdict
-prints and the exit code is the run's however many come. The one thing it still ends is a `run.gif`
-being made, which can take minutes on a long run: that is left out, and the verdict still prints.
+Once a run has closed, a press changes nothing to the end of the process, so the verdict prints
+however many come. It is still somebody saying stop, so a success comes out as exit 130, and
+`quackd run a && quackd run b` does not go on to move an arm. What it can still end is a `run.gif`
+being made, which can take minutes on a long run and is left out, and a process still there 5 s
+after its close, which is stuck on something: that press ends it, and says so.
 
 **SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever

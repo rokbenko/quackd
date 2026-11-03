@@ -71,7 +71,7 @@ keep people beyond the arm's reach in these as in any played run. Run one with `
 see it without the section. The lines they had before are in this folder's git history. The
 other 129 do not play. 105 of them keep every line they had and read what they always did: most
 ask for a result on the table, a high five, a guess or a question answered in words, a stillness
-test, a trap or a benchmark. The other 23 came with 0.30.0, below.
+test, a trap or a benchmark. The other 24 came with 0.30.0 and 0.30.3, below.
 `e004/royalty`, `e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23
 September, are among the 118 and no longer read what they read that day, and the 29 September
 rehearsal below ran the five `e004` files as they read before.

@@ -11,9 +11,11 @@ a `stop` intent.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import functools
 import math
+import os
 import queue
 import signal
 import sys
@@ -1478,6 +1480,64 @@ class _Enter(NamedTuple):
     """False for one that goes to no wait: behind a `q`, or ending the line of a `[y/N]`."""
 
 
+OUTSTAYED_S = 5.0
+"""How long after its close a process has for what is left, which is saying how it went. Past this
+it is stuck on something, and a press gets out (`AfterTheClose`). Far longer than the milliseconds
+that takes, and short enough for somebody still pressing to find the way out."""
+EXIT_PRESSED = 130
+"""The exit code of a process a Ctrl-C ended or had a say in: 128 and the signal, as a shell has."""
+OUTSTAYED = (
+    "\nquackd has closed, and something it was waiting on has not come back, so this Ctrl-C ended "
+    "it. What the run did is in its folder.\n"
+)
+
+
+class AfterTheClose:
+    """What a Ctrl-C does once a command has closed what it had open, for the rest of the process.
+
+    A person still pressing has no way to tell the end of a run from its last moments, and a press
+    past the switch used to raise through the printing of the verdict, or on Windows to end the
+    process in the middle of its exit. So it does nothing to what is left, and it is remembered,
+    since it was still somebody saying stop: `quackd run a && quackd run b` must not go on to move
+    an arm after one (`exit_code`). What cannot be taken from them is the way out. asyncio's pool
+    and the exit both wait for their threads, so a call on another body that never came back would
+    otherwise leave nothing but `kill`: once the process has outstayed its close, a press ends it
+    where it stands, with the record already written.
+
+    On Windows a thread's join does not hear a signal at all, so the last stretch of an exit stuck
+    that way still takes closing the window, as it always did. The interpreter puts back the
+    default for a handler like this one as it ends, which is the `0xC000013A`, so `atexit`, which
+    comes after those joins and before that, swaps it for one the interpreter leaves in place."""
+
+    heard = 0
+    """The presses since a close, in this process."""
+
+    def __init__(self) -> None:
+        self.since = time.monotonic()
+        atexit.register(self._deaf_to_the_end)
+
+    def __call__(self, _signum: int, _frame: Any) -> None:
+        AfterTheClose.heard += 1
+        if time.monotonic() - self.since >= OUTSTAYED_S:
+            with contextlib.suppress(OSError):
+                os.write(2, OUTSTAYED.encode())
+            os._exit(EXIT_PRESSED)
+
+    def _deaf_to_the_end(self) -> None:
+        with contextlib.suppress(ValueError):
+            if signal.getsignal(signal.SIGINT) is self:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def took_its_time(self) -> None:
+        """What was left was slow on purpose, a `run.gif` on a long run: no sign of being stuck."""
+        self.since = time.monotonic()
+
+    @classmethod
+    def exit_code(cls, code: Any) -> Any:
+        """`code`, unless it is a success with a press heard after the close."""
+        return EXIT_PRESSED if cls.heard and code in (0, None) else code
+
+
 class KillSwitch:
     """Ctrl-C or `q` → abort, and Enter → the one thing a run ever waits for a person to do.
 
@@ -1869,18 +1929,14 @@ class KillSwitch:
         if self._previous is not None:
             with contextlib.suppress(ValueError):
                 signal.signal(
-                    signal.SIGINT, signal.SIG_IGN if nothing_left_to_stop else self._previous
+                    signal.SIGINT, AfterTheClose() if nothing_left_to_stop else self._previous
                 )
             self._previous = None
 
     def uninstall(self, *, nothing_left_to_stop: bool = False) -> None:
         """`nothing_left_to_stop` is for a command with nothing after its body but saying how it
-        went. A person still pressing has no way to tell the end of a run from its last moments,
-        and a press past this used to raise through the printing of the verdict, or on Windows to
-        end the process in the middle of its exit with the run's own exit code lost. So a press
-        does nothing from here to the end of the process: the handler changes in one step, with no
-        moment for one to land in, and the interpreter leaves one set to ignore where it found
-        it as it ends."""
+        went: `AfterTheClose` takes the signal from here, in one step, with no moment for a press
+        to land in."""
         self._restore(nothing_left_to_stop=nothing_left_to_stop)
         self._uninstalled = True
         if self._looking is not None:

@@ -129,10 +129,10 @@ a bus it shares with the lift, so quackd sends its stop more than once.
 
 A stop stops the base and the lift at once, and then holds an arm on its way somewhere where it
 stands, which the watchdog does not do. A reading here takes a request and a reply, so that comes
-second, and only the answer to the request just sent counts. The rules are the XLeRobot's: a reading
-from the last 100 ms or the joint goes on to its goal and `stop` names it, since one older than that
-could be a move of its own, once for each goal, or an arm under load would walk down a stop at a
-time, and never a gripper, which would open on what it holds. From beside a verb it ends `lift`
+second, and only the answer to a request sent after the stop began counts. The rules are the
+XLeRobot's: that reading within 200 ms, or the joint goes on to its goal and `stop` names it, once
+for each goal, or an arm under load would walk down a stop at a time, and never a gripper, which
+would open on what it holds. From beside a verb it ends `lift`
 before its next send, `home_arms` before the next arm's, and `move_joints` and `gripper` at once,
 and what they answer says which of these it was. `gripper` has to say which way: `open` has no
 default. None of this has met a real arm.

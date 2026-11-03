@@ -67,18 +67,13 @@ POLL_MS = 200
 CONNECT_TIMEOUT_S = 5.0
 CALL_TIMEOUT_S = 3.0
 STOP_REPEATS = 3
-HOLD_FRESH_MS = 100.0
-"""How old a reading of an arm may be for a stop to make it the arm's goal: three of the host's
-cycles. The arm steps back by what it travelled since that reading, which is a hold. From an
-older one it could be a move of its own, and nothing on the wire says how old a reading really
-is."""
-HOLD_READ_S = 0.1
-"""How long a stop may look for that reading, after the wheels and the lift are stopped: a
-request and its reply, and the host answers one request a cycle. Inside `HOLD_FRESH_MS`, or
-what it found would be too old on arrival."""
-HOLD_READ_POLL_MS = 20
 """`stop_base` writes with num_retry=0 and shares a bus with the lift, so one lost serial
 packet loses the stop. Saying it more than once is cheap."""
+HOLD_READ_S = 0.2
+"""How long a stop looks for a reading from after it began, once the wheels and the lift are
+stopped: a request and its reply, where the host answers one request a cycle at 30 Hz. The arm
+goes on meanwhile, and past this it goes on to its goal."""
+HOLD_READ_POLL_MS = 20
 
 VEL_KEYS = ("x.vel", "y.vel", "theta.vel")
 LIFT_HEIGHT_KEY = "lift_axis.height_mm"
@@ -93,6 +88,8 @@ class HostLink(Protocol):
     def send(self, text: str) -> None: ...
 
     def request(self, token: bytes, timeout_ms: int) -> list[bytes] | None: ...
+
+    def answer(self, timeout_ms: int) -> list[bytes] | None: ...
 
     def close(self) -> None: ...
 
@@ -133,6 +130,9 @@ class _PyZmqLink:
 
     def request(self, token: bytes, timeout_ms: int) -> list[bytes] | None:
         self._obs.send(token, flags=self._zmq.NOBLOCK)
+        return self.answer(timeout_ms)
+
+    def answer(self, timeout_ms: int) -> list[bytes] | None:
         if self._obs.poll(timeout_ms):
             parts: list[bytes] = self._obs.recv_multipart()
             return parts
@@ -190,10 +190,10 @@ class AlohaMiniZmq:
         self._state: dict[str, float] = {}
         self._frames: dict[str, bytes] = {}
         self._rx_at: float | None = None
-        self._answered_at: float | None = None
-        """When the host last answered the request just sent. Any later than `_rx_at` it never
-        is, and earlier wherever a reply came in behind its time: a DEALER keeps those, so the
-        one read can be the answer to an earlier request, and `_hold_the_arms` needs this one."""
+        self._answered = 0
+        """The newest request the host has answered. A DEALER keeps a reply that came in behind
+        its time, so the one read can be the answer to an earlier request, however old, and
+        `_reading_from_now_on` wants an answer to a request sent since it began."""
         self._unheld: set[str] = set()
         """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
         self.stop_left_going: tuple[str, ...] = ()
@@ -237,6 +237,10 @@ class AlohaMiniZmq:
             self._token += 1
             return self._require_link().request(str(self._token).encode("ascii"), timeout_ms)
 
+    def _answer_locked(self, timeout_ms: int) -> list[bytes] | None:
+        with self._lock:
+            return self._require_link().answer(timeout_ms)
+
     def _open_locked(self) -> None:
         with self._lock:
             self._require_link().open(self.host, self.cmd_port, self.obs_port)
@@ -269,7 +273,10 @@ class AlohaMiniZmq:
 
     async def _pump(self, timeout_ms: int = POLL_MS) -> bool:
         """One request/reply round. Returns True only when a reply actually decoded."""
-        parts = await self._call(self._request_locked, timeout_ms)
+        return self._took(await self._call(self._request_locked, timeout_ms))
+
+    def _took(self, parts: list[bytes] | None) -> bool:
+        """Keep what a reply says. True only where it decoded."""
         if not parts or len(parts) < 2:
             return False
         try:
@@ -299,8 +306,8 @@ class AlohaMiniZmq:
         self.arm_torque = bool(observation.get("quackd_arm_torque", False))
         self.calibrated = bool(observation.get("quackd_calibrated", True))
         self._rx_at = time.monotonic()
-        if parts[0] == str(self._token).encode("ascii"):
-            self._answered_at = self._rx_at
+        if parts[0].isdigit():
+            self._answered = max(self._answered, int(parts[0]))
         self.sequence += 1
         return True
 
@@ -477,23 +484,37 @@ class AlohaMiniZmq:
         somewhere got there, with a person's hand in the way or not. A reading here takes a
         request and a reply, so the base does not wait on it."""
         self._halt()
+        fresh = False
         if self._unheld:
             with contextlib.suppress(Exception):
                 await self._send()
-            with contextlib.suppress(Exception):
-                async with asyncio.timeout(HOLD_READ_S):
-                    asked = time.monotonic()
-                    while (self._answered_at or asked) <= asked:
-                        await self._pump(HOLD_READ_POLL_MS)
-        self._hold_the_arms()
+            fresh = await self._reading_from_now_on()
+        self._hold_the_arms(fresh)
 
-    def _hold_the_arms(self) -> None:
+    async def _reading_from_now_on(self) -> bool:
+        """Whether the host has answered a request sent after this began. One request, and then
+        as long as it takes to read down to its answer: the host answers one a cycle, so asking
+        again before it has answered only leaves replies behind for every read after this, each
+        an older reading than the last, with the arm's position marked fresh. A heartbeat's
+        request sent since then will do as well, whichever of the two reads the answer."""
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(HOLD_READ_S):
+                asked = self._token + 1
+                self._took(await self._call(self._request_locked, HOLD_READ_POLL_MS))
+                while self._answered < asked:
+                    self._took(await self._call(self._answer_locked, HOLD_READ_POLL_MS))
+                return True
+        return False
+
+    def _hold_the_arms(self, fresh: bool) -> None:
         """The reading becomes the goal, under three rules, each of which is about a stop that
         would otherwise move an arm.
 
-        A reading older than `HOLD_FRESH_MS` is not used (ADR-0026: a fake host caught a stop
-        built from an observation that had not caught up, which sent the arm back to zero).
-        That joint goes on to the goal it was sent, the transport says so, and the next stop
+        Only a reading from after the stop began is used (`fresh`), since a goal built from an
+        older one is a move of its own: a fake host caught a stop built from an observation that
+        had not caught up, which sent the arm back to zero (ADR-0026), and one that had sat unread
+        while the host stalled sent an arm back as far as it had travelled in the stall. Failing
+        that, the joint goes on to the goal it was sent, the transport says so, and the next stop
         tries again.
 
         A joint is held once for each goal it is sent. A servo under load reads below its goal,
@@ -502,8 +523,7 @@ class AlohaMiniZmq:
 
         A gripper is never held: sending it what it reads would open a hand that is squeezing
         something against its goal, so the goal it has stands."""
-        answered = self._answered_at
-        if answered is not None and (time.monotonic() - answered) * 1000.0 <= HOLD_FRESH_MS:
+        if fresh:
             for key in self._unheld & set(self._state):
                 self._arm_goals[key] = self._state[key]
             self._unheld -= set(self._state)

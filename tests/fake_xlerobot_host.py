@@ -90,6 +90,9 @@ class FakeXLerobotHost:
         self.frame = "" if broken_camera else _tiny_jpeg()
         self.state: dict[str, float] = dict.fromkeys(STATE_KEYS, 0.0)
         self.actions: list[dict[str, Any]] = []
+        self.slow: set[str] = set()
+        """State keys a goal does not land on at once: a servo takes its time, and a test says
+        where one has got to by writing `state`."""
         self.watchdog_trips = 0
         self._last_cmd = time.monotonic()
         self._running = False
@@ -108,7 +111,7 @@ class FakeXLerobotHost:
         every action whether or not it carried velocity keys."""
         self.actions.append(dict(action))
         for key, value in action.items():
-            if key.endswith(".pos") and key.split(".")[0] + ".pos" in STATE_KEYS:
+            if key.endswith(".pos") and key in STATE_KEYS and key not in self.slow:
                 self.state[key] = float(value)
         # _body_to_wheel_raw is called unconditionally with .get(key, 0.0) defaults, and always
         # returns three wheels, so `if base_wheel_goal_vel:` is always true

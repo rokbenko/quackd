@@ -24,13 +24,12 @@ T = TypeVar("T")
 
 
 class DaemonThreads(Executor):
-    """An executor whose threads are daemons, with a new one wherever none is free unless
-    `max_workers` says otherwise. A thread that goes idle waits for the next call rather than
-    ending, so a bus called a hundred times a second does not start a hundred threads."""
+    """An executor whose threads are daemons, with a new one wherever none is free. A thread that
+    goes idle waits for the next call rather than ending, so a bus called a hundred times a second
+    does not start a hundred threads."""
 
-    def __init__(self, name: str, max_workers: int | None = None) -> None:
+    def __init__(self, name: str) -> None:
         self._name = name
-        self._max_workers = max_workers
         self._work: queue.SimpleQueue[Callable[[], None]] = queue.SimpleQueue()
         self._idle = threading.Semaphore(0)
         self._started = 0
@@ -56,8 +55,6 @@ class DaemonThreads(Executor):
 
     def _one_more(self) -> None:
         with self._lock:
-            if self._max_workers is not None and self._started >= self._max_workers:
-                return
             self._started += 1
             number = self._started
         threading.Thread(target=self._serve, name=f"{self._name}-{number}", daemon=True).start()

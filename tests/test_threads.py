@@ -7,15 +7,16 @@ import subprocess
 import sys
 import textwrap
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from quackd.adapters.threads import DaemonThreads
-from quackd_lerobot.policy.loop import WORKER, PolicyLoop
-from quackd_lerobot.real import LeRobotReal
-from tests.test_lerobot_adapter import FakeArm
+from quackd_lerobot.policy.loop import PolicyLoop
+from quackd_lerobot.real import TORQUE_RELEASE_NOT_KNOWN, LeRobotReal
+from tests.test_lerobot_adapter import FOLDED, FakeArm
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,26 +54,6 @@ def test_a_call_that_is_stuck_does_not_hold_up_the_next() -> None:
     finally:
         free.set()
     assert stuck.result(10) is True
-
-
-def test_a_limit_of_one_keeps_calls_in_order_and_a_queued_one_can_be_called_off() -> None:
-    """What a policy's single worker needs: its close runs after whatever it was asked before it."""
-    threads = DaemonThreads("test", max_workers=1)
-    free = threading.Event()
-    ran: list[str] = []
-
-    def first() -> None:
-        free.wait(10)
-        ran.append("ahead")
-
-    ahead = threads.submit(first)
-    called_off = threads.submit(ran.append, "called off")
-    behind = threads.submit(ran.append, "behind")
-    assert called_off.cancel()
-    free.set()
-    ahead.result(10)
-    behind.result(10)
-    assert ran == ["ahead", "behind"]
 
 
 def test_a_call_that_raises_says_so_to_whoever_asked() -> None:
@@ -186,10 +167,52 @@ async def test_the_cameras_are_on_threads_no_exit_waits_for() -> None:
     assert camera.daemon == [True, True, True]
 
 
-async def test_a_policy_worker_is_on_a_thread_no_exit_waits_for() -> None:
-    """A policy that never answers ends the segment on its own clock, and held the process after."""
+async def test_a_policy_keeps_a_worker_the_exit_waits_for() -> None:
+    """Its close goes out on that worker with nothing waiting for it, and that is what tells the
+    server the session is over: cut off, the next client's reset is refused for the lease."""
     loop = PolicyLoop.__new__(PolicyLoop)
     loop._executor = None
     thread = await asyncio.wrap_future(loop._submit(threading.current_thread))
-    assert thread.daemon
-    assert thread.name.startswith(WORKER)
+    assert not thread.daemon
+
+
+def _disconnects_slowly(seconds: float, *, raises: bool = False) -> FakeArm:
+    class Slow(FakeArm):
+        def disconnect(self) -> None:
+            time.sleep(seconds)
+            if raises:
+                raise OSError("the bus lost it")
+            super().disconnect()
+
+    return Slow()
+
+
+async def _closed_at_rest(arm: FakeArm) -> LeRobotReal:
+    transport = LeRobotReal("COM99", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    result = await transport.go_to_rest()
+    assert result.reached, result.reason
+    await transport.close()
+    return transport
+
+
+async def test_a_disconnect_that_takes_torque_off_is_waited_for() -> None:
+    """Its thread is a daemon, and the exit cut off one that ran past the close's old 5 s, with some
+    motors let go and some not, a success on the panel and nothing said."""
+    arm = _disconnects_slowly(0.3)
+    transport = await _closed_at_rest(arm)
+    assert arm.torque is False
+    assert transport.close_note is None
+
+
+async def test_a_disconnect_that_does_not_come_back_is_said_of(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("quackd_lerobot.real.DISCONNECT_S", 0.05)
+    transport = await _closed_at_rest(_disconnects_slowly(0.5))
+    assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN
+
+
+async def test_a_disconnect_that_raises_is_said_of() -> None:
+    transport = await _closed_at_rest(_disconnects_slowly(0.0, raises=True))
+    assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN
