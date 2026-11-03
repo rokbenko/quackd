@@ -3,8 +3,8 @@ with a call that does not say which way a gripper goes.
 
 A verb that waits on a move has to hear a stop sent beside it, over MCP from a second call, or it
 reports the move as done, and one with another goal to send after the wait undoes the stop. The
-SO-101's own verbs have their tests in `test_lerobot_adapter.py`, and the core's in `test_composite.py`
-and `test_executor.py`.
+SO-101's own verbs have their tests in `test_lerobot_adapter.py`, and the core's in
+`test_composite.py` and `test_executor.py`.
 """
 
 from __future__ import annotations
