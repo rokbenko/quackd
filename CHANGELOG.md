@@ -9,6 +9,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-11-03
+
+0.31.0 lets Robot Passport run on a robot's own computer that is not a Jetson. `quackd onboard
+--board generic` takes any other Linux computer's word for its name, from its device tree or DMI,
+and its passport says kind `other`, so the specification, its schema and its vectors do not move.
+Nothing can tell a robot's computer from a desk's, so it matches no string and is never found by
+itself. It refuses a computer whose firmware says it is a laptop or the like, and it leaves a Jetson
+to the Jetson board. Named once, the name is kept in the robot's folder, so nothing later needs the
+flag.
+
+`quackd onboard preflight` now says when nothing keeps the clock right, checks that the adapter can
+be a central, and no longer tells a clock behind a passport to sign again, and signing refuses a
+clock before any passport quackd signs. A wrong clock refuses good passports, which matters more on
+a computer with no clock battery.
+
+It is written from the kernel's and systemd's sources. It has run in a stock Ubuntu 24.04 container,
+which has no device tree, no DMI and no Bluetooth, and on no robot's computer and no real radio.
+
 ### Added
 
 - **`quackd onboard --board generic` puts a passport on any other robot's Linux computer.** It
@@ -9499,7 +9517,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.30.3...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/rokbenko/quackd/compare/v0.30.3...v0.31.0
 [0.30.3]: https://github.com/rokbenko/quackd/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/rokbenko/quackd/compare/v0.30.1...v0.30.2
 [0.30.1]: https://github.com/rokbenko/quackd/compare/v0.30.0...v0.30.1
