@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from quackd.onboard import config, systemd, wizard
+from quackd.onboard import preflight as preflight_module
 from quackd.onboard.keys import WrongPassphrase
 from quackd.onboard.service import check_own_passport
 from quackd.onboard.store import OnboardDir
@@ -119,6 +120,77 @@ def test_a_signed_passport_is_signed_again_only_when_its_file_changed_or_its_day
     sign(home, passphrase_file, days=wizard.RENEW_WITHIN_DAYS - 1)
     why = wizard.needs_signing(home, config.load(home.robot_yaml), SIM)
     assert why is not None and "runs out" in why
+
+
+def test_what_a_computer_calls_itself_changing_is_not_robot_yaml_changing(
+    home: OnboardDir, passphrase_file: Path
+) -> None:
+    """A firmware update can rename a computer, and nobody edited anything."""
+    sign(home, passphrase_file)
+    renamed = {**SIM, "model": "another name"}
+    file = config.load(home.robot_yaml)
+    assert wizard.needs_signing(home, file, renamed) == (
+        "this computer calls itself something else since it was signed"
+    )
+    home.robot_yaml.write_text(robot_text(how_to_stop="pull the cord"), encoding="utf-8")
+    why = wizard.needs_signing(home, config.load(home.robot_yaml), renamed)
+    assert why == "robot.yaml changed since it was signed: safety", "board is no edit of it"
+
+
+def test_a_clock_before_any_passport_cannot_sign_and_makes_no_key_trying(
+    home: OnboardDir, passphrase_file: Path
+) -> None:
+    """A board with no clock battery and no network wakes up long ago, and a signature from then
+    would have run out before anybody read it."""
+    long_ago = datetime(preflight_module.EARLIEST_YEAR - 1, 12, 31, tzinfo=UTC)
+    with pytest.raises(wizard.WizardError, match="timedatectl"):
+        wizard.sign(
+            home,
+            config.load(home.robot_yaml),
+            SIM,
+            ask=NoQuestions(),
+            passphrase_file=passphrase_file,
+            days=30,
+            now=long_ago,
+        )
+    assert not home.robot_key.exists() and not home.owner_key.exists()
+    assert not home.passport_jws.exists()
+
+
+def test_a_clock_behind_the_passport_is_told_to_set_the_time_and_not_to_sign_again(
+    home: OnboardDir, passphrase_file: Path
+) -> None:
+    """Signing there would write the wrong date down. Any other failure still says to sign."""
+
+    def passport_row() -> preflight_module.Check:
+        checks = preflight_module.preflight(
+            home,
+            "sim",
+            service=lambda: None,
+            radio_rows=lambda *_: [],
+            clock_state=lambda: (None, None),
+        )
+        return next(check for check in checks if check.name == "passport")
+
+    def signed_at(moment: datetime, days: int) -> None:
+        wizard.sign(
+            home,
+            config.load(home.robot_yaml),
+            SIM,
+            ask=NoQuestions(),
+            passphrase_file=passphrase_file,
+            days=days,
+            now=moment,
+        )
+
+    signed_at(datetime.now(UTC) + timedelta(days=30), 30)
+    row = passport_row()
+    assert row.state == "fail" and "clock is behind" in row.detail
+    assert row.hint == preflight_module.SET_THE_TIME
+    signed_at(datetime.now(UTC) - timedelta(days=30), 1)
+    row = passport_row()
+    assert row.state == "fail" and "expired" in row.detail
+    assert row.hint == "quackd onboard sign"
 
 
 def test_the_service_serves_only_a_passport_that_checks_out_for_its_own_key(

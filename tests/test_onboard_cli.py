@@ -11,6 +11,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import subprocess
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ from quackd import boards
 from quackd.boards import generic
 from quackd.cli import app
 from quackd.onboard import config, demo
+from quackd.onboard import preflight as preflight_module
 from quackd.onboard.store import OnboardDir
 from quackd.passport import document
 from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
@@ -350,6 +353,81 @@ def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(
 def preflight_rows(home: Path, *board: str) -> tuple[int, dict[str, dict[str, str]]]:
     checked = runner.invoke(app, ["onboard", "preflight", *board, "--dir", str(home), "--json"])
     return checked.exit_code, {row["check"]: row for row in json.loads(checked.output)["checks"]}
+
+
+THE_CLOCK = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("synced", "rtc", "state", "words"),
+    [
+        (True, True, "ok", None),
+        (None, None, "ok", None),
+        (True, None, "ok", None),
+        (False, True, "warn", "nothing has set it"),
+        (False, False, "warn", "nothing has set it"),
+        (False, None, "warn", "nothing has set it"),
+        (True, False, "warn", "no clock here that survives a reboot"),
+        (None, False, "warn", "no clock here that survives a reboot"),
+    ],
+)
+def test_the_clock_row_says_whether_anything_keeps_the_clock_right(
+    synced: bool | None, rtc: bool | None, state: str, words: str | None
+) -> None:
+    check = preflight_module._clock(THE_CLOCK, synced, rtc)
+    assert check.state == state and check.detail.startswith("2026-11-03 12:00 UTC")
+    assert words is None or words in check.detail
+    assert (check.hint is None) == (words is None)
+
+
+def test_a_clock_before_any_passport_fails_whatever_else_it_says() -> None:
+    long_ago = THE_CLOCK.replace(year=preflight_module.EARLIEST_YEAR - 1)
+    check = preflight_module._clock(long_ago, True, True)
+    assert check.state == "fail" and check.hint == preflight_module.SET_THE_TIME
+
+
+@pytest.mark.parametrize(
+    ("code", "stdout", "listed", "wanted"),
+    [
+        (0, "yes\n", ["rtc0"], (True, True)),
+        (0, "no\n", [], (False, False)),
+        (1, "", None, (None, None)),
+        (0, "something else\n", ["rtc0"], (None, True)),
+    ],
+    ids=["synced", "unsynced-no-rtc", "no-systemd-no-folder", "unreadable"],
+)
+def test_what_linux_says_of_its_clock_is_read_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+    stdout: str,
+    listed: list[str] | None,
+    wanted: tuple[bool | None, bool | None],
+) -> None:
+    asked: list[list[str]] = []
+
+    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        asked.append(command)
+        return subprocess.CompletedProcess(command, code, stdout, "")
+
+    monkeypatch.setattr(preflight_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(preflight_module.subprocess, "run", run)
+    monkeypatch.setattr(preflight_module, "list_dir", lambda path: listed)
+    assert preflight_module._clock_state() == wanted
+    assert asked == [["timedatectl", "show", "--property=NTPSynchronized", "--value"]]
+
+
+def test_a_computer_with_no_timedatectl_says_nothing_of_it_and_off_linux_nothing_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("timedatectl")
+
+    monkeypatch.setattr(preflight_module.subprocess, "run", run)
+    monkeypatch.setattr(preflight_module, "list_dir", lambda path: ["rtc0"])
+    monkeypatch.setattr(preflight_module.platform, "system", lambda: "Linux")
+    assert preflight_module._clock_state() == (None, True)
+    monkeypatch.setattr(preflight_module.platform, "system", lambda: "Windows")
+    assert preflight_module._clock_state() == (None, None)
 
 
 def test_preflight_off_a_robot_leaves_the_next_step_to_the_board_row(

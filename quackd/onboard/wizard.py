@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from quackd.onboard import config, facts
+from quackd.onboard.preflight import EARLIEST_YEAR, SET_THE_TIME
 
 #: Sign again when the owner's signature runs out within this many days.
 RENEW_WITHIN_DAYS = 30
@@ -74,10 +75,18 @@ def sign(
     manifest: Any = None,
     now: datetime | None = None,
 ) -> Signed:
-    """Sign robot.yaml's passport section with the owner key and write passport.jws."""
+    """Sign robot.yaml's passport section with the owner key and write passport.jws. A clock
+    before any passport quackd signs refuses, before a key is made: the signature would carry
+    its date for a year."""
     from quackd.onboard.keys import read_sealed, unseal
     from quackd.passport import document
 
+    moment = (now or datetime.now(UTC)).replace(microsecond=0)
+    if moment.year < EARLIEST_YEAR:
+        raise WizardError(
+            f"this computer's clock says {moment:%Y-%m-%d}, before any passport quackd signs: "
+            f"{SET_THE_TIME}, then sign"
+        )
     home.ensure()
     robot_key, robot_made = home.robot_key_or_new()
     new_owner = not home.owner_key.exists()
@@ -86,7 +95,6 @@ def sign(
         owner_key, owner_made = home.owner_key_or_new(passphrase)
     else:
         owner_key, owner_made = unseal(read_sealed(home.owner_key), passphrase), False
-    moment = (now or datetime.now(UTC)).replace(microsecond=0)
     doc = facts.passport_document(
         file,
         robot_did=robot_key.did,
@@ -117,8 +125,11 @@ def needs_signing(
     except PassportError as e:
         return f"the signed one does not check out ({e})"
     changed = facts.unsigned_changes(file, reading, board=board, manifest=manifest)
+    edited = [name for name in changed if name != "board"]
+    if edited:
+        return f"robot.yaml changed since it was signed: {', '.join(edited)}"
     if changed:
-        return f"robot.yaml changed since it was signed: {', '.join(changed)}"
+        return "this computer calls itself something else since it was signed"
     left = reading.expires - int(datetime.now(UTC).timestamp())
     if left < RENEW_WITHIN_DAYS * 86_400:
         return f"its signature runs out in {max(0, left) // 86_400} days"

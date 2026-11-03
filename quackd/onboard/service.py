@@ -72,6 +72,9 @@ class SelfCheck:
     ok: bool
     why: str
     reading: document.Reading | None = None
+    clock_behind: bool = False
+    """It failed because this robot's clock is earlier than the passport says, which signing
+    again would only write down."""
 
 
 def check_own_passport(token: str | None, robot_did: str, *, now: int | None = None) -> SelfCheck:
@@ -83,7 +86,9 @@ def check_own_passport(token: str | None, robot_did: str, *, now: int | None = N
     except PassportError as e:
         if e.rule == "4.5" and "ahead of this clock" in str(e):
             return SelfCheck(
-                False, f"{e}; this robot's clock is behind: set the time (timedatectl)"
+                False,
+                f"{e}; this robot's clock is behind: set the time (timedatectl)",
+                clock_behind=True,
             )
         return SelfCheck(False, f"its own passport does not check out: {e}")
     if reading.id != robot_did:

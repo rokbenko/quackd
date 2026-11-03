@@ -175,6 +175,15 @@ def _bluez(facts: Facts) -> list[Row]:
     else:
         roles = ", ".join(adapter.roles) if adapter.roles is not None else "roles not reported"
         out.append(Row("adapter", "ok", f"{adapter.name} {adapter.address}, {roles}"))
+    if adapter.central is False:
+        out.append(
+            Row(
+                "central role",
+                "fail",
+                "the controller cannot be a central: this robot could neither hear another nor "
+                "link to it",
+            )
+        )
     if adapter.peripheral is False:
         out.append(
             Row(
