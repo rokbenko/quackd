@@ -5,7 +5,7 @@ read here on the board itself: the device tree's `model` names the board, its `c
 the chip (`nvidia,tegra234` is Orin, `nvidia,tegra264` is Thor), and `/etc/nv_tegra_release`
 names the L4T release, which names the JetPack (`l4t.py`). `facts` is pure, over a function that
 reads a path, so every case is a test that needs no board; `JetsonBoard` hands it the real files
-by default, and nothing else in this module reads one.
+by default, through `linux.py`, and this module reads none itself.
 
 quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with JetPack 7, and nothing else
 (`SUPPORTED`).
@@ -19,23 +19,24 @@ were not read off one, which is why detection keys on the chip alone.
 
 from __future__ import annotations
 
-import os
 import re
-from collections.abc import Callable
-from pathlib import Path
 
 from quackd.boards import BoardFacts, RadioCheck, Unsupported
 from quackd.boards.l4t import jetpack_for, parse_l4t
+from quackd.boards.linux import (
+    BLUETOOTH,
+    COMPATIBLE,
+    MODEL,
+    Lister,
+    Reader,
+    compatible_entries,
+    device_tree_text,
+    list_dir,
+    radio_check,
+    read_file,
+)
 
-Reader = Callable[[str], str | None]
-"""A file's text by its path, or None where it cannot be read."""
-Lister = Callable[[str], list[str] | None]
-"""A folder's entries by its path, or None where there is no such folder."""
-
-MODEL = "/proc/device-tree/model"
-COMPATIBLE = "/proc/device-tree/compatible"
 RELEASE = "/etc/nv_tegra_release"
-BLUETOOTH = "/sys/class/bluetooth"
 
 CHIPS = {
     "tegra264": "Thor",
@@ -53,7 +54,6 @@ NVIDIA's JetPack 7.2 page says added Orin to JetPack 7, on Orin; and 38 and 39, 
 SUPPORTS = "quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with JetPack 7"
 
 _CHIP = re.compile(r"nvidia,(tegra\d+)")
-_NUL = "\x00"
 
 
 class JetsonBoard:
@@ -81,8 +81,7 @@ def facts(read: Reader) -> BoardFacts | None:
     No Jetson means neither file a Jetson carries: no NVIDIA Tegra among the device tree's
     `compatible` entries, which are NUL-separated, and no release file. One without the other is
     a Jetson something hides, and it is refused, saying which."""
-    entries = [part.strip() for part in (read(COMPATIBLE) or "").split(_NUL)]
-    chip = next((m.group(1) for e in entries if (m := _CHIP.fullmatch(e))), None)
+    chip = chip_of(read)
     release_text = read(RELEASE)
     if chip is None and release_text is None:
         return None
@@ -112,18 +111,16 @@ def facts(read: Reader) -> BoardFacts | None:
     release = f"L4T {l4t} (JetPack {jetpack})" if jetpack else f"L4T {l4t}"
     if l4t.split(".")[0] not in SUPPORTED[chip]:
         raise Unsupported(f"{what} on {release}: {SUPPORTS}")
-    model = (read(MODEL) or "").replace(_NUL, "").strip()
+    model = device_tree_text(read, MODEL)
     return BoardFacts(
         kind="jetson", model=model or f"NVIDIA Jetson {family}", soc=chip, release=release
     )
 
 
-def radio_check(listdir: Lister) -> RadioCheck:
-    """The first Bluetooth adapter the kernel lists, which is the one BlueZ calls `hci0`."""
-    adapters = sorted(name for name in listdir(BLUETOOTH) or [] if name.startswith("hci"))
-    if adapters:
-        return RadioCheck(ok=True, adapter=adapters[0])
-    return RadioCheck(ok=False, why=f"no Bluetooth adapter: {BLUETOOTH} lists no hci device")
+def chip_of(read: Reader) -> str | None:
+    """The Tegra among the device tree's `compatible` entries, or None where it names none."""
+    entries = compatible_entries(read)
+    return next((m.group(1) for e in entries if (m := _CHIP.fullmatch(e))), None)
 
 
 def looked_for(system: str) -> str:
@@ -133,19 +130,25 @@ def looked_for(system: str) -> str:
     return f"{COMPATIBLE} names no NVIDIA Tegra, and there is no {RELEASE}"
 
 
-def read_file(path: str) -> str | None:
-    try:
-        return Path(path).read_bytes().decode("utf-8", "replace")
-    except OSError:
-        return None
-
-
-def list_dir(path: str) -> list[str] | None:
-    try:
-        return os.listdir(path)
-    except OSError:
-        return None
-
-
 def _article(word: str) -> str:
     return "an" if word[:1] in "AEIOU" else "a"
+
+
+__all__ = [
+    "BLUETOOTH",
+    "CHIPS",
+    "COMPATIBLE",
+    "MODEL",
+    "RELEASE",
+    "SUPPORTED",
+    "SUPPORTS",
+    "JetsonBoard",
+    "Lister",
+    "Reader",
+    "chip_of",
+    "facts",
+    "list_dir",
+    "looked_for",
+    "radio_check",
+    "read_file",
+]
