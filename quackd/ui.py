@@ -933,8 +933,6 @@ class RunStatus:
             # must only ever follow a release that actually happened
             if data.get("how") == "released":
                 self.update("waiting for you to place the arm")
-        elif kind == "note" and str(data.get("text") or "").startswith("kill switch"):
-            self.stopping()
         elif kind in ("declare", "member_end", "run_end"):
             self.update("finishing")
         else:

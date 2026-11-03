@@ -330,6 +330,21 @@ async def test_a_call_after_a_stop_has_finished_still_runs() -> None:
     assert (await ex.run_verb("gripper", {"open": False})).ok
 
 
+async def test_what_only_speaks_still_goes_out_after_a_stop() -> None:
+    """It moves nothing, and `Executor._overtaken` lets it start for that reason: refused at its
+    send it was a `say` failing, and a stop more, for a brake that had nothing to do with it."""
+    sent: list[str] = []
+
+    class Speaks:
+        async def send_intent(self, intent: Intent) -> Any:
+            sent.append(intent.kind)
+            return SimpleNamespace(accepted=True, reason=None)
+
+    ctx = VerbContext(transport=Speaks(), interrupted=lambda: STOPPED)  # type: ignore[arg-type]
+    assert await send_or_fail(ctx, Intent.sound("say", "hello")) is None
+    assert sent == ["sound"]
+
+
 async def test_nothing_goes_out_through_send_or_fail_after_a_stop() -> None:
     """For a verb that reads something itself before it sends, past where the executor can see."""
     adapter = _xlerobot()

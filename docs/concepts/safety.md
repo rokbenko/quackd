@@ -46,7 +46,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
 | `preempted` | a newer command in `quackd drive`, or its brake, ended this verb while it moved the body, and a `stop` went out after it. A verb admitted before that and still reading the body's state is refused before it sends anything | nothing: the newer command runs |
-| `stopped` | a composite's call that would move the body and that a `stop` overtook: one sent between two of the composite's calls, the composite's own included, or while the call waited on its gates or read the body's state. The call answers to the stops its composite answers to, so it never starts, nobody is asked to confirm it, and a kick or a scoop the brake was pulled on is not sent. A call that only looks or speaks still runs. It is not counted among `abort_when`'s failures in a row, and neither is an `approach_and` whose `then` it kept from starting | nothing: the brake did its job |
+| `stopped` | a call that would move the body and that a `stop` overtook: a verb that had not sent anything yet, and a composite's call: one sent between two of the composite's calls, the composite's own included, or while the call waited on its gates or read the body's state. The call answers to the stops its composite answers to, so it never starts, nobody is asked to confirm it, and a kick or a scoop the brake was pulled on is not sent. A call that only looks or speaks still runs. It is not counted among `abort_when`'s failures in a row, and neither is an `approach_and` whose `then` it kept from starting | nothing: the brake did its job |
 | `peer` | a verb a robot met over Robot Passport started, through the courtesy handler. A courtesy runs `stop`, which a granted pause begins with, and `say`, which an identify is, and a peer reaches nothing else, whatever its tier | nothing: a robot met asks, and fixed code decides ([passport/talk.md](../passport/talk.md#what-quackd-does-with-an-ask)) |
 | `paused` | a pause this robot granted a robot it met still holds, so only `stop` and the verbs that move nothing (`observe`, `report_state`, `say`, `quack`, `introspect`, `map`, `mark_place`, `forget_place`) run, whoever asks, the pilot included. `gaze`, `look`, `watch` and `express`, which a pilot may use before its verdict, wait as well, since they turn a head or move antennas. A verb already moving the body when the pause is granted is ended there and then, as an abort ends one, and a stop is sent after it, and one let through a moment before the pause is held once its state read returns. A verb a pause ended is not counted among `abort_when`'s failures in a row | wait it out: a granted pause is 10 s at most, and one a minute |
 
@@ -183,8 +183,11 @@ exit. In 0.14 and before the arm was built asking that disconnect for the releas
 fall instead.
 
 There are two places where that is not what happens. No press quits a `--by-hand` run at all,
-from its start to its close, because somebody is at the arm, and its panel says so. It ends by
-asking whether to open the gripper before the arm folds up, and a press at *that* wait means
+from its start to its close, because somebody is at the arm, and its panel says so. A fresh press
+stops every fold it makes instead, the one it starts with and the one after a press at the
+placement wait, and holds the arm where it is. A press before the first fold keeps it from
+starting. It ends by asking whether to open the gripper before the arm folds up, and a press at
+*that* wait means
 "skip the question" and not "abandon the arm energised with no record written". The gripper is left
 exactly as the run left it, the arm is still folded to its recorded rest pose, the transport is
 still closed, and the record still ends with a `run_end` and a summary. A press in the 3 seconds
@@ -196,7 +199,8 @@ which stops that fold at most a step cap past where you pressed (5 degrees by de
 landing on the release that Enter at the second sends stops it if its torque write has not gone
 out, and says which it was. Either way the teardown still closes the transport and writes `run_end`
 and the summary. From the first of those questions to the close no press quits, however many come,
-since somebody is at the arm and everything there ends on a press or has a deadline of its own.
+since somebody is at the arm. Whatever moves it there ends on a press, and what talks to it has a
+deadline of its own.
 `quackd robot release` holds to the same once it has connected the arm, and `quackd doctor` from
 where it would fold it. `Ctrl-\` where there is one, or closing the window, is what is left for
 somebody who has to kill it. Anywhere else, the first rest move of a run with no hand-back
@@ -805,7 +809,8 @@ write says nothing about what that write did.
   `quackd doctor` is the other way round: it drives a probed arm back to the pose and says which
   it got in a `rest pose` row, because a doctor probe disconnects like anything else, and that
   is one of the ways the arm fell.
-- **A second Ctrl-C during the end-of-run rest move skips the close entirely.** The move is not
+- **On a run with no `--by-hand`, a second Ctrl-C during the end-of-run rest move skips the close
+  entirely.** The move is not
   shielded from a `KeyboardInterrupt`, so the process exits with quackd's close never called,
   torque never disabled, and the arm holding wherever the move had got to. LeRobot's own
   disconnect can still run as the process lets go of the arm, and it keeps torque, because
@@ -815,7 +820,7 @@ write says nothing about what that write did.
   not a clean exit: the port closes with the arm still energised, so clear its way and run
   `quackd robot release <name>`, which folds it to its rest pose and lets go of it there,
   supporting the arm while it connects, or hold it and cut its power. The fold the first
-  question over a missed fold asks for is the one end-of-run rest move that is shielded: a press
+  question over a missed fold asks for is shielded, as every fold of a `--by-hand` run is: a press
   during it stops it and keeps torque on, and the close still happens.
 - A good first contract is the shipped `lerobot-lookout`, which moves no joint. The order to
   bring one up in, nothing moving until step 10:

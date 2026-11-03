@@ -295,7 +295,6 @@ def test_the_status_line_follows_a_run_through_its_phases() -> None:
         (LogEvent("verb_start", 0.0, {"name": "go_to", "params": {"target": "ball"}}), "go_to("),
         (LogEvent("verb_end", 0.0, {"name": "go_to", "ok": True}), "observing"),
         (LogEvent("claim", 0.0, {"kicker": "duck-1", "dist": 0.6}), "claim duck-1"),
-        (LogEvent("note", 0.0, {"text": "kill switch: Ctrl-C"}), "stopping the robot"),
         (LogEvent("run_end", 0.0, {"outcome": "success"}), "finishing"),
     ):
         status.sink(event)
@@ -344,17 +343,6 @@ def test_a_press_at_a_question_leaves_the_line_saying_stopping() -> None:
     status.sink(LogEvent("run_end", 0.0, {"outcome": "success"}))
     with status.asking():
         status.stopping()
-    assert "stopping the robot" in status.__rich__().plain
-
-
-def test_a_stop_from_the_page_holds_the_line_too() -> None:
-    """The page's Stop reaches the line as a note, and the cancelled call and the verb then wrote
-    over it just the same."""
-    console, _ = wide()
-    status = ui.RunStatus(console)
-    status.sink(LogEvent("note", 0.0, {"text": "kill switch: the page's Stop"}))
-    status.sink(LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}))
-    status.sink(LogEvent("llm", 0.0, {"provider": "openai", "error": "cancelled"}))
     assert "stopping the robot" in status.__rich__().plain
 
 

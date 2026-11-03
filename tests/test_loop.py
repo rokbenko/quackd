@@ -3556,6 +3556,194 @@ class PressesAtTheCount(Presser):
             self.press()
 
 
+def _a_fold_that_presses(mock: LeRobotMock, person: Presser, *, on: int) -> list[str]:
+    """The rest move, the `on`th of a run, with a press as it starts, that would never end by
+    itself: left running it is a test that never finishes, or goals sent after the press."""
+    real = mock.go_to_rest
+    folds = 0
+    ended: list[str] = []
+
+    async def fold() -> Any:
+        nonlocal folds
+        folds += 1
+        if folds != on:
+            return await real()
+        mock.sequence.append("rest")
+        person.press()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.append("stopped")
+        raise AssertionError("the fold ran on past its press")
+
+    mock.go_to_rest = fold  # type: ignore[method-assign]
+    return ended
+
+
+async def test_a_press_stops_the_fold_a_by_hand_run_starts_with(tmp_path: Path) -> None:
+    """No press quits such a run, so the fold it starts with has to stop on one. It went on to its
+    pose under the hands that pressed, up to half a minute, with only the power switch left."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    ended = _a_fold_that_presses(mock, person, on=1)
+    result = await run_duck(_by_hand(mock, person, tmp_path))
+    assert ended == ["stopped"], "the fold was cancelled, and waited for"
+    assert result.outcome == "aborted", result.reason
+    assert mock.sequence == ["rest", "stop", "close"], "nothing folds it afterwards, or lets it go"
+    assert person.asked == [], "and nobody is told the arm is theirs"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert FOLD_STOPPED in [e["text"] for e in events if e["kind"] == "note"]
+
+
+async def test_a_press_before_a_by_hand_runs_first_fold_keeps_it_from_starting(
+    tmp_path: Path,
+) -> None:
+    """A press while the arm connected, with somebody supporting it as the line says to: nothing
+    moves after one, as in `quackd doctor`. The arm started moving all the same."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    connect = mock.connect
+
+    async def pressed_while_connecting() -> Any:
+        connected = await connect()
+        loop.executor.abort.set()
+        return connected
+
+    mock.connect = pressed_while_connecting  # type: ignore[method-assign]
+    result = await loop.run()
+    assert result.outcome == "aborted", result.reason
+    assert "rest" not in mock.sequence and "let_go" not in mock.sequence, mock.sequence
+    assert mock.sequence[-1] == "close"
+
+
+async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(tmp_path: Path) -> None:
+    """A second press quits that run, so it has the way out it always had."""
+    mock = LeRobotMock(rest_pose=REST)
+    declare = ToolCall(name="declare_success", arguments={"reason": "up"})
+    loop = AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider(script=[declare]),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+    connect = mock.connect
+
+    async def pressed_while_connecting() -> Any:
+        connected = await connect()
+        loop.executor.abort.set()
+        return connected
+
+    mock.connect = pressed_while_connecting  # type: ignore[method-assign]
+    result = await loop.run()
+    assert result.outcome == "aborted", result.reason
+    assert "rest" in mock.sequence
+
+
+def _pressed_at_the_placement_wait(person: Presser, loop: AgentLoop) -> None:
+    def stopped_the_run(_person: Any) -> None:
+        loop.executor.abort.set()
+
+    person.on_wait = stopped_the_run
+
+
+async def test_a_further_press_stops_the_fold_after_a_press_at_the_placement_wait(
+    tmp_path: Path,
+) -> None:
+    """The first press ends the wait, torque comes on under the hands holding the arm, and it starts
+    for its rest pose. The next press is them saying stop, and there is no quitting that run."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED, answers=[False])
+    ended = _a_fold_that_presses(mock, person, on=2)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    _pressed_at_the_placement_wait(person, loop)
+    result = await loop.run()
+    assert ended == ["stopped"], "the fold was cancelled, and waited for"
+    assert result.outcome == "aborted", result.reason
+    assert mock.sequence.count("rest") == 2, mock.sequence
+    assert mock.sequence.count("let_go") == 1, "only the one that handed it over"
+    assert mock.sequence[-1] == "close"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert FOLD_STOPPED in [e["text"] for e in events if e["kind"] == "note"]
+
+
+async def test_a_double_tap_at_the_placement_wait_keeps_the_fold_from_starting(
+    tmp_path: Path,
+) -> None:
+    """The second press lands on the stop the teardown begins with. It went past everything when
+    it quit, and it is not the fold's to wait for now."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED, answers=[False])
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    _pressed_at_the_placement_wait(person, loop)
+    stop = mock.stop
+
+    async def pressed_on_the_stop() -> None:
+        person.press()
+        await asyncio.sleep(0.05)  # the watch hears it before the fold would begin
+        await stop()
+
+    mock.stop = pressed_on_the_stop  # type: ignore[method-assign]
+    result = await loop.run()
+    assert result.outcome == "aborted", result.reason
+    assert mock.sequence.count("rest") == 1, f"the fold began after the press: {mock.sequence}"
+    assert mock.sequence[-1] == "close"
+
+
+async def test_a_press_from_before_the_question_does_not_spoil_its_enter(tmp_path: Path) -> None:
+    """A double tap with the run going: the second press is older than the question, and the Enter
+    that answers it still opens the gripper, which is what they came for."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED, answers=[True, True])
+    stop = mock.stop
+    stops = 0
+
+    async def pressed_on_the_first_stop() -> None:
+        nonlocal stops
+        stops += 1
+        if stops == 1:
+            person.press()
+        await stop()
+
+    mock.stop = pressed_on_the_first_stop  # type: ignore[method-assign]
+    result = await run_duck(_by_hand(mock, person, tmp_path))
+    assert result.outcome == "success", result.reason
+    assert mock.joints["gripper"] == 100.0, "the Enter opened nothing"
+    assert mock.sequence.count("rest") == 2, "and the arm folded after it"
+
+
+async def test_a_stepper_that_will_not_go_does_not_replace_how_the_run_ended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wait for one is bounded (`cancel_and_wait`), so it can come back with the task running,
+    and reading its exception then raised over the run's real ending."""
+    monkeypatch.setattr("quackd.release.STOPPED_FOLD_S", 0.05)
+    release = asyncio.Event()
+
+    async def stubborn() -> Any:
+        while not release.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await release.wait()
+        return None, None
+
+    beside = asyncio.ensure_future(stubborn())
+    await asyncio.sleep(0)
+    loop = NS(_emit=lambda *a, **k: None, budget=NS(steps=1))
+    try:
+        got = await AgentLoop._settle_beside(
+            loop,  # type: ignore[arg-type]
+            beside,
+            NS(cut_off=None),  # type: ignore[arg-type]
+            cancel=True,
+        )
+        assert got is None
+    finally:
+        release.set()
+        await beside
+
+
 @pytest.mark.parametrize("where", ["stop", "get_state", "close"])
 async def test_a_second_press_cannot_take_the_close_or_the_record_with_it(
     tmp_path: Path, where: str
@@ -4324,8 +4512,8 @@ async def test_a_ctrl_c_before_the_release_went_out_says_nothing_was_sent(
     had gone out: the person was sent to hold up an arm that was holding itself, and the close
     then said the release "did not take". The arm's own backend says which side of the send it
     was (`in_hand`, still False here), and before it the person is told nothing was sent and
-    torque is as the rest move left it, the record keeps torque on, and the close says what it
-    says of any arm left holding itself up.
+    torque is as it was, the record keeps torque on, and the close says what it says of any arm
+    left holding itself up.
 
     The line says that and no more. It used to go on "and the arm still holds itself up", which
     no read after the interrupt had said: on the arm the interrupted read can still be out when
@@ -4343,7 +4531,7 @@ async def test_a_ctrl_c_before_the_release_went_out_says_nothing_was_sent(
 
     assert person.said == [RELEASE_NOT_SENT], person.said
     said = RELEASE_NOT_SENT
-    assert "before anything was sent" in said and "as the rest move left it" in said, said
+    assert "before anything was sent" in said and "torque is as it was" in said, said
     assert "holds itself up" not in said and "holding itself up" not in said, said
     assert mock.torque is True and mock.in_hand is False
     assert mock.sequence[-1] == "close", "the close was skipped"

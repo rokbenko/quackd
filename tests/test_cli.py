@@ -3070,6 +3070,39 @@ def test_doctor_with_no_pose_to_fold_to_stays_for_its_own_question(
     assert told == [True], result.output
 
 
+def test_a_press_as_doctors_count_line_prints_stops_the_fold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rich.console import Console
+
+    from quackd.safety import KillSwitch
+    from tests.test_lerobot_adapter import FakeArm
+
+    switches: list[KillSwitch] = []
+    install = KillSwitch.install
+    printing = Console.print
+
+    def installing(self: KillSwitch, *, keys: bool = True) -> None:
+        switches.append(self)
+        install(self, keys=False)
+
+    def prints(self: Console, *objects: Any, **kwargs: Any) -> None:
+        printing(self, *objects, **kwargs)
+        if "to its rest pose in" in " ".join(str(o) for o in objects) and switches:
+            switches[0]._fire("test")
+
+    monkeypatch.setattr(KillSwitch, "install", installing)
+    monkeypatch.setattr(Console, "print", prints)
+    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.05)
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-d", off=20.0)
+    before = arm.positions["shoulder_pan"]
+    result = runner.invoke(app, ["doctor", "--robot", "arm-d", "--registry-dir", str(reg)])
+    assert "stopped before the fold" in " ".join(result.output.split()), result.output
+    assert arm.positions["shoulder_pan"] == before, "the arm folded after the press"
+
+
 def test_a_press_between_a_releases_count_and_its_fold_stops_the_fold(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3097,14 +3130,13 @@ def test_a_press_between_a_releases_count_and_its_fold_stops_the_fold(
     monkeypatch.setattr(Console, "print", prints)
     monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
     _a_terminal(monkeypatch, {})
-    arm = FakeArm()
+    arm = FakeArm(step=5.0)  # as the arm's own cap, so a goal already on its way is no fold
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-p", off=20.0)
-    sent = len(arm.actions)
     result = _release(reg, "arm-p", "--yes")
     said = " ".join(result.output.split())
     assert "the fold was stopped where it was" in said, result.output
     assert arm.torque_disabled == 0, "nothing was released"
-    assert len(arm.actions) <= sent + 1, "the fold went on past the press"
+    assert abs(arm.positions["shoulder_pan"]) <= 5.0, "the fold went on past the press"
 
 
 def test_a_press_stays_from_the_connect_of_a_release_and_from_a_fold_of_doctors(

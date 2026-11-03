@@ -1566,12 +1566,14 @@ class KillSwitch:
         return False
 
     def _fire(self, why: str) -> None:
-        # the stop first and the words after: a line that cannot get out must not hold up the stop
+        # the stop first and the words after: a line that cannot get out must not hold up the stop,
+        # nor raise into what the signal interrupted, as a write to stderr it landed inside does
         self.presses += 1
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self.abort.set)
             self._loop.call_soon_threadsafe(self.pressed.set)
-        self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
+        with contextlib.suppress(Exception):
+            self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
 
     def _on_sigint(self, _signum: int, _frame: Any) -> None:
         # The first Ctrl-C is the orderly one: it aborts, which cancels the running verb and

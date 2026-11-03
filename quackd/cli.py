@@ -7680,13 +7680,13 @@ class _DoctorHands:
             # a Ctrl-C or `q` while the arm connected or was read: nothing moves after one
             return RestResult("refused", "stopped before the fold: nothing was moved")
         with ui.pause_status():
-            ui.err_console.print(
-                Text(
-                    FOLDING_IN.format(name=self.label, seconds=HANDS_AWAY_S),
-                    style=ui.STYLES["warn"],
-                )
-            )
             async with one_watch(person) as stopped:
+                ui.err_console.print(
+                    Text(
+                        FOLDING_IN.format(name=self.label, seconds=HANDS_AWAY_S),
+                        style=ui.STYLES["warn"],
+                    )
+                )
                 try:
                     await fold_unless_stopped(_hands_away, stopped)
                 except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
@@ -7704,17 +7704,25 @@ class _DoctorHands:
         """Over an arm whose close keeps its torque, ask whether to drop it instead. Not after a
         press, which asked for nothing to move. The release is `release_where_it_stands`, which
         a second Ctrl-C landing on it cannot take past the close, and what it did is said."""
-        from quackd.release import DROP_UNPOSED, ENTER, ENTER_DROPS_S, ask, release_where_it_stands
+        from quackd.release import (
+            DROP_UNPOSED,
+            ENTER,
+            ENTER_DROPS_S,
+            ask,
+            one_watch,
+            release_where_it_stands,
+        )
 
         person = self.person
         if person is None or not self.prompting or not self.unposed or self.pressed():
             return
         question = DROP_UNPOSED.format(name=self.label, seconds=ENTER_DROPS_S)
         with ui.pause_status():
-            if await ask(person, question, ENTER_DROPS_S) == ENTER:
-                settled = await release_where_it_stands(adapter, stopped=person.stopped)
-                if settled.said:
-                    ui.err_console.print(_warn_line(settled.said))
+            async with one_watch(person) as stopped:
+                if await ask(person, question, ENTER_DROPS_S) == ENTER:
+                    settled = await release_where_it_stands(adapter, stopped=stopped)
+                    if settled.said:
+                        ui.err_console.print(_warn_line(settled.said))
 
 
 def _switch_pressed(_message: str) -> None:

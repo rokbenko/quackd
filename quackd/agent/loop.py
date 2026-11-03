@@ -1000,9 +1000,10 @@ class AgentLoop:
         was read only once the call came back. Raced against the abort instead, as a verb is
         raced, the call goes the moment the kill switch, a failing heartbeat or a flock's stop
         sets it, and is waited out before `Aborted` goes up, so nothing it started is still
-        running behind the teardown. The robot was holding still meanwhile, so nothing else
-        has to stop. A call that answered as the abort was set has answered, and its turn is
-        returned: the run ends at its next check, as it did before.
+        running behind the teardown, unless it will not go (`cancel_and_wait`). The robot was
+        holding still meanwhile, so nothing else has to stop. A call that answered as the abort
+        was set has answered, and its turn is returned: the run ends at its next check, as it did
+        before.
 
         With `minutes`, the pilot's own call is raced against the task's minutes as well
         (`_minutes_spent`): `max_minutes` was read only once an answer came back, so a call that
@@ -1082,7 +1083,7 @@ class AgentLoop:
         try:
             if cancel:
                 await cancel_and_wait(beside)
-                if not beside.cancelled() and beside.exception() is None:
+                if beside.done() and not beside.cancelled() and beside.exception() is None:
                     advice, interrupted = beside.result()
             else:
                 advice, interrupted = await self._unless_stopped(beside)
@@ -1190,7 +1191,8 @@ class AgentLoop:
         with contextlib.suppress(Exception):
             await cfg.transport.stop()
         with contextlib.suppress(Exception):
-            await self._rest()
+            if not self._a_person_has_stopped_it():
+                await self._rest_a_person_can_stop()
         with contextlib.suppress(Exception):
             await cfg.transport.close()
         if note := getattr(cfg.transport, "close_note", None):
@@ -1215,6 +1217,30 @@ class AgentLoop:
                 held = self.executor.paused_until - time.monotonic()
         except (asyncio.CancelledError, KeyboardInterrupt):
             self._note("stopped waiting out the pause: interrupted")
+
+    def _a_person_has_stopped_it(self) -> bool:
+        """A run with somebody at the arm that a person has stopped already: nothing moves after
+        that, where a heartbeat that failed is no reason to leave an arm unfolded."""
+        return (
+            self.cfg.hand_off is not None
+            and self.executor.abort.is_set()
+            and self._abort_reason() in PERSON_STOPS
+        )
+
+    async def _rest_a_person_can_stop(self) -> RestResult | None:
+        """A rest move that is not the end of the run (`_teardown_fold`), on a run no press quits
+        (`KillSwitch.stay_to_the_close`), where one has to stop it as it stops every other fold
+        there. The fold went on to its pose under the hands that had pressed, with only the power
+        switch left. Stopped, it leaves the arm where it is and nothing folds it later."""
+        stopped = getattr(self.cfg.hand_off, "stopped", None)
+        if stopped is None:
+            return await self._rest()
+        try:
+            return await fold_unless_stopped(functools.partial(self._rest, pause=False), stopped)
+        except FoldStopped:
+            self._no_fold = True
+            self._note(FOLD_STOPPED)
+            return None
 
     async def _rest(self, *, pause: bool = True) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
@@ -1263,7 +1289,7 @@ class AgentLoop:
         """The rest move a run ends with, stopped by a press where the run ended by itself.
 
         A run a press ended has that press behind its fold: the person asked for the fold, and
-        a second press quits at once, as it always has. A run that ended by itself folds with
+        a second press quits at once, where it can. A run that ended by itself folds with
         nobody having asked, and a press during that fold used to change nothing until a second
         one quit the process. The first press now stops it as it stops a fold a person asked
         for (`fold_unless_stopped`): cancelled at its next await, at most a step cap past where
@@ -1274,10 +1300,10 @@ class AgentLoop:
         waited out just before this, and is not waited out again inside the race, where the
         wait would swallow the cancellation.
 
-        A run that handed the arm to somebody has them at the jaws at this point, whichever way
-        it ended, so there a fresh press stops the fold even after a press ended the run, every
-        Ctrl-C does too rather than quitting (`KillSwitch.stay_to_the_close`), and a hand-back that
-        held the arm means no fold."""
+        A run with a hand-off has somebody at the arm at this point, whichever way it ended, so
+        there a fresh press stops the fold even after a press ended the run, every Ctrl-C does too
+        rather than quitting (`KillSwitch.stay_to_the_close`), and a hand-back that held the arm
+        means no fold."""
         try:
             if self._no_fold:
                 return None
@@ -2944,7 +2970,13 @@ class AgentLoop:
             # `recorded` as well as `reached`, matching the flock member: a body that answers
             # `none` has no pose to be away from, and ending a run over that would punish a
             # transport for not being one quackd parks rather than for failing to park.
-            parked = await self._rest()
+            if self._a_person_has_stopped_it():
+                # a press during the connect, with somebody supporting the arm: nothing moves
+                self._no_fold = True
+                raise Aborted(self._abort_reason())
+            parked = await self._rest_a_person_can_stop()
+            if self._no_fold:
+                raise Aborted(self._abort_reason())
             if parked is not None and parked.recorded and not parked.reached:
                 raise Aborted(f"the arm did not reach its rest pose: {parked.reason}")
             # and then, where somebody asked for it, the arm is theirs to place: released at
@@ -3311,6 +3343,12 @@ class AgentLoop:
             # closed before the rest move and the hand-back, which reach the body without
             # passing the executor's gates
             self.executor.open_to_peers = False
+            if cfg.hand_off is not None and not self._handed_over:
+                # somebody is at an arm that was never theirs to place, or that they were placing
+                # when they pressed, so a press from here on stops the fold to come, and one landing
+                # on the stop just below keeps it from starting. A hand-back counts from its own
+                # question, whose Enter a press from before it must not spoil
+                self._watch_for_a_press(cfg.hand_off)
             await self.heartbeat.stop()
             with contextlib.suppress(Exception):
                 # the run's last intent, narrated like every other one

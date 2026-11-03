@@ -343,26 +343,57 @@ async def test_the_drop_at_the_second_question_hears_a_press() -> None:
     assert settled.how == "kept" and arm.calls == [], "the arm went limp after the press"
 
 
+class Pressing(Person):
+    """Somebody who can press, heard the way a terminal hears it: counted, from when asked."""
+
+    def __init__(self, *answers: bool) -> None:
+        super().__init__(*(answers or (True,)))
+        self.presses = 0
+        self.pressed = asyncio.Event()
+
+    def press(self) -> None:
+        self.presses += 1
+        self.pressed.set()
+
+    def stopped(self) -> Any:
+        presses = self.presses
+
+        async def fresh() -> None:
+            while self.presses == presses:
+                self.pressed.clear()
+                await self.pressed.wait()
+
+        return fresh()
+
+
+async def test_a_press_as_the_enter_for_a_drop_is_recorded_stops_the_drop() -> None:
+    """Two to eight milliseconds in a real console, between the Enter being taken and the release's
+    own watch beginning: the press was counted, and missed, and the torque write went out."""
+    person = Pressing(True, True)
+
+    class ReadingFirst(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            await asyncio.sleep(0.2)  # the read it begins with, which is on the bus
+            return await super().let_go(**kw)
+
+    arm = ReadingFirst()
+    fold, _made = _folds(MISSED)
+
+    async def stop() -> None:
+        return None
+
+    def asked(question: str, _agreed: bool) -> None:
+        if question.startswith(DROP_AFTER_TWO_FOLDS[:20]):
+            person.press()
+
+    settled = await settle_missed_fold(arm, person, MISSED, fold=fold, stop=stop, asked=asked)
+    assert arm.calls == [], "the torque write went out"
+    assert settled.how == "kept" and settled.said == RELEASE_NOT_SENT
+
+
 async def test_one_watch_hears_a_press_made_between_what_it_watches() -> None:
     """The count and then the fold, with a line printed in between. Each counting presses from where
     it began took one made there for an old one, and the arm folded under the hand that made it."""
-
-    class Pressing(Person):
-        def __init__(self) -> None:
-            super().__init__(True)
-            self.presses = 0
-            self.pressed = asyncio.Event()
-
-        def stopped(self) -> Any:
-            presses = self.presses
-
-            async def fresh() -> None:
-                while self.presses == presses:
-                    self.pressed.clear()
-                    await self.pressed.wait()
-
-            return fresh()
-
     person = Pressing()
     moved: list[str] = []
 
@@ -373,8 +404,7 @@ async def test_one_watch_hears_a_press_made_between_what_it_watches() -> None:
 
     async with one_watch(person) as stopped:
         assert await fold_unless_stopped(_nothing, stopped) is None
-        person.presses += 1  # in between: nothing is racing a press just now
-        person.pressed.set()
+        person.press()  # in between: nothing is racing a press just now
         with pytest.raises(FoldStopped):
             await fold_unless_stopped(fold, stopped)
     assert moved == [], "the fold moved after the press"

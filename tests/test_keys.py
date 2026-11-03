@@ -1003,6 +1003,40 @@ def test_a_guard_that_will_not_start_costs_nothing_but_the_guard(
 
 
 @posix_only
+def test_anything_that_fails_out_of_line_mode_puts_the_terminal_back(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It is taken for no console at all, and the keys are read a line at a time: with the terminal
+    left out of line mode nothing typed showed, for good."""
+
+    def fails(_fd: int) -> None:
+        raise OSError("no descriptors left")
+
+    _, slave = pty_pair
+    before = _settings(slave)
+    monkeypatch.setattr("quackd.keys._for_drawing", fails)
+    with pytest.raises(OSError, match="no descriptors"):
+        PosixKeys(slave)
+    assert _settings(slave) == before
+
+
+@posix_only
+def test_a_process_with_no_descriptors_left_goes_on_without_a_guard(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_pipe() -> tuple[int, int]:
+        raise OSError("Too many open files")
+
+    _, slave = pty_pair
+    before = _settings(slave)
+    monkeypatch.setattr(os, "pipe", no_pipe)
+    keys = PosixKeys(slave)
+    assert keys._guard is None
+    keys.close()
+    assert _settings(slave) == before
+
+
+@posix_only
 def test_a_terminal_put_back_in_lines_under_a_run_is_taken_out_again(pty_pair: Any) -> None:
     """A SIGSTOP from outside and an `fg` leave the terminal as the shell wants it, reading lines:
     `q` then did nothing until somebody pressed Enter, under every line that promises it does."""

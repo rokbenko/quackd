@@ -949,6 +949,8 @@ class Front:
             return
         if not first:
             return
+        # held there, or what the cancelled call and the verb then write goes over it
+        self._status.stopping()
         self._channel.send("status", text="stopping the robot", step=None)
         said = "the page went away" if gone else "the page's Stop"
         self._say(f"stop: {said}, cancelling the verb and stopping the robot", warn=True)

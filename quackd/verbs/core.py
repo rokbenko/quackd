@@ -130,8 +130,9 @@ class ApproachAndParams(BaseModel):
 async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
     """Send an intent; return a failure result if the robot refused it, or if the verb has been
     told to end (`VerbContext.interrupted`), when nothing goes out. A stop that came while a verb
-    read the body's state was followed by the goal that verb went on to send."""
-    if (why := ctx.interrupted()) is not None:
+    read the body's state was followed by the goal that verb went on to send. What only speaks
+    goes out all the same, as it runs beside a stop (`Executor._overtaken`)."""
+    if intent.kind != "sound" and (why := ctx.interrupted()) is not None:
         return await _ended_by(ctx, intent.kind, why, "nothing more was sent")
     ack = await ctx.transport.send_intent(intent)
     if not ack.accepted:

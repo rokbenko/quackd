@@ -17,11 +17,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   questions over a fold that missed, or a second past the stop in `quackd robot release`. In all of a
   `--by-hand` run, whose panel now says so, from the first of those questions in any other, from the
   moment `quackd robot release` has connected the arm, and from where `quackd doctor` would fold it,
-  a Ctrl-C does what `q` does and no more, however often it comes. Everything there ends on a press or
-  has a deadline of its own, and a drop asked for can still be stopped up to its torque write.
-  Anywhere else in a run, Ctrl-C twice quits at once, as the panel says. What changes for you, under
-  the safety rule: there a Ctrl-C no longer gets you out at once, and `Ctrl-\` where there is one,
-  or closing the window, does.
+  a Ctrl-C does what `q` does and no more, however often it comes. Whatever moves the arm there ends
+  on a press, a drop asked for up to its torque write, and on a `--by-hand` run that takes in the fold
+  it starts with and the one after a press at the placement wait, which a further press used to end
+  only by quitting. A press before the first fold keeps it from starting. What talks to the SO-101
+  has a deadline of its own. Anywhere else in a run, Ctrl-C twice quits at once, as the panel says.
+  What changes for you, under the safety rule: there a Ctrl-C no longer gets you out at once, and
+  `Ctrl-\` where there is one, or closing the window, does.
 - **A terminal survives a kill nothing can catch.** A SIGKILL or a crash in native code left it out of
   its line mode and echoing nothing, and under a wrapper such as `uv run`, which exits normally, no
   shell put it back, so what was typed next went unseen until somebody typed `stty sane`, unseen. A
@@ -59,7 +61,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   SO-101's, and that is a failure, except for `stand`, `perform` and `stand_up`, which are left to
   finish. And a stop that came while any verb that moves read the body's state, before it had sent
   anything, was followed by its first goal: `gripper(open=true)` opened the jaws after the brake. Such
-  a verb does not start now, and nothing that goes through `send_or_fail` goes out after a stop.
+  a verb does not start now, and no goal that goes through `send_or_fail` goes out after a stop.
+  Speech still does.
 - **The status line says what a run is doing once it has been stopped, and who a question waits on.**
   After a Ctrl-C or `q` it went on saying `waiting on` the model nobody was waiting for, and the
   cancelled call and the verb then wrote over `stopping the robot`, on the page too. And under a
@@ -76,6 +79,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A guard can lose a race.** A SIGKILL in the first moments of a run, while the guard is still
   starting, or on a machine with no CPU to spare, where a shell can get to the terminal first, still
   leaves it for `stty sane`.
+- **A press during a connect that then fails leaves no `run_end` and no summary,** as before: the run
+  had not begun.
 - **A bus call that never comes back still holds the process after the close.** The close, the record
   and the summary are done by then. On Windows nothing but closing the window ends it, and the
   verdict's panel may not print. It was so before this release.

@@ -174,8 +174,13 @@ class PosixKeys(_Echoing):
                     mode[6][getattr(termios, name)] = off
         termios.tcsetattr(fd, termios.TCSANOW, mode)
         self._mode = mode
-        self._screen = _for_drawing(fd)
-        self._guard = _Guard.start(fd, self._as_found, termios.tcgetattr(fd))
+        try:
+            self._screen = _for_drawing(fd)
+            self._guard = _Guard.start(fd, self._as_found, termios.tcgetattr(fd))
+        except Exception:
+            # the caller takes this for no console, with the terminal out of line mode for good
+            termios.tcsetattr(fd, termios.TCSANOW, self._as_found)
+            raise
         atexit.register(self.close)
         self._before: dict[int, Any] = {}
         for name in ("SIGTERM", "SIGHUP", "SIGQUIT"):
@@ -315,7 +320,10 @@ class _Guard:
         ignored = getattr(importlib.import_module("termios"), "PENDIN", 0)
         left = [*left[:3], left[3] & ~ignored, *left[4:]]
         said = marshal.dumps((as_found, left, ignored)).hex()
-        ears, word = os.pipe()
+        try:
+            ears, word = os.pipe()  # no descriptors left is a process that can go on without one
+        except OSError:
+            return None
         try:
             process = subprocess.Popen(
                 [sys.executable, "-I", "-S", "-c", cls._SCRIPT, str(ears), said],

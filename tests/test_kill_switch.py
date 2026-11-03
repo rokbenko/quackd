@@ -423,6 +423,21 @@ async def test_a_press_told_to_stay_quits_nothing_however_often_it_comes() -> No
     assert signal.getsignal(signal.SIGINT) is before, "and it is put back as the switch found it"
 
 
+async def test_a_line_that_cannot_get_out_raises_nothing_into_what_the_signal_interrupted() -> None:
+    """A press while the main thread's write to a stalled terminal is blocked: a write to stderr
+    from the signal's handler raises `RuntimeError: reentrant call`, into whatever was printing."""
+
+    def cannot(_line: str) -> None:
+        raise RuntimeError("reentrant call inside <_io.BufferedWriter name='<stderr>'>")
+
+    ks = KillSwitch(asyncio.Event(), log=cannot)
+    ks._loop = asyncio.get_running_loop()
+    ks._fire("Ctrl-C")
+    await asyncio.sleep(0)
+    assert ks.presses == 1
+    assert ks.abort.is_set(), "and the stop went first"
+
+
 async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:
     before = signal.getsignal(signal.SIGINT)
     ks = KillSwitch(asyncio.Event())

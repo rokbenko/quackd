@@ -2619,8 +2619,8 @@ questions, and the interrupt landing there:
 
 ```
 ·  release kept: interrupted before the release was sent
-·  note    the release was interrupted before anything was sent, so torque is as the rest move left it
-the release was interrupted before anything was sent, so torque is as the rest move left it
+·  note    the release was interrupted before anything was sent, so torque is as it was
+the release was interrupted before anything was sent, so torque is as it was
 ·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 

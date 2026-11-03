@@ -209,9 +209,7 @@ RELEASE_INTERRUPTED = (
 pressed Enter because they were holding the arm, the release may have reached some motors
 and not others, and the only safe reading of that is the limp one."""
 
-RELEASE_NOT_SENT = (
-    "the release was interrupted before anything was sent, so torque is as the rest move left it"
-)
+RELEASE_NOT_SENT = "the release was interrupted before anything was sent, so torque is as it was"
 """Said when a Ctrl-C lands on the release after Enter and before it went out, on the read
 the release begins with: the arm's own backend says so (`in_hand` still False). Nothing
 reached a motor, which is all this line knows, so it says that and no more.
@@ -359,7 +357,8 @@ async def fold_unless_stopped(
     raced against `stopped`, and the press cancels it at its next await. A goal already sent is
     one step cap from where the arm was, so that is as far as it goes on.
 
-    The fold task never outlives this call. If the task awaiting it is cancelled, which is what
+    The fold task does not outlive this call, unless it will not go (`cancel_and_wait`). If the
+    task awaiting it is cancelled, which is what
     a later Ctrl-C does where the switch has handed the signal back, the fold is cancelled and
     waited for before the cancellation goes on up: a fold left running would go on sending goals
     while the close decides whether to let go. A `stopped` that fails is no stop, and the fold
@@ -370,6 +369,8 @@ async def fold_unless_stopped(
     # the watch first: a person's `stopped` counts the presses so far as it is called, and a
     # press made as the fold starts has to be one it has not counted yet
     watching = asyncio.ensure_future(stopped())
+    if watching.done() and not watching.cancelled() and watching.exception() is None:
+        raise FoldStopped  # one a watch that spans more than this heard already: nothing starts
     folding = asyncio.ensure_future(fold())
     try:
         await asyncio.wait({folding, watching}, return_when=asyncio.FIRST_COMPLETED)
@@ -542,11 +543,12 @@ async def settle_missed_fold(
         note(said)
         return Settled("kept", FOLD_UNANSWERED, asked="clear", fold=again, said=said)
     second = DROP_AFTER_TWO_FOLDS.format(why=again.reason, seconds=ENTER_DROPS_S)
-    answer = await ask(person, second, ENTER_DROPS_S, asked=asked)
-    if answer != ENTER:
-        kept_at_a_wait(answer, event=event, note=note)
-        return Settled("kept", answer, asked="drop", fold=again)
-    settled = await release_where_it_stands(
-        transport, event=event, note=note, stopped=getattr(person, "stopped", None)
-    )
+    # from before the question: a press during it ends it anyway, and one made after the Enter was
+    # taken, as its record was written, was counted before the release's own watch began
+    async with one_watch(person) as stopped:
+        answer = await ask(person, second, ENTER_DROPS_S, asked=asked)
+        if answer != ENTER:
+            kept_at_a_wait(answer, event=event, note=note)
+            return Settled("kept", answer, asked="drop", fold=again)
+        settled = await release_where_it_stands(transport, event=event, note=note, stopped=stopped)
     return replace(settled, asked="drop", fold=again)
