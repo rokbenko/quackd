@@ -317,6 +317,12 @@ class AdapterFacts:
         return self.path.rsplit("/", 1)[-1]
 
     @property
+    def central(self) -> bool | None:
+        """Whether it can take the central role, to scan and to dial; None when this BlueZ does
+        not say."""
+        return None if self.roles is None else "central" in self.roles
+
+    @property
     def peripheral(self) -> bool | None:
         """Whether it can take the peripheral role; None when this BlueZ does not say."""
         return None if self.roles is None else "peripheral" in self.roles

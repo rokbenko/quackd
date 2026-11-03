@@ -6,6 +6,7 @@ two robots on the sim board. The systemd unit names the directory in `QUACKD_ONB
 
     robot.yaml        0600  the one file a person edits; its passport section is what gets signed
     robot.env         0600  the brain's key, the unit's EnvironmentFile=
+    board             0600  the board this robot was set up with by name, where it needs one
     keys/robot.json   0600  the robot key, in the clear, for the unattended service
     keys/owner.json   0600  the owner key, sealed with a passphrase (`keys.seal`)
     passport.jws      0644  what the owner signed, and what the service serves
@@ -29,6 +30,7 @@ import contextlib
 import os
 from pathlib import Path
 
+from quackd.boards import SIM
 from quackd.dotenv_names import from_dotenv
 from quackd.onboard.keys import (
     KeysError,
@@ -87,6 +89,10 @@ class OnboardDir:
         return self.root / "robot.env"
 
     @property
+    def board_file(self) -> Path:
+        return self.root / "board"
+
+    @property
     def keys(self) -> Path:
         return self.root / "keys"
 
@@ -129,6 +135,29 @@ class OnboardDir:
     @property
     def lock(self) -> Path:
         return self.root / "service.lock"
+
+    def board_named(self, asked: str | None = None) -> str | None:
+        """The board a command means: `--board` where it was given, else the one the wizard was
+        told by name, so a robot on a board that is only ever found by name needs the flag once:
+        not on `sign`, not in a hint, and not in the unit, which names none. Never `sim`, which is
+        named every time, so no file can make a robot take itself for a simulation."""
+        if asked is not None:
+            return asked
+        try:
+            kept = self.board_file.read_text(encoding="utf-8").strip().lower()
+        except (OSError, UnicodeDecodeError):
+            return None
+        return kept if kept and kept != SIM else None
+
+    def remember_board(self, name: str | None) -> None:
+        """What `board_named` reads from now on: `name`, or nothing for `None` and for `sim`."""
+        if name is None or name == SIM:
+            with contextlib.suppress(OSError):
+                self.board_file.unlink()
+            return
+        from quackd.onboard.control import write_private
+
+        write_private(self.board_file, name + "\n")
 
     def ensure(self) -> None:
         """Make the directory and its folders, each one this user alone can enter where the OS

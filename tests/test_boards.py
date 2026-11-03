@@ -20,6 +20,7 @@ import pytest
 
 from quackd import boards, doctor
 from quackd.boards import jetson, l4t, sim
+from quackd.boards.generic import GenericBoard
 from quackd.boards.jetson import JetsonBoard
 from quackd.boards.sim import SimBoard
 from tests.jetson_fixtures import COMPATIBLE, NUL, ORIN_NANO, RELEASE_36_4_3
@@ -216,8 +217,9 @@ def test_a_computer_with_no_jetson_is_not_a_robot_in_the_plans_sentence(
         with pytest.raises(boards.NotARobot) as caught:
             boards.detect(named, among=_among(files=files))
         said = str(caught.value)
-        assert said.startswith(PREFIX) and said.endswith(SUFFIX), said
-        looked = said[len(PREFIX) : -len(SUFFIX)]
+        ending = SUFFIX + boards.GENERIC_TOO if system == "Linux" else SUFFIX
+        assert said.startswith(PREFIX) and said.endswith(ending), said
+        looked = said[len(PREFIX) : -len(ending)]
         if system == "Linux":
             assert jetson.COMPATIBLE in looked and jetson.RELEASE in looked, looked
         else:
@@ -333,10 +335,12 @@ def _installed(monkeypatch: pytest.MonkeyPatch, plugins: Mapping[str, object]) -
 
 
 def test_a_plugin_cannot_take_jetson_or_sim(monkeypatch: pytest.MonkeyPatch) -> None:
-    _installed(monkeypatch, {"jetson": _Acme(), "SIM": _Acme(), "acme": _Acme()})
+    plugins = {"jetson": _Acme(), "SIM": _Acme(), "generic": _Acme(), "acme": _Acme()}
+    _installed(monkeypatch, plugins)
     found = boards.boards()
-    assert list(found) == [*boards.OFFICIAL, boards.SIM, "acme"]
+    assert list(found) == [*boards.RESERVED, "acme"]
     assert isinstance(found["jetson"], JetsonBoard) and isinstance(found[boards.SIM], SimBoard)
+    assert isinstance(found[boards.GENERIC], GenericBoard)
     assert isinstance(found["acme"], _Acme)
     assert isinstance(boards.named(" Jetson "), JetsonBoard)
 
@@ -345,7 +349,7 @@ def test_a_plugin_that_fails_to_load_is_named_and_breaks_nothing_else(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _installed(monkeypatch, {"broken": RuntimeError("no such bus"), "junk": object()})
-    assert list(boards.boards()) == [*boards.OFFICIAL, boards.SIM]
+    assert list(boards.boards()) == list(boards.RESERVED)
     with pytest.raises(boards.UnknownBoard, match="no such bus"):
         boards.named("broken")
     with pytest.raises(boards.UnknownBoard, match="not a board"):
@@ -358,7 +362,7 @@ def test_a_plugin_is_what_it_is_installed_as_or_nothing(monkeypatch: pytest.Monk
     """A board that calls itself by another name than its entry point, or one whose name cannot
     be asked, is not installed, and says why when it is asked for."""
     _installed(monkeypatch, {"acme": _Zeta(), "ghost": _Unnamable()})
-    assert list(boards.boards()) == [*boards.OFFICIAL, boards.SIM]
+    assert list(boards.boards()) == list(boards.RESERVED)
     with pytest.raises(boards.UnknownBoard, match="calls itself 'zeta'"):
         boards.named("acme")
     with pytest.raises(boards.UnknownBoard, match="no name yet"):
@@ -375,7 +379,7 @@ def test_a_plugin_that_fails_or_answers_as_only_quackds_own_may_takes_no_sentenc
     the sentence and a Xavier still gets its refusal; asked for by name, its failure is said."""
     with pytest.raises(boards.NotARobot) as caught:
         boards.detect(among=_among(plugin, files={}))
-    assert str(caught.value).startswith(PREFIX) and str(caught.value).endswith(SUFFIX)
+    assert str(caught.value).startswith(PREFIX) and SUFFIX in str(caught.value)
     with pytest.raises(boards.Unsupported, match="Xavier"):
         boards.detect(among=_among(plugin, files=XAVIER))
     with pytest.raises(boards.Unsupported, match=f"the {plugin.name} board"):
@@ -393,7 +397,7 @@ def test_a_plugin_that_knows_no_computer_is_named_in_the_sentence() -> None:
     with pytest.raises(boards.NotARobot) as caught:
         boards.detect(among=_among(_Zeta(), files={}))
     said = str(caught.value)
-    assert said.startswith(PREFIX) and said.endswith(SUFFIX) and "zeta" in said
+    assert said.startswith(PREFIX) and SUFFIX in said and "zeta" in said
     with pytest.raises(boards.NotARobot, match="it found no zeta board here"):
         boards.detect("zeta", among=_among(_Zeta(), files={}))
     with pytest.raises(boards.NotARobot) as hidden:

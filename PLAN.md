@@ -201,6 +201,15 @@ before.
   the transcripts, `quackd onboard status --json` from each, a `tegrastats` line while they
   talk, and the signal strength at 1, 3 and 10 m. Each part flips its row in the roadmap's
   status table, and not before.
+- ⬜ **`--board generic` on a computer that is not a Jetson.** It is written from the kernel's
+  documentation and has run on nothing. On a Qualcomm, Rockchip or x86 computer a robot carries:
+  the three commands with `--board generic`, the unit, and a reboot that brings the service back.
+  Bring back what the computer calls itself, `/proc/device-tree/model`, `compatible` and
+  `chassis-type`, or `/sys/class/dmi/id/` without its serials, and `/etc/os-release`, `bluetoothctl
+  --version` and `quackd onboard preflight --json`. On an NVIDIA IGX, also whether
+  `/etc/nv_tegra_release` is there: with it an IGX reads as a Jetson today, and without it, it is
+  refused as a Thor. A board that has run may then find itself, one at a time, through the
+  `quackd.boards` plugin interface.
 - ⬜ **The page `quackd ui` on a phone.** Its phone path has been seen only in a headless browser at
   a phone's width, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
   0.0.0.0`, the firewall's question on Windows, the printed QR code scanned, a goal and a chat
@@ -214,13 +223,12 @@ before.
 
 ## Open here
 
-- ⬜ **Robot Passport after 0.29.0.** Boards beyond the Jetson, through the `quackd.boards`
-  plugin interface. A pilot that asks a robot it met for a courtesy, or shares what it saw.
-  Maker signatures beside the owner's. Revocation, so a stolen robot's key stops speaking before
-  its passport expires. Guests, which need a decision record of their own first. Talk that is
-  encrypted as well as signed. And the signal strength at one metre measured on real adapters,
-  so `rssi_at_1m` and the 2 m a robot meets at stop being starting values. Phase 7 is dropped
-  ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)), and
+- ⬜ **Robot Passport after 0.29.0.** A pilot that asks a robot it met for a courtesy, or shares
+  what it saw. Maker signatures beside the owner's. Revocation, so a stolen robot's key stops
+  speaking before its passport expires. Guests, which need a decision record of their own first.
+  Talk that is encrypted as well as signed. And the signal strength at one metre measured on real
+  adapters, so `rssi_at_1m` and the 2 m a robot meets at stop being starting values. Phase 7 is
+  dropped ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)), and
   its note, [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md), is
   kept as the record of what was planned.
 - ⬜ **Nobody has run the discrete stepper against a real decision LLM.** Not TypeSafe's hosted

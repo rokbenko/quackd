@@ -2,21 +2,25 @@
 
 Each check reads, and none changes anything: the board; the radio's own rows from
 `quackd.radio.preflight` (the packages, BlueZ, the adapter and its address, or the sim air, and
-the LAN); the clock; the robot's file, keys and passport; its brain; and whether the service is
-running. `live` is the one exception, and only when asked for: the radio's check that serves
-the advert and the GATT service for two seconds. A check is `ok`, `warn` (it runs, with less) or
-`fail` (it does not run until this is fixed), with the sentence that says why and, where there
-is one, what to do.
+the LAN); the clock, and whether anything keeps it right; the robot's file, keys and passport; its
+brain; and whether the service is running. `live` is the one exception, and only when asked for:
+the radio's check that serves the advert and the GATT service for two seconds. A check is `ok`,
+`warn` (it runs, with less) or `fail` (it does not run until this is fixed), with the sentence that
+says why and, where there is one, what to do.
 """
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import platform
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from quackd.boards.linux import list_dir
 from quackd.onboard.store import OnboardDir
 
 State = Literal["ok", "warn", "fail"]
@@ -24,6 +28,10 @@ State = Literal["ok", "warn", "fail"]
 ONBOARD_INSTALL = 'uv tool install "quackd[onboard]"'
 #: A clock before this year cannot be right: every passport quackd signs is later.
 EARLIEST_YEAR = 2026
+#: What to do about a clock that is wrong, which signing again would only write down.
+SET_THE_TIME = "set the time: timedatectl set-ntp true"
+#: The clocks that survive a reboot, as the kernel lists them.
+RTC = "/sys/class/rtc"
 
 
 @dataclass(frozen=True)
@@ -48,18 +56,20 @@ def preflight(
     service: Callable[[], dict[str, Any] | None] | None = None,
     live: bool = False,
     radio_rows: Callable[[str, str | None, bool], list[Check]] | None = None,
+    clock_state: Callable[[], tuple[bool | None, bool | None]] | None = None,
 ) -> list[Check]:
     """Every check, in the order a person fixes them. `service` asks the running service for
-    its status, None when none answers; `radio_rows` stands in for the radio's own, for tests."""
+    its status, None when none answers; `radio_rows` and `clock_state` stand in for the radio's
+    own and for what this computer says of its clock, for tests."""
     checks: list[Check] = []
-    facts, radio_kind, radio = _board(board, checks)
+    facts, radio_kind, radio = _board(home.board_named(board), checks)
     if radio_kind is not None:
         adapter = (
             radio.detail.split(", ")[-1] if radio is not None and radio.state == "ok" else None
         )
         checks += (radio_rows or _radio_rows)(radio_kind, adapter, live)
         radio = None  # the radio's own rows say it, and more
-    checks.append(_clock(now or datetime.now(UTC)))
+    checks.append(_clock(now or datetime.now(UTC), *(clock_state or _clock_state)()))
     file = _file(home, checks)
     if file is not None:
         _keys_and_passport(home, file, facts, checks)
@@ -132,15 +142,37 @@ def _radio_rows(radio_kind: str, adapter: str | None, live: bool) -> list[Check]
     ]
 
 
-def _clock(now: datetime) -> Check:
+def _clock(now: datetime, synced: bool | None = None, rtc: bool | None = None) -> Check:
+    """`synced` is whether anything set the clock from a network, and `rtc` whether a clock here
+    survives a reboot, each None where it cannot be told. A passport is refused by a clock
+    more than 300 s behind its `issued` or past its `expires`, so a wrong one refuses good
+    passports and signs wrong dates. It runs all the same, which is why these are warnings."""
+    when = f"{now:%Y-%m-%d %H:%M} UTC"
     if now.year < EARLIEST_YEAR:
-        return Check(
-            "clock",
-            "fail",
-            f"it says {now:%Y-%m-%d}, before any passport quackd signs",
-            "set the time: timedatectl set-ntp true",
-        )
-    return Check("clock", "ok", f"{now:%Y-%m-%d %H:%M} UTC")
+        said = f"it says {now:%Y-%m-%d}, before any passport quackd signs"
+        return Check("clock", "fail", said, SET_THE_TIME)
+    if synced is False:
+        said = f"{when}, and nothing has set it from a network, so it may be wrong"
+        return Check("clock", "warn", said, SET_THE_TIME)
+    if rtc is False:
+        said = f"{when}, with no clock here that survives a reboot"
+        return Check("clock", "warn", said, "give it a network at every boot, or a clock battery")
+    return Check("clock", "ok", when)
+
+
+def _clock_state() -> tuple[bool | None, bool | None]:
+    """What this computer says of its clock: `timedatectl`, which also speaks for chrony and ntpd,
+    and the kernel's list of clocks that survive a reboot. On Linux alone, and only ever read."""
+    if platform.system() != "Linux":
+        return None, None
+    synced = None
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        asked = ["timedatectl", "show", "--property=NTPSynchronized", "--value"]
+        done = subprocess.run(asked, capture_output=True, text=True, timeout=3, check=False)
+        if done.returncode == 0 and done.stdout.strip() in ("yes", "no"):
+            synced = done.stdout.strip() == "yes"
+    clocks = list_dir(RTC)
+    return synced, None if clocks is None else bool(clocks)
 
 
 def _file(home: OnboardDir, checks: list[Check]) -> Any:
@@ -181,7 +213,8 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
     if facts is not None:
         check = check_board(check, facts)
     if not check.ok or check.reading is None:
-        checks.append(Check("passport", "fail", check.why, "quackd onboard sign"))
+        hint = SET_THE_TIME if check.clock_behind else "quackd onboard sign"
+        checks.append(Check("passport", "fail", check.why, hint))
         return
     expires = check.reading.document["expires"]
     checks.append(Check("passport", "ok", f"signed by its owner, until {expires}"))
@@ -258,4 +291,4 @@ def _env_has(home: OnboardDir, variable: str) -> bool:
     return any(line.split("=", 1)[0].strip() == variable for line in lines if "=" in line)
 
 
-__all__ = ["EARLIEST_YEAR", "Check", "key_needed", "key_variable", "preflight"]
+__all__ = ["EARLIEST_YEAR", "SET_THE_TIME", "Check", "key_needed", "key_variable", "preflight"]

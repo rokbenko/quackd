@@ -25,7 +25,8 @@ Without it uv stops with `the current Python version (3.10.12) does not satisfy 
 `quackd onboard` is a wizard, and it does the rest in this order:
 
 1. **The board.** It finds the Jetson by itself, an Orin or a Thor, and checks that BlueZ can
-   advertise. On anything else it stops and says why.
+   advertise. On anything else it stops and says why, and on another robot's Linux computer
+   `quackd onboard --board generic` names the computer instead.
 2. **About six questions**: the robot's name, what it is, its owner's label and contact, how a
    person stops it, its brain, a provider and model with its key typed hidden or a model server's
    URL, and how close another robot must come before the two meet.
