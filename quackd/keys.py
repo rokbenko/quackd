@@ -325,8 +325,8 @@ class _Guard:
     unseen. So a guard that comes second does not leave. Bash runs the next command in the mode it
     took, which is this process's, so the guard waits for a key, looks closely for that mode, puts
     the terminal back under that command, and bash takes that for its own when the command ends:
-    one line typed unseen, where it was `stty sane` as ever. It gives up after `GUARD_WATCHES_S`, or
-    as soon as the terminal is as this process found it, or gone.
+    a line or two typed unseen, where it was `stty sane` as ever. It gives up after
+    `GUARD_WATCHES_S`, or as soon as the terminal is as this process found it, or gone.
 
     Interpreter flags that skip the site packages and the environment, since it has to be up in
     milliseconds and nothing it needs is outside the standard library."""

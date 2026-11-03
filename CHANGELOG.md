@@ -42,19 +42,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a wrapper left it broken, 16 times in 24 under a real `bash`, and it is 0 in 24 now. On a machine with no
   CPU to spare a guard could come second and leave, and that stayed broken until somebody typed `stty sane`
   unseen: 4 times in 12 in a container held to one CPU by eight busy loops, and 0 in 12 now. A guard that
-  comes second stays for up to ten minutes and puts the terminal back under the next command, so the
-  line typed at that prompt may go unseen and the next is right. Nor does a child forked with no exec keep
-  it asleep any more.
+  comes second stays for up to ten minutes and puts the terminal back under a command run there, so what
+  is typed at that prompt may go unseen for a line or two. Nor does a child forked with no exec keep it
+  asleep any more.
 
 ### Known limitations
 
 - **None of the fixes above has met a robot.** They ran on the mocks and the fake hosts, in a real Windows
   console, and on Linux under a real `bash`. The arm owes what 0.30.2 lists, and the XLeRobot and the
   AlohaMini have now to show that a hold from a reading stops an arm as it should.
-- **A guard can still come second often enough to be seen, with everything pinned to one busy CPU.** With
-  the run on one CPU and six busy loops on it, the first line after a kill went unseen 10 times in 16, as
-  it did 12 times in 16 before, and it heals over a few commands where 3 stayed broken before. It looks
-  every 2 ms, and on a CPU that busy it does not get to.
+- **A guard can still come second often enough to be seen, with the run pinned to one busy CPU.** With
+  six busy loops on that CPU, the first command after a kill ran broken 20 times in 32, against 21 before,
+  and by the fifth command it was 2, against 6. It looks every 2 ms, and on a CPU that busy it does not
+  get to. What it does not reach by then is still `stty sane`, typed unseen.
 - **A key set to repeat slower than once every 2 s still cannot be told from somebody pressing it,** as
   0.30.2 says.
 

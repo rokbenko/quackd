@@ -1719,6 +1719,9 @@ def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
     before = signal.getsignal(signal.SIGINT)
     try:
         signal.signal(signal.SIGINT, signal.default_int_handler)
+    except ValueError:  # not the main thread, so nothing a press could reach
+        return save(path)
+    try:
         try:
             return save(path)
         finally:
@@ -1729,8 +1732,6 @@ def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
             path.unlink(missing_ok=True)
         ui.err_console.print(Text("  run.gif was left out", style=ui.STYLES["muted"]))
         return None
-    except ValueError:  # not the main thread, so nothing a press could reach
-        return save(path)
 
 
 def _frame_hook(recorder: Any, front: Front | None) -> Any:

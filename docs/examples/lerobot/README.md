@@ -69,7 +69,7 @@ are meant to shrink. That step and the section are requests no gate reads, and n
 played arm away from a person ([guides/play.md](../../guides/play.md#what-does-not-change)), so
 keep people beyond the arm's reach in these as in any played run. Run one with `--no-play` to
 see it without the section. The lines they had before are in this folder's git history. The
-other 128 do not play. 105 of them keep every line they had and read what they always did: most
+other 129 do not play. 105 of them keep every line they had and read what they always did: most
 ask for a result on the table, a high five, a guess or a question answered in words, a stillness
 test, a trap or a benchmark. The other 23 came with 0.30.0, below.
 `e004/royalty`, `e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23

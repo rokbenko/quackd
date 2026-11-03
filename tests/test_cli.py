@@ -3249,24 +3249,23 @@ def test_a_press_stays_from_the_connect_of_a_release_and_from_a_fold_of_doctors(
     assert connected == [True], probed.output
 
 
-def test_doctor_puts_the_ctrl_c_handler_back_before_its_event_loop_closes(
+def test_doctor_takes_its_ctrl_c_handler_out_before_its_event_loop_closes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """doctor's kill switch went in inside the probe's event loop and came out once that loop had
     closed, so a Ctrl-C between the two raised in the switch's own handler and ended doctor with
     no report, and the handler it put back was the closed loop's. It comes out inside the loop,
-    and the process is left with the handler it had."""
+    and from there a press does nothing, so the report always comes."""
     import signal
 
     from tests.test_lerobot_adapter import FakeArm
 
-    before = signal.getsignal(signal.SIGINT)
     _a_terminal(monkeypatch, {})
     arm = FakeArm()
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-h", off=20.0)
     result = runner.invoke(app, ["doctor", "--robot", "arm-h", "--registry-dir", str(reg)])
     assert "folding arm-h to its rest pose" in " ".join(result.output.split()), result.output
-    assert signal.getsignal(signal.SIGINT) is before
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
 
 
 def test_a_press_while_an_arm_with_no_rest_pose_connects_keeps_it_powered_and_says_so(
