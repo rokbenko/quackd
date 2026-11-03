@@ -128,7 +128,12 @@ class ApproachAndParams(BaseModel):
 
 
 async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
-    """Send an intent; return a failure result if the robot refused it."""
+    """Send an intent; return a failure result if the robot refused it, or if the verb has been
+    told to end (`VerbContext.interrupted`), when nothing goes out. A stop that came while a verb
+    read the body's state was followed by the goal that verb went on to send. What only speaks
+    goes out all the same, as it runs beside a stop (`Executor._overtaken`)."""
+    if intent.kind != "sound" and (why := ctx.interrupted()) is not None:
+        return await _ended_by(ctx, intent.kind, why, "nothing more was sent")
     ack = await ctx.transport.send_intent(intent)
     if not ack.accepted:
         return VerbResult.fail(f"{intent.kind} refused: {ack.reason or 'no reason given'}")
@@ -196,6 +201,19 @@ async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data:
     if why == STOPPED:
         data["ended_by"] = STOP_ENDED
     return VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data)
+
+
+async def _waited_out(ctx: VerbContext, seconds: float) -> str | None:
+    """`seconds` on the body's clock for a verb that has sent what it sends and is waiting on it, or
+    why it was told to end before they were up (`VerbContext.interrupted`), looked at every tick.
+    A wait that heard nothing reported the move it was waiting on as done, with a stop sent beside
+    it, and a verb with another goal to send after the wait sent it, which undid the stop."""
+    slices = max(1, round(seconds / TICK_S))
+    for _ in range(slices):
+        if (why := ctx.interrupted()) is not None:
+            return why
+        await ctx.transport.sleep(seconds / slices)
+    return ctx.interrupted()
 
 
 def _head_fade_s(ctx: VerbContext) -> float:
@@ -866,6 +884,13 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
 async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
     if ctx.run_verb is None:
         return VerbResult.fail("approach_and needs an executor")
+    if not ctx.takes_no_arguments(p.then):
+        # `then` carries no arguments, so a verb that needs some would be refused after the walk,
+        # with nothing the pilot could correct through this verb
+        return VerbResult.fail(
+            f"approach_and cannot end in {p.then}, which needs arguments that `then` has no way "
+            f"to give it: call go_to, then {p.then}"
+        )
     first = await ctx.run_verb("go_to", {"target": p.target, "stop_distance": p.stop_distance})
     if not first.ok:
         return first

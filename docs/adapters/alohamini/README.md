@@ -127,6 +127,12 @@ the lift's register, because the write that would zero it afterwards is commente
 first thing quackd says to this robot is a stop**. And `stop_base` writes with `num_retry=0` on
 a bus it shares with the lift, so quackd sends its stop more than once.
 
+A stop stops the base and the lift and leaves the arms' goals alone, as the watchdog does, since a
+hold built from an observation several cycles old moves an arm. From beside a verb it ends `lift`
+before its next send, `home_arms` before the next arm's, and `move_joints` and `gripper` at once,
+and what those two answer says the arm or the gripper goes on to where it was sent. `gripper` has to
+say which way: `open` has no default.
+
 ## Units
 
 - **`theta.vel` on the wire is degrees per second**; quackd's `wz` is rad/s and the adapter

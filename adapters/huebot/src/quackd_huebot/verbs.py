@@ -18,8 +18,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import SayParams, send_or_fail
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.core import SayParams, _ended_by, send_or_fail
+from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd_huebot import upstream_api as up
 
 #: The skills `sit`, `stand` and `kick` send through `robot.do`, by the names robotd
@@ -270,6 +270,9 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     asked = ctx.transport.now()
     while True:
         await ctx.transport.sleep(STAND_UP_POLL_S)
+        if ctx.interrupted() == STOPPED:
+            what = "this stopped waiting for it to get up"
+            return await _ended_by(ctx, "stand_up", STOPPED, what)
         state = await ctx.transport.get_state()
         waited = ctx.transport.now() - asked
         if _blind(state):

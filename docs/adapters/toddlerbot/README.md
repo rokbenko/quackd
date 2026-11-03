@@ -124,6 +124,8 @@ The core verbs come from the registry. These four are the robot's own.
 | `look` | the two joint neck. Which motor is yaw is inferred from the motor names (`NECK_AXES` below) |
 | `move`, `go_to`, `approach_and` | present only when the daemon reports a walk checkpoint staged, which a fresh install has not got |
 
+A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has.
+
 ## The motions, and which ones quackd offers
 
 Nine motions ship as keyframes, and they are the only motion that works with no downloads.

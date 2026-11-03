@@ -781,7 +781,10 @@ class RunStatus:
     ) -> None:
         self.console = target if target is not None else err_console
         self._clock = clock
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        """Reentrant, because the kill switch's handler says `stopping` on the thread it interrupts,
+        which may be inside `update` with this held, and a Ctrl-C that waited on its own thread
+        would leave the robot with no stop at all."""
         self._step = ""
         self._text = "starting"
         self._since = clock()
@@ -789,6 +792,7 @@ class RunStatus:
         self._last_call_s: float | None = None
         """How long the model's previous answer took, read off its `llm` record, so a wait on
         the next one says roughly how long it is likely to be. None until a call has answered."""
+        self._stopping = False
 
     # ── the line itself ─────────────────────────────────────────────────────────────
 
@@ -828,6 +832,25 @@ class RunStatus:
                 self._step = step
             if restart:
                 self._since = self._clock()
+
+    def stopping(self) -> None:
+        """A person has stopped the run, and the line says so until it finishes. The kill switch
+        says nothing to the run's event stream, so it went on saying `waiting on` a model nobody
+        was waiting for, and what the cancelled call and the verb then wrote read the same."""
+        self._stopping = True
+        self.update("stopping the robot")
+
+    @contextlib.contextmanager
+    def asking(self) -> Iterator[None]:
+        """Waiting on a person, whatever the run was doing, and back to that once they answer: the
+        line said `finishing` or `stopping the robot` under a question that wanted their Enter."""
+        with self._lock:
+            before = self._text
+        self.update("waiting for you")
+        try:
+            yield
+        finally:
+            self.update("stopping the robot" if self._stopping else before)
 
     # ── being on screen ─────────────────────────────────────────────────────────────
 
@@ -875,6 +898,8 @@ class RunStatus:
     def _read(self, event: Any) -> None:
         kind = str(getattr(event, "kind", ""))
         data: Mapping[str, Any] = getattr(event, "data", None) or {}
+        if self._stopping and kind not in ("member_end", "run_end"):
+            return
         if kind == "run_start":
             self.update("observing", step="")
         elif kind == "observation":
@@ -908,8 +933,6 @@ class RunStatus:
             # must only ever follow a release that actually happened
             if data.get("how") == "released":
                 self.update("waiting for you to place the arm")
-        elif kind == "note" and str(data.get("text") or "").startswith("kill switch"):
-            self.update("stopping the robot")
         elif kind in ("declare", "member_end", "run_end"):
             self.update("finishing")
         else:
@@ -950,6 +973,16 @@ def pause_status() -> Iterator[None]:
         yield
         return
     with _ACTIVE[-1].paused():
+        yield
+
+
+@contextlib.contextmanager
+def asking_a_person() -> Iterator[None]:
+    """What `RunStatus.asking` says, for anyone who has no handle on the status line."""
+    if not _ACTIVE:
+        yield
+        return
+    with _ACTIVE[-1].asking():
         yield
 
 

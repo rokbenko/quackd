@@ -13,6 +13,7 @@ nothing that drives the terminal they read it in, and a word about itself if it 
 from __future__ import annotations
 
 import io
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -294,11 +295,74 @@ def test_the_status_line_follows_a_run_through_its_phases() -> None:
         (LogEvent("verb_start", 0.0, {"name": "go_to", "params": {"target": "ball"}}), "go_to("),
         (LogEvent("verb_end", 0.0, {"name": "go_to", "ok": True}), "observing"),
         (LogEvent("claim", 0.0, {"kicker": "duck-1", "dist": 0.6}), "claim duck-1"),
-        (LogEvent("note", 0.0, {"text": "kill switch: Ctrl-C"}), "stopping the robot"),
         (LogEvent("run_end", 0.0, {"outcome": "success"}), "finishing"),
     ):
         status.sink(event)
         assert expected in status.__rich__().plain, event.kind
+
+
+def test_the_status_line_says_stopping_from_a_press_until_the_run_finishes() -> None:
+    """The kill switch says nothing to the event stream, so the line went on saying `waiting on` a
+    model nobody was waiting for now, and the cancelled call and the verb then wrote over it."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("llm_request", 0.0, {"provider": "openai", "model": "gpt-6-sol"}))
+    assert "waiting on openai" in status.__rich__().plain
+    status.stopping()
+    for event in (
+        LogEvent("llm", 0.0, {"provider": "openai", "error": "cancelled"}),
+        LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}),
+        LogEvent("observation", 0.0, {"text": "[step 3/40 · llm calls 3/40, 0.1/5 min]"}),
+        LogEvent("note", 0.0, {"text": "moving to the rest pose"}),
+    ):
+        status.sink(event)
+        assert "stopping the robot" in status.__rich__().plain, event.kind
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "aborted"}))
+    assert "finishing" in status.__rich__().plain
+
+
+def test_the_status_line_says_who_a_question_waits_on_and_goes_back_after() -> None:
+    """It said `finishing` or `stopping the robot`, counting up, under a question wanting Enter."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "success"}))
+    with status.asking():
+        assert "waiting for you" in status.__rich__().plain
+    assert "finishing" in status.__rich__().plain
+    status.stopping()
+    with status, ui.asking_a_person():
+        assert "waiting for you" in status.__rich__().plain
+    assert "stopping the robot" in status.__rich__().plain
+    with ui.asking_a_person():  # with no status line up, it is nothing at all
+        pass
+
+
+def test_a_press_at_a_question_leaves_the_line_saying_stopping() -> None:
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    status.sink(LogEvent("run_end", 0.0, {"outcome": "success"}))
+    with status.asking():
+        status.stopping()
+    assert "stopping the robot" in status.__rich__().plain
+
+
+def test_a_ctrl_c_landing_inside_an_update_does_not_wait_on_its_own_thread() -> None:
+    """The handler says `stopping` on the thread it interrupted, which may be inside `update` with
+    the line's lock held. On a plain lock that was the event loop's thread waiting on itself, with
+    no stop, no fold and no close, and nothing but killing it to end it."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    done: list[bool] = []
+
+    def inside_an_update() -> None:
+        with status._lock:
+            status.stopping()
+        done.append(True)
+
+    thread = threading.Thread(target=inside_an_update, daemon=True)
+    thread.start()
+    thread.join(10)
+    assert done == [True], "the handler waited on the lock its own thread held"
 
 
 def test_a_status_line_that_cannot_draw_never_counts_as_a_dropped_event() -> None:

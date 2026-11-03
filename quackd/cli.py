@@ -1471,15 +1471,18 @@ class _TerminalHandOff:
     ) -> bool:
         if self.switch is None:  # `bind` runs before the loop does, so this is a bug if hit
             raise RuntimeError("the hand-off has no kill switch to read Enter from")
-        self.say(text)
         self.ended = None
         # counted rather than read off `pressed`, which the wait itself clears on the way in: a
         # press is counted on the signal's own thread before the loop is told of it, so one
-        # that ended this wait has always been counted by the time it returns
+        # that ended this wait has always been counted by the time it returns. From before the
+        # question is printed: one made as it prints ends the wait too, and was filed under a wait
+        # nobody answered
         presses = self.switch.presses
-        came = await self.switch.wait_for_enter(
-            timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate
-        )
+        self.say(text)
+        with ui.asking_a_person():
+            came = await self.switch.wait_for_enter(
+                timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate, said=self.say
+            )
         if came:
             self.ended = "enter"
         elif self.switch.presses > presses:
@@ -1498,6 +1501,17 @@ class _TerminalHandOff:
         ui.note(self.WAIT_ENDED[self.ended])
         return came
 
+    @property
+    def presses(self) -> int:
+        """How many times the kill switch has fired, written as each press lands, where what it
+        sets for the event loop waits for the loop to have a turn."""
+        return self.switch.presses if self.switch is not None else 0
+
+    def stay_to_the_close(self) -> None:
+        """From here on a Ctrl-C is a press like `q` and quits nothing (`KillSwitch`)."""
+        if self.switch is not None:
+            self.switch.stay_to_the_close()
+
     def stopped(self) -> Awaitable[None]:
         """What returns when the kill switch fires from now on: a fresh Ctrl-C or `q`.
 
@@ -1507,8 +1521,9 @@ class _TerminalHandOff:
         called rather than when what it returns first runs: the fold is started straight after,
         and a press made as it starts used to fall in between and be taken for an old one. After
         the switch's first press, SIGINT goes back to the event loop's own handler, and every
-        later Ctrl-C reaches the fold as a cancellation instead, which its caller catches; `q`
-        reaches the switch every time, so this is what hears it."""
+        later Ctrl-C reaches the fold as a cancellation instead, which its caller catches, unless
+        a press has been told to stay (`stay_to_the_close`); `q` reaches the switch every time, so
+        this is what hears it."""
         if self.switch is None:  # `bind` runs before anything is folded, so a bug if hit
             raise RuntimeError("the hand-off has no kill switch to watch")
         switch = self.switch
@@ -2810,15 +2825,18 @@ def _run_impl(
                 ),
                 effort=effort,
             ),
-            hint="Ctrl-C or q stops the duck. Ctrl-C twice quits at once."
-            if front is None
-            else "Stop in the page stops the duck.",
+            hint="Stop in the page stops the duck."
+            if front is not None
+            else "Ctrl-C or q stops the duck. However often you press, the run ends properly."
+            if by_hand
+            else "Ctrl-C or q stops the duck. Ctrl-C twice quits at once.",
         )
     )
 
     def killed(msg: str) -> None:
         """Always printed, unlike `log`, which is --verbose only. Someone who has just hit
         Ctrl-C on a walking robot needs to see that it registered."""
+        status.stopping()  # first, or the line printed here draws the old words under it
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     ran: list[Any] = []
@@ -2853,6 +2871,10 @@ def _run_impl(
         if person is not None and person is not hand_off:
             person.bind(ks)
         ks.install()
+        if hand_off is not None:
+            # somebody is at this arm from its first move to its last, and a second press landing
+            # on the teardown's first stop went past the question, the fold and the close
+            ks.stay_to_the_close()
         _SWITCH = ks
         try:
             return await loop.run()
@@ -3080,6 +3102,7 @@ def _run_pilots_impl(
     )
 
     def killed(msg: str) -> None:
+        status.stopping()
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     async def main() -> Any:
@@ -3344,8 +3367,12 @@ def _run_flock_impl(
     ui.install_logging()
     holder: dict[str, Any] = {}
 
+    def killed(msg: str) -> None:
+        status.stopping()
+        log(msg)
+
     def on_ready(transport0: Any, coordinator: Any) -> None:
-        ks = KillSwitch(coordinator.abort, log=log)
+        ks = KillSwitch(coordinator.abort, log=killed)
         ks.install()
         holder["ks"] = ks
         if not gif:
@@ -7647,51 +7674,63 @@ class _DoctorHands:
             HANDS_AWAY_S,
             FoldStopped,
             fold_unless_stopped,
+            one_watch,
         )
 
         person = self.person
+        if person is not None:
+            # somebody is at the arm from here on, whatever is asked of them, and the close is what
+            # says what became of its torque
+            person.stay_to_the_close()
         if person is None or getattr(adapter, "rest_pose", None) is None:
             return await go_to_rest_if_any(adapter)
         if self.pressed():
             # a Ctrl-C or `q` while the arm connected or was read: nothing moves after one
             return RestResult("refused", "stopped before the fold: nothing was moved")
         with ui.pause_status():
-            ui.err_console.print(
-                Text(
-                    FOLDING_IN.format(name=self.label, seconds=HANDS_AWAY_S),
-                    style=ui.STYLES["warn"],
+            async with one_watch(person) as stopped:
+                ui.err_console.print(
+                    Text(
+                        FOLDING_IN.format(name=self.label, seconds=HANDS_AWAY_S),
+                        style=ui.STYLES["warn"],
+                    )
                 )
-            )
-            try:
-                await fold_unless_stopped(_hands_away, person.stopped)
-            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                return RestResult("refused", "stopped before the fold: nothing was moved")
-            try:
-                parked = await fold_unless_stopped(
-                    lambda: go_to_rest_if_any(adapter), person.stopped
-                )
-                return parked if parked is not None else RestResult.none()
-            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
-                    # held where the stopped fold left it, a step cap on at most
-                    await adapter.stop()
-                return RestResult("refused", FOLD_STOPPED)
+                try:
+                    await fold_unless_stopped(_hands_away, stopped)
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    return RestResult("refused", "stopped before the fold: nothing was moved")
+                try:
+                    parked = await fold_unless_stopped(lambda: go_to_rest_if_any(adapter), stopped)
+                    return parked if parked is not None else RestResult.none()
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                        # held where the stopped fold left it, a step cap on at most
+                        await adapter.stop()
+                    return RestResult("refused", FOLD_STOPPED)
 
     async def before_close(self, adapter: Any) -> None:
         """Over an arm whose close keeps its torque, ask whether to drop it instead. Not after a
         press, which asked for nothing to move. The release is `release_where_it_stands`, which
         a second Ctrl-C landing on it cannot take past the close, and what it did is said."""
-        from quackd.release import DROP_UNPOSED, ENTER, ENTER_DROPS_S, ask, release_where_it_stands
+        from quackd.release import (
+            DROP_UNPOSED,
+            ENTER,
+            ENTER_DROPS_S,
+            ask,
+            one_watch,
+            release_where_it_stands,
+        )
 
         person = self.person
         if person is None or not self.prompting or not self.unposed or self.pressed():
             return
         question = DROP_UNPOSED.format(name=self.label, seconds=ENTER_DROPS_S)
         with ui.pause_status():
-            if await ask(person, question, ENTER_DROPS_S) == ENTER:
-                settled = await release_where_it_stands(adapter)
-                if settled.said:
-                    ui.err_console.print(_warn_line(settled.said))
+            async with one_watch(person) as stopped:
+                if await ask(person, question, ENTER_DROPS_S) == ENTER:
+                    settled = await release_where_it_stands(adapter, stopped=stopped)
+                    if settled.said:
+                        ui.err_console.print(_warn_line(settled.said))
 
 
 def _switch_pressed(_message: str) -> None:
@@ -7755,6 +7794,7 @@ def robot_release(
         Settled,
         ask,
         fold_unless_stopped,
+        one_watch,
         release_where_it_stands,
         settle_missed_fold,
     )
@@ -7874,30 +7914,37 @@ def robot_release(
         if rest is None:
             # nothing to fold to: the simulator's arm, or a real one after Enter at the question
             # that said it drops
-            return await release_where_it_stands(adapter)
-        if not simulated:
-            # The hands that supported the arm through the connect come away before it moves:
-            # the fold used to start a few milliseconds after the connect, under them. The
-            # countdown is raced against a press the way the fold is, and one stops the command
-            # with nothing moved.
-            ui.err_console.print(
-                Text(FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S), style=ui.STYLES["warn"])
+            return await release_where_it_stands(adapter, stopped=person.stopped)
+        async with one_watch(person) as stopped:
+            if not simulated:
+                # The hands that supported the arm through the connect come away before it moves:
+                # the fold used to start a few milliseconds after the connect, under them. The
+                # countdown is raced against a press the way the fold is, and one stops the command
+                # with nothing moved.
+                ui.err_console.print(
+                    Text(
+                        FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S),
+                        style=ui.STYLES["warn"],
+                    )
+                )
+                try:
+                    await fold_unless_stopped(hands_away, stopped)
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                    return Settled("kept", "stopped before the fold", said=stopped_before)
+            ui.console.print(
+                Text(
+                    f"folding {name} to its rest pose: keep your hands out of its way",
+                    style=muted,
+                )
             )
             try:
-                await fold_unless_stopped(hands_away, person.stopped)
+                first = await fold_unless_stopped(fold, stopped)
             except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                return Settled("kept", "stopped before the fold", said=stopped_before)
-        ui.console.print(
-            Text(f"folding {name} to its rest pose: keep your hands out of its way", style=muted)
-        )
-        try:
-            first = await fold_unless_stopped(fold, person.stopped)
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-            with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
-                # holds the arm where the cancelled fold left it, a step cap on at most, and a
-                # second press landing here is caught too, so the close still comes
-                await adapter.stop()
-            return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
+                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                    # holds the arm where the cancelled fold left it, a step cap on at most, and a
+                    # second press landing here is caught too, so the close still comes
+                    await adapter.stop()
+                return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
         if first is not None and first.note:
             # what the body has to say about the pose it parked in, once, as a run says it
             ui.console.print(Text(first.note, style=muted))
@@ -7966,6 +8013,9 @@ def robot_release(
             finally:
                 if callable(stop_check):
                     stop_check(None)
+            # The arm answers now and there is somebody at it, so no press quits from here to the
+            # close, which is what says what became of its torque.
+            person.stay_to_the_close()
             settled: Settled | None = None
             try:
                 settled = await settle(person, lambda: switch.presses)

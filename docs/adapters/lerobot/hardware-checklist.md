@@ -645,7 +645,9 @@ stopped
     line: the gripper opens all the way while you have it, a few seconds from shut at the default step
     cap, and a line then says the arm folds in 3 seconds. Take your hands away in those seconds, and a Ctrl-C or `q` in them
     or in the fold holds the arm where it is. A gripper that cannot open is said out loud, and the
-    arm stays where it is, since you are being told to reach in. That question stands for two
+    arm stays where it is, since you are being told to reach in. If you press Enter twice, or
+    within 2 seconds of the last one, it answers nothing and says so: take your finger off it, wait
+    and press it once. That question stands for two
     minutes and then answers itself by leaving the gripper shut, so an arm nobody came back to
     folds up holding what it was given rather than dropping it on the bench.
 

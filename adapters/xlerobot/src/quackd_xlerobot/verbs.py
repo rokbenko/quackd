@@ -23,7 +23,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import send_or_fail
+from quackd.verbs.core import _ended_by, _waited_out, send_or_fail
 from quackd.verbs.registry import Precondition, Verb, VerbContext, VerbResult
 
 ARMS: tuple[str, ...] = ("left", "right")
@@ -97,7 +97,12 @@ class GripperParams(BaseModel):
     side: Literal["left", "right", "both"] = Field(
         default="right", description="Which hand: left, right, or both at once."
     )
-    open: bool = Field(default=True, description="True opens the gripper, False closes it.")
+    open: bool = Field(
+        ...,
+        description=(
+            "True opens the gripper, False closes it. Say which: opening lets go of what it holds."
+        ),
+    )
 
 
 # ── preconditions the manifest references by name ───────────────────────────────────────
@@ -136,11 +141,18 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     Sending arm goals also commands zero base velocity, because upstream writes the wheels on
     every action (`upstream_api.SEND_ACTION_ALWAYS_WRITES_BASE`). That is upstream's design
     and it is safe, but it means this verb stops a driving base, so the result says so.
+
+    A stop from beside it ends the wait and says what it did. This robot's stop leaves the arm's
+    goals alone (`zmq_host`), so the arm goes on to this one, and "moved" was all anybody heard.
     """
     intent = Intent.joint(dict(p.positions), p.duration_s)
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(p.duration_s)
+    if (why := await _waited_out(ctx, p.duration_s)) is not None:
+        stopped = "the wheels are stopped and the arm goes on to the goal it was sent"
+        return await _ended_by(
+            ctx, "move_joints", why, stopped, goal=dict(p.positions), base_stopped=True
+        )
     state = await ctx.transport.get_state()
     joints: dict[str, Any] = state.extras.get("joints", {})
     return VerbResult.success(
@@ -163,7 +175,9 @@ async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
     intent = Intent(kind="gripper", params={"open": p.open, "side": p.side, "positions": positions})
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(GRIPPER_S)
+    if (why := await _waited_out(ctx, GRIPPER_S)) is not None:
+        stopped = "the wheels are stopped and the gripper goes on to where it was sent"
+        return await _ended_by(ctx, "gripper", why, stopped, side=p.side, open=p.open)
     state = await ctx.transport.get_state()
     held = state.extras.get("holding", {})
     what = "both grippers" if p.side == "both" else f"the {p.side} gripper"

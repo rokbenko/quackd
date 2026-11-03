@@ -564,6 +564,7 @@ class Executor:
             transport=self.logged_transport(),
             detector=self.detector,
             dry_run=self.dry_run,
+            takes_no_arguments=self._takes_no_arguments,
             # a verb's own log line is a `note` as well, so it is not the one thing the log
             # cannot see. Not the executor's own arrows: those would double `verb_start`.
             log=self._note,
@@ -611,6 +612,17 @@ class Executor:
             raise Aborted(f"{reason}; the verb stopped where it stood")
 
         return abort_when
+
+    def _takes_no_arguments(self, name: str) -> bool:
+        """`VerbContext.takes_no_arguments`. A verb that does not exist is for the gates that
+        refuse it to say so."""
+        try:
+            self.registry.get(name).params.model_validate({})
+        except VerbNotFound:
+            return True
+        except ValidationError:
+            return False
+        return True
 
     def _interruption(self, stops_then: int) -> Callable[[], str | None]:
         """`VerbContext.interrupted` for a verb beginning now: `STOPPED` once a `stop` has been
@@ -845,9 +857,9 @@ class Executor:
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
 
-        # before a person is asked anything: a composite's call a stop has overtaken is not going
-        # to start, and a question about it would be answered for nothing
-        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+        # before a person is asked anything: a call a stop has overtaken is not going to start,
+        # and a question about it would be answered for nothing
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
 
         if self.needs_confirm(verb):
@@ -1031,9 +1043,9 @@ class Executor:
         if self.abort.is_set() and canonical != "stop":
             self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
             raise Aborted("run aborted")
-        # and a composite's call that a stop sent while it read the body's state has overtaken,
-        # for the reason the gate before the confirm gives (`_overtaken`)
-        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+        # and a call that a stop sent while it read the body's state has overtaken, for the reason
+        # the gate before the confirm gives (`_overtaken`)
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
         try:
             self._check_abort_conditions(state)
@@ -1304,13 +1316,14 @@ class Executor:
     def _overtaken(
         self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
     ) -> VerbResult | None:
-        """The result of a composite's call that would move the body and that a stop has
-        overtaken, or None. It answers to the stops its composite answers to (`context`), so a
-        stop sent between two of the composite's calls, or while this one waited on its gates or
-        read the body's state, is the brake pulled on the whole of it. A verb that polls for it
-        would end at its first check, but a kick or a scoop sends its one intent without looking,
-        so it is ended here, before it sends anything. A call that only looks or speaks runs, as
-        it runs beside a pause or a newer command."""
+        """The result of a call that would move the body and that a stop has overtaken, or None.
+        A stop that came while it waited on its gates or read the body's state, as a second MCP
+        call does, ends it. A composite's call answers to the stops its composite answers to
+        (`context`), so a stop sent between two of the composite's calls is the brake pulled on the
+        whole of it. A verb that polls for it would end at its first check, but a kick or a scoop
+        or a gripper sends its one intent without looking, so it is ended here, before it sends
+        anything. A call that only looks or speaks runs, as it runs beside a pause or a newer
+        command."""
         if (
             stops is None
             or self.stops == stops
@@ -1418,15 +1431,26 @@ terminal the moment it starts, and an Enter pressed twice, or pressed while the 
 still starting, used to answer the question that followed it before anybody could have read it:
 one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
 arm and decides in half a second, and an Enter that comes too soon is passed by rather than
-taken, so a person who did mean it presses it again."""
+taken, so a person who did mean it presses it again, and is told when (`ENTER_TOO_SOON`)."""
 ENTER_ALONE_S = 0.45
-"""How long a bare Enter has to stand alone, with no other Enter this close before it or after it,
-to say yes to a question that moves or drops an arm. A key held down is a stream of Enters, and
-its first repeat can come a second after the press, past any wait a person could be asked to sit
-through, so a wait before it proves nothing. What gives a held key away is the next Enter, and
-this is longer than the slowest repeat Windows can be set to, 2.5 a second. A key set to repeat
-slower still cannot be told from somebody pressing it. An answer takes this long to be sure of,
-and somebody who stops and presses it once more gets through. A no needs no such care."""
+"""How long a bare Enter has to stand with no other Enter behind it to say yes to a question that
+moves or drops an arm. A key pressed and held is a stream of Enters, and its first repeat can come
+a second after the press, past any wait a person could be asked to sit through, so a wait before
+it proves nothing. What gives it away is the next Enter. An answer takes this long to be sure of.
+A no needs no such care."""
+ENTER_QUIET_S = 2.0
+"""How long since the last Enter a bare one has to come to say yes to the same question. Enter held
+down from before the question is a stream with the key's own repeat between each, which is 2.5 a
+second at the slowest Windows' keyboard settings go, and slower where somebody has asked for it.
+A terminal says nothing of a key coming up, so a key set to repeat slower than this cannot be told
+from somebody pressing it, and nothing that reads a terminal can do better. Somebody who stops and
+presses it once more gets through, and whoever does not is told (`ENTER_TOO_SOON`)."""
+ENTER_TOO_SOON = (
+    "that Enter answered nothing, because it came too soon after the question or too close to "
+    f"another: take your finger off it, wait {ENTER_QUIET_S:.0f} s and press it once"
+)
+"""Said once a wait, at the first Enter it passes by. A person who presses it again and again, as
+somebody at an arm's jaws will, would otherwise never get through and never know why."""
 ENTER_BEHIND_Q_S = 2.0
 """How long after a `q` at a console an Enter is taken for the old habit of finishing the line,
 and answers nothing (`KillSwitch._watch_keys`). The press ends the run and the question that
@@ -1435,6 +1459,11 @@ press of it, and one taken costs what was in the jaws."""
 ASK_POLL_S = 0.05
 """How often a question put on the loop's thread looks for what else may have ended it
 (`KillSwitch.ask`). An untimed wait there cannot be interrupted on Windows, Ctrl-C included."""
+SIGNAL_LOOK_S = 0.25
+"""The longest a signal waits to be acted on (`KillSwitch._look_for_a_signal`). Python acts on one
+on the main thread between bytecodes, so one landing in the instant before the event loop goes to
+sleep interrupts nothing: a Ctrl-C or a SIGTERM waited for the loop's next timer, however far off,
+and under load that was seen at twenty seconds."""
 
 
 class _Enter(NamedTuple):
@@ -1495,6 +1524,7 @@ class KillSwitch:
         self._line: list[str] = []
         """What has been typed since the last Enter, under the lock."""
         self._last_key = -math.inf
+        self._looking: asyncio.TimerHandle | None = None
         self.unanswered: str | None = None
         """Why the last `ask` came back with no line anybody typed, or None where one did."""
 
@@ -1511,10 +1541,11 @@ class KillSwitch:
 
     def _line_since(self, since: float) -> str | None:
         """What was typed on the first line read at `since` or later that says anything: one with
-        something on it, a no, as soon as it is read, or a bare one that stands alone
-        (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has been read yet.
-        Enter held down from before a question answered it the moment the question's half second
-        was up, and a no that had to stand alone could be lost, to the next bare Enter's yes."""
+        something on it, a no, as soon as it is read, or a bare one that comes after quiet
+        (`ENTER_QUIET_S`) and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None
+        where neither has been read yet. Enter held down from before a question answered it the
+        moment the question's half second was up, and a no that had to stand alone could be lost,
+        to the next bare Enter's yes."""
         now = time.monotonic()
         with self._enters_lock:
             enters = list(self._enters)
@@ -1522,17 +1553,33 @@ class KillSwitch:
             if not enter.answers or enter.at < since:
                 continue
             after = enters[n + 1].at if n + 1 < len(enters) else now
-            if enter.text or (enter.quiet >= ENTER_ALONE_S and after - enter.at >= ENTER_ALONE_S):
+            alone = enter.quiet >= ENTER_QUIET_S and after - enter.at >= ENTER_ALONE_S
+            if enter.text or alone:
                 return enter.text
         return None
 
+    def _passed_by(self, asked_at: float) -> bool:
+        """Whether a bare Enter read since the question was put at `asked_at` has been passed by
+        for good: too soon after the question or too close behind another, which is also how one
+        with another close behind it is found. One still waiting to be sure of is not."""
+        with self._enters_lock:
+            enters = list(self._enters)
+        for enter in enters:
+            if not enter.answers or enter.text or enter.at < asked_at:
+                continue
+            if enter.at < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
+                return True
+        return False
+
     def _fire(self, why: str) -> None:
-        # the stop first and the words after: a line that cannot get out must not hold up the stop
+        # the stop first and the words after: a line that cannot get out must not hold up the stop,
+        # nor raise into what the signal interrupted, as a write to stderr it landed inside does
         self.presses += 1
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self.abort.set)
             self._loop.call_soon_threadsafe(self.pressed.set)
-        self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
+        with contextlib.suppress(Exception):
+            self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
 
     def _on_sigint(self, _signum: int, _frame: Any) -> None:
         # The first Ctrl-C is the orderly one: it aborts, which cancels the running verb and
@@ -1541,6 +1588,24 @@ class KillSwitch:
         # that quackd has quietly swallowed.
         self._restore()
         self._fire("Ctrl-C")
+
+    def _press_and_stay(self, _signum: int, _frame: Any) -> None:
+        self._fire("Ctrl-C")
+
+    def stay_to_the_close(self) -> None:
+        """From here to `uninstall` a Ctrl-C does what `q` does and nothing else.
+
+        For a run that has somebody at the arm: all of a `--by-hand` run, and any other from the
+        question about a fold that missed on to the close. A hand near the jaws presses again and
+        again, and a press past the first used to raise through whatever it landed on, past the
+        close, `run_end` and the summary, and left an energised arm with no record of what became
+        of it. Everything from here ends on a press or has a deadline of its own.
+        `Ctrl-\\` where there is one, or closing the window, is what is left for somebody who has
+        to kill it, and the power switch for the arm."""
+        with contextlib.suppress(ValueError):  # not the main thread, so nothing to catch it on
+            before = signal.signal(signal.SIGINT, self._press_and_stay)
+            if self._previous is None:
+                self._previous = before
 
     def _watch_keys(self) -> None:
         """Read stdin until it ends, whatever the run is doing.
@@ -1686,6 +1751,7 @@ class KillSwitch:
         timeout_s: float | None = None,
         until_abort: bool = True,
         deliberate: bool = False,
+        said: Callable[[str], None] | None = None,
     ) -> bool:
         """Wait for Enter. True if it came, False if anything else ended the wait.
 
@@ -1711,8 +1777,9 @@ class KillSwitch:
         no, and the wait ends saying so (`declined`), though not a key from before the question,
         which may be a stray press from minutes ago; an Enter read within `TYPED_AHEAD_S` of the
         question being put was typed before anybody could have read it, so the wait goes on past
-        it; and so it does past one that does not stand alone (`ENTER_ALONE_S`), a key held down
-        or pressed twice."""
+        it; and so it does past one that does not stand alone (`ENTER_ALONE_S`) or that comes close
+        behind another (`ENTER_QUIET_S`), a key held down or pressed twice. `said` is told of the
+        first it passes by (`ENTER_TOO_SOON`)."""
         loop = asyncio.get_running_loop()
         asked_at = time.monotonic()
         presses = self.presses
@@ -1732,6 +1799,9 @@ class KillSwitch:
                     self.declined = True
                     return False
                 return True
+            if deliberate and said is not None and self._passed_by(asked_at):
+                said(ENTER_TOO_SOON)
+                said = None
             left = None if deadline is None else deadline - loop.time()
             if left is not None and left <= 0:
                 return False
@@ -1766,10 +1836,16 @@ class KillSwitch:
             # alone, is passed by, and the wait goes on for the next.
             self.entered.clear()
 
+    def _look_for_a_signal(self) -> None:
+        """Nothing to do but wake: Python runs a signal's handler on the way back to sleep."""
+        if self._loop is not None and not self._uninstalled:
+            self._looking = self._loop.call_later(SIGNAL_LOOK_S, self._look_for_a_signal)
+
     def install(self, *, keys: bool = True) -> None:
         self._loop = asyncio.get_running_loop()
         with contextlib.suppress(ValueError):  # not the main thread
             self._previous = signal.signal(signal.SIGINT, self._on_sigint)
+        self._look_for_a_signal()
         if (
             keys
             and sys.stdin is not None
@@ -1797,6 +1873,8 @@ class KillSwitch:
 
     def uninstall(self) -> None:
         self._restore()
+        self._uninstalled = True
+        if self._looking is not None:
+            self._looking.cancel()
         if self._keys is not None:
-            self._uninstalled = True
             self._keys.close()

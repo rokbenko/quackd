@@ -33,7 +33,7 @@ from quackd.front import (
     QuestionWithdrawn,
     trimmed,
 )
-from quackd.log import A_PERSON, A_PIPE, asked_on, who_answered
+from quackd.log import A_PERSON, A_PIPE, LogEvent, asked_on, who_answered
 from quackd.safety import VerbNotAllowed
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import VerbRegistry
@@ -413,6 +413,20 @@ async def test_the_page_stop_sets_the_abort_and_names_the_stop_button() -> None:
     assert agent.stop_reason == STOP_BUTTON
     stopping = {"ev": "status", "text": "stopping the robot", "step": None}
     await asyncio.to_thread(_until, _written(out, stopping))
+
+
+async def test_the_line_stays_stopping_after_the_pages_stop() -> None:
+    """What the cancelled call and the verb then wrote went over it: `the call to openrouter failed`
+    on a page whose Stop had just been pressed."""
+    front, _out = _front()
+    agent = _Agent()
+    front.bind(agent, asyncio.get_running_loop())
+    await asyncio.to_thread(front.stop)
+    front.status_from(LogEvent("llm", 0.0, {"provider": "openrouter", "error": "cancelled"}))
+    front.status_from(LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}))
+    assert front._status.words[1] == "stopping the robot"
+    front.status_from(LogEvent("run_end", 0.0, {"outcome": "aborted"}))
+    assert front._status.words[1] == "finishing"
 
 
 def test_the_stop_button_is_a_person_stop_and_a_page_gone_is_not() -> None:

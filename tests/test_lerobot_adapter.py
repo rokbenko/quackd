@@ -7001,7 +7001,8 @@ async def test_a_stop_queued_behind_the_read_before_a_pick_keeps_its_policy_from
     client's stop reads the state first and lands as the segment starts. The heartbeat's, and
     the executor's own after another verb fails, read nothing first: they are under way before
     the `do` comes, with no segment to cancel, and their hold waits behind the read. Whichever
-    it is, no goal of the policy's reaches the arm after the stop returns."""
+    it is, no goal of the policy's reaches the arm after the stop returns, and the one the
+    executor saw keeps `pick` from starting at all."""
     arm = _segment_arm()
     stall, on_bus, answer = _stalling(arm)
     policy = Scripted(_pan)
@@ -7019,7 +7020,10 @@ async def test_a_stop_queued_behind_the_read_before_a_pick_keeps_its_policy_from
     assert transport.stop_error is None and _whole_hold(arm.actions[-1]), arm.actions[-1]
     sent = len(arm.actions)
     picked = await running
-    assert not picked.ok and "a stop was sent to the arm" in picked.summary, picked.summary
+    said = (
+        f"pick did not start: {STOPPED}" if who == "an MCP client" else "a stop was sent to the arm"
+    )
+    assert not picked.ok and said in picked.summary, picked.summary
     assert policy.n == 0, "the policy was asked for a goal after the stop"
     await asyncio.sleep(0.05)
     assert len(arm.actions) == sent and not transport.policy_running

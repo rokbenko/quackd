@@ -25,7 +25,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import send_or_fail
+from quackd.verbs.core import _ended_by, _waited_out, send_or_fail
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 
 ARMS: tuple[str, ...] = ("left", "right")
@@ -121,7 +121,12 @@ class GripperParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     side: Literal["left", "right", "both"] = Field(default="right")
-    open: bool = Field(default=True, description="True opens the gripper, False closes it.")
+    open: bool = Field(
+        ...,
+        description=(
+            "True opens the gripper, False closes it. Say which: opening lets go of what it holds."
+        ),
+    )
 
 
 class LiftParams(BaseModel):
@@ -192,12 +197,18 @@ def alohamini_conditions() -> dict[str, Precondition]:
 
 
 async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
-    """Absolute joint goals for one arm. Also stops the base, as upstream does."""
+    """Absolute joint goals for one arm. Also stops the base, as upstream does. A stop from beside
+    it ends the wait and says what it did: this robot's stop leaves the arms' goals alone
+    (`zmq_host`), so the arm goes on to this one."""
     goals = {f"arm_{p.arm}_{joint}": value for joint, value in p.positions.items()}
     intent = Intent.joint(goals, p.duration_s)
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(p.duration_s)
+    if (why := await _waited_out(ctx, p.duration_s)) is not None:
+        stopped = "the base and the lift are stopped and the arm goes on to the goal it was sent"
+        return await _ended_by(
+            ctx, "move_joints", why, stopped, arm=p.arm, goal=dict(p.positions), base_stopped=True
+        )
     state = await ctx.transport.get_state()
     joints: dict[str, Any] = state.extras.get("joints", {})
     return VerbResult.success(
@@ -221,7 +232,9 @@ async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
     intent = Intent(kind="gripper", params={"open": p.open, "side": p.side, "positions": positions})
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(GRIPPER_S)
+    if (why := await _waited_out(ctx, GRIPPER_S)) is not None:
+        stopped = "the base and the lift are stopped and the gripper goes on to where it was sent"
+        return await _ended_by(ctx, "gripper", why, stopped, side=p.side, open=p.open)
     state = await ctx.transport.get_state()
     what = "both grippers" if p.side == "both" else f"the {p.side} gripper"
     return VerbResult.success(
@@ -240,7 +253,8 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
     and its watchdog stops the lift after a second of silence. So a single command moves the
     lift a little and then the deadman ends it. quackd re-sends the target every tick for the
     same reason `move` re-sends a velocity, and watches the height rather than timing the
-    travel: nothing upstream says how fast the lift moves."""
+    travel: nothing upstream says how fast the lift moves. It hears a stop from beside it before
+    each send, since the next one carried the lift on with the pilot told the brake had worked."""
     intent = Intent(kind="pose", params={"lift_height_mm": p.height_mm})
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
@@ -248,6 +262,9 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
     height = None
     while ctx.transport.now() - t0 < LIFT_TIMEOUT_S:
         await ctx.transport.sleep(LIFT_TICK_S)
+        if (why := ctx.interrupted()) is not None:
+            stopped = "the lift stopped where it was"
+            return await _ended_by(ctx, "lift", why, stopped, goal_mm=p.height_mm)
         if (fail := await send_or_fail(ctx, intent)) is not None:
             return fail
         state = await ctx.transport.get_state()
@@ -267,14 +284,18 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
 
 
 async def home_arms(ctx: VerbContext, _: NoParams) -> VerbResult:
-    """Return both arms to their rest pose, one arm at a time."""
-    for arm in ARMS:
+    """Return both arms to their rest pose, one arm at a time. A stop from beside it ends it before
+    the next arm's goal: this robot's stop leaves the goals alone, so the arm already sent goes on
+    to rest, and the other used to set off after the stop."""
+    for n, arm in enumerate(ARMS, 1):
         goals = {
             f"arm_{arm}_{joint}": 0.0 for joint in ("shoulder_pan", "shoulder_lift", "elbow_flex")
         }
         if (fail := await send_or_fail(ctx, Intent.joint(goals, 2.0))) is not None:
             return fail
-        await ctx.transport.sleep(2.0)
+        if (why := await _waited_out(ctx, 2.0)) is not None:
+            stopped = f"the {arm} arm goes on to rest and no arm was sent after it"
+            return await _ended_by(ctx, "home_arms", why, stopped, arms_sent=n)
     return VerbResult.success("both arms returned to rest")
 
 

@@ -363,7 +363,12 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     ```
 
     Every line says 2. A minute after the 0.15.0 and 0.16.0 uploads the first `uvx` found no
-    solution, while PyPI's JSON already listed every file.
+    solution, while PyPI's JSON already listed every file. And this asks the origin, where a client
+    with an empty cache takes what the CDN holds, for as long as the index's `max-age` of ten
+    minutes: after the 0.30.1 upload every line said 2 and `uvx` went on refusing for about five
+    minutes, with `only quackd-microduck<=0.30.0 is available`. Nothing is wrong with a release
+    that says that. Wait a minute and run the next step again from a new empty cache, and stop only
+    if it outlasts the ten minutes.
 15. **Smoke the published release from an empty cache.**
 
     ```bash

@@ -26,12 +26,14 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import (
     SearchScanParams,
+    _ended_by,
     _see,
+    _waited_out,
     detector_failed,
     gaze_sweep_yaws,
     send_or_fail,
 )
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 
 #: The motions that ship as keyframes in the repository, and therefore the only motion that
 #: works with no downloads at all (`upstream_api.MOTION_KEYFRAMES`).
@@ -201,13 +203,19 @@ def look_degrees(x: float, y: float, z: float) -> tuple[float, float]:
     )
 
 
+HOLDS = "the robot holds where it is"
+"""What this body's stop does: it has no zero velocity and torque-off is a fall, so the daemon
+holds the last verified-good pose it measured (`bridge`)."""
+
+
 async def look(ctx: VerbContext, p: LookParams) -> VerbResult:
     """Point the head. The daemon interpolates and rate limits; quackd sends a target."""
     x, y, z = look_point(p.yaw_deg, p.pitch_deg)
     intent = Intent.look(x=x, y=y, z=z)
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(LOOK_S)
+    if (why := await _waited_out(ctx, LOOK_S)) is not None:
+        return await _ended_by(ctx, "look", why, HOLDS)
     state = await ctx.transport.get_state()
     neck = state.extras.get("neck", {})
     return VerbResult.success(
@@ -230,6 +238,8 @@ async def stand(ctx: VerbContext, _: NoParams) -> VerbResult:
     t0 = ctx.transport.now()
     while ctx.transport.now() - t0 < STAND_TIMEOUT_S:
         await ctx.transport.sleep(0.2)
+        if ctx.interrupted() == STOPPED:
+            return await _ended_by(ctx, "stand", STOPPED, HOLDS)
         state = await ctx.transport.get_state()
         if state.fallen:
             await ctx.transport.stop()
@@ -250,6 +260,11 @@ async def perform(ctx: VerbContext, p: PerformParams) -> VerbResult:
     t0 = ctx.transport.now()
     while ctx.transport.now() - t0 < PERFORM_TIMEOUT_S:
         await ctx.transport.sleep(0.25)
+        # read before `moving`, which a stop makes false: "performed" was the answer to a brake.
+        # Only a person's stop: the run's minutes running out do not cut a motion short on a body
+        # with no way up from the floor
+        if ctx.interrupted() == STOPPED:
+            return await _ended_by(ctx, "perform", STOPPED, HOLDS, motion=p.motion)
         state = await ctx.transport.get_state()
         if state.fallen:
             await ctx.transport.stop()
@@ -266,7 +281,8 @@ async def grip(ctx: VerbContext, p: GripParams) -> VerbResult:
     intent = Intent(kind="gripper", params={"open": not p.close, "side": p.side})
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return fail
-    await ctx.transport.sleep(GRIP_S)
+    if (why := await _waited_out(ctx, GRIP_S)) is not None:
+        return await _ended_by(ctx, "grip", why, HOLDS, side=p.side, close=p.close)
     state = await ctx.transport.get_state()
     what = "both hands" if p.side == "both" else f"the {p.side} hand"
     return VerbResult.success(
@@ -296,15 +312,21 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
     missing, so this waits the same `LOOK_S` the `look` verb waits.
 
     The manifest declares `search_scan` only when there is both a camera and a neck, so what
-    this needs always exists by the time it runs.
+    this needs always exists by the time it runs. And like the shared sweep it hears a stop from
+    beside it before each look, since the next one carried the head on from where it had held.
     """
     state = await ctx.transport.get_state()
     centre = float(state.extras.get("head_yaw_deg") or 0.0)
     yaws = gaze_sweep_yaws(centre, p.step_deg, p.max_steps, NECK_YAW_LIMIT_DEG)
     for i, yaw in enumerate(yaws):
+        swept = f"the sweep stopped after {i} of {len(yaws)} looks"
+        if (why := ctx.interrupted()) is not None:
+            return await _ended_by(ctx, "search_scan", why, swept, steps=i)
         x, y, z = look_point(yaw, 0.0)
         await ctx.transport.send_intent(Intent.look(x=x, y=y, z=z))
-        await ctx.transport.sleep(LOOK_S)  # the neck is rate limited; let it get there
+        # the neck is rate limited; let it get there
+        if (why := await _waited_out(ctx, LOOK_S)) is not None:
+            return await _ended_by(ctx, "search_scan", why, swept, steps=i)
         img, hits = await _see(ctx, p.target, f"search_scan gaze {yaw:+.0f}")
         if img is None:
             return VerbResult.fail("this transport has no camera")

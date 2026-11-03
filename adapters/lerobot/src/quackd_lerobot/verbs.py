@@ -217,7 +217,12 @@ class MoveJointsParams(BaseModel):
 class GripperParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    open: bool = Field(default=True, description="True opens the gripper, False closes it.")
+    open: bool = Field(
+        ...,
+        description=(
+            "True opens the gripper, False closes it. Say which: opening lets go of what it holds."
+        ),
+    )
 
 
 class PickParams(BaseModel):

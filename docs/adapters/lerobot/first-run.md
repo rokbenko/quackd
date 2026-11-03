@@ -1245,7 +1245,9 @@ hands, Ctrl-C ends the run before the pilot has had a turn, and the teardown beg
 `stop`, which on a released arm means taking hold of it again. Torque comes back on where you
 are standing holding it, the arm then travels to its rest pose, and only there does torque
 drop. Keep hold of it until it has stopped, and keep your fingers out of the jaws, because from
-the arm's side that is an ordinary teardown and nothing about it is slower for being one. With a
+the arm's side that is an ordinary teardown and nothing about it is slower for being one. A second
+press stops that travel and holds the arm where it is, as a press during the fold the run starts
+with does, and a press while the arm connects keeps that fold from starting. With a
 joint outside its travel none of that happens: you are told once that quackd did not take hold
 and which joint reads where, torque stays off, nothing is written to the arm and nothing folds
 it, even if you then move the joint back inside, and the last line says what quackd read: the
@@ -1261,7 +1263,9 @@ skipped the rest move, the close, the run's own end record and the summary, and 
 energised arm holding a pencil with nothing written down about the run that put it there. The
 arm still gives you 3 seconds before it folds, and a Ctrl-C or `q` in them or in the fold holds
 it where it is, with nothing released, and the close, the end record and the summary still come.
-Keep pressing Ctrl-C after that and quackd can still quit without them, with the arm holding.
+Keep pressing Ctrl-C and nothing changes: no press quits a hand-placed run, from start to close,
+so once the arm has connected they always come, and its panel says so. `Ctrl-\` where there is one,
+or closing the window, is what kills it.
 
 Section 07's [two questions](#what-a-run-then-does-with-it), after a fold back to the rest pose
 that missed, open one more window, an exception of the same kind. **During the second fold**,
@@ -1271,8 +1275,8 @@ still on its way, keeps torque on, and says
 `the fold was stopped where it was, and nothing was released: torque is as the fold left it`.
 The run then closes as it would have, with the close's own line after that one, and still writes
 its end record and its summary. A Ctrl-C or `q` at either question ends that question without an
-Enter, which keeps torque on too. A third press lands somewhere without that guard and still
-quits at once. None of this has been tried on a real arm.
+Enter, which keeps torque on too. From the first question to the close no press quits, however
+many there are. None of this has been tried on a real arm.
 
 > [!CAUTION]
 > If any of these five surprises you, stop. Cut power and read
