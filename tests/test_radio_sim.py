@@ -30,6 +30,7 @@ from quackd.radio.sim import (
     OP_WRITE_REQ,
     STALE_S,
     AirModel,
+    AirRecord,
     Path,
     SimLan,
     SimOptions,
@@ -354,6 +355,65 @@ def test_the_sim_lan_finds_a_robot_by_the_beacon_id_it_advertises(tmp_path: File
         home.publish({"id": "../escape"}, host="127.0.0.1", port=1)
     with pytest.raises(ValueError):
         SimLan(tmp_path, "../elsewhere")
+
+
+def reads_of(
+    monkeypatch: pytest.MonkeyPatch, token: str, *, lose: int = 0
+) -> list[AirRecord | None]:
+    """Every read of the radio called `token` from here on, the first `lose` of them lost, as a
+    read that races the file being replaced is."""
+    reads: list[AirRecord | None] = []
+
+    def counted(air: FilePath, name: str, *, now: float | None = None) -> AirRecord | None:
+        if name != token:
+            return read_radio(air, name, now=now)
+        record = None if len(reads) < lose else read_radio(air, name, now=now)
+        reads.append(record)
+        return record
+
+    monkeypatch.setattr("quackd.radio.sim.read_radio", counted)
+    return reads
+
+
+async def test_a_dial_does_not_take_a_lost_read_for_a_radio_that_has_gone(
+    tmp_path: FilePath, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scan that loses a read to a file being replaced hears the next advert. A dial has no next
+    advert, so it keeps looking before it says a robot just heard is not there. The tick is long
+    here so that a slow machine still gets its looks: this counts them and times nothing."""
+    t0 = time.time()
+    b = Robot(tmp_path, "1,0@0", t0=t0)
+    await b.start()
+    a = SimRadio(SimOptions(air=tmp_path, t0=t0))
+    await a.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
+    try:
+        monkeypatch.setattr("quackd.radio.sim.TICK_S", STALE_S)
+        reads = reads_of(monkeypatch, b.radio.token, lose=2)
+        pipe = await a.connect(b.radio.address, timeout=5)
+        assert reads[:2] == [None, None] and len(reads) > 2
+        await pipe.close()
+    finally:
+        await a.stop()
+        await b.stop()
+
+
+async def test_a_dial_to_a_radio_that_is_not_there_says_so_after_looking_again(
+    tmp_path: FilePath, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    me = SimRadio(SimOptions(air=tmp_path, t0=time.time()))
+    await me.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
+    try:
+        reads = reads_of(monkeypatch, "gone")
+        with pytest.raises(ConnectionError, match="nothing is advertising at sim:gone now"):
+            await me.connect("sim:gone", timeout=5)
+        assert len(reads) > 1
+        # the caller's timeout bounds the looking too: none at all leaves one look
+        reads.clear()
+        with pytest.raises(ConnectionError, match="nothing is advertising at sim:gone now"):
+            await me.connect("sim:gone", timeout=0)
+        assert len(reads) == 1
+    finally:
+        await me.stop()
 
 
 async def test_a_radio_that_hangs_up_before_the_link_opens_is_a_connection_error(

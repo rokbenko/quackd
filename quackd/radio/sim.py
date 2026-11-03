@@ -503,13 +503,20 @@ class SimRadio:
         token = address.removeprefix(SIM_PREFIX)
         if not address.startswith(SIM_PREFIX) or not _TOKEN.match(token):
             raise ConnectionError(f"{address!r} is not a sim radio's address")
+        loop = asyncio.get_running_loop()
+        deadline, looking = loop.time() + timeout, loop.time() + min(timeout, TICK_S)
         record = read_radio(self.options.air, token)
+        # a scan that misses a file being replaced hears the next advert, but a dial has no
+        # next one: a radio that is there writes again within a tick, so look until then
+        while record is None and loop.time() < looking:
+            await asyncio.sleep(0.05)
+            record = read_radio(self.options.air, token)
         if record is None:
             raise ConnectionError(f"nothing is advertising at {address} now")
         x, y = self.position()
         if not self.options.model.in_range(math.hypot(record.x - x, record.y - y)):
             raise ConnectionError(f"{address} is out of radio range")
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout_at(deadline):
             reader, writer = await asyncio.open_connection("127.0.0.1", record.link)
             try:
                 hello = self.options.mtu.to_bytes(2, "big") + self.token.encode("ascii")

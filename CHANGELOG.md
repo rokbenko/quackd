@@ -28,6 +28,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the subcommand does not take, says it is the wizard's. Put it after the command instead.
   `tests/test_onboard_cli.py` tries each kind, and that nothing was signed. It failed before this
   change.
+- **A dial on the sim radio no longer takes a lost read for a robot that has gone.** It read the other
+  radio's file once, and on Windows a read can lose to that file being replaced, so a robot just heard
+  came back as `nothing is advertising`. A meeting lost that try and made another, and a test that
+  dials once failed, which is how CI met it on this release's branch, in
+  `tests/test_radio_sim_processes.py`. The dial now looks again for one tick of the air, 0.2 s, within
+  its timeout. `tests/test_radio_sim.py` loses the first two reads. It failed before this change.
 
 ## [0.31.0] — 2026-11-03
 
