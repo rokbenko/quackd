@@ -1255,11 +1255,9 @@ async def test_a_stop_once_drive_tos_goal_is_out_ends_it_marked_as_the_brake() -
     mock = MossMock()
     adapter = MossAdapter(mock)
     await adapter.connect()
-    asked = {"n": 0}
 
     def interrupted() -> str | None:
-        asked["n"] += 1  # the first is the check just before the goal goes out
-        return STOPPED if asked["n"] > 1 else None
+        return STOPPED if mock.intents_of("pose") else None  # from when the goal has gone out
 
     result = await drive_to(
         VerbContext(transport=adapter, interrupted=interrupted), DriveToParams(x_m=0.5, y_m=0.0)
