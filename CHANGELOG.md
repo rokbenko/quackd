@@ -65,9 +65,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   asyncio's wait, so it takes a call on a pool of quackd's own that never comes back, a policy's worker
   above all.
 - **A guard can still come second often enough to be seen, with the run pinned to one busy CPU.** With
-  six busy loops on that CPU, the first command after a kill ran broken 20 times in 32, against 21 before,
-  and by the fifth command it was 2, against 6. It looks every 2 ms, and on a CPU that busy it does not
-  get to. What it does not reach by then is still `stty sane`, typed unseen.
+  six busy loops on that CPU, the first command after a kill ran broken 14 times in 32, against 21 before,
+  and none at the fourth, where 6 of 32 were still broken at the fifth before. What it has not reached
+  in its ten minutes is still `stty sane`, typed unseen.
 - **A key set to repeat slower than once every 2 s still cannot be told from somebody pressing it,** as
   0.30.2 says.
 
