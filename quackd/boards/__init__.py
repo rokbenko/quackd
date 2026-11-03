@@ -3,7 +3,10 @@
 `quackd onboard` runs on a robot's own computer, and only on one it knows: an NVIDIA Jetson
 (`jetson.py`), which finds itself from the files every Jetson carries. The sim board (`sim.py`)
 stands in for one on a laptop, and only when asked for by name, so a laptop never passes for a
-robot, and the passport it signs says `sim`, so no robot that reads it is fooled either.
+robot, and the passport it signs says `sim`, so no robot that reads it is fooled either. The generic
+board (`generic.py`) is any other Linux computer, also only when asked for by name, and the passport
+it signs says `other` with what that computer calls itself. Nothing here can tell a robot's computer
+from a desk's, so it matches nothing, and nobody has run it on a robot's.
 
 A board says whether this computer is one (`detect`), what goes into the passport and what is
 only shown (`BoardFacts`), which radio it has (`radio_kind`, the name `quackd.radio` opens it
@@ -12,8 +15,8 @@ file of the machine it runs on (ADR-0046, and a test that parses doctor.py), whi
 lives outside doctor, and the two share only `l4t.py`, the L4T table and its parser.
 
 Another computer arrives as a plugin, through the `quackd.boards` entry point group, the way a
-third party's robot arrives through `quackd.adapters`. A plugin may not take `jetson` or `sim`:
-those are quackd's own, and a package on PyPI cannot become what `--board jetson` means.
+third party's robot arrives through `quackd.adapters`. A plugin may not take `jetson`, `sim` or
+`generic`: those are quackd's own, and a package on PyPI cannot become what `--board jetson` means.
 """
 
 from __future__ import annotations
@@ -32,7 +35,8 @@ OFFICIAL = ("jetson",)
 """The boards quackd ships and supports, each found by itself."""
 
 SIM = "sim"
-RESERVED = (*OFFICIAL, SIM)
+GENERIC = "generic"
+RESERVED = (*OFFICIAL, SIM, GENERIC)
 """The names no plugin may take."""
 
 KINDS = ("jetson", "sim", "other")
@@ -46,6 +50,12 @@ NOT_A_ROBOT = (
     "quackd onboard runs on a robot's own computer, and this is not one it supports: {found}. "
     "To try it here as a simulation, which its passport will say, run quackd onboard --board sim."
 )
+GENERIC_TOO = (
+    " If it is a robot's own computer all the same, quackd onboard --board generic names it, and "
+    "its passport will say what the computer calls itself."
+)
+"""Said on Linux alone, where the generic board runs, so nobody on a robot's own computer signs a
+passport that says `sim` for want of knowing another way."""
 
 
 @dataclass(frozen=True)
@@ -107,7 +117,7 @@ class Board(Protocol):
 
     name: str
     explicit_only: bool
-    """Found only when asked for by name (`--board`), never by `detect()`: the sim board."""
+    """Found only when asked for by name (`--board`), never by `detect()`: sim and generic."""
     radio_kind: str
     """The radio `quackd.radio` opens on it: `bluez` on a Jetson, `sim` on the sim board."""
 
@@ -142,9 +152,9 @@ def detect(
 ) -> tuple[Board, BoardFacts]:
     """The board this computer is, and its facts.
 
-    With `name` (`--board`), that board alone is asked, and that is the only way the sim board is
-    ever asked. Without, every other board is asked in turn, quackd's own first, and the first
-    that knows this computer wins. One that knows it and cannot run quackd on it raises
+    With `name` (`--board`), that board alone is asked, and that is the only way the sim and generic
+    boards are ever asked. Without, every other board is asked in turn, quackd's own first, and the
+    first that knows this computer wins. One that knows it and cannot run quackd on it raises
     `Unsupported`, and a later board still has its turn, since a plugin may support what quackd
     does not; with none, that refusal stands. Nothing knowing it at all is `NotARobot`. A plugin
     that fails to look, or answers as only quackd's own boards may, counts as one that does not
@@ -227,20 +237,23 @@ def _not_a_robot(name: str | None, plugins: Iterable[str]) -> str:
         return NOT_A_ROBOT.format(found=f"it found no {name} board here")
     from quackd.boards.jetson import looked_for
 
-    looked = looked_for({"Darwin": "macOS"}.get(platform.system(), platform.system()))
+    system = {"Darwin": "macOS"}.get(platform.system(), platform.system())
+    looked = looked_for(system)
     others = list(plugins)
     if others:
         looked += f", and no board installed here ({', '.join(others)}) knows it"
-    return NOT_A_ROBOT.format(found=f"it found no NVIDIA Jetson ({looked})")
+    said = NOT_A_ROBOT.format(found=f"it found no NVIDIA Jetson ({looked})")
+    return said + GENERIC_TOO if system == "Linux" else said
 
 
 def _installed() -> tuple[dict[str, Board], dict[str, str]]:
     """quackd's own boards and every plugin's, by name, and each plugin that failed to load, with
     why. Not cached: a command asks once, and a test installs plugins of its own."""
+    from quackd.boards.generic import GenericBoard
     from quackd.boards.jetson import JetsonBoard
     from quackd.boards.sim import SimBoard
 
-    found: dict[str, Board] = {"jetson": JetsonBoard(), SIM: SimBoard()}
+    found: dict[str, Board] = {"jetson": JetsonBoard(), SIM: SimBoard(), GENERIC: GenericBoard()}
     broken: dict[str, str] = {}
     plugins = importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)
     for ep in sorted(plugins, key=lambda e: e.name):

@@ -93,6 +93,7 @@ def test_a_missing_package_fails_naming_the_extra_but_the_sim_needs_no_bluetooth
         ({"adapter": replace(ADAPTER, powered=False)}, "adapter", "powered off", "power on"),
         ({"rfkill": True}, "rfkill", "blocked", "rfkill unblock bluetooth"),
         ({"adapter": replace(ADAPTER, roles=("central",))}, "peripheral role", "cannot", None),
+        ({"adapter": replace(ADAPTER, roles=("peripheral",))}, "central role", "cannot", None),
         (
             {"adapter": replace(ADAPTER, advertising=False)},
             "LE advertising",

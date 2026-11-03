@@ -11,8 +11,8 @@ the middle of a meeting. [discovery.md](discovery.md#the-beacon-id-changes-every
 **Bluetooth link.** A Bluetooth LE connection two robots open when they share no LAN, which carries
 their talk in small frames. [discovery.md](discovery.md#the-bluetooth-link)
 
-**Board.** The computer `quackd onboard` runs on: `jetson`, `sim`, or a plugin's. Its kind goes into
-the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
+**Board.** The computer `quackd onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind
+goes into the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
 
 **Brain.** The language model a robot runs on, named under `brain:` in `robot.yaml`, which holds its
 meetings and its goals. [quackd.md](quackd.md#talking)
@@ -46,6 +46,10 @@ passport, no redirects, 12 KB and 5 seconds at most. [discovery.md](discovery.md
 
 **Figure.** A number in a passport's `body`, optionally with a confidence and a source. Absent means
 not published, never zero. [passport.md](passport.md#body)
+
+**Generic board.** Any other robot's Linux computer, only when `--board generic` names it, and kept
+once named. Its passports say `other`, with what the computer calls itself. It has run on nothing.
+[compatibility.md](compatibility.md#the-generic-board)
 
 **Global budget.** The one budget every peer draws from when it asks for a courtesy, so making more
 keys gains a stranger nothing. [trust.md](trust.md#the-tiers)

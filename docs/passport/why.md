@@ -38,8 +38,8 @@ its passport really meant "the computer that drives this robot". A robot that wa
 leaves that laptop behind.
 
 So the passport moved onto the robot: its key on its own computer, its owner's signature on what it
-says, and an introduction wherever it goes. Humanoids and quadrupeds nearly all have an NVIDIA Jetson
-on board that runs quackd. An arm is fixed in place and will rarely meet another robot, and a
+says, and an introduction wherever it goes. Many humanoids and quadrupeds have an NVIDIA Jetson on
+board that runs quackd, and others another Linux computer. An arm is fixed in place and will rarely meet another robot, and a
 toy-sized robot has no computer on board that can run quackd, so neither carries one
 ([compatibility.md](compatibility.md)).
 

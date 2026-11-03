@@ -571,8 +571,8 @@ it can drive from there, and it calls the Jetson a board, never a robot
 and will rarely meet another robot, and a toy-sized robot has no computer on board that can run
 quackd. Since 0.29.0 a passport lives on the robot it describes, served by `quackd onboard` from
 the robot's own computer, so the robots that carry one are bigger mobile ones, humanoids and
-robots on four legs, which nearly all carry an NVIDIA Jetson that can run quackd. quackd drives
-an arm and a duck exactly as it did before
+robots on four legs, many of which carry an NVIDIA Jetson that can run quackd, and others another
+Linux computer that can. quackd drives an arm and a duck exactly as it did before
 ([passport/compatibility.md](passport/compatibility.md)).
 
 **Why does `validate` say "requires kick, but arm-01 (lerobot-so101) does not provide

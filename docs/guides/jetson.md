@@ -553,7 +553,8 @@ What the board needs for them:
 - **An Orin on JetPack 6 or 7.2, or a Thor on JetPack 7.** `quackd onboard` reads the board from
   its device tree and `/etc/nv_tegra_release`, and refuses a Xavier and JetPack 5 with the
   reason. On any other computer it refuses and names `--board sim`, which stands in for a robot's
-  computer on a laptop and says so in the passport it signs.
+  computer on a laptop and says so in the passport it signs, and on Linux `--board generic`, which
+  is any other robot's computer by what it calls itself.
 - **Python 3.11 or newer.** JetPack 6 ships 3.10, so there the second command is
   `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the
   tool. JetPack's own `python3` is left to the host daemon.
