@@ -9,6 +9,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.31.1] — 2026-11-03
+
+0.31.1 fixes older faults in `quackd onboard`, found while the generic board was being written
+and while this release was reviewed, and one in the sim radio, which CI met on this release's
+branch. What changes for you: a flag before a subcommand, which never reached it, now stops and
+says what to do with it. One the subcommand takes goes after it, and one it does not take is for
+the wizard, `quackd onboard` with nothing after it.
+
 ### Fixed
 
 - **The radio opens the adapter preflight checked.** It always opened `hci0`, while `quackd onboard
@@ -9559,7 +9567,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/rokbenko/quackd/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/rokbenko/quackd/compare/v0.30.3...v0.31.0
 [0.30.3]: https://github.com/rokbenko/quackd/compare/v0.30.2...v0.30.3
 [0.30.2]: https://github.com/rokbenko/quackd/compare/v0.30.1...v0.30.2
