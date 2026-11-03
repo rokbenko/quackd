@@ -49,6 +49,10 @@ GUARD_UP_S = 1.0
 takes a few dozen milliseconds, and a machine that needs longer goes on without the wait."""
 GUARD_WATCHES_S = 600.0
 """How long a guard that lost its race goes on looking for the mode this process left (`_Guard`)."""
+GUARD_IDLE_S = 0.05
+"""How often it looks when it has heard no key, which costs nothing a machine can measure. A key can
+be read before it has seen it, since a shell is waiting for the same one, so hearing one cannot
+be all it looks for."""
 GUARD_LOOKS_S = 0.25
 """How long it looks closely after a key, or after it wakes: long enough for the command that key
 may have started to be under way, and what it does the rest of the time is sleep."""
@@ -323,7 +327,7 @@ class _Guard:
     `uv run` and the shell behind that. Then bash has taken the mode it found for its own, readline
     has asked for its own on top of that, and from here that looks like any prompt: the person types
     unseen. So a guard that comes second does not leave. Bash runs the next command in the mode it
-    took, which is this process's, so the guard waits for a key, looks closely for that mode, puts
+    took, which is this process's, so the guard looks for that mode, closely after a key, puts
     the terminal back under that command, and bash takes that for its own when the command ends:
     a line or two typed unseen, where it was `stty sane` as ever. It gives up after
     `GUARD_WATCHES_S`, or as soon as the terminal is as this process found it, or gone. Linux says
@@ -336,7 +340,7 @@ class _Guard:
 
     _SCRIPT = (
         "import fcntl, marshal, os, select, struct, sys, termios, time\n"
-        "as_found, left, ignored, watch_s, look_s, tick_s = "
+        "as_found, left, ignored, watch_s, look_s, tick_s, idle_s = "
         "marshal.loads(bytes.fromhex(sys.argv[2]))\n"
         "try:\n"
         "    os.write(1, b'.')\n"
@@ -367,7 +371,7 @@ class _Guard:
         "                break\n"
         "            if clock < closely:\n"
         "                time.sleep(tick_s)\n"
-        "            elif select.select([0], [], [], until - clock)[0]:\n"
+        "            elif select.select([0], [], [], min(idle_s, until - clock))[0]:\n"
         "                if gone():\n"
         "                    break\n"
         "                closely = time.monotonic() + look_s\n"
@@ -387,7 +391,7 @@ class _Guard:
         ignored = getattr(importlib.import_module("termios"), "PENDIN", 0)
         left = [*left[:3], left[3] & ~ignored, *left[4:]]
         said = marshal.dumps(
-            (as_found, left, ignored, GUARD_WATCHES_S, GUARD_LOOKS_S, GUARD_TICK_S)
+            (as_found, left, ignored, GUARD_WATCHES_S, GUARD_LOOKS_S, GUARD_TICK_S, GUARD_IDLE_S)
         ).hex()
         try:
             ears, word = os.pipe()  # no descriptors left is a process that can go on without one

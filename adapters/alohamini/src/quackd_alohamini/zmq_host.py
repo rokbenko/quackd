@@ -508,15 +508,19 @@ class AlohaMiniZmq:
         One request at a time, read down to its answer: the host answers one a cycle, so asking
         again before it has answered only leaves replies behind for every read after this, each
         an older reading than the last, with the arm's position marked fresh. A heartbeat's
-        request sent since then will do as well, whichever of the two reads the answer."""
+        request sent since then will do as well, whichever of the two reads the answer. Its own
+        clock rather than `asyncio.timeout`, whose one cancel a `wait_for` under it can swallow on
+        3.11, and then nothing ended this on a host that had gone quiet."""
+        end = time.monotonic() + HOLD_READ_S
         with contextlib.suppress(Exception):
-            async with asyncio.timeout(HOLD_READ_S):
-                for _ in range(HOLD_READ_ANSWERS):
-                    asked = self._token + 1
-                    self._took(await self._call(self._request_locked, HOLD_READ_POLL_MS))
-                    while self._answered < asked:
-                        self._took(await self._call(self._answer_locked, HOLD_READ_POLL_MS))
-                return True
+            for _ in range(HOLD_READ_ANSWERS):
+                asked = self._token + 1
+                self._took(await self._call(self._request_locked, HOLD_READ_POLL_MS))
+                while self._answered < asked:
+                    if time.monotonic() >= end:
+                        return False
+                    self._took(await self._call(self._answer_locked, HOLD_READ_POLL_MS))
+            return True
         return False
 
     def _hold_the_arms(self, fresh: bool) -> None:

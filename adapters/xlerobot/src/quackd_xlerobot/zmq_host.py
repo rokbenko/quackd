@@ -434,15 +434,16 @@ class XLerobotZmq:
         """Whether a reading taken after this began has come in. The socket keeps the newest
         message however long it has sat there, and nothing on the wire says how old it is, so
         what is waiting is thrown away and `HOLD_READ_MESSAGES` more are waited for. A heartbeat
-        that takes one first leaves the next, a cycle later."""
+        that takes one first leaves the next, a cycle later. Its own clock rather than
+        `asyncio.timeout`, whose one cancel a `wait_for` under it can swallow on 3.11, and then
+        nothing ended this on a host that had gone quiet."""
+        end = time.monotonic() + HOLD_READ_S
+        got = 0
         with contextlib.suppress(Exception):
-            async with asyncio.timeout(HOLD_READ_S):
-                await self._call(self._recv_locked, 0)
-                for _ in range(HOLD_READ_MESSAGES):
-                    while not await self._pump(HOLD_READ_POLL_MS):
-                        pass
-                return True
-        return False
+            await self._call(self._recv_locked, 0)
+            while got < HOLD_READ_MESSAGES and time.monotonic() < end:
+                got += 1 if await self._pump(HOLD_READ_POLL_MS) else 0
+        return got >= HOLD_READ_MESSAGES
 
     def _hold_the_arms(self, fresh: bool) -> None:
         """The reading becomes the goal, under three rules, each of which is about a stop that

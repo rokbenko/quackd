@@ -1224,6 +1224,24 @@ def test_a_guard_that_comes_second_gives_up_and_leaves_the_terminal_as_it_is(
 
 
 @posix_only
+def test_a_guard_that_comes_second_catches_a_command_it_heard_no_key_for(
+    pty_pair: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shell is waiting for the same key, and has often read it before the guard has seen it."""
+    import termios
+
+    _, slave = pty_pair
+    monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.01)
+    guard, _, left, _ = _guard_that_lost(slave)
+    try:
+        time.sleep(0.2)
+        termios.tcsetattr(slave, termios.TCSANOW, left)
+        assert guard._process.wait(10) == 0
+    finally:
+        guard._process.kill()
+
+
+@posix_only
 def test_a_key_somebody_else_has_read_is_no_terminal_gone(
     pty_pair: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
