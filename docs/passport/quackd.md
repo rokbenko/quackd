@@ -150,6 +150,9 @@ $ quackd onboard --help
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
+These are the wizard's, for `quackd onboard` with nothing after it. Each subcommand has its own,
+after its name, and a flag before a subcommand stops and says what to do with it.
+
 `--board` names the computer: `jetson`, `sim`, or `generic`, any other robot's Linux computer,
 which is kept in its folder once named, so nothing later needs the flag. `--dir` is that folder,
 `~/.quackd/onboard/` unless `QUACKD_ONBOARD_DIR` names another. `--days` is how long the owner's
@@ -204,7 +207,7 @@ passport:
 
 # Everything below changes without a new signature.
 # robot:                    # a body quackd can drive, by its adapter:
-#   adapter: toddlerbot:real
+#   adapter: toddlerbot:bridge
 
 # The model that talks for this robot. Its key goes in robot.env, never in this file.
 brain:

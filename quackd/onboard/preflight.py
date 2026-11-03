@@ -205,7 +205,7 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
         Check("keys", "ok" if home.owner_key.exists() else "warn", f"the robot key {owner}")
     )
     token = (
-        home.passport_jws.read_text(encoding="utf-8").strip()
+        home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
         if home.passport_jws.exists()
         else None
     )
@@ -219,9 +219,12 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
     expires = check.reading.document["expires"]
     checks.append(Check("passport", "ok", f"signed by its owner, until {expires}"))
     if facts is not None:
-        why = wizard.needs_signing(home, file, facts.passport())
-        if why is not None:
-            checks.append(Check("signed", "warn", why, "quackd onboard sign"))
+        why, trouble = wizard.signing_state(home, file, facts.passport())
+        said = [text for text in (why, trouble) if text is not None]
+        if said:
+            # signing needs whatever the trouble is, so it cannot help until that is mended
+            sign = "quackd onboard sign" if trouble is None else None
+            checks.append(Check("signed", "warn", "; ".join(said), sign))
 
 
 def _brain(home: OnboardDir, file: Any) -> Check:

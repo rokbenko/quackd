@@ -9275,12 +9275,15 @@ def _onboard_file(home: Any) -> Any:
 
 
 def _onboard_manifest(robot: Any) -> Any:
-    """The manifest of the body quackd drives for this robot, or None for one it only talks for."""
-    if robot.robot is None:
-        return None
-    from quackd.adapters.factory import describe, parse_robot_spec
+    """The manifest of the body quackd drives for this robot, or None for one it only talks for.
+    One this computer cannot read stops here, since signing needs what it supplies."""
+    from quackd.onboard.facts import manifest_of, why_unread
 
-    return describe(parse_robot_spec(robot.robot.adapter))
+    try:
+        return manifest_of(robot)
+    except Exception as e:  # a third party's adapter can raise anything
+        _fail(f"the body robot.yaml names cannot be read here: {ui.printable(why_unread(e))}")
+        return None
 
 
 def _brain_key_variable(llm: str | None) -> str | None:
@@ -9288,6 +9291,26 @@ def _brain_key_variable(llm: str | None) -> str | None:
     from quackd.onboard.preflight import key_variable
 
     return key_variable(llm) if llm else None
+
+
+def _refuse_flags_before_a_command(ctx: typer.Context) -> None:
+    """The wizard's flags, before a subcommand, parse and reach nothing, so `quackd onboard --dir
+    ~/two sign` signed the robot in the default folder and said so in passing. A subcommand takes
+    its own, so one that came too early is refused, saying where it goes."""
+    command = str(ctx.invoked_subcommand)
+    takes = getattr(ctx.command, "commands", {}).get(command)
+    ours = {flag for param in takes.params for flag in param.opts} if takes else set()
+    for param in ctx.command.params:
+        # by its name: Typer brings a click of its own, whose enum is not click's
+        source = ctx.get_parameter_source(param.name) if param.name else None
+        if getattr(source, "name", "") == "COMMANDLINE":
+            flag = param.opts[0]
+            if flag in ours:
+                _fail(f"{flag} goes after the command: quackd onboard {command} {flag} ...")
+            _fail(
+                f"quackd onboard {command} takes no {flag}: it is for the wizard, quackd onboard "
+                "with nothing after it"
+            )
 
 
 def _refuse_root() -> None:
@@ -9339,6 +9362,7 @@ def onboard(
     that meets other robots. Run again, it signs only when robot.yaml changed or the signature
     runs out within 30 days."""
     if ctx.invoked_subcommand is not None:
+        _refuse_flags_before_a_command(ctx)
         return
     from quackd.onboard import config, wizard
     from quackd.onboard.control import write_private
@@ -9388,7 +9412,11 @@ def onboard(
         if key:
             wizard.write_key_file(home.robot_env, variable, key)
     manifest = _onboard_manifest(robot)
-    why = wizard.needs_signing(home, robot, facts.passport(), manifest=manifest)
+    try:
+        why = wizard.needs_signing(home, robot, facts.passport(), manifest=manifest)
+    except ValueError as e:  # a passport refuses what the manifest or the file says
+        _fail(ui.printable(str(e)))
+        return
     if why is None:
         ui.console.print(_ok_line("its passport is signed and current"))
     else:
@@ -9449,6 +9477,7 @@ def onboard_sign(
     home = _onboard_home(directory)
     _chosen, facts = _onboard_board(board, home)
     robot = _onboard_file(home)
+    manifest = _onboard_manifest(robot)
     try:
         signed = wizard.sign(
             home,
@@ -9457,7 +9486,7 @@ def onboard_sign(
             ask=_Prompts(False),
             passphrase_file=passphrase_file,
             days=days,
-            manifest=_onboard_manifest(robot),
+            manifest=manifest,
         )
     except Exception as e:  # a wrong passphrase above all
         _fail(str(e))
@@ -9481,7 +9510,11 @@ def onboard_show(
     if not home.passport_jws.exists():
         _fail("this robot has no signed passport yet", hint="run quackd onboard")
         return
-    token = home.passport_jws.read_text(encoding="utf-8").strip()
+    try:
+        token = home.passport_jws.read_text(encoding="utf-8").strip()
+    except UnicodeError:  # strict: --jws prints what it read, and a script publishes that
+        _fail("its passport does not check out: passport.jws is not text")
+        return
     if as_jws:
         print(token)
         return
@@ -9556,10 +9589,14 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
         )
     ]
     with contextlib.suppress(config.FileError, OSError, ValueError):
-        why = wizard.needs_signing(home, config.load(home.robot_yaml), board)
+        robot = config.load(home.robot_yaml)
+        why, trouble = wizard.signing_state(home, robot, board)
         if why is not None and passport.get("ok"):
-            said = f"{why}, so other robots still see what was signed: quackd onboard sign"
+            sign = ": quackd onboard sign" if trouble is None else ""
+            said = f"{why}, so other robots still see what was signed{sign}"
             rows.append(("unsigned", Text(said, style=ui.STYLES["warn"])))
+        if trouble is not None:
+            rows.append(("robot.yaml", Text(ui.printable(trouble), style=ui.STYLES["warn"])))
     if reply.get("file_problem"):
         problem = ui.printable(str(reply["file_problem"]))
         rows.append(("robot.yaml", Text(problem, style=ui.STYLES["warn"])))
