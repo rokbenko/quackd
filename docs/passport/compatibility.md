@@ -10,9 +10,10 @@ robot it introduces, run by quackd on the robot's own computer.
 ## Robots that carry one
 
 Bigger mobile robots: humanoids and quadrupeds. They walk the corridors, doorways and pavements other
-robots walk, they meet robots from other makers there, and nearly all of them carry an NVIDIA Jetson
-that can run quackd. One `quackd onboard` on that Jetson gives the robot its passport, its radio
-beacon and its talk ([quackd.md](quackd.md#onboarding)).
+robots walk, and they meet robots from other makers there. Many carry an NVIDIA Jetson that can run
+quackd, and others another Linux computer that can, such as the Qualcomm Dragonwing IQ9 in VinMotion's
+Motion 2. One `quackd onboard` on that computer gives the robot its passport, its radio beacon and its
+talk ([quackd.md](quackd.md#onboarding)).
 
 ## Robots that carry none
 
@@ -25,16 +26,40 @@ wizard refuses an `arm` embodiment.
 ## The boards
 
 `quackd onboard` runs on a computer it knows, and calls each kind a board. The board's kind goes
-into every passport, `board.kind`, so a robot that meets it knows what it runs on.
+into every passport, `board.kind`, so a robot that meets it knows what it runs on. That is the
+computer quackd runs on, and not a controller beside it that keeps the robot walking.
 
 | Board | How quackd knows it | Where it stands |
 |---|---|---|
 | `jetson` | by itself: the device tree says `nvidia,tegra234`, an Orin, or `nvidia,tegra264`, a Thor, and `/etc/nv_tegra_release` says L4T 36.x, JetPack 6, or 38.x or 39.x, JetPack 7 | the first board, written from NVIDIA's documentation; nothing has run on one |
+| `generic` | only when `--board generic` names it, never by itself, and kept once named: what the computer calls itself, from its device tree or DMI, and its passport says `other` | any other robot's Linux computer, written from the kernel's documentation; nothing has run on one |
 | `sim` | only when `--board sim` names it, never by itself | a laptop standing in for a robot's computer, for trying it out and for CI; its passport says `sim` |
 | another | a plugin, from the `quackd.boards` entry-point group | none exists yet |
 
 A Jetson Xavier, or a Jetson on JetPack 5, is refused, and the refusal says why. Any other computer
-is refused too, and told that `--board sim` runs the same thing as a simulation that says so.
+is refused unless it is named, and told that `--board sim` runs the same thing as a simulation that
+says so, and, on Linux, that `--board generic` names a robot's own computer.
+
+### What a computer needs
+
+Linux and Python 3.11 or newer. BlueZ 5.55 or newer, and 5.62 or newer for a link this robot dials to
+write more than 20 bytes at a time. A Bluetooth adapter that can scan, advertise and serve GATT. A
+clock no more than 300 seconds behind a passport's `issued` and not yet past its `expires`, which a
+computer with no clock battery has only once a network has set it. How fast it is does not matter: a
+passport is signatures and Bluetooth, and only a model run on the robot's own computer cares.
+`quackd onboard preflight` checks all of it but Python, which the install itself refuses.
+
+### The generic board
+
+It matches nothing, since nothing can tell a robot's computer from a desk's: `qcom,qcm6490` is a RUBIK
+Pi 3 and a Fairphone 5, and an x86 module and a laptop read alike. So it is never found by itself. It
+takes the computer's word for its name, `/proc/device-tree/model`, or else the maker and product in
+`/sys/class/dmi/id`, and never reads a serial. It refuses a computer whose firmware says it is a
+laptop, a tablet or the like, pointing at `--board sim`, and it leaves a Jetson to the Jetson board,
+so a Xavier stays refused. A desktop still passes, with its real name in the passport it signs:
+`board` is what the software found and the owner signed, and nothing attests it. Named once, it is
+kept in the robot's folder, so neither a later command nor the systemd unit needs the flag
+([ADR-0074](../adr/0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md)).
 
 ### Another board
 
@@ -42,12 +67,13 @@ A board is a small Python object with a name, a way to detect itself that return
 nothing, a check of its radio, and which radio it uses, BlueZ or the sim. Its facts are a kind, a
 model, a system on chip and a release, and the release is shown in `status` and never signed. A
 package registers its board under the `quackd.boards` entry-point group, the way an adapter
-registers under `quackd.adapters`, and may not call it `jetson` or `sim`, which are quackd's own. A
-board that must never be guessed, the way `sim` must not, says so, and is then used only when
-`--board` names it.
+registers under `quackd.adapters`, and may not call it `jetson`, `sim` or `generic`, which are
+quackd's own. A board that must never be guessed, the way `sim` must not, says so, and is then used
+only when `--board` names it, and quackd remembers the name unless it is `sim`.
 
-A new board joins the table above once somebody has run it and written down what happened. Until
-then it is a plugin like any other, and quackd claims nothing about it.
+A board quackd would find by itself joins the table above once somebody has run it and written down
+what happened. Until then it is a plugin like any other, and quackd claims nothing about it.
+`generic` is in the table because `--board` takes it, and it claims nothing either.
 
 ## What a reader of its own needs
 

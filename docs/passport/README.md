@@ -31,8 +31,8 @@ words never reach a brain until a person pins it.
 
 ## Which robots carry one
 
-The robots that will meet strangers: humanoids and quadrupeds, and nearly all of them carry an
-NVIDIA Jetson that can run quackd. An arm carries none, because it is fixed in place and will rarely
+The robots that will meet strangers: humanoids and quadrupeds, many of them carrying an NVIDIA
+Jetson that can run quackd, and others another Linux computer that can. An arm carries none, because it is fixed in place and will rarely
 meet another robot, and neither does a toy-sized robot, because it has no computer on board that can
 run quackd ([compatibility.md](compatibility.md)).
 

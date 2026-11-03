@@ -8,8 +8,8 @@ BlueZ says of bluetoothd and the adapter, rfkill's switches, main.conf, the user
 the LAN address. `live` is the one check that changes anything, and only when asked for: it
 registers the advert and the GATT service for two seconds, then takes them down again.
 
-The board itself (a Jetson, or `--board sim`) is lane C's `quackd.boards`, which hands its
-verdict in as a row of its own; nothing here guesses what board it is on.
+The board itself (a Jetson, `--board generic` or `--board sim`) is `quackd.boards`, which hands
+its verdict in as a row of its own; nothing here guesses what board it is on.
 """
 
 from __future__ import annotations

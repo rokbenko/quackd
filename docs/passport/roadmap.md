@@ -9,7 +9,7 @@ Nothing in this folder has run on a Jetson or over a real Bluetooth radio.
 "Tested on the sim board" means the suite runs it on a laptop, mostly in one process against fakes,
 the sim board standing in for a robot's computer and a folder for the air. One test runs two
 processes that hear each other and pass a request over a simulated link. No part of it has run
-between two machines.
+between two machines, and `--board generic` has run on no robot's computer.
 
 The nearest it has come to a Jetson is JetPack 6's userland without the board. On 2026-11-01 the
 three commands ran in an `ubuntu:22.04` container for arm64 under emulation, whose own Python is
@@ -23,7 +23,7 @@ had none of a Jetson's own files, no bluetoothd and no systemd, so no column of 
 |---|---|---|---|---|---|
 | the passport, signed by its owner | 1.0 | yes: the wizard, `sign`, `show`, `quackd passport check` | yes, against the vectors | no | does not apply |
 | the robot key, and the owner key sealed by a passphrase | quackd's own | yes | yes | no | does not apply |
-| boards: the Jetson, the sim board, plugins | quackd's own | yes | the sim board; Jetson detection against fakes of a board's files | no | does not apply |
+| boards: the Jetson, generic, the sim board, plugins | quackd's own | yes | the sim board; the Jetson and generic against fakes of a computer's files | no | does not apply |
 | the Bluetooth LE advert and its rotating id | 1.0 | yes, through BlueZ | the advert's bytes and the rotation's clock | no | no |
 | near and far by signal strength | quackd's own | yes | yes, with a threshold nobody has measured | no | no |
 | the Bluetooth link | 1.0 | yes, through BlueZ | its frames, and one request between two processes | no | no |
@@ -74,8 +74,12 @@ These were open questions, and the answers are the defaults 1.0 ships with.
 - **The owner signs the passport,** and the owner key lives on the robot, sealed by a passphrase
   asked only when signing. A stamp vouched for a key, never for what the passport said.
 - **Arms and toys carry none.** An arm is fixed in place and will rarely meet another robot, and a
-  toy-sized robot has no computer on board that can run quackd. Humanoids and quadrupeds nearly all
-  carry a Jetson that can.
+  toy-sized robot has no computer on board that can run quackd. Many humanoids and quadrupeds carry a
+  Jetson that can, and others another Linux computer.
+- **A computer that is not a Jetson is named, not found.** `--board generic` takes its word for its
+  name and says `other`, because nothing can tell a robot's computer from a desk's. A kind of its
+  own, or a board that finds itself, waits until somebody has run one
+  ([ADR-0074](../adr/0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md)).
 - **Close is Bluetooth LE signal strength,** and the beacon's id is random and changes every 15
   minutes, never in the middle of a meeting, because a fixed id broadcast by radio would let anybody
   follow a robot ([privacy.md](privacy.md#tracking)).

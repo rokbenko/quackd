@@ -131,10 +131,13 @@ robot's own computer, the one part of quackd that runs there, and the suite runs
 one machine for the radio, and fakes for BlueZ, so nothing you change needs a board or a Bluetooth
 adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with `quackd[onboard]`,
 and the radio's tests run with both installed in CI's `onboard` job, on a private bus
-`dbus-run-session` starts, so sync `--extra onboard` on Linux to run them yourself. A board other
-than a Jetson comes in as a plugin through the `quackd.boards` entry point group, the way an
-adapter comes in through `quackd.adapters`, and may not take the names `jetson` or `sim`. Nothing
-in these folders has run on a Jetson or over a real radio, so a change is checked against the sim
+`dbus-run-session` starts, so sync `--extra onboard` on Linux to run them yourself. `generic` is
+any other Linux computer, only when it is named, and written from the kernel's documentation. A
+board that finds itself, other than a Jetson, comes in as a plugin through the `quackd.boards`
+entry point group, the way an adapter comes in through `quackd.adapters`, and may not take the
+names `jetson`, `sim` or `generic`. Identity strings come from kernel.org or a vendor's documents,
+cited where they are used, and anything that cannot tell a robot from a laptop is only ever named.
+Nothing in these folders has run on a Jetson or over a real radio, so a change is checked against the sim
 board and the fakes, and a page or a help string that claims more than that of a board or a radio
 is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 

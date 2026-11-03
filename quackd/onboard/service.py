@@ -4,8 +4,8 @@
 (robot.yaml, the robot key, the passport its owner signed), checks that passport the way any
 robot would before it says a word, then:
 
-- serves the passport and the talk inbox over HTTP, and on a Jetson announces both by DNS-SD
-  with the beacon id the radio advertises now;
+- serves the passport and the talk inbox over HTTP, and on a robot's own computer announces both
+  by DNS-SD with the beacon id the radio advertises now;
 - advertises on the radio and listens to it, and lets the radio decide who is near
   (`quackd.radio`): a robot near enough is met over the LAN when both are on one, and over a
   Bluetooth link when not, the lower beacon id dialling;

@@ -9,6 +9,54 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`quackd onboard --board generic` puts a passport on any other robot's Linux computer.** It
+  matches nothing, because nothing can tell a robot's computer from a desk's: `qcom,qcm6490` is a
+  RUBIK Pi 3 and a Fairphone 5, and an x86 module and a laptop read alike. So it is never found by
+  itself. It takes the computer's word for its name, from `/proc/device-tree/model` or from the maker
+  and product in `/sys/class/dmi/id`, and never reads a serial. Its passport says kind `other`, so the
+  specification, its schema and its vectors do not move, and the system's name from `/etc/os-release`
+  shows in `status` and is never signed. It refuses a computer whose firmware says it is a laptop, a
+  tablet or the like, pointing at `--board sim`, and leaves a Jetson to the Jetson board, so a Xavier
+  stays refused. A desktop still passes, with its real name in its passport. Named once, it is kept
+  in `board` in the robot's folder, so `sign`, `serve` and the systemd unit need no flag, and `sim` is
+  never kept. On Linux the sentence for a computer quackd does not know names it too. It is written
+  from the kernel's and systemd's sources and has run on no robot's computer, and
+  [ADR-0074](docs/adr/0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md)
+  says why. `tests/test_boards_generic.py` reads it from files, the kernel's own strings among them,
+  and `tests/test_onboard_cli.py` runs the wizard, `sign`, `preflight` and `serve` through it.
+
+### Fixed
+
+- **`quackd onboard preflight` says when nothing keeps the clock right.** Its `clock` row checked
+  only that the year was 2026 or later, so a board with no clock battery showed `ok` on a clock stuck
+  anywhere in 2026, though a clock more than 300 seconds behind a passport's `issued` refuses it. The
+  row warns now when `timedatectl` says nothing has set the clock from a network, and when
+  `/sys/class/rtc` lists no clock that survives a reboot. Where it cannot tell, it says what it said
+  before. `tests/test_onboard_cli.py` reads each case. It failed before this change.
+- **A clock behind a passport is told to set the time, and a clock before any passport cannot
+  sign.** The `passport` row said to run `quackd onboard sign`, which would write the wrong date
+  down, and signing took whatever the clock said, so a board that woke up long ago signed a passport
+  already run out. The row says `timedatectl set-ntp true` now, and signing on a clock before 2026
+  refuses before it makes a key. `tests/test_onboard_wizard.py` runs both. It failed before this
+  change.
+- **`quackd onboard preflight` checks that the adapter can be a central.** A robot has to scan and
+  dial, and only the peripheral role was checked. A controller that says it cannot is a `central
+  role` row that fails. `tests/test_onboard_preflight_rows.py` has the case. It failed before this
+  change.
+- **A computer that calls itself something else no longer reads as `robot.yaml` having changed.**
+  A firmware update can rename a computer, and `needs_signing` said `robot.yaml changed since it was
+  signed: board`, of a file nobody had edited. `tests/test_onboard_wizard.py` has the case. It failed
+  before this change.
+
+### Documentation
+
+- **The pages no longer say nearly every humanoid and quadruped carries a Jetson.** Many do, and
+  others do not, VinMotion's Motion 2 with its Qualcomm Dragonwing IQ9 among them. The README, the
+  FAQ and the Robot Passport pages say so, ADR-0073 keeps what it said on its day, and
+  `docs/passport/compatibility.md` says what a computer needs and how the generic board reads one.
+
 ## [0.30.2] — 2026-11-03
 
 0.30.2 fixes what 0.30.1 shipped knowing about, and what a review of those fixes found. What changes for

@@ -75,9 +75,14 @@ $ quackd onboard --help
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --board                    <str>                    The computer this is: a  │
 │                                                     Jetson is found by       │
-│                                                     itself; sim stands in    │
-│                                                     for one on a laptop, and │
-│                                                     its passport says so.    │
+│                                                     itself; generic is any   │
+│                                                     other robot's Linux      │
+│                                                     computer, by what it     │
+│                                                     calls itself, and is     │
+│                                                     remembered once named;   │
+│                                                     sim stands in for one on │
+│                                                     a laptop, and its        │
+│                                                     passport says so.        │
 │ --dir                      <str>                    Where this robot's file, │
 │                                                     keys and records live    │
 │                                                     (default                 │
@@ -145,7 +150,8 @@ $ quackd onboard --help
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-`--board` names the computer, `jetson` or `sim`. `--dir` is the robot's folder,
+`--board` names the computer: `jetson`, `sim`, or `generic`, any other robot's Linux computer,
+which is kept in its folder once named, so nothing later needs the flag. `--dir` is that folder,
 `~/.quackd/onboard/` unless `QUACKD_ONBOARD_DIR` names another. `--days` is how long the owner's
 signature holds, 365 by default and 400 at most. `--passphrase-file` is for a script, since no
 environment variable carries a passphrase. `--no-service` writes and signs everything and installs no
@@ -344,10 +350,12 @@ $ quackd onboard status --dir ~/sim/one
 ```
 
 `quackd onboard preflight` checks the computer before anything runs: the board, the extra, the
-system bus, bluetoothd and its version, the adapter, whether it is blocked, whether it can
-advertise and serve, whether your user may use it, address privacy, and the LAN. Each row that
-fails says what to do. `--live` also registers the advert and the service with BlueZ for two
-seconds, then takes them down. On the sim board the sim air's row stands in for the Bluetooth ones:
+system bus, bluetoothd and its version, the adapter, whether it is blocked, whether it can scan,
+advertise and serve, whether your user may use it, address privacy, and the LAN, and then the
+clock, which warns when nothing has set it from a network or no clock here survives a reboot. Each
+row that fails says what to do. `--live` also registers the advert and the service with BlueZ for
+two seconds, then takes them down. On the sim board the sim air's row stands in for the Bluetooth
+ones:
 
 ```
 $ quackd onboard preflight --board sim --dir ~/sim/one
@@ -561,10 +569,12 @@ answered `no`.
 
 ## Boards
 
-`quackd onboard` runs on a computer it knows, a board: a Jetson Orin or Thor, found by itself; the
-sim board, only when `--board sim` names it; or a plugin's board from the `quackd.boards` entry-point
-group ([compatibility.md](compatibility.md#the-boards)). The L4T release shows in `status` and is
-never signed. On any other computer it stops before it writes anything. On this laptop:
+`quackd onboard` runs on a computer it knows, a board: a Jetson Orin or Thor, found by itself; any
+other robot's Linux computer, only when `--board generic` names it; the sim board, only when
+`--board sim` names it; or a plugin's board from the `quackd.boards` entry-point group
+([compatibility.md](compatibility.md#the-boards)). The release, L4T on a Jetson and the system's
+name on `generic`, shows in `status` and is never signed. With no board it stops before it writes
+anything. On this laptop:
 
 ```
 $ quackd onboard
@@ -572,6 +582,18 @@ $ quackd onboard
 supports: it found no NVIDIA Jetson (this computer runs Windows). To try it 
 here as a simulation, which its passport will say, run quackd onboard --board 
 sim.
+```
+
+On Linux, where `generic` runs, it says so too. In a stock Ubuntu 24.04 container:
+
+```
+$ quackd onboard
+✗ error: quackd onboard runs on a robot's own computer, and this is not one it 
+supports: it found no NVIDIA Jetson (/proc/device-tree/compatible names no 
+NVIDIA Tegra, and there is no /etc/nv_tegra_release). To try it here as a 
+simulation, which its passport will say, run quackd onboard --board sim. If it 
+is a robot's own computer all the same, quackd onboard --board generic names it,
+and its passport will say what the computer calls itself.
 ```
 
 ## The demo
@@ -640,6 +662,7 @@ file, then `~/.quackd/onboard/`.
 | the one file, and the brain's key | `robot.yaml` and `robot.env`, readable by the robot's user alone |
 | the robot key, plain | `keys/robot.json`, readable by the robot's user alone |
 | the owner key, sealed by the passphrase | `keys/owner.json`, readable by the robot's user alone |
+| the board it was set up with, where it had to be named | `board` |
 | the passport the owner signed, which the service serves | `passport.jws` |
 | the control port and its token | `control.json` |
 | the service's state, every 2 seconds | `status.json` |

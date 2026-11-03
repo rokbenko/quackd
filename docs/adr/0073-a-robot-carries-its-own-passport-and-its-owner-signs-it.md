@@ -1,6 +1,11 @@
 # ADR-0073: A robot carries its own passport, and its owner signs it
 
-**Status:** accepted · **Date:** 2026-10-29 · Amends [ADR-0057](0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md) (a passport is served by the robot it describes, signed by its owner, found by Bluetooth LE and read over the LAN or a Bluetooth link) and [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) (`quackd onboard` runs on a robot's own Jetson) · Drops phase 7 of [design/robot-passport-phase-7.md](../design/robot-passport-phase-7.md) · Implemented in `quackd/onboard/`, `quackd/boards/` and `quackd/radio/` · Documented in [docs/passport/](../passport/README.md)
+**Status:** accepted, amended · **Date:** 2026-10-29 · Amends [ADR-0057](0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md) (a passport is served by the robot it describes, signed by its owner, found by Bluetooth LE and read over the LAN or a Bluetooth link) and [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) (`quackd onboard` runs on a robot's own Jetson) · Drops phase 7 of [design/robot-passport-phase-7.md](../design/robot-passport-phase-7.md) · Implemented in `quackd/onboard/`, `quackd/boards/` and `quackd/radio/` · Documented in [docs/passport/](../passport/README.md)
+
+**Amended 2026-11-03 by [ADR-0074](0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md):**
+a computer that is not a Jetson need not be a plugin: `--board generic` names any other Linux
+computer, its passport says `other`, and the name is kept in the robot's folder. "Nearly all" of
+the robots that meet strangers carrying a Jetson overstated it, and is left below as it was written.
 
 ## Context
 

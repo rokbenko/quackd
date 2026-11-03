@@ -18,7 +18,8 @@ lives on the robot's own computer, and quackd on a laptop still drives robots th
 **Why is there no passport for my SO-101, or my Microduck?**
 An arm is fixed in place and will rarely meet another robot, and a toy-sized robot has no computer
 on board that can run quackd. Robot Passport is for the robots that will meet strangers, humanoids
-and quadrupeds, which nearly all carry a Jetson ([compatibility.md](compatibility.md)).
+and quadrupeds, which carry a computer that can run quackd, on many of them a Jetson
+([compatibility.md](compatibility.md)).
 
 **Do I need quackd?**
 Not to implement the protocol: it is a specification, with schemas and conformance vectors
