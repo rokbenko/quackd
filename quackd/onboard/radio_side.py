@@ -445,11 +445,15 @@ def board_side(
     rotate_s: float = ROTATE_S,
     log: Callable[[str], None] = lambda _line: None,
     advertise: bool = True,
+    adapter: str | None = None,
 ) -> RadioSide:
     """The radio of a robot's own computer: BlueZ, or `off`, and DNS-SD on every interface. A
     radio it cannot have is a `NoRadio` saying why, and the robot meets others over its LAN.
-    `browser` finds other robots' LAN records; without one, robots near are met over a link."""
-    options = {"advertise": advertise} if radio_kind == "bluez" else {}
+    `browser` finds other robots' LAN records; without one, robots near are met over a link.
+    `adapter` is the one the board found, which is the one preflight checks."""
+    options: dict[str, Any] = {"advertise": advertise} if radio_kind == "bluez" else {}
+    if radio_kind == "bluez" and adapter and adapter.startswith("hci"):
+        options["adapter"] = adapter
     try:
         radio: Radio = open_radio(radio_kind, **options)  # type: ignore[arg-type]
     except RadioUnavailable as e:

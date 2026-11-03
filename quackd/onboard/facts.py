@@ -23,6 +23,17 @@ from quackd.passport.document import VERSION, Reading, validate
 _DATED = ("issued", "expires")
 
 
+def manifest_of(file: RobotFile) -> RobotManifest | None:
+    """The manifest of the body quackd drives for this robot, or None for one it only talks for.
+    It supplies the passport's body, skills and courtesies, so whatever compares a passport with
+    the file has to read it too, or it finds them all changed."""
+    if file.robot is None:
+        return None
+    from quackd.adapters.factory import describe, parse_robot_spec
+
+    return describe(parse_robot_spec(file.robot.adapter))
+
+
 def passport_document(
     file: RobotFile,
     *,

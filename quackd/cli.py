@@ -9276,11 +9276,9 @@ def _onboard_file(home: Any) -> Any:
 
 def _onboard_manifest(robot: Any) -> Any:
     """The manifest of the body quackd drives for this robot, or None for one it only talks for."""
-    if robot.robot is None:
-        return None
-    from quackd.adapters.factory import describe, parse_robot_spec
+    from quackd.onboard.facts import manifest_of
 
-    return describe(parse_robot_spec(robot.robot.adapter))
+    return manifest_of(robot)
 
 
 def _brain_key_variable(llm: str | None) -> str | None:
@@ -9288,6 +9286,26 @@ def _brain_key_variable(llm: str | None) -> str | None:
     from quackd.onboard.preflight import key_variable
 
     return key_variable(llm) if llm else None
+
+
+def _refuse_flags_before_a_command(ctx: typer.Context) -> None:
+    """The wizard's flags, before a subcommand, parse and reach nothing, so `quackd onboard --dir
+    ~/two sign` signed the robot in the default folder and said so in passing. A subcommand takes
+    its own, so one that came too early is refused, saying where it goes."""
+    command = str(ctx.invoked_subcommand)
+    takes = getattr(ctx.command, "commands", {}).get(command)
+    ours = {flag for param in takes.params for flag in param.opts} if takes else set()
+    for param in ctx.command.params:
+        # by its name: Typer brings a click of its own, whose enum is not click's
+        source = ctx.get_parameter_source(param.name) if param.name else None
+        if getattr(source, "name", "") == "COMMANDLINE":
+            flag = param.opts[0]
+            if flag in ours:
+                _fail(f"{flag} goes after the command: quackd onboard {command} {flag} ...")
+            _fail(
+                f"quackd onboard {command} takes no {flag}: it is for the wizard, quackd onboard "
+                "with nothing after it"
+            )
 
 
 def _refuse_root() -> None:
@@ -9339,6 +9357,7 @@ def onboard(
     that meets other robots. Run again, it signs only when robot.yaml changed or the signature
     runs out within 30 days."""
     if ctx.invoked_subcommand is not None:
+        _refuse_flags_before_a_command(ctx)
         return
     from quackd.onboard import config, wizard
     from quackd.onboard.control import write_private
@@ -9541,6 +9560,7 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
     """The service's status as a person reads it: the passport and what is not signed yet, the
     board and brain, the radio and every robot it hears, the sessions, the run, the last
     meetings."""
+    from quackd.adapters.base import AdapterError
     from quackd.onboard import config, wizard
 
     passport = reply.get("passport", {})
@@ -9555,8 +9575,9 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
             else Text(f"OFF: {passport.get('why')}", style=ui.STYLES["warn"]),
         )
     ]
-    with contextlib.suppress(config.FileError, OSError, ValueError):
-        why = wizard.needs_signing(home, config.load(home.robot_yaml), board)
+    with contextlib.suppress(config.FileError, OSError, ValueError, AdapterError):
+        robot = config.load(home.robot_yaml)
+        why = wizard.needs_signing(home, robot, board, manifest=_onboard_manifest(robot))
         if why is not None and passport.get("ok"):
             said = f"{why}, so other robots still see what was signed: quackd onboard sign"
             rows.append(("unsigned", Text(said, style=ui.STYLES["warn"])))

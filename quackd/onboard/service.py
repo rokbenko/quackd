@@ -774,6 +774,7 @@ def serve(
             rotate_s=rotate_s,
             log=log,
             advertise=file.radio.advertise,
+            adapter=chosen.radio().adapter,
         )
 
     home.ensure()

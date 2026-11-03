@@ -219,7 +219,16 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
     expires = check.reading.document["expires"]
     checks.append(Check("passport", "ok", f"signed by its owner, until {expires}"))
     if facts is not None:
-        why = wizard.needs_signing(home, file, facts.passport())
+        from quackd.adapters.base import AdapterError
+        from quackd.onboard.facts import manifest_of
+
+        try:
+            manifest = manifest_of(file)
+        except (AdapterError, ValueError) as e:
+            said = f"the body its file names cannot be read here, so nothing compares it: {e}"
+            checks.append(Check("signed", "warn", said))
+            return
+        why = wizard.needs_signing(home, file, facts.passport(), manifest=manifest)
         if why is not None:
             checks.append(Check("signed", "warn", why, "quackd onboard sign"))
 

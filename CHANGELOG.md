@@ -9,6 +9,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **The radio opens the adapter preflight checked.** It always opened `hci0`, while `quackd onboard
+  preflight` checked the first adapter the kernel lists, so a computer whose only adapter came up as
+  `hci1` passed preflight and got no radio. The service now opens the one the board found.
+  `tests/test_onboard_cli.py` starts the service on such a computer. It failed before this change.
+- **A robot with a body no longer reads as unsigned straight after it is signed.** Signing reads the
+  manifest of the body its file names, which supplies the passport's body, skills and courtesies, and
+  preflight's `signed` row and `status` compared the passport with the file alone, so they said
+  `robot.yaml changed since it was signed: body, ...` of a file nobody had edited. Both read the
+  manifest now. A body that cannot be read here, its package not installed, is said by that row, and
+  stops neither. `tests/test_onboard_cli.py` signs a robot with a body and asks both. It failed before
+  this change.
+- **A flag before a subcommand is refused, not dropped.** The wizard's flags parsed before a subcommand
+  and reached nothing, so `quackd onboard --dir ~/two sign` signed the robot in the default folder.
+  Such a flag now stops with `--dir goes after the command: quackd onboard sign --dir ...`, or, for one
+  the subcommand does not take, says it is the wizard's. Put it after the command instead.
+  `tests/test_onboard_cli.py` tries each kind, and that nothing was signed. It failed before this
+  change.
+
 ## [0.31.0] — 2026-11-03
 
 0.31.0 lets Robot Passport run on a robot's own computer that is not a Jetson. `quackd onboard
