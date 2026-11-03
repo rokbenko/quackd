@@ -47,7 +47,7 @@ write more than 20 bytes at a time. A Bluetooth adapter that can scan, advertise
 clock no more than 300 seconds behind a passport's `issued` and not yet past its `expires`, which a
 computer with no clock battery has only once a network has set it. How fast it is does not matter: a
 passport is signatures and Bluetooth, and only a model run on the robot's own computer cares.
-`quackd onboard preflight` checks all of it but Python, which the install itself refuses.
+`quackd onboard preflight` checks all of it but Python, and the install refuses an older one.
 
 ### The generic board
 

@@ -137,9 +137,9 @@ board that finds itself, other than a Jetson, comes in as a plugin through the `
 entry point group, the way an adapter comes in through `quackd.adapters`, and may not take the
 names `jetson`, `sim` or `generic`. Identity strings come from kernel.org or a vendor's documents,
 cited where they are used, and anything that cannot tell a robot from a laptop is only ever named.
-Nothing in these folders has run on a Jetson or over a real radio, so a change is checked against the sim
-board and the fakes, and a page or a help string that claims more than that of a board or a radio
-is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
+Nothing in these folders has run on a Jetson or over a real radio, so a change is checked against
+the sim board and the fakes, and a page or a help string that claims more than that of a board or a
+radio is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
 Touching `web/`? That is the browser demo, and the only quackd code that is not Python: plain
 JavaScript modules, no build step, nothing to install. Run it with the server in the directory

@@ -11,8 +11,8 @@ the middle of a meeting. [discovery.md](discovery.md#the-beacon-id-changes-every
 **Bluetooth link.** A Bluetooth LE connection two robots open when they share no LAN, which carries
 their talk in small frames. [discovery.md](discovery.md#the-bluetooth-link)
 
-**Board.** The computer `quackd onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind goes into
-the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
+**Board.** The computer `quackd onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind
+goes into the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
 
 **Brain.** The language model a robot runs on, named under `brain:` in `robot.yaml`, which holds its
 meetings and its goals. [quackd.md](quackd.md#talking)
