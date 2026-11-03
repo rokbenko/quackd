@@ -210,13 +210,32 @@ def test_a_laptop_by_its_device_tree_is_refused_and_pointed_at_sim() -> None:
     assert "a laptop" in said and generic.CHASSIS in said and "--board sim" in said
 
 
-@pytest.mark.parametrize("chassis", sorted(generic.NOT_ON_A_ROBOT))
+@pytest.mark.parametrize(
+    "chassis",
+    # written out, so that taking one from the code does not take its test with it
+    [
+        "all-in-one",
+        "convertible",
+        "handheld",
+        "handset",
+        "headset",
+        "laptop",
+        "spectacles",
+        "tablet",
+        "television",
+        "watch",
+    ],
+)
 def test_every_chassis_no_robot_carries_is_refused(chassis: str) -> None:
     with pytest.raises(boards.Unsupported, match="no robot's own"):
         generic.facts(tree("A computer", "acme,computer", chassis=chassis).get)
 
 
-@pytest.mark.parametrize("number", sorted(generic.NOT_ON_A_ROBOT_SMBIOS))
+@pytest.mark.parametrize(
+    "number",
+    # portable, laptop, notebook, handheld, all-in-one, sub notebook, tablet, convertible, 2-in-1
+    [8, 9, 10, 11, 13, 14, 30, 31, 32],
+)
 def test_every_smbios_number_no_robot_carries_is_refused(number: int) -> None:
     files = dmi(sys_vendor="Acme", product_name="Thin 14", chassis_type=str(number))
     with pytest.raises(boards.Unsupported, match="/sys/class/dmi/id/chassis_type"):
