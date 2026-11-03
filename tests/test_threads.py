@@ -213,6 +213,22 @@ async def test_a_disconnect_that_does_not_come_back_is_said_of(
     assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN
 
 
+async def test_a_second_close_says_nothing_of_a_port_it_finds_shut() -> None:
+    """The first let go of the arm, and a disconnect that raises because it did is no failed one."""
+
+    class Upstream(FakeArm):
+        def disconnect(self) -> None:
+            if not self.connected:  # `check_if_not_connected`
+                raise ConnectionError("SO101Follower is not connected")
+            super().disconnect()
+
+    arm = Upstream()
+    transport = await _closed_at_rest(arm)
+    assert arm.torque is False
+    await transport.close()
+    assert transport.close_note != TORQUE_RELEASE_NOT_KNOWN
+
+
 async def test_a_disconnect_that_raises_is_said_of() -> None:
     transport = await _closed_at_rest(_disconnects_slowly(0.0, raises=True))
     assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN

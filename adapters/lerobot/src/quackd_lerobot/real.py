@@ -2095,17 +2095,19 @@ class LeRobotReal:
             # the seam did not take, so the disconnect below releases torque after all. Saying
             # the arm is being held when it is about to be let go is worse than saying nothing.
             self.close_note = TORQUE_COULD_NOT_BE_KEPT.format(why=why)
+        # a close after a close finds the port shut, and that is no release going wrong
+        connected = self._port_is_open()
         disconnected = False
         with contextlib.suppress(Exception):
             await self._call(
                 self._robot.disconnect, deadline_s=DISCONNECT_S
             )  # up.SO_DISCONNECT_TORQUE
             disconnected = True
-        if why is None and not disconnected and releases is not False:
+        if why is None and connected and not disconnected and releases is not False:
             # that was the call that lets go of the arm, and it raised or never came back, so
             # some motors may have let go and some not, and every other line here is about an
             # arm the close knows the state of
-            self.close_note = TORQUE_RELEASE_NOT_KNOWN
+            self.close_note = self.RELEASE_NOT_KNOWN
         if why is None and self._release_refused and disconnected and releases is not False:
             # only once the disconnect came back, because its `Torque_Enable` 0 writes raise on
             # a bus that lost them, and "the close took torque off" is a thing to say only of a
@@ -2119,6 +2121,17 @@ class LeRobotReal:
         if self.rest_pose is None:
             return TORQUE_LEFT_ON_WITHOUT_A_POSE.format(name=self.registered_name or UNNAMED)
         return torque_left_on(why, self.registered_name)
+
+    RELEASE_NOT_KNOWN = TORQUE_RELEASE_NOT_KNOWN
+    """What the close says of a release that raised or did not come back, which the simulator words
+    for a simulated arm."""
+
+    def _port_is_open(self) -> bool:
+        """Whether the follower says it is connected. True where it will not say, so a release
+        that went wrong on an odd one is still said of."""
+        with contextlib.suppress(Exception):
+            return bool(self._robot.is_connected)
+        return True
 
     KEEPS_TORQUE_WITHOUT_A_POSE = True
     """Whether the close keeps the torque of an arm with no rest pose recorded. True for an arm on

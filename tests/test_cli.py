@@ -2916,6 +2916,20 @@ def test_a_press_after_the_close_stops_what_is_chained_to_a_success(
     assert ended.value.code == comes_to
 
 
+def test_doctor_has_more_to_say_after_the_close_and_is_not_taken_for_stuck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its table can take seconds after the arm's close, and a person pressing twice a second in
+    that lost the report, which is what says what became of the torque."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    told: list[bool] = []
+    monkeypatch.setattr(AfterTheClose, "not_stuck_yet", lambda: told.append(True))
+    reg = _real_arm(monkeypatch, tmp_path, FakeArm(step=5.0), "arm-p", off=10.0)
+    runner.invoke(app, ["doctor", "--robot", "arm-p", "--registry-dir", str(reg)])
+    assert told == [True]
+
+
 def test_a_press_past_the_end_of_a_run_loses_no_verdict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -239,6 +239,7 @@ class _Late:
     def request(self, token: bytes, timeout_ms: int) -> list[bytes] | None:
         self.asked.append(token)
         self.waiting.append((token, self.next_reading))
+        self.next_reading += 10.0
         return self.answer(timeout_ms)
 
     def answer(self, timeout_ms: int) -> list[bytes] | None:
@@ -249,7 +250,9 @@ class _Late:
 
 async def test_a_stop_reads_down_to_the_answer_to_its_own_request() -> None:
     """A DEALER keeps a reply that came in behind its time, so a stop's first read can be the answer
-    to an earlier request, however old: no goal is built from it, and it asks only the once."""
+    to an earlier request, however old: no goal is built from it, and nothing more is asked until it
+    has its answer. That answer can be as old, where the host stuck between reading its motors and
+    answering, with the servo gone on, so it is the answer after that."""
     key = "arm_left_elbow_flex.pos"
     host = _Late((b"1", 3.0), (b"2", 4.0))
     link = AlohaMiniZmq(client=host)
@@ -257,9 +260,19 @@ async def test_a_stop_reads_down_to_the_answer_to_its_own_request() -> None:
     link._arm_goals[key] = 80.0
     link._unheld.add(key)
     await link.stop()
-    assert host.asked == [b"3"], "asking again leaves replies behind"
-    assert link._arm_goals[key] == pytest.approx(12.0)
+    assert host.asked == [b"3", b"4"], "asking again leaves replies behind"
+    assert link._arm_goals[key] == pytest.approx(22.0)
     assert link.stop_left_going == ()
+
+
+async def test_a_read_reads_past_replies_behind_their_time() -> None:
+    """Each read asks once and takes one, so a reply left behind by a host that stalled made every
+    read for the rest of the session that much older than it said."""
+    host = _Late((b"1", 3.0), (b"2", 4.0))
+    link = AlohaMiniZmq(client=host)
+    link._token = 2
+    assert await link._pump(5)
+    assert link._state["arm_left_elbow_flex.pos"] == pytest.approx(12.0)
 
 
 async def test_a_stop_with_no_answer_stops_the_base_and_leaves_the_goal_and_says_so() -> None:

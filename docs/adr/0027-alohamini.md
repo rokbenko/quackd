@@ -4,9 +4,9 @@
 
 **Amended 2026-11-03, for 0.30.3:** a `stop` holds an arm on its way somewhere, on the rules
 [ADR-0026](0026-xlerobot.md) now gives, where this record says it leaves every arm goal alone. A
-reading here takes a request and a reply, so the wheels and the lift go first, then one request, and
-only its answer counts. Asking again before the host has answered leaves replies behind for every
-read after it. The host's watchdog still leaves the arms alone.
+reading here takes a request and a reply, so the wheels and the lift go first, then one request at a
+time, and the second answer is the one used. Asking again before the host has answered leaves replies
+behind for every read after it. The host's watchdog still leaves the arms alone.
 
 ## Context
 

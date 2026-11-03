@@ -59,6 +59,11 @@ HOLD_READ_S = 0.2
 host's cycles at 30 Hz. The arm goes on meanwhile, and past this it goes on to its goal, since a
 host that has stopped publishing leaves nothing to say where the arm is."""
 HOLD_READ_POLL_MS = 20
+HOLD_READ_MESSAGES = 2
+"""Which message after the stop a hold is built from. The host reads its motors, then its cameras,
+and publishes, and can stick anywhere in that, so the first to come in can hold a reading from
+before the stop, with the servo gone on since. The second's motors were read after the first went
+out."""
 CONNECT_TIMEOUT_S = 5.0
 CALL_TIMEOUT_S = 2.0
 
@@ -426,15 +431,16 @@ class XLerobotZmq:
         self._hold_the_arms(fresh)
 
     async def _reading_from_now_on(self) -> bool:
-        """Whether a reading published after this began has come in. The socket keeps the newest
+        """Whether a reading taken after this began has come in. The socket keeps the newest
         message however long it has sat there, and nothing on the wire says how old it is, so
-        what is waiting is thrown away and only the next one counts. A heartbeat that takes one
-        first leaves the one after, a cycle later."""
+        what is waiting is thrown away and `HOLD_READ_MESSAGES` more are waited for. A heartbeat
+        that takes one first leaves the next, a cycle later."""
         with contextlib.suppress(Exception):
             async with asyncio.timeout(HOLD_READ_S):
                 await self._call(self._recv_locked, 0)
-                while not await self._pump(HOLD_READ_POLL_MS):
-                    pass
+                for _ in range(HOLD_READ_MESSAGES):
+                    while not await self._pump(HOLD_READ_POLL_MS):
+                        pass
                 return True
         return False
 
@@ -442,7 +448,7 @@ class XLerobotZmq:
         """The reading becomes the goal, under three rules, each of which is about a stop that
         would otherwise move an arm.
 
-        Only a reading from after the stop began is used (`fresh`), since a goal built from an
+        Only a reading taken after the stop began is used (`fresh`), since a goal built from an
         older one is a move of its own: a fake host caught a stop built from an observation that
         had not caught up, which sent the arm back to zero (ADR-0026), and one that had sat unread
         while the host stalled sent an arm back as far as it had travelled in the stall. Failing

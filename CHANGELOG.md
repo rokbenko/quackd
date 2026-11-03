@@ -15,9 +15,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the lift, and left arm goals alone, so an arm on its way somewhere got there with a hand in the way or
   not, and the answer said so. The wheels and the lift still stop at once. Each joint sent a goal is then
   sent where it reads, on three rules, since a stop that moves an arm is what this is all against. Only
-  a reading from after the stop began counts, so what was waiting in the socket is thrown away, and
-  with none inside 200 ms that joint goes on to its goal and the answer names it. A joint is held once
-  for each goal, or an arm under load would walk down a stop at a time. And a gripper is never held, or
+  a reading taken after the stop began counts, so what was waiting is thrown away and the first to come
+  in is passed over, as a host can stick between reading its motors and sending them. With no second
+  one inside 200 ms that joint goes on to its goal and the answer names it. A joint is held once for
+  each goal, or an arm under load would walk down a stop at a time. And a gripper is never held, or
   it would open on what it holds. What changes for you, under the safety rule: on those two bodies a
   `stop` now moves an arm, by what it travelled since that reading, and a `stop` beside `move_joints`
   says the arm `is held where it stood`. The host's own watchdog still leaves the arms alone.
@@ -56,6 +57,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **None of the fixes above has met a robot.** They ran on the mocks and the fake hosts, in a real Windows
   console, and on Linux under a real `bash`. The arm owes what 0.30.2 lists, and the XLeRobot and the
   AlohaMini have now to show that a hold from a reading stops an arm as it should.
+- **A hold on the XLeRobot and the AlohaMini is only as good as the reading.** Nothing on those wires says
+  when a reading was taken, so a link holding a backlog of large frames can still hand over an old one,
+  and the arm steps back by what it travelled since. Nobody has measured a real host's stalls.
 - **On Windows an exit stuck on a thread still takes closing the window,** since a thread's join hears no
   signal there. The SO-101's bus and camera calls no longer wait there, and a press gets out of
   asyncio's wait, so it takes a call on a pool of quackd's own that never comes back, a policy's worker

@@ -1487,8 +1487,8 @@ that takes, and short enough for somebody still pressing to find the way out."""
 EXIT_PRESSED = 130
 """The exit code of a process a Ctrl-C ended or had a say in: 128 and the signal, as a shell has."""
 OUTSTAYED = (
-    "\nquackd has closed, and something it was waiting on has not come back, so this Ctrl-C ended "
-    "it. What the run did is in its folder.\n"
+    "\nquackd has finished with the robot, and something it was waiting on has not come back, so "
+    "this Ctrl-C ended it. What a run did is in its folder.\n"
 )
 
 
@@ -1531,6 +1531,14 @@ class AfterTheClose:
     def took_its_time(self) -> None:
         """What was left was slow on purpose, a `run.gif` on a long run: no sign of being stuck."""
         self.since = time.monotonic()
+
+    @classmethod
+    def not_stuck_yet(cls) -> None:
+        """`took_its_time`, on whichever one is in place, for what has more to say than a verdict
+        panel and has got as far as saying it (`quackd doctor`)."""
+        handler = signal.getsignal(signal.SIGINT)
+        if isinstance(handler, cls):
+            handler.took_its_time()
 
     @classmethod
     def exit_code(cls, code: Any) -> Any:

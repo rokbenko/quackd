@@ -74,6 +74,10 @@ HOLD_READ_S = 0.2
 stopped: a request and its reply, where the host answers one request a cycle at 30 Hz. The arm
 goes on meanwhile, and past this it goes on to its goal."""
 HOLD_READ_POLL_MS = 20
+HOLD_READ_ANSWERS = 2
+"""Which answer after the stop a hold is built from. The host reads its motors once a cycle and
+answers from that, and can stick in between, so the first answer can hold a reading from before the
+stop, with the servo gone on since. The second's motors were read after the first went out."""
 
 VEL_KEYS = ("x.vel", "y.vel", "theta.vel")
 LIFT_HEIGHT_KEY = "lift_axis.height_mm"
@@ -272,8 +276,16 @@ class AlohaMiniZmq:
         await self._call(self._send_locked, self._payload())
 
     async def _pump(self, timeout_ms: int = POLL_MS) -> bool:
-        """One request/reply round. Returns True only when a reply actually decoded."""
-        return self._took(await self._call(self._request_locked, timeout_ms))
+        """One request/reply round. Returns True only when a reply actually decoded. A reply behind
+        its time is read past, or every read for the rest of the session would be that much older
+        than it says."""
+        took = self._took(await self._call(self._request_locked, timeout_ms))
+        while took and self._answered < self._token:
+            parts = await self._call(self._answer_locked, 0)
+            if not parts:
+                break
+            self._took(parts)
+        return took
 
     def _took(self, parts: list[bytes] | None) -> bool:
         """Keep what a reply says. True only where it decoded."""
@@ -492,17 +504,18 @@ class AlohaMiniZmq:
         self._hold_the_arms(fresh)
 
     async def _reading_from_now_on(self) -> bool:
-        """Whether the host has answered a request sent after this began. One request, and then
-        as long as it takes to read down to its answer: the host answers one a cycle, so asking
+        """Whether the host has answered, `HOLD_READ_ANSWERS` times, requests sent after this began.
+        One request at a time, read down to its answer: the host answers one a cycle, so asking
         again before it has answered only leaves replies behind for every read after this, each
         an older reading than the last, with the arm's position marked fresh. A heartbeat's
         request sent since then will do as well, whichever of the two reads the answer."""
         with contextlib.suppress(Exception):
             async with asyncio.timeout(HOLD_READ_S):
-                asked = self._token + 1
-                self._took(await self._call(self._request_locked, HOLD_READ_POLL_MS))
-                while self._answered < asked:
-                    self._took(await self._call(self._answer_locked, HOLD_READ_POLL_MS))
+                for _ in range(HOLD_READ_ANSWERS):
+                    asked = self._token + 1
+                    self._took(await self._call(self._request_locked, HOLD_READ_POLL_MS))
+                    while self._answered < asked:
+                        self._took(await self._call(self._answer_locked, HOLD_READ_POLL_MS))
                 return True
         return False
 
@@ -510,7 +523,7 @@ class AlohaMiniZmq:
         """The reading becomes the goal, under three rules, each of which is about a stop that
         would otherwise move an arm.
 
-        Only a reading from after the stop began is used (`fresh`), since a goal built from an
+        Only a reading taken after the stop began is used (`fresh`), since a goal built from an
         older one is a move of its own: a fake host caught a stop built from an observation that
         had not caught up, which sent the arm back to zero (ADR-0026), and one that had sat unread
         while the host stalled sent an arm back as far as it had travelled in the stall. Failing

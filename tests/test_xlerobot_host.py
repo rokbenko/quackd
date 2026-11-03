@@ -306,9 +306,11 @@ class _Wire:
 async def test_a_stop_throws_away_a_reading_that_was_waiting_and_uses_the_next() -> None:
     """The socket keeps the newest message however long it has sat there, and nothing on the wire
     says how old it is. With the host stuck on a camera a stop read one half a second old, sent the
-    arm back as far as it had gone since, and said it was held."""
+    arm back as far as it had gone since, and said it was held. The next one to come in can be as
+    old, where the host stuck between reading its motors and publishing them, with the servo gone
+    on, so it is the one after that."""
     key = "left_arm_elbow_flex.pos"
-    wire = _Wire({key: 3.0}, {key: 12.0})
+    wire = _Wire({key: 3.0}, {key: 7.0}, {key: 12.0})
     link = XLerobotZmq(client=wire)
     link._desired[key] = 80.0
     link._unheld.add(key)
@@ -318,9 +320,9 @@ async def test_a_stop_throws_away_a_reading_that_was_waiting_and_uses_the_next()
 
 
 async def test_a_stop_that_finds_only_what_was_waiting_holds_nothing_and_says_so() -> None:
-    """A host that has stopped publishing, its last message still in the socket."""
+    """A host that has stopped publishing, what it last sent still on its way."""
     key = "left_arm_elbow_flex.pos"
-    wire = _Wire({key: 3.0})
+    wire = _Wire({key: 3.0}, {key: 7.0})
     link = XLerobotZmq(client=wire)
     link._desired[key] = 80.0
     link._unheld.add(key)

@@ -547,6 +547,21 @@ def test_a_press_as_the_interpreter_ends_leaves_the_exit_code_alone() -> None:
     assert done.stdout.split() == ["the", "verdict", "last", "True"]
 
 
+async def test_a_command_with_more_to_say_is_not_taken_for_stuck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Doctor's table can take seconds after the arm's close, and its report is what says what
+    became of the torque, so the clock starts again as it gets there."""
+    after = AfterTheClose()
+    after.since = 0.0
+    before = signal.signal(signal.SIGINT, after)
+    try:
+        AfterTheClose.not_stuck_yet()
+    finally:
+        signal.signal(signal.SIGINT, before)
+    assert after.since > 0.0
+
+
 def test_a_press_once_a_process_has_outstayed_its_close_ends_it() -> None:
     """A call on another body that never came back holds asyncio's pool and the exit, and with every
     press doing nothing that left `kill`. The record is written by then."""

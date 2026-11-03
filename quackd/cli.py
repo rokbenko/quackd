@@ -1727,14 +1727,14 @@ def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
         try:
             return save(path)
         finally:
-            signal.signal(signal.SIGINT, before)
             if isinstance(before, AfterTheClose):
                 before.took_its_time()
+            signal.signal(signal.SIGINT, before)
     except KeyboardInterrupt:
-        signal.signal(signal.SIGINT, before)
         if isinstance(before, AfterTheClose):
             before.took_its_time()
             AfterTheClose.heard += 1
+        signal.signal(signal.SIGINT, before)
         with contextlib.suppress(OSError):
             path.unlink(missing_ok=True)
         ui.err_console.print(Text("  run.gif was left out", style=ui.STYLES["muted"]))
@@ -5399,6 +5399,9 @@ def doctor(
             )
     finally:
         hands.finish()
+    from quackd.safety import AfterTheClose
+
+    AfterTheClose.not_stuck_yet()
     report.host = unusable or report.host
     render(ui.console, report)
     if not report.ok:
