@@ -3591,6 +3591,7 @@ async def test_a_press_stops_the_fold_a_by_hand_run_starts_with(tmp_path: Path) 
     assert result.outcome == "aborted", result.reason
     assert mock.sequence == ["rest", "stop", "close"], "nothing folds it afterwards, or lets it go"
     assert person.asked == [], "and nobody is told the arm is theirs"
+    assert FOLD_STOPPED in person.said, "and they are told, with the log off too"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert FOLD_STOPPED in [e["text"] for e in events if e["kind"] == "note"]
 
@@ -3617,7 +3618,48 @@ async def test_a_press_before_a_by_hand_runs_first_fold_keeps_it_from_starting(
     assert mock.sequence[-1] == "close"
 
 
-async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(tmp_path: Path) -> None:
+async def test_a_press_the_loop_has_not_heard_of_yet_keeps_the_first_fold_from_starting(
+    tmp_path: Path,
+) -> None:
+    """A real Ctrl-C with the first state read just back, and the thread busy for a third of a
+    second before the fold comes up: counted as it landed, with the abort it sets still waiting for
+    the loop to have a turn. All three of three tries sent the whole fold after the press."""
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    connect = mock.connect
+
+    async def pressed_while_connecting() -> Any:
+        connected = await connect()
+        person.presses += 1  # nothing else: not the flag, and not the event a watch sits on
+        return connected
+
+    mock.connect = pressed_while_connecting  # type: ignore[method-assign]
+    result = await run_duck(_by_hand(mock, person, tmp_path))
+    assert result.outcome == "aborted", result.reason
+    assert "rest" not in mock.sequence and "let_go" not in mock.sequence, mock.sequence
+
+
+async def test_a_watch_that_raises_costs_nothing_but_the_watch(tmp_path: Path) -> None:
+    """It is on the first line of the teardown, and raising there went past the stop, the close and
+    the record."""
+
+    class CannotWatch(ScriptedPerson):
+        def stopped(self) -> Any:
+            raise RuntimeError("no switch to watch")
+
+    mock = LeRobotMock(rest_pose=REST)
+    person = CannotWatch(mock, places=PLACED, answers=[False])
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    person.on_wait = lambda _p: loop.executor.abort.set()
+    result = await loop.run()
+    assert result.outcome == "aborted", result.reason
+    assert mock.sequence[-1] == "close", mock.sequence
+    assert (result.run_dir / "summary.json").exists()
+
+
+async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(
+    tmp_path: Path,
+) -> None:
     """A second press quits that run, so it has the way out it always had."""
     mock = LeRobotMock(rest_pose=REST)
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})

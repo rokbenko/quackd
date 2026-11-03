@@ -94,6 +94,7 @@ from quackd.release import (
     FoldStopped,
     cancel_and_wait,
     fold_unless_stopped,
+    one_watch,
     settle_missed_fold,
 )
 from quackd.safety import (
@@ -1191,8 +1192,7 @@ class AgentLoop:
         with contextlib.suppress(Exception):
             await cfg.transport.stop()
         with contextlib.suppress(Exception):
-            if not self._a_person_has_stopped_it():
-                await self._rest_a_person_can_stop()
+            await self._rest_a_person_can_stop()
         with contextlib.suppress(Exception):
             await cfg.transport.close()
         if note := getattr(cfg.transport, "close_note", None):
@@ -1220,27 +1220,46 @@ class AgentLoop:
 
     def _a_person_has_stopped_it(self) -> bool:
         """A run with somebody at the arm that a person has stopped already: nothing moves after
-        that, where a heartbeat that failed is no reason to leave an arm unfolded."""
-        return (
-            self.cfg.hand_off is not None
-            and self.executor.abort.is_set()
-            and self._abort_reason() in PERSON_STOPS
-        )
+        that, where a heartbeat that failed is no reason to leave an arm unfolded. The count first,
+        which a press writes as it lands: the abort it sets comes through the event loop, and this
+        thread can be a third of a second from giving that a turn when the first fold comes up."""
+        hand = self.cfg.hand_off
+        if hand is None:
+            return False
+        if getattr(hand, "presses", 0) > 0:
+            return True
+        return self.executor.abort.is_set() and self._abort_reason() in PERSON_STOPS
 
     async def _rest_a_person_can_stop(self) -> RestResult | None:
         """A rest move that is not the end of the run (`_teardown_fold`), on a run no press quits
         (`KillSwitch.stay_to_the_close`), where one has to stop it as it stops every other fold
         there. The fold went on to its pose under the hands that had pressed, with only the power
-        switch left. Stopped, it leaves the arm where it is and nothing folds it later."""
-        stopped = getattr(self.cfg.hand_off, "stopped", None)
-        if stopped is None:
+        switch left. A press made before it keeps it from starting: the watch first, and then the
+        look, so one lands on one or the other. Stopped, it leaves the arm where it is and nothing
+        folds it later, and the person is told, with the log off too."""
+        hand = self.cfg.hand_off
+        if hand is None or getattr(hand, "stopped", None) is None:
             return await self._rest()
         try:
-            return await fold_unless_stopped(functools.partial(self._rest, pause=False), stopped)
+            async with one_watch(hand) as stopped:
+                if self._a_person_has_stopped_it():
+                    self._no_fold = True
+                    return None
+                return await fold_unless_stopped(
+                    functools.partial(self._rest, pause=False), stopped
+                )
         except FoldStopped:
             self._no_fold = True
-            self._note(FOLD_STOPPED)
+            self._fold_was_stopped()
             return None
+
+    def _fold_was_stopped(self) -> None:
+        """Said to whoever pressed as well as to the log, which `--no-log` leaves them without."""
+        self._note(FOLD_STOPPED)
+        hand = self.cfg.hand_off
+        if hand is not None:
+            with contextlib.suppress(Exception):
+                hand.say(FOLD_STOPPED)
 
     async def _rest(self, *, pause: bool = True) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
@@ -1321,7 +1340,7 @@ class AgentLoop:
                     raise
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 await self._unbroken(self.executor.logged_transport().stop())
-            self._note(FOLD_STOPPED)
+            self._fold_was_stopped()
             return None
         finally:
             if self._press_watch is not None:
@@ -2970,10 +2989,7 @@ class AgentLoop:
             # `recorded` as well as `reached`, matching the flock member: a body that answers
             # `none` has no pose to be away from, and ending a run over that would punish a
             # transport for not being one quackd parks rather than for failing to park.
-            if self._a_person_has_stopped_it():
-                # a press during the connect, with somebody supporting the arm: nothing moves
-                self._no_fold = True
-                raise Aborted(self._abort_reason())
+            # a press during the connect, with somebody supporting the arm, moves nothing at all
             parked = await self._rest_a_person_can_stop()
             if self._no_fold:
                 raise Aborted(self._abort_reason())
@@ -3348,7 +3364,8 @@ class AgentLoop:
                 # when they pressed, so a press from here on stops the fold to come, and one landing
                 # on the stop just below keeps it from starting. A hand-back counts from its own
                 # question, whose Enter a press from before it must not spoil
-                self._watch_for_a_press(cfg.hand_off)
+                with contextlib.suppress(Exception):  # this is the first line of the teardown
+                    self._watch_for_a_press(cfg.hand_off)
             await self.heartbeat.stop()
             with contextlib.suppress(Exception):
                 # the run's last intent, narrated like every other one

@@ -1471,12 +1471,14 @@ class _TerminalHandOff:
     ) -> bool:
         if self.switch is None:  # `bind` runs before the loop does, so this is a bug if hit
             raise RuntimeError("the hand-off has no kill switch to read Enter from")
-        self.say(text)
         self.ended = None
         # counted rather than read off `pressed`, which the wait itself clears on the way in: a
         # press is counted on the signal's own thread before the loop is told of it, so one
-        # that ended this wait has always been counted by the time it returns
+        # that ended this wait has always been counted by the time it returns. From before the
+        # question is printed: one made as it prints ends the wait too, and was filed under a wait
+        # nobody answered
         presses = self.switch.presses
+        self.say(text)
         with ui.asking_a_person():
             came = await self.switch.wait_for_enter(
                 timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate, said=self.say
@@ -1498,6 +1500,12 @@ class _TerminalHandOff:
         # half: a hand-off that timed out is why the arm was left where it was.
         ui.note(self.WAIT_ENDED[self.ended])
         return came
+
+    @property
+    def presses(self) -> int:
+        """How many times the kill switch has fired, written as each press lands, where what it
+        sets for the event loop waits for the loop to have a turn."""
+        return self.switch.presses if self.switch is not None else 0
 
     def stay_to_the_close(self) -> None:
         """From here on a Ctrl-C is a press like `q` and quits nothing (`KillSwitch`)."""

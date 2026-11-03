@@ -388,6 +388,21 @@ async def test_the_terminal_says_when_it_passes_an_enter_by(
     assert said == ["open?", ENTER_TOO_SOON]
 
 
+async def test_a_press_as_a_question_prints_ends_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It ends the wait through the event loop, and it was counted before the wait began to count,
+    so the record filed it under a question nobody answered."""
+    from quackd.cli import _TerminalHandOff
+
+    ks, _ = switch()
+    hand = _TerminalHandOff()
+    hand.bind(ks)
+    monkeypatch.setattr(hand, "say", lambda _text: ks._fire("Ctrl-C"))
+    came = await hand.wait("drop it?", timeout_s=20.0, until_abort=False, deliberate=True)
+    assert came is False
+    assert hand.ended == "kill switch"
+    assert hand.presses == 1
+
+
 async def test_an_answer_that_came_in_time_is_told_nothing() -> None:
     ks, _ = switch()
     told: list[str] = []

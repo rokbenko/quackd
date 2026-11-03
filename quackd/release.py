@@ -330,12 +330,16 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
 async def one_watch(person: Any) -> AsyncIterator[Callable[[], Awaitable[Any]] | None]:
     """A press watched for once across what a person may stop in turn: a count and then a fold.
     Each counting presses from where it began lost one made in between, and the arm folded under
-    the hand that made it. What it yields is `fold_unless_stopped`'s `stopped`."""
+    the hand that made it. What it yields is `fold_unless_stopped`'s `stopped`, and a `stopped`
+    that fails is no stop, as it is there."""
     stopped = getattr(person, "stopped", None)
-    if stopped is None:
+    watch: asyncio.Future[Any] | None = None
+    if stopped is not None:
+        with contextlib.suppress(Exception):
+            watch = asyncio.ensure_future(stopped())
+    if watch is None:
         yield None
         return
-    watch = asyncio.ensure_future(stopped())
     try:
         yield functools.partial(asyncio.shield, watch)
     finally:
