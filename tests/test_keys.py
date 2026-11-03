@@ -1174,10 +1174,11 @@ def test_a_guard_that_comes_second_catches_a_command_that_lasts_no_time(
 
     master, slave = pty_pair
     monkeypatch.setattr(keys_module, "GUARD_LOOKS_S", 0.05)
+    monkeypatch.setattr(keys_module, "GUARD_IDLE_S", 60.0)  # so only a key can bring it to look
     guard, _, left, theirs = _guard_that_lost(slave)
     try:
         time.sleep(0.4)  # past the close look it wakes with
-        end = time.monotonic() + 15
+        end = time.monotonic() + 20
         while guard._process.poll() is None and time.monotonic() < end:
             os.write(master, b"l")
             termios.tcsetattr(slave, termios.TCSANOW, left)
