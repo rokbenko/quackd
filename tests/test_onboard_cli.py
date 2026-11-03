@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from importlib import resources
@@ -21,12 +22,16 @@ import pytest
 from typer.testing import CliRunner
 
 from quackd import boards
+from quackd.adapters.base import AdapterNotInstalled
 from quackd.boards import generic
-from quackd.cli import app
-from quackd.onboard import config, demo
+from quackd.boards.linux import BLUETOOTH
+from quackd.cli import _status_rows, app
+from quackd.onboard import config, demo, radio_side, service
+from quackd.onboard import facts as facts_module
 from quackd.onboard import preflight as preflight_module
 from quackd.onboard.store import OnboardDir
 from quackd.passport import document
+from quackd.radio import NoRadio
 from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
 
 runner = CliRunner()
@@ -212,6 +217,505 @@ def test_a_remembered_board_nothing_provides_says_so(
         app, ["onboard", "sign", "--dir", str(home), "--passphrase-file", str(secret)]
     )
     assert signed.exit_code == 1 and "no board called 'gone-plugin'" in flat(signed.output)
+
+
+def adapter_opened(home: Path, monkeypatch: pytest.MonkeyPatch, **asked: Any) -> str | None:
+    """The adapter `service.serve` hands the radio, stopping there. One that started without
+    opening a radio fails here rather than serving for ever."""
+
+    class Opened(Exception):
+        pass
+
+    def side(**options: Any) -> Any:
+        raise Opened(options["adapter"])
+
+    def started(_service: Any) -> None:
+        raise AssertionError("the service started and opened no radio")
+
+    monkeypatch.setattr(service, "_browser", lambda log: None)
+    monkeypatch.setattr(service, "board_side", side)
+    with pytest.raises(Opened) as opened:
+        service.serve(OnboardDir(home), board=None, log=lambda line: None, started=started, **asked)
+    adapter: str | None = opened.value.args[0]
+    return adapter
+
+
+def test_the_service_opens_the_adapter_preflight_checked(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    named_computer: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preflight checks the first adapter the kernel lists, and the radio opened `hci0`, so a
+    computer whose only adapter came up as `hci1` passed preflight and got no radio."""
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+    monkeypatch.setattr(generic, "list_dir", {BLUETOOTH: ["hci1"]}.get)
+    assert adapter_opened(home, monkeypatch) == "hci1"
+
+
+@pytest.mark.parametrize(
+    ("radio", "found"),
+    [
+        (None, boards.RadioCheck(ok=False, adapter="hci3", why="it is down")),
+        (None, OSError("a third party's board could not say")),
+        ("off", OSError("a third party's board could not say")),
+        (None, None),
+    ],
+    ids=["not-fit", "cannot-say", "radio-off", "answers-nothing"],
+)
+def test_the_service_opens_no_adapter_preflight_did_not_check(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    named_computer: None,
+    monkeypatch: pytest.MonkeyPatch,
+    radio: str | None,
+    found: Any,
+) -> None:
+    """Preflight checks the radio's default on a board that found nothing fit, so the service
+    does too, and a board that cannot say does not stop it. A radio that is off asks it nothing."""
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+    asked: list[Any] = []
+
+    def answer(_board: Any) -> Any:
+        asked.append(found)
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    monkeypatch.setattr(generic.GenericBoard, "radio", answer)
+    assert adapter_opened(home, monkeypatch, radio=radio) is None
+    assert asked == ([] if radio == "off" else [found])
+
+
+@pytest.mark.parametrize(
+    ("kind", "adapter", "wanted"),
+    [
+        ("bluez", "hci1", {"advertise": True, "adapter": "hci1"}),
+        ("bluez", None, {"advertise": True}),
+        ("bluez", "sim", {"advertise": True}),
+        ("off", "hci1", {}),
+    ],
+    ids=["found", "none-found", "not-an-adapter", "radio-off"],
+)
+def test_the_radio_is_opened_on_the_adapter_it_is_handed(
+    monkeypatch: pytest.MonkeyPatch, kind: str, adapter: str | None, wanted: dict[str, Any]
+) -> None:
+    asked: dict[str, Any] = {}
+
+    def opened(radio_kind: str, **options: Any) -> Any:
+        asked.update(options)
+        return NoRadio()
+
+    monkeypatch.setattr(radio_side, "open_radio", opened)
+    radio_side.board_side(radio_kind=kind, instance="x", adapter=adapter)
+    assert asked == wanted
+
+
+@pytest.fixture
+def body_file(robot_file: Path) -> Path:
+    """A robot file that names a body quackd drives, whose manifest supplies what it can do."""
+    text = robot_file.read_text(encoding="utf-8")
+    body = text.replace("\nmeeting:\n", "\nrobot:\n  adapter: microduck:sim2d\n\nmeeting:\n", 1)
+    assert body != text
+    robot_file.write_text(body, encoding="utf-8")
+    return robot_file
+
+
+def test_a_robot_with_a_body_does_not_read_as_unsigned_just_after_it_was_signed(
+    tmp_path: Path, body_file: Path, secret: Path
+) -> None:
+    """Signing reads the body's manifest, and preflight and status compared the passport with
+    the file alone, so every member the manifest supplies looked changed."""
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+    signed = document.read_jws((home / "passport.jws").read_text(encoding="utf-8").strip())
+    assert signed.document["body"]["mobility"] == "legged", "the manifest said what it is"
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert rows["passport"]["state"] == "ok"
+    assert "signed" not in rows, rows.get("signed")
+    reply = {
+        "passport": {"ok": True, "why": "its passport checks out"},
+        "board": signed.board(),
+        "radio": {},
+        "run": {},
+    }
+    assert "unsigned" not in [name for name, _ in _status_rows(OnboardDir(home), reply)]
+
+
+def status_said(home: Path) -> dict[str, str]:
+    signed = document.read_jws((home / "passport.jws").read_text(encoding="utf-8").strip())
+    reply = {"passport": {"ok": True}, "board": signed.board(), "radio": {}, "run": {}}
+    return {name: str(said) for name, said in _status_rows(OnboardDir(home), reply)}
+
+
+#: What a body's adapter may raise, a third party's above all, and what a person must be told of it.
+UNREADABLE_BODIES = [
+    pytest.param(
+        AdapterNotInstalled("microduck", "quackd[microduck]"),
+        "quackd[microduck]",
+        id="not-installed",
+    ),
+    pytest.param(
+        ImportError("libfoo.so: gone"), "ImportError: libfoo.so: gone", id="its-import-broke"
+    ),
+    pytest.param(
+        RuntimeError("its SDK refused"), "RuntimeError: its SDK refused", id="its-describe-broke"
+    ),
+    pytest.param(RuntimeError(), "RuntimeError", id="says-nothing"),
+    pytest.param(KeyError("calibration"), "KeyError: 'calibration'", id="a-bare-key"),
+]
+
+
+@pytest.mark.parametrize(("raised", "told"), UNREADABLE_BODIES)
+def test_a_body_that_cannot_be_read_here_is_said_and_stops_neither_preflight_nor_status(
+    tmp_path: Path,
+    body_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raised: Exception,
+    told: str,
+) -> None:
+    """A third party's adapter can raise anything, on import or when it describes itself."""
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+
+    def not_here(file: Any) -> Any:
+        raise raised
+
+    monkeypatch.setattr(facts_module, "manifest_of", not_here)
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert rows["signed"]["state"] == "warn" and told in rows["signed"]["detail"]
+    assert "the body its file names cannot be read here" in rows["signed"]["detail"]
+    assert "changed since it was signed" not in rows["signed"]["detail"]
+    assert not rows["signed"].get("hint"), "signing cannot help until the body can be read"
+    said = status_said(home)
+    assert told in said["robot.yaml"]
+    assert "unsigned" not in said, "nobody edited anything"
+
+
+def test_a_cannot_the_body_supplied_does_not_look_deleted_while_it_cannot_be_read(
+    tmp_path: Path, body_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With none in the file, `cannot` is the manifest's, which nothing here can read."""
+    home = tmp_path / "robot"
+    text = body_file.read_text(encoding="utf-8")
+    stated = '  cannot: ["move: this is a mock on a laptop, and no G1 is here"]\n'
+    assert stated in text
+    body_file.write_text(text.replace(stated, "  cannot: []\n"), encoding="utf-8")
+    assert onboard(home, body_file, secret).exit_code == 0
+    signed = document.read_jws((home / "passport.jws").read_text(encoding="utf-8").strip())
+    assert signed.document["cannot"], "the manifest's own lines"
+
+    def not_here(file: Any) -> Any:
+        raise AdapterNotInstalled("microduck", "quackd[microduck]")
+
+    monkeypatch.setattr(facts_module, "manifest_of", not_here)
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert "changed since it was signed" not in rows["signed"]["detail"]
+    assert "unsigned" not in status_said(home)
+
+
+#: A figure whose source a file may hold and a passport refuses, for a body the manifest supplies.
+A_SOURCE_TOO_LONG = r"\1" + "x" * 121
+A_FIGURES_SOURCE = r'(mass_kg: \[35, official, ")[^"]*'
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "member"),
+    [
+        ("name: g1-edu-mock", "name: g1-edu-other", "name"),
+        ('vendor: "unitree"', 'vendor: "somebody"', "maker"),
+        ("Courier company (demo)", "Somebody else", "owner"),
+    ],
+    ids=["name", "maker", "owner"],
+)
+@pytest.mark.parametrize("figure", [False, True], ids=["file-fine", "file-alone-no-passport"])
+def test_an_edit_is_still_named_while_the_body_cannot_be_read(
+    tmp_path: Path,
+    body_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    old: str,
+    new: str,
+    member: str,
+    figure: bool,
+) -> None:
+    """`status` names every unsigned change, and what the file alone decides needs no body, nor
+    a passport built from the rest of the file."""
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+    text = (home / "robot.yaml").read_text(encoding="utf-8")
+    edited = text.replace(old, new)
+    assert edited != text
+    if figure:
+        edited = re.sub(A_FIGURES_SOURCE, A_SOURCE_TOO_LONG, edited)
+        assert "x" * 121 in edited
+    (home / "robot.yaml").write_text(edited, encoding="utf-8")
+
+    def not_here(file: Any) -> Any:
+        raise AdapterNotInstalled("microduck", "quackd[microduck]")
+
+    monkeypatch.setattr(facts_module, "manifest_of", not_here)
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert f"changed since it was signed: {member};" in rows["signed"]["detail"]
+    assert "quackd[microduck]" in rows["signed"]["detail"]
+    assert not rows["signed"].get("hint"), "signing stops at the body too"
+    said = status_said(home)
+    assert f"changed since it was signed: {member}," in said["unsigned"]
+    assert "quackd onboard sign" not in said["unsigned"]
+    assert "quackd[microduck]" in said["robot.yaml"]
+
+
+@pytest.mark.parametrize(
+    ("made", "told"),
+    [
+        (lambda real: real.model_copy(update={"vendor": "acme" * 20}), "vendor"),
+        (lambda real: object(), "AttributeError"),
+    ],
+    ids=["too-long", "not-a-manifest"],
+)
+def test_a_manifest_that_makes_no_passport_stops_neither_preflight_nor_status(
+    tmp_path: Path,
+    body_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    made: Any,
+    told: str,
+) -> None:
+    """A manifest's names are freer than a passport's, so a third party's may make no passport,
+    which reading it back says."""
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+    real = facts_module.manifest_of(config.load(home / "robot.yaml"))
+    assert real is not None
+    monkeypatch.setattr(facts_module, "manifest_of", lambda file: made(real))
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert told in rows["signed"]["detail"]
+    assert "robot.yaml and the body it names" in rows["signed"]["detail"]
+    assert "PassportError" not in rows["signed"]["detail"], "quackd's own refusal needs no type"
+    assert told in status_said(home)["robot.yaml"]
+
+
+def test_a_robot_with_no_body_is_not_told_its_body_is_at_fault(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """A file may hold what a passport refuses. That stops neither, an edit beside it is still
+    named, and no body is blamed, since this robot has none."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    text = (home / "robot.yaml").read_text(encoding="utf-8")
+    edited = re.sub(A_FIGURES_SOURCE, A_SOURCE_TOO_LONG, text)
+    edited = edited.replace("Courier company (demo)", "Somebody else")
+    assert "x" * 121 in edited and "Somebody else" in edited
+    (home / "robot.yaml").write_text(edited, encoding="utf-8")
+    _, rows = preflight_rows(home, "--board", "sim")
+    detail = rows["signed"]["detail"]
+    assert "no passport can be built from robot.yaml," in detail
+    assert "changed since it was signed: owner" in detail
+    assert "body it names" not in detail and "body its file names" not in detail
+    assert not rows["signed"].get("hint"), "signing would refuse it too"
+    said = status_said(home)
+    assert "no passport can be built from robot.yaml," in said["robot.yaml"]
+    assert "changed since it was signed: owner" in said["unsigned"]
+
+
+def test_the_wizard_says_why_it_cannot_sign_a_file_a_passport_refuses(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    text = (home / "robot.yaml").read_text(encoding="utf-8")
+    edited = re.sub(A_FIGURES_SOURCE, A_SOURCE_TOO_LONG, text)
+    assert edited != text
+    (home / "robot.yaml").write_text(edited, encoding="utf-8")
+    again = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "sim",
+            "--dir",
+            str(home),
+            "--passphrase-file",
+            str(secret),
+            "--no-service",
+        ],
+    )
+    assert again.exit_code == 1
+    assert isinstance(again.exception, SystemExit), "said plainly, not a traceback"
+    assert "mass_kg" in flat(again.output)
+
+
+def test_a_passport_file_that_is_not_text_does_not_check_out_everywhere_it_is_read(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    good = service.Service(
+        OnboardDir(home),
+        facts=boards.detect("sim")[1],
+        radio_side=lambda: None,
+        log=lambda _line: None,
+    )
+    (home / "passport.jws").write_bytes(b"\xff\xfe not text")
+    assert good._reload()["ok"] is True, "the service reads it again and keeps what it had"
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert (
+        rows["passport"]["state"] == "fail" and "does not check out" in rows["passport"]["detail"]
+    )
+    for how in ([], ["--json"], ["--jws"]):
+        shown = runner.invoke(app, ["onboard", "show", "--dir", str(home), *how])
+        assert shown.exit_code == 1 and isinstance(shown.exception, SystemExit), how
+        assert "does not check out" in flat(shown.output), how
+    started = service.Service(
+        OnboardDir(home),
+        facts=boards.detect("sim")[1],
+        radio_side=lambda: None,
+        log=lambda _line: None,
+    )
+    assert not started.check.ok and "does not check out" in started.check.why
+    # the wizard signs one that does not check out, as it does any other
+    again = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "sim",
+            "--dir",
+            str(home),
+            "--passphrase-file",
+            str(secret),
+            "--no-service",
+        ],
+    )
+    assert again.exit_code == 0, again.output
+    assert document.read_jws((home / "passport.jws").read_text(encoding="utf-8").strip())
+
+
+@pytest.mark.parametrize(
+    ("raised", "told"),
+    [
+        *UNREADABLE_BODIES,
+        pytest.param(RuntimeError("a\x1b[31mb"), "\\x1b", id="control-characters"),
+    ],
+)
+@pytest.mark.parametrize("sign", [False, True], ids=["wizard", "sign"])
+def test_the_wizard_and_sign_say_why_they_cannot_sign_for_a_body_they_cannot_read(
+    tmp_path: Path,
+    body_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raised: Exception,
+    told: str,
+    sign: bool,
+) -> None:
+    home = tmp_path / "robot"
+
+    def not_here(file: Any) -> Any:
+        raise raised
+
+    if sign:
+        assert onboard(home, body_file, secret).exit_code == 0
+        (home / "passport.jws").unlink()
+    monkeypatch.setattr(facts_module, "manifest_of", not_here)
+    done = (
+        runner.invoke(
+            app,
+            [
+                "onboard",
+                "sign",
+                "--board",
+                "sim",
+                "--dir",
+                str(home),
+                "--passphrase-file",
+                str(secret),
+            ],
+        )
+        if sign
+        else onboard(home, body_file, secret)
+    )
+    assert done.exit_code == 1
+    assert isinstance(done.exception, SystemExit), "said plainly, not a traceback"
+    assert "the body robot.yaml names cannot be read here" in flat(done.output)
+    assert told in flat(done.output)
+    assert not (home / "passport.jws").exists()
+
+
+@pytest.mark.parametrize(
+    ("before", "command", "said"),
+    [
+        (["--dir", "somewhere"], ["sign"], "--dir goes after the command"),
+        (["--board", "sim"], ["sign"], "--board goes after the command"),
+        (["--days", "30"], ["sign"], "--days goes after the command"),
+        (["--board", "sim"], ["status"], "takes no --board"),
+        (["--file", "robot.yaml"], ["sign"], "takes no --file"),
+        (["--yes"], ["met"], "takes no --yes"),
+    ],
+    ids=["dir", "board", "days", "no-such-flag", "wizards-file", "wizards-yes"],
+)
+def test_a_flag_before_a_command_is_refused_and_not_dropped(
+    before: list[str], command: list[str], said: str
+) -> None:
+    """`quackd onboard --dir ~/two sign` parsed, reached nothing, and signed the robot in the
+    default folder."""
+    refused = runner.invoke(app, ["onboard", *before, *command])
+    assert refused.exit_code == 1
+    assert said in flat(refused.output)
+
+
+def test_a_flag_before_a_command_signs_nothing(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home, other = tmp_path / "robot", tmp_path / "other"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    before = (home / "passport.jws").read_bytes()
+    refused = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--dir",
+            str(other),
+            "sign",
+            "--dir",
+            str(home),
+            "--board",
+            "sim",
+            "--passphrase-file",
+            str(secret),
+        ],
+    )
+    assert refused.exit_code == 1
+    assert (home / "passport.jws").read_bytes() == before and not other.exists()
+
+
+def test_a_flag_after_a_command_and_a_flag_with_no_command_still_work(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    signed = runner.invoke(
+        app,
+        [
+            "onboard",
+            "sign",
+            "--board",
+            "sim",
+            "--dir",
+            str(home),
+            "--passphrase-file",
+            str(secret),
+            "--days",
+            "30",
+        ],
+    )
+    assert signed.exit_code == 0, signed.output
+    bare = runner.invoke(app, ["onboard", "status", "--dir", str(home)])
+    assert "goes after the command" not in flat(bare.output)
 
 
 def test_a_robot_on_a_board_with_no_kind_of_its_own_is_not_named_other_by_default(

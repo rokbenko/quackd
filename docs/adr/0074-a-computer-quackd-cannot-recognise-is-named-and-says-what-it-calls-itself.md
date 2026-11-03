@@ -99,5 +99,3 @@ everything.
   `kind: jetson`, though NVIDIA does not brand it a Jetson. Without the file it is refused as a Thor,
   and `generic` takes it. No NVIDIA page says which, IGX Thor's compatible is not in mainline, and this
   decision leaves it until somebody with one can look.
-- **The radio still opens `hci0`.** Preflight checks the first adapter the kernel lists, so a computer
-  whose only adapter is `hci1` passes preflight and gets no radio. It is older than this decision.

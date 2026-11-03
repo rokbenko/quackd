@@ -36,7 +36,8 @@ def device_tree_text(read: Reader, path: str) -> str:
 
 
 def radio_check(listdir: Lister) -> RadioCheck:
-    """The first Bluetooth adapter the kernel lists, which is the one BlueZ calls `hci0`."""
+    """The first Bluetooth adapter the kernel lists, which the radio opens and preflight checks:
+    `hci0` as a rule, and not on a computer whose only adapter came up as `hci1`."""
     adapters = sorted(name for name in listdir(BLUETOOTH) or [] if name.startswith("hci"))
     if adapters:
         return RadioCheck(ok=True, adapter=adapters[0])

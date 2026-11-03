@@ -24,6 +24,8 @@ from quackd.passport.keys import public_from_did
 from quackd.passport_trust import Pin as TrustPin
 
 FILE_VERSION = 1
+#: The body robot.yaml shows as its example, which a person uncomments, so one that parses.
+ADAPTER_EXAMPLE = "toddlerbot:bridge"
 #: The bodies a robot.yaml may describe: robots that move about and so meet others. An arm is
 #: fixed in place and rarely meets another robot, and a toy has no computer of its own that can
 #: run quackd, so neither carries a passport (ADR-0073).
@@ -143,7 +145,7 @@ class Robot(_Strict):
     @classmethod
     def _adapter_spec(cls, spec: str) -> str:
         if ":" not in spec:
-            raise ValueError(f"{spec!r} is not <adapter>:<backend>, such as toddlerbot:real")
+            raise ValueError(f"{spec!r} is not <adapter>:<backend>, such as {ADAPTER_EXAMPLE}")
         return spec
 
 
@@ -377,7 +379,7 @@ def template(
         f"  adapter: {adapter}\n" + (f"  address: {_yaml_text(address)}\n" if address else "")
         if adapter
         else "# robot:                    # a body quackd can drive, by its adapter:\n"
-        "#   adapter: toddlerbot:real\n"
+        f"#   adapter: {ADAPTER_EXAMPLE}\n"
     )
     brain_lines = (f"  llm: {_yaml_text(llm)}\n" if llm else "  # llm: local:MODEL\n") + (
         f"  base_url: {_yaml_text(base_url)}\n" if base_url else "  # base_url: URL\n"

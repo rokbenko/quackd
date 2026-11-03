@@ -9,6 +9,48 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **The radio opens the adapter preflight checked.** It always opened `hci0`, while `quackd onboard
+  preflight` checked the first adapter the kernel lists, so a computer whose only adapter came up as
+  `hci1` passed preflight and got no radio. The service now opens the one the board finds as the radio
+  opens, so an adapter that comes up later under another name needs the service started again.
+  `tests/test_onboard_cli.py` starts the service with only `hci1` listed, and no real adapter has run
+  this. It failed before this change.
+- **A robot with a body no longer reads as unsigned straight after it is signed.** Signing reads the
+  manifest of the body its file names, which supplies the passport's body, skills and courtesies, and
+  preflight's `signed` row and `status` compared the passport with the file alone, so they said
+  `robot.yaml changed since it was signed: body, ...` of a file nobody had edited. Both read the
+  manifest now. A body that cannot be read here, its package not installed or its adapter broken, stops
+  neither: both say so, and still name an edit to the robot's name, maker or owner.
+  `tests/test_onboard_cli.py` signs a robot with a body and asks both. It failed before this change.
+- **Preflight no longer ends in a traceback on a file a passport refuses.** A figure's source longer
+  than a passport allows passed `robot.yaml`'s own check and stopped preflight. It now says no passport
+  can be built from the file. `tests/test_onboard_cli.py` tries it. It failed before this change.
+- **The wizard says why it cannot sign for a body it cannot read.** `quackd onboard` with a file naming
+  such a body ended in a traceback. It now stops with what is wrong, in the words `quackd onboard sign`
+  uses. `tests/test_onboard_cli.py` runs both. It failed before this change.
+- **A flag before a subcommand is refused, not dropped.** The wizard's flags parsed before a subcommand
+  and reached nothing, so `quackd onboard --dir ~/two sign` signed the robot in the default folder.
+  Such a flag now stops. One the subcommand takes says `--dir goes after the command: quackd onboard
+  sign --dir ...`, so put it there. One it does not take says it is for the wizard, `quackd onboard`
+  with nothing after it. `tests/test_onboard_cli.py` tries each kind, and that nothing was signed. It
+  failed before this change.
+- **A passport file that is not text reads as one that does not check out.** `quackd onboard
+  preflight`, `show` and the service ended in a traceback on a `passport.jws` holding bytes that are not
+  UTF-8. Each now says it does not check out, and the wizard signs it again.
+  `tests/test_onboard_cli.py` tries each. It failed before this change.
+- **The example adapter in `robot.yaml` is one quackd has.** The comment in the file the wizard writes,
+  and the refusal of an adapter with no backend, named `toddlerbot:real`, a backend ToddlerBot does not
+  have, so uncommenting it was refused at signing. Both name `toddlerbot:bridge` now.
+  `tests/test_onboard_config.py` parses it. It failed before this change.
+- **A dial on the sim radio no longer takes a lost read for a robot that has gone.** It read the other
+  radio's file once, and on Windows a read can lose to that file being replaced, so a robot just heard
+  came back as `nothing is advertising`. A meeting lost that try and made another, and a test that
+  dials once failed, which is how CI met it on this release's branch, in
+  `tests/test_radio_sim_processes.py`. The dial now looks again for one tick of the air, 0.2 s, within
+  its timeout. `tests/test_radio_sim.py` loses the first two reads. It failed before this change.
+
 ## [0.31.0] — 2026-11-03
 
 0.31.0 lets Robot Passport run on a robot's own computer that is not a Jetson. `quackd onboard

@@ -113,18 +113,30 @@ def sign(
 
 
 def needs_signing(
-    home: Any, file: config.RobotFile, board: dict[str, str], *, manifest: Any = None
+    home: Any,
+    file: config.RobotFile,
+    board: dict[str, str],
+    *,
+    manifest: Any = None,
+    file_alone: bool = False,
 ) -> str | None:
-    """Why the passport has to be signed now, or None when the signed one still says it all."""
+    """Why the passport has to be signed now, or None when the signed one still says it all.
+    With `file_alone` only what the file alone decides is compared, and no passport is built."""
     from quackd.passport import PassportError, document
 
     if not home.passport_jws.exists():
         return "it has never been signed"
     try:
-        reading = document.read_jws(home.passport_jws.read_text(encoding="utf-8").strip())
+        reading = document.read_jws(
+            home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
+        )
     except PassportError as e:
         return f"the signed one does not check out ({e})"
-    changed = facts.unsigned_changes(file, reading, board=board, manifest=manifest)
+    changed = (
+        facts.file_changes(file, reading, board=board)
+        if file_alone
+        else facts.unsigned_changes(file, reading, board=board, manifest=manifest)
+    )
     edited = [name for name in changed if name != "board"]
     if edited:
         return f"robot.yaml changed since it was signed: {', '.join(edited)}"
@@ -134,6 +146,27 @@ def needs_signing(
     if left < RENEW_WITHIN_DAYS * 86_400:
         return f"its signature runs out in {max(0, left) // 86_400} days"
     return None
+
+
+def signing_state(
+    home: Any, file: config.RobotFile, board: dict[str, str]
+) -> tuple[str | None, str | None]:
+    """Why the passport has to be signed now, and what kept all of it from being compared, each
+    None when nothing did. Preflight and status ask this and neither stops for it: a body's adapter
+    may be a third party's and raise anything, and what the file and its manifest say may make no
+    passport, while what the file alone decides can still be compared."""
+    only = "so only the name, maker, owner and board can be compared"
+    try:
+        manifest = facts.manifest_of(file)
+    except Exception as e:  # a third party's adapter can raise anything
+        trouble = f"the body its file names cannot be read here, {only}: {facts.why_unread(e)}"
+    else:
+        try:
+            return needs_signing(home, file, board, manifest=manifest), None
+        except Exception as e:  # a passport refuses what a manifest or a file may say
+            what = "robot.yaml" if manifest is None else "robot.yaml and the body it names"
+            trouble = f"no passport can be built from {what}, {only}: {facts.why_unread(e)}"
+    return needs_signing(home, file, board, file_alone=True), trouble
 
 
 def ask_for_file(ask: Asker, *, default_name: str, port: int = 8790) -> str:

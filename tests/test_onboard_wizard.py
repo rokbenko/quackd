@@ -132,6 +132,10 @@ def test_what_a_computer_calls_itself_changing_is_not_robot_yaml_changing(
     assert wizard.needs_signing(home, file, renamed) == (
         "this computer calls itself something else since it was signed"
     )
+    assert wizard.needs_signing(home, file, renamed, file_alone=True) == (
+        "this computer calls itself something else since it was signed"
+    ), "with no passport to build, the board is still the board"
+    assert wizard.needs_signing(home, file, SIM, file_alone=True) is None
     home.robot_yaml.write_text(robot_text(how_to_stop="pull the cord"), encoding="utf-8")
     why = wizard.needs_signing(home, config.load(home.robot_yaml), renamed)
     assert why == "robot.yaml changed since it was signed: safety", "board is no edit of it"
