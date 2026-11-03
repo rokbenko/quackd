@@ -734,7 +734,7 @@ def serve(
     from quackd.boards import detect
     from quackd.radio.sim import default_air_dir
 
-    chosen, facts = detect(board)
+    chosen, facts = detect(home.board_named(board))
     file = config.load(home.robot_yaml)
     for name in load_env(home.robot_env):
         log(f"the brain's {name} is read from robot.env")

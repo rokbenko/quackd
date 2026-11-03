@@ -9169,8 +9169,9 @@ _ONBOARD_DIR = typer.Option(
 _ONBOARD_BOARD = typer.Option(
     None,
     "--board",
-    help="The computer this is: a Jetson is found by itself; sim stands in for one on a laptop, "
-    "and its passport says so.",
+    help="The computer this is: a Jetson is found by itself; generic is any other robot's Linux "
+    "computer, by what it calls itself, and is remembered once named; sim stands in for one on a "
+    "laptop, and its passport says so.",
 )
 _PASSPHRASE_FILE = typer.Option(
     None,
@@ -9219,11 +9220,11 @@ def _onboard_home(directory: str | None) -> Any:
         raise  # unreachable: _fail exits
 
 
-def _onboard_board(name: str | None) -> tuple[Any, Any]:
+def _onboard_board(name: str | None, home: Any) -> tuple[Any, Any]:
     from quackd.boards import NotARobot, UnknownBoard, Unsupported, detect
 
     try:
-        return detect(name)
+        return detect(home.board_named(name))
     except (NotARobot, Unsupported, UnknownBoard) as e:
         _fail(str(e))
         raise  # unreachable: _fail exits
@@ -9310,7 +9311,7 @@ def onboard(
 
     _refuse_root()
     home = _onboard_home(directory)
-    chosen, facts = _onboard_board(board)
+    chosen, facts = _onboard_board(board, home)
     release = f", {facts.release}" if facts.release else ""
     if facts.kind == "sim":
         ui.console.print(_ok_line("the sim board: this computer stands in for a robot's own"))
@@ -9318,6 +9319,7 @@ def onboard(
         ui.console.print(_ok_line(f"this computer is {facts.model} ({facts.kind}{release})"))
     ask = _Prompts(yes)
     home.ensure()
+    home.remember_board(chosen.name if chosen.explicit_only else None)
     if file is not None:
         try:
             text = file.read_text(encoding="utf-8")
@@ -9329,7 +9331,7 @@ def onboard(
     elif home.robot_yaml.exists():
         robot = _onboard_file(home)
     else:
-        default_name = facts.kind if facts.kind != "sim" else "robot-01"
+        default_name = facts.kind if facts.kind == "jetson" else "robot-01"
         text = wizard.ask_for_file(
             ask,
             default_name=f"{default_name}-01".replace("-01-01", "-01"),
@@ -9411,7 +9413,7 @@ def onboard_sign(
     from quackd.onboard import wizard
 
     home = _onboard_home(directory)
-    _chosen, facts = _onboard_board(board)
+    _chosen, facts = _onboard_board(board, home)
     robot = _onboard_file(home)
     try:
         signed = wizard.sign(

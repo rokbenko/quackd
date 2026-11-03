@@ -52,7 +52,7 @@ def preflight(
     """Every check, in the order a person fixes them. `service` asks the running service for
     its status, None when none answers; `radio_rows` stands in for the radio's own, for tests."""
     checks: list[Check] = []
-    facts, radio_kind, radio = _board(board, checks)
+    facts, radio_kind, radio = _board(home.board_named(board), checks)
     if radio_kind is not None:
         adapter = (
             radio.detail.split(", ")[-1] if radio is not None and radio.state == "ok" else None

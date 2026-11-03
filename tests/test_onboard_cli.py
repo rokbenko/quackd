@@ -13,14 +13,18 @@ import json
 import os
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
 from quackd import boards
+from quackd.boards import generic
 from quackd.cli import app
 from quackd.onboard import config, demo
+from quackd.onboard.store import OnboardDir
 from quackd.passport import document
+from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
 
 runner = CliRunner()
 PASSPHRASE = "a passphrase for these tests only"
@@ -69,6 +73,164 @@ def onboard(home: Path, robot_file: Path, secret: Path, *more: str) -> object:
             *more,
         ],
     )
+
+
+@pytest.fixture
+def named_computer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The generic board on any machine: Linux to that board alone, and a Radxa Dragon Q6A's files
+    to read, so no test here reads the computer it runs on."""
+    files = DRAGON_Q6A | UBUNTU_24
+    monkeypatch.setattr(generic, "system_name", lambda: "Linux")
+    monkeypatch.setattr(generic, "read_file", files.get)
+
+
+def onboard_named(home: Path, robot_file: Path, secret: Path) -> Any:
+    return runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(home),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--no-service",
+        ],
+    )
+
+
+def signed_board(home: Path) -> dict[str, Any]:
+    token = (home / "passport.jws").read_text(encoding="utf-8").strip()
+    return document.read_jws(token).board()
+
+
+def test_a_board_named_once_is_remembered_so_nothing_later_needs_the_flag(
+    tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
+) -> None:
+    """The unit runs `quackd onboard serve`, and every hint says `quackd onboard sign`, with no
+    flag. A board only ever found by name would refuse them all, and point at `--board sim`."""
+    home = tmp_path / "robot"
+    first = onboard_named(home, robot_file, secret)
+    assert first.exit_code == 0, first.output
+    said = flat(first.output)
+    assert "Radxa Dragon Q6A (other, Ubuntu 24.04.4 LTS)" in said
+    assert "--board" not in said, "the line that says how to start it needs no flag"
+    assert (home / "board").read_text(encoding="utf-8") == "generic\n"
+    assert signed_board(home) == {"kind": "other", "model": "Radxa Dragon Q6A", "soc": "qcm6490"}
+    signed = runner.invoke(
+        app, ["onboard", "sign", "--dir", str(home), "--passphrase-file", str(secret)]
+    )
+    assert signed.exit_code == 0, signed.output
+    assert signed_board(home)["kind"] == "other"
+    checked = runner.invoke(app, ["onboard", "preflight", "--dir", str(home), "--json"])
+    rows = {row["check"]: row for row in json.loads(checked.output)["checks"]}
+    assert rows["board"]["state"] == "ok" and "Radxa Dragon Q6A" in rows["board"]["detail"]
+    assert rows["passport"]["state"] == "ok"
+    start = "sudo systemctl start quackd-onboard, or quackd onboard serve"
+    assert rows["service"]["hint"] == start
+    again = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--dir",
+            str(home),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--no-service",
+        ],
+    )
+    assert again.exit_code == 0, again.output
+    assert "its passport is signed and current" in flat(again.output)
+
+
+def test_the_service_finds_the_remembered_board_as_the_unit_starts_it_with_no_flag(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    named_computer: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+    asked: list[str | None] = []
+
+    def detect(name: str | None = None, **_: object) -> Any:
+        asked.append(name)
+        raise boards.NotARobot("that is all this test wanted to know")
+
+    monkeypatch.setattr(boards, "detect", detect)
+    served = runner.invoke(app, ["onboard", "serve", "--dir", str(home)])
+    assert served.exit_code == 1 and "all this test wanted" in flat(served.output)
+    assert asked == ["generic"]
+
+
+def test_a_flag_wins_over_the_remembered_board_and_sim_is_never_remembered(
+    tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
+) -> None:
+    """Sim is named every time, so no file can make a robot take itself for a simulation."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    assert not (home / "board").exists()
+    kept = OnboardDir(home)
+    assert kept.board_named() is None
+    kept.remember_board("sim")
+    assert not kept.board_file.exists()
+    kept.board_file.write_text("sim\n", encoding="utf-8")
+    assert kept.board_named() is None, "a file that says sim by hand says nothing"
+    kept.board_file.write_text(" Generic \n", encoding="utf-8")
+    assert kept.board_named() == "generic"
+    assert kept.board_named("jetson") == "jetson"
+    kept.board_file.write_bytes(bytes([255, 254]))
+    assert kept.board_named() is None, "a file that is no text says nothing"
+
+
+def test_the_wizard_on_another_board_forgets_the_one_it_remembered(
+    tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+    assert (home / "board").exists()
+    assert onboard(home, robot_file, secret).exit_code == 0
+    assert not (home / "board").exists()
+
+
+def test_a_remembered_board_nothing_provides_says_so(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    (home / "board").write_text("gone-plugin\n", encoding="utf-8")
+    signed = runner.invoke(
+        app, ["onboard", "sign", "--dir", str(home), "--passphrase-file", str(secret)]
+    )
+    assert signed.exit_code == 1 and "no board called 'gone-plugin'" in flat(signed.output)
+
+
+def test_a_robot_on_a_board_with_no_kind_of_its_own_is_not_named_other_by_default(
+    tmp_path: Path, secret: Path, named_computer: None
+) -> None:
+    home = tmp_path / "robot"
+    made = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(home),
+            "--yes",
+            "--passphrase-file",
+            str(secret),
+            "--no-service",
+        ],
+    )
+    assert made.exit_code == 0, made.output
+    assert config.load(home / "robot.yaml").passport.name == "robot-01"
 
 
 def test_the_wizard_from_a_file_writes_the_robot_signs_it_and_says_how_to_start_it(
