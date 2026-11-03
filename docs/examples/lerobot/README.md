@@ -243,4 +243,4 @@ How they were checked, on the commit that became 0.30.3. `e208` to `e214` and `e
 `lerobot:mock` or the real backend over a stand-in arm, in a real Windows console with the presses
 made as the sheet says, and what the sheet quotes is what that printed. `e215` ran on the mock with
 its stand-in serving, and `e216` on the arm's twin, whose clock runs fast, so with `--after 0.2`. `e220`
-ran in Docker under a real `bash`, and the sentence about a hand on the arm in each has met no hand.
+ran in Docker under a real `bash`. Nothing any of them says about a hand on the arm has met a hand.
