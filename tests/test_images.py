@@ -167,7 +167,8 @@ def test_a_format_quackd_does_not_send_is_refused_and_lists_the_ones_it_does(
     tmp_path: Path,
 ) -> None:
     """PIL reads far more than quackd sends. A netpbm file decodes perfectly well and is still
-    refused, because the refusal's job is to tell a person which file to convert."""
+    refused, because the refusal's job is to tell a person which file to convert. It cannot
+    say what the file is: no decoder off the list is asked (tests/test_image_formats.py)."""
     netpbm = tmp_path / "raw.ppm"
     Image.new("RGB", (16, 16), "white").save(netpbm, format="PPM")
 
@@ -175,7 +176,23 @@ def test_a_format_quackd_does_not_send_is_refused_and_lists_the_ones_it_does(
         load_task_images([str(netpbm)])
 
     said = str(refusal.value)
-    assert str(netpbm) in said and "PPM" in said
+    assert str(netpbm) in said
+    for fmt in images.FORMATS:
+        assert fmt in said
+
+
+def test_a_multi_picture_jpeg_is_refused_by_what_pil_calls_it(tmp_path: Path) -> None:
+    """`formats=` cannot stop this one: the JPEG decoder opens the file and hands it back as
+    MPO, so the check after the open is still what refuses it."""
+    stereo = tmp_path / "stereo.jpg"
+    picture = Image.new("RGB", (16, 16), "white")
+    picture.save(stereo, format="MPO", save_all=True, append_images=[picture])
+
+    with pytest.raises(TaskImageError) as refusal:
+        load_task_images([str(stereo)])
+
+    said = str(refusal.value)
+    assert str(stereo) in said and "MPO" in said
     for fmt in images.FORMATS:
         assert fmt in said
 

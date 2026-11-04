@@ -180,7 +180,9 @@ def load_task_images(paths: Sequence[str]) -> list[NamedPng]:
                 # warning used to land in the terminal as a raw site-packages line in the
                 # middle of quackd's own output. Promoted so it takes the refusal below.
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(file) as img:
+                with Image.open(file, formats=FORMATS) as img:
+                    # No other decoder is asked, but the JPEG one hands a multi-picture file
+                    # back as MPO, which is not on the list
                     if img.format not in FORMATS:
                         raise TaskImageError(
                             f"--image {path}: quackd sends {', '.join(FORMATS)} and this is "

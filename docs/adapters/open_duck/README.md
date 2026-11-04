@@ -151,7 +151,8 @@ cost tens of megabytes on a 512 MB board. So the camera lives in
 the kernel take it before it takes the walk loop. It captures on a timer rather than on
 request, so a slow client cannot stall the capture, and serves the newest frame at
 `/snapshot.jpg` with a `/healthz` beside it. quackd fetches it directly, the way
-`--camera-url` already works for `microduck:jsonrpc`.
+`--camera-url` already works for `microduck:jsonrpc`, and takes a JPEG or a PNG from whatever
+that URL names.
 
 It reads a camera and answers GET. There is no control path in that file at all, so the
 camera port cannot move the robot even if you expose it.

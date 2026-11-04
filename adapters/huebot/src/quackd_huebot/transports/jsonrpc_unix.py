@@ -61,7 +61,7 @@ is at the other end of an ssh tunnel:
 Addresses: `tcp://host:port`, after `ssh -L 9870:<socket> <huebot>`, which also works from
 Windows, or `unix:///path` to the shim's socket on the robot itself, POSIX only. Frames: the
 shim's socket carries no picture, so `--camera-url` names one, any HTTP URL that answers each
-request with one still image.
+request with one still image, a JPEG or a PNG.
 """
 
 from __future__ import annotations
@@ -1144,7 +1144,8 @@ class JsonRpcUnixTransport:
             )
 
         data = await asyncio.to_thread(fetch)
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        # what `fetch_still`'s refusal asks a camera for
+        return Image.open(io.BytesIO(data), formats=["JPEG", "PNG"]).convert("RGB")
 
     async def _camera_loop(self) -> None:
         """Keep the newest frame, on a timer, so `get_frame` is a memory read.

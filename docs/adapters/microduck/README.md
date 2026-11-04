@@ -219,7 +219,8 @@ robotd walks on the newest twist from either (`padd drives while a pad is connec
 `robotd`'s socket carries no picture, so quackd takes the camera from `--camera-url`. Without
 one, `jsonrpc.get_frame()` returns `None` and the manifest drops `camera` and the four verbs that
 need eyes, instead of advertising sight the robot has not got. `mediad` on the duck serves the
-camera two ways quackd reads, and its own snapshot route, `/frame`, is the one to start with:
+camera two ways quackd reads, and its own snapshot route, `/frame`, is the one to start with. Any
+other HTTP URL is read as a snapshot server, which answers with a JPEG or a PNG:
 
 | | `--camera-url http://127.0.0.1:8080/frame` | `--camera-url webrtc://127.0.0.1:8443` |
 |---|---|---|

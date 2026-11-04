@@ -9,6 +9,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Security
+
+- **A picture read off a wire is decoded only in the formats that wire carries.** Ten places read a frame
+  from the network with a bare `Image.open`, which tries dozens of decoders, some through external
+  programs, on the strength of the first bytes. So a robot that had been taken over, or anything on its
+  network answering in its place, chose the decoder. On Pillow 12.3.0 that reached a heap overflow in its
+  JPEG 2000 library, a crafted IPTC file that crashes the process, TIFF files that read heap memory into
+  the picture, and small files that use up the memory or hold a core for minutes. Six of the ten now take
+  JPEG and nothing else: the Jetson's snapshot, the policy server's frames, AlohaMini, XLeRobot, ToddlerBot
+  and MOSS. Microduck, Huebot, Open Duck and rosbridge take JPEG or PNG, since `mediad` serves a PNG and a
+  `--camera-url` can name a server of your own. `--image` asks only the six decoders it already listed,
+  rather than opening the file and then refusing it, so its refusal no longer says what the file was. What
+  changes for you: a `--camera-url` that answers with anything but a JPEG or a PNG is treated like a picture
+  that cannot be read, so serve one of those two. `tests/test_image_formats.py` registers a decoder nobody
+  names and fails if any of the eleven asks it, and fails if an `Image.open` that ships has no `formats=`.
+  Both failed before this change.
+
 ### Documentation
 
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README

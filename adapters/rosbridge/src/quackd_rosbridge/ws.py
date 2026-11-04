@@ -179,7 +179,8 @@ def decode_compressed_image(message: dict[str, Any]) -> Image.Image:
     raw = base64.b64decode(data) if isinstance(data, str) else bytes(data)
     if not any(codec in fmt for codec in ("jpeg", "jpg", "png")) and fmt:
         raise ValueError(f"unsupported CompressedImage format {fmt!r} (jpeg or png only)")
-    img: Image.Image = Image.open(io.BytesIO(raw))
+    # the same two the check above takes, since the bytes need not be what `format` says
+    img: Image.Image = Image.open(io.BytesIO(raw), formats=["JPEG", "PNG"])
     img.load()
     if img.mode != "RGB":
         img = img.convert("RGB")

@@ -303,7 +303,7 @@ class ToddlerBotBridge:
         if not payload:
             return None
         try:
-            img = Image.open(BytesIO(base64.b64decode(payload, validate=True)))
+            img = Image.open(BytesIO(base64.b64decode(payload, validate=True)), formats=["JPEG"])
             img.load()
         except (binascii.Error, ValueError, OSError, UnidentifiedImageError):
             return None

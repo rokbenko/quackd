@@ -373,7 +373,7 @@ class AlohaMiniZmq:
             if not raw:
                 continue
             try:
-                img = Image.open(BytesIO(raw))
+                img = Image.open(BytesIO(raw), formats=["JPEG"])
                 img.load()
             except (ValueError, OSError, UnidentifiedImageError):
                 return None

@@ -352,7 +352,8 @@ class OpenDuckBridge:
 
         try:
             data, age = await asyncio.to_thread(fetch)
-            frame = Image.open(io.BytesIO(data)).convert("RGB")
+            # camd's JPEG, or a snapshot server of the person's own (`--camera-url`)
+            frame = Image.open(io.BytesIO(data), formats=["JPEG", "PNG"]).convert("RGB")
         except Exception as e:
             self.camera_error = str(e)
             self.frame_age_s = None
