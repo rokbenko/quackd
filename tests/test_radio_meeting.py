@@ -39,8 +39,17 @@ from quackd.radio.links import (
     talk_inbox,
 )
 from quackd.radio.loop import LoopThread
-from quackd.radio.meet import INBOX_PATH, Meet, Meeter, MeetEvent, MeetPolicy, Planner, TalkerPort
-from quackd.radio.proximity import ProximityPolicy, Tracker
+from quackd.radio.meet import (
+    INBOX_PATH,
+    Meet,
+    Meeter,
+    MeetEvent,
+    MeetPolicy,
+    Outcome,
+    Planner,
+    TalkerPort,
+)
+from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
 from quackd.radio.sim import AirModel
 from quackd.radio.transport import Transports
 
@@ -356,7 +365,7 @@ def test_two_robots_on_one_network_meet_over_the_lan_and_hold_no_link(loop: Loop
     for robot in robots:
         loop.call(robot.start(), 5)
     try:
-        run(air, loop, robots, lambda: a.state_of(high) == "met", fake_s=10)
+        run(air, loop, robots, lambda: any(e.kind == "met" for e in a.events), fake_s=10)
         met = next(e for e in a.events if e.kind == "met")
         assert met.via == "lan" and met.route == f"http://10.0.0.2:8790{INBOX_PATH}"
         assert b.talker.sessions[a.did] == "http://10.0.0.1"
@@ -378,7 +387,7 @@ def test_a_lan_record_that_does_not_answer_falls_back_to_a_link(loop: LoopThread
     for robot in robots:
         loop.call(robot.start(), 5)
     try:
-        run(air, loop, robots, lambda: a.state_of(high) == "met", fake_s=10)
+        run(air, loop, robots, lambda: any(e.kind == "met" for e in a.events), fake_s=10)
         met = next(e for e in a.events if e.kind == "met")
         assert met.via == "link"
         assert len(a.links) == 1
@@ -406,7 +415,7 @@ def test_a_lan_address_that_turns_a_robot_away_leaves_the_link_to_try(loop: Loop
     for robot in robots:
         loop.call(robot.start(), 5)
     try:
-        run(air, loop, robots, lambda: a.state_of(high) == "met", fake_s=10)
+        run(air, loop, robots, lambda: any(e.kind == "met" for e in a.events), fake_s=10)
         met = next(e for e in a.events if e.kind == "met")
         assert met.via == "link" and len(a.links) == 1
     finally:
@@ -521,6 +530,35 @@ def test_parting_from_everyone_says_bye_over_the_lan(loop: LoopThread) -> None:
         assert a.talker.peers_open() == set() and a.did not in b.talker.peers_open()
     finally:
         teardown(loop, robots)
+
+
+def test_a_meeting_whose_session_ended_as_it_opened_is_no_meeting(loop: LoopThread) -> None:
+    """Its link can go between the hello and the outcome, and calling that met would hold the plan
+    at met with no session, and nothing due, until the robot went far."""
+    low, high = pair()
+    planner = Planner(lambda: low, MeetPolicy())
+
+    class Gone:
+        def peers_open(self) -> set[str]:
+            return set()
+
+    meeter = Meeter(
+        planner=planner,
+        talker=Gone(),  # type: ignore[arg-type]
+        links=LinkTable(),
+        radio=NoRadio(),
+        loop=loop,
+        me=lambda: low,
+        inbox_for=lambda route: None,
+    )
+    meeter.attempt = lambda action: Outcome("met", "did:key:z6Mkb", "ble://1", "link")  # type: ignore[method-assign]
+    planner.on_proximity(ProximityEvent("near", high, "fake:b", FLAG_LINK, -50.0, 1.0, 0.0, "near"))
+    [action] = planner.due(0.0)
+    assert isinstance(action, Meet)
+    meeter._meet(action)
+    [plan] = planner.peers()
+    assert plan.state != "met"
+    meeter.shutdown()
 
 
 def test_parting_ends_both_sessions_with_a_robot_met_twice(loop: LoopThread) -> None:

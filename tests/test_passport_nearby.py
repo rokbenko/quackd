@@ -363,6 +363,12 @@ def test_a_link_that_closes_ends_the_sessions_it_carried_at_both_ends() -> None:
     assert duck.peers_open() == set() and cart.peers_open() == set()
     assert duck_heard[-1].kind == "left" and cart_heard[-1].kind == "left"
     assert cart.meet(Link.ROUTE) == DUCK.did, "and they can meet again"
+    # a link closed for going idle takes a session that went quiet, and it is said as that
+    session = cart.endpoint.session_with(DUCK.did)
+    assert session is not None
+    session.last -= cart.endpoint.idle_s + 1
+    cart.link_closed(Link.ROUTE)
+    assert cart_heard[-1].kind == "quiet"
 
 
 def test_a_session_that_fills_at_one_end_ends_at_both(monkeypatch: pytest.MonkeyPatch) -> None:

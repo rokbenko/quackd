@@ -332,10 +332,11 @@ class Talker:
         dialling until it idled out."""
         with self.endpoint._lock:
             gone = [s for s in self.endpoint.sessions.values() if s.route == route]
+            quiet = {s.nonces for s in gone if self.endpoint._quiet(s)}
             for session in gone:
                 del self.endpoint.sessions[session.nonces]
         for session in gone:
-            self._note(Event("left", session))
+            self._note(Event("quiet" if session.nonces in quiet else "left", session))
 
     def _ended_there(self, session: Session, status: int) -> None:
         """A 403 to a message in a session says the other robot no longer holds it (spec 6.3): it

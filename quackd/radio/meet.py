@@ -446,6 +446,11 @@ class Meeter:
     def _meet(self, action: Meet) -> None:
         try:
             outcome = self.attempt(action)
+            if outcome.kind == "met" and outcome.did not in self.talker.peers_open():
+                # its link went as the hello finished, and the session with it: nothing to hold
+                outcome = Outcome(
+                    "unreachable", via=outcome.via, reason="its session ended at once"
+                )
         except Exception as e:  # a bug here must not leave the robot "meeting" for a minute
             outcome = Outcome("unreachable", reason=f"the try failed: {e}")
         self.planner.on_outcome(action.beacon_id, outcome, self.clock(), token=action.token)

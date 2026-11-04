@@ -57,9 +57,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   had dialled, neither robot dialled again until the session idled out, ten minutes on. It now ends the
   session, and the two meet again. `tests/test_passport_nearby.py` tries `say` and `ask`. It failed
   before this change.
-- **A link that closes ends the sessions it carried.** Both robots went on calling them met, every word
-  failed with `LinkDown`, and neither dialled until they idled out, ten minutes on. They now end with
-  the link, and robots that stay near meet again. `tests/test_passport_nearby.py` and
+- **A link that closes ends the sessions it carried.** A robot whose link had gone went on calling the
+  session met, every word to it failing with `LinkDown`, until it idled out, ten minutes on: the robot
+  that had been dialled after a link dropped, and both robots after a close that was no loss. They now
+  end with the link, and robots that stay near meet again. `tests/test_passport_nearby.py` and
   `tests/test_onboard_service.py` close one. They failed before this change.
 - **`quackd onboard sign` says when the running service will not take the new passport.** It said `the
   running service serves it from now on` whatever the service made of it, so a passport signed for
