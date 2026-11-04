@@ -29,7 +29,13 @@ from quackd.passport.beacon import WELL_KNOWN_JSON, ble_service_data, txt_record
 from quackd.passport.talk import MAX_SESSIONS, Session
 from quackd.passport_talk import Talker
 from quackd.radio import NoRadio, Pipe, Radio, RadioStatus, RadioUnavailable, Sighting, open_radio
-from quackd.radio.links import LinkChange, LinkInbox, LinkTable, LinkTransport, talk_inbox
+from quackd.radio.links import (
+    LinkChange,
+    LinkInbox,
+    LinkTable,
+    LinkTransport,
+    talk_inbox,
+)
 from quackd.radio.loop import LoopThread
 from quackd.radio.meet import Meeter, MeetEvent, MeetPolicy, Planner
 from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
@@ -128,7 +134,7 @@ class RadioSide:
         self.log = log
         self.clock = clock
         #: whether something outside the radio holds this robot's attention, a meeting run;
-        #: the service sets it, and the beacon id does not rotate while it is true
+        #: the service sets it, and the beacon id waits for it, for an hour at most
         self.busy_elsewhere: Callable[[], bool] = lambda: False
         self._busy_said = False
         #: what the meeter did, for the service's log and met.jsonl
@@ -137,13 +143,17 @@ class RadioSide:
         self.on_proximity: Callable[[ProximityEvent], None] | None = None
         self.loop = LoopThread("quackd-radio")
         self.rotor = BeaconRotor(
-            period_s=rotate_s, busy=self._busy, on_rotate=self._rotated, clock=clock
+            period_s=rotate_s,
+            busy=self._busy,
+            on_rotate=self._rotated,
+            on_overdue=self._held_too_long,
+            clock=clock,
         )
         self.tracker = Tracker(policy or ProximityPolicy(), me=self.rotor.current)
         self.planner = Planner(
             lambda: self.rotor.current, meet_policy or MeetPolicy(), advertising=advertising
         )
-        self.links = LinkTable(on_change=self._link_changed)
+        self.links = LinkTable(on_change=self._link_changed, on_gone=self._link_gone)
         self.transports = Transports(http=http_post, link=LinkTransport(self.links, self.loop))
         self.talker: Talker | None = None
         self.meeter: Meeter | None = None
@@ -316,6 +326,13 @@ class RadioSide:
         talker = self.talker
         return talk_inbox(talker.inbox, route) if talker is not None else None
 
+    def _link_gone(self, route: str) -> None:
+        """The sessions a link carried end with it, off this loop, since telling a person of it may
+        take a moment."""
+        if self.talker is not None and self.meeter is not None:
+            with contextlib.suppress(RuntimeError):  # a meeter already shut down
+                self.meeter.executor.submit(self.talker.link_closed, route)
+
     def _link_changed(self, change: LinkChange) -> None:
         now = self.clock()
         how = "from" if change.inbound else "to"
@@ -341,11 +358,14 @@ class RadioSide:
             or self.busy_elsewhere()
         )
 
+    def _held_too_long(self) -> None:
+        """Something has held the beacon id an hour past its time, which anybody can do by opening
+        a link and keeping it talking: it ends, and only then does the id change."""
+        if self.meeter is not None:
+            self.meeter.part_from_everyone(then=self.rotor.rotate)
+
     def _rotated(self, fresh: str) -> None:
-        """A new beacon id: the advert, the hello and the LAN record change together. Whatever held
-        the old one past its time ends first."""
-        if self.meeter is not None and self._busy():
-            self.meeter.part_from_everyone()
+        """A new beacon id: the advert, the hello and the LAN record change together."""
         with contextlib.suppress(Exception):
             self.loop.call(self._advertise(fresh), CALL_S)
         if self.talker is not None:

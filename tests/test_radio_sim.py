@@ -495,6 +495,7 @@ async def test_a_link_that_opens_after_the_radio_stopped_is_not_kept(tmp_path: F
         await release.wait()
         writer.write(sim._OP.pack(OP_WRITE_ACK, 2) + (50).to_bytes(2, "big"))
         await writer.drain()
+        writer.close()  # from 3.12, a server's wait_closed waits for this
 
     server = await asyncio.start_server(slow, "127.0.0.1", 0)
     port = int(server.sockets[0].getsockname()[1])

@@ -350,6 +350,21 @@ def test_a_robot_told_its_session_is_gone_ends_its_side_and_can_meet_again(words
     assert cart.meet(Link.ROUTE) == DUCK.did, "and a new hello starts another"
 
 
+def test_a_link_that_closes_ends_the_sessions_it_carried_at_both_ends() -> None:
+    """They read as met while every word failed, with neither robot dialling until they idled."""
+    link = Link()
+    duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01")
+    cart, cart_heard = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    duck.link_closed("ble://another-link")
+    assert duck.peers_open() == {CART.did}, "that one carried nothing of this"
+    duck.link_closed(Link.ROUTE)
+    cart.link_closed(Link.ROUTE)
+    assert duck.peers_open() == set() and cart.peers_open() == set()
+    assert duck_heard[-1].kind == "left" and cart_heard[-1].kind == "left"
+    assert cart.meet(Link.ROUTE) == DUCK.did, "and they can meet again"
+
+
 def test_a_session_that_fills_at_one_end_ends_at_both(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 2)
     link = Link()

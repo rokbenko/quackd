@@ -445,23 +445,50 @@ def test_the_advert_says_when_this_robot_is_at_a_limit() -> None:
         side.loop.stop()
 
 
-def test_an_id_held_past_its_time_ends_what_held_it_and_only_then() -> None:
+def test_an_id_held_past_its_time_ends_what_held_it_and_only_then_changes() -> None:
+    from quackd.onboard.radio_side import RadioSide
+    from quackd.radio import NoRadio
+    from quackd.radio.rotation import HOLD_S, RETRY_S
+
+    side = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()
+    parted: list[Any] = []
+    side.meeter = SimpleNamespace(part_from_everyone=lambda then: parted.append(then))
+    rotor, first = side.rotor, side.rotor.current
+    try:
+        side.busy_elsewhere = lambda: True
+        assert rotor.tick(rotor.due_at) is None and parted == []
+        assert rotor.tick(rotor.due_at + HOLD_S - RETRY_S) is None and parted == []
+        assert rotor.tick(rotor.due_at + HOLD_S) is None
+        assert parted == [rotor.rotate] and rotor.current == first, "ended first"
+        side.busy_elsewhere = lambda: False
+        parted.clear()
+        assert rotor.tick(rotor.next_at) is not None
+        assert parted == [], "nothing open: a rotation like any other"
+    finally:
+        side.meeter = None
+        side.loop.stop()
+
+
+def test_a_link_that_closes_is_told_to_the_talker_off_the_radios_loop() -> None:
     from quackd.onboard.radio_side import RadioSide
     from quackd.radio import NoRadio
 
     side = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
-    side.loop.start()
-    parted: list[bool] = []
-    side.meeter = SimpleNamespace(part_from_everyone=lambda: parted.append(True))
-    try:
-        side._rotated("0123456789abcdef")
-        assert parted == [], "nothing open: a rotation like any other"
-        side.busy_elsewhere = lambda: True
-        side._rotated("fedcba9876543210")
-        assert parted == [True]
-    finally:
-        side.meeter = None
-        side.loop.stop()
+    closed: list[str] = []
+    submitted: list[Any] = []
+
+    def submit(call: Any, *args: Any) -> None:
+        submitted.append(call)
+        call(*args)
+
+    side.talker = SimpleNamespace(link_closed=closed.append)
+    side.meeter = SimpleNamespace(executor=SimpleNamespace(submit=submit))
+    assert side.links.on_gone == side._link_gone
+    side._link_gone("ble://abc")
+    assert closed == ["ble://abc"] and submitted == [side.talker.link_closed]
+    side.talker = None
+    side.meeter = None
 
 
 def test_an_advert_that_will_not_change_does_not_stop_the_tick() -> None:

@@ -326,13 +326,24 @@ class Talker:
             return "later", "no answer came in time"
         return str(answered.get("result")), str(answered.get("reason", ""))
 
+    def link_closed(self, route: Route) -> None:
+        """The sessions a link carried end with it. They have no other way to that robot, and one
+        left behind would go on reading as met while every word to it failed, with neither robot
+        dialling until it idled out."""
+        with self.endpoint._lock:
+            gone = [s for s in self.endpoint.sessions.values() if s.route == route]
+            for session in gone:
+                del self.endpoint.sessions[session.nonces]
+        for session in gone:
+            self._note(Event("left", session))
+
     def _ended_there(self, session: Session, status: int) -> None:
         """A 403 to a message in a session says the other robot no longer holds it (spec 6.3): it
         went quiet there, or heard all it can remember. So this robot's end goes too, and the two
         can meet again, where this one would go on calling it met and neither would dial."""
         if status != 403:
             return
-        with self._lock:
+        with self.endpoint._lock:
             ended = self.endpoint.sessions.pop(session.nonces, None)
         if ended is not None:
             self._note(Event("left", session))

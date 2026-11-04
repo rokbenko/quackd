@@ -6,10 +6,10 @@ its owner, from street to street, collecting the id wherever it is heard. So the
 bytes derived from no key, and it is replaced every `period_s`: the advert, the `bt` in the LAN
 record and the beacon the robot names in its hellos change together, as one. A robot in a link,
 a session or a meeting keeps its id until that is over, because the robot it is talking to found
-it by that id, and tries again every `retry_s`, for `hold_s` at most: anybody can open a link and
-keep it talking, and an id they could hold for as long as they liked is one they could follow the
-robot by, so `on_rotate` is told then with something still open, and ends it. Who a robot is never
-rests on the id: the passport does that, and what a robot remembers
+it by that id, and tries again every `retry_s`. Anybody can open a link and keep it talking, and an
+id they could hold for as long as they liked is one they could follow the robot by, so after
+`hold_s` `on_overdue` is told, which ends what holds it and then calls `rotate`. Who a robot is
+never rests on the id: the passport does that, and what a robot remembers
 of another (refusals, cooldowns) is kept by its `did`, learned in the hello, so a rotation costs
 another robot one more hello at most.
 
@@ -44,6 +44,7 @@ class BeaconRotor:
         hold_s: float = HOLD_S,
         busy: Callable[[], bool],
         on_rotate: Callable[[str], None],
+        on_overdue: Callable[[], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         draw: Callable[[], str] = new_beacon_id,
         current: str | None = None,
@@ -52,6 +53,7 @@ class BeaconRotor:
             raise ValueError("a rotation period and its retry are some seconds long")
         self.period_s, self.retry_s, self.hold_s = period_s, retry_s, hold_s
         self.busy, self.on_rotate, self.clock, self.draw = busy, on_rotate, clock, draw
+        self.on_overdue = on_overdue
         self.current = current if current is not None else draw()
         if not is_beacon_id(self.current):
             raise ValueError(f"{self.current!r} is not a beacon id")
@@ -62,14 +64,22 @@ class BeaconRotor:
 
     def tick(self, now: float | None = None) -> str | None:
         """The new beacon id when it is time and nothing is open, else None. When something is
-        open the rotation waits `retry_s` and asks again, until it has waited `hold_s`."""
+        open the rotation waits `retry_s` and asks again, and once it has waited `hold_s` it says so
+        to `on_overdue`."""
         now = self.clock() if now is None else now
         if now < self.next_at:
             return None
-        if now - self.due_at < self.hold_s and self.busy():
+        if self.busy():
             self.deferred += 1
             self.next_at = now + self.retry_s
+            if self.on_overdue is not None and now - self.due_at >= self.hold_s:
+                self.on_overdue()
             return None
+        return self.rotate(now)
+
+    def rotate(self, now: float | None = None) -> str:
+        """A new beacon id now, whatever is open: what `on_overdue` calls once it has ended it."""
+        now = self.clock() if now is None else now
         fresh = self.draw()
         while fresh == self.current:  # two draws of 8 random bytes alike: draw again
             fresh = self.draw()

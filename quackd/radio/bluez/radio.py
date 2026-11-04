@@ -52,6 +52,8 @@ from quackd.radio.bluez.probe import DBUS, Probe, connect_bus, probe
 
 #: How long the watchdog waits between tries while the radio is not ready, longer each time.
 RETRY_S = (15.0, 15.0, 30.0, 30.0, 60.0)
+#: How long the radio waits to be told which adapter, before it goes on with the one it has.
+ASK_S = 2.0
 
 
 class BlueZRadio:
@@ -221,9 +223,11 @@ class BlueZRadio:
     async def _bring_up(self) -> None:
         self._problems = []
         if self.find_adapter is not None:
-            # off this loop: it is the board's question, a plugin's may be slow, and links wait
-            named: str | None = await asyncio.to_thread(self.find_adapter)
-            self.adapter = named or self.adapter
+            # off this loop and bounded: it is the board's question, and a plugin's may be slow
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(ASK_S):
+                    named: str | None = await asyncio.to_thread(self.find_adapter)
+                    self.adapter = named or self.adapter
         if self._bus is None:
             try:
                 self._bus = await connect_bus(self.bus_kind, self.bus_address)

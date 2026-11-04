@@ -376,6 +376,25 @@ async def test_the_radio_opens_the_adapter_the_board_finds_once_one_comes_up(
         bus.disconnect()
 
 
+async def test_a_board_slow_to_say_which_adapter_does_not_hold_the_radio_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bluez_radio, "ASK_S", 0.01)
+
+    def slow() -> str:
+        time.sleep(0.3)
+        return "hci9"
+
+    radio = BlueZRadio(bus="session", scan=False, find_adapter=slow)
+    try:
+        status = await radio.start(
+            advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None
+        )
+        assert status.adapter == "hci0", "the one it has"
+    finally:
+        await radio.stop()
+
+
 async def test_with_nothing_owning_org_bluez_the_radio_starts_missing_and_says_why() -> None:
     radio = BlueZRadio(bus="session", scan=False)
     status = await radio.start(

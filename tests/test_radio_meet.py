@@ -112,6 +112,19 @@ def test_a_robot_met_that_goes_far_is_parted_from_then_not_met_again_at_once() -
     assert meets(p.due(10.0 + POLICY.remeet_s)) == [HIGH]
 
 
+def test_a_robot_whose_session_ends_as_it_goes_far_is_still_parted_from() -> None:
+    """A lost link ends its session as it puts the robot far, and a bye can cross, and either
+    could get in before `due`: a person is still told the robots parted."""
+    p = planner(MID)
+    p.on_proximity(ev("near", HIGH, 0.0))
+    p.due(0.0)
+    p.on_outcome(HIGH, Outcome("met", DID_B, "ble://00000001", "link"), 0.5)
+    p.on_proximity(ev("far", HIGH, 10.0))
+    p.on_session(HIGH, opened=False, route="ble://00000001", did=DID_B, now=10.0)
+    assert p.due(10.0) == [Part(HIGH, DID_B, "ble://00000001")]
+    assert p.peers() == []
+
+
 def test_a_robot_kept_when_far_is_not_parted_from() -> None:
     p = Planner(lambda: MID, MeetPolicy(on_far="keep"), rng=random.Random(1))
     p.on_proximity(ev("near", HIGH, 0.0))

@@ -252,6 +252,8 @@ class Planner:
             if plan is None or plan.did != did or plan.state not in ("met", "parting"):
                 return
             self._cooldown[did] = now + self.policy.remeet_s
+            if plan.state == "parting":
+                return  # gone first, as a bye or a lost link can be: `due` still parts from it
             if plan.near:
                 plan.state, plan.next_at, plan.reason = (
                     "cooldown",
@@ -428,6 +430,7 @@ class Meeter:
     on_event: Callable[[MeetEvent], None] | None = None
     #: how long dialling a robot may take, then opening the link
     connect_s: float = 10.0
+    _parting: bool = field(default=False, init=False)
 
     def step(self, now: float | None = None) -> list[Meet | Part]:
         """Start whatever is due. What it started, for a log."""
@@ -552,18 +555,30 @@ class Meeter:
         self._close(action.beacon_id)
         self._tell(MeetEvent("parted", action.beacon_id, did=action.did, route=action.route))
 
-    def part_from_everyone(self) -> None:
-        """A bye to every robot and every link closed, on a worker thread: what a beacon id held
-        past its time does before it changes, so that nobody holds a session under the old id beside
-        one under the new, and leaving one ends the other."""
-        self.executor.submit(self._part_from_everyone)
+    def part_from_everyone(self, then: Callable[[], object]) -> None:
+        """Every link closed, a bye to whoever is left, then `then`, on a worker thread: what a
+        beacon id held past its time does before it changes, so that nobody holds a session under
+        the old id beside one under the new, and leaving one ends the other. Links first: closing
+        one ends what it carried at both ends at once, where a bye to a robot ignoring it takes
+        seconds."""
+        if not self._parting:
+            self._parting = True
+            self.executor.submit(self._part_from_everyone, then)
 
-    def _part_from_everyone(self) -> None:
-        for did in self.talker.peers_open():
+    def _part_from_everyone(self, then: Callable[[], object]) -> None:
+        try:
             with contextlib.suppress(Exception):
-                self.talker.leave(did)
-        with contextlib.suppress(Exception):
-            self.loop.call(self.links.close_all(CloseReason.DONE), 5.0)
+                self.loop.call(self.links.close_all(CloseReason.DONE), 5.0)
+            for did in self.talker.peers_open():
+                # one session a bye, and a robot that met this one twice has two
+                for _ in range(4):
+                    if did not in self.talker.peers_open():
+                        break
+                    with contextlib.suppress(Exception):
+                        self.talker.leave(did)
+        finally:
+            self._parting = False
+            then()
 
     def _close(self, beacon_id: str) -> None:
         # a loop that is stopping closes every link anyway

@@ -19,8 +19,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_passport_talk.py` fills a session and replays into it. It failed before this change.
 - **A peer can no longer hold a robot's beacon id for as long as it likes.** The id waited for every
   link, session and meeting to end, so anybody who opened a link and kept it talking kept the id from
-  changing, and could follow the robot by it. After an hour of that the robot now says bye to all of
-  them, closes its links and takes the new id, and the robots near it say hello again.
+  changing, and could follow the robot by it. After an hour of that the robot now closes its links, says
+  bye to whoever is left and only then takes the new id, and the robots near it say hello again.
   `tests/test_radio_rotation.py` keeps a link talking, and `tests/test_onboard_service.py` and
   `tests/test_radio_meeting.py` end what held the id. They failed before this change.
 - **Preflight says when others can read a secret.** The robot key and `robot.env` were read whatever
@@ -53,9 +53,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   hello, which leaves that robot no session to report. `tests/test_passport_nearby.py` tries it. It failed
   before this change.
 - **A robot told its session is gone ends its side.** A 403 to a message in a session says the other
-  robot no longer holds it, and this robot went on calling it met, so neither dialled until the session
-  idled out, ten minutes on. It now ends the session, and the two meet again.
-  `tests/test_passport_nearby.py` tries `say` and `ask`. It failed before this change.
+  robot no longer holds it or will not hear it, and this robot went on calling it met. Over a link it
+  had dialled, neither robot dialled again until the session idled out, ten minutes on. It now ends the
+  session, and the two meet again. `tests/test_passport_nearby.py` tries `say` and `ask`. It failed
+  before this change.
+- **A link that closes ends the sessions it carried.** Both robots went on calling them met, every word
+  failed with `LinkDown`, and neither dialled until they idled out, ten minutes on. They now end with
+  the link, and robots that stay near meet again. `tests/test_passport_nearby.py` and
+  `tests/test_onboard_service.py` close one. They failed before this change.
 - **`quackd onboard sign` says when the running service will not take the new passport.** It said `the
   running service serves it from now on` whatever the service made of it, so a passport signed for
   another board read as served. It now says the service keeps the passport it had, and why, and so does
