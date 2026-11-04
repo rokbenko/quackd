@@ -9,6 +9,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.31.2] — 2026-11-04
+
+0.31.2 fixes what the reviews of the last releases found and nobody had mended, among it a way to
+replay a message into a session and a way to hold a robot's beacon id. What changes for you: two
+robots that reach 1,024 messages in one session say hello again, so do robots whose meeting has
+held a beacon id for an hour, and preflight may name a key file others can read. What it leaves,
+and why, is under Known limitations. None of this has met a real radio.
+
 ### Security
 
 - **A message can no longer be replayed into its session once newer ones have pushed it out of memory.**
@@ -9658,7 +9666,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.2...HEAD
+[0.31.2]: https://github.com/rokbenko/quackd/compare/v0.31.1...v0.31.2
 [0.31.1]: https://github.com/rokbenko/quackd/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/rokbenko/quackd/compare/v0.30.3...v0.31.0
 [0.30.3]: https://github.com/rokbenko/quackd/compare/v0.30.2...v0.30.3
