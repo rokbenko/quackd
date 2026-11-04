@@ -11,6 +11,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
+  with a GIF of the video, why the example and its result matter, the goal, what the run showed and
+  did not show, the exact command, the quackd version and the full terminal trace, and
+  `docs/examples/lerobot/README.md` gets one table of every experiment, ticked once it has a log.
+  `scripts/example_log.py` writes all of it, so every log has the same headings and sentences, and
+  a test fails when one says anything else.
 - **The arm's page opens with a table of contents and the steps to run it.**
   [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md) now goes from its title and
   description to a table of contents, then to a section called Step by step: what to do without the

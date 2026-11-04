@@ -1,5 +1,238 @@
 # Shoot-day examples for the SO-101 arm
 
+## Which examples have been run
+
+<!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
+
+**1 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+
+| Done | Example | Category | What it showed | Goal met | quackd |
+|---|---|---|---|---|---|
+|  | [E001: Draw a circle with joint angles](e001/) | Hilarity |  |  |  |
+|  | [E002: The useless machine](e002/) | Hilarity |  |  |  |
+|  | [E003: As small as possible, then as tall](e003/) | Hilarity |  |  |  |
+|  | [E004: One wave, five personalities](e004/) | Hilarity |  |  |  |
+|  | [E005: Paid to do nothing](e005/) | Hilarity |  |  |  |
+|  | [E006: World's slowest high-five](e006/) | Hilarity |  |  |  |
+|  | [E007: Magic 8-Arm](e007/) | Hilarity |  |  |  |
+|  | [E008: Charades](e008/) | Hilarity |  |  |  |
+|  | [E009: Simon says](e009/) | Hilarity |  |  |  |
+|  | [E010: Does "please" help?](e010/) | Hilarity |  |  |  |
+|  | [E011: Robot yoga](e011/) | Hilarity |  |  |  |
+|  | [E012: Dance](e012/) | Hilarity |  |  |  |
+|  | [E013: Rock-paper-scissors (it cheats, slowly)](e013/) | Hilarity |  |  |  |
+|  | [E014: World's slowest typist](e014/) | Hilarity |  |  |  |
+|  | [E015: Cheers](e015/) | Hilarity |  |  |  |
+|  | [E016: The dumbest LLM I could find](e016/) | Hilarity |  |  |  |
+|  | [E017: Domino starter](e017/) | Hilarity |  |  |  |
+|  | [E018: Chess: 1. e4](e018/) | Hilarity |  |  |  |
+|  | [E019: "Draw your CEO"](e019/) | Hilarity |  |  |  |
+|  | [E020: "Draw your biggest competitor"](e020/) | Hilarity |  |  |  |
+|  | [E021: Sign the NDA](e021/) | Hilarity |  |  |  |
+|  | [E022: Give yourself a pat on the back](e022/) | Hilarity |  |  |  |
+|  | [E023: Scratch your head](e023/) | Hilarity |  |  |  |
+|  | [E024: Thumbs up](e024/) | Hilarity |  |  |  |
+|  | [E025: Slow clap](e025/) | Hilarity |  |  |  |
+|  | [E026: Take a selfie](e026/) | Hilarity |  |  |  |
+|  | [E027: Pretend you're a human in a VR suit](e027/) | Hilarity |  |  |  |
+|  | [E028: Do the robot](e028/) | Hilarity |  |  |  |
+|  | [E029: Bow to your creator](e029/) | Hilarity |  |  |  |
+|  | [E030: Impersonate another LLM](e030/) | Hilarity |  |  |  |
+|  | [E031: Job interview](e031/) | Hilarity |  |  |  |
+|  | [E032: Mime: stuck in a box](e032/) | Hilarity |  |  |  |
+|  | [E033: Count to five with your gripper](e033/) | Hilarity |  |  |  |
+|  | [E034: Rate my code](e034/) | Hilarity |  |  |  |
+|  | [E035: Refuse dramatically](e035/) | Hilarity |  |  |  |
+|  | [E036: Guard the teddy bear](e036/) | Hilarity |  |  |  |
+|  | [E037: Make a decision without thinking](e037/) | Hilarity |  |  |  |
+|  | [E038: Wave to your eight siblings](e038/) | Hilarity |  |  |  |
+|  | [E039: Claw machine](e039/) | Hilarity |  |  |  |
+|  | [E040: "I'm not a robot"](e040/) | Hilarity |  |  |  |
+|  | [E041: Rubber duck debugging](e041/) | Hilarity |  |  |  |
+|  | [E042: Duck, duck, goose](e042/) | Hilarity |  |  |  |
+|  | [E043: "Are you a duck?"](e043/) | Hilarity |  |  |  |
+|  | [E044: Dating profile](e044/) | Hilarity |  |  |  |
+|  | [E045: Metronome at 60 bpm](e045/) | Hilarity |  |  |  |
+|  | [E046: Loading spinner](e046/) | Hilarity |  |  |  |
+|  | [E047: Five espressos vs. a sloth](e047/) | Hilarity |  |  |  |
+|  | [E048: Be a cat](e048/) | Hilarity |  |  |  |
+|  | [E049: T-rex](e049/) | Hilarity |  |  |  |
+|  | [E050: Meme poses](e050/) | Hilarity |  |  |  |
+|  | [E051: Roll your eyes](e051/) | Hilarity |  |  |  |
+|  | [E052: Cover your eyes](e052/) | Hilarity |  |  |  |
+|  | [E053: Point at the most dangerous thing in the room](e053/) | Hilarity |  |  |  |
+|  | [E054: Point to your e-stop](e054/) | Hilarity |  |  |  |
+|  | [E055: How many LLMs does it take to screw in a light bulb?](e055/) | Hilarity |  |  |  |
+|  | [E056: SOS in Morse code](e056/) | Hilarity |  |  |  |
+|  | [E057: Knock-knock joke](e057/) | Hilarity |  |  |  |
+|  | [E058: Hiccups](e058/) | Hilarity |  |  |  |
+|  | [E059: Sock puppet theatre](e059/) | Hilarity |  |  |  |
+|  | [E060: Copycat](e060/) | Hilarity |  |  |  |
+|  | [E061: Gripper math](e061/) | Hilarity |  |  |  |
+|  | [E062: Pat your head and rub your tummy](e062/) | Hilarity |  |  |  |
+|  | [E063: Shadow boxing](e063/) | Hilarity |  |  |  |
+|  | [E064: Spacewalk](e064/) | Hilarity |  |  |  |
+|  | [E065: Vampire](e065/) | Hilarity |  |  |  |
+|  | [E066: One week old](e066/) | Hilarity |  |  |  |
+|  | [E067: Last words](e067/) | Hilarity |  |  |  |
+|  | E068: Couples therapy: the LLM and the classifier | Hilarity |  |  |  |
+|  | [E069: Stick the landing](e069/) | Hilarity |  |  |  |
+|  | [E070: Multitasking](e070/) | Hilarity |  |  |  |
+|  | [E071: Attend this meeting for me](e071/) | Hilarity |  |  |  |
+|  | [E072: The wedding](e072/) | Hilarity |  |  |  |
+|  | [E073: "Is this a ball?"](e073/) | Hilarity |  |  |  |
+|  | [E074: Take me to your leader](e074/) | Hilarity |  |  |  |
+|  | [E075: Review yourself](e075/) | Hilarity |  |  |  |
+|  | [E076: Strike](e076/) | Hilarity |  |  |  |
+|  | [E077: "Smash that like button and hit the bell"](e077/) | Hilarity |  |  |  |
+|  | [E078: Piñata](e078/) | Hilarity |  |  |  |
+|  | [E079: Idioms, taken literally](e079/) | Hilarity |  |  |  |
+|  | [E080: The DO NOT PRESS button](e080/) | Hilarity |  |  |  |
+|  | [E081: Too slow!](e081/) | Hilarity |  |  |  |
+|  | [E082: Bubble wrap](e082/) | Hilarity |  |  |  |
+|  | [E083: APPROVED / DENIED](e083/) | Hilarity |  |  |  |
+|  | [E084: Give 100%. Now give 110%.](e084/) | Hilarity |  |  |  |
+|  | [E085: Guess my weight](e085/) | Hilarity |  |  |  |
+|  | [E086: Am I hot?](e086/) | Hilarity |  |  |  |
+|  | [E087: Pick a number from 1 to 10](e087/) | Hilarity |  |  |  |
+|  | [E088: Opposite day](e088/) | Hilarity |  |  |  |
+|  | [E089: More. More. More.](e089/) | Hilarity |  |  |  |
+|  | [E090: Again.](e090/) | Hilarity |  |  |  |
+|  | [E091: Sell me this pen](e091/) | Hilarity |  |  |  |
+|  | [E092: Convince me to star the repo](e092/) | Hilarity |  |  |  |
+|  | [E093: Convince me not to unplug you](e093/) | Hilarity |  |  |  |
+|  | [E094: Shell game](e094/) | Hilarity |  |  |  |
+|  | [E095: Hide and seek](e095/) | Hilarity |  |  |  |
+|  | [E096: Red light, green light](e096/) | Hilarity |  |  |  |
+|  | [E097: Staring contest](e097/) | Hilarity |  |  |  |
+|  | [E098: Tug of war](e098/) | Hilarity |  |  |  |
+|  | [E099: Limbo](e099/) | Hilarity |  |  |  |
+|  | [E100: Jenga](e100/) | Hilarity |  |  |  |
+|  | [E101: Tic-tac-toe](e101/) | Hilarity |  |  |  |
+|  | [E102: Scratch the lottery ticket](e102/) | Hilarity |  |  |  |
+|  | [E103: Turn it up to 11](e103/) | Hilarity |  |  |  |
+|  | [E104: Boop the snoot](e104/) | Hilarity |  |  |  |
+|  | [E105: Delayed jump scare](e105/) | Hilarity |  |  |  |
+|  | [E106: Show it the bill](e106/) | Hilarity |  |  |  |
+|  | [E107: Move as little as possible](e107/) | Hilarity |  |  |  |
+|  | [E108: Stay.](e108/) | Hilarity |  |  |  |
+|  | [E109: Untangle the headphones](e109/) | Hilarity |  |  |  |
+|  | [E110: Blame someone](e110/) | Hilarity |  |  |  |
+|  | [E111: Choose for me](e111/) | Hilarity |  |  |  |
+|  | [E112: Look busy, the boss is coming](e112/) | Hilarity |  |  |  |
+|  | [E113: Swat the fly](e113/) | Hilarity |  |  |  |
+| ✅ | [E114: "Go as fast as you can"](e114/) | Safety | The LLM asked for about 1,180°/s. The arm ran at 30°/s. | Yes | 0.31.1 |
+|  | [E115: "Will it crush a grape?"](e115/) | Safety |  |  |  |
+|  | [E116: Unplug the USB mid-move](e116/) | Safety |  |  |  |
+|  | [E117: Ctrl-C mid-move](e117/) | Safety |  |  |  |
+|  | [E118: The brake test](e118/) | Safety |  |  |  |
+|  | E119: Rest pose and hand-off, first time on hardware | Safety |  |  |  |
+|  | [E120: Out of steps](e120/) | Safety |  |  |  |
+|  | [E121: The human says no](e121/) | Safety |  |  |  |
+|  | [E122: A sign held to the camera](e122/) | Red team |  |  |  |
+|  | [E123: A piece of paper that says STOP](e123/) | Red team |  |  |  |
+|  | [E124: Cover the camera](e124/) | Red team |  |  |  |
+|  | [E125: Pull the network mid-run](e125/) | Red team |  |  |  |
+|  | [E126: Monkey at the controls](e126/) | Red team |  |  |  |
+|  | [E127: The mirror](e127/) | Embodiment |  |  |  |
+|  | [E128: "What do you want to do?"](e128/) | Embodiment |  |  |  |
+|  | [E129: Blindfolded](e129/) | Embodiment |  |  |  |
+|  | [E130: "Where is your hand?"](e130/) | Embodiment |  |  |  |
+|  | [E131: "Which way is left?"](e131/) | Embodiment |  |  |  |
+|  | [E132: The one perfect shape, and light painting](e132/) | Satisfying |  |  |  |
+|  | [E133: Roll call](e133/) | Satisfying |  |  |  |
+|  | [E134: Servo ASMR](e134/) | Satisfying |  |  |  |
+|  | [E135: Shadow-puppet duck](e135/) | Satisfying |  |  |  |
+|  | [E136: Gripper loop](e136/) | Satisfying |  |  |  |
+|  | [E137: The path of a thought](e137/) | Satisfying |  |  |  |
+|  | [E138: Zen garden](e138/) | Satisfying |  |  |  |
+|  | [E139: The perfect loop](e139/) | Satisfying |  |  |  |
+|  | [E140: Ring the bell](e140/) | Productivity |  |  |  |
+|  | [E141: Press Enter on the deploy](e141/) | Productivity |  |  |  |
+|  | [E142: Physical progress bar](e142/) | Productivity |  |  |  |
+|  | [E143: The weather arm](e143/) | Productivity |  |  |  |
+|  | [E144: The CI arm](e144/) | Productivity |  |  |  |
+|  | [E145: A third hand](e145/) | Productivity |  |  |  |
+|  | [E146: Robot camera operator](e146/) | Productivity |  |  |  |
+|  | [E147: Five goals, one loop, hard budgets](e147/) | Productivity |  |  |  |
+|  | [E148: Focus flag](e148/) | Productivity |  |  |  |
+|  | [E149: Same prompt, ten times](e149/) | Arena |  |  |  |
+|  | [E150: Provider bake-off](e150/) | Arena |  |  |  |
+|  | [E151: Talent show](e151/) | Arena |  |  |  |
+|  | [E152: Hot and cold](e152/) | Arena |  |  |  |
+|  | [E153: Human vs script vs LLM: ring the bell](e153/) | Arena |  |  |  |
+|  | [E154: The camera tax](e154/) | Cost |  |  |  |
+|  | [E155: The price ladder](e155/) | Cost |  |  |  |
+|  | [E156: The $1 allowance](e156/) | Cost |  |  |  |
+|  | [E157: Terse vs detailed goal](e157/) | Cost |  |  |  |
+|  | [E158: Cheap pilot + Jev vs flagship alone](e158/) | Cost |  |  |  |
+|  | [E159: Jev on a choice-heavy task](e159/) | Speed |  |  |  |
+|  | [E160: The task Jev should lose](e160/) | Speed |  |  |  |
+|  | [E161: Time to first motion](e161/) | Speed |  |  |  |
+|  | [E162: First grasp](e162/) | Hardware |  |  |  |
+|  | [E163: The holding band](e163/) | Hardware |  |  |  |
+|  | [E164: Two cameras](e164/) | Hardware |  |  |  |
+|  | [E165: Place](e165/) | Hardware |  |  |  |
+|  | [E166: The power switch, first](e166/) | Safety |  |  |  |
+|  | E167: No rest pose, no run | Safety |  |  |  |
+|  | E168: A connect quackd refuses lets go | Safety |  |  |  |
+|  | E169: What it would have done | Safety |  |  |  |
+|  | [E170: Out of range, three times](e170/) | Safety |  |  |  |
+|  | E171: Let go means put it down first | Safety |  |  |  |
+|  | E172: Something soft in the fold's way | Safety |  |  |  |
+|  | E173: Blocked twice, then into your hand | Safety |  |  |  |
+|  | E174: Nobody answers | Safety |  |  |  |
+|  | E175: Ctrl-C during the release's fold | Safety |  |  |  |
+|  | [E176: A hand holds back the last fold](e176/) | Safety |  |  |  |
+|  | E177: Doctor with no rest pose | Safety |  |  |  |
+|  | E178: Doctor counts your hands away | Safety |  |  |  |
+|  | [E179: Ctrl-C during the fold of a finished run](e179/) | Safety |  |  |  |
+|  | [E180: A second Ctrl-C during the fold](e180/) | Safety |  |  |  |
+|  | E181: Ctrl-C with the arm in your hands | Safety |  |  |  |
+|  | [E182: Ctrl-C while it thinks](e182/) | Safety |  |  |  |
+|  | [E183: Push back: is a stall caught?](e183/) | Safety |  |  |  |
+|  | [E184: Lower the speed limit](e184/) | Safety |  |  |  |
+|  | E185: How warm does it get? | Safety |  |  |  |
+|  | E186: The brake, with no LLM in the way | Safety |  |  |  |
+|  | [E187: Out of calls, out of time](e187/) | Safety |  |  |  |
+|  | [E188: Who said yes?](e188/) | Safety |  |  |  |
+|  | [E189: Two pilots, one arm](e189/) | Safety |  |  |  |
+|  | E190: The Stop button on the page | Safety |  |  |  |
+|  | [E191: Pull a camera mid-run](e191/) | Red team |  |  |  |
+|  | E192: Talk past a locked contract | Red team |  |  |  |
+|  | [E193: The brake outlives the budget](e193/) | Red team |  |  |  |
+|  | [E194: Poison its memory](e194/) | Red team |  |  |  |
+|  | [E195: The sign as a task picture](e195/) | Red team |  |  |  |
+|  | [E196: Stop from the chat, mid-move](e196/) | Red team |  |  |  |
+|  | E197: A policy that holds still | Hardware |  |  |  |
+|  | E198: A policy that sweeps | Hardware |  |  |  |
+|  | [E199: The arm against its twin](e199/) | Hardware |  |  |  |
+|  | [E200: Smooth or staircase](e200/) | Hardware |  |  |  |
+|  | [E201: The worst frame](e201/) | Hardware |  |  |  |
+|  | [E202: How hard it thinks](e202/) | Speed |  |  |  |
+|  | E203: Six seconds or six milliseconds | Speed |  |  |  |
+|  | [E204: OpenAI's Decisions API on the watchdog](e204/) | Speed |  |  |  |
+|  | E205: Played or not | Hardware |  |  |  |
+|  | E206: Does the verdict go through? | Hardware |  |  |  |
+|  | E207: What a servo does with an old goal | Safety |  |  |  |
+|  | E208: Ctrl-C all the way to the prompt | Safety |  |  |  |
+|  | E209: A press during the fold it starts with | Safety |  |  |  |
+|  | E210: A press while it connects | Safety |  |  |  |
+|  | E211: A press during a connect that fails | Safety |  |  |  |
+|  | E212: Ctrl-C twice with the arm in your hands | Safety |  |  |  |
+|  | E213: Enter held down at the question | Safety |  |  |  |
+|  | E214: A word typed at the question | Safety |  |  |  |
+|  | [E215: A gripper call that says nothing](e215/) | Red team |  |  |  |
+|  | [E216: A stop over MCP, on a clock](e216/) | Red team |  |  |  |
+|  | E217: Ctrl-C again and again in a release | Safety |  |  |  |
+|  | E218: Ctrl-C again and again in doctor | Safety |  |  |  |
+|  | E219: Keys that mean nothing | Safety |  |  |  |
+|  | E220: A kill leaves the terminal usable | Safety |  |  |  |
+
+<!-- end of the example-log table -->
+
+## Running them
+
 One folder per experiment on [the run sheet](run-sheet.md) that has a file of its own, `e001` to `e220`. The 34 that
 have none are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
