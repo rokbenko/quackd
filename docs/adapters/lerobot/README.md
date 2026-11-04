@@ -394,8 +394,10 @@ The six commands of step 10, with a hand on the switch. Each one is the proof th
    hand under it in the air before you press Enter, never between two links. The raise is small on
    purpose, and you cut the supply as soon as the shoulder starts to lift. The arm should go limp and
    fall into your hand, and the run should end in an error within about a second, its close saying the
-   arm did not answer. Nobody has reported this from an arm yet, so say how far it fell and whether one
-   hand caught it. Then fold the limp arm by hand into its rest pose and turn the supply back on.
+   arm did not answer. On 0.31.2 and before, the run's own read can meet the silence first, and then a
+   Python traceback comes after the close and the record. Nobody has reported this from an arm yet, so
+   say how far it fell and whether one hand caught it. Then fold the limp arm by hand into its rest pose
+   and turn the supply back on.
 
    ```bash
    quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name cut
