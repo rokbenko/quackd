@@ -9,6 +9,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **An arm that stops answering ends a run in one line, not in a Python traceback.** A supply cut or a
+  pulled cable met by the run's own read of the arm, rather than by the heartbeat, let LeRobot's
+  `ConnectionError` through to the command, so the last thing on the screen was a page of Python, after
+  the stop, the close and the record had all run. A port that went with the supply and a read past its
+  deadline did the same. A read that fails now says `the arm did not answer: ` and what LeRobot raised,
+  as the heartbeat always has, and the run ends on that line, with the same exit code, 1, and the same
+  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `quackd run`,
+  and `tests/test_lerobot_adapter.py` tries each kind of failure. Each failed before this change. It has
+  run against the simulator's lost reads, and not on an arm.
+- **A by-hand run no longer tells somebody to reach into the jaws of an arm that stopped answering.** If
+  the arm went silent as Enter opened the gripper, the line said to take what is in it by hand and that
+  the arm was holding where it stopped, which nothing had read. It now says quackd could not confirm
+  whether the arm has torque, and to cut its power first. A gripper that refused on an arm that answered
+  says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
+- **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
+  answer of its own, so over MCP the tool only said it had failed, on `stop` too. It now answers
+  `the arm did not answer: ` and what LeRobot raised, and the stop still goes out.
+  `tests/test_mcp_server.py` tries it. It failed before this change.
+
 ## [0.31.2] — 2026-11-04
 
 0.31.2 fixes what the reviews of the last releases found and nobody had mended, among it a way to

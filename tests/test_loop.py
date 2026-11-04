@@ -3509,6 +3509,47 @@ async def test_a_gripper_that_will_not_open_is_said_out_loud(tmp_path: Path) -> 
     assert any("take what is in it by hand" in s for s in person.said), "said to them, too"
 
 
+@pytest.mark.parametrize(
+    ("refused", "why"),
+    [(False, "the arm did not answer"), (True, "gripper refused")],
+    ids=["a read that raised", "a send that came back as a refusal"],
+)
+async def test_a_gripper_an_arm_that_stopped_answering_did_not_open_says_cut_its_power(
+    tmp_path: Path, refused: bool, why: str
+) -> None:
+    """A gripper that refused is on an arm that answered, which holds where it stopped. An arm that
+    went silent as the jaws were asked to open could be holding or limp, and quackd cannot say. So
+    "take what is in it by hand" and "the arm is holding" were one invitation to put fingers into
+    jaws that may be energised and one claim nothing read, to somebody standing there. The backend
+    answers a send that met the silence as a refusal, so why it failed does not tell them apart."""
+
+    class GoesSilent(LeRobotMock):
+        silent = False
+
+        async def get_state(self) -> DuckState:
+            if self.silent:
+                raise TransportError("the arm did not answer: ConnectionError: no status packet")
+            return await super().get_state()
+
+    class AtTheJaws(ScriptedPerson):
+        async def wait(self, text: str, **kwargs: Any) -> bool:
+            if text == AgentLoop.HAND_IT_BACK:
+                mock.silent = True
+                if refused:
+                    mock._refuse = {"gripper"}
+            return await super().wait(text, **kwargs)
+
+    mock = GoesSilent(rest_pose=REST)
+    person = AtTheJaws(mock, places=PLACED)
+    await run_duck(_by_hand(mock, person, tmp_path))
+    said = [s for s in person.said if s.startswith("the gripper did not open")]
+    assert said, person.said
+    assert why in said[0]
+    assert "cut its power before you take out" in said[0]
+    assert "take what is in it by hand" not in said[0] and "is holding" not in said[0]
+    assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
+
+
 async def test_a_gripper_that_will_not_open_leaves_the_arm_where_it_is(tmp_path: Path) -> None:
     """They have just been told to reach in and take it by hand. The fold used to follow in the
     same breath, with the pencil clamped in the jaws and the hand on the pencil. The close then

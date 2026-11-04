@@ -784,6 +784,28 @@ async def test_a_dry_run_session_never_moves_the_arm() -> None:
     assert arm.joints["shoulder_pan"] == 45.0
 
 
+async def test_a_read_the_arm_did_not_answer_reaches_the_chat_in_words() -> None:
+    """A verb's gates begin by reading the body, and a read that failed left the call with no
+    answer of its own, so a chat was told only that the tool had failed, on `stop` too, which is
+    what a pilot reaches for at that moment. The stop still goes out."""
+
+    class Silent(MockTransport):
+        silent = False
+
+        async def get_state(self) -> Any:
+            if self.silent:
+                raise TransportError("the arm did not answer: ConnectionError: no status packet")
+            return await super().get_state()
+
+    async with connected(Silent()) as (client, _session, transport):
+        transport.silent = True
+        stops = transport.stops
+        answer = _data(await client.call_tool("robot_run_verb", {"verb": "stop"}))
+    assert answer["ok"] is False
+    assert "the arm did not answer" in answer["summary"]
+    assert transport.stops > stops
+
+
 async def test_a_session_refuses_to_start_when_the_arm_cannot_reach_its_rest_pose() -> None:
     """Nothing here reads joint angles before it acts, so the rest pose is how the pilot
     knows where the arm is. An arm that stalled on the way to it is at a pose nobody has

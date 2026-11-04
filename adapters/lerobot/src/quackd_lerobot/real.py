@@ -2415,7 +2415,15 @@ class LeRobotReal:
         return HOLD_MIN < latest < HOLD_MAX
 
     async def get_state(self) -> DuckState:
-        await self._probe()
+        try:
+            await self._probe()
+        except TransportError:
+            raise  # a wedge, which says so already
+        except Exception as e:
+            # In the heartbeat's words, because a read the arm did not answer is the transport
+            # failing, whoever met it first. A run says one line for that, and calls anything
+            # else a crash, which is what LeRobot's own error was when it left here as it was.
+            raise TransportError(f"the arm did not answer: {type(e).__name__}: {e}") from e
         extras: dict[str, Any] = {
             "joints": {k: round(v, 1) for k, v in self._joints.items()},
             "torque": self._torque,  # measured, not assumed: up.STS3215_REGISTERS
