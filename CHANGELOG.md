@@ -68,9 +68,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `torch`, stay until LeRobot's next release, because forcing them is worse than having them: LeRobot's own
   [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer `transformers`
   loads pi0 and pi05 checkpoints with a random vision tower and only a warning. Nothing in quackd reaches
-  those five, and they are dismissed on GitHub with the reason on each. `.github/dependabot.yml` no longer
-  ignores Pillow, and ignores LeRobot from 0.6.2. A wheel asks for none of this, which is the first entry
-  under Known limitations.
+  those five. `.github/dependabot.yml` no longer ignores Pillow, and ignores LeRobot from 0.6.2. A wheel asks
+  for none of this, which is the first entry under Known limitations.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
   did not show, the exact command, the quackd version and the full terminal trace, and
