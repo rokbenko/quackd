@@ -17,6 +17,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -530,7 +531,9 @@ def _clip(path: Path) -> None:
         "[bg][box]overlay=x='100+t*100':y=100,noise=alls=6:allf=t"
     )
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-filter_complex", graph, "-t", "3", str(path)], check=True
+        ["ffmpeg", "-y", "-v", "error", "-filter_complex", graph, "-t", "3", str(path)],
+        stdin=subprocess.DEVNULL,
+        check=True,
     )
 
 
@@ -563,6 +566,20 @@ def test_a_video_too_big_for_any_gif_is_refused(
     monkeypatch.setattr(script, "GIF_LADDER", ((320, 8),))
     with pytest.raises(script.LogError, match="shorter or a faster video"):
         script.make_gif(video, gif)
+
+
+def test_the_how_to_names_everything_a_log_asks_for() -> None:
+    """The section a person writes a log from, held to the fields and the verbs the script has."""
+    readme = (script.EXAMPLES / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## How a log is written\n", 1)[1].split("\n## ", 1)[0]
+    for field in [*yaml.safe_load(script.NOTES), "before"]:
+        assert f"| `{field}` |" in section, f"the how-to does not say what goes in {field}"
+    for word in script.GOAL_MET:
+        assert f"`{word}`" in section
+    for verb in ("add", "write", "check"):
+        assert f"example_log.py {verb}" in section
+    for flag in ("--speed", "--example", "--replace"):
+        assert flag in section
 
 
 def test_no_published_package_carries_a_logs_pictures() -> None:

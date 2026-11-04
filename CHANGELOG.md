@@ -16,7 +16,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   did not show, the exact command, the quackd version and the full terminal trace, and
   `docs/examples/lerobot/README.md` gets one table of every experiment, ticked once it has a log.
   `scripts/example_log.py` writes all of it, so every log has the same headings and sentences, and
-  a test fails when one says anything else.
+  a test fails when one says anything else. The same page says how to write one.
 - **The arm's page opens with a table of contents and the steps to run it.**
   [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md) now goes from its title and
   description to a table of contents, then to a section called Step by step: what to do without the

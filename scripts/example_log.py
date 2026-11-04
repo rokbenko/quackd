@@ -23,6 +23,7 @@ faster than real time that video plays, which is read off the video. What goes w
     log/frame-N.jpg    what the robot's camera saw at the start, the middle and the end
 
 `write` and `check` need neither ffmpeg nor the run folders, and read nothing outside this tree.
+What to write in the notes is under How a log is written in `docs/examples/lerobot/README.md`.
 """
 
 from __future__ import annotations
@@ -447,6 +448,7 @@ def check_all(root: Path) -> list[str]:
 def _run(*command: str | Path) -> str:
     done = subprocess.run(
         [str(word) for word in command],
+        stdin=subprocess.DEVNULL,  # ffmpeg reads its keyboard from here, and can wait on it forever
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -513,7 +515,7 @@ def add_run(
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
-        raise LogError(f"cannot tell the example from {run_dir.name}: pass --example e114")
+        raise LogError(f"cannot tell the example from {run_dir.name}: pass --example eNNN")
     if not (run_dir / "summary.json").exists():
         raise LogError(f"{run_dir} has no summary.json: that run never reached its end")
     summary = _read(run_dir / "summary.json")
