@@ -4734,15 +4734,25 @@ def test_the_arms_table_of_contents_lists_every_section_in_order() -> None:
     listed = re.findall(r"^(?:- |  \* )\[.*\]\(#([^)]+)\)$", contents, flags=re.M)
     headings = re.findall(r"^#{2,3}\s+(.+?)\s*$", "## " + body, flags=re.M)
     assert listed == [_github_slug(heading) for heading in headings]
-    assert headings[0] == "Step by step", "the steps are the first thing after the contents"
+    assert headings[0] == "Getting started", "the steps are the first thing after the contents"
 
 
-def test_the_arms_step_by_step_says_what_the_task_files_say() -> None:
+def _arm_steps() -> str:
+    page = _ARM_PAGE.read_text(encoding="utf-8")
+    return page.split("\n## Getting started\n", 1)[1].split("\n## ", 1)[0]
+
+
+def _arm_steps_commands() -> list[str]:
+    """Every line in a fenced block in the arm's steps, whose fences a numbered list indents."""
+    blocks = re.findall(r"^ *```[a-z]*\n(.*?)^ *```$", _arm_steps(), re.M | re.S)
+    return [line.strip() for block in blocks for line in block.splitlines()]
+
+
+def test_the_arms_getting_started_says_what_the_task_files_say() -> None:
     """The steps send a reader to the task files by path, quote each one's own first command and
     count them. A later change to docs/examples/lerobot can make any of that untrue with nothing
     else on this page moving."""
-    page = _ARM_PAGE.read_text(encoding="utf-8")
-    steps = page.split("\n## Step by step\n", 1)[1].split("\n## ", 1)[0]
+    steps = _arm_steps()
     examples = REPO / "docs" / "examples" / "lerobot"
     for path in set(re.findall(r"docs/examples/lerobot/[\w/.-]+\.(?:duck|py|png)", steps)):
         assert (REPO / path).exists(), f"the arm's steps name {path}, which is not there"
@@ -4758,6 +4768,23 @@ def test_the_arms_step_by_step_says_what_the_task_files_say() -> None:
     assert len(on_the_arm) >= 4
     for line, duck in on_the_arm:
         assert line in (examples / duck).read_text(encoding="utf-8"), f"{duck} says otherwise"
+
+
+def test_the_arms_steps_name_the_row_list_models_prints_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The install step tells a reader what the first row has to be, as its check that the install
+    took, and a new default or a new order in the catalogue would make that a false alarm."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    monkeypatch.setenv("COLUMNS", "220")
+    result = CliRunner().invoke(app, ["list-models", "--llm", "openai"])
+    assert result.exit_code == 0, result.output
+    first = next(line for line in result.output.splitlines() if "gpt-" in line)
+    assert "gpt-6-sol" in first and "default" in first, first
+    assert "must be `gpt-6-sol`, marked default" in " ".join(_arm_steps().split())
 
 
 _RUN_SHEET = REPO / "docs" / "examples" / "lerobot" / "run-sheet.md"
@@ -4801,7 +4828,9 @@ def test_every_task_files_first_command_is_on_the_run_sheet() -> None:
     assert not missing, f"no card has the first command of {missing}"
 
 
-def test_every_quackd_line_on_the_run_sheet_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_every_quackd_line_on_the_run_sheet_and_in_the_arms_steps_parses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A flag renamed or a subcommand moved leaves 500 lines here wrong with nothing else on the
     page changing, and a reader finds out at the arm. So each is parsed by the CLI itself, which
     runs nothing, up to whatever a pipe or an `&&` joins it to."""
@@ -4816,9 +4845,10 @@ def test_every_quackd_line_on_the_run_sheet_parses(monkeypatch: pytest.MonkeyPat
     root = get_command(app)
     refused = []
     seen = 0
-    for line in _run_sheet_commands():
+    for line in _run_sheet_commands() + _arm_steps_commands():
         for part in re.split(r"\s(?:\||&&)\s", line):
-            if not part.startswith("quackd "):
+            # --version is the root's own, with no command to walk to
+            if not part.startswith("quackd ") or part == "quackd --version":
                 continue
             seen += 1
             args = shlex.split(part)[1:]

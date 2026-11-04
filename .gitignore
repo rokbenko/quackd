@@ -6,6 +6,9 @@
 # runs are artifacts, not source (the hero GIF lives in docs/assets on purpose)
 runs/
 
+# lerobot-find-cameras saves a frame per camera here, pictures of whatever room it is in
+outputs/
+
 # MuJoCo writes this into the working directory, with no way to redirect it, the first time
 # the physics goes non-finite. `test_a_world_that_mujoco_has_reset_under_us_refuses_to_carry_on`
 # makes that happen on purpose, so every test run produces one.

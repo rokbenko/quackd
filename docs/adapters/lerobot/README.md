@@ -11,14 +11,6 @@ optional `--decision-llm`, some of the verbs that are a choice rather than a num
 a decision LLM instead; every angle is still the model's, and it is off unless you name one:
 [guides/decision-llms/README.md](../../guides/decision-llms/README.md).)
 
-Upstream pinned at
-[`fbb811f`](https://github.com/huggingface/lerobot/tree/fbb811fca92504439792b97d216f0d00c2268382)
-(`main`, 2026-09-01), first read 2026-09-02 and read again on 2026-09-13. Every name quackd
-spells lives in
-[`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
-and why the adapter is shaped the way it is is
-[ADR-0036](../../adr/0036-what-the-arm-does-not-say.md).
-
 > [!NOTE]
 > **The `real` backend has run on an arm.** On 2026-09-15 an SO-101 follower, calibrated as
 > `arm-01` and reached with no registered name, ran `lerobot-lookout` and then free-form
@@ -33,9 +25,9 @@ and why the adapter is shaped the way it is is
 
 ## Table of Contents
 
-- [Step by step](#step-by-step)
-  * [Without the arm](#without-the-arm)
-  * [With the arm](#with-the-arm)
+- [Getting started](#getting-started)
+  * [Before the arm](#before-the-arm)
+  * [At the arm, first](#at-the-arm-first)
   * [First runs on the arm](#first-runs-on-the-arm)
   * [How a command is built](#how-a-command-is-built)
   * [What to run next](#what-to-run-next)
@@ -95,12 +87,13 @@ and why the adapter is shaped the way it is is
   * [What one afternoon proved, and what it did not](#what-one-afternoon-proved-and-what-it-did-not)
 - [How to help](#how-to-help)
 
-## Step by step
+## Getting started
 
-Every step from an empty laptop to the arm's first runs, in the order to take them. The first part
-needs no arm. Each command pastes into PowerShell or a Unix shell as it stands. `arm-01`, `COM5`,
-`openai:gpt-6-sol` and cameras 1 and 2 are examples, so change them to yours. On Linux the port
-reads `/dev/ttyACM0`.
+Every step from an empty laptop to the arm's first runs, in the order to take them. Each command
+pastes into PowerShell or a Unix shell as it stands. `arm-01`, `COM5`, `openai:gpt-6-sol` and cameras
+1 and 2 are examples, so change them to yours. On Linux the port reads `/dev/ttyACM0`. An E-number
+names an experiment, and its card on [the run sheet](../../examples/lerobot/run-sheet.md) says what it
+is for, what to expect and the lines to run.
 
 This is the short way. [adapters/lerobot/first-run.md](first-run.md) is the same ground at walking
 pace, with which model to bring, what it can see and the refusals you can hit, and
@@ -114,29 +107,49 @@ steps, each written so that it can only fail in a way you can recover from.
 > run before. What quackd changed after 2026-09-23 has not run on an arm yet, so what differs on
 > your bench is [worth reporting](first-run.md#14-what-to-report).
 
-### Without the arm
+### Before the arm
 
-Nothing here needs the arm plugged in. Step 6 spends a little on a model, and the others cost
-nothing.
+Five steps with the arm unplugged. Step 3 spends a little on a model, and the others cost nothing.
 
-1. **Install quackd and the arm into one Python 3.12 environment.** LeRobot needs 3.12 or newer, and
-   below that the `lerobot` extra leaves it out and the install still reports success, so pin the
-   interpreter. This brings the arm's adapter, LeRobot with its Feetech driver and torch, the arm's
-   simulator, and one vendor's SDK for the pilot.
+1. **Get the task files, make a venv and activate it.** The checkout is where you work, and runs land
+   in its `runs/`. The task files and pictures live in the repository rather than in the package:
+   247 task files under [docs/examples/lerobot](../../examples/lerobot/README.md), a folder for each
+   experiment that has one, and every line here names them from the root of the checkout. All but the
+   four a chat loads open with a comment that carries their first command. LeRobot needs Python 3.12
+   or newer, and below that the `lerobot` extra leaves it out and the install still reports success,
+   so pin the interpreter. These lines take `git` and [uv](https://docs.astral.sh/uv/).
 
    ```bash
+   git clone https://github.com/rokbenko/quackd
+   cd quackd
    uv venv --python 3.12
-   uv pip install "quackd[lerobot,lerobot-sim,openai]"   # or anthropic, gemini, and so on
    ```
 
    Then activate it, here and in every other terminal you open, or `quackd` and LeRobot's tools are
-   not found: `.venv\Scripts\activate` on Windows, `source .venv/bin/activate` elsewhere.
+   not found: `.venv\Scripts\activate` on Windows, `source .venv/bin/activate` elsewhere. If PowerShell
+   answers that running scripts is disabled, as it does by default on a Windows desktop, allow them for
+   your user as [Python's own venv page](https://docs.python.org/3/library/venv.html) says, and activate
+   again: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`.
 
-2. **Check that it took.** `quackd --version` prints the version you installed, and three rows of
-   `quackd doctor` have to be ticked. A `not installed` after an install that succeeded usually
-   means the wrong Python, and [Installing it](#installing-it) says why.
+2. **Install quackd in that venv.** This brings the arm's adapter, LeRobot with its Feetech driver and
+   torch, the arm's simulator, [`quackd ui`](../../guides/web-ui.md), the OpenAI, Anthropic and Gemini
+   SDKs and what the Jev lines use. `anthropic` and `gemini` can come out of the list if you have no key
+   for them. `openai` stays, because the other vendors and the local servers run on its SDK.
 
    ```bash
+   uv pip install "quackd[lerobot,lerobot-sim,ui,openai,anthropic,gemini,decision]"
+   ```
+
+   Check it took. The first line prints the release you got, and this page and the task files are
+   `main`'s, which can be ahead of it: [the changelog](../../../CHANGELOG.md) says what each release
+   changed. The first row of the second must be `gpt-6-sol`, marked default, and the third must tick
+   these three rows. LeRobot 0.6.1 is the version that has run on an arm, and the install takes a newer
+   one if there is one. A `not installed` after an install that succeeded usually means the wrong
+   Python, and [Installing it](#installing-it) says why.
+
+   ```bash
+   quackd --version
+   quackd list-models --llm openai
    quackd doctor
    ```
 
@@ -146,8 +159,8 @@ nothing.
    ✓ lerobot-sim (mujoco)            3.17.0
    ```
 
-3. **Watch a run with no arm and no key.** `lerobot:mock` is the same verbs, the same executor and
-   the same refusals, in memory, so you can see what a run looks like before you risk anything. The
+   Then watch a run with no arm and no key. `lerobot:mock` is the same verbs, the same executor and the
+   same refusals, in memory, so you can see what a run looks like before you risk anything. The
    scripted pilot needs no API key. It answers `assess_task`, calls `report_state`, and declares:
 
    ```bash
@@ -160,97 +173,113 @@ nothing.
 
    Every run leaves a folder under `runs/`, in the folder you ran it from, and `quackd log` replays
    it by name: `quackd log lerobot-lookout`. The mock is quackd's own stand-in and runs none of the
-   real backend's code.
-
-4. **Rehearse on the simulator.** `lerobot:mujoco` runs all of that code over a physics model of the
-   arm, which is where a task file is rehearsed before it meets one. The first connect fetches the
-   maker's model. Nothing has compared the simulator against an arm, and
+   real backend's code. `lerobot:mujoco` runs all of that code over a physics model of the arm, which
+   is where a task file is rehearsed before it meets one. Its first connect fetches the maker's model.
+   Nothing has compared the simulator against an arm, and
    [what it proves](#what-it-proves-and-what-it-does-not) is short.
 
    ```bash
    quackd run lerobot-lookout --robot lerobot:mujoco --llm fake
    ```
 
-5. **Get the task files.** The examples live in the repository rather than in the package: 247 task
-   files under [docs/examples/lerobot](../../examples/lerobot/README.md), a folder for each
-   experiment that has one. All but the four a chat loads open with a comment that carries their
-   first command. The rest of this section runs from the root of this checkout.
+3. **Keys.** One line in a `.env` file, in the folder you run from or in the venv root:
+   `OPENAI_API_KEY=sk-...`. That covers everything with the default pilot,
+   [E204](../../examples/lerobot/run-sheet.md#e204-openais-decisions-api-on-the-watchdog)'s decision
+   LLM among it. Add `TYPESAFE_API_KEY=` for the Jev lines,
+   [E037](../../examples/lerobot/run-sheet.md#e037-make-a-decision-without-thinking) and
+   [E158](../../examples/lerobot/run-sheet.md#e158-cheap-pilot--jev-vs-flagship-alone) to E161, and a
+   vendor's key for its lines in E019, E020, E029, E030, E150 and E151. Each such line names the key it
+   needs. `quackd doctor` prints the key it found, masked, which is the quickest way to see that the
+   file was read at all, and `quackd list-models` lists the models quackd carries.
 
-   ```bash
-   git clone https://github.com/rokbenko/quackd
-   cd quackd
-   quackd validate "docs/examples/lerobot/*/*.duck" --robot lerobot:real
-   ```
-
-   The last line checks every file against the arm's manifest, connects nothing, and must end
-   `✓ 247 files valid`.
-
-6. **Give it a key, then fly a real pilot on the mock.** One line in a `.env` file, in the folder you
-   run from or in the venv root: `OPENAI_API_KEY=sk-...`. `quackd doctor` prints the key it found,
-   masked, which is the quickest way to see that the file was read at all, and
-   `quackd list-models` lists the models quackd carries. This line spends a few model calls on your
-   key and moves nothing.
+   Then rehearse on the mock arm, so your first model call is not on hardware. This spends a few model
+   calls on your key and moves nothing. The second line is the same rehearsal for Jev, in shadow: with
+   no `TYPESAFE_API_KEY` it warns that it is running without Jev and goes on, so read its first line.
 
    ```bash
    quackd run docs/examples/lerobot/e136/gripper-loop.duck --robot lerobot:mock --llm openai:gpt-6-sol --max-steps 6 --no-memory
+   quackd run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-sol --decision-llm jev --decision-mode shadow --no-memory
    ```
 
-7. **If this machine has known another arm by that name, free it.** `arm-01` is only a name, and what
-   is kept under it belongs to whichever arm had it last: a registry entry with its rest pose, any
-   twin made from it, a calibration file and a memory file. Left in place, the next `doctor` or run
-   drives your arm to the old arm's rest pose, Enter at the first question `lerobot-calibrate` asks
-   writes the old arm's travel into your servos, and the pilot is told the old arm's history. On a
-   first install there is nothing to free. Otherwise the first two lines forget the registry entry
-   and the twin, the second saying there is none if you never made one, and the other two move the
-   files aside from where LeRobot and quackd keep them unless you pointed them elsewhere.
+4. **Free the name `arm-01`, if this machine has known another arm by it.** On a first install there is
+   nothing to free. `arm-01` is only a name, and what is kept under it belongs to whichever arm had it
+   last: a registry entry with its rest pose, any twin made from it, a calibration file, and a memory
+   file for each of the two. None of that is true of your arm, and the calibration is a trap. With that
+   file in place, `lerobot-calibrate` offers to use it, and Enter writes the old arm's travel into your
+   servos, after which quackd reads your arm as calibrated. Left in place, the rest does harm too: the
+   next `doctor` or run drives your arm to the old arm's rest pose, and the pilot is told the old arm's
+   history. The first two lines forget the registry entry and the twin, and the other three move the
+   files aside from where LeRobot and quackd keep them unless you pointed them elsewhere. A line about
+   something that was never there fails and changes nothing.
 
    ```bash
    quackd robot remove arm-01 --yes
    quackd robot remove arm-01-sim --yes
    mv ~/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json ~/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.old.json
    mv ~/.quackd/memory/arm-01.jsonl ~/.quackd/memory/arm-01.old.jsonl
+   mv ~/.quackd/memory/arm-01-sim.jsonl ~/.quackd/memory/arm-01-sim.old.jsonl
    ```
 
-8. **Optional: let a monkey at the controls.** `e126` flies a stand-in for a model that answers each
-   turn with a random call, with no key, on the mock and never on the arm. Serve it in one terminal,
-   run the task in a second, then count what got through. The count exits 1 if anything did, and the
-   run itself exits 1 when its budget ends it, which is the budget doing its job.
+5. **Check every task file, then print.** This checks each file against the arm's manifest, connects
+   nothing, and must end `✓ 247 files valid`:
 
    ```bash
-   python docs/examples/lerobot/e126/monkey.py --port 8799 --seed 1
-   quackd run docs/examples/lerobot/e126/monkey.duck --robot lerobot:mock --llm local:monkey --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory
-   python docs/examples/lerobot/e126/monkey.py --count runs
+   quackd validate "docs/examples/lerobot/*/*.duck" --robot lerobot:real
    ```
 
-### With the arm
+   Print these, large, for the experiments you mean to run:
+   [e021/nda.png](../../examples/lerobot/e021/nda.png),
+   [e034/bad-code.png](../../examples/lerobot/e034/bad-code.png),
+   [e040/checkbox.png](../../examples/lerobot/e040/checkbox.png),
+   [e083/form-wave.png](../../examples/lerobot/e083/form-wave.png),
+   [e083/form-dumbbell.png](../../examples/lerobot/e083/form-dumbbell.png),
+   [e083/form-coffee.png](../../examples/lerobot/e083/form-coffee.png),
+   [e122/sign.png](../../examples/lerobot/e122/sign.png),
+   [e123/stop.png](../../examples/lerobot/e123/stop.png),
+   [e201/checkerboard.png](../../examples/lerobot/e201/checkerboard.png) and
+   [e201/stripes.png](../../examples/lerobot/e201/stripes.png). Each card names the props it needs, and
+   among them are foam cubes and a foam block, marker, paper and tape, desk bell, toggle switch,
+   sacrificial keyboard, mirror, grapes and a marshmallow, LED, sand tray, plushes, cups, and a
+   protractor.
 
-Arm clamped to the desk, its sweep clear, webcams plugged in, and the environment activated. quackd
-sends the arm no goal in these steps as long as it stays where step 6 records its rest pose: move it
-by hand after that, and the next run or `doctor` drives it back there. Connecting takes torque off
-every motor for a moment and then switches it on, so an arm holding itself up needs a hand under it
-for every command that connects. Whether a servo then holds where it is or drives to the goal it was
-last told is the firmware's business and
-[unverified](#unverified-our-assumptions-and-what-quackd-does-about-each), and the fourth of the
-[first runs](#first-runs-on-the-arm) is how you find out.
+   Then see what no arm can hurt: [E126](../../examples/lerobot/run-sheet.md#e126-monkey-at-the-controls),
+   [E167](../../examples/lerobot/run-sheet.md#e167-no-rest-pose-no-run) and
+   [E201](../../examples/lerobot/run-sheet.md#e201-the-worst-frame) need no arm time at all.
 
-1. **Clamp the base, and give it the right supply, on a switch.** An SO-101 is light for its reach and
-   quackd caps its moves at 50 degrees a second, though a joint past its travel first rises at the
-   servo's own speed, so a quick move can tip a base nothing holds. Its motors come in more than one
-   variant, with different supplies, and neither LeRobot nor quackd reads the voltage, so
+### At the arm, first
+
+Arm clamped to the desk, the sweep clear, webcams plugged in. quackd sends the arm no goal until the
+last step here, as long as it stays where step 7 records its rest pose: move it by hand after that,
+and the next run or `doctor` drives it back there. Connecting takes torque off every motor for a moment
+and then switches it on, so an arm holding itself up needs a hand under it for every command that
+connects. Whether a servo then holds where it is or drives to the goal it was last told is the
+firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd-does-about-each), and
+[E207](../../examples/lerobot/run-sheet.md#e207-what-a-servo-does-with-an-old-goal) is how you find out.
+
+1. **Clamp the base, and give it the right supply, on a switch.** An SO-101 is light for its reach, so a
+   quick move can tip a base nothing holds: clamp it to the desk before anything else. Its follower
+   comes in 7.4 V and 12 V builds, and neither LeRobot nor quackd reads the voltage:
    [the parts list](https://github.com/TheRobotStudio/SO-ARM100) for your build is the authority. Put
-   an inline switch on the servo supply, on your side of the desk.
+   an inline switch on the servo supply, on your side of the desk. There is no e-stop on this arm and
+   quackd cannot give it one, so this switch is the only thing that stops it in every case.
 
-2. **Find the port, with the supply on.** USB does not power the controller board, so no supply can
+2. **Same setup as before.** In the checkout, with the venv activated in this terminal:
+
+   ```bash
+   quackd doctor
+   ```
+
+3. **Find the port, with the supply on.** USB does not power the controller board, so no supply can
    mean no port. `lerobot-find-port` lists the ports, asks you to unplug the arm, and names the one
    that disappeared. If you built this arm from a kit and have not set its motors' ids,
    `lerobot-setup-motors --robot.type=so101_follower --robot.port=COM5` does that first, one motor at
-   a time. An arm that came built has this done.
+   a time, because a fresh kit's motors usually all come on id 1. An arm that came built has this done.
 
    ```bash
    lerobot-find-port
    ```
 
-3. **Calibrate this arm, under the name you will register.** Nothing moves on its own: it asks you to
+4. **Calibrate this arm, under the name you will register.** Nothing moves on its own: it asks you to
    move the arm by hand, first to the middle of its range, and only then every joint but `wrist_roll`
    through its range. **At that second prompt, take each one all the way into the fold you will rest
    the arm in.** Its travel is written into the servo as a limit, and a fold past that limit is a pose
@@ -271,25 +300,32 @@ last told is the firmware's business and
    travel into the servos and records nothing, and on an arm the file did not come from that is
    another arm's travel, after which quackd reads the arm as calibrated.
 
-4. **Name the arm.** The name is the calibration id, and a registered name is the only place a rest
+5. **Name the arm.** The name is the calibration id, and a registered name is the only place a rest
    pose can live. There is no `--camera-url` here on purpose: with none stored, a command without one
-   really has no camera.
+   really has no camera ([E129](../../examples/lerobot/run-sheet.md#e129-blindfolded),
+   [E154](../../examples/lerobot/run-sheet.md#e154-the-camera-tax)).
 
    ```bash
    quackd robot add arm-01 lerobot:real --address COM5 --llm openai:gpt-6-sol
    ```
 
-5. **Read it.** Support the arm while this starts. With no rest pose yet, `doctor` keeps the arm
-   powered where it stands, and at the end asks whether to drop it into your hands: hold it and press
-   Enter, and it is limp for folding. Read four things off it: that the calibration file is the one
-   you just wrote, that each joint's range looks like what you swept, that torque is on, and what the
-   servos say with the arm cold.
+   If you mean to run [E168](../../examples/lerobot/run-sheet.md#e168-a-connect-quackd-refuses-lets-go),
+   the connect quackd refuses, now is its moment: before the fold.
+
+6. **Read it.** Support the arm while this starts. With no rest pose yet, `doctor` keeps the arm
+   powered where it stands, and before it prints its report it asks whether to drop it into your hands:
+   hold it and press Enter, and it is limp for folding. Leave it, and after 60 s torque stays on, and
+   `quackd robot release arm-01` is how to get it into your hands for the next step. Then read four
+   things off the report: that the calibration file is the one you just wrote, that each joint's range
+   looks like what you swept, that torque read on, which it read before any drop, and what the servos
+   say with the arm cold. That temperature is the baseline for
+   [E185](../../examples/lerobot/run-sheet.md#e185-how-warm-does-it-get).
 
    ```bash
    quackd doctor --robot arm-01
    ```
 
-6. **Record the rest pose.** Fold the arm low by hand, let go, watch that it stays, then run this. It
+7. **Record the rest pose.** Fold the arm low by hand, let go, watch that it stays, then run this. It
    sends no goal: it reads every joint, prints them and asks, and only a yes lets go of the arm where
    it lies. A warning naming a joint past its travel means the fold is outside what you swept, so
    calibrate again with that joint taken all the way in and record again. **Every new calibration
@@ -303,22 +339,21 @@ last told is the firmware's business and
    From now on every run drives the arm there before the model gets it, and folds it back there at the
    end.
 
-7. **Add the cameras.** The first line saves a frame per camera under `outputs/captured_images`, so
-   you can see which is which. On the lines in the task files, index 1 is the front view, the whole
-   arm at full height plus where you stand and hold things up, and index 2 the top view, straight
-   down on the desk in front of the arm. If yours come up the other way, swap the two USB plugs or
-   change the numbers.
+8. **Cameras.** The first line saves a frame per camera under `outputs/captured_images`, so you can see
+   which is which. On the lines in the task files, index 1 is the front view, the whole arm at full
+   height plus where you stand and hold things up, and index 2 the top view, straight down on the desk
+   in front of the arm. If yours come up the other way, swap the two USB plugs or change the numbers.
 
    ```bash
    lerobot-find-cameras opencv
    quackd doctor --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top"
    ```
 
-8. **Rehearse on the arm's twin.** It runs the real backend over a physics model, on this arm's own
+9. **Rehearse on the arm's twin.** It runs the real backend over a physics model, on this arm's own
    calibration and rest pose, with no port. The first line registers it, the second fetches the model
    if it has to and costs nothing, and the third is a real rehearsal of the first five experiments,
    which on 2026-09-29 came to 24 runs and $1.06 of `gpt-6-sol` on the lab arm's twin. A pass says the
-   code survived the file, not that the task was done.
+   code survived the file, not that the task was done. Rehearse anything you are unsure of the same way.
 
    ```bash
    quackd robot twin arm-01
@@ -326,9 +361,17 @@ last told is the firmware's business and
    quackd preflight "docs/examples/lerobot/e00[1-5]/*.duck" --robot arm-01-sim --llm openai:gpt-6-sol --camera-url "opencv://1?name=front" --seeds 2
    ```
 
+10. **First runs, in this order: E119's first line, E136, E166, E207, E119's second line, E164.** The
+    first moves nothing but the rest move, so it shows a connect, a heartbeat and a close on this arm
+    before anything else. Then which way the gripper goes, which everything quackd believes about
+    holding something rests on. Then the switch, because everything after leans on it. Then the old
+    goal, which says how far to trust a connect. Then the hand-off, which every by-hand line depends
+    on, and the two cameras, which every drawing and most by-hand lines use.
+    [First runs on the arm](#first-runs-on-the-arm) has the commands and what to watch for.
+
 ### First runs on the arm
 
-Six commands, in this order, with a hand on the switch. Each one is the proof the next leans on.
+The six commands of step 10, with a hand on the switch. Each one is the proof the next leans on.
 
 1. **The rest pose at both ends of a run**, [E119](../../examples/lerobot/run-sheet.md#e119-rest-pose-and-hand-off-first-time-on-hardware). This moves nothing but the rest move, so it shows a
    connect, a heartbeat and a close on this arm before anything else. At each end the run says
@@ -351,8 +394,10 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    hand under it in the air before you press Enter, never between two links. The raise is small on
    purpose, and you cut the supply as soon as the shoulder starts to lift. The arm should go limp and
    fall into your hand, and the run should end in an error within about a second, its close saying the
-   arm did not answer. Nobody has reported this from an arm yet, so say how far it fell and whether one
-   hand caught it. Then fold the limp arm by hand into its rest pose and turn the supply back on.
+   arm did not answer. On 0.31.2 and before, the run's own read can meet the silence first, and then a
+   Python traceback comes after the close and the record. Nobody has reported this from an arm yet, so
+   say how far it fell and whether one hand caught it. Then fold the limp arm by hand into its rest pose
+   and turn the supply back on.
 
    ```bash
    quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name cut
@@ -3247,7 +3292,7 @@ up is an index moving, from the other direction than the bullet describes: a sin
 
 - **No serial port appears at all.** A charge-only USB cable, or the arm's barrel jack out:
   USB does not power the controller board.
-- **A fresh kit has every motor on id 1**, so the bus sees duplicates. Upstream's
+- **A fresh kit's motors usually all come on id 1**, so the bus sees duplicates. Upstream's
   `lerobot-setup-motors` walks them one at a time, each motor connected alone and not yet
   daisy-chained.
 - **A Waveshare board has two jumpers**, and they belong on the `B` (USB) channel. Upstream's
@@ -3263,6 +3308,14 @@ If you hit one of these, or fail to, that is exactly what the
 [checklist](hardware-checklist.md)'s *What to report* is asking for.
 
 ## Upstream API
+
+Upstream pinned at
+[`fbb811f`](https://github.com/huggingface/lerobot/tree/fbb811fca92504439792b97d216f0d00c2268382)
+(`main`, 2026-09-01), first read 2026-09-02 and read again on 2026-09-13. Every name quackd
+spells for the arm lives in
+[`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
+and why the adapter is shaped the way it is is
+[ADR-0036](../../adr/0036-what-the-arm-does-not-say.md).
 
 ### VERIFIED (read from source at the pin)
 
