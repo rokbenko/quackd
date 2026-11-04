@@ -450,7 +450,15 @@ def test_an_id_held_past_its_time_ends_what_held_it_and_only_then_changes() -> N
     from quackd.radio import NoRadio
     from quackd.radio.rotation import HOLD_S, RETRY_S
 
-    side = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
+    # A clock that starts at nothing: on a real one the sum below can round to just under the
+    # hour, and then the rotor rightly asks again after RETRY_S and this test says it never asked.
+    side = RadioSide(
+        NoRadio(),
+        lan=None,
+        server_host="127.0.0.1",
+        record_host="127.0.0.1",
+        clock=lambda: 0.0,
+    )
     side.loop.start()
     parted: list[Any] = []
     side.meeter = SimpleNamespace(part_from_everyone=lambda then: parted.append(then))

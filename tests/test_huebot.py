@@ -811,8 +811,15 @@ async def test_a_walk_whose_link_is_cut_leaves_the_robots_deadman_to_stop_it(
     assert shim.driving() == [0.1, 0.0, 0.0], "the walk never reached the shim"
     shim.hang_up()
     result = await asyncio.wait_for(walk, 5.0)
-    assert not result.ok and "the shim closed the connection" in result.summary, result.summary
-    assert t.stop_error is not None and "closed the connection" in t.stop_error
+    # A close with a twist still unread can arrive as a reset and not as an end of file, and a
+    # write can meet it before the reader does. Each says what it saw, and each is the link gone.
+    gone = (
+        "the shim closed the connection",
+        "the link to the shim failed",
+        "the link to the shim is gone",
+    )
+    assert not result.ok and any(said in result.summary for said in gone), result.summary
+    assert t.stop_error is not None and any(said in t.stop_error for said in gone), t.stop_error
     last_move = max(at for at, m in shim.arrived if m == "robot.move")
     await asyncio.sleep(max(0.0, last_move + up.DEADMAN_S + 0.1 - time.monotonic()))
     assert shim.driving() == [0.0, 0.0, 0.0], "the deadman never fired"
