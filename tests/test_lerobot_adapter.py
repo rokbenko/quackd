@@ -1434,6 +1434,67 @@ async def test_an_unplugged_arm_fails_the_heartbeat_even_though_is_connected_is_
         await adapter.heartbeat()
 
 
+@pytest.mark.parametrize(
+    "lost",
+    [
+        ConnectionError("Failed to sync read 'Present_Position'"),
+        OSError("ClearCommError failed"),  # pyserial's, for a port that went with the supply
+    ],
+    ids=["the bus", "the port"],
+)
+async def test_a_state_read_the_arm_does_not_answer_fails_as_the_transport(lost: Exception) -> None:
+    """A read that fails is the transport failing, as it is for the heartbeat. `quackd run` says
+    one line for that, and treats anything else as a crash, so LeRobot's own error leaving here as
+    it was made a supply cut mid-move end in a traceback, after the stop and the close had run."""
+
+    class Silent(FakeArm):
+        lost: Exception | None = None
+
+        def get_observation(self) -> dict[str, Any]:
+            if self.lost is not None:
+                raise self.lost
+            return super().get_observation()
+
+    arm = Silent()
+    adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
+    await adapter.connect()
+    arm.lost = lost
+    with pytest.raises(TransportError, match="the arm did not answer") as raised:
+        await adapter.get_state()
+    assert str(lost) in str(raised.value)
+    assert raised.value.__cause__ is lost
+
+
+async def test_a_state_read_past_its_deadline_fails_as_the_transport_and_then_says_wedged() -> None:
+    """A read that never comes back was a bare `TimeoutError` on this path too. The next read is
+    refused for the wedge, which is a transport's own error already and is not wrapped in a
+    second saying of the first."""
+    release = threading.Event()
+
+    class Stuck(FakeArm):
+        stuck = False
+
+        def get_observation(self) -> dict[str, Any]:
+            if self.stuck:
+                release.wait(5.0)
+            return super().get_observation()
+
+    arm = Stuck()
+    transport = LeRobotReal("COM5", robot=arm)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    transport.timeout_s = 0.1
+    arm.stuck = True
+    try:
+        with pytest.raises(TransportError, match="did not answer: TimeoutError: a LeRobot call"):
+            await adapter.get_state()
+        with pytest.raises(TransportError, match="one owner") as wedged:
+            await adapter.get_state()
+        assert "did not answer" not in str(wedged.value)
+    finally:
+        release.set()
+
+
 async def test_a_wedged_call_refuses_every_later_call_instead_of_sharing_the_bus() -> None:
     """A call that blows its deadline is not over: its thread is still sitting on a
     half-duplex bus. Starting another would put two talkers on it."""

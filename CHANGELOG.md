@@ -17,6 +17,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `docs/examples/lerobot/README.md` gets one table of every experiment, ticked once it has a log.
   `scripts/example_log.py` writes all of it, so every log has the same headings and sentences, and
   a test fails when one says anything else.
+- **The arm's page opens with a table of contents and the steps to run it.**
+  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md) now goes from its title and
+  description to a table of contents, then to a section called Step by step: what to do without the
+  arm, what to do with it, the first runs, how a command is built, which task files to run next and
+  what people forget. It replaces the page's short Start here, and the page's first block of commands
+  moved under Backends. `tests/test_docs.py` checks that the contents list every section and that the
+  steps agree with the task files they quote.
+- **The SO-101's run sheet is on the pages.**
+  [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
+  experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
+  them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
+  on its card, and that every `quackd` line on the page parses.
+
+## [0.31.3] — 2026-11-04
+
+0.31.3 fixes how a run ends when the arm stops answering, which is what cutting its supply does. What
+changes for you: nothing to do. A run that loses the arm ends on one line and no longer in a Python
+traceback, at the end of a by-hand run nobody is told to reach into its jaws, and a chat is told why.
+None of this has met an arm.
+
+### Fixed
+
+- **An arm that stops answering ends a run in one line, not in a Python traceback.** A supply cut or a
+  pulled cable met by the run's own read of the arm, rather than by the heartbeat, let LeRobot's
+  `ConnectionError` through to the command, so the last thing on the screen was a page of Python, after
+  the stop, the close and the record had all run. A port that went with the supply and a read past its
+  deadline did the same. A read that fails now says `the arm did not answer: ` and what LeRobot raised,
+  as the heartbeat always has, and the run ends on that line, with the same exit code, 1, and the same
+  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `quackd run`,
+  and `tests/test_lerobot_adapter.py` tries each kind of failure. Each failed before this change. It has
+  run against the simulator's lost reads, and not on an arm.
+- **A by-hand run no longer tells somebody to reach into the jaws of an arm that stopped answering.** If
+  the arm went silent as Enter opened the gripper, the line said to take what is in it by hand and that
+  the arm was holding where it stopped, which nothing had read. It now says quackd could not confirm
+  whether the arm has torque, and to cut its power first. A gripper that refused on an arm that answered
+  says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
+- **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
+  answer of its own, so over MCP the tool only said it had failed, on `stop` too. It now answers
+  `the arm did not answer: ` and what LeRobot raised, and the stop still goes out.
+  `tests/test_mcp_server.py` tries it. It failed before this change.
 
 ## [0.31.2] — 2026-11-04
 
@@ -9675,7 +9715,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.2...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.3...HEAD
+[0.31.3]: https://github.com/rokbenko/quackd/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/rokbenko/quackd/compare/v0.31.1...v0.31.2
 [0.31.1]: https://github.com/rokbenko/quackd/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/rokbenko/quackd/compare/v0.30.3...v0.31.0

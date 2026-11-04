@@ -1796,11 +1796,23 @@ class AgentLoop:
         said = (
             f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
             "where it stopped and does not fold"
+            if await self._arm_answers()
+            else f"the gripper did not open: {why}; {self.STILL_UNCONFIRMED}"
         )
         with contextlib.suppress(Exception):
             hand.say(said)
         self._emit("hand_off", stage="stuck", reason=why)
         self._note(said)
+
+    async def _arm_answers(self) -> bool:
+        """Whether the arm answers a read, asked after a gripper that did not open. One that
+        refused is on an arm that answered, which holds where it stopped. One that went silent could
+        be holding or limp, and an arm's backend reports a send that met that as a refusal, so why
+        the gripper failed cannot say which. Only asking can, before anybody is told to reach in."""
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
+            await self._unbroken(self.cfg.transport.get_state())
+            return True
+        return False
 
     async def _open_the_gripper(self) -> str | None:
         """Drive the gripper all the way open, or say why it did not get there.
