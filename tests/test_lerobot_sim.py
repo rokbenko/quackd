@@ -2656,7 +2656,7 @@ async def test_the_heartbeat_draws_no_fault_and_feeds_no_grasp_but_meets_a_lost_
         assert transport._register_error is None, "the heartbeat's register reads failed"
         assert len(follower.faults.injected) == drawn
         assert len(transport._gripper_trace) == trace
-        with pytest.raises(ConnectionError, match="Failed to sync read"):
+        with pytest.raises(TransportError, match=r"did not answer.*Failed to sync read"):
             await transport.get_state()  # the second observation: the arm drops off the bus
         with pytest.raises(HeartbeatError, match="did not answer"):
             await transport.heartbeat()
@@ -2984,6 +2984,52 @@ def test_the_lookout_runs_on_the_simulated_arm_end_to_end(
     assert "arena" not in system and "orange ball" not in system
     # run with no camera, which the note says rather than pointing at cameras it has not got
     assert "This run has no camera" in system and "what the cameras show" not in system
+
+
+def test_an_arm_that_stops_answering_ends_the_run_in_a_verdict_and_no_traceback(
+    mjcf: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A supply cut or a pulled cable, met by the run's own read of the arm rather than by the
+    heartbeat. The stop, the close and the record all happened, and then the last thing on the
+    screen was a page of Python, over an arm that had done what it should."""
+    from typer.testing import CliRunner
+
+    from quackd.agent.transcript import Transcript
+    from quackd.cli import app
+    from quackd_lerobot.sim.transport import LeRobotSim
+
+    built = LeRobotSim.__init__
+
+    def lost(self: LeRobotSim, *args: Any, **kwargs: Any) -> None:
+        built(self, *args, **{**kwargs, "faults": FaultPlan.parse("read_loss_from=3", seed=0)})
+
+    monkeypatch.setattr(LeRobotSim, "__init__", lost)
+    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    runs = tmp_path / "runs"
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "lerobot-lookout",
+            "--llm",
+            "fake",
+            "--robot",
+            "lerobot:mujoco",
+            "--no-memory",
+            "--runs-dir",
+            str(runs),
+            "--no-log",
+        ],
+    )
+    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
+        pytest.skip("no OpenGL context for offscreen rendering")
+    assert isinstance(result.exception, SystemExit), repr(result.exception)
+    assert result.exit_code == 1
+    assert "the arm did not answer" in " ".join(result.output.split())
+    events = Transcript.read(next(runs.rglob("transcript.jsonl")))
+    end = next(e for e in events if e["kind"] == "run_end")
+    assert end["outcome"] == "error" and "the arm did not answer" in end["reason"]
+    assert next(runs.rglob("summary.json")).exists()
 
 
 def test_doctor_and_release_on_a_registered_simulated_arm_say_it_is_the_simulator(
