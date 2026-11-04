@@ -9,6 +9,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
+  with a GIF of the video, why the example and its result matter, the goal, what the run showed and
+  did not show, the exact command, the quackd version and the full terminal trace, and
+  `docs/examples/lerobot/README.md` gets one table of every experiment, ticked once it has a log.
+  `scripts/example_log.py` writes all of it, so every log has the same headings and sentences, and
+  a test fails when one says anything else.
+
 ## [0.31.2] — 2026-11-04
 
 0.31.2 fixes what the reviews of the last releases found and nobody had mended, among it a way to
