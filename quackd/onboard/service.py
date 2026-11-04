@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from quackd import __version__
-from quackd.boards import BoardFacts
+from quackd.boards import BoardFacts, radio_of
 from quackd.onboard import config
 from quackd.onboard.brain import RunSlot
 from quackd.onboard.config import RobotFile
@@ -522,6 +522,8 @@ class Service:
         self._courtesy.executor = agent.executor
         self._courtesy.loop = asyncio.get_running_loop()
         self._courtesy.stranger_pauses = self.file.trust.strangers_may_pause
+        if self.check.reading is not None:
+            self._courtesy.offered = tuple(self.check.reading.courtesy())
         self.talker.courtesy = self._courtesy
 
     def _released(self) -> None:
@@ -623,10 +625,13 @@ class Service:
             self.file_problem = f"{e}; the service keeps the file it read last"
             return {"ok": False, "reason": str(e)}
         self.file_problem = None
+        refused: str | None = None
         # a passport signed again since start: served from now on, and in every new hello
         if self.home.passport_jws.exists():
             token = self.home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
             check = check_board(check_own_passport(token, self.robot_key.did), self.facts)
+            if not check.ok:
+                refused = check.why
             if check.ok and check.reading is not None and token != self.token:
                 self.token, self.check = token, check
                 if self.server is not None:
@@ -640,7 +645,10 @@ class Service:
         if self.talker is not None and self.check.reading is not None:
             self.talker._judge = self._judge_for(self.check.reading)
             self.talker.rejudge()
-        return {"ok": True, "pins": len(self.file.trust.pins)}
+        reply: dict[str, Any] = {"ok": True, "pins": len(self.file.trust.pins)}
+        if refused is not None:
+            reply["passport_refused"] = refused
+        return reply
 
     def _met_rows(self, limit: int) -> list[dict[str, Any]]:
         try:
@@ -696,17 +704,6 @@ class Service:
 
         with contextlib.suppress(OSError):
             write_private(self.home.status_json, json.dumps(self.status(), default=str) + "\n")
-
-
-def _adapter_found(board: Any) -> str | None:
-    """The adapter `board` found fit, which is the one preflight checks, or None for the radio's
-    own default: a third party's board that cannot say is no reason to stop a robot that can
-    still meet others over its LAN."""
-    try:
-        found = board.radio()
-        return found.adapter if found.ok else None
-    except Exception:
-        return None
 
 
 def _browser(log: Callable[[str], None]) -> Any:
@@ -786,7 +783,7 @@ def serve(
             rotate_s=rotate_s,
             log=log,
             advertise=file.radio.advertise,
-            adapter=_adapter_found(chosen) if kind == "bluez" else None,
+            find_adapter=(lambda: radio_of(chosen).adapter_to_open) if kind == "bluez" else None,
         )
 
     home.ensure()

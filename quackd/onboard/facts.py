@@ -9,6 +9,8 @@ says `sim` however it is edited.
 
 from __future__ import annotations
 
+import contextlib
+import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -26,12 +28,20 @@ _DATED = ("issued", "expires")
 def manifest_of(file: RobotFile) -> RobotManifest | None:
     """The manifest of the body quackd drives for this robot, or None for one it only talks for.
     It supplies the passport's body, skills and courtesies, so whatever compares a passport with
-    the file has to read it too, or it finds them all changed."""
+    the file has to read it too, or it finds them all changed. The adapter may be a third party's,
+    so what it prints goes to stderr and never into a command's --json, and its sys.exit is a
+    failure to read it, not the end of the command."""
     if file.robot is None:
         return None
+    from quackd.adapters.base import AdapterError
     from quackd.adapters.factory import describe, parse_robot_spec
 
-    return describe(parse_robot_spec(file.robot.adapter))
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            return describe(parse_robot_spec(file.robot.adapter))
+    except SystemExit as e:
+        said = f"the {file.robot.adapter} adapter exited as it was read, with code {e.code}"
+        raise AdapterError(said) from e
 
 
 def why_unread(error: Exception) -> str:

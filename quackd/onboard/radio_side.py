@@ -26,10 +26,16 @@ from typing import Any, Protocol
 
 from quackd.lan.lookup import LanDirectory, LanRecord
 from quackd.passport.beacon import WELL_KNOWN_JSON, ble_service_data, txt_record
-from quackd.passport.talk import Session
+from quackd.passport.talk import MAX_SESSIONS, Session
 from quackd.passport_talk import Talker
 from quackd.radio import NoRadio, Pipe, Radio, RadioStatus, RadioUnavailable, Sighting, open_radio
-from quackd.radio.links import LinkChange, LinkInbox, LinkTable, LinkTransport, talk_inbox
+from quackd.radio.links import (
+    LinkChange,
+    LinkInbox,
+    LinkTable,
+    LinkTransport,
+    talk_inbox,
+)
 from quackd.radio.loop import LoopThread
 from quackd.radio.meet import Meeter, MeetEvent, MeetPolicy, Planner
 from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
@@ -128,21 +134,26 @@ class RadioSide:
         self.log = log
         self.clock = clock
         #: whether something outside the radio holds this robot's attention, a meeting run;
-        #: the service sets it, and the beacon id does not rotate while it is true
+        #: the service sets it, and the beacon id waits for it, for an hour at most
         self.busy_elsewhere: Callable[[], bool] = lambda: False
+        self._busy_said = False
         #: what the meeter did, for the service's log and met.jsonl
         self.on_event: Callable[[MeetEvent], None] | None = None
         #: every proximity event, for a narration
         self.on_proximity: Callable[[ProximityEvent], None] | None = None
         self.loop = LoopThread("quackd-radio")
         self.rotor = BeaconRotor(
-            period_s=rotate_s, busy=self._busy, on_rotate=self._rotated, clock=clock
+            period_s=rotate_s,
+            busy=self._busy,
+            on_rotate=self._rotated,
+            on_overdue=self._held_too_long,
+            clock=clock,
         )
         self.tracker = Tracker(policy or ProximityPolicy(), me=self.rotor.current)
         self.planner = Planner(
             lambda: self.rotor.current, meet_policy or MeetPolicy(), advertising=advertising
         )
-        self.links = LinkTable(on_change=self._link_changed)
+        self.links = LinkTable(on_change=self._link_changed, on_gone=self._link_gone)
         self.transports = Transports(http=http_post, link=LinkTransport(self.links, self.loop))
         self.talker: Talker | None = None
         self.meeter: Meeter | None = None
@@ -247,6 +258,9 @@ class RadioSide:
         self.rotor.tick(now)
 
     async def _tick(self, now: float) -> list[ProximityEvent]:
+        if self._at_limit() != self._busy_said:
+            with contextlib.suppress(Exception):  # no reason to stop hearing
+                await self.radio.set_advert(self._advert())
         # silence from a radio that is not listening is not a robot gone
         if self.radio.status().hears:
             self.tracker.resume(now)
@@ -274,7 +288,18 @@ class RadioSide:
     # ── on the radio's loop ─────────────────────────────────────────────────────────────
 
     def _advert(self) -> bytes:
-        return ble_service_data(self.rotor.current, lan=self._on_lan, link=True)
+        self._busy_said = self._at_limit()
+        return ble_service_data(
+            self.rotor.current, lan=self._on_lan, link=True, busy=self._busy_said
+        )
+
+    def _at_limit(self) -> bool:
+        """At its link or session limit, which the advert says (spec 5.6), so that a robot heard
+        does not dial only to be told so."""
+        talker = self.talker
+        return self.links.full or (
+            talker is not None and len(talker.endpoint.sessions) >= MAX_SESSIONS
+        )
 
     def _sighting(self, sighting: Sighting) -> None:
         self._sightings += 1
@@ -301,6 +326,13 @@ class RadioSide:
         talker = self.talker
         return talk_inbox(talker.inbox, route) if talker is not None else None
 
+    def _link_gone(self, route: str) -> None:
+        """The sessions a link carried end with it, off this loop, since telling a person of it may
+        take a moment."""
+        if self.talker is not None and self.meeter is not None:
+            with contextlib.suppress(RuntimeError):  # a meeter already shut down
+                self.meeter.executor.submit(self.talker.link_closed, route)
+
     def _link_changed(self, change: LinkChange) -> None:
         now = self.clock()
         how = "from" if change.inbound else "to"
@@ -325,6 +357,12 @@ class RadioSide:
             or (talker is not None and bool(talker.peers_open()))
             or self.busy_elsewhere()
         )
+
+    def _held_too_long(self) -> None:
+        """Something has held the beacon id an hour past its time, which anybody can do by opening
+        a link and keeping it talking: it ends, and only then does the id change."""
+        if self.meeter is not None:
+            self.meeter.part_from_everyone(then=self.rotor.rotate)
 
     def _rotated(self, fresh: str) -> None:
         """A new beacon id: the advert, the hello and the LAN record change together."""
@@ -445,15 +483,16 @@ def board_side(
     rotate_s: float = ROTATE_S,
     log: Callable[[str], None] = lambda _line: None,
     advertise: bool = True,
-    adapter: str | None = None,
+    find_adapter: Callable[[], str | None] | None = None,
 ) -> RadioSide:
     """The radio of a robot's own computer: BlueZ, or `off`, and DNS-SD on every interface. A
     radio it cannot have is a `NoRadio` saying why, and the robot meets others over its LAN.
     `browser` finds other robots' LAN records; without one, robots near are met over a link.
-    `adapter` is the one the board found, which is the one preflight checks."""
+    `find_adapter` asks the board which adapter to open, the one preflight checks, each time the
+    radio comes up, since one can appear or come back under another name while it runs."""
     options: dict[str, Any] = {"advertise": advertise} if radio_kind == "bluez" else {}
-    if radio_kind == "bluez" and adapter and adapter.startswith("hci"):
-        options["adapter"] = adapter
+    if radio_kind == "bluez" and find_adapter is not None:
+        options["find_adapter"] = find_adapter
     try:
         radio: Radio = open_radio(radio_kind, **options)  # type: ignore[arg-type]
     except RadioUnavailable as e:

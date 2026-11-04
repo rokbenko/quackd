@@ -214,6 +214,18 @@ def read_robot_key(path: str | Path) -> SigningKey:
     return key
 
 
+def open_to_others(path: str | Path) -> str | None:
+    """`path`'s mode when somebody other than its owner can open it. None when nobody can, when
+    there is no such file, and on Windows, which has no such modes."""
+    if os.name == "nt":
+        return None
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return None
+    return f"{stat.S_IMODE(mode):o}" if mode & 0o077 else None
+
+
 def read_passphrase_file(path: str | Path) -> str:
     """The first line of `path`, stripped: how a script hands quackd a passphrase, since no
     environment variable ever carries one.

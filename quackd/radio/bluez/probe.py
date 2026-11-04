@@ -21,6 +21,7 @@ from quackd.radio.bluez.core import (
     AdapterFacts,
     adapter_state,
     adapters_from,
+    join_bluetooth_hint,
     pick_adapter,
     rfkill_blocked,
 )
@@ -38,7 +39,7 @@ async def connect_bus(kind: Literal["system", "session"], address: str | None = 
         return await MessageBus(bus_address=address, bus_type=bus_type).connect()
     except PermissionError as e:
         raise RadioUnavailable(
-            "denied", f"the {kind} bus refused this user: {e}", "sudo usermod -aG bluetooth $USER"
+            "denied", f"the {kind} bus refused this user: {e}", join_bluetooth_hint()
         ) from e
     except (OSError, ValueError, EOFError) as e:
         raise RadioUnavailable(

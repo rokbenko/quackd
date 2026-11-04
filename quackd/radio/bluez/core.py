@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -366,6 +367,19 @@ def adapters_from(objects: Mapping[str, Mapping[str, Mapping[str, Any]]]) -> lis
     return found
 
 
+def join_bluetooth_hint() -> str:
+    """What lets this user reach BlueZ: its D-Bus policy names the `bluetooth` group on most
+    systems, and on one with no such group `usermod` would only fail."""
+    try:
+        importlib.import_module("grp").getgrnam("bluetooth")
+    except (ImportError, KeyError):
+        return (
+            "this computer has no bluetooth group: "
+            "/etc/dbus-1/system.d/bluetooth.conf says who may reach BlueZ"
+        )
+    return "sudo usermod -aG bluetooth $USER, then log in again"
+
+
 def pick_adapter(adapters: list[AdapterFacts], name: str) -> AdapterFacts | None:
     """The adapter called `name` (`hci0`), or None."""
     return next((a for a in adapters if a.name == name), None)
@@ -422,6 +436,7 @@ __all__ = [
     "advert_bytes",
     "advert_properties",
     "device_path",
+    "join_bluetooth_hint",
     "pick_adapter",
     "rfkill_blocked",
     "settled_write_size",

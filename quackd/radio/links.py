@@ -679,6 +679,7 @@ class LinkTable:
         policy: LinkPolicy | None = None,
         executor: Executor | None = None,
         on_change: Callable[[LinkChange], None] | None = None,
+        on_gone: Callable[[str], None] | None = None,
     ) -> None:
         self.max_links = max_links
         self.limits = limits or Limits()
@@ -687,6 +688,9 @@ class LinkTable:
             max_workers=self.policy.inflight, thread_name_prefix="passport-link"
         )
         self.on_change = on_change
+        #: the route of every link that closes, reported or not: a session may have opened over
+        #: one whose hello never bore its OPEN out, and it ends with the link all the same
+        self.on_gone = on_gone
         self._links: dict[str, Link] = {}
         #: dials under way, each holding a slot and the tag it will open with
         self._dialling: set[str] = set()
@@ -824,13 +828,16 @@ class LinkTable:
         if self._links.get(link.id) is not link:
             return
         del self._links[link.id]
-        if not link.announced:
-            return
-        reason = link.closed or ""
-        lost = not link.inbound and reason.startswith("lost")
-        if link.inbound and reason.startswith("lost"):
-            reason = "dropped" + reason[len("lost") :]
-        self._tell(LinkChange(False, link.id, link.peer_beacon, link.inbound, reason, lost))
+        if link.announced:
+            reason = link.closed or ""
+            lost = not link.inbound and reason.startswith("lost")
+            if link.inbound and reason.startswith("lost"):
+                reason = "dropped" + reason[len("lost") :]
+            self._tell(LinkChange(False, link.id, link.peer_beacon, link.inbound, reason, lost))
+        # after that, so a robot this link's loss puts out of range is far before its session ends
+        if self.on_gone is not None:
+            with contextlib.suppress(Exception):
+                self.on_gone(link.route)
 
     def _tell(self, change: LinkChange) -> None:
         if self.on_change is not None:

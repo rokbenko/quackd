@@ -34,6 +34,19 @@ DUCK, CART = A, B
 STEP = {"vx": 0.1, "duration_s": 0.1}
 
 
+def test_only_what_the_signed_passport_offers_can_be_asked_for() -> None:
+    only_identify = Courtesy(None, None, offered=("identify",))  # type: ignore[arg-type]
+    for tier in ("stranger", "known", "same owner"):
+        assert only_identify.allowed(tier) == ("identify",)
+    told = only_identify.decide("known", "pause", {"seconds": 3})
+    assert told.result == "no" and "identify" in told.reason
+    none = Courtesy(None, None, offered=())  # type: ignore[arg-type]
+    assert none.allowed("known") == ()
+    assert "nothing" in none.decide("known", "identify", {}).reason
+    no_passport = Courtesy(None, None)  # type: ignore[arg-type]
+    assert no_passport.allowed("known") == ("pause", "identify")
+
+
 def contract(allow: str = "move, say, stop, report_state") -> Any:
     return parse_duck_text(
         f"---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [{allow}]\nsuccess: [x]\n"
