@@ -221,7 +221,9 @@ class BlueZRadio:
     async def _bring_up(self) -> None:
         self._problems = []
         if self.find_adapter is not None:
-            self.adapter = self.find_adapter() or self.adapter
+            # off this loop: it is the board's question, a plugin's may be slow, and links wait
+            named: str | None = await asyncio.to_thread(self.find_adapter)
+            self.adapter = named or self.adapter
         if self._bus is None:
             try:
                 self._bus = await connect_bus(self.bus_kind, self.bus_address)

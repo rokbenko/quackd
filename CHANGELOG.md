@@ -19,8 +19,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_passport_talk.py` fills a session and replays into it. It failed before this change.
 - **A peer can no longer hold a robot's beacon id for as long as it likes.** The id waited for every
   link, session and meeting to end, so anybody who opened a link and kept it talking kept the id from
-  changing, and could follow the robot by it. It now waits an hour at most, which costs the other robot
-  one more hello. `tests/test_radio_rotation.py` keeps a link talking. It failed before this change.
+  changing, and could follow the robot by it. After an hour of that the robot now says bye to all of
+  them, closes its links and takes the new id, and the robots near it say hello again.
+  `tests/test_radio_rotation.py` keeps a link talking, and `tests/test_onboard_service.py` and
+  `tests/test_radio_meeting.py` end what held the id. They failed before this change.
 - **Preflight says when others can read a secret.** The robot key and `robot.env` were read whatever
   their mode, where a passphrase file is refused for it. A row now names either file when somebody other
   than its owner can open it, with the `chmod` that mends it, and nothing stops. Windows has no such
@@ -38,7 +40,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   It failed before this change.
 - **The advert's `BUSY` flag is set and read.** Section 5.6 of the specification gives a flag for a robot
   at its link or session limit, and nothing set it or read it. A robot now sets it while at either limit,
-  and one that hears it waits instead of dialling. A robot on an older version ignores it.
+  and one that hears it waits instead of opening a new link, though it still says hello over a link it
+  holds. A robot on an older version ignores it.
   `tests/test_onboard_service.py` and `tests/test_radio_meeting.py` try each half. They failed before this
   change.
 - **A robot grants only what its passport offers.** The signed `courtesy` list was never read, so a robot
@@ -49,10 +52,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   third hello, so the robot that answered logged `met` and then `left`. It now comes before the third
   hello, which leaves that robot no session to report. `tests/test_passport_nearby.py` tries it. It failed
   before this change.
+- **A robot told its session is gone ends its side.** A 403 to a message in a session says the other
+  robot no longer holds it, and this robot went on calling it met, so neither dialled until the session
+  idled out, ten minutes on. It now ends the session, and the two meet again.
+  `tests/test_passport_nearby.py` tries `say` and `ask`. It failed before this change.
 - **`quackd onboard sign` says when the running service will not take the new passport.** It said `the
   running service serves it from now on` whatever the service made of it, so a passport signed for
-  another board read as served. It now says the service keeps the passport it had, and why.
-  `tests/test_onboard_cli.py` tries both answers. It failed before this change.
+  another board read as served. It now says the service keeps the passport it had, and why, and so does
+  the wizard. `tests/test_onboard_cli.py` tries both answers. It failed before this change.
 - **A service that stops answering is no traceback.** A connection that failed after it opened, reset or
   timed out, ended `status`, `stop` and every other command that tells the service in a traceback. They
   now read it as a service not running. `tests/test_onboard_cli.py` connects to a socket that never
@@ -76,9 +83,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   is not dialled until that robot dials or its id changes. Nothing the stranger claims is trusted, since
   a robot's tier comes from its passport. Telling the two apart takes a change to the protocol, or a
   second link for every meeting.
-- A stranger that keeps talking can hold a link for as long as it likes, and four of them fill a robot's
-  links, so robots near it are met over the LAN or told it is busy until one closes. Choosing which to
-  drop takes a robot's tier, which a link does not know when it opens.
+- Strangers can hold all four of a robot's links, and take them again as soon as the beacon id's hour
+  has ended them, so robots near it are met over the LAN or told it is busy until one closes. Choosing
+  which to drop takes a robot's tier, which a link does not know when it opens.
 - A radio loud enough to read as near can fill the table of robots heard with made-up ids, and a robot
   heard after that is not tracked until they go.
 - A local program that reconnects in a loop can keep the control socket's eight slots full, and `status`

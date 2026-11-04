@@ -190,6 +190,24 @@ def _where(control_json: Path) -> tuple[int, str]:
         ) from e
 
 
+class _Client(Connection):
+    """A client's end, whose socket failing after it connected is a `ControlError` like one that
+    never did. Only the socket: what the caller does between reads, printing above all, is its
+    own."""
+
+    def send(self, line: Mapping[str, Any]) -> None:
+        try:
+            super().send(line)
+        except OSError as e:
+            raise ControlError(f"the service stopped answering: {e}") from e
+
+    def read(self) -> dict[str, Any] | None:
+        try:
+            return super().read()
+        except OSError as e:
+            raise ControlError(f"the service stopped answering: {e}") from e
+
+
 @contextlib.contextmanager
 def connect(
     control_json: Path, *, timeout: float = HELLO_S, then: float | None = None
@@ -202,7 +220,7 @@ def connect(
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     except OSError as e:
         raise ControlError(f"the service is not answering on 127.0.0.1:{port}: {e}") from e
-    conn = Connection(sock)
+    conn = _Client(sock)
     try:
         conn.send({"op": "hello", "token": token})
         hello = conn.read()
@@ -210,8 +228,6 @@ def connect(
             raise ControlError(str((hello or {}).get("reason", "the service refused the hello")))
         sock.settimeout(then)
         yield conn
-    except OSError as e:
-        raise ControlError(f"the service stopped answering on 127.0.0.1:{port}: {e}") from e
     finally:
         conn.close()
 

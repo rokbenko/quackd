@@ -9332,6 +9332,16 @@ def _tell_service(home: Any, op: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
+def _said_refused(told: dict[str, Any] | None) -> bool:
+    """Whether the running service refused the passport just signed, said if it did."""
+    if told is None or not told.get("passport_refused"):
+        return False
+    why = ui.printable(str(told["passport_refused"]))
+    said = f"the running service keeps the passport it had, and refuses this one: {why}"
+    ui.console.print(Text(said, style=ui.STYLES["warn"]))
+    return True
+
+
 @onboard_app.callback(invoke_without_command=True)
 def onboard(
     ctx: typer.Context,
@@ -9440,7 +9450,7 @@ def onboard(
             else ""
         )
         ui.console.print(_ok_line(f"signed {signed.path}{made}"))
-        _tell_service(home, {"op": "reload"})
+        _said_refused(_tell_service(home, {"op": "reload"}))
     on_a_robot = chosen.radio_kind == "bluez" and sys.platform.startswith("linux")
     if on_a_robot and not no_service:
         try:
@@ -9493,11 +9503,7 @@ def onboard_sign(
         return
     ui.console.print(_ok_line(f"signed {signed.path}, good for {days} days"))
     told = _tell_service(home, {"op": "reload"})
-    if told is not None and told.get("passport_refused"):
-        why = ui.printable(str(told["passport_refused"]))
-        said = f"the running service keeps the passport it had, and refuses this one: {why}"
-        ui.console.print(Text(said, style=ui.STYLES["warn"]))
-    elif told is not None:
+    if told is not None and not _said_refused(told):
         ui.console.print(_ok_line("the running service serves it from now on"))
 
 

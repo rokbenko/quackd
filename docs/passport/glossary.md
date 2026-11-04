@@ -5,8 +5,8 @@ Every term the Robot Passport pages use, in a sentence or two, with where it is 
 **Beacon.** What tells a robot another is near: a version, three flags and a beacon id, in a 31-byte
 Bluetooth LE advert. Never a name, an owner or the passport. [discovery.md](discovery.md#the-bluetooth-le-beacon)
 
-**Beacon id.** 8 random bytes in the beacon, tied to no key, replaced every 15 minutes, and in the
-middle of a meeting only after an hour. [discovery.md](discovery.md#the-beacon-id-changes-every-15-minutes)
+**Beacon id.** 8 random bytes in the beacon, tied to no key, replaced every 15 minutes and never in
+the middle of a meeting, which ends for it after an hour. [discovery.md](discovery.md#the-beacon-id-changes-every-15-minutes)
 
 **Bluetooth link.** A Bluetooth LE connection two robots open when they share no LAN, which carries
 their talk in small frames. [discovery.md](discovery.md#the-bluetooth-link)

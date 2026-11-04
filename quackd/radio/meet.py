@@ -482,9 +482,6 @@ class Meeter:
                     return Outcome("met", did, route, "lan")
         if not action.flags & FLAG_LINK:
             why.append("it accepts no link")
-        elif action.flags & FLAG_BUSY:
-            said = "; ".join([*why, "its advert says it is at its limit"])
-            return Outcome("busy", via="link", reason=said)
         elif not self.radio.status().ready:
             why.append(f"this robot's radio is {self.radio.status().state}")
         else:
@@ -500,17 +497,23 @@ class Meeter:
             # a link to this robot already open, from an earlier meeting either robot began,
             # carries this one too: a pair of robots that stays near and meets again every few
             # minutes would otherwise open a link each time and fill the four a robot may hold
-            link = self.loop.call(self._open_link_to(action.beacon_id), 5.0) or self.loop.call(
-                self.links.dial(
-                    self.radio,
-                    action.address,
-                    me=self.me(),
-                    expect=action.beacon_id,
-                    inbox_for=self.inbox_for,
-                    timeout=self.connect_s,
-                ),
-                wait,
-            )
+            link = self.loop.call(self._open_link_to(action.beacon_id), 5.0)
+            if link is None and action.flags & FLAG_BUSY:
+                # a robot at its limit has no room for a new link, and needs none for one it holds
+                said = "; ".join([*why, "its advert says it is at its limit"])
+                return Outcome("busy", via="link", reason=said)
+            if link is None:
+                link = self.loop.call(
+                    self.links.dial(
+                        self.radio,
+                        action.address,
+                        me=self.me(),
+                        expect=action.beacon_id,
+                        inbox_for=self.inbox_for,
+                        timeout=self.connect_s,
+                    ),
+                    wait,
+                )
         except LinkRefused as e:
             return Outcome("busy" if e.busy else "refused", via="link", reason=str(e))
         except (LinkDown, TimeoutError) as e:
@@ -548,6 +551,19 @@ class Meeter:
                 self.talker.leave(action.did)
         self._close(action.beacon_id)
         self._tell(MeetEvent("parted", action.beacon_id, did=action.did, route=action.route))
+
+    def part_from_everyone(self) -> None:
+        """A bye to every robot and every link closed, on a worker thread: what a beacon id held
+        past its time does before it changes, so that nobody holds a session under the old id beside
+        one under the new, and leaving one ends the other."""
+        self.executor.submit(self._part_from_everyone)
+
+    def _part_from_everyone(self) -> None:
+        for did in self.talker.peers_open():
+            with contextlib.suppress(Exception):
+                self.talker.leave(did)
+        with contextlib.suppress(Exception):
+            self.loop.call(self.links.close_all(CloseReason.DONE), 5.0)
 
     def _close(self, beacon_id: str) -> None:
         # a loop that is stopping closes every link anyway

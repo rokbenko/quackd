@@ -1,5 +1,5 @@
-"""Rotating the beacon id: a new random one every quarter of an hour, and in the middle of a meeting
-only once that meeting has held it for an hour.
+"""Rotating the beacon id: a new random one every quarter of an hour, never in the middle of a
+meeting, and a meeting that holds it for an hour is ended for it.
 
 An advert that carried the same id for ever would let anybody with a phone follow a robot, and so
 its owner, from street to street, collecting the id wherever it is heard. So the id is 8 random
@@ -8,7 +8,8 @@ record and the beacon the robot names in its hellos change together, as one. A r
 a session or a meeting keeps its id until that is over, because the robot it is talking to found
 it by that id, and tries again every `retry_s`, for `hold_s` at most: anybody can open a link and
 keep it talking, and an id they could hold for as long as they liked is one they could follow the
-robot by. Who a robot is never rests on the id: the passport does that, and what a robot remembers
+robot by, so `on_rotate` is told then with something still open, and ends it. Who a robot is never
+rests on the id: the passport does that, and what a robot remembers
 of another (refusals, cooldowns) is kept by its `did`, learned in the hello, so a rotation costs
 another robot one more hello at most.
 

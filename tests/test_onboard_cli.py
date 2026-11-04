@@ -15,6 +15,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
@@ -33,7 +34,7 @@ from quackd.cli import _status_rows, app
 from quackd.onboard import config, demo, radio_side, service
 from quackd.onboard import facts as facts_module
 from quackd.onboard import preflight as preflight_module
-from quackd.onboard.control import ControlError, request
+from quackd.onboard.control import ControlError, connect, request
 from quackd.onboard.store import OnboardDir
 from quackd.passport import document
 from quackd.radio import NoRadio
@@ -539,6 +540,17 @@ def test_sign_says_so_when_the_running_service_will_not_take_it(
     assert "serves it from now on" in flat(runner.invoke(app, argv).output)
 
 
+def test_the_wizard_says_so_when_the_running_service_will_not_take_it(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuses(_home: Any, _op: Any) -> dict[str, Any]:
+        return {"ok": True, "passport_refused": "signed on another computer"}
+
+    monkeypatch.setattr("quackd.cli._tell_service", refuses)
+    said = flat(onboard(tmp_path / "robot", robot_file, secret).output)
+    assert "keeps the passport it had" in said and "signed on another computer" in said
+
+
 def test_a_service_that_stops_answering_is_said_and_no_traceback(tmp_path: Path) -> None:
     """A socket that fails after it connected was no `ControlError`, so `status` and `stop` and
     every other command that tells the service ended in a traceback."""
@@ -547,6 +559,27 @@ def test_a_service_that_stops_answering_is_said_and_no_traceback(tmp_path: Path)
         where.write_text(json.dumps({"port": server.getsockname()[1], "token": "t"}), "utf-8")
         with pytest.raises(ControlError, match="stopped answering"):
             request(where, {"op": "status"}, timeout=0.05)
+
+
+def test_what_a_caller_does_between_reads_is_not_blamed_on_the_service(tmp_path: Path) -> None:
+    """A broken stdout under `goal x | head -1` is the caller's: no service stopped answering."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+
+        def answer() -> None:
+            peer, _address = server.accept()
+            with peer:
+                peer.makefile("rb").readline()
+                peer.sendall(b'{"ev": "hello"}\n')
+                with contextlib.suppress(OSError):
+                    peer.recv(1)
+
+        thread = threading.Thread(target=answer, daemon=True)
+        thread.start()
+        where = tmp_path / "control.json"
+        where.write_text(json.dumps({"port": server.getsockname()[1], "token": "t"}), "utf-8")
+        with pytest.raises(OSError, match="a broken stdout"), connect(where):
+            raise OSError("a broken stdout")
+        thread.join(5)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows has no such modes")

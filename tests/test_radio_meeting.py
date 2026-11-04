@@ -425,6 +425,56 @@ def test_a_robot_whose_advert_says_it_is_busy_is_not_dialled(loop: LoopThread) -
         teardown(loop, [a, b])
 
 
+def test_a_robot_at_its_limit_is_still_met_over_the_link_it_holds(loop: LoopThread) -> None:
+    """It has no room for a new link, and needs none for one it holds: the two would otherwise
+    wait on each other until that link idled out."""
+    air = FakeAir(QUIET_AIR)
+    net = Network()
+    low, high = pair()
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low)
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high)
+    robots = [a, b]
+    for robot in robots:
+        loop.call(robot.start(), 5)
+    try:
+        run(air, loop, robots, lambda: a.state_of(high) == "met", fake_s=10)
+        a.talker.leave(b.did)
+        got = a.meeter.attempt(Meet(high, "fake:b", FLAG_LINK | FLAG_BUSY, 1, 1))
+        assert got.kind == "met" and got.via == "link"
+        assert len(a.links) == 1, "over the link it held"
+    finally:
+        teardown(loop, robots)
+
+
+def test_parting_from_everyone_ends_each_session_and_closes_each_link(loop: LoopThread) -> None:
+    """What a beacon id held past its time does before it changes, and the robots meet again."""
+    air = FakeAir(QUIET_AIR)
+    net = Network()
+    low, high = pair()
+    policy = MeetPolicy(remeet_s=3.0)
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low, meet_policy=policy)
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high, meet_policy=policy)
+    robots = [a, b]
+    for robot in robots:
+        loop.call(robot.start(), 5)
+
+    def met() -> int:
+        return sum(1 for e in a.events if e.kind == "met")
+
+    try:
+        run(air, loop, robots, lambda: met() == 1, fake_s=10)
+        assert a.talker.peers_open() == {b.did} and len(a.links) == 1
+        a.meeter.part_from_everyone()
+        deadline = time.monotonic() + 10.0
+        while (a.talker.peers_open() or len(a.links)) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert a.talker.peers_open() == set() and len(a.links) == 0
+        assert b.did not in a.talker.peers_open() and a.did not in b.talker.peers_open()
+        run(air, loop, robots, lambda: met() == 2, fake_s=20)
+    finally:
+        teardown(loop, robots)
+
+
 @pytest.mark.parametrize(("answer", "state"), [(400, "refused"), (429, "waiting")])
 def test_a_refusal_holds_a_robot_back_for_an_hour_and_busy_for_a_moment(
     loop: LoopThread, answer: int, state: str

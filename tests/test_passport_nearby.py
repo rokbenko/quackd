@@ -331,6 +331,39 @@ def test_meet_opens_no_session_with_a_robot_other_than_the_one_heard(
     assert cart.talker.meet(duck.inbox, expect_beacon=DUCK_BEACON) == DUCK.did
 
 
+@pytest.mark.parametrize("words", ["say", "ask"])
+def test_a_robot_told_its_session_is_gone_ends_its_side_and_can_meet_again(words: str) -> None:
+    """A 403 says the other robot no longer holds it. This robot went on calling it met, so
+    neither dialled until the session idled out."""
+    link = Link()
+    duck, _duck_heard = on_link(link, DUCK, OWNER, "duck-01")
+    cart, cart_heard = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    duck.endpoint.sessions.clear()  # gone at the duck, as a full or a quiet session goes
+    with pytest.raises(PassportError, match="no longer holds this session"):
+        if words == "say":
+            cart.say(DUCK.did, "are you there?")
+        else:
+            cart.ask(DUCK.did, "pause", {"seconds": 3})
+    assert cart.peers_open() == set()
+    assert [h.kind for h in cart_heard] == ["met", "left"]
+    assert cart.meet(Link.ROUTE) == DUCK.did, "and a new hello starts another"
+
+
+def test_a_session_that_fills_at_one_end_ends_at_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 2)
+    link = Link()
+    duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01")
+    cart, cart_heard = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    for i in range(2):
+        cart.say(DUCK.did, f"word {i}")
+    with pytest.raises(PassportError, match="no longer holds this session"):
+        cart.say(DUCK.did, "one more")
+    assert cart.peers_open() == set() and duck.peers_open() == set()
+    assert duck_heard[-1].kind == "quiet" and cart_heard[-1].kind == "left"
+
+
 def test_leave_notes_left_even_when_the_bye_cannot_be_delivered() -> None:
     link = Link()
     duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01")

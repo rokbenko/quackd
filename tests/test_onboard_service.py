@@ -445,6 +445,25 @@ def test_the_advert_says_when_this_robot_is_at_a_limit() -> None:
         side.loop.stop()
 
 
+def test_an_id_held_past_its_time_ends_what_held_it_and_only_then() -> None:
+    from quackd.onboard.radio_side import RadioSide
+    from quackd.radio import NoRadio
+
+    side = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()
+    parted: list[bool] = []
+    side.meeter = SimpleNamespace(part_from_everyone=lambda: parted.append(True))
+    try:
+        side._rotated("0123456789abcdef")
+        assert parted == [], "nothing open: a rotation like any other"
+        side.busy_elsewhere = lambda: True
+        side._rotated("fedcba9876543210")
+        assert parted == [True]
+    finally:
+        side.meeter = None
+        side.loop.stop()
+
+
 def test_an_advert_that_will_not_change_does_not_stop_the_tick() -> None:
     from quackd.onboard.radio_side import RadioSide
     from quackd.radio import NoRadio

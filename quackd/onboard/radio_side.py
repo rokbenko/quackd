@@ -342,7 +342,10 @@ class RadioSide:
         )
 
     def _rotated(self, fresh: str) -> None:
-        """A new beacon id: the advert, the hello and the LAN record change together."""
+        """A new beacon id: the advert, the hello and the LAN record change together. Whatever held
+        the old one past its time ends first."""
+        if self.meeter is not None and self._busy():
+            self.meeter.part_from_everyone()
         with contextlib.suppress(Exception):
             self.loop.call(self._advertise(fresh), CALL_S)
         if self.talker is not None:

@@ -282,6 +282,7 @@ class Talker:
                 "6.2", f"{who} listens nowhere this robot may reach, so it can only be answered"
             )
         status, _reply = self._deliver(session.route, self.endpoint.say(session.peer, text))
+        self._ended_there(session, status)
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
@@ -305,6 +306,7 @@ class Talker:
             self._asking.add(msg)
         try:
             status, reply = self._deliver(session.route, wire)
+            self._ended_there(session, status)
             if reply is not None:
                 answer = read_message(reply)
                 self.receive(answer)
@@ -324,6 +326,18 @@ class Talker:
             return "later", "no answer came in time"
         return str(answered.get("result")), str(answered.get("reason", ""))
 
+    def _ended_there(self, session: Session, status: int) -> None:
+        """A 403 to a message in a session says the other robot no longer holds it (spec 6.3): it
+        went quiet there, or heard all it can remember. So this robot's end goes too, and the two
+        can meet again, where this one would go on calling it met and neither would dial."""
+        if status != 403:
+            return
+        with self._lock:
+            ended = self.endpoint.sessions.pop(session.nonces, None)
+        if ended is not None:
+            self._note(Event("left", session))
+        raise PassportError("6.3", f"{session.peer} no longer holds this session")
+
     def share(self, who: str, about: str, fact: str, **more: Any) -> None:
         """Tell a robot this one met something it saw: what, the fact, and where, as a place
         both can recognise rather than a coordinate (spec 6.6)."""
@@ -333,6 +347,7 @@ class Talker:
         status, _reply = self._deliver(
             session.route, self.endpoint.share(session.peer, about, fact, **more)
         )
+        self._ended_there(session, status)
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
