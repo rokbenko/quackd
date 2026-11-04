@@ -9,6 +9,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.31.3] — 2026-11-04
+
+0.31.3 fixes how a run ends when the arm stops answering, which is what cutting its supply does. What
+changes for you: nothing to do. A run that loses the arm ends on one line and no longer in a Python
+traceback, at the end of a by-hand run nobody is told to reach into its jaws, and a chat is told why.
+None of this has met an arm.
+
 ### Fixed
 
 - **An arm that stops answering ends a run in one line, not in a Python traceback.** A supply cut or a
@@ -9687,7 +9694,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.2...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.3...HEAD
+[0.31.3]: https://github.com/rokbenko/quackd/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/rokbenko/quackd/compare/v0.31.1...v0.31.2
 [0.31.1]: https://github.com/rokbenko/quackd/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/rokbenko/quackd/compare/v0.30.3...v0.31.0
