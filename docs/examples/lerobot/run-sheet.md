@@ -2,7 +2,7 @@
 
 A card for each of 220 experiments on an SO-101 arm, E001 to E220: what it is for, what to expect, how to set it
 up and the lines to run. It is the run sheet the comment at the top of a [task file](README.md) names. Start with
-[the arm's steps](../../adapters/lerobot/README.md#step-by-step), which go from an empty laptop to the first runs
+[the arm's steps](../../adapters/lerobot/README.md#getting-started), which go from an empty laptop to the first runs
 and say how a line is built.
 
 > [!WARNING]
@@ -2581,7 +2581,7 @@ quackd run lerobot-lookout --robot arm-01 --camera-url "opencv://1?name=front" -
 quackd run lerobot-lookout --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-by-hand
 ```
 
-**Film the rest pose being recorded (the setup section already did this once; re-record only if you changed the fold)**
+**Film the rest pose being recorded ([At the arm, first](../../adapters/lerobot/README.md#at-the-arm-first) already did this once; re-record only if you changed the fold)**
 
 ```bash
 quackd robot rest-pose arm-01
@@ -3961,7 +3961,7 @@ Free space.
 
 **Goal.** Show the refusal that keeps a real arm from being left holding itself up: named by its spec it has no name to keep a rest pose under, so quackd refuses it before anything connects, a dry run included.
 
-**Expect.** `✗ error: lerobot:real names no registered arm, so it has no rest pose, and at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped`, then the way back, `quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME`. No run folder, no model call, and the arm does not twitch.
+**Expect.** `✗ error: lerobot:real names no registered arm, so it has no rest pose, and at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped`, then the way back, `quackd robot add NAME lerobot:real --address COM5, then quackd robot rest-pose NAME`. No run folder, no model call, and the arm does not twitch.
 
 - The arm can stay folded and powered: nothing reaches it. Film the terminal.
 
@@ -3987,7 +3987,7 @@ Free space.
 
 **Expect.** `doctor` energises the arm for a moment, then refuses it: `the arm is not calibrated`. Press gently on the forearm once the refusal is printed: it should give, limp. An arm that still resists is the refusal keeping it energised with nothing said: hold it and cut its power. Step 6 of the hardware checklist, which has not run on an arm yet.
 
-- Run this in the setup below, after calibrating and before you fold the arm and record its rest pose, because pressing on the arm moves it.
+- Run this during [At the arm, first](../../adapters/lerobot/README.md#at-the-arm-first), after calibrating and before you fold the arm and record its rest pose, because pressing on the arm moves it.
 - A hand under the arm while it energises.
 
 **A second name on the same port, one nothing was calibrated as**
@@ -4526,7 +4526,7 @@ Free space. Its files are in [e189/](e189/).
 
 **Goal.** Show what stops a second quackd from driving an arm that a first one is already moving. quackd holds no lock on a robot across processes, so the answer on this laptop is Windows: a COM port has one owner.
 
-**Expect.** The second run names the port and stops: `connect failed 3 times: Could not connect on port 'COM3'. Make sure you are using the correct port ... and that nothing else has COM3 open (a teleoperation, a recording or a serial monitor)`, with `The port never opened, so nothing reached a motor`. The first run carries on as if nothing happened. On Linux nothing refuses: the serial library does not lock a port unless asked, so two writers could share the bus. Say whether the first run so much as twitched.
+**Expect.** The second run names the port and stops: `connect failed 3 times: Could not connect on port 'COM5'. Make sure you are using the correct port ... and that nothing else has COM5 open (a teleoperation, a recording or a serial monitor)`, with `The port never opened, so nothing reached a motor`. The first run carries on as if nothing happened. On Linux nothing refuses: the serial library does not lock a port unless asked, so two writers could share the bus. Say whether the first run so much as twitched.
 
 - Start the slow raise, then run the second line from another terminal while it moves. The second pilot is the scripted one, so it costs nothing. Hand on the switch.
 
@@ -4796,7 +4796,7 @@ Free space. Its files are in [e199/](e199/).
 
 **Expect.** Two `summary.json` files and two videos of the same five nudges. For each joint: did it turn the same way? A joint that turns the other way on the twin is a finding worth an issue. The twin runs on this arm's own calibration, and it opens no port, so its line can run with the arm powered off.
 
-- The twin first, registered in the setup above. Its table holds a red cube and a pen and nothing else. Clear the arm's sweep before its line.
+- The twin first, registered in [At the arm, first](../../adapters/lerobot/README.md#at-the-arm-first). Its table holds a red cube and a pen and nothing else. Clear the arm's sweep before its line.
 
 **On the twin**
 
