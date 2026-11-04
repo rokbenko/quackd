@@ -1,6 +1,6 @@
 """Every picture quackd decodes names the formats it takes.
 
-`Image.open` with no `formats=` tries dozens of decoders, some through external programs, on the
+`Image.open` with no `formats=` tries dozens of decoders, one of which starts Ghostscript, on the
 strength of the first bytes, so whoever answers a camera request chooses which decoder runs: a
 robot that has been taken over, or anything else on its network, since most of these wires are
 plain HTTP or ZeroMQ. Pillow's own advisories are mostly about decoders no camera here needs, and
@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
-from PIL import Image, ImageFile, UnidentifiedImageError
+from PIL import Image, ImageFile
 
 from quackd.agent.images import FORMATS, TaskImageError, load_task_images
 from quackd.host import HostClient, HostError
+from quackd.transport.base import camera_url_frame
 
 REPO = Path(__file__).resolve().parent.parent
 SIZE = (16, 16)
@@ -141,7 +142,7 @@ async def _microduck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> An
     link = JsonRpcUnixTransport("tcp://127.0.0.1:9", camera_url="http://127.0.0.1:9/frame")
     try:
         return await link._fetch_frame()
-    except UnidentifiedImageError:
+    except (ValueError, Image.DecompressionBombError):  # what `_camera_loop` keeps as the error
         return None
 
 
@@ -154,18 +155,17 @@ async def _huebot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
     )
     try:
         return await link._fetch_frame()
-    except UnidentifiedImageError:
+    except (ValueError, Image.DecompressionBombError):  # what `_camera_loop` keeps as the error
         return None
 
 
 async def _rosbridge(raw: bytes, _: pytest.MonkeyPatch, __: Path) -> Any:
-    from quackd_rosbridge.ws import decode_compressed_image
+    from quackd_rosbridge.ws import RosbridgeWs
 
-    message = {"format": "jpeg", "data": base64.b64encode(raw).decode("ascii")}
-    try:
-        return decode_compressed_image(message)
-    except UnidentifiedImageError:
-        return None
+    link = RosbridgeWs("ws://127.0.0.1:9")
+    link._image = object()  # type: ignore[assignment]
+    link._latest_image = {"format": "jpeg", "data": base64.b64encode(raw).decode("ascii")}
+    return await link.get_frame()
 
 
 async def _task_image(raw: bytes, _: pytest.MonkeyPatch, folder: Path) -> Any:
@@ -269,6 +269,33 @@ async def test_no_decoder_a_wire_does_not_name_is_even_asked(
     assert probe.opened == 0, f"{site.name} let a decoder it does not name open the bytes"
 
 
+@EACH_SITE
+async def test_a_frame_claiming_to_be_enormous_is_a_refusal_and_not_an_exception(
+    site: Site, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pillow raises `DecompressionBombError` from inside `Image.open`, and it is neither an
+    `OSError` nor a `ValueError`. Five sites let it out of `get_frame`, whose contract is None, so
+    one JPEG header from the far end could end a run."""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    assert await site.read(_picture("JPEG"), monkeypatch, tmp_path) is None
+
+
+def test_a_camera_url_that_serves_anything_else_is_told_what_to_serve() -> None:
+    with pytest.raises(ValueError, match="a JPEG or a PNG"):
+        camera_url_frame(_picture("BMP"))
+
+
+async def test_the_refusal_is_what_a_person_reads_in_camera_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackd_open_duck.bridge import OpenDuckBridge
+
+    _answers_with(_picture("BMP"), monkeypatch)
+    link = OpenDuckBridge(camera_url="http://127.0.0.1:9/snapshot.jpg")
+    assert await link.get_frame() is None
+    assert "a JPEG or a PNG" in str(link.camera_error)
+
+
 def _opens(path: Path) -> Iterator[ast.Call]:
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if (
@@ -282,7 +309,7 @@ def _opens(path: Path) -> Iterator[ast.Call]:
 
 def test_every_image_open_that_ships_names_its_formats() -> None:
     """What a wheel or a robot runs. `docs/assets`, `web/` and `docs/examples` open a file the
-    person running them chose, and ship in nothing."""
+    person running them chose, and no install runs them."""
     shipped = [
         *REPO.glob("quackd/**/*.py"),
         *REPO.glob("adapters/*/src/**/*.py"),

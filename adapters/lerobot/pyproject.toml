@@ -16,10 +16,10 @@ dependencies = ["quackd>=0.31.3,<0.32"]
 # solvable on 3.11, where this package still installs and still gives you `lerobot:mock`.
 # `[feetech]` is where the serial SDK lives: without it `import lerobot` succeeds and opening
 # the arm's port fails, which is a worse thing to find out at a bench than at an install.
-# The ceiling is the first version nobody here has read. LeRobot's main calls itself 0.6.2 and
-# has replaced feetech-servo-sdk, the library upstream_api.py read the bus through, with rustypot
-# (its #4672), so a fresh install must not take it the day it appears. Raise it with
-# upstream_api.py, after a run on an arm, and with the ignore in .github/dependabot.yml.
+# The ceiling is the first release that can carry rustypot. LeRobot's main calls itself 0.6.2 and
+# has replaced feetech-servo-sdk, the library upstream_api.py read the bus through, with it (its
+# #4672), so a fresh install must not take that the day it appears. Raise it with upstream_api.py,
+# after a run on an arm, and with the ignore in .github/dependabot.yml.
 [project.optional-dependencies]
 sdk = ["lerobot[feetech]>=0.6,<0.6.2; python_version >= '3.12'"]
 # The arm's simulator, `lerobot:mujoco`: MuJoCo on the CPU and nothing of LeRobot's, so it

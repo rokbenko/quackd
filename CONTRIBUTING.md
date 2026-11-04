@@ -17,6 +17,11 @@ uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run
 
 Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real provider.
 
+`pre-commit` is not in the `dev` extra: it brings `virtualenv`, and the lock cannot take a
+`virtualenv` with its security fixes while LeRobot caps `packaging`. A hook installed by the older
+`uv run pre-commit install` stops every commit with `No module named pre_commit`, so run
+`pre-commit install` again.
+
 This repository is a uv workspace: `quackd` is one distribution and each robot under
 `adapters/` is another (`quackd-microduck`, `quackd-lerobot`, `quackd-rosbridge`,
 `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`, `quackd-toddlerbot`,

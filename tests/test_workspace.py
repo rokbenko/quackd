@@ -203,7 +203,7 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
         assert name in BY_NAME, f"{name} is installed but quackd does not publish it"
 
 
-def test_the_arms_extras_stop_below_the_lerobot_nobody_has_read() -> None:
+def test_the_arms_extras_stop_below_the_release_that_can_carry_rustypot() -> None:
     """LeRobot's main calls itself 0.6.2 and has replaced the library that talks to the arm's
     motors, so a fresh `quackd[lerobot]` must not take it before somebody has read it and run an
     arm on it. Whoever reads a newer one changes `PYPI_VERSION_READ`, and this sends them to the

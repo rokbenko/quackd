@@ -503,7 +503,11 @@ class RosbridgeWs:
             message = self._latest_image
         if message is None:
             return None
-        return decode_compressed_image(message)
+        try:
+            return decode_compressed_image(message)
+        except (ValueError, OSError, Image.DecompressionBombError):
+            # `frames_of` promises every caller this never raises for a camera that failed
+            return None
 
     async def get_state(self) -> DuckState:
         with self._lock:

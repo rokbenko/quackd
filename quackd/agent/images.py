@@ -204,6 +204,13 @@ def load_task_images(paths: Sequence[str]) -> list[NamedPng]:
                 f"--image {path}: this picture claims to be far larger than anything quackd "
                 f"will decode ({e})"
             ) from e
+        except SyntaxError as e:
+            # What PIL's TIFF reader raises for an EXIF block it cannot read, from `_flatten`'s
+            # `exif_transpose`, and it is no OSError, so it used to come out as a traceback.
+            raise TaskImageError(
+                f"--image {path}: this picture's metadata cannot be read ({e}); save a copy "
+                "without it"
+            ) from e
         except OSError as e:
             raise TaskImageError(f"--image {path}: could not be read: {e}") from e
         out.append(NamedPng(name=name, png=png))

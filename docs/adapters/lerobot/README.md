@@ -633,7 +633,8 @@ install it: check `python --version` first.
 > with `rustypot`, and nothing on this page has been read or run against that. LeRobot 0.6.1
 > also holds Pillow under 13, so this install has Pillow 12.3.0, with the advisories that
 > release carries, until quackd moves to LeRobot's next release. What they can still reach is
-> under Known limitations in the [changelog](../../../CHANGELOG.md).
+> under Known limitations in the [changelog](../../../CHANGELOG.md). Inside a checkout of this
+> repository `uv pip` reads its override and installs Pillow 13 instead.
 
 Without the extra, every real-arm command ends the same way, and this is what it looks like:
 

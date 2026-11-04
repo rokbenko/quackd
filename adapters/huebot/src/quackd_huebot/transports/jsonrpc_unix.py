@@ -69,7 +69,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import http.client
-import io
 import json
 import logging
 import math
@@ -95,6 +94,7 @@ from quackd.transport.base import (
     Intent,
     Posture,
     TransportError,
+    camera_url_frame,
 )
 from quackd_huebot import upstream_api as up
 
@@ -1144,8 +1144,7 @@ class JsonRpcUnixTransport:
             )
 
         data = await asyncio.to_thread(fetch)
-        # what `fetch_still`'s refusal asks a camera for
-        return Image.open(io.BytesIO(data), formats=["JPEG", "PNG"]).convert("RGB")
+        return camera_url_frame(data)
 
     async def _camera_loop(self) -> None:
         """Keep the newest frame, on a timer, so `get_frame` is a memory read.

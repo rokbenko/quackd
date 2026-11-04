@@ -375,7 +375,7 @@ class AlohaMiniZmq:
             try:
                 img = Image.open(BytesIO(raw), formats=["JPEG"])
                 img.load()
-            except (ValueError, OSError, UnidentifiedImageError):
+            except (ValueError, OSError, UnidentifiedImageError, Image.DecompressionBombError):
                 return None
             return img.convert("RGB")
         return None

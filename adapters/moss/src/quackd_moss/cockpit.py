@@ -532,7 +532,7 @@ def _decode(jpeg: bytes) -> Image.Image | None:
     try:
         img = Image.open(io.BytesIO(jpeg), formats=["JPEG"])
         img.load()
-    except (OSError, ValueError, UnidentifiedImageError):
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
         return None
     return img.convert("RGB")
 

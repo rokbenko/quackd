@@ -305,7 +305,13 @@ class ToddlerBotBridge:
         try:
             img = Image.open(BytesIO(base64.b64decode(payload, validate=True)), formats=["JPEG"])
             img.load()
-        except (binascii.Error, ValueError, OSError, UnidentifiedImageError):
+        except (
+            binascii.Error,
+            ValueError,
+            OSError,
+            UnidentifiedImageError,
+            Image.DecompressionBombError,
+        ):
             return None
         return img.convert("RGB")
 
