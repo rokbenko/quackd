@@ -4714,3 +4714,46 @@ def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> No
             assert flag in guide, f"docs/guides/places.md does not name {flag}"
     for command in ("quackd map", "quackd places add", "quackd places list", "quackd places rm"):
         assert command in guide, f"docs/guides/places.md does not show {command}"
+
+
+_ARM_PAGE = REPO / "docs" / "adapters" / "lerobot" / "README.md"
+
+
+def test_the_arms_table_of_contents_lists_every_section_in_order() -> None:
+    """The arm's page runs to thousands of lines, so its table of contents is how a reader gets
+    around it, and a heading added without a line there is one they do not find. Whether each
+    link lands is the job of test_every_relative_link_and_anchor_in_the_markdown_resolves."""
+    prose = _prose(_ARM_PAGE.read_text(encoding="utf-8"))
+    before, after = prose.split("\n## Table of Contents\n", 1)
+    contents, body = after.split("\n## ", 1)
+    assert not re.search(r"^## ", before, flags=re.M), "a section came before the contents"
+    listed = re.findall(r"^(?:- |  \* )\[.*\]\(#([^)]+)\)$", contents, flags=re.M)
+    headings = re.findall(r"^#{2,3}\s+(.+?)\s*$", "## " + body, flags=re.M)
+    assert listed == [_github_slug(heading) for heading in headings]
+    assert headings[0] == "Step by step", "the steps are the first thing after the contents"
+
+
+def test_the_arms_step_by_step_says_what_the_task_files_say() -> None:
+    """The steps send a reader to the task files by path, quote each one's own first command and
+    count them. A later change to docs/examples/lerobot can make any of that untrue with nothing
+    else on this page moving."""
+    page = _ARM_PAGE.read_text(encoding="utf-8")
+    steps = page.split("\n## Step by step\n", 1)[1].split("\n## ", 1)[0]
+    examples = REPO / "docs" / "examples" / "lerobot"
+    for path in set(re.findall(r"docs/examples/lerobot/[\w/.-]+\.(?:duck|py|png)", steps)):
+        assert (REPO / path).exists(), f"the arm's steps name {path}, which is not there"
+    ducks = [duck.read_text(encoding="utf-8") for duck in examples.glob("*/*.duck")]
+    assert f"{len(ducks)} task" in steps and f"{len(ducks)} files valid" in steps
+    played = sum("play: true" in duck for duck in ducks)
+    assert f"{played} of the task files" in steps
+    on_the_arm = re.findall(
+        r"^\s*(quackd run docs/examples/lerobot/([\w/.-]+\.duck) --robot arm-01 .*)$",
+        steps,
+        flags=re.M,
+    )
+    assert len(on_the_arm) >= 4
+    for line, duck in on_the_arm:
+        assert line in (examples / duck).read_text(encoding="utf-8"), f"{duck} says otherwise"
+    # "an experiment left out here is a command with no task file of its own"
+    folders = {path.name for path in examples.iterdir() if path.is_dir()}
+    assert folders == set(re.findall(r"\b(e\d{3})/", steps))
