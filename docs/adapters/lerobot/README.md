@@ -856,7 +856,7 @@ quackd policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
 
 ```text
   http://127.0.0.1:9875
-policy           scripted:sweep (quackd-policy 1, quackd 0.31.2)
+policy           scripted:sweep (quackd-policy 1, quackd 0.31.3)
 features         whatever the arm has (a scripted policy)
 rate             10 Hz, from scripted:sweep's own, the verbs' tick
 chunks           10 actions, 10 played from each
@@ -1046,7 +1046,7 @@ quackd policy check --policy quackd-test/tiny-act@v1 --bench --seconds 3
 
 ```text
   served here for the check, at http://127.0.0.1:53804
-policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.31.2)
+policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.31.3)
 features         state 6, action 6, images observation.images.front 64x48
 rate             10 Hz, from
                  quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
@@ -2910,7 +2910,7 @@ If you hit one of these, or fail to, that is exactly what the
 | `Failed to write '<register>' on id_=<N> with '<value>' after <k> tries. <result>` | what a single write or read that failed raises. quackd reads the id out of it to name the joint; a sync read or write names several and quackd names none |
 | `_handshake` | what `MotorsBus.connect()` runs once the port is open: a ping per motor and the firmware reads, and no write. `configure()`, where every write of a connect is, comes after it, so a connect refused in the handshake left every motor's torque as it was, and its refusal does not tell you to keep a hand under the arm. quackd tells the two apart by this frame in the error's traceback |
 | `Missing motor IDs: / Motors with incorrect model numbers: - <N> (...)` | what the handshake raises for a servo that did not answer its ping, or answered as another model: one line per motor. A servo answering with its error bit set, an overload say, is listed as missing too. quackd names the joint of the first id listed, through the bus's motor table |
-| `Failed to sync read '<register>' on ids=[<N>, ...] after <k> tries. <result>` | what a read of several motors at once raises when no good reply came back, and a sync write says `Failed to sync write` when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The result is the servo SDK's own words, `[TxRxResult] There is no status packet!` for a reply that never came. Neither names one motor, so quackd names no joint. The arm simulator fails its reads and goal writes in these words |
+| `Failed to sync read '<register>' on ids=[<N>, ...] after <k> tries. <result>` | what a read of several motors at once raises when no good reply came back, and a sync write says `Failed to sync write` when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The result is the servo SDK's own words, `[TxRxResult] There is no status packet!` for a reply that never came. Neither names one motor, so quackd names no joint. The arm simulator fails its reads and goal writes in these words. A read that ends a run says `the arm did not answer: ConnectionError: ` in front of them |
 | `sts3215 model number 777` | what an SO-101 servo answers a ping with, and what the handshake prints beside each id it lists. The arm simulator's handshake fault prints it where the arm's would |
 | `check_if_not_connected refuses a call on a port that is not open` | ``<class> is not connected. Run `.connect()` first.``, a ConnectionError, on the follower's observation, send and disconnect and on every bus read and write, and its twin says `<class> is already connected.` for a connect. The arm simulator refuses in the same words under upstream's class names |
 | `MotorsBus.is_connected is port_handler.is_open` | a port flag, not a reply: why the heartbeat reads the arm |

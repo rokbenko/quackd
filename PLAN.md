@@ -122,7 +122,9 @@ before.
   The gripper opening all the way at the end of a `--by-hand` run, the count after it, and `q` with
   no Enter behind it are owed by the arm as well, and so, for 0.30.2, is a press again and again
   through the end of such a run, and one during the fold it starts with, which should stop it there.
-  `e208` to `e219` put those, and what 0.30.3 changed, on the run sheet.
+  `e208` to `e219` put those, and what 0.30.3 changed, on the run sheet. In 0.31.3 a run that loses
+  the arm ends on one line and not in a traceback, which `e166` would show on the arm, and a gripper
+  that an arm gone silent did not open says to cut its power first.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a

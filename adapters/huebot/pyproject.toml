@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.31.2,<0.32"]
+dependencies = ["quackd>=0.31.3,<0.32"]
 
 [project.entry-points."quackd.adapters"]
 huebot = "quackd_huebot"
