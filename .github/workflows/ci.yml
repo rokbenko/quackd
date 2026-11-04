@@ -257,6 +257,8 @@ jobs:
   # torch comes from its CPU wheel index first, because this runner has no GPU and the default
   # wheels carry CUDA's gigabytes, and LeRobot after it, at the version policy/upstream_api.py
   # was read at, with its X-VLA extra for transformers, which keeps the torch already there.
+  # `uv pip` reads pyproject.toml's override-dependencies too, so LeRobot runs on Pillow 13 here,
+  # as it does in a checkout, and not on the 12.3.0 a PyPI install of the extra gets.
   # `--no-sync` from then on, or `uv run`
   # would sync them both away again. Not a matrix: nothing here differs by platform that the
   # default suite does not already run six times.

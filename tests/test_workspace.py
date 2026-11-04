@@ -22,6 +22,7 @@ import pytest
 import quackd
 from quackd.adapters.catalogue import BY_NAME, ENTRY_POINT_GROUP, OFFICIAL
 from quackd.adapters.factory import adapter_names, info, is_installed
+from quackd_lerobot import upstream_api
 
 REPO = Path(__file__).resolve().parents[1]
 MEMBERS = sorted(p for p in (REPO / "adapters").glob("*/pyproject.toml"))
@@ -200,6 +201,19 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
         module = importlib.import_module(f"quackd_{name}")
         assert tuple(module.BACKENDS) == info(name).backends, name
         assert name in BY_NAME, f"{name} is installed but quackd does not publish it"
+
+
+def test_the_arms_extras_stop_below_the_lerobot_nobody_has_read() -> None:
+    """LeRobot's main calls itself 0.6.2 and has replaced the library that talks to the arm's
+    motors, so a fresh `quackd[lerobot]` must not take it before somebody has read it and run an
+    arm on it. Whoever reads a newer one changes `PYPI_VERSION_READ`, and this sends them to the
+    ceilings, the override in the root pyproject.toml and the ignore in dependabot.yml."""
+    assert upstream_api.PYPI_VERSION_READ == "0.6.1"
+    member = _toml(REPO / "adapters" / "lerobot" / "pyproject.toml")
+    extras = member["project"]["optional-dependencies"]
+    for name in ("sdk", "vla"):
+        (asks,) = [r for r in extras[name] if _dist(r) == "lerobot"]
+        assert ">=0.6,<0.6.2;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
 
 
 def test_every_published_adapter_is_installed_for_the_suite() -> None:

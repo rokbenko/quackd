@@ -9,6 +9,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **`quackd[lerobot]` and `quackd[lerobot-vla]` stop below the LeRobot nobody here has read.** The first
+  asked for `lerobot[feetech]>=0.6` with no ceiling and the second stopped only at 0.7, so a fresh install
+  would have taken LeRobot's next release the day it appeared. LeRobot's main branch calls itself 0.6.2 and
+  has replaced `feetech-servo-sdk`, the library that talks to the arm's motors, with `rustypot`
+  ([huggingface/lerobot#4672](https://github.com/huggingface/lerobot/pull/4672)), and nothing in quackd has
+  been read or run against that. Both extras now stop below 0.6.2. What changes for you: nothing, since
+  0.6.1 is what they install today. A wheel already on PyPI keeps the requirement it shipped with.
+  `tests/test_workspace.py` fails if a ceiling goes, or if the version `upstream_api.py` was read at moves
+  and leaves it behind. It failed before this change.
+
 ### Security
 
 - **A picture read off a wire is decoded only in the formats that wire carries.** Ten places read a frame
@@ -28,6 +40,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **`uv.lock` holds Pillow 13.0.0 and no `pre-commit`, which closes 53 of the 58 Dependabot alerts open on
+  it.** All 58 came from LeRobot 0.6.1's caps. `override-dependencies` in `pyproject.toml` lifts its
+  `Pillow<13` for a checkout and for CI, where 41 of them were, so CI's policy job now runs LeRobot 0.6.1 on
+  Pillow 13, and the fresh install nightly already ran the whole suite on it. The other 12 were in
+  `virtualenv`, whose fixes need a `packaging` LeRobot also caps, and only `pre-commit` brought it. So
+  `pre-commit` leaves the `dev` extra, with `virtualenv` and six other packages. No CI job ran it, and
+  `CONTRIBUTING.md` now says `uv tool install pre-commit`. The last five, in `transformers`, `setuptools` and
+  `torch`, stay until LeRobot's next release, because forcing them is worse than having them: LeRobot's own
+  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer `transformers`
+  loads pi0 and pi05 checkpoints with a random vision tower and only a warning. Nothing in quackd reaches
+  those five, and they are dismissed on GitHub with the reason on each. `.github/dependabot.yml` no longer
+  ignores Pillow, and ignores LeRobot from 0.6.2. None of this is what a wheel asks for, which is the first
+  entry under Known limitations.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
   did not show, the exact command, the quackd version and the full terminal trace, and
@@ -47,6 +72,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
   them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
   on its card, and that every `quackd` line on the page parses.
+
+### Known limitations
+
+- **`quackd[lerobot]`, `quackd[lerobot-vla]` and `quackd[robots]` on Python 3.12 still install Pillow
+  12.3.0.** LeRobot 0.6.1 asks for a Pillow under 13, and the override in `pyproject.toml` is the lock's
+  alone, so these installs keep the advisories that release carries until quackd moves to LeRobot's next
+  release, which takes a run on an arm ([PLAN.md](PLAN.md)). With the format lists above, what can still
+  reach them is a crafted animated PNG from a camera on one of the four wires that take PNG, and a crafted
+  TIFF, GIF, BMP or PNG handed to `--image`. They keep `setuptools` 81 and `torch` 2.11 as well, and
+  `[lerobot-vla]` keeps `transformers` 5.5.4, whose advisories nothing in quackd reaches. A fresh install
+  with no LeRobot in it gets Pillow 13.
 
 ## [0.31.3] — 2026-11-04
 

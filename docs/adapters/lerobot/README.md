@@ -627,6 +627,14 @@ quackd's own is 3.11. On 3.11 the extra installs the adapter and the SDK resolve
 so `lerobot:mock` works and `doctor` keeps saying `not installed` however many times you
 install it: check `python --version` first.
 
+> [!NOTE]
+> The extra asks for a LeRobot below 0.6.2, and `quackd[lerobot-vla]` stops at the same place.
+> LeRobot's main branch has replaced `feetech-servo-sdk`, the library that talks to the motors,
+> with `rustypot`, and nothing on this page has been read or run against that. LeRobot 0.6.1
+> also holds Pillow under 13, so this install has Pillow 12.3.0, with the advisories that
+> release carries, until quackd moves to LeRobot's next release. What they can still reach is
+> under Known limitations in the [changelog](../../../CHANGELOG.md).
+
 Without the extra, every real-arm command ends the same way, and this is what it looks like:
 
 ```

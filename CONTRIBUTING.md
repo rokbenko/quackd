@@ -9,7 +9,8 @@ Thanks for taking a toy duck seriously. Two kinds of contribution matter most: *
 git clone https://github.com/rokbenko/quackd && cd quackd
 uv sync --extra dev            # the core and all nine robots, editable, no robot SDKs
 uv sync --extra dev --extra mujoco   # the physics simulator, or its tests just skip
-uv run pre-commit install
+uv tool install pre-commit     # the hooks' runner, in an environment of its own, not in the lock
+pre-commit install
 uv run pytest -n auto          # the whole suite on every core, about ten minutes, no network, no keys
 uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run quackd validate ducks/*.duck
 ```
