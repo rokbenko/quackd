@@ -231,6 +231,55 @@
 
 <!-- end of the example-log table -->
 
+## How a log is written
+
+A log is one run of one example, and whoever ran it picks which run. `scripts/example_log.py` writes
+every README, and a test fails if one is edited by hand, so the only file a person writes is the
+example's `log/notes.yaml`.
+
+1. Copy the video into the run folder, under any name, and read off it how fast it plays. A video
+   at real speed is `--speed 1`.
+2. Copy the run in. This needs ffmpeg. It makes the GIF and the robot's frames, and leaves
+   `log/notes.yaml` full of TODOs:
+
+   ```bash
+   uv run --no-sync python scripts/example_log.py add <run folder> --speed 10
+   ```
+
+   A run folder that does not start with its example needs `--example e119`. A different run of an
+   example that already has a log needs `--replace`, which starts its notes over.
+3. Look at the GIF and the frames. They go public, with whatever the camera caught.
+4. Fill in the notes:
+
+   | Field | What goes in it |
+   |---|---|
+   | `hook` | One line a stranger would stop for: what happened, with its number if it has one. It is also What it showed in the table above. |
+   | `goal_met` | `Yes`, `Partly` or `No`: whether the run showed what the example set out to show. SUCCESS on the screen is only the LLM's own verdict. |
+   | `why_example` | Why the example exists: the risk or the question behind it. |
+   | `why_result` | Why this result is important: what it means for someone trusting a robot to an LLM, or simply why it is worth watching. |
+   | `goal` | What the example sets out to show. Start from its card on [the run sheet](run-sheet.md), and check the card against the code, because it was written as a plan for filming. |
+   | `expected` | What should happen, as it stood before the run. |
+   | `showed` | What the run showed, with anything that went wrong, quackd's own mistakes included. |
+   | `did_not_show` | What this run does not prove. If the GIF is sped up and that could mislead, say so here. |
+   | `before` | Optional: any line run before the command, such as `$env:QUACKD_LEROBOT_MAX_STEP_DEG = "2"`, which the run's record cannot show. |
+
+5. Write the log and the table above, then check them:
+
+   ```bash
+   uv run --no-sync python scripts/example_log.py write
+   uv run --no-sync python scripts/example_log.py check
+   ```
+
+Three rules hold for all of it:
+
+* Say LLM, never `model` or `AI model`. The script refuses a log that does. What a run really said
+  stays as it was: the trace, the command, the recorded reason and anything in a code span.
+* Take every number from the run's own record, not from memory. Where quackd does not print a number
+  and you work it out, say how: the `transcript.jsonl` in the run folder has the send times, and it
+  is not copied here because it holds a path into a home folder.
+* Write for someone who has never heard of quackd. The first lines should show what it is worth, as
+  a safety feature or as a funny experiment.
+
 ## Running them
 
 One folder per experiment on [the run sheet](run-sheet.md) that has a file of its own, `e001` to `e220`. The 34 that
