@@ -320,7 +320,8 @@ async def test_a_central_in_another_framing_version_is_told_so() -> None:
 
 async def test_a_table_holds_at_most_its_links_and_reports_only_those_borne_out() -> None:
     changes: list[LinkChange] = []
-    table = LinkTable(policy=FAST, on_change=changes.append)
+    gone: list[str] = []
+    table = LinkTable(policy=FAST, on_change=changes.append, on_gone=gone.append)
     assert table.max_links == MAX_LINKS
     for i in range(MAX_LINKS + 1):
         c_pipe, p_pipe = MemoryPipe.pair(182)
@@ -343,6 +344,8 @@ async def test_a_table_holds_at_most_its_links_and_reports_only_those_borne_out(
     await table.close_all()
     await until(lambda: len(table) == 0)
     assert len(changes) == 2  # the links never borne out leave without a word
+    assert len(gone) == MAX_LINKS, "but each is told as gone, whatever a session on it thinks"
+    assert all(route.startswith("ble://") for route in gone)
     table.shutdown()
 
 

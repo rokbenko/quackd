@@ -97,6 +97,12 @@ class RadioCheck:
     why: str | None = None
     """Why there is no radio, where there is none, in words a person can act on."""
 
+    @property
+    def adapter_to_open(self) -> str | None:
+        """The Bluetooth adapter to open, or None for the radio's own default. One rule, so that
+        what preflight checks is what the service opens."""
+        return self.adapter if self.ok and self.adapter and self.adapter.startswith("hci") else None
+
 
 class Unsupported(Exception):
     """A computer a board recognises and quackd cannot run on, with the reason: a Xavier, or an
@@ -127,6 +133,19 @@ class Board(Protocol):
         ...
 
     def radio(self) -> RadioCheck: ...
+
+
+def radio_of(board: Board) -> RadioCheck:
+    """What `board` says of its radio. A plugin may raise anything or answer anything, and neither
+    is a reason to stop a robot that can still meet others over its LAN, so it reads as a radio not
+    found, saying why."""
+    try:
+        found = board.radio()
+        adapter = found.adapter if isinstance(found.adapter, str) else None
+        return RadioCheck(bool(found.ok), adapter, str(found.why) if found.why else None)
+    except Exception as e:
+        why = f"the {board.name} board could not say what radio it has: {type(e).__name__}: {e}"
+        return RadioCheck(False, why=why)
 
 
 def boards() -> dict[str, Board]:

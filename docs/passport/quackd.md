@@ -564,8 +564,9 @@ every ten seconds. Then the executor runs it with the source `peer`, under every
 | known | `pause` for up to 10 s, and `identify` by light, sound or motion |
 | same owner | the same as a known robot |
 
-quackd identifies a body by sound alone, so it answers `no` to light and motion, and to any
-`identify` of a robot it only talks for, which has no voice.
+quackd identifies a body by sound alone, so it answers `no` to light and motion. A robot grants
+only what its signed passport lists under `courtesy`, and a robot quackd only talks for lists
+nothing, so it answers `no` to a `pause` and an `identify` alike.
 
 A courtesy is granted only while a goal or a meeting has the body, and outside one every `ask` is
 answered `no`.

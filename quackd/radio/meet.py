@@ -36,7 +36,7 @@ from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol
 
 from quackd.lan.lookup import LanDirectory
-from quackd.passport.beacon import FLAG_LAN, FLAG_LINK, initiates
+from quackd.passport.beacon import FLAG_BUSY, FLAG_LAN, FLAG_LINK, initiates
 from quackd.passport.errors import PassportError
 from quackd.passport.fetch import Unreachable
 from quackd.passport.link import CloseReason
@@ -252,6 +252,8 @@ class Planner:
             if plan is None or plan.did != did or plan.state not in ("met", "parting"):
                 return
             self._cooldown[did] = now + self.policy.remeet_s
+            if plan.state == "parting":
+                return  # gone first, as a bye or a lost link can be: `due` still parts from it
             if plan.near:
                 plan.state, plan.next_at, plan.reason = (
                     "cooldown",
@@ -428,6 +430,7 @@ class Meeter:
     on_event: Callable[[MeetEvent], None] | None = None
     #: how long dialling a robot may take, then opening the link
     connect_s: float = 10.0
+    _parting: bool = field(default=False, init=False)
 
     def step(self, now: float | None = None) -> list[Meet | Part]:
         """Start whatever is due. What it started, for a log."""
@@ -443,6 +446,11 @@ class Meeter:
     def _meet(self, action: Meet) -> None:
         try:
             outcome = self.attempt(action)
+            if outcome.kind == "met" and outcome.did not in self.talker.peers_open():
+                # its link went as the hello finished, and the session with it: nothing to hold
+                outcome = Outcome(
+                    "unreachable", via=outcome.via, reason="its session ended at once"
+                )
         except Exception as e:  # a bug here must not leave the robot "meeting" for a minute
             outcome = Outcome("unreachable", reason=f"the try failed: {e}")
         self.planner.on_outcome(action.beacon_id, outcome, self.clock(), token=action.token)
@@ -473,7 +481,11 @@ class Meeter:
                 except (Unreachable, LinkDown) as e:
                     why.append(f"its LAN address did not answer: {e}")
                 except PassportError as e:
-                    return self._refused_or_busy(e, route, "lan")
+                    # turned away there, as a robot that does not advertise always is: it has
+                    # not been heard by radio. A link needs no such hearing, so it may yet do
+                    if getattr(e, "status", None) != 403 or not self._link_may_do(action):
+                        return self._refused_or_busy(e, route, "lan")
+                    why.append(f"its LAN address turned this robot away: {e}")
                 else:
                     return Outcome("met", did, route, "lan")
         if not action.flags & FLAG_LINK:
@@ -484,23 +496,32 @@ class Meeter:
             return self._over_a_link(action, why)
         return Outcome("unreachable", reason="; ".join(why))
 
+    def _link_may_do(self, action: Meet) -> bool:
+        return bool(action.flags & FLAG_LINK) and self.radio.status().ready
+
     def _over_a_link(self, action: Meet, why: list[str]) -> Outcome:
         wait = self.connect_s + LinkPolicy().accept_s + 2.0
         try:
             # a link to this robot already open, from an earlier meeting either robot began,
             # carries this one too: a pair of robots that stays near and meets again every few
             # minutes would otherwise open a link each time and fill the four a robot may hold
-            link = self.loop.call(self._open_link_to(action.beacon_id), 5.0) or self.loop.call(
-                self.links.dial(
-                    self.radio,
-                    action.address,
-                    me=self.me(),
-                    expect=action.beacon_id,
-                    inbox_for=self.inbox_for,
-                    timeout=self.connect_s,
-                ),
-                wait,
-            )
+            link = self.loop.call(self._open_link_to(action.beacon_id), 5.0)
+            if link is None and action.flags & FLAG_BUSY:
+                # a robot at its limit has no room for a new link, and needs none for one it holds
+                said = "; ".join([*why, "its advert says it is at its limit"])
+                return Outcome("busy", via="link", reason=said)
+            if link is None:
+                link = self.loop.call(
+                    self.links.dial(
+                        self.radio,
+                        action.address,
+                        me=self.me(),
+                        expect=action.beacon_id,
+                        inbox_for=self.inbox_for,
+                        timeout=self.connect_s,
+                    ),
+                    wait,
+                )
         except LinkRefused as e:
             return Outcome("busy" if e.busy else "refused", via="link", reason=str(e))
         except (LinkDown, TimeoutError) as e:
@@ -538,6 +559,31 @@ class Meeter:
                 self.talker.leave(action.did)
         self._close(action.beacon_id)
         self._tell(MeetEvent("parted", action.beacon_id, did=action.did, route=action.route))
+
+    def part_from_everyone(self, then: Callable[[], object]) -> None:
+        """Every link closed, a bye to whoever is left, then `then`, on a worker thread: what a
+        beacon id held past its time does before it changes, so that nobody holds a session under
+        the old id beside one under the new, and leaving one ends the other. Links first: closing
+        one ends what it carried at both ends at once, where a bye to a robot ignoring it takes
+        seconds."""
+        if not self._parting:
+            self._parting = True
+            self.executor.submit(self._part_from_everyone, then)
+
+    def _part_from_everyone(self, then: Callable[[], object]) -> None:
+        try:
+            with contextlib.suppress(Exception):
+                self.loop.call(self.links.close_all(CloseReason.DONE), 5.0)
+            for did in self.talker.peers_open():
+                # one session a bye, and a robot that met this one twice has two
+                for _ in range(4):
+                    if did not in self.talker.peers_open():
+                        break
+                    with contextlib.suppress(Exception):
+                        self.talker.leave(did)
+        finally:
+            self._parting = False
+            then()
 
     def _close(self, beacon_id: str) -> None:
         # a loop that is stopping closes every link anyway

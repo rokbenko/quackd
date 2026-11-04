@@ -43,9 +43,10 @@ MAX_SESSIONS = 64
 MAX_PENDING = 64
 #: How many messages a robot remembers having seen, to drop a second copy: hellos and anything
 #: outside a session in one memory, and each session's messages in its own, so 64 sessions at
-#: most hold 16,384 of them.
+#: most hold 65,536 of them. A message carries no clock, so one forgotten could be replayed
+#: into its session: a session that has heard this many ends, and a new hello has new nonces.
 REMEMBERED = 1024
-REMEMBERED_PER_SESSION = 256
+REMEMBERED_PER_SESSION = 1024
 SIGNED_TYPE = "application/jose"
 PLAIN_TYPE = "application/json"
 
@@ -538,6 +539,11 @@ class Endpoint:
             memory, seen, limit = self._memory(message)
             if seen in memory:
                 return self._repeat(message) or Reply(204, reason="a repeat, dropped")
+            full = self._full_session(message, len(memory), limit)
+            if full is not None:
+                del self.sessions[full.nonces]
+                said = "that session heard all it can remember: say hello again"
+                return Reply(403, event=Event("quiet", full), reason=said)
             try:
                 reply = (
                     self._hello(message, from_inbox)
@@ -561,6 +567,13 @@ class Endpoint:
         if session is not None and session.peer == message.sender:
             return session.seen, message.msg, REMEMBERED_PER_SESSION
         return self._seen, (message.sender, message.msg), REMEMBERED
+
+    def _full_session(self, message: Message, held: int, limit: int) -> Session | None:
+        """The session `message` belongs to, when it has no room left to remember it."""
+        session = self.sessions.get(message.nonces) if message.nonces is not None else None
+        if session is None or session.peer != message.sender or held < limit:
+            return None
+        return session
 
     def _repeat(self, message: Message) -> Reply | None:
         """A first hello that came again while its answer is still waiting gets that answer
@@ -709,10 +722,17 @@ def version_answer(error: VersionUnknown, me: str, key: SigningKey) -> str:
 Post = Callable[[str], tuple[int, str | None]]
 
 
-def open_session(endpoint: Endpoint, peer: str | None, post: Post) -> Session:
+def open_session(
+    endpoint: Endpoint,
+    peer: str | None,
+    post: Post,
+    *,
+    check: Callable[[Session], None] | None = None,
+) -> Session:
     """Run the three-step hello over a channel whose reply rides back on the response: send the
     first hello, check the second, send the third. A step that fails raises `PassportError`, and
-    no session is left open on this side when the other side refused the third step."""
+    no session is left open on this side when the other side refused the third step. `check` may
+    raise it before the third is sent, which leaves the other robot with no session to report."""
     status, reply = post(endpoint.hello(peer))
     if status != 200 or reply is None:
         said = f": {reply.strip()[:200]}" if reply and status >= 400 else ""
@@ -721,6 +741,13 @@ def open_session(endpoint: Endpoint, peer: str | None, post: Post) -> Session:
     if answer.status != 200 or answer.wire is None or answer.event is None:
         raise PassportError("6.3", f"the hello's answer was refused: {answer.reason}")
     session = answer.event.session
+    if check is not None:
+        try:
+            check(session)
+        except PassportError:
+            with endpoint._lock:
+                endpoint.sessions.pop(session.nonces, None)
+            raise
     status, _ = post(answer.wire)
     if status not in (200, 204):
         with endpoint._lock:

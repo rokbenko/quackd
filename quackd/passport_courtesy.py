@@ -85,24 +85,31 @@ class Courtesy:
         *,
         stranger_pauses: bool = True,
         same_owner: Sequence[str] = ("pause", "identify"),
+        offered: Sequence[str] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.executor = executor
         self.loop = loop
         self.stranger_pauses = stranger_pauses
         self.same_owner = tuple(same_owner)
+        #: what this robot's signed passport lists under `courtesy`, None for no passport to go by
+        self.offered = None if offered is None else tuple(offered)
         self.clock = clock
         self._lock = threading.Lock()
         self._last_pause = -math.inf
         self._last_identify = -math.inf
 
     def allowed(self, tier: str) -> tuple[str, ...]:
-        """The courtesies `tier` may ask for."""
+        """The courtesies `tier` may ask for, of those this robot's passport offers."""
         if tier == "stranger":
-            return ("pause", "identify") if self.stranger_pauses else ("identify",)
-        if tier == "known":
-            return ("pause", "identify")
-        return self.same_owner
+            names: tuple[str, ...] = (
+                ("pause", "identify") if self.stranger_pauses else ("identify",)
+            )
+        elif tier == "known":
+            names = ("pause", "identify")
+        else:
+            names = self.same_owner
+        return names if self.offered is None else tuple(n for n in names if n in self.offered)
 
     def decide(self, tier: str, skill: str, args: dict[str, Any]) -> Decision:
         """The answer to one `ask`, the courtesy done first when it is granted."""

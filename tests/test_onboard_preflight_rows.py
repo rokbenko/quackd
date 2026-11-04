@@ -7,8 +7,10 @@ from __future__ import annotations
 import asyncio
 import json
 import platform
+import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,6 +84,24 @@ def test_a_missing_package_fails_naming_the_extra_but_the_sim_needs_no_bluetooth
     assert by_name(rows(bare))["onboard extra"].level == "warn"  # the sim goes on without them
 
 
+def has_bluetooth_group(monkeypatch: pytest.MonkeyPatch, *, it_does: bool) -> None:
+    def getgrnam(name: str) -> SimpleNamespace:
+        if not it_does:
+            raise KeyError(name)
+        return SimpleNamespace(gr_gid=1)
+
+    monkeypatch.setitem(sys.modules, "grp", SimpleNamespace(getgrnam=getgrnam))
+
+
+def test_a_computer_with_no_bluetooth_group_is_not_told_to_join_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    has_bluetooth_group(monkeypatch, it_does=False)
+    denied = rows(replace(HEALTHY, bus="denied", bus_detail="AccessDenied"))
+    hint = by_name(denied)["system bus"].hint
+    assert hint is not None and "usermod" not in hint and "no bluetooth group" in hint
+
+
 @pytest.mark.parametrize(
     ("changes", "name", "words", "hint"),
     [
@@ -110,8 +130,13 @@ def test_a_missing_package_fails_naming_the_extra_but_the_sim_needs_no_bluetooth
     ],
 )
 def test_each_failure_says_what_was_found_and_what_to_do(
-    changes: dict[str, object], name: str, words: str, hint: str | None
+    monkeypatch: pytest.MonkeyPatch,
+    changes: dict[str, object],
+    name: str,
+    words: str,
+    hint: str | None,
 ) -> None:
+    has_bluetooth_group(monkeypatch, it_does=True)
     found = rows(replace(HEALTHY, **changes))  # type: ignore[arg-type]
     row = by_name(found)[name]
     assert row.level == "fail" and words in row.detail

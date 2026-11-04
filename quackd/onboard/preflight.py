@@ -62,20 +62,14 @@ def preflight(
     its status, None when none answers; `radio_rows` and `clock_state` stand in for the radio's
     own and for what this computer says of its clock, for tests."""
     checks: list[Check] = []
-    facts, radio_kind, radio = _board(home.board_named(board), checks)
+    facts, radio_kind, adapter = _board(home.board_named(board), checks)
     if radio_kind is not None:
-        adapter = (
-            radio.detail.split(", ")[-1] if radio is not None and radio.state == "ok" else None
-        )
         checks += (radio_rows or _radio_rows)(radio_kind, adapter, live)
-        radio = None  # the radio's own rows say it, and more
     checks.append(_clock(now or datetime.now(UTC), *(clock_state or _clock_state)()))
     file = _file(home, checks)
     if file is not None:
         _keys_and_passport(home, file, facts, checks)
         checks.append(_brain(home, file))
-    if radio is not None:
-        checks.insert(1, radio)
     running = service() if service is not None else None
     # with no board, serve refuses as the board's row does, so that row says what to do; a
     # robot set up with --no-service has no unit, so the terminal is offered beside it
@@ -94,8 +88,9 @@ def preflight(
     return checks
 
 
-def _board(name: str | None, checks: list[Check]) -> tuple[Any, str | None, Check | None]:
-    from quackd.boards import NotARobot, UnknownBoard, Unsupported, detect
+def _board(name: str | None, checks: list[Check]) -> tuple[Any, str | None, str | None]:
+    """This computer's facts, its radio's kind and the adapter to check, each None with no board."""
+    from quackd.boards import RESERVED, NotARobot, UnknownBoard, Unsupported, detect, radio_of
 
     try:
         chosen, facts = detect(name)
@@ -104,18 +99,11 @@ def _board(name: str | None, checks: list[Check]) -> tuple[Any, str | None, Chec
         return None, None, None
     release = f", {facts.release}" if facts.release else ""
     checks.append(Check("board", "ok", f"{facts.model} ({facts.kind}{release})"))
-    found = chosen.radio()
-    if found.ok:
-        adapter = found.adapter if found.adapter not in (None, chosen.radio_kind) else None
-        radio = Check("radio", "ok", chosen.radio_kind + (f", {adapter}" if adapter else ""))
-    else:
-        radio = Check(
-            "radio",
-            "warn",
-            found.why or "no Bluetooth adapter",
-            "robots are met over the LAN only until it has one",
-        )
-    return facts, chosen.radio_kind, radio
+    found = radio_of(chosen)
+    if not found.ok and found.why and chosen.name not in RESERVED:
+        # the radio's own rows cannot say why a plugin's board found no radio
+        checks.append(Check("board radio", "warn", found.why))
+    return facts, chosen.radio_kind, found.adapter_to_open
 
 
 def _radio_rows(radio_kind: str, adapter: str | None, live: bool) -> list[Check]:
@@ -192,7 +180,7 @@ def _file(home: OnboardDir, checks: list[Check]) -> Any:
 
 def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Check]) -> None:
     from quackd.onboard import wizard
-    from quackd.onboard.keys import KeysError, read_robot_key
+    from quackd.onboard.keys import KeysError, open_to_others, read_robot_key
     from quackd.onboard.service import check_board, check_own_passport
 
     try:
@@ -204,6 +192,11 @@ def _keys_and_passport(home: OnboardDir, file: Any, facts: Any, checks: list[Che
     checks.append(
         Check("keys", "ok" if home.owner_key.exists() else "warn", f"the robot key {owner}")
     )
+    for secret in (home.robot_key, home.robot_env):
+        mode = open_to_others(secret)
+        if mode is not None:
+            open_to = f"{secret} holds a secret, and others can read it (mode {mode})"
+            checks.append(Check(secret.name, "warn", open_to, f"chmod 600 {secret}"))
     token = (
         home.passport_jws.read_text(encoding="utf-8", errors="replace").strip()
         if home.passport_jws.exists()

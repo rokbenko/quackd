@@ -262,6 +262,40 @@ def test_a_message_replayed_into_its_session_is_dropped_however_many_came_betwee
     assert again.status == 204 and again.event is None
 
 
+def test_a_session_that_heard_all_it_can_remember_ends_rather_than_forgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A message carries no clock, so one forgotten could be replayed into its session as if its
+    robot had said it again. A new hello has new nonces, which no old message carries."""
+    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 4)
+    a, b = pair()
+    handshake(a, b)
+    words = [a.say(B.did, f"word {i}") for i in range(4)]
+    for word in words:
+        assert b.receive(read_message(word)).status == 204
+    ending = b.receive(read_message(a.say(B.did, "one more")))
+    assert ending.status == 403 and ending.event is not None and ending.event.kind == "quiet"
+    assert b.session_with(A.did) is None
+    replayed = b.receive(read_message(words[0]))
+    assert replayed.status == 403 and replayed.event is None
+    handshake(a, b)
+    assert b.session_with(A.did) is not None, "and a new hello starts another"
+
+
+def test_a_repeat_is_still_a_repeat_when_a_session_is_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 2)
+    a, b = pair()
+    handshake(a, b)
+    words = [a.say(B.did, f"word {i}") for i in range(2)]
+    for word in words:
+        b.receive(read_message(word))
+    again = b.receive(read_message(words[1]))
+    assert again.status == 204 and again.event is None
+    assert b.session_with(A.did) is not None
+
+
 def test_quiet_sessions_end_before_a_new_hello_meets_the_limit() -> None:
     clock = Clock()
     b = Endpoint(B.did, passport_of(B, "agile-one-sn-01"), B, clock=clock)

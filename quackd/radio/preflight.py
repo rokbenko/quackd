@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from quackd.radio import ONBOARD_INSTALL
-from quackd.radio.bluez.core import AdapterFacts
+from quackd.radio.bluez.core import AdapterFacts, join_bluetooth_hint
 from quackd.radio.bluez.privacy import MAIN_CONF, privacy_setting, privacy_words
 
 Level = Literal["ok", "warn", "fail", "info"]
@@ -127,11 +127,7 @@ def _bluez(facts: Facts) -> list[Row]:
         ]
     out: list[Row] = []
     if facts.bus != "ok":
-        hint = (
-            "sudo usermod -aG bluetooth $USER, then log in again"
-            if facts.bus == "denied"
-            else "systemctl status dbus"
-        )
+        hint = join_bluetooth_hint() if facts.bus == "denied" else "systemctl status dbus"
         return [Row("system bus", "fail", facts.bus_detail or facts.bus, hint)]
     out.append(Row("system bus", "ok", "answers"))
     if not facts.bluez_running:

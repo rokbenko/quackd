@@ -129,8 +129,9 @@ bounded ([spec section 6.5](spec.md#65-ask-and-answer)).
 | known | a person pinned its robot key, signed by the owner it had then, or the owner key that signed it | `pause` for up to 10 s, and `identify` by light, sound or motion | its name, skills, what it cannot do and its safety, and what it says, JSON-quoted |
 | same owner | it is signed by this robot's own owner key | what a known robot can | the same |
 
-quackd identifies a body by sound alone, so an `identify` by light or motion is answered `no`, and
-so is any `identify` of a robot quackd only talks for, which has no voice. A robot meets strangers
+quackd identifies a body by sound alone, so an `identify` by light or motion is answered `no`. A
+robot grants only what its signed passport lists under `courtesy`, and a robot quackd only talks
+for lists nothing, so it answers `no` to a `pause` and an `identify` alike. A robot meets strangers
 unless `robot.yaml` says `with_strangers: false` under `meeting:`, and a stranger's words stay in
 the log either way. Free talk needs a pin.
 

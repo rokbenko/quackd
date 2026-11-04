@@ -188,13 +188,18 @@ class Talker:
         """Say hello over `route`, an HTTP inbox or a Bluetooth link, and return the id of the
         robot that answered once each has checked the other's passport and key (spec 6.3).
         `expect_beacon` is the beacon id the robot was heard by: an answer from any other robot
-        ends the session there and then."""
-        session = open_session(self.endpoint, None, lambda wire: self._send(route, wire))
+        ends the hello there and then, before that robot has a session to report."""
+
+        def as_heard(session: Session) -> None:
+            if expect_beacon is not None and session.runtime.get("beacon") != expect_beacon:
+                raise PassportError(
+                    "6.3", "the robot that answered is not the one this robot heard"
+                )
+
+        session = open_session(
+            self.endpoint, None, lambda wire: self._send(route, wire), check=as_heard
+        )
         session.route = route
-        if expect_beacon is not None and session.runtime.get("beacon") != expect_beacon:
-            with contextlib.suppress(Exception):  # its own bye may have ended the session first
-                self._deliver(route, self.endpoint.bye(session.peer))
-            raise PassportError("6.3", "the robot that answered is not the one this robot heard")
         self._note(Event("met", session))
         return session.peer
 
@@ -277,6 +282,7 @@ class Talker:
                 "6.2", f"{who} listens nowhere this robot may reach, so it can only be answered"
             )
         status, _reply = self._deliver(session.route, self.endpoint.say(session.peer, text))
+        self._ended_there(session, status)
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
@@ -300,6 +306,7 @@ class Talker:
             self._asking.add(msg)
         try:
             status, reply = self._deliver(session.route, wire)
+            self._ended_there(session, status)
             if reply is not None:
                 answer = read_message(reply)
                 self.receive(answer)
@@ -319,6 +326,30 @@ class Talker:
             return "later", "no answer came in time"
         return str(answered.get("result")), str(answered.get("reason", ""))
 
+    def link_closed(self, route: Route) -> None:
+        """The sessions a link carried end with it. They have no other way to that robot, and one
+        left behind would go on reading as met while every word to it failed, with neither robot
+        dialling until it idled out."""
+        with self.endpoint._lock:
+            gone = [s for s in self.endpoint.sessions.values() if s.route == route]
+            quiet = {s.nonces for s in gone if self.endpoint._quiet(s)}
+            for session in gone:
+                del self.endpoint.sessions[session.nonces]
+        for session in gone:
+            self._note(Event("quiet" if session.nonces in quiet else "left", session))
+
+    def _ended_there(self, session: Session, status: int) -> None:
+        """A 403 to a message in a session says the other robot no longer holds it (spec 6.3): it
+        went quiet there, or heard all it can remember. So this robot's end goes too, and the two
+        can meet again, where this one would go on calling it met and neither would dial."""
+        if status != 403:
+            return
+        with self.endpoint._lock:
+            ended = self.endpoint.sessions.pop(session.nonces, None)
+        if ended is not None:
+            self._note(Event("left", session))
+        raise PassportError("6.3", f"{session.peer} no longer holds this session")
+
     def share(self, who: str, about: str, fact: str, **more: Any) -> None:
         """Tell a robot this one met something it saw: what, the fact, and where, as a place
         both can recognise rather than a coordinate (spec 6.6)."""
@@ -328,6 +359,7 @@ class Talker:
         status, _reply = self._deliver(
             session.route, self.endpoint.share(session.peer, about, fact, **more)
         )
+        self._ended_there(session, status)
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
