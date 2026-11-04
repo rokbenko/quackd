@@ -1,6 +1,6 @@
 # Shoot-day examples for the SO-101 arm
 
-One folder per experiment on the run sheet that has a file of its own, `e001` to `e220`. The 34 that
+One folder per experiment on [the run sheet](run-sheet.md) that has a file of its own, `e001` to `e220`. The 34 that
 have none are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
 `e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for a model beside

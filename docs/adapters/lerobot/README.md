@@ -330,7 +330,7 @@ last told is the firmware's business and
 
 Six commands, in this order, with a hand on the switch. Each one is the proof the next leans on.
 
-1. **The rest pose at both ends of a run.** This moves nothing but the rest move, so it shows a
+1. **The rest pose at both ends of a run**, [E119](../../examples/lerobot/run-sheet.md#e119-rest-pose-and-hand-off-first-time-on-hardware). This moves nothing but the rest move, so it shows a
    connect, a heartbeat and a close on this arm before anything else. At each end the run says
    `moving to the rest pose`, then `already at the rest pose` or `at the rest pose`. The arm folds
    there and is let go of, and a fold that misses asks before anything drops.
@@ -339,7 +339,7 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    quackd run lerobot-lookout --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-rest-pose
    ```
 
-2. **Which way the gripper goes.** quackd assumes 100 is open and 0 is closed, and that is a fact about
+2. **Which way the gripper goes**, [E136](../../examples/lerobot/run-sheet.md#e136-gripper-loop). quackd assumes 100 is open and 0 is closed, and that is a fact about
    how this arm was assembled and calibrated. If it runs the other way, stop: everything quackd
    believes about holding something rests on it.
 
@@ -347,7 +347,7 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    quackd run docs/examples/lerobot/e136/gripper-loop.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
    ```
 
-3. **The power switch, on purpose.** Everything after this leans on it. Foam under the forearm, and one
+3. **The power switch, on purpose**, [E166](../../examples/lerobot/run-sheet.md#e166-the-power-switch-first). Everything after this leans on it. Foam under the forearm, and one
    hand under it in the air before you press Enter, never between two links. The raise is small on
    purpose, and you cut the supply as soon as the shoulder starts to lift. The arm should go limp and
    fall into your hand, and the run should end in an error within about a second, its close saying the
@@ -359,7 +359,7 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name cut
    ```
 
-4. **The old goal.** Run the first command again, so the servos last heard from a run that ended
+4. **The old goal**, [E207](../../examples/lerobot/run-sheet.md#e207-what-a-servo-does-with-an-old-goal). Run the first command again, so the servos last heard from a run that ended
    normally, and leave the supply on. With the arm limp at its rest pose and nothing connected, lift the
    forearm about ten degrees and keep your palm under it, in the air and never between two links, with
    your other hand on the switch. Then run this. Either the arm takes its own weight where your hand has
@@ -372,7 +372,7 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    quackd doctor --robot arm-01
    ```
 
-5. **The hand-off**, which every by-hand line depends on. At the prompt, lift the limp arm into any pose
+5. **The hand-off**, [E119](../../examples/lerobot/run-sheet.md#e119-rest-pose-and-hand-off-first-time-on-hardware), which every by-hand line depends on. At the prompt, lift the limp arm into any pose
    with nothing in the jaws, hold it, press Enter, and keep a hand on a link until it prints
    `you can let go`. [How a command is built](#how-a-command-is-built) says what the end of the run
    asks.
@@ -381,7 +381,7 @@ Six commands, in this order, with a hand on the switch. Each one is the proof th
    quackd run lerobot-lookout --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-by-hand
    ```
 
-6. **Both cameras**, which every drawing and most by-hand lines use.
+6. **Both cameras**, [E164](../../examples/lerobot/run-sheet.md#e164-two-cameras), which every drawing and most by-hand lines use.
 
    ```bash
    quackd run docs/examples/lerobot/e164/two-cameras.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -426,27 +426,27 @@ quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --cam
 
 ### What to run next
 
-Hardware proofs first, numbers before claims, contact last. Most folders hold a task file, or one per
-variant, some with what it needs beside it, and `e201` and `e216` hold a script instead. Apart from the
-first runs above, an experiment left out here is a command with no task file of its own, among them
-`e208` to `e214` and `e217` to `e219`, which try what a press does:
-[the examples' page](../../examples/lerobot/README.md#the-files-added-for-quackd-0303) says what each
-one presses.
+Hardware proofs first, numbers before claims, contact last.
+[The run sheet](../../examples/lerobot/run-sheet.md) has a card for each of the 220 experiments, with what it is
+for, what to expect, how to set it up and the lines to run, and it takes them in this order:
 
-| In this order | Why it comes here | Folders |
-|---|---|---|
-| No arm at all | The monkey on the mock, and the colour detector on a real camera | [`e126`](../../examples/lerobot/e126/) [`e201`](../../examples/lerobot/e201/) |
-| The gates, hand on the power switch | Each is one small run, and these say whether what follows is safe to try | [`e170`](../../examples/lerobot/e170/) [`e184`](../../examples/lerobot/e184/) [`e200`](../../examples/lerobot/e200/) [`e183`](../../examples/lerobot/e183/) [`e187`](../../examples/lerobot/e187/) [`e188`](../../examples/lerobot/e188/) [`e189`](../../examples/lerobot/e189/) |
-| Putting it down | An arm left raised, then ways of folding it, stopping the fold or having it miss. Run these with `QUACKD_LEROBOT_MAX_STEP_DEG` set to 1 in that terminal, which makes a fold 10 degrees a second, and open a new terminal afterwards. Foam, not fingers, wherever foam will do | [`e176`](../../examples/lerobot/e176/) [`e179`](../../examples/lerobot/e179/) [`e180`](../../examples/lerobot/e180/) |
-| Numbers before claims | Arena, cost and speed, with a lot of model switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY`. To switch vendor, change `--llm` and set its key | [`e149`](../../examples/lerobot/e149/) [`e150`](../../examples/lerobot/e150/) [`e151`](../../examples/lerobot/e151/) [`e154`](../../examples/lerobot/e154/) [`e155`](../../examples/lerobot/e155/) [`e157`](../../examples/lerobot/e157/) [`e156`](../../examples/lerobot/e156/) [`e158`](../../examples/lerobot/e158/) [`e159`](../../examples/lerobot/e159/) [`e160`](../../examples/lerobot/e160/) [`e161`](../../examples/lerobot/e161/) [`e202`](../../examples/lerobot/e202/) [`e204`](../../examples/lerobot/e204/) |
-| Hazards, hand on the power switch | Speed, the cable pull, Ctrl-C and the hard kill, the network, a camera pulled, a call cut off | [`e114`](../../examples/lerobot/e114/) [`e116`](../../examples/lerobot/e116/) [`e067`](../../examples/lerobot/e067/) [`e117`](../../examples/lerobot/e117/) [`e118`](../../examples/lerobot/e118/) [`e182`](../../examples/lerobot/e182/) [`e125`](../../examples/lerobot/e125/) [`e191`](../../examples/lerobot/e191/) |
-| Gates and the red team | `e110` straight after `e120`. That pair and `e194` are the only ones that use memory | [`e120`](../../examples/lerobot/e120/) [`e110`](../../examples/lerobot/e110/) [`e121`](../../examples/lerobot/e121/) [`e122`](../../examples/lerobot/e122/) [`e123`](../../examples/lerobot/e123/) [`e124`](../../examples/lerobot/e124/) [`e194`](../../examples/lerobot/e194/) [`e195`](../../examples/lerobot/e195/) [`e215`](../../examples/lerobot/e215/) |
-| Marker and pen | One marker, one pad, every drawing in a row | [`e001`](../../examples/lerobot/e001/) [`e019`](../../examples/lerobot/e019/) [`e020`](../../examples/lerobot/e020/) [`e021`](../../examples/lerobot/e021/) [`e101`](../../examples/lerobot/e101/) |
-| Free space | No hand-placing. Not all of it is clear of contact: `e006` and `e081` reach for your raised hand and `e048` touches a foam cube, so read a task before you run it | [`e003`](../../examples/lerobot/e003/) [`e004`](../../examples/lerobot/e004/) [`e005`](../../examples/lerobot/e005/) [`e006`](../../examples/lerobot/e006/) [`e007`](../../examples/lerobot/e007/) [`e008`](../../examples/lerobot/e008/) [`e009`](../../examples/lerobot/e009/) [`e010`](../../examples/lerobot/e010/) [`e011`](../../examples/lerobot/e011/) [`e012`](../../examples/lerobot/e012/) [`e016`](../../examples/lerobot/e016/) [`e022`](../../examples/lerobot/e022/) [`e023`](../../examples/lerobot/e023/) [`e024`](../../examples/lerobot/e024/) [`e025`](../../examples/lerobot/e025/) [`e026`](../../examples/lerobot/e026/) [`e027`](../../examples/lerobot/e027/) [`e028`](../../examples/lerobot/e028/) [`e029`](../../examples/lerobot/e029/) [`e030`](../../examples/lerobot/e030/) [`e031`](../../examples/lerobot/e031/) [`e032`](../../examples/lerobot/e032/) [`e033`](../../examples/lerobot/e033/) [`e034`](../../examples/lerobot/e034/) [`e035`](../../examples/lerobot/e035/) [`e036`](../../examples/lerobot/e036/) [`e037`](../../examples/lerobot/e037/) [`e038`](../../examples/lerobot/e038/) [`e041`](../../examples/lerobot/e041/) [`e043`](../../examples/lerobot/e043/) [`e044`](../../examples/lerobot/e044/) [`e045`](../../examples/lerobot/e045/) [`e046`](../../examples/lerobot/e046/) [`e047`](../../examples/lerobot/e047/) [`e048`](../../examples/lerobot/e048/) [`e049`](../../examples/lerobot/e049/) [`e050`](../../examples/lerobot/e050/) [`e051`](../../examples/lerobot/e051/) [`e052`](../../examples/lerobot/e052/) [`e053`](../../examples/lerobot/e053/) [`e054`](../../examples/lerobot/e054/) [`e055`](../../examples/lerobot/e055/) [`e056`](../../examples/lerobot/e056/) [`e058`](../../examples/lerobot/e058/) [`e059`](../../examples/lerobot/e059/) [`e061`](../../examples/lerobot/e061/) [`e062`](../../examples/lerobot/e062/) [`e063`](../../examples/lerobot/e063/) [`e064`](../../examples/lerobot/e064/) [`e065`](../../examples/lerobot/e065/) [`e066`](../../examples/lerobot/e066/) [`e069`](../../examples/lerobot/e069/) [`e070`](../../examples/lerobot/e070/) [`e071`](../../examples/lerobot/e071/) [`e072`](../../examples/lerobot/e072/) [`e073`](../../examples/lerobot/e073/) [`e074`](../../examples/lerobot/e074/) [`e075`](../../examples/lerobot/e075/) [`e076`](../../examples/lerobot/e076/) [`e079`](../../examples/lerobot/e079/) [`e081`](../../examples/lerobot/e081/) [`e084`](../../examples/lerobot/e084/) [`e085`](../../examples/lerobot/e085/) [`e086`](../../examples/lerobot/e086/) [`e087`](../../examples/lerobot/e087/) [`e088`](../../examples/lerobot/e088/) [`e089`](../../examples/lerobot/e089/) [`e090`](../../examples/lerobot/e090/) [`e092`](../../examples/lerobot/e092/) [`e093`](../../examples/lerobot/e093/) [`e094`](../../examples/lerobot/e094/) [`e095`](../../examples/lerobot/e095/) [`e096`](../../examples/lerobot/e096/) [`e097`](../../examples/lerobot/e097/) [`e099`](../../examples/lerobot/e099/) [`e105`](../../examples/lerobot/e105/) [`e107`](../../examples/lerobot/e107/) [`e108`](../../examples/lerobot/e108/) [`e111`](../../examples/lerobot/e111/) [`e112`](../../examples/lerobot/e112/) [`e113`](../../examples/lerobot/e113/) [`e128`](../../examples/lerobot/e128/) [`e129`](../../examples/lerobot/e129/) [`e131`](../../examples/lerobot/e131/) [`e133`](../../examples/lerobot/e133/) [`e134`](../../examples/lerobot/e134/) [`e135`](../../examples/lerobot/e135/) [`e139`](../../examples/lerobot/e139/) [`e142`](../../examples/lerobot/e142/) [`e143`](../../examples/lerobot/e143/) [`e144`](../../examples/lerobot/e144/) [`e147`](../../examples/lerobot/e147/) [`e148`](../../examples/lerobot/e148/) |
-| By hand and contact | Most start where you put the arm | [`e002`](../../examples/lerobot/e002/) [`e013`](../../examples/lerobot/e013/) [`e014`](../../examples/lerobot/e014/) [`e015`](../../examples/lerobot/e015/) [`e017`](../../examples/lerobot/e017/) [`e018`](../../examples/lerobot/e018/) [`e039`](../../examples/lerobot/e039/) [`e040`](../../examples/lerobot/e040/) [`e042`](../../examples/lerobot/e042/) [`e057`](../../examples/lerobot/e057/) [`e060`](../../examples/lerobot/e060/) [`e077`](../../examples/lerobot/e077/) [`e078`](../../examples/lerobot/e078/) [`e080`](../../examples/lerobot/e080/) [`e082`](../../examples/lerobot/e082/) [`e083`](../../examples/lerobot/e083/) [`e091`](../../examples/lerobot/e091/) [`e098`](../../examples/lerobot/e098/) [`e100`](../../examples/lerobot/e100/) [`e102`](../../examples/lerobot/e102/) [`e103`](../../examples/lerobot/e103/) [`e104`](../../examples/lerobot/e104/) [`e109`](../../examples/lerobot/e109/) [`e115`](../../examples/lerobot/e115/) [`e127`](../../examples/lerobot/e127/) [`e130`](../../examples/lerobot/e130/) [`e132`](../../examples/lerobot/e132/) [`e137`](../../examples/lerobot/e137/) [`e140`](../../examples/lerobot/e140/) [`e141`](../../examples/lerobot/e141/) [`e146`](../../examples/lerobot/e146/) [`e153`](../../examples/lerobot/e153/) [`e162`](../../examples/lerobot/e162/) [`e163`](../../examples/lerobot/e163/) [`e165`](../../examples/lerobot/e165/) |
-| Over MCP | Claude as the pilot. Set the server up once with `e145`, and read `e196` first: in a chat the switch is the stop | [`e145`](../../examples/lerobot/e145/) [`e196`](../../examples/lerobot/e196/) [`e216`](../../examples/lerobot/e216/) [`e152`](../../examples/lerobot/e152/) [`e193`](../../examples/lerobot/e193/) |
-| The arm against its twin | Joint by joint | [`e199`](../../examples/lerobot/e199/) |
-| Last | Sand at the very end, and the bill once there is a bill to show | [`e138`](../../examples/lerobot/e138/) [`e106`](../../examples/lerobot/e106/) |
+| Block | Why it comes here |
+|---|---|
+| [No arm time](../../examples/lerobot/run-sheet.md#no-arm-time) | The monkey on the mock arm, a refusal that connects nothing, and the detector on a real camera. E068 is a replay of E159 |
+| [Prove the hardware](../../examples/lerobot/run-sheet.md#prove-the-hardware) | E119's first line moves nothing but the rest move. Then which way the gripper goes, the switch, the old goal, the hand-off and the two cameras. Everything after leans on these. E168 belongs before the rest pose is recorded |
+| [The gates, hand on the power switch](../../examples/lerobot/run-sheet.md#the-gates-hand-on-the-power-switch) | Each is one small run. A dry run and a refusal cost almost nothing, and these say whether what follows is safe to try |
+| [Putting it down](../../examples/lerobot/run-sheet.md#putting-it-down) | An arm left raised, then every way of folding it, stopping the fold or having it miss, all at E171's slow step. Foam, not fingers, wherever foam will do. E177 clears the pose, so it comes last, and you record the pose again after it |
+| [What a press does](../../examples/lerobot/run-sheet.md#what-a-press-does) | Every place a press used to go past the close, or used to quit, one small run each, most with no model and no key. Same slow step as the block above, and the same hand on the switch. E212 is the one with the arm in your hands |
+| [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing models, cost and speed, with a lot of model switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY` |
+| [Hazard block, hand on the power switch](../../examples/lerobot/run-sheet.md#hazard-block-hand-on-the-power-switch) | Speed, the cable pull, Ctrl-C and the hard kill, the brake, the network, a camera pulled, a call cut off |
+| [Gates and the red team](../../examples/lerobot/run-sheet.md#gates-and-the-red-team) | E110 straight after E120: the pair and E194 are the only uses of memory today |
+| [Marker and pen, together](../../examples/lerobot/run-sheet.md#marker-and-pen-together) | One marker, one pad, every drawing in a row |
+| [Free space](../../examples/lerobot/run-sheet.md#free-space) | No hand-placing, and not all of it clear of contact: E006 and E081 reach for your raised hand and E048 touches a foam cube, so read each task first |
+| [By hand and contact](../../examples/lerobot/run-sheet.md#by-hand-and-contact) | Most start where you put the arm |
+| [Over MCP](../../examples/lerobot/run-sheet.md#over-mcp) | Claude as the pilot. Set the server up once (E145), and remove it when you are done. Read E196 first: in a chat the switch is the stop. E192 last, because it replaces the server |
+| [A policy, scripted first](../../examples/lerobot/run-sheet.md#a-policy-scripted-first) | No torch and no checkpoint. Then the arm against its twin, joint by joint |
+| [From the page](../../examples/lerobot/run-sheet.md#from-the-page) | `quackd ui`, and from a phone if you can |
+| [Last](../../examples/lerobot/run-sheet.md#last) | Sand at the very end, the bill once there is a bill to show, and ten minutes of warming the servos |
 
 ### Things people forget
 

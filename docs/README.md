@@ -140,7 +140,8 @@ than rewriting it.
 
 ## Also here
 
-- [examples/lerobot/](examples/lerobot/README.md): the shoot-day task files for the SO-101 arm.
+- [examples/lerobot/](examples/lerobot/README.md): the shoot-day task files for the SO-101 arm, and
+  [the run sheet](examples/lerobot/run-sheet.md) with a card for each experiment.
 - [assets/](assets/README.md): the pictures and transcripts these pages show, and how each one
   was made.
 

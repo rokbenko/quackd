@@ -18,6 +18,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   what people forget. It replaces the page's short Start here, and the page's first block of commands
   moved under Backends. `tests/test_docs.py` checks that the contents list every section and that the
   steps agree with the task files they quote.
+- **The SO-101's run sheet is on the pages.**
+  [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
+  experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
+  them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
+  on its card, and that every `quackd` line on the page parses.
 
 ## [0.31.3] — 2026-11-04
 
