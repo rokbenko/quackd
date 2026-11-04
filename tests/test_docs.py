@@ -3621,6 +3621,10 @@ _BARE_REAL_RUNS_ON_PURPOSE = {
     "docs/adapters/lerobot/README.md": (
         "$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake"
     ),
+    # E167's two lines, whose refusal is the experiment
+    "docs/examples/lerobot/run-sheet.md": (
+        "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM5"
+    ),
 }
 _BARE_REAL_RUN = re.compile(
     r'quackd (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
@@ -4714,3 +4718,119 @@ def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> No
             assert flag in guide, f"docs/guides/places.md does not name {flag}"
     for command in ("quackd map", "quackd places add", "quackd places list", "quackd places rm"):
         assert command in guide, f"docs/guides/places.md does not show {command}"
+
+
+_ARM_PAGE = REPO / "docs" / "adapters" / "lerobot" / "README.md"
+
+
+def test_the_arms_table_of_contents_lists_every_section_in_order() -> None:
+    """The arm's page runs to thousands of lines, so its table of contents is how a reader gets
+    around it, and a heading added without a line there is one they do not find. Whether each
+    link lands is the job of test_every_relative_link_and_anchor_in_the_markdown_resolves."""
+    prose = _prose(_ARM_PAGE.read_text(encoding="utf-8"))
+    before, after = prose.split("\n## Table of Contents\n", 1)
+    contents, body = after.split("\n## ", 1)
+    assert not re.search(r"^## ", before, flags=re.M), "a section came before the contents"
+    listed = re.findall(r"^(?:- |  \* )\[.*\]\(#([^)]+)\)$", contents, flags=re.M)
+    headings = re.findall(r"^#{2,3}\s+(.+?)\s*$", "## " + body, flags=re.M)
+    assert listed == [_github_slug(heading) for heading in headings]
+    assert headings[0] == "Step by step", "the steps are the first thing after the contents"
+
+
+def test_the_arms_step_by_step_says_what_the_task_files_say() -> None:
+    """The steps send a reader to the task files by path, quote each one's own first command and
+    count them. A later change to docs/examples/lerobot can make any of that untrue with nothing
+    else on this page moving."""
+    page = _ARM_PAGE.read_text(encoding="utf-8")
+    steps = page.split("\n## Step by step\n", 1)[1].split("\n## ", 1)[0]
+    examples = REPO / "docs" / "examples" / "lerobot"
+    for path in set(re.findall(r"docs/examples/lerobot/[\w/.-]+\.(?:duck|py|png)", steps)):
+        assert (REPO / path).exists(), f"the arm's steps name {path}, which is not there"
+    ducks = [duck.read_text(encoding="utf-8") for duck in examples.glob("*/*.duck")]
+    assert f"{len(ducks)} task" in steps and f"{len(ducks)} files valid" in steps
+    played = sum("play: true" in duck for duck in ducks)
+    assert f"{played} of the task files" in steps
+    on_the_arm = re.findall(
+        r"^\s*(quackd run docs/examples/lerobot/([\w/.-]+\.duck) --robot arm-01 .*)$",
+        steps,
+        flags=re.M,
+    )
+    assert len(on_the_arm) >= 4
+    for line, duck in on_the_arm:
+        assert line in (examples / duck).read_text(encoding="utf-8"), f"{duck} says otherwise"
+
+
+_RUN_SHEET = REPO / "docs" / "examples" / "lerobot" / "run-sheet.md"
+
+
+def _run_sheet_commands() -> list[str]:
+    """Every line in a fenced block on the run sheet, which is what a reader copies."""
+    blocks = re.findall(
+        r"^```[a-z]*\n(.*?)^```$", _RUN_SHEET.read_text(encoding="utf-8"), re.M | re.S
+    )
+    return [line for block in blocks for line in block.splitlines()]
+
+
+def test_the_run_sheet_has_a_card_for_each_experiment_and_the_order_takes_each_once() -> None:
+    """The task files' first comments and the arm's page send a reader here by number, and 34
+    experiments have no file, so a card that goes missing leaves nothing saying how to run one."""
+    prose = _prose(_RUN_SHEET.read_text(encoding="utf-8"))
+    order, cards = prose.split("\n## The experiments\n", 1)
+    numbers = re.findall(r"^### (E\d{3}): ", cards, flags=re.M)
+    assert numbers == [f"E{n:03d}" for n in range(1, len(numbers) + 1)]
+    examples = _RUN_SHEET.parent
+    folders = {path.name for path in examples.iterdir() if path.is_dir()}
+    assert folders <= {number.lower() for number in numbers}, "a folder with no card"
+    assert f"{len(numbers) - len(folders)} experiments have no folder" in " ".join(prose.split())
+    assert f"each of the {len(numbers)} experiments" in _ARM_PAGE.read_text(encoding="utf-8")
+    assert f"each of {len(numbers)} experiments" in " ".join(prose.split())
+    linked = re.findall(r"\[(E\d{3})\]\(#", order)
+    assert sorted(linked) == numbers, "the order leaves one out or takes one twice"
+
+
+def test_every_task_files_first_command_is_on_the_run_sheet() -> None:
+    """Each task file opens with the command that runs it, and its card has to say the same."""
+    commands = set(_run_sheet_commands())
+    missing = []
+    for duck in sorted(_RUN_SHEET.parent.glob("*/*.duck")):
+        first = re.search(
+            r"^#\s+(quackd (?:run|preflight)\b.*)$", duck.read_text(encoding="utf-8"), re.M
+        )
+        if first and first.group(1).strip() not in commands:
+            missing.append(f"{duck.parent.name}/{duck.name}")
+    assert not missing, f"no card has the first command of {missing}"
+
+
+def test_every_quackd_line_on_the_run_sheet_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A flag renamed or a subcommand moved leaves 500 lines here wrong with nothing else on the
+    page changing, and a reader finds out at the arm. So each is parsed by the CLI itself, which
+    runs nothing, up to whatever a pipe or an `&&` joins it to."""
+    import shlex
+    from typing import Any
+
+    from typer.main import get_command
+
+    from quackd.cli import app
+
+    monkeypatch.chdir(REPO)
+    root = get_command(app)
+    refused = []
+    seen = 0
+    for line in _run_sheet_commands():
+        for part in re.split(r"\s(?:\||&&)\s", line):
+            if not part.startswith("quackd "):
+                continue
+            seen += 1
+            args = shlex.split(part)[1:]
+            command: Any = root
+            # by what it has and not by its type: Typer brings a click of its own, whose Group
+            # is not click's, and a walk that stops at the root takes every line as extra arguments
+            while args and args[0] in getattr(command, "commands", {}):
+                command = command.commands[args.pop(0)]
+            assert command is not root, part
+            try:
+                command.make_context("quackd", args)
+            except Exception as e:  # Typer's click again, so its errors are not click's either
+                refused.append(f"{part}: {e}")
+    assert seen > 400, seen
+    assert not refused, "\n".join(refused)

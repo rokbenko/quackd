@@ -9,6 +9,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **The arm's page opens with a table of contents and the steps to run it.**
+  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md) now goes from its title and
+  description to a table of contents, then to a section called Step by step: what to do without the
+  arm, what to do with it, the first runs, how a command is built, which task files to run next and
+  what people forget. It replaces the page's short Start here, and the page's first block of commands
+  moved under Backends. `tests/test_docs.py` checks that the contents list every section and that the
+  steps agree with the task files they quote.
+- **The SO-101's run sheet is on the pages.**
+  [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
+  experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
+  them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
+  on its card, and that every `quackd` line on the page parses.
+
 ## [0.31.3] — 2026-11-04
 
 0.31.3 fixes how a run ends when the arm stops answering, which is what cutting its supply does. What
