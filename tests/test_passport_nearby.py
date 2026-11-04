@@ -317,7 +317,7 @@ def test_a_hello_over_the_network_from_a_robot_the_radio_has_not_heard_is_refuse
     assert cart.talker.meet(duck.inbox) == DUCK.did
 
 
-def test_meet_ends_a_session_with_a_robot_other_than_the_one_heard(
+def test_meet_opens_no_session_with_a_robot_other_than_the_one_heard(
     lan: Callable[..., Robot],
 ) -> None:
     duck = lan(DUCK, OWNER, "duck-01", beacon=DUCK_BEACON)
@@ -326,9 +326,8 @@ def test_meet_ends_a_session_with_a_robot_other_than_the_one_heard(
     with pytest.raises(PassportError, match="not the one this robot heard"):
         cart.talker.meet(duck.inbox, expect_beacon=heard_by_radio)
     assert cart.talker.peers_open() == set() and cart.heard == []
-    # its bye reached the duck, whose person hears the session open and end
-    assert duck.talker.peers_open() == set()
-    assert [h.kind for h in duck.heard] == ["met", "left"]
+    # turned away before the third hello, so the duck has no session to report and no bye
+    assert duck.talker.peers_open() == set() and duck.heard == []
     assert cart.talker.meet(duck.inbox, expect_beacon=DUCK_BEACON) == DUCK.did
 
 

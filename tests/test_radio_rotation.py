@@ -8,7 +8,7 @@ import itertools
 import pytest
 
 from quackd.passport.beacon import is_beacon_id
-from quackd.radio.rotation import RETRY_S, ROTATE_S, BeaconRotor
+from quackd.radio.rotation import HOLD_S, RETRY_S, ROTATE_S, BeaconRotor
 
 
 class Clock:
@@ -51,6 +51,24 @@ def test_while_anything_is_open_the_id_stays_and_rotation_retries() -> None:
     assert r.tick() is None  # the retry is not due yet
     clock.now += 1
     assert r.tick() is not None and len(rotated) == 1 and r.current != first
+
+
+def test_a_peer_that_keeps_a_link_talking_holds_the_id_for_so_long_and_no_longer() -> None:
+    """Anybody can open a link and keep it busy, and an id they could hold for as long as they
+    liked is one they could follow the robot by."""
+    clock, busy, rotated = Clock(), [True], []
+    r = rotor(busy, rotated, clock)
+    first = r.current
+    clock.now = ROTATE_S
+    for _ in range(int(HOLD_S / RETRY_S)):
+        assert r.tick() is None and r.current == first
+        clock.now += RETRY_S
+    fresh = r.tick()
+    assert fresh is not None and fresh != first and rotated == [fresh]
+    # the next is a whole period away, and may be held as long again
+    assert r.due_in() == ROTATE_S
+    clock.now += ROTATE_S
+    assert r.tick() is None and r.current == fresh
 
 
 def test_ids_never_repeat_back_to_back_even_when_the_draw_does() -> None:

@@ -210,6 +210,8 @@ def connect(
             raise ControlError(str((hello or {}).get("reason", "the service refused the hello")))
         sock.settimeout(then)
         yield conn
+    except OSError as e:
+        raise ControlError(f"the service stopped answering on 127.0.0.1:{port}: {e}") from e
     finally:
         conn.close()
 

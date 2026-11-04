@@ -423,6 +423,7 @@ class SimRadio:
         self._rngs: dict[str, random.Random] = {}
         self._t0 = 0.0
         self._speed = 1.0
+        self._stopped = False
         self._status = RadioStatus(
             "off", "sim", adapter="sim", address=self.address, detail="not started"
         )
@@ -449,6 +450,7 @@ class SimRadio:
         on_sighting: Callable[[Sighting], None],
         on_link: Callable[[Pipe, str], None],
     ) -> RadioStatus:
+        self._stopped = False
         air = self.options.air
         scene = read_scene(air)
         self._t0 = (
@@ -508,7 +510,7 @@ class SimRadio:
         record = read_radio(self.options.air, token)
         # a scan that misses a file being replaced hears the next advert, but a dial has no
         # next one: a radio that is there writes again within a tick, so look until then
-        while record is None and loop.time() < looking:
+        while record is None and not self._stopped and loop.time() < looking:
             await asyncio.sleep(min(0.05, looking - loop.time()))
             record = read_radio(self.options.air, token)
         if record is None:
@@ -534,6 +536,9 @@ class SimRadio:
         if op != OP_WRITE_ACK or len(payload) != 2:
             writer.close()
             raise ConnectionError(f"{address} is not a passport link")
+        if self._stopped:  # while the link was opening: a stopped radio holds nothing
+            writer.close()
+            raise ConnectionError(f"this radio stopped before the link to {address} opened")
         mtu = int.from_bytes(payload, "big")
         pipe = SimPipe(
             reader,
@@ -548,6 +553,7 @@ class SimRadio:
         return pipe
 
     async def stop(self) -> None:
+        self._stopped = True
         for task in self._tasks:
             task.cancel()
         for task in self._tasks:

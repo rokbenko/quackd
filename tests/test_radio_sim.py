@@ -24,9 +24,10 @@ from quackd.passport.beacon import (
     new_beacon_id,
 )
 from quackd.passport.link import Media
-from quackd.radio import Pipe, Sighting, open_radio
+from quackd.radio import Pipe, Sighting, open_radio, sim
 from quackd.radio.links import LinkInbox, LinkTable
 from quackd.radio.sim import (
+    OP_WRITE_ACK,
     OP_WRITE_REQ,
     STALE_S,
     AirModel,
@@ -450,6 +451,68 @@ async def test_the_looking_comes_out_of_the_dials_own_timeout(
     finally:
         await a.stop()
         await b.stop()
+
+
+async def test_a_radio_that_stops_ends_a_dial_still_looking_and_can_start_again(
+    tmp_path: FilePath, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    t0 = time.time()
+    b = Robot(tmp_path, "1,0@0", t0=t0)
+    await b.start()
+    a = SimRadio(SimOptions(air=tmp_path, t0=t0))
+    start = {
+        "advert": bytes(10),
+        "on_sighting": lambda s: None,
+        "on_link": lambda p, a: None,
+    }
+    await a.start(**start)
+    try:
+        monkeypatch.setattr("quackd.radio.sim.TICK_S", STALE_S)
+        reads = reads_of(monkeypatch, b.radio.token, lose=10**6)
+        dial = asyncio.create_task(a.connect(b.radio.address, timeout=5))
+        await until(lambda: reads)
+        await a.stop()
+        with pytest.raises(ConnectionError, match="nothing is advertising"):
+            await asyncio.wait_for(dial, 1)
+        assert not a._pipes
+        monkeypatch.undo()
+        await until(lambda: read_radio(tmp_path, b.radio.token) is not None)
+        await a.start(**start)
+        pipe = await a.connect(b.radio.address, timeout=5)
+        await pipe.close()
+    finally:
+        await a.stop()
+        await b.stop()
+
+
+async def test_a_link_that_opens_after_the_radio_stopped_is_not_kept(tmp_path: FilePath) -> None:
+    """stop() closes the pipes it holds, and a dial still opening holds none yet."""
+    asked, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(64)
+        asked.set()
+        await release.wait()
+        writer.write(sim._OP.pack(OP_WRITE_ACK, 2) + (50).to_bytes(2, "big"))
+        await writer.drain()
+
+    server = await asyncio.start_server(slow, "127.0.0.1", 0)
+    port = int(server.sockets[0].getsockname()[1])
+    radio_file(tmp_path, "slow", link=port, x=0.5)
+    me = SimRadio(SimOptions(air=tmp_path, t0=time.time()))
+    await me.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
+    try:
+        dial = asyncio.create_task(me.connect("sim:slow", timeout=5))
+        await asyncio.wait_for(asked.wait(), 5)
+        await me.stop()
+        release.set()
+        with pytest.raises(ConnectionError, match="stopped"):
+            await asyncio.wait_for(dial, 5)
+        assert not me._pipes
+    finally:
+        await me.stop()
+        server.close()
+        await server.wait_closed()
 
 
 async def test_a_radio_that_hangs_up_before_the_link_opens_is_a_connection_error(

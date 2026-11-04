@@ -9493,7 +9493,11 @@ def onboard_sign(
         return
     ui.console.print(_ok_line(f"signed {signed.path}, good for {days} days"))
     told = _tell_service(home, {"op": "reload"})
-    if told is not None:
+    if told is not None and told.get("passport_refused"):
+        why = ui.printable(str(told["passport_refused"]))
+        said = f"the running service keeps the passport it had, and refuses this one: {why}"
+        ui.console.print(Text(said, style=ui.STYLES["warn"]))
+    elif told is not None:
         ui.console.print(_ok_line("the running service serves it from now on"))
 
 

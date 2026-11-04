@@ -345,6 +345,37 @@ async def test_a_central_links_through_bluez_and_is_dropped_when_bluez_says_it_l
         await radio.stop()
 
 
+async def test_the_radio_opens_the_adapter_the_board_finds_once_one_comes_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing was there when the radio first looked, so it tries the default and keeps trying,
+    and the adapter then comes up under another name. It takes that one with no restart."""
+    monkeypatch.setattr(bluez_radio, "RETRY_S", (0.05,))
+    bus = await MessageBus(bus_type=BusType.SESSION).connect()
+    registry = Registry()
+    await bus.request_name("org.bluez")
+    found: list[str | None] = [None]
+    radio = BlueZRadio(bus="session", scan=False, find_adapter=lambda: found[-1])
+    try:
+        status = await radio.start(
+            advert=ble_service_data(new_beacon_id(), lan=False, link=True),
+            on_sighting=lambda s: None,
+            on_link=lambda p, a: None,
+        )
+        assert status.state == "missing" and "hci0" in status.detail
+        late = "/org/bluez/hci1"
+        bus.export(late, FakeAdapter())
+        bus.export(late, FakeGattManager(registry))
+        bus.export(late, FakeAdvertisingManager(registry))
+        found.append("hci1")
+        await until(lambda: radio.status().state == "ready")
+        assert radio.status().adapter == "hci1"
+        assert ("RegisterApplication", APP_PATH) in registry.calls
+    finally:
+        await radio.stop()
+        bus.disconnect()
+
+
 async def test_with_nothing_owning_org_bluez_the_radio_starts_missing_and_says_why() -> None:
     radio = BlueZRadio(bus="session", scan=False)
     status = await radio.start(

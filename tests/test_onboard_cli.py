@@ -12,16 +12,20 @@ import contextlib
 import json
 import os
 import re
+import socket
 import subprocess
+import sys
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
 from quackd import boards
+from quackd.adapters import factory
 from quackd.adapters.base import AdapterNotInstalled
 from quackd.boards import generic
 from quackd.boards.linux import BLUETOOTH
@@ -29,6 +33,7 @@ from quackd.cli import _status_rows, app
 from quackd.onboard import config, demo, radio_side, service
 from quackd.onboard import facts as facts_module
 from quackd.onboard import preflight as preflight_module
+from quackd.onboard.control import ControlError, request
 from quackd.onboard.store import OnboardDir
 from quackd.passport import document
 from quackd.radio import NoRadio
@@ -227,7 +232,8 @@ def adapter_opened(home: Path, monkeypatch: pytest.MonkeyPatch, **asked: Any) ->
         pass
 
     def side(**options: Any) -> Any:
-        raise Opened(options["adapter"])
+        find = options["find_adapter"]
+        raise Opened(find() if find is not None else None)
 
     def started(_service: Any) -> None:
         raise AssertionError("the service started and opened no radio")
@@ -255,54 +261,131 @@ def test_the_service_opens_the_adapter_preflight_checked(
     assert adapter_opened(home, monkeypatch) == "hci1"
 
 
+def checks_adapter(home: Path) -> str | None:
+    """The adapter preflight asks the radio's own rows to check."""
+    checked: list[str | None] = []
+
+    def rows(_kind: str, adapter: str | None, _live: bool) -> list[Any]:
+        checked.append(adapter)
+        return []
+
+    preflight_module.preflight(
+        OnboardDir(home), None, radio_rows=rows, clock_state=lambda: (True, True)
+    )
+    assert len(checked) == 1
+    return checked[0]
+
+
 @pytest.mark.parametrize(
-    ("radio", "found"),
+    ("found", "wanted"),
     [
-        (None, boards.RadioCheck(ok=False, adapter="hci3", why="it is down")),
-        (None, OSError("a third party's board could not say")),
-        ("off", OSError("a third party's board could not say")),
+        (boards.RadioCheck(ok=True, adapter="hci1"), "hci1"),
+        (boards.RadioCheck(ok=False, adapter="hci3", why="it is down"), None),
+        (boards.RadioCheck(ok=True, adapter="sim"), None),
+        (boards.RadioCheck(ok=True), None),
+        (SimpleNamespace(ok=True, adapter=7, why=None), None),
+        (OSError("a third party's board could not say"), None),
         (None, None),
     ],
-    ids=["not-fit", "cannot-say", "radio-off", "answers-nothing"],
+    ids=[
+        "found",
+        "not-fit",
+        "not-bluetooth",
+        "named-none",
+        "not-a-name",
+        "raises",
+        "answers-nothing",
+    ],
 )
-def test_the_service_opens_no_adapter_preflight_did_not_check(
+def test_preflight_and_the_service_settle_on_the_same_adapter(
     tmp_path: Path,
     robot_file: Path,
     secret: Path,
     named_computer: None,
     monkeypatch: pytest.MonkeyPatch,
-    radio: str | None,
     found: Any,
+    wanted: str | None,
 ) -> None:
-    """Preflight checks the radio's default on a board that found nothing fit, so the service
-    does too, and a board that cannot say does not stop it. A radio that is off asks it nothing."""
+    """Whatever a board answers, a third party's above all, neither stops and both read it alike."""
     home = tmp_path / "robot"
     assert onboard_named(home, robot_file, secret).exit_code == 0
-    asked: list[Any] = []
 
     def answer(_board: Any) -> Any:
-        asked.append(found)
         if isinstance(found, Exception):
             raise found
         return found
 
     monkeypatch.setattr(generic.GenericBoard, "radio", answer)
-    assert adapter_opened(home, monkeypatch, radio=radio) is None
-    assert asked == ([] if radio == "off" else [found])
+    assert adapter_opened(home, monkeypatch) == wanted
+    assert checks_adapter(home) == wanted
+
+
+def test_a_radio_that_is_off_asks_the_board_nothing(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    named_computer: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+
+    asked: list[Any] = []
+    monkeypatch.setattr(generic.GenericBoard, "radio", lambda board: asked.append(board))
+    assert adapter_opened(home, monkeypatch, radio="off") is None
+    assert asked == [], "asked about a radio that is off"
+
+
+def test_a_plugins_reason_for_having_no_radio_reaches_preflight(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The radio's own rows say what BlueZ sees, and cannot say why a plugin found nothing."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    facts = boards.detect("sim")[1]
+
+    class Plugin:
+        name, radio_kind, explicit_only = "acme", "bluez", False
+
+        def radio(self) -> Any:
+            raise OSError("its SDK is gone")
+
+    monkeypatch.setattr(boards, "detect", lambda name=None: (Plugin(), facts))
+    checks = preflight_module.preflight(
+        OnboardDir(home), "acme", radio_rows=lambda *_: [], clock_state=lambda: (True, True)
+    )
+    said = {check.name: check for check in checks}
+    assert said["board radio"].state == "warn"
+    assert "the acme board could not say" in said["board radio"].detail
+    assert "OSError: its SDK is gone" in said["board radio"].detail
+
+
+def test_quackds_own_board_adds_no_row_beside_the_radios_own(
+    tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard_named(home, robot_file, secret).exit_code == 0
+    checks = preflight_module.preflight(
+        OnboardDir(home), None, radio_rows=lambda *_: [], clock_state=lambda: (True, True)
+    )
+    assert "board radio" not in {check.name for check in checks}
+
+
+def find_hci1() -> str:
+    return "hci1"
 
 
 @pytest.mark.parametrize(
-    ("kind", "adapter", "wanted"),
+    ("kind", "find", "wanted"),
     [
-        ("bluez", "hci1", {"advertise": True, "adapter": "hci1"}),
+        ("bluez", find_hci1, {"advertise": True, "find_adapter": find_hci1}),
         ("bluez", None, {"advertise": True}),
-        ("bluez", "sim", {"advertise": True}),
-        ("off", "hci1", {}),
+        ("off", find_hci1, {}),
     ],
-    ids=["found", "none-found", "not-an-adapter", "radio-off"],
+    ids=["asks-the-board", "nothing-to-ask", "radio-off"],
 )
-def test_the_radio_is_opened_on_the_adapter_it_is_handed(
-    monkeypatch: pytest.MonkeyPatch, kind: str, adapter: str | None, wanted: dict[str, Any]
+def test_the_radio_is_handed_the_question_of_which_adapter(
+    monkeypatch: pytest.MonkeyPatch, kind: str, find: Any, wanted: dict[str, Any]
 ) -> None:
     asked: dict[str, Any] = {}
 
@@ -311,7 +394,7 @@ def test_the_radio_is_opened_on_the_adapter_it_is_handed(
         return NoRadio()
 
     monkeypatch.setattr(radio_side, "open_radio", opened)
-    radio_side.board_side(radio_kind=kind, instance="x", adapter=adapter)
+    radio_side.board_side(radio_kind=kind, instance="x", find_adapter=find)
     assert asked == wanted
 
 
@@ -395,6 +478,89 @@ def test_a_body_that_cannot_be_read_here_is_said_and_stops_neither_preflight_nor
     said = status_said(home)
     assert told in said["robot.yaml"]
     assert "unsigned" not in said, "nobody edited anything"
+
+
+def test_what_an_adapter_prints_stays_out_of_preflights_json(
+    tmp_path: Path, body_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preflight reads the body's manifest, and a third party's adapter may print as it loads."""
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+    real = factory.describe
+
+    def noisy(spec: Any) -> Any:
+        print("acme robotics sdk 2.1 loaded")
+        return real(spec)
+
+    monkeypatch.setattr(factory, "describe", noisy)
+    argv = ["onboard", "preflight", "--board", "sim", "--dir", str(home), "--json"]
+    checked = runner.invoke(app, argv)
+    rows = {row["check"]: row for row in json.loads(checked.stdout)["checks"]}
+    assert rows["passport"]["state"] == "ok" and "signed" not in rows
+    assert "acme robotics" in checked.stderr, "said, on the stream for it"
+
+
+def test_an_adapter_that_exits_ends_no_command_that_reads_it(
+    tmp_path: Path, body_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, body_file, secret).exit_code == 0
+
+    def leaves(spec: Any) -> Any:
+        sys.exit(3)
+
+    monkeypatch.setattr(factory, "describe", leaves)
+    said = "the microduck:sim2d adapter exited as it was read, with code 3"
+    code, rows = preflight_rows(home, "--board", "sim")
+    assert said in rows["signed"]["detail"] and code != 3
+    assert said in status_said(home)["robot.yaml"]
+    signing = ["onboard", "sign", "--board", "sim", "--dir", str(home)]
+    done = runner.invoke(app, [*signing, "--passphrase-file", str(secret)])
+    assert done.exit_code == 1 and said in flat(done.output)
+
+
+def test_sign_says_so_when_the_running_service_will_not_take_it(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It said the service served the new passport whatever the service made of it."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    argv = ["onboard", "sign", "--board", "sim", "--dir", str(home)]
+    argv += ["--passphrase-file", str(secret)]
+
+    def refuses(_home: Any, _op: Any) -> dict[str, Any]:
+        return {"ok": True, "passport_refused": "signed on another computer"}
+
+    monkeypatch.setattr("quackd.cli._tell_service", refuses)
+    said = flat(runner.invoke(app, argv).output)
+    assert "keeps the passport it had" in said and "signed on another computer" in said
+    assert "serves it from now on" not in said
+    monkeypatch.setattr("quackd.cli._tell_service", lambda _home, _op: {"ok": True})
+    assert "serves it from now on" in flat(runner.invoke(app, argv).output)
+
+
+def test_a_service_that_stops_answering_is_said_and_no_traceback(tmp_path: Path) -> None:
+    """A socket that fails after it connected was no `ControlError`, so `status` and `stop` and
+    every other command that tells the service ended in a traceback."""
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        where = tmp_path / "control.json"
+        where.write_text(json.dumps({"port": server.getsockname()[1], "token": "t"}), "utf-8")
+        with pytest.raises(ControlError, match="stopped answering"):
+            request(where, {"op": "status"}, timeout=0.05)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no such modes")
+def test_preflight_says_when_others_can_read_a_secret(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert "robot.json" not in rows
+    (home / "keys" / "robot.json").chmod(0o644)
+    _, rows = preflight_rows(home, "--board", "sim")
+    assert rows["robot.json"]["state"] == "warn" and "mode 644" in rows["robot.json"]["detail"]
+    assert rows["robot.json"]["hint"].startswith("chmod 600 ")
 
 
 def test_a_cannot_the_body_supplied_does_not_look_deleted_while_it_cannot_be_read(
@@ -562,7 +728,8 @@ def test_a_passport_file_that_is_not_text_does_not_check_out_everywhere_it_is_re
         log=lambda _line: None,
     )
     (home / "passport.jws").write_bytes(b"\xff\xfe not text")
-    assert good._reload()["ok"] is True, "the service reads it again and keeps what it had"
+    reloaded = good._reload()
+    assert reloaded["ok"] is True and "does not check out" in reloaded["passport_refused"]
     _, rows = preflight_rows(home, "--board", "sim")
     assert (
         rows["passport"]["state"] == "fail" and "does not check out" in rows["passport"]["detail"]

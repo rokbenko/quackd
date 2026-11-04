@@ -44,6 +44,7 @@ from quackd.radio.bluez.core import (
     ClientPipe,
     PeripheralCore,
     ServerPipe,
+    join_bluetooth_hint,
 )
 from quackd.radio.bluez.objects import plain
 from quackd.radio.bluez.peripheral import BlueZError, Peripheral, call
@@ -54,7 +55,10 @@ RETRY_S = (15.0, 15.0, 30.0, 30.0, 60.0)
 
 
 class BlueZRadio:
-    """The radio on one BlueZ adapter (`hci0`), on the system bus or a bus a test names."""
+    """The radio on one BlueZ adapter (`hci0`), on the system bus or a bus a test names.
+
+    `find_adapter` says which adapter to use each time the radio comes up, None to keep the one it
+    has: an adapter can appear, or come back, under another name while the radio keeps trying."""
 
     kind = "bluez"
 
@@ -62,6 +66,7 @@ class BlueZRadio:
         self,
         *,
         adapter: str = "hci0",
+        find_adapter: Callable[[], str | None] | None = None,
         bus: Literal["system", "session"] = "system",
         bus_address: str | None = None,
         advertise: bool = True,
@@ -70,6 +75,7 @@ class BlueZRadio:
         on_scanning: Callable[[bool], None] | None = None,
     ) -> None:
         self.adapter = adapter
+        self.find_adapter = find_adapter
         self.bus_kind, self.bus_address = bus, bus_address
         self.advertise, self.accept, self.scan = advertise, accept, scan
         self.on_scanning = on_scanning
@@ -214,6 +220,8 @@ class BlueZRadio:
 
     async def _bring_up(self) -> None:
         self._problems = []
+        if self.find_adapter is not None:
+            self.adapter = self.find_adapter() or self.adapter
         if self._bus is None:
             try:
                 self._bus = await connect_bus(self.bus_kind, self.bus_address)
@@ -252,7 +260,7 @@ class BlueZRadio:
         if not self._problems:
             self._set("ready", found.detail)
         elif denied and not (peripheral.serving or peripheral.advertising):
-            self._set("denied", "; ".join(self._problems), "sudo usermod -aG bluetooth $USER")
+            self._set("denied", "; ".join(self._problems), join_bluetooth_hint())
         else:
             self._set("degraded", "; ".join(self._problems), found.hint)
 

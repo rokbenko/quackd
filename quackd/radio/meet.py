@@ -36,7 +36,7 @@ from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol
 
 from quackd.lan.lookup import LanDirectory
-from quackd.passport.beacon import FLAG_LAN, FLAG_LINK, initiates
+from quackd.passport.beacon import FLAG_BUSY, FLAG_LAN, FLAG_LINK, initiates
 from quackd.passport.errors import PassportError
 from quackd.passport.fetch import Unreachable
 from quackd.passport.link import CloseReason
@@ -473,16 +473,26 @@ class Meeter:
                 except (Unreachable, LinkDown) as e:
                     why.append(f"its LAN address did not answer: {e}")
                 except PassportError as e:
-                    return self._refused_or_busy(e, route, "lan")
+                    # turned away there, as a robot that does not advertise always is: it has
+                    # not been heard by radio. A link needs no such hearing, so it may yet do
+                    if getattr(e, "status", None) != 403 or not self._link_may_do(action):
+                        return self._refused_or_busy(e, route, "lan")
+                    why.append(f"its LAN address turned this robot away: {e}")
                 else:
                     return Outcome("met", did, route, "lan")
         if not action.flags & FLAG_LINK:
             why.append("it accepts no link")
+        elif action.flags & FLAG_BUSY:
+            said = "; ".join([*why, "its advert says it is at its limit"])
+            return Outcome("busy", via="link", reason=said)
         elif not self.radio.status().ready:
             why.append(f"this robot's radio is {self.radio.status().state}")
         else:
             return self._over_a_link(action, why)
         return Outcome("unreachable", reason="; ".join(why))
+
+    def _link_may_do(self, action: Meet) -> bool:
+        return bool(action.flags & FLAG_LINK) and self.radio.status().ready
 
     def _over_a_link(self, action: Meet, why: list[str]) -> Outcome:
         wait = self.connect_s + LinkPolicy().accept_s + 2.0

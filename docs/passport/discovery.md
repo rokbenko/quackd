@@ -33,8 +33,9 @@ can recompute and which sits outside the range the SIG reserves ([naming.md](nam
 ### The beacon id changes every 15 minutes
 
 The **beacon id** is 8 random bytes, drawn fresh and derived from no key. Every 15 minutes, or what
-`radio.rotate_min` says in `robot.yaml`, the robot draws a new one, but never while a Bluetooth
-link, a talk session or a meeting is open: then it tries again every 30 seconds until nothing is.
+`radio.rotate_min` says in `robot.yaml`, the robot draws a new one, but not while a Bluetooth link,
+a talk session or a meeting is open: then it tries again every 30 seconds until nothing is, or until
+an hour has passed, since anybody can open a link and keep it talking.
 The advert, the robot's LAN record and the beacon its `hello` carries all change together.
 
 A listener who wrote an id down an hour ago cannot match it to the robot by the id alone

@@ -188,13 +188,18 @@ class Talker:
         """Say hello over `route`, an HTTP inbox or a Bluetooth link, and return the id of the
         robot that answered once each has checked the other's passport and key (spec 6.3).
         `expect_beacon` is the beacon id the robot was heard by: an answer from any other robot
-        ends the session there and then."""
-        session = open_session(self.endpoint, None, lambda wire: self._send(route, wire))
+        ends the hello there and then, before that robot has a session to report."""
+
+        def as_heard(session: Session) -> None:
+            if expect_beacon is not None and session.runtime.get("beacon") != expect_beacon:
+                raise PassportError(
+                    "6.3", "the robot that answered is not the one this robot heard"
+                )
+
+        session = open_session(
+            self.endpoint, None, lambda wire: self._send(route, wire), check=as_heard
+        )
         session.route = route
-        if expect_beacon is not None and session.runtime.get("beacon") != expect_beacon:
-            with contextlib.suppress(Exception):  # its own bye may have ended the session first
-                self._deliver(route, self.endpoint.bye(session.peer))
-            raise PassportError("6.3", "the robot that answered is not the one this robot heard")
         self._note(Event("met", session))
         return session.peer
 

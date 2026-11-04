@@ -26,7 +26,7 @@ from typing import Any, Protocol
 
 from quackd.lan.lookup import LanDirectory, LanRecord
 from quackd.passport.beacon import WELL_KNOWN_JSON, ble_service_data, txt_record
-from quackd.passport.talk import Session
+from quackd.passport.talk import MAX_SESSIONS, Session
 from quackd.passport_talk import Talker
 from quackd.radio import NoRadio, Pipe, Radio, RadioStatus, RadioUnavailable, Sighting, open_radio
 from quackd.radio.links import LinkChange, LinkInbox, LinkTable, LinkTransport, talk_inbox
@@ -130,6 +130,7 @@ class RadioSide:
         #: whether something outside the radio holds this robot's attention, a meeting run;
         #: the service sets it, and the beacon id does not rotate while it is true
         self.busy_elsewhere: Callable[[], bool] = lambda: False
+        self._busy_said = False
         #: what the meeter did, for the service's log and met.jsonl
         self.on_event: Callable[[MeetEvent], None] | None = None
         #: every proximity event, for a narration
@@ -247,6 +248,9 @@ class RadioSide:
         self.rotor.tick(now)
 
     async def _tick(self, now: float) -> list[ProximityEvent]:
+        if self._at_limit() != self._busy_said:
+            with contextlib.suppress(Exception):  # no reason to stop hearing
+                await self.radio.set_advert(self._advert())
         # silence from a radio that is not listening is not a robot gone
         if self.radio.status().hears:
             self.tracker.resume(now)
@@ -274,7 +278,18 @@ class RadioSide:
     # ── on the radio's loop ─────────────────────────────────────────────────────────────
 
     def _advert(self) -> bytes:
-        return ble_service_data(self.rotor.current, lan=self._on_lan, link=True)
+        self._busy_said = self._at_limit()
+        return ble_service_data(
+            self.rotor.current, lan=self._on_lan, link=True, busy=self._busy_said
+        )
+
+    def _at_limit(self) -> bool:
+        """At its link or session limit, which the advert says (spec 5.6), so that a robot heard
+        does not dial only to be told so."""
+        talker = self.talker
+        return self.links.full or (
+            talker is not None and len(talker.endpoint.sessions) >= MAX_SESSIONS
+        )
 
     def _sighting(self, sighting: Sighting) -> None:
         self._sightings += 1
@@ -445,15 +460,16 @@ def board_side(
     rotate_s: float = ROTATE_S,
     log: Callable[[str], None] = lambda _line: None,
     advertise: bool = True,
-    adapter: str | None = None,
+    find_adapter: Callable[[], str | None] | None = None,
 ) -> RadioSide:
     """The radio of a robot's own computer: BlueZ, or `off`, and DNS-SD on every interface. A
     radio it cannot have is a `NoRadio` saying why, and the robot meets others over its LAN.
     `browser` finds other robots' LAN records; without one, robots near are met over a link.
-    `adapter` is the one the board found, which is the one preflight checks."""
+    `find_adapter` asks the board which adapter to open, the one preflight checks, each time the
+    radio comes up, since one can appear or come back under another name while it runs."""
     options: dict[str, Any] = {"advertise": advertise} if radio_kind == "bluez" else {}
-    if radio_kind == "bluez" and adapter and adapter.startswith("hci"):
-        options["adapter"] = adapter
+    if radio_kind == "bluez" and find_adapter is not None:
+        options["find_adapter"] = find_adapter
     try:
         radio: Radio = open_radio(radio_kind, **options)  # type: ignore[arg-type]
     except RadioUnavailable as e:

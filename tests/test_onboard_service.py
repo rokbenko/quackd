@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterator
 from datetime import date
 from importlib import resources
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -400,6 +401,83 @@ def test_a_robot_file_that_stops_reading_is_named_in_status_and_the_service_runs
         assert wait_for(lambda: service.file_problem is not None, 15)
         assert "not UTF-8" in str(service.status()["file_problem"])
         assert service.talker is not None
+
+
+def test_the_advert_says_when_this_robot_is_at_a_limit() -> None:
+    """Spec 5.6: the flag says a robot is at a link or session limit, and nothing ever set it."""
+    from quackd.onboard.radio_side import RadioSide
+    from quackd.passport.beacon import read_ble_service_data
+    from quackd.passport.talk import MAX_SESSIONS
+    from quackd.radio import NoRadio
+
+    adverts: list[bytes] = []
+
+    class Radio(NoRadio):
+        async def set_advert(self, advert: bytes) -> None:
+            adverts.append(advert)
+
+    side = RadioSide(Radio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()
+
+    def busy(advert: bytes) -> bool:
+        beacon = read_ble_service_data(advert)
+        assert beacon is not None
+        return beacon.busy
+
+    try:
+        assert not busy(side._advert())
+        side.loop.call(side._tick(0.0), 5)
+        assert adverts == [], "nothing changed, so nothing to send"
+        side.links.max_links = 0
+        side.loop.call(side._tick(1.0), 5)
+        assert len(adverts) == 1 and busy(adverts[-1])
+        side.loop.call(side._tick(2.0), 5)
+        assert len(adverts) == 1, "said once"
+        side.links.max_links = 4
+        side.loop.call(side._tick(3.0), 5)
+        assert len(adverts) == 2 and not busy(adverts[-1])
+        sessions = dict.fromkeys(range(MAX_SESSIONS))
+        side.talker = SimpleNamespace(endpoint=SimpleNamespace(sessions=sessions))
+        side.loop.call(side._tick(4.0), 5)
+        assert len(adverts) == 3 and busy(adverts[-1])
+    finally:
+        side.talker = None
+        side.loop.stop()
+
+
+def test_an_advert_that_will_not_change_does_not_stop_the_tick() -> None:
+    from quackd.onboard.radio_side import RadioSide
+    from quackd.radio import NoRadio
+
+    class Radio(NoRadio):
+        async def set_advert(self, advert: bytes) -> None:
+            raise OSError("bluetoothd went away")
+
+    side = RadioSide(Radio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()
+    try:
+        side.links.max_links = 0
+        assert side.loop.call(side._tick(0.0), 5) == []
+    finally:
+        side.loop.stop()
+
+
+def test_a_run_grants_only_the_courtesies_the_signed_passport_offers(tmp_path: Path) -> None:
+    """A robot quackd only talks for signs `courtesy: []`, and a run still granted a pause."""
+    import asyncio
+
+    home = robot(tmp_path, HOUSEHOLD)
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type]
+    service.talker = SimpleNamespace(courtesy=None)  # type: ignore[assignment]
+
+    async def hold() -> None:
+        service._holding(SimpleNamespace(executor=object()))
+
+    asyncio.run(hold())
+    granted = service.talker.courtesy
+    assert service.check.reading is not None and service.check.reading.courtesy() == []
+    assert granted.allowed("known") == () and granted.allowed("stranger") == ()
+    assert granted.decide("known", "pause", {"seconds": 3}).result == "no"
 
 
 def test_refusals_are_written_at_most_thirty_a_minute_and_rows_from_many_threads_all_kept(

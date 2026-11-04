@@ -20,14 +20,20 @@ from typing import Any
 import pytest
 
 from quackd.lan.lookup import LanRecord
-from quackd.passport.beacon import ble_service_data, new_beacon_id
+from quackd.passport.beacon import (
+    FLAG_BUSY,
+    FLAG_LAN,
+    FLAG_LINK,
+    ble_service_data,
+    new_beacon_id,
+)
 from quackd.passport.errors import PassportError
 from quackd.passport.fetch import HttpStatus, Unreachable
 from quackd.radio import Pipe, Sighting
 from quackd.radio.fake import FakeAir, FakeLan
 from quackd.radio.links import LinkChange, LinkTable, LinkTransport, talk_inbox
 from quackd.radio.loop import LoopThread
-from quackd.radio.meet import INBOX_PATH, Meeter, MeetEvent, MeetPolicy, Planner, TalkerPort
+from quackd.radio.meet import INBOX_PATH, Meet, Meeter, MeetEvent, MeetPolicy, Planner, TalkerPort
 from quackd.radio.proximity import ProximityPolicy, Tracker
 from quackd.radio.sim import AirModel
 from quackd.radio.transport import Transports
@@ -359,6 +365,64 @@ def test_a_lan_record_that_does_not_answer_falls_back_to_a_link(loop: LoopThread
         assert len(a.links) == 1
     finally:
         teardown(loop, robots)
+
+
+def test_a_lan_address_that_turns_a_robot_away_leaves_the_link_to_try(loop: LoopThread) -> None:
+    """A robot that does not advertise is never heard, so a LAN inbox always answers it 403, and
+    a link, which needs no hearing, was never tried."""
+    air = FakeAir(QUIET_AIR)
+    net, lan = Network(), FakeLan()
+    low, high = pair()
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low, network="home", lan=lan, ip="10.0.0.1")
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high, network="home", lan=lan, ip="10.0.0.2")
+    answer = b.talker.inbox
+
+    def not_near(wire: str, origin: str) -> tuple[int, str | None]:
+        if origin.startswith("http"):
+            return 403, "this robot has not heard you by radio, so you are not near"
+        return answer(wire, origin)
+
+    b.talker.inbox = not_near  # type: ignore[method-assign]
+    robots = [a, b]
+    for robot in robots:
+        loop.call(robot.start(), 5)
+    try:
+        run(air, loop, robots, lambda: a.state_of(high) == "met", fake_s=10)
+        met = next(e for e in a.events if e.kind == "met")
+        assert met.via == "link" and len(a.links) == 1
+    finally:
+        teardown(loop, robots)
+
+
+def test_a_lan_refusal_stands_for_a_robot_with_no_link_to_try(loop: LoopThread) -> None:
+    air = FakeAir(QUIET_AIR)
+    net, lan = Network(), FakeLan()
+    low, high = pair()
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low, network="home", lan=lan, ip="10.0.0.1")
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high, network="home", lan=lan, ip="10.0.0.2")
+    b.talker.answer_with = 403
+    loop.call(a.start(), 5)
+    try:
+        got = a.meeter.attempt(Meet(high, "fake:b", FLAG_LAN, 1, 1))
+        assert got.kind == "busy" and got.via == "lan"
+    finally:
+        teardown(loop, [a, b])
+
+
+def test_a_robot_whose_advert_says_it_is_busy_is_not_dialled(loop: LoopThread) -> None:
+    air = FakeAir(QUIET_AIR)
+    net = Network()
+    low, high = pair()
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low)
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high)
+    loop.call(a.start(), 5)
+    loop.call(b.start(), 5)
+    try:
+        got = a.meeter.attempt(Meet(high, "fake:b", FLAG_LINK | FLAG_BUSY, 1, 1))
+        assert got.kind == "busy" and got.via == "link" and "at its limit" in got.reason
+        assert len(a.links) == 0
+    finally:
+        teardown(loop, [a, b])
 
 
 @pytest.mark.parametrize(("answer", "state"), [(400, "refused"), (429, "waiting")])
