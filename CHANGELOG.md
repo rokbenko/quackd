@@ -9,6 +9,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **A ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot.** A frame comes
+  from the daemon as one line of base64, and the client read with asyncio's 64 KiB limit, so a longer line
+  raised out of its read loop, which died without a word. Every request after it waited out its timeout,
+  the heartbeat's among them, while the keepalive went on telling the daemon all was well. The camera's
+  640x480 can pass that at the quality the daemon encodes at. The limit is 4 MiB now, and a line longer
+  still, or one the client cannot read, is skipped and the link goes on. A link that fails tells whatever
+  is waiting at once, rather than leaving it to time out. What changes for you: nothing to do.
+  `tests/test_toddlerbot_daemon.py` sends such a frame from the real daemon over a real socket. It failed
+  before this change. Like everything on this adapter, it has not run on a robot.
+
 ## [0.31.3] — 2026-11-05
 
 0.31.3 stops a camera's picture choosing among Pillow's decoders, stops the arm's extras below LeRobot's
