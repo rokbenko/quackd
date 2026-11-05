@@ -84,7 +84,7 @@ CODE_LICENSE = UpstreamRef(
 MESH_LICENSE = UpstreamRef(
     "3D model files are licensed under Creative Commons BY-SA-NC",
     "VERIFIED",
-    src(_README),
+    src(_README, 261),
     "one sentence in the README's License section: no CC version, no file headers, no "
     "LICENSE in assets/. Whether the MJCF XML counts as a '3D model file' is not stated, so "
     "quackd treats the XML and the meshes alike: fetched at run time, never shipped",
