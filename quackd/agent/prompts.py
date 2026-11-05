@@ -803,9 +803,13 @@ def build_system_prompt(
     adapter: str | None = None,
     sees: bool = False,
     play: bool = False,
+    calls_word: str = "LLM calls",
 ) -> str:
     """`memory_text` is what the robot remembers from earlier runs (`RobotMemory.recall`);
     None means memory is off for this run, "" means on but empty.
+
+    `calls_word` is what the budget's `max_llm_calls` counts (`Budget.calls_word`): `turns` on a
+    VLA pilot's run, which nothing reads this prompt on but a person reading the record.
 
     `play` is whether the task may give the pilot a part to play, as the run decided it: the
     task file's `play`, or `--play` and `--no-play` over it. Passed in rather than read off
@@ -1001,7 +1005,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 ## Rules (enforced by the executor — not optional)
 - Call exactly one tool per turn. Never zero, never two.
 - Only these verbs are allowed: {", ".join(fm.verbs.allow)}. Anything else is refused.
-- Budgets: {fm.budgets.max_steps} steps, {fm.budgets.max_minutes:g} minutes, {fm.budgets.max_llm_calls} LLM calls. The run stops when any is hit.
+- Budgets: {fm.budgets.max_steps} steps, {fm.budgets.max_minutes:g} minutes, {fm.budgets.max_llm_calls} {calls_word}. The run stops when any is hit.
 - Verbs marked confirm ({", ".join(asks) or "none"}) ask a human before running.
 - Before the first verb that moves the body, call `assess_task` with your verdict on whether this body can do this task at all, judged against its datasheet below: `feasible`, `infeasible` (the run ends, nothing moves) or `uncertain` (a human is asked). The verdict is about the body, not the view: not having found the target yet is not by itself a reason for `uncertain`. It is one when a limit turns on that unseen thing's mass or size, or on a figure the datasheet does not publish. Until then {before_verdict}. Assess again later if what you see changes your mind.
 - When a success criterion is met, call `declare_success`. If the task turns out impossible while doing it, call `declare_failure`.

@@ -25,6 +25,18 @@ APP = str(Path(__file__).resolve().parents[1] / "quackd" / "webui" / "app.py")
 SCREENS = ("setup", "goal", "chat", "history", "robots", "memory", "policies")
 
 
+def test_history_says_turns_of_a_run_that_asked_no_llm() -> None:
+    from quackd.webui.screens.history import _caption
+
+    run = {"outcome": "success", "steps": 3, "llm_calls": 5, "wall_s": 0.4, "cost_usd": 0.0}
+    assert _caption({**run, "provider": "vla"}) == (
+        "outcome success · steps 3 · turns 5 · wall_s 0.4 · cost_usd 0.0"
+    )
+    assert _caption({**run, "provider": "fake"}) == (
+        "outcome success · steps 3 · llm_calls 5 · wall_s 0.4 · cost_usd 0.0"
+    )
+
+
 @pytest.fixture(autouse=True)
 def page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A page of its own for every test: its working folder, its setup and its job table."""

@@ -415,23 +415,26 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
     exception: it has kept a wall clock of its own since long before a solo run had one, so
     an old flock record does gain a `time` counter from the number it was already writing.
     """
-    from quackd.agent.providers.pricing import VLA_PILOT, fmt_usd
-    from quackd.log import fmt_duration
+    from quackd.agent.providers.pricing import fmt_usd
+    from quackd.log import asks_no_llm, fmt_duration
 
     usage = end.get("usage") or {}
     # A VLA pilot's run asks no LLM: its pilot takes turns handing the arm's policy one line at a
     # time, so it counts those, and it has no LLM's seconds to split out or to spread.
-    vla = end.get("provider") == VLA_PILOT
+    vla = asks_no_llm(end)
     call = "turn" if vla else "LLM call"
     # the tries quackd sent again for turns the API could not answer, which `llm_calls` does
     # not count, each being a turn it counted already (ADR-0059): only where a run had one
     retries = int(_number(end.get("llm_retries")) or 0)
-    counters = [
-        f"steps {int(_number(end.get('steps')) or 0)}",
-        f"{call}s {int(_number(end.get('llm_calls')) or 0)}"
-        + (f" (+{retries} asked again)" if retries else ""),
-        f"tokens {usage.get('input_tokens', 0)}+{usage.get('output_tokens', 0)}",
-    ]
+    counters = [f"steps {int(_number(end.get('steps')) or 0)}"]
+    # A chat session recorded before 0.32.0 did not add up what its goals spent, and each goal's
+    # own record says it, so that session names no calls and no tokens: a zero there is false.
+    if end.get("duck") != "drive" or "llm_calls" in end:
+        counters += [
+            f"{call}s {int(_number(end.get('llm_calls')) or 0)}"
+            + (f" (+{retries} asked again)" if retries else ""),
+            f"tokens {usage.get('input_tokens', 0)}+{usage.get('output_tokens', 0)}",
+        ]
     wall = _number(end.get("wall_s"))
     if wall is None:
         wall = _number(end.get("wall_elapsed_s"))

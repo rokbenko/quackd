@@ -3027,6 +3027,7 @@ class AgentLoop:
                 # as `_observe` decides whether an observation carries the frames it read
                 sees=bool(cfg.provider.supports_vision),
                 play=self.play,
+                calls_word=self.budget.calls_word,
             )
             system += getattr(cfg.provider, "prompt_hint", "") or ""  # e.g. the local JSON fallback
             # before `run_start`, so a reader of the record meets the pictures the task is

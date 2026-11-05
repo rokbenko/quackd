@@ -73,19 +73,25 @@ def screen() -> None:
     _show(run)
 
 
+def _caption(summary: dict[str, Any]) -> str:
+    """A run's record in its own names, but for the calls of a VLA pilot, which asks no LLM."""
+    from quackd.log import asks_no_llm
+
+    named = {"llm_calls": "turns"} if asks_no_llm(summary) else {}
+    return " · ".join(
+        f"{named.get(k, k)} {summary[k]}"
+        for k in ("outcome", "reason", "steps", "llm_calls", "wall_s", "cost_usd")
+        if summary.get(k) is not None
+    )
+
+
 def _show(run: Path) -> None:
     from quackd.agent.transcript import Transcript
     from quackd.log import LineLog, LogEvent
 
     summary = _summary(run)
     if summary:
-        st.caption(
-            " · ".join(
-                f"{k} {summary[k]}"
-                for k in ("outcome", "reason", "steps", "llm_calls", "wall_s", "cost_usd")
-                if summary.get(k) is not None
-            )
-        )
+        st.caption(_caption(summary))
     shown = st.toggle(
         "Show the system prompt", value=False, help="As quackd log --prompt shows it."
     )

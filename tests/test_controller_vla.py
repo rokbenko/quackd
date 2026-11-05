@@ -25,7 +25,7 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli
+from quackd import cli, ui
 from quackd.agent.loop import RunConfig, RunResult, run_duck
 from quackd.agent.providers import pricing
 from quackd.agent.providers import vla as V
@@ -42,7 +42,7 @@ from quackd.agent.providers.vla import VlaProvider
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.parser import parse_duck_text
 from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB
-from quackd.log import a_person_was_asked
+from quackd.log import LineLog, LogEvent, a_person_was_asked, render_lines
 from quackd.safety import allow_all
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import LeRobotMock
@@ -183,6 +183,47 @@ async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
     assert tops, "no step of this run was observed"
     for top in tops:
         assert " · turns " in top and "LLM" not in top, top
+
+
+async def test_no_line_of_its_record_says_an_llm_was_asked(tmp_path: Path) -> None:
+    """Replayed whole, its prompt included, as `quackd log --prompt` and the page's History tell
+    it, and the live line through every answer it gave, because a label that says `LLM` on a run
+    with no LLM in it is as false as a counter that does. The record's own keys stay."""
+    result = await _run(tmp_path, judge=_person(True))
+    events = _events(result)
+    made: list[str] = []
+    replay = LineLog(lambda text, _style: made.append(text), prompt=True)
+    answers = []
+    for event in events:
+        data = {k: v for k, v in event.items() if k not in ("t", "kind")}
+        replay(LogEvent(str(event["kind"]), float(event["t"]), data))
+        if event["kind"] == "llm":
+            answers.append(ui._answered(data))
+    told = "\n".join(made)
+    assert "provider=vla pilot=scripted:stack" in told
+    assert "pilot>  step 0:" in told
+    assert "40 turns" in told, "the prompt's budget line"
+    assert not re.search(r"\bLLMs?\b|\bllm\b", told, re.IGNORECASE), told
+    assert answers and all(answer.startswith("the pilot chose ") for answer in answers), answers
+
+
+def test_another_pilot_keeps_the_words_of_an_llm() -> None:
+    """`--llm fake` stands in for an LLM, and a transcript's lines are a contract with whatever
+    reads an MCP result, so only the VLA pilot's lines are told apart."""
+    start = {"duck": "d", "provider": "fake", "llm_id": "scripted:d", "transport": "mock"}
+    ((head, _), *_) = render_lines(LogEvent("run_start", 0.0, start))
+    assert "provider=fake LLM=scripted:d" in head
+    asked = {"step": 0, "messages": 1, "provider": "fake", "llm_id": "scripted:d"}
+    ((line, _),) = render_lines(LogEvent("llm_request", 0.0, asked))
+    assert line.startswith("llm>  ")
+    said = {"provider": "fake", "text": "hm", "tool_calls": [{"name": "stop", "arguments": {}}]}
+    assert render_lines(LogEvent("llm", 0.0, said))[0][0].startswith("llm<  ")
+    assert ui._answered(said) == "the LLM chose stop()"
+    assert ui._answered({"provider": "fake"}) == "the LLM answered without a call"
+    assert ui._answered({"provider": V.NAME}) == "the pilot answered without a call"
+    assert render_lines(LogEvent("llm", 0.0, {**said, "provider": V.NAME}))[0][0].startswith(
+        "pilot<"
+    )
 
 
 def test_one_turn_is_one_turn_and_a_pilot_llm_still_says_what_it_did() -> None:

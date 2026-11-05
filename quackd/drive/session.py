@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from quackd.agent.decision.base import DecisionLLM
     from quackd.agent.decision.catalogue import DecisionMode
     from quackd.agent.decision.commands import Choice, CommandChooser
-    from quackd.agent.providers.base import LLMProvider
+    from quackd.agent.providers.base import LLMProvider, Usage
     from quackd.agent.providers.catalogue import Price
     from quackd.duckfile.schema import DuckFile, DuckFrontmatter
     from quackd.log import Sink
@@ -360,6 +360,9 @@ class DriveSession:
         """Where a goal's camera frames go as they are taken, for the page as `goal_view` is."""
         self.settings = settings or GoalSettings()
         self.stats = Stats()
+        self.usage: Usage | None = None
+        """The tokens its goals' pilots spent, added up by `_charge` for the session's record.
+        None until a goal has been charged."""
         self._count = itertools.count(1)
         self._goal_count = itertools.count(1)
         self._routing: set[Command] = set()
@@ -879,12 +882,14 @@ class DriveSession:
         """A goal's steps and LLM calls are the session's as well, so the session's own
         budgets bound every goal together rather than each one alone. So are the seconds a
         policy drove the body, which are the body's, as a second task file loaded into a session
-        keeps them (`RobotSession.adopt`)."""
+        keeps them (`RobotSession.adopt`). Its tokens are added up too, which no budget bounds,
+        so the session's record can say what its goals spent."""
         spent, mine = goal.executor.budget, self.robot.executor.budget
         if spent is not None and mine is not None:
             mine.steps += spent.steps
             mine.llm_calls += spent.llm_calls
             mine.policy_s += spent.policy_s
+        self.usage = goal.usage if self.usage is None else self.usage + goal.usage
 
     def _vla_refusal(self, text: str) -> str | None:
         """Why the session's VLA pilot cannot take this line, where it flies its goals with one:

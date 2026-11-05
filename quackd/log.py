@@ -30,9 +30,21 @@ from typing import Any
 
 from rich.text import Text
 
-from quackd.agent.providers.pricing import fmt_usd
+from quackd.agent.providers.pricing import VLA_PILOT, fmt_usd
 from quackd.transport.base import Ack, Intent
 from quackd.verbs.watch import EDGE_AFTER, ERRORS_AFTER, LOST_AFTER, STALE_AFTER
+
+
+def asks_no_llm(record: Mapping[str, Any]) -> bool:
+    """Whether a record is of a run a VLA pilot flew, which its `provider` says. That pilot is a
+    rule, so what the record files under `llm` and `llm_id` is the rule's, and no line a person
+    reads of it may say an LLM was asked."""
+    return record.get("provider") == VLA_PILOT
+
+
+def _asked(record: Mapping[str, Any]) -> str:
+    """Who a record's `llm_request` and `llm` went to, in the label column."""
+    return "pilot" if asks_no_llm(record) else "llm"
 
 
 def _llm_id(record: Mapping[str, Any]) -> Any:
@@ -576,7 +588,8 @@ def render_events(
     if k == "run_start":
         adapter = d.get("adapter")
         robot = f"{adapter}:{d.get('transport')}" if adapter else str(d.get("transport"))
-        head = f"{d.get('duck')} provider={d.get('provider')} LLM={_llm_id(d)} robot={robot}"
+        word = "pilot" if asks_no_llm(d) else "LLM"
+        head = f"{d.get('duck')} provider={d.get('provider')} {word}={_llm_id(d)} robot={robot}"
         # Only a detector other than the colour one, which every run before there was a choice
         # used and every run on a simulator still does: those lines stay exactly as they were,
         # in every transcript already written and in every MCP result an LLM reads.
@@ -640,14 +653,14 @@ def render_events(
         # try, so every transcript recorded before quackd asked again replays line for line
         if (attempt := d.get("attempt")) and attempt > 1:
             text += f" (try {attempt})"
-        return [LogLine("llm>", text, "dim")]
+        return [LogLine(f"{_asked(d)}>", text, "dim")]
     if k == "llm":
         if "error" in d and "retry_in_s" in d:
             # a failure quackd will ask again after: a warning, not the run's end, which the
             # red line below is
             return [
                 LogLine(
-                    "llm<",
+                    f"{_asked(d)}<",
                     f"ERROR {d['error']} after {d.get('latency_s', 0):.1f} s, asking again in "
                     f"{d['retry_in_s']:g} s",
                     "yellow",
@@ -657,7 +670,7 @@ def render_events(
         if "error" in d:
             return [
                 LogLine(
-                    "llm<",
+                    f"{_asked(d)}<",
                     f"ERROR {d['error']} after {d.get('latency_s', 0):.1f} s",
                     "red",
                     mark="fail",
@@ -673,7 +686,7 @@ def render_events(
                 )
             out.append(LogLine("think", text, "dim italic", multiline=True))
         if d.get("text"):
-            out.append(LogLine("llm<", str(d["text"]), "", multiline=True))
+            out.append(LogLine(f"{_asked(d)}<", str(d["text"]), "", multiline=True))
         calls = d.get("tool_calls") or []
         if not calls:
             out.append(LogLine("tool", "(no tool call)", "yellow", mark="warn"))

@@ -325,7 +325,9 @@ An answer to a question is no `command`: it is in the row of the call it answere
 questions and your answers are in that goal's own record, with `channel: web` where the page
 asked. A session whose arm has a policy server names it in `run_start`, as a run does.
 
-Its `summary.json` has a `drive` block, this one from the session above:
+Its `summary.json` adds up what the pilot spent on its goals in `llm_calls` and `usage`, beside
+the `provider` that flew them, so `quackd log` says of a session what it says of a run. It also
+has a `drive` block, this one from the session above:
 
 ```json
 {
@@ -347,7 +349,8 @@ All figures are milliseconds:
   the session ran itself, by lane, since a goal's motion is in the goal's own record;
 - `brake_ms` runs from a brake to the stop it sent, over every brake.
 
-Each goal the pilot flew is under `goals/NN-what-you-typed/`, a whole run `quackd log` replays.
+Each goal the pilot flew is under `goals/NN-what-you-typed/`, a whole run `quackd log` replays,
+and that record is where a goal's cost is.
 
 > [!WARNING]
 > **Nothing here has driven a real robot yet.** Drive has run against the mock Microduck and

@@ -138,6 +138,23 @@ def test_a_decision_block_with_no_cost_key_gains_no_cost_counter(
     assert "time" not in out, "and no clock either: it recorded none"
 
 
+def test_a_session_recorded_before_it_added_up_its_goals_claims_no_zeros() -> None:
+    """Before 0.32.0 a session wrote neither key, whatever its goals spent, and a zero read
+    from a key nobody wrote is a claim nobody measured. A run with no such key keeps its three
+    counters, since every run has always written them."""
+    from quackd.cli import run_counters
+
+    old = {"duck": "drive", "steps": 3, "wall_s": 0.2}
+    assert run_counters(old) == ["steps 3", "time 0.2 s"]
+    now = {**old, "llm_calls": 2, "usage": {"input_tokens": 9, "output_tokens": 1}}
+    assert run_counters(now)[:3] == ["steps 3", "LLM calls 2", "tokens 9+1"]
+    assert run_counters({"duck": "a-task", "steps": 3})[:3] == [
+        "steps 3",
+        "LLM calls 0",
+        "tokens 0+0",
+    ]
+
+
 def test_log_survives_a_summary_somebody_edited_by_hand(tmp_path: Path) -> None:
     """`quackd log` is pointed at files people edit, truncate and copy between machines. The
     renderers beside the counter line already shrug at a field that is not what it should be,

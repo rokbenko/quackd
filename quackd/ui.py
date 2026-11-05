@@ -951,15 +951,16 @@ def _answered(data: Mapping[str, Any]) -> str:
     it names the call the LLM chose, which is what the run is about to do, or says that the
     LLM answered without one, which is what the re-prompt that follows is about, or that the
     call failed. Only the first of several calls is named and runs, and the line says so."""
-    from quackd.log import fmt_params
+    from quackd.log import asks_no_llm, fmt_params
 
     if "error" in data:
         return f"the call to {data.get('provider')} failed"
+    who = "the pilot" if asks_no_llm(data) else "the LLM"
     calls = [call for call in data.get("tool_calls") or () if isinstance(call, Mapping)]
     if not calls:
-        return "the LLM answered without a call"
+        return f"{who} answered without a call"
     first = calls[0]
-    chosen = f"the LLM chose {first.get('name')}({fmt_params(first.get('arguments'))})"
+    chosen = f"{who} chose {first.get('name')}({fmt_params(first.get('arguments'))})"
     return chosen if len(calls) == 1 else f"{chosen}, the first of {len(calls)}"
 
 
