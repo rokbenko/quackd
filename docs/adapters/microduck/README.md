@@ -12,6 +12,12 @@ The rest of this page is the robot's upstreams, read at pinned commits: `robotd`
 quackd never sends it, what the robot is as numbers, how to get a picture off one, and the model
 and policies the physics simulator runs.
 
+Its verbs and its transport also drive [Huebot](../huebot/README.md), whose shim is to answer the
+same calls. What differs is one record each, `quackd_microduck/body.py` and `quackd_huebot/body.py`
+([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)), so a fix to either
+is a fix to both, and a Microduck-only thing in them, mediad's camera, odometry, the map, the head,
+stays behind that record.
+
 ## Upstream API
 
 Read: 2026-10-08, pinned at [`d818af5`](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1)

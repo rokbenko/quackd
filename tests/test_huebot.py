@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import http.client
 import io
 import itertools
@@ -56,11 +57,11 @@ from quackd_huebot import (
     offered_skill_verbs,
 )
 from quackd_huebot import upstream_api as up
-from quackd_huebot.transports import jsonrpc_unix
-from quackd_huebot.transports.jsonrpc_unix import (
+from quackd_huebot.body import HUEBOT, LOOK_REFUSED, NO_ADDRESS
+from quackd_huebot.verbs import SKILLS_OF, STAND_UP_POLL_S, STAND_UP_WAIT_S
+from quackd_microduck.transports import jsonrpc_unix
+from quackd_microduck.transports.jsonrpc_unix import (
     HELD_FOR_A_VERB,
-    LOOK_REFUSED,
-    NO_ADDRESS,
     SNAPSHOT_MAX_BYTES,
     JsonRpcUnixTransport,
     NotAStill,
@@ -68,7 +69,9 @@ from quackd_huebot.transports.jsonrpc_unix import (
     StillTooSlow,
     fetch_still,
 )
-from quackd_huebot.verbs import SKILLS_OF, STAND_UP_POLL_S, STAND_UP_WAIT_S
+
+Shim = functools.partial(JsonRpcUnixTransport, body=HUEBOT)
+"""The family's transport, on Huebot's body, as `make` builds it."""
 
 #: Every verb, for the tests that run them through an executor and its allowlist.
 EVERYTHING = parse_duck_text(
@@ -490,8 +493,8 @@ def test_the_head_fades_for_nobody() -> None:
     Microduck that glances on its own is a second and a half. Huebot is sent no look at all, so
     there is nothing to wait out, on any backend."""
     assert HuebotAdapter(MockTransport()).head_fade_s == 0.0
-    assert HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1")).head_fade_s == 0.0
-    assert HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1")).frames_upright is False
+    assert HuebotAdapter(Shim("tcp://127.0.0.1:1")).head_fade_s == 0.0
+    assert HuebotAdapter(Shim("tcp://127.0.0.1:1")).frames_upright is False
 
 
 # ── every verb, offline ─────────────────────────────────────────────────────────────────
@@ -616,7 +619,7 @@ async def test_connect_shakes_hands_subscribes_and_narrows_to_what_the_shim_has(
 async def test_no_address_is_refused_naming_the_ssh_forward(address: str | None) -> None:
     """The shim is wherever its maker put it, so there is no default to fall back on, and the
     refusal names the forward that reaches it."""
-    t = JsonRpcUnixTransport(address)
+    t = Shim(address)
     with pytest.raises(TransportError) as refused:
         await t.connect()
     assert str(refused.value) == NO_ADDRESS
@@ -708,7 +711,7 @@ def test_a_robot_command_refuses_a_huebot_with_no_address_in_one_line(
 @pytest.mark.skipif(sys.platform != "win32", reason="the refusal is Windows' own")
 async def test_a_unix_socket_on_windows_names_the_forward() -> None:
     with pytest.raises(TransportError, match=r"ssh -L 9870:<socket> <huebot>"):
-        await JsonRpcUnixTransport("unix:///run/huebot.sock").connect()
+        await Shim("unix:///run/huebot.sock").connect()
 
 
 async def test_a_shim_older_than_the_floor_is_refused() -> None:
@@ -1547,7 +1550,7 @@ def test_a_close_stops_the_fetch_still_reading() -> None:
     ):
 
         async def run() -> None:
-            camera = JsonRpcUnixTransport(fake.address, camera_url=url, camera_wait_s=0.3)
+            camera = Shim(fake.address, camera_url=url, camera_wait_s=0.3)
             adapter = HuebotAdapter(camera)
             await adapter.connect()
             assert camera.camera_working is False

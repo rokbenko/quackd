@@ -4,19 +4,21 @@
 delegates every call to one of those transports and adds what 0.4 needs: a manifest, the
 named preconditions the manifest references, and the Microduck's own verbs. Wrapping
 rather than moving is how "zero behaviour change" is made mechanically true (ADR-0017).
+
+Another robot that answers `robotd`'s JSON-RPC is a body of this family (ADR-0075): a `Body` of its
+own (`quackd_microduck.body`), and a package that hands it to `manifest_for`, `MicroduckAdapter` and
+`transports.factory.make_transport`, as `quackd_huebot` does.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Sequence
 from typing import Any
 
 from PIL import Image
 
 from quackd.adapters.base import AdapterError, RestResult, one_camera_url, refuse_rest_pose
 from quackd.adapters.manifest import (
-    Datasheet,
-    Figure,
     Frame,
     Health,
     RobotManifest,
@@ -39,83 +41,27 @@ from quackd.transport.base import (
 )
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
-from quackd_microduck.verbs import MICRODUCK_VERBS, microduck_conditions
+from quackd_microduck.body import (
+    BLURB,
+    DATASHEET,
+    MAP_BACKENDS,
+    MICRODUCK,
+    ROOM_BACKENDS,
+    Body,
+)
+from quackd_microduck.verbs import (
+    MICRODUCK_VERBS,
+    conditions_for,
+    microduck_conditions,
+    verbs_for,
+)
 
 __version__ = "0.32.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""
 
-BACKENDS = ("sim2d", "mujoco", "mock", "jsonrpc")
-
-# The 0.3 descriptions of the renamed verbs, so an old duck's tool schemas are byte-identical.
-_MOVE_DESCRIPTION = (
-    "Walk with a velocity for a duration. Use small values; the robot is 25 cm tall."
-)
-_GO_TO_DESCRIPTION = (
-    "Walk toward a detected target and stop at a distance. Closes the loop on the camera itself."
-)
-_SEARCH_SCAN_DESCRIPTION = "Rotate in steps, looking for a target. Returns where it was seen."
-_APPROACH_AND_DESCRIPTION = "walk_to a target, then run another verb (kick, grab)."
-BLURB = "a small biped duck robot (25 cm, 800 g)"
-
-DATASHEET = Datasheet(
-    mass_kg=Figure(value=0.8, confidence="official", source="the Pollen Robotics README"),
-    height_m=Figure(value=0.25, confidence="official", source="the Pollen Robotics README"),
-    dof=Figure(
-        value=15,
-        confidence="official",
-        source="the Pollen Robotics README",
-        note="XL330 class servos, which is an estimate",
-    ),
-    manipulator="beak",
-    tethered=False,
-    terrain="indoor_flat",
-    not_rated=["stairs", "steps", "slopes"],
-    cannot=[
-        "carry, hold or push anything: the beak scoops at the floor and nothing else",
-        "climb or descend a step",
-        "hold a heading for long without a landmark: the IMU has no magnetometer, so heading "
-        "drifts",
-    ],
-    notes=[
-        # It said the caps were a software clamp in robotd, which clamps no twist at any release
-        # quackd has read (upstream_api.NO_TWIST_CLAMP). They are this manifest's own `limits`,
-        # which quackd.verbs.core holds every twist a verb sends to (speed_limits), and which
-        # `move` refuses to be asked past.
-        "The speed caps are quackd's own clamp on the twists it sends, not a measured hardware "
-        "maximum: robotd clamps no twist",
-        "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
-        # It said the duck could get itself upright again, which was robotd's limp_fall. On
-        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT). From
-        # daemon-v0.16.2 it is on again, and robotd hands a duck it catches falling back to a
-        # policy upstream says gets it up, which nobody has seen under quackd. It catches none
-        # during a skill, a ground pick or a sit, so none during quackd's kick or grab
-        # (upstream_api.LIMP_FALL). This is the sheet a pilot judges a task against before
-        # anything moves, so it says what daemon-v0.16.1 and daemon-v0.16.2 onwards do, and
-        # promises no get-up. Two notes, since a note holds 300 characters.
-        "It falls, and may not get up again by itself. By default, robotd on daemon-v0.16.1 "
-        "does nothing about a fall but report it",
-        "From daemon-v0.16.2, by default, robotd goes limp in a fall it predicts while the duck "
-        "walks or stands, though not during a kick, a grab or a sit, poses the duck and hands it "
-        "back to its walking policy, which upstream says gets it up",
-    ],
-)
-
-
-PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
-"""The backends that say where the duck is before anything connects: robotd's contact odometry
-(`upstream_api.STATE_ODOM`) and the mock's scripted pose. A simulator says where the duck is only
-in a room it was given (`ROOM_BACKENDS`)."""
-
-MAP_BACKENDS = ("jsonrpc",)
-"""The backends that reach the duck's own `mapd` (`--map-address`): a real duck, beside its
-robotd. A simulator keeps its own map of the room it was given (`ROOM_BACKENDS`)."""
-
-ROOM_BACKENDS = ("sim2d", "mujoco")
-"""The backends a room (`--room`) is laid out in. A simulator given one keeps a map of it the way
-the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
-real duck's room is the one it stands in, and the mock scripts its own."""
+BACKENDS = MICRODUCK.backends
 
 NO_MAP_WHY = (
     "it says where it is by odometry alone and keeps no map on this connection, and exploring "
@@ -137,9 +83,21 @@ NO_CAMERA_WHY = "it has no camera on this connection, and find looks for things 
 """Why `find` is not offered on a duck that explores but has no frame to look in."""
 
 
-def microduck_manifest(
+def offered_skill_verbs(body: Body, skills: Collection[str] | None) -> list[str]:
+    """The verbs that send `robot.do` a body that gates them offers (`Body.skill_verbs`): every one
+    while nothing has said which skills it has, which is the description `validate` reads and the
+    mock, and on a connected robot each one whose every skill it listed."""
+    return [
+        verb
+        for verb, needs in (body.skill_verbs or {}).items()
+        if skills is None or all(skill in skills for skill in needs)
+    ]
+
+
+def manifest_for(
+    body: Body,
     backend: str,
-    robot_id: str = "microduck",
+    robot_id: str | None = None,
     *,
     camera: bool = True,
     camera_fov_deg: float | None = None,
@@ -147,8 +105,9 @@ def microduck_manifest(
     places: bool | None = None,
     mapped: bool | None = None,
     sized: bool | None = None,
+    skills: Collection[str] | None = None,
 ) -> RobotManifest:
-    """The Microduck as data. Static: no connection needed (validate, announce, doctor).
+    """A body of this family as data. Static: no connection needed (validate, announce, doctor).
 
     `places` is whether the duck says where it is on this connection, which settles whether it
     can name places and list them (`quackd.verbs.places`). None is what the backend promises
@@ -178,44 +137,53 @@ def microduck_manifest(
     `camera_fov_assumed` is the words of the assumption that lens rests on, when nobody measured
     it, which go in the extras under `quackd.perception.ASSUMED_LENS`: the detector then
     measures through the lens uncalibrated, and says to pass `--fov-deg`.
+
+    `skills` is what the robot's `robot.subscribe` answer listed, on a connected robot, and None
+    everywhere else. On a body that gates its skills, each verb that sends `robot.do` is declared
+    only when every skill it sends is among them, so a skill the robot does not have is never a
+    verb the pilot is offered (`Body.skill_verbs`). Any other body takes no notice of it.
     """
+    verbs = verbs_for(body)
+    texts = body.core_texts
     core = [
         verb_spec(CORE["report_state"], core=True),
         verb_spec(CORE["stop"], core=True),
-        verb_spec(MICRODUCK_VERBS["say"], core=True),
-        verb_spec(CORE["move"], core=True, description=_MOVE_DESCRIPTION),
+        verb_spec(verbs["say"], core=True),
+        verb_spec(CORE["move"], core=True, description=texts["move"]),
     ]
     if camera:
         core += [
             verb_spec(CORE["observe"], core=True),
-            verb_spec(CORE["go_to"], core=True, description=_GO_TO_DESCRIPTION),
-            verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
-            verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
+            verb_spec(CORE["go_to"], core=True, description=texts["go_to"]),
+            verb_spec(CORE["search_scan"], core=True, description=texts["search_scan"]),
+            verb_spec(CORE["approach_and"], core=True, description=texts["approach_and"]),
         ]
-    offers_places = places if places is not None else backend in PLACES_BACKENDS
+    offers_places = places if places is not None else backend in body.places_backends
     if offers_places:
         core += [
             verb_spec(CORE[name], core=True)
             for name in ("map", "mark_place", "forget_place", "go_to_place")
         ]
-    keeps_map = mapped if mapped is not None else backend in MAP_BACKENDS or places is True
-    knows_size = sized if sized is not None else backend in ROOM_BACKENDS
-    offers_explore = offers_places and keeps_map and knows_size
-    offers_find = offers_explore and camera
+    keeps_map = mapped if mapped is not None else backend in body.map_backends or places is True
+    knows_size = sized if sized is not None else backend in body.room_backends
+    offers_explore = offers_places and keeps_map and knows_size and "explore" in verbs
+    offers_find = offers_explore and camera and "find" in verbs
+    offered = offered_skill_verbs(body, skills)
+    gated = body.skill_verbs or {}
     # `watch` looks through the camera, `explore` walks by a map and `find` does both, so each is
     # a verb of a duck that has what it needs, declared below
     extensions = [
         verb_spec(v, core=False)
-        for n, v in MICRODUCK_VERBS.items()
-        if n not in ("say", "watch", "explore", "find")
+        for n, v in verbs.items()
+        if n not in ("say", "watch", "explore", "find") and (n not in gated or n in offered)
     ]
-    if camera:
-        extensions.append(verb_spec(MICRODUCK_VERBS["watch"], core=False))
+    if camera and "watch" in verbs:
+        extensions.append(verb_spec(verbs["watch"], core=False))
     if offers_explore:
-        extensions.append(verb_spec(MICRODUCK_VERBS["explore"], core=False))
+        extensions.append(verb_spec(verbs["explore"], core=False))
     if offers_find:
-        extensions.append(verb_spec(MICRODUCK_VERBS["find"], core=False))
-    sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
+        extensions.append(verb_spec(verbs["find"], core=False))
+    sensors: list[Sensor] = list(body.sensors)
     if camera:
         sensors.insert(0, "camera")
     # The 0.3 attachments, walk, kick and grab needing standing and sit, stand and gaze not
@@ -224,7 +192,7 @@ def microduck_manifest(
     # the verb starts, and what stops a duck picked up halfway through one is the transport's
     # hold on `robot.move`. The simulators never report `unknown`, so on them the one change is
     # that a seated or fallen duck is refused the three, where it used to be steered while its
-    # legs ignored every twist.
+    # legs ignored every twist. Each applies only to a verb this body declares here.
     preconditions: dict[str, list[str]] = {
         "move": ["standing"],
         "kick": ["standing"],
@@ -232,21 +200,18 @@ def microduck_manifest(
         "sit": ["not_fallen"],
         "stand": ["not_fallen"],
         "gaze": ["not_fallen"],
-    }
-    if camera:
-        preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
+        "go_to": ["standing"],
+        "search_scan": ["standing"],
+        "approach_and": ["standing"],
         # the head alone, as `gaze`: a seated duck may watch, and a fallen or held one may not
-        preconditions["watch"] = ["not_fallen"]
-    if offers_places:
-        preconditions["go_to_place"] = ["standing"]  # it walks; where it is the verb checks
-    if offers_explore:
-        preconditions["explore"] = ["standing"]
-    if offers_find:
-        preconditions["find"] = ["standing"]
-    # quackd's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
-    # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
-    # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.
-    limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.0}
+        "watch": ["not_fallen"],
+        "go_to_place": ["standing"],  # it walks; where it is the verb checks
+        "explore": ["standing"],
+        "find": ["standing"],
+    }
+    declared = {spec.name for spec in core + extensions}
+    preconditions = {verb: names for verb, names in preconditions.items() if verb in declared}
+    limits = dict(body.limits)
     extras: dict[str, Any] = {}
     # what this duck lacks here, said beside its body where the pilot judges a task; the
     # datasheet is the body's own, the same on every backend
@@ -259,23 +224,52 @@ def microduck_manifest(
         limits["camera_fov_deg"] = float(camera_fov_deg)
         if camera_fov_assumed:
             extras[ASSUMED_LENS] = camera_fov_assumed
+    # A claim about hardware, which a body that has not shown its deadman does not make (`Body`).
+    deadman = body.claims_deadman(backend)
     return RobotManifest(
-        id=robot_id,
-        vendor="pollen-robotics",
-        model="microduck",
+        id=robot_id or body.name,
+        vendor=body.vendor,
+        model=body.model,
         embodiment="biped",
         mobility="legged",
-        intents=["twist", "skill", "gaze", "sound", "pose"],
+        intents=list(body.intents),
         sensors=sensors,
         verbs=core + extensions,
         preconditions=preconditions,
-        safety_authority=SafetyAuthority(native="robotd_deadman", deadman=True, heartbeat_hz=2.0),
+        safety_authority=SafetyAuthority(
+            native="robotd_deadman" if deadman else "none", deadman=deadman, heartbeat_hz=2.0
+        ),
         frame=Frame(reference="body"),
         limits=limits,
         backend=backend,
-        blurb=BLURB,
-        datasheet=DATASHEET,
+        blurb=body.blurb,
+        datasheet=body.datasheet,
         extras=extras,
+    )
+
+
+def microduck_manifest(
+    backend: str,
+    robot_id: str = "microduck",
+    *,
+    camera: bool = True,
+    camera_fov_deg: float | None = None,
+    camera_fov_assumed: str | None = None,
+    places: bool | None = None,
+    mapped: bool | None = None,
+    sized: bool | None = None,
+) -> RobotManifest:
+    """The Microduck as data: `manifest_for` over its own body, which says what each of these is."""
+    return manifest_for(
+        MICRODUCK,
+        backend,
+        robot_id,
+        camera=camera,
+        camera_fov_deg=camera_fov_deg,
+        camera_fov_assumed=camera_fov_assumed,
+        places=places,
+        mapped=mapped,
+        sized=sized,
     )
 
 
@@ -287,24 +281,17 @@ def _lens(value: Any) -> float | None:
     return None
 
 
-def _robotd_line(robotd: dict[str, Any]) -> str:
-    """`0.16.1, API v41, revision d818af5`: the release, the version and the build that answered
-    `hello`. robotd sends null for a release number its own build cannot parse as one, and for
-    the revision of a build that did not come out of its CI, so either can be missing."""
-    build = robotd.get("daemon_version") or "a build that names no release"
-    revision = robotd.get("revision") or "none"
-    return f"{build}, API v{robotd.get('api_version')}, revision {revision}"
-
-
 class MicroduckAdapter:
-    """A `RobotAdapter` over any of the Microduck transports."""
+    """A `RobotAdapter` over any of the Microduck transports, for the body its class names. A robot
+    of this family in another package subclasses it and names its own (`quackd_huebot`)."""
 
     name = "microduck"
+    body = MICRODUCK
 
-    def __init__(self, transport: DuckTransport, *, robot_id: str = "microduck") -> None:
+    def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
         self.transport = transport
         self.backend = transport.name
-        self.robot_id = robot_id
+        self.robot_id = robot_id or self.body.name
         self.manifest: RobotManifest | None = None
         self.last_look: tuple[float, float, float] | None = None
         """The trunk-frame point of the newest look the duck accepted, or None before any:
@@ -326,7 +313,11 @@ class MicroduckAdapter:
         # transport learns it. The simulators report none: the detector knows their lens.
         assumed = getattr(self.transport, "camera_fov_assumed", None)
         source = spatial_of(self.transport)
-        self.manifest = microduck_manifest(
+        # The skills a robot listed, which a gated body's verbs that send `robot.do` are offered
+        # for. The mock has no list, and is described whole.
+        listed = getattr(self.transport, "skills", None)
+        self.manifest = manifest_for(
+            self.body,
             self.backend,
             self.robot_id,
             camera=camera,
@@ -339,6 +330,7 @@ class MicroduckAdapter:
             # and mapd's map comes with no body radius to plan a way round a room by
             mapped=source is not None and source.has_grid and source.view is not None,
             sized=source is not None and bool(source.footprint_m),
+            skills=tuple(str(s) for s in listed) if isinstance(listed, Sequence) else None,
         )
         return self.manifest
 
@@ -375,8 +367,9 @@ class MicroduckAdapter:
         # Which robotd answered, a row in doctor's health block, so the release a robot runs is
         # on the screen at the checklist's go/no-go gate whether or not it is the one quackd
         # read. Only a real robot says; the simulators and the mock have no such record.
-        if isinstance(robotd := state.extras.get("robotd"), dict):
-            extras["robotd"] = _robotd_line(robotd)
+        key = self.body.health_key
+        if isinstance(hello := state.extras.get(key), dict):
+            extras[key] = self.body.health_line(hello)
         return Health(ok=True, battery_percent=state.battery_percent, extras=extras)
 
     async def heartbeat(self) -> None:
@@ -513,10 +506,10 @@ class MicroduckAdapter:
         await self.transport.sleep(seconds)
 
     def preconditions(self) -> dict[str, Precondition]:
-        return microduck_conditions()
+        return conditions_for(self.body)
 
     def implementations(self) -> dict[str, Verb]:
-        return dict(MICRODUCK_VERBS)
+        return dict(verbs_for(self.body))
 
     # ── sim-only passthroughs the flock and the recorder use today ──────────────────
 
@@ -629,19 +622,27 @@ def make(
         )
     except RoomError as e:
         raise AdapterError(str(e)) from None
-    return MicroduckAdapter(transport, robot_id=robot_id or "microduck")
+    return MicroduckAdapter(transport, robot_id=robot_id)
 
 
 __all__ = [
     "BACKENDS",
+    "BLURB",
+    "DATASHEET",
+    "MICRODUCK",
     "MICRODUCK_VERBS",
+    "Body",
     "MicroduckAdapter",
     "conditions",
+    "conditions_for",
     "describe",
     "implementations",
     "make",
+    "manifest_for",
     "microduck_conditions",
     "microduck_manifest",
+    "offered_skill_verbs",
+    "verbs_for",
 ]
 
 

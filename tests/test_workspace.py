@@ -112,6 +112,23 @@ def test_an_adapter_declares_the_entry_point_that_makes_it_findable(member: Path
     assert declared == {name: f"quackd_{name}"}, declared
 
 
+def test_huebot_installs_the_family_it_is_a_body_of_in_the_same_window() -> None:
+    """Its verbs and its transport are the Microduck's package's (ADR-0075), so a Huebot with no
+    Microduck package does not import at all, and one with another release's runs code nobody
+    tested it on. `scripts/set_version.py` moves every window it finds, which this holds too: a
+    release that moved one of the two would leave the package uninstallable."""
+    deps = _toml(REPO / "adapters" / "huebot" / "pyproject.toml")["project"]["dependencies"]
+    core = next(d for d in deps if d.startswith("quackd>="))
+    family = next(d for d in deps if d.startswith("quackd-microduck>="))
+    assert family.removeprefix("quackd-microduck") == core.removeprefix("quackd"), deps
+    sources = _toml(REPO / "adapters" / "huebot" / "pyproject.toml")["tool"]["uv"]["sources"]
+    assert sources["quackd-microduck"] == {"workspace": True}
+    script = (REPO / "scripts" / "set_version.py").read_text(encoding="utf-8")
+    pattern = re.search(r"WINDOW = re\.compile\(r'(.+)'\)", script)
+    assert pattern, "scripts/set_version.py has no WINDOW to read"
+    assert len(re.findall(pattern.group(1), f"{core!r} {family!r}".replace("'", '"'))) == 2
+
+
 def test_the_core_publishes_an_extra_for_every_robot_it_names() -> None:
     """The catalogue is what `list-adapters` prints on a machine with nothing installed, so
     the extra it names has to be one that exists and that pulls in that adapter's package."""

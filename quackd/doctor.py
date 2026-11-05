@@ -868,8 +868,10 @@ def probe(
             if warning := getattr(transport, key, None):
                 told[key] = warning
         # what became of the robot's own map, read before the disconnect ends it
-        if callable(report := getattr(transport, "mapd_report", None)):
-            told["mapd"] = report()
+        report = getattr(transport, "mapd_report", None)
+        # a robot of a family whose other bodies keep a map says None, and has no row
+        if callable(report) and (mapd := report()) is not None:
+            told["mapd"] = mapd
             told["places_by"] = (
                 "mapd"
                 if told["mapd"].get("state") == "answered"

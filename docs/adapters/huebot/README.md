@@ -32,12 +32,16 @@ quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 There is no simulator: the Microduck's `sim2d` and `mujoco` backends model the Microduck's
 body and gait, which are not Huebot's.
 
-The adapter is the Microduck's, copied and renamed rather than imported, so the two can diverge as
-the robots do. It keeps the protocol, the version gate, the check that the robot took each twist,
-the posture allowlist, the hold on a walk once the robot stops standing, the heartbeat and the
-reliance on the robot's own deadman. It leaves out what the shim does not answer yet, `robot.look`,
-so there is no `gaze` and no `watch`, and the Microduck's camera, which comes from a daemon Huebot
-does not run. It has no `grab` either, until Huebot's maker says what `ground_pick` does on Huebot.
+Huebot is a body of the Microduck's family
+([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)): its package is one
+record, [`body.py`](../../../adapters/huebot/src/quackd_huebot/body.py), over the verbs and the
+transport in `quackd-microduck`, which `quackd[huebot]` installs with it. So it has the protocol,
+the version gate, the check that the robot took each twist, the posture allowlist, the hold on a
+walk once the robot stops standing, the heartbeat and the reliance on the robot's own deadman, and a
+fix to any of them is a fix for both robots. It leaves out what the shim does not answer yet,
+`robot.look`, so there is no `gaze` and no `watch`, and the Microduck's camera, which comes from a
+daemon Huebot does not run, so a `--camera-url` ending in `/frame` is a snapshot server like any
+other here. It has no `grab` either, until Huebot's maker says what `ground_pick` does on Huebot.
 
 ## What Huebot's shim must answer
 
@@ -315,8 +319,7 @@ The protocol was read on 2026-10-08, in the Microduck's own source, pinned at
 (`daemon-v0.16.1`), **API v41**, the pin the [Microduck adapter](../microduck/README.md) reads it
 at. Every name quackd spells lives in
 [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../../adapters/huebot/src/quackd_huebot/upstream_api.py),
-copied from the Microduck's rather than imported, and a test holds the two to agree while they
-read one pin.
+which imports the protocol's from the Microduck's by name, so a re-pin of the one moves the other.
 
 Huebot's side is the maker's word: an email to Rok Benko of 2026-10-15, which is not public,
 and the maker's page, [ce-net.com/huebot](https://ce-net.com/huebot), read on 2026-10-20. The

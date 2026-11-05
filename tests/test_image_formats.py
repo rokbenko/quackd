@@ -136,10 +136,12 @@ async def _open_duck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> An
 
 
 async def _microduck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+    from quackd_microduck.transports import jsonrpc_unix
 
-    _answers_with(raw, monkeypatch)
-    link = JsonRpcUnixTransport("tcp://127.0.0.1:9", camera_url="http://127.0.0.1:9/frame")
+    monkeypatch.setattr(jsonrpc_unix, "fetch_still", lambda *a, **k: raw)
+    link = jsonrpc_unix.JsonRpcUnixTransport(
+        "tcp://127.0.0.1:9", camera_url="http://127.0.0.1:9/frame"
+    )
     try:
         return await link._fetch_frame()
     except (ValueError, Image.DecompressionBombError):  # what `_camera_loop` keeps as the error
@@ -147,11 +149,12 @@ async def _microduck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> An
 
 
 async def _huebot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_huebot.transports import jsonrpc_unix
+    from quackd_huebot.body import HUEBOT
+    from quackd_microduck.transports import jsonrpc_unix
 
     monkeypatch.setattr(jsonrpc_unix, "fetch_still", lambda *a, **k: raw)
     link = jsonrpc_unix.JsonRpcUnixTransport(
-        "tcp://127.0.0.1:9", camera_url="http://127.0.0.1:9/still.jpg"
+        "tcp://127.0.0.1:9", body=HUEBOT, camera_url="http://127.0.0.1:9/still.jpg"
     )
     try:
         return await link._fetch_frame()

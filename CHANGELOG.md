@@ -11,6 +11,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Added
 
+- **A robot that answers `robotd`'s calls is one record over the Microduck's package.**
+  `quackd_microduck.body.Body` holds what differs between two such robots: the description, the verbs
+  it has, what quackd's sentences call it and what answers for it, and whether it has a `mediad`, a map
+  and a head. `manifest_for`, `verbs_for`, `conditions_for` and `make_transport(body=...)` take one, and
+  a package over the family subclasses `MicroduckAdapter` and names its own. Huebot is the first, and
+  [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) has the four files it
+  takes.
 - **Every backend says how far it has got, in one of four words.** `quackd list-adapters` and
   `quackd doctor` print a tier for each backend: 📄 described, a body quackd only describes; ✅ rehearsed,
   a simulator or a mock that runs whole tasks in CI; 🧪 bound, code that reaches a real robot and has never
@@ -54,6 +61,44 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2 runs to the
   end in it.
 
+### Changed
+
+- **`quackd-huebot` is a body over `quackd-microduck`, and installs it.** The Huebot package was the
+  Microduck's copied and renamed on 2026-10-20, and two fixes since had to land in both by hand. It is
+  one record now, `quackd_huebot/body.py`, over one set of verbs and one transport, as
+  [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says. `quackd[huebot]`,
+  `--robot huebot:jsonrpc`, a registered Huebot and everything a pilot is told read as they did, and
+  every description either robot can give hashes as it did, which
+  `tests/golden/manifest_digests.json` now holds. What changes for you: nothing to do, one more package
+  in the install, and `quackd_huebot.transports` is gone, so code importing that module imports
+  `quackd_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`.
+
+### Fixed
+
+- **A Microduck on a camera that streams is told so at connect.** An MJPEG URL answers with a body that
+  never ends, and the transport read it whole, in a thread nothing could stop, so a connect waited out
+  its time, said only that no frame came, and left the thread reading past the run's end. A fetch is
+  bounded now, as Huebot's copy had learned: 3 s from the request to the last byte, 8 MB, a
+  `multipart/*` or a redirect named and refused, and a close that ends a fetch under way. What changes
+  for you: a camera that sent one picture larger than 8 MB, which no robot's camera here does, is
+  refused, and a `--camera-url` that redirects has to name where it redirects to.
+- **A safety flag that is not a JSON boolean no longer reads as true or false on a Microduck.** A
+  `fallen` of `"false"` read as a duck on the floor and a `picked_up` of `"false"` as a duck in
+  somebody's hands, and a null `fallen` as a detector saying all clear. Null now reads as the key being
+  absent, and anything else as `unknown`, with `extras.safety_unread` quoting the value and every walk
+  and `stand_up` refused.
+- **A `battery` that is not an object no longer stops every verb on a Microduck.** A `robot.health`
+  answering `battery: 80` raised out of every state read, and the executor reads the robot before each
+  verb. It reads as no battery now.
+- **A long policy label is quoted only so far.** A peer decides how long a label is, and one of a
+  megabyte went whole into every refusal that quotes `posture_reason` and into the log. 60 characters
+  are quoted.
+- **`stand_up` times its wait by the transport's clock on a Microduck, and says how long it waited.** It
+  counted its polls, so a slow link ran past what it said it waited, and it called a duck upright on
+  posture alone. A duck is called upright now only where something reports falls and nobody holds it,
+  the summary reads `upright after 3.2 s` where it read `upright`, the result carries `waited_s`, and an
+  unreadable safety flag ends the wait.
+
 ### Documentation
 
 - **Five SO-101 examples reach forward instead of raising the shoulder into the desk.** E116, E117,
@@ -76,9 +121,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the three records describe lands in 0.33.0 behind them.
 - **The README shows how an intent reaches a robot, in one picture.** Its *Architecture* section and
   [docs/concepts/architecture.md](docs/concepts/architecture.md) gain the four layers an intent passes
-  through: the body, data and one per robot, the one layer of the four the LLM reads; a behaviour
-  family, what bodies of a kind do alike; a binding by one of three routes; and a transport that moves
-  bytes. Two SVGs, for a
+  through: the body, data and one per robot, which is all the LLM reads; a behaviour family, what bodies
+  of a kind do alike; a binding by one of three routes; and a transport that moves bytes. Two SVGs, for a
   light page and a dark one, are drawn by [docs/assets/architecture.py](docs/assets/architecture.py) from
   the catalogue, so each robot sits where its row's `family` and `route` put it, and a test fails if a
   committed file is not what the script draws or a robot is missing from a box.
