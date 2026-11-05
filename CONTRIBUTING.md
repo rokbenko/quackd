@@ -380,6 +380,17 @@ every SDK name in the package's `upstream_api.py` with a pinned link and a row i
 extra; never send the SDK's "go limp" call; write `docs/adapters/<name>/README.md` listing
 every ref; and arrive 🧪 in the status tables until someone runs it against the real thing.
 
+Two more rules since 2026-11-05. An adapter is a family, a body and a binding, and only the body
+is one per robot ([ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)):
+a robot of a kind a package already drives, or one that speaks a protocol a package already
+speaks, is a body record in that package and a thin distribution of its own, not a copy. And a
+backend that reaches a real robot enters this repository only with a named owner and a date for
+its first hardware run ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)),
+which the catalogue row carries and a test holds. A robot you cannot run can still join: as a
+described body, one YAML under `quackd/adapters/bodies/` with its maker's figures and a source
+for each ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)),
+which is the cheapest row in the catalogue and the honest one.
+
 ## Working agreements
 
 - **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`).

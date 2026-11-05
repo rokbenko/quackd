@@ -2,6 +2,15 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-02 · Implemented in Phase 1 of 0.4 ([design](../design/multi-robot.md))
 
+**Amended 2026-11-05 by [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md):**
+"adding a robot means one package" holds for a robot of a new kind on a new route. A robot of a
+kind a package already drives, or one that speaks a protocol a package already speaks, is a body
+record in that package, data the package loads, plus a thin distribution that keeps its name;
+and a robot nobody here can run is one YAML in the core
+([ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). The manifest is still
+what decides which verbs exist, and `describe()` still returns it without an SDK; what changed is
+that a body's manifest is loaded from its record rather than built by code of its own.
+
 **Amended 2026-09-28 by [ADR-0048](0048-policies-are-the-arms-executor.md):** two things the decision below takes as given have
 changed. A verb's parameter schema no longer comes from its adapter alone. A `duck: 3` task
 file's `policy` section narrows `manipulate`'s `instruction` to the instructions it lists, as an

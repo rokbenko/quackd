@@ -1,6 +1,14 @@
 # ADR-0022: Every SDK-facing adapter owns its own VERIFIED / UNVERIFIED file
 
-**Status:** accepted · **Date:** 2026-09-02 · Extends ADR-0006 · Implemented in Phases 2 and 5 of 0.4 ([design](../design/multi-robot.md))
+**Status:** accepted, amended · **Date:** 2026-09-02 · Extends ADR-0006 · Implemented in Phases 2 and 5 of 0.4 ([design](../design/multi-robot.md))
+
+**Amended 2026-11-05 by [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)
+and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md):** a package
+that speaks a protocol another package already speaks imports that package's VERIFIED refs by
+name rather than copying them, so one re-pin moves both; the UNVERIFIED refs about its own
+maker's promises stay in its own file, and the containment test holds them to its own package
+as before. "No adapter row gets ✅ unless we exercised it against its real target ourselves" is
+now one of four tiers, described, rehearsed, bound and verified, kept as data on every backend.
 
 ## Context
 

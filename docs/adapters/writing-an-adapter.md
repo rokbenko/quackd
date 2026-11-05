@@ -483,6 +483,34 @@ under a registered name with a rest pose recorded ([adapters/status.md](status.m
 body here any of this has been tested against. Every other adapter is still 🧪 on the backend
 that reaches its robot, which is the state this page is mostly written for.
 
+## Three layers, four tiers, one rule
+
+An adapter is three things in one package, and only the first is one per robot
+([ADR-0075](../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). The **body** is
+data: the manifest, the datasheet with a source per figure, the verbs offered and the verbs
+withheld with the reason, the limits, the safety authority, the rest pose. The **family** is the
+code every body of a kind needs, shared by the bodies that declare it, and it is extracted only
+once two bodies share it. The **binding** is one of the three routes above and nothing else.
+So before writing a package, ask which of the three the robot really adds. A robot of a kind a
+package already drives, or one that speaks a protocol a package already speaks, is a body
+record in that package plus a thin distribution of its own, which keeps its name, its extra and
+its entry point and depends on the family's package in the same version window: Huebot over the
+Microduck's package is the first, in 0.33.0, and its page says what that looks like once it is
+there.
+
+Every backend carries a **tier**
+([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)): described,
+a body quackd lists and reasons about from one YAML and drives no part of; rehearsed, a mock or
+a simulator; bound, a backend that reaches a real robot and has never met one; verified, run on
+hardware by a named person on a date. The marks in the tables above are the tiers' marks.
+
+And one **rule**, since 2026-11-05: bound code enters this repository only with a named owner
+and a date for its first hardware run, kept in the catalogue row and held by a test. A robot
+nobody here can run enters as a described body, one YAML under `quackd/adapters/bodies/`
+([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)), or is
+published out of tree as the last section says, where it needs nothing from this repository.
+The nine adapters that were here before the rule are grandfathered, and their rows say so.
+
 ## The checklist
 
 Steps 1 to 5 are the adapter. Everything after them is what quackd owes a robot it

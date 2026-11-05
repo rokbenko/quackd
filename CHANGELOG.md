@@ -18,6 +18,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `Fully extend the arm and reach forward.`, E183 with its report after it, and their cards say to
   clear about 40 cm in front of the base. The cards of E200 and E219, which run two of these files,
   say so too.
+- **Three records on what an adapter is, and the rule for the next robot.** ADR-0075 names the three
+  layers an adapter carries, the body as data, the family every body of a kind shares and the binding
+  by one of three routes, and says a robot that speaks a protocol a package already speaks is a body
+  record in that package plus a thin distribution of its own. ADR-0076 gives every backend one of
+  four tiers, described, rehearsed, bound and verified, and the rule that bound code enters this
+  repository only with a named owner and a date for its first hardware run, the nine of 0.32.0
+  grandfathered. ADR-0077 makes a body quackd only describes one YAML in the core, read from its
+  maker's figures with a source each. The amendment notes on ADR-0017, ADR-0022 and ADR-0037, a
+  section on [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) and a
+  paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code
+  the three records describe lands in 0.33.0 behind them.
 
 ## [0.32.0] — 2026-11-07
 
