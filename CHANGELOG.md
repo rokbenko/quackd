@@ -74,6 +74,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   section on [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) and a
   paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code
   the three records describe lands in 0.33.0 behind them.
+- **The README shows how an intent reaches a robot, in one picture.** Its *Architecture* section and
+  [docs/concepts/architecture.md](docs/concepts/architecture.md) gain the four layers an intent passes
+  through: the body, data and one per robot, which is all the LLM reads; a behaviour family, what bodies
+  of a kind do alike; a binding by one of three routes; and a transport that moves bytes. Two SVGs, for a
+  light page and a dark one, are drawn by [docs/assets/architecture.py](docs/assets/architecture.py) from
+  the catalogue, so each robot sits where its row's `family` and `route` put it, and a test fails if a
+  committed file is not what the script draws or a robot is missing from a box.
 - **The status page says each backend's tier, and lists the described bodies with their numbers.**
   [docs/adapters/status.md](docs/adapters/status.md) gains a tier column held to the catalogue by a test,
   a legend of the four tiers, and a table of the described bodies that `scripts/bodies_docs.py` renders

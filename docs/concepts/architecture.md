@@ -123,6 +123,56 @@ The only thing the members share is the bus: `tell` puts a TALK message on it, a
 addressee reads it in its next observation. A coordinator flock replaces the LLM participant
 with a deterministic referee on one lockstep clock ([guides/flock.md](../guides/flock.md)).
 
+## Four layers
+
+The adapter in that sequence is four layers
+([ADR-0075](../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). An intent passes
+down through them on its way to the robot, and state and frames come back up.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/architecture-dark.svg">
+    <img src="../assets/architecture-light.svg" alt="Four stacked layers. Body: data, one per robot, the only layer the LLM reads. Behaviour family: servo arm, biped on a runtime, wheeled base, humanoid with its own loop. Binding: import the SDK, speak its wire, or a bridge quackd ships. Transport: bytes only. An intent goes down through them, and state and frames come back up." width="880">
+  </picture>
+</p>
+
+**The body** is data, one per robot: the manifest ([ADR-0017](../adr/0017-robot-adapters-and-manifest.md)),
+the datasheet with a source for every figure and what the body `cannot` do
+([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)), the verbs it offers and the ones it
+withholds, its limits, its `safety_authority` and its rest pose. The prompt is built from this
+layer alone, so it is everything the LLM knows about the robot. A
+[described body](../adapters/status.md#described-bodies) is this layer and nothing under it: one
+YAML of its maker's figures, which no code drives
+([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)).
+
+**A behaviour family** is what bodies of a kind do alike. The catalogue's `family` field names
+one for every row, its own kind first and then a second where a body carries something another
+family drives, as a cart carries arms. Code moves into a family once two bodies need it, and not
+before, so a family with one body keeps its code in that body's package.
+
+| Family | What its bodies do alike | Bodies |
+|---|---|---|
+| Servo arm | a rest pose, a fold before it lets go, a hand-off, goals clipped to the travel, paced joint moves | `lerobot`. `xlerobot` and `alohamini` carry arms of this kind, which their own hosts drive, so they share none of this code |
+| Biped on a runtime | a twist re-sent while it walks, skills, a posture, a deadman | `microduck`, `open_duck`, `huebot` |
+| Wheeled base | a twist, a stop that zeroes it, places and a map where the base reports odometry | `rosbridge`, `xlerobot`, `alohamini`, `moss` |
+| Humanoid with its own loop | a loop quackd ships, a slew to a safe pose, keyframes, clamps | `toddlerbot` |
+
+**A binding** is how an intent reaches the robot, by one of three routes, which the catalogue's
+`route` field names and [adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md#backends-mock-first-then-whichever-route-the-robot-leaves-you)
+compares. `sdk` imports what upstream ships, inside `connect()`. `wire` speaks a protocol read
+from upstream's source, with framing of quackd's own. `bridge` runs a daemon quackd ships on the
+robot's own computer, from [`bridge/`](../../bridge/). Whatever a binding reads from upstream is
+named in its package's `upstream_api.py`, pinned to a commit
+([ADR-0022](../adr/0022-per-adapter-upstream-refs.md)).
+
+**The transport** moves bytes and knows nothing about the body: USB serial, a Unix socket, TCP,
+HTTP or a WebSocket. What each real backend's address looks like is its `Connect` block in the
+catalogue, which [guides/web-ui.md](../guides/web-ui.md) renders.
+
+The picture is drawn from the catalogue by `docs/assets/architecture.py`, which puts each robot in
+the boxes its row names, and `tests/test_docs.py` fails if a committed file is not what the script
+draws or a robot is missing from a box.
+
 ## Modules
 
 | Path | Why it exists |
@@ -498,6 +548,8 @@ its logs.
   finds that package by its `quackd.adapters` entry point, so it does not have to be one of
   the nine here: publish `quackd-<robot>`, declare the entry point, and
   `--robot <name>:<backend>` reaches it with no change to this repository
-  ([adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md)).
+  ([adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md)). One of the nine also
+  gives its catalogue row a `family` and a `route`, and `python docs/assets/architecture.py`
+  redraws the picture under [Four layers](#four-layers) with it in.
 - **Learned verbs** — `register_learned_verb(registry, spec, runner)`; see
   [concepts/learned-verbs.md](learned-verbs.md).

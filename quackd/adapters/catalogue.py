@@ -321,7 +321,9 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
             ),
         },
         family=("wheeled", "arm"),
-        route=("wire",),
+        # upstream's own host for the base and the lift, and quackd's for the arms, which
+        # upstream's leaves limp (`bridge/alohamini/`)
+        route=("wire", "bridge"),
     ),
     # No network API of any kind upstream: no socket, no daemon, no IPC. So quackd ships the
     # daemon, as it does for the Open Duck Mini, and the client is stdlib (ADR-0028).
