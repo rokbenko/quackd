@@ -4815,9 +4815,13 @@ def test_the_run_sheet_has_a_card_for_each_experiment_and_the_order_takes_each_o
     numbers = re.findall(r"^### (E\d{3}): ", cards, flags=re.M)
     assert numbers == [f"E{n:03d}" for n in range(1, len(numbers) + 1)]
     examples = _RUN_SHEET.parent
-    folders = {path.name for path in examples.iterdir() if path.is_dir()}
-    assert folders <= {number.lower() for number in numbers}, "a folder with no card"
-    assert f"{len(numbers) - len(folders)} experiments have no folder" in " ".join(prose.split())
+    folders = [path for path in examples.iterdir() if path.is_dir()]
+    assert {path.name for path in folders} == {number.lower() for number in numbers}, (
+        "a folder with no card, or a card with no folder"
+    )
+    # A page and a log come from `scripts/example_log.py` and a run, not from the experiment itself.
+    empty = [p for p in folders if all(f.name in ("README.md", "log") for f in p.iterdir())]
+    assert f"{len(empty)} experiments have no file of their own" in " ".join(prose.split())
     assert f"each of the {len(numbers)} experiments" in _ARM_PAGE.read_text(encoding="utf-8")
     assert f"each of {len(numbers)} experiments" in " ".join(prose.split())
     linked = re.findall(r"\[(E\d{3})\]\(#", order)

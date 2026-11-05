@@ -80,6 +80,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **Every SO-101 experiment has a folder now.** The 34 with no file of their own, E119 among them,
+  had no folder at all, because git keeps no empty one, so their numbers led nowhere. Each now holds
+  a short page pointing at its card on the run sheet, written by `scripts/example_log.py`, and the
+  example's log replaces that page once it has been run. The table links every example.
 - **The pages say LLM too, and `docs/models/` is `docs/llms/`.** Every page, ADR, design note and
   comment that meant an LLM now says so, and where the word covered policies as well they say LLMs and
   policies. `docs/models/vlas.md` is `docs/guides/vlas.md`, because a policy is no LLM.
