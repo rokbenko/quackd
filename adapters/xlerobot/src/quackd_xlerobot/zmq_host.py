@@ -307,9 +307,17 @@ class XLerobotZmq:
         if not self._frame_b64:
             return None
         try:
-            opened = Image.open(BytesIO(base64.b64decode(self._frame_b64, validate=True)))
+            opened = Image.open(
+                BytesIO(base64.b64decode(self._frame_b64, validate=True)), formats=["JPEG"]
+            )
             opened.load()
-        except (binascii.Error, ValueError, OSError, UnidentifiedImageError):
+        except (
+            binascii.Error,
+            ValueError,
+            OSError,
+            UnidentifiedImageError,
+            Image.DecompressionBombError,
+        ):
             return None
         img: Image.Image = opened.convert("RGB")
         if self.swap_colour:

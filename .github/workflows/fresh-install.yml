@@ -1,8 +1,8 @@
 name: fresh install
 
-# What somebody who installs quackd today gets, rather than what uv.lock holds. The lock's numpy and
-# Pillow stay old because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it,
-# so it resolves past both, and no other job here runs that combination. It keeps a schedule of its
+# What somebody who installs quackd today gets, rather than what uv.lock holds. The lock's numpy
+# stays old because LeRobot pins it, and a fresh `uv pip install quackd` has no LeRobot in it, so
+# it resolves past it, and no other job here runs that combination. It keeps a schedule of its
 # own, off main's run, because what it answers to is other people's releases: one of them breaking
 # this should say so here, and should not stop a tag (RELEASING.md wants every job of main's run green).
 

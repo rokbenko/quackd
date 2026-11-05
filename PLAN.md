@@ -453,6 +453,14 @@ before.
   lines on the LeRobot mock's scripted policy alone. Owed: a session on `lerobot:mujoco` with
   `quackd policy serve --policy scripted:sweep`, three lines with a brake mid-segment, from the
   keyboard and from the page, then the same on the arm with a trained checkpoint.
+- ⬜ **LeRobot's next release, which takes a run on the arm.** `quackd-lerobot`'s extras stop below
+  0.6.2, because LeRobot's main has replaced `feetech-servo-sdk` with `rustypot` and dropped the
+  tables `upstream_api.py` cites (its #4672), and moved to transformers 5.22 and torch 2.15. Owed
+  when it ships: read both `upstream_api.py` files against it, change `doctor`'s `scservo_sdk` rows,
+  the `port_handler` line in `real.py` and the bus `sim/follower.py` stands in for, run the arm, then
+  raise the ceiling and Dependabot's ignore, drop `override-dependencies` from `pyproject.toml` and
+  raise the core's Pillow floor to 13. That gets `quackd[lerobot]` off Pillow 12.3.0, and the lock
+  past the last five Dependabot alerts.
 
 ## Open elsewhere
 

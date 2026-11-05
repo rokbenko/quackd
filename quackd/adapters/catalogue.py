@@ -196,7 +196,8 @@ _CONNECT: dict[str, dict[str, Connect]] = {
             default="unix:///run/robotd.sock",
             example="tcp://127.0.0.1:9870",
             camera="One camera URL: mediad's `http://HOST:8080/frame`, `webrtc://HOST:8443` with "
-            "`quackd[microduck-camera]`, or any HTTP snapshot. Without one the duck runs blind.",
+            "`quackd[microduck-camera]`, or any HTTP snapshot, a JPEG or a PNG. Without one the "
+            "duck runs blind.",
             on_robot="Pollen's robotd, at API 23 or later, and mediad for the camera. quackd "
             "installs nothing on the duck.",
             first="Forward the socket with `ssh -L 9870:/run/robotd.sock microduck@DUCK` and use "
@@ -242,7 +243,7 @@ _CONNECT: dict[str, dict[str, Connect]] = {
             example="tcp://127.0.0.1:9871",
             token_env="QUACKD_DUCK_TOKEN",
             camera="The snapshot the bridge names, `http://HOST:9872/snapshot.jpg`, unless a "
-            "camera URL is given.",
+            "camera URL is given, which serves a JPEG or a PNG.",
             on_robot="quackd's bridge and camera daemons, installed by "
             "`bridge/open_duck/install.sh` and started from their systemd units.",
             first="`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 PI`, and the token from "
@@ -296,7 +297,7 @@ _CONNECT: dict[str, dict[str, Connect]] = {
             "`unix:///PATH` with quackd on the robot itself",
             default=None,
             example="tcp://127.0.0.1:9870",
-            camera="Any HTTP URL that answers each request with one still image.",
+            camera="Any HTTP URL that answers each request with one still image, a JPEG or a PNG.",
             on_robot="The maker's shim.",
             first="Forward the shim with `ssh -L 9870:SOCKET HUEBOT` and use "
             "`tcp://127.0.0.1:9870`.",

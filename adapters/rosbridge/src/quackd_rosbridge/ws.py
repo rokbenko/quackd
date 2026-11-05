@@ -179,7 +179,8 @@ def decode_compressed_image(message: dict[str, Any]) -> Image.Image:
     raw = base64.b64decode(data) if isinstance(data, str) else bytes(data)
     if not any(codec in fmt for codec in ("jpeg", "jpg", "png")) and fmt:
         raise ValueError(f"unsupported CompressedImage format {fmt!r} (jpeg or png only)")
-    img: Image.Image = Image.open(io.BytesIO(raw))
+    # the same two the check above takes, since the bytes need not be what `format` says
+    img: Image.Image = Image.open(io.BytesIO(raw), formats=["JPEG", "PNG"])
     img.load()
     if img.mode != "RGB":
         img = img.convert("RGB")
@@ -502,7 +503,11 @@ class RosbridgeWs:
             message = self._latest_image
         if message is None:
             return None
-        return decode_compressed_image(message)
+        try:
+            return decode_compressed_image(message)
+        except (ValueError, OSError, Image.DecompressionBombError):
+            # `frames_of` promises every caller this never raises for a camera that failed
+            return None
 
     async def get_state(self) -> DuckState:
         with self._lock:

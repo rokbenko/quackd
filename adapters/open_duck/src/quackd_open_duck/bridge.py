@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import io
 import json
 import math
 import os
@@ -39,6 +38,7 @@ from quackd.transport.base import (
     Intent,
     Posture,
     TransportError,
+    camera_url_frame,
 )
 from quackd_open_duck import upstream_api as up
 from quackd_open_duck.verbs import (
@@ -352,7 +352,7 @@ class OpenDuckBridge:
 
         try:
             data, age = await asyncio.to_thread(fetch)
-            frame = Image.open(io.BytesIO(data)).convert("RGB")
+            frame = camera_url_frame(data)
         except Exception as e:
             self.camera_error = str(e)
             self.frame_age_s = None

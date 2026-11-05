@@ -9,12 +9,18 @@ Thanks for taking a toy duck seriously. Two kinds of contribution matter most: *
 git clone https://github.com/rokbenko/quackd && cd quackd
 uv sync --extra dev            # the core and all nine robots, editable, no robot SDKs
 uv sync --extra dev --extra mujoco   # the physics simulator, or its tests just skip
-uv run pre-commit install
+uv tool install pre-commit     # the hooks' runner, in an environment of its own, not in the lock
+pre-commit install
 uv run pytest -n auto          # the whole suite on every core, about ten minutes, no network, no keys
 uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run quackd validate ducks/*.duck
 ```
 
 Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real provider.
+
+`pre-commit` is not in the `dev` extra: it brings `virtualenv`, and the lock cannot take a
+`virtualenv` with its security fixes while LeRobot caps `packaging`. A hook installed by the older
+`uv run pre-commit install` stops every commit with `No module named pre_commit`, so run
+`pre-commit install` again.
 
 This repository is a uv workspace: `quackd` is one distribution and each robot under
 `adapters/` is another (`quackd-microduck`, `quackd-lerobot`, `quackd-rosbridge`,
