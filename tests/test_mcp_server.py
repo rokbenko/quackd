@@ -787,7 +787,8 @@ async def test_a_dry_run_session_never_moves_the_arm() -> None:
 async def test_a_read_the_arm_did_not_answer_reaches_the_chat_in_words() -> None:
     """A verb's gates begin by reading the body, and a read that failed left the call with no
     answer of its own, so a chat was told only that the tool had failed, on `stop` too, which is
-    what a pilot reaches for at that moment. The stop still goes out."""
+    what a pilot reaches for at that moment. The stop is still tried, which this mock counts: on
+    the real arm it ends a policy segment and writes no goal, since it reads before it writes."""
 
     class Silent(MockTransport):
         silent = False

@@ -481,8 +481,9 @@ class RobotSession:
                 f"aborted: {e}" + (f" (the heartbeat failed: {why})" if why is not None else "")
             )
         except TransportError as e:
-            # the read a verb's gates begin with failed, and the stop that follows has been sent.
-            # Left to the SDK, the chat learned only that the tool had failed, on `stop` too.
+            # the read a verb's gates begin with failed, and the stop that follows has been tried,
+            # though an arm that cannot be read gets no goal from it. Left to the SDK, the chat
+            # learned only that the tool had failed, on `stop` too.
             result = VerbResult.fail(str(e))
         return _result(result)
 

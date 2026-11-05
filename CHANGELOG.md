@@ -9,14 +9,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`quackd policy list` lists the policy types.** These are the rows `quackd list-models --kind policy`
+  printed, the types `quackd policy serve` serves and the ones it refuses with why, with their `--json`
+  as it was and still on a machine with no LeRobot. They sit beside `serve`, `check` and `endpoint`
+  now.
+
 ### Changed
 
 - **quackd says LLM wherever it means one.** What it prints, what it sends to the pilot and what its
   help says all use the word now. The counters under a run's verdict read `LLM calls 6`,
   `time 49.5 s (LLM 20.4 s)`, `LLM calls p50 2.6 s, p90 7.7 s, max 7.7 s` and `after 3 LLM calls`, the
   run line reads `provider=openai LLM=gpt-6-sol`, the budget line `step 3/40, LLM calls 3/40`, and the
-  stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help` has a panel called `LLM`, and so does
-  the page `quackd ui` draws, and `--llm` shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an
+  stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help`'s panel `Model` is `Pilot`, on the
+  page `quackd ui` draws as well, since those flags decide who flies the run, and `--llm` shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an
   OpenRouter id `AUTHOR/LLM`. The pilot reads the word as well: the play section's `product or LLM`, and
   the task files of E016, E156 and E187. A script that matches a printed line has to change its words.
 - **Run records and `--json` say `llm_id` where they said `model`, and a script that reads them has to
@@ -28,6 +35,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a rename, because the project's owner chose to take the break at once. What keeps its name is what
   belongs to somebody else: the `model` a vendor's API takes and returns, `/v1/models`, and the
   `model` field of a robot's manifest and passport, which is the robot's and no LLM's.
+- **A VLA run counts turns, because no LLM is asked in it.** With `--controller vla` the line under the
+  verdict said `llm calls 5`, `(model 0.0 s)`, a spread of those seconds and `after 2 model calls`. It
+  now says `turns 5` and `after 2 turns`, without the split or the spread, and the line at the top of
+  each step says `turns 2/40`. On a VLA run recorded earlier, `quackd log` says turns under the verdict
+  and leaves its steps as they were recorded. `--llm fake` keeps `LLM calls`, because it is chosen
+  through `--llm` and stands in for an LLM.
 - **A decision LLM you wrote yourself has to rename three things.** The module's `make(spec, *, url,
   model)` is `make(spec, *, url, llm_id)`, its `MODEL` is `LLM_ID`, and the object it returns answers to
   `llm_id`. `tests/stub_decision_llm.py` shows the new shape.
@@ -37,9 +50,55 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **`quackd list-models` is gone: the command is `quackd list-llms`.** There is no alias, so a script
   that still types the old name stops with `No such command` and has to change it. Like the keys above,
   it had no release of warning, at the project's owner's word.
+- **`--kind policy` is gone as well, and `--kind all` is now the pilots and the decision LLMs.** A policy
+  is no LLM, so `quackd list-llms --kind policy` is refused and names `quackd policy list`.
+
+### Documentation
+
+- **The pages say LLM too, and `docs/models/` is `docs/llms/`.** Every page, ADR, design note and
+  comment that meant an LLM now says so, and where the word covered policies as well they say LLMs and
+  policies. `docs/models/vlas.md` is `docs/guides/vlas.md`, because a policy is no LLM.
+  `scripts/models_docs.py` is `scripts/llms_docs.py`, and ADR-0031, ADR-0040 and ADR-0062 have
+  new file names. A published PyPI page's link into `docs/models/` no longer resolves, as happened when
+  the pages moved in 0.16.1. What is a simulator's, a policy's, a detector's or a board's keeps its word,
+  and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
+  word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
+  as their runs printed them, and so do the recorded transcripts under `docs/assets/`.
+- **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
+  prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
+  the counters was captured again by running its command.
+
+## [0.31.3] — 2026-11-05
+
+0.31.3 stops a camera's picture choosing among Pillow's decoders, stops the arm's extras below LeRobot's
+next release, and fixes how a run ends when the arm stops answering, which is what cutting its supply
+does. What changes for you: nothing to do, unless a `--camera-url` serves something other than a JPEG or
+a PNG. A run that loses the arm ends on one line and no longer in a Python traceback, at the end of a
+by-hand run nobody is told to reach into its jaws, and a chat is told why. On Python 3.12 or later
+`quackd[lerobot]` still installs Pillow 12.3.0 until quackd moves to LeRobot's next release, as Known
+limitations says. None of this has met an arm.
 
 ### Fixed
 
+- **An arm that stops answering ends a run in one line, not in a Python traceback.** A supply cut or a
+  pulled cable met by the run's own read of the arm, rather than by the heartbeat, let LeRobot's
+  `ConnectionError` through to the command, so the last thing on the screen was a page of Python, after
+  the stop, the close and the record had all run. A port that went with the supply and a read past its
+  deadline did the same. A read that fails now says `the arm did not answer: ` and what LeRobot raised,
+  as the heartbeat always has, and the run ends on that line, with the same exit code, 1, and the same
+  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `quackd run`,
+  and `tests/test_lerobot_adapter.py` tries each kind of failure. Each failed before this change. It has
+  run against the simulator's lost reads, and not on an arm.
+- **A by-hand run no longer tells somebody to reach into the jaws of an arm that stopped answering.** If
+  the arm went silent as Enter opened the gripper, the line said to take what is in it by hand and that
+  the arm was holding where it stopped, which nothing had read. It now says quackd could not confirm
+  whether the arm has torque, and to cut its power first. A gripper that refused on an arm that answered
+  says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
+- **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
+  answer of its own, so over MCP the tool only said it had failed, on `stop` too. It now answers
+  `the arm did not answer: ` and what LeRobot raised. The stop is still tried and ends a running policy
+  segment, but on an arm that does not answer a read it writes no goal, so the power switch is what stops
+  that arm. `tests/test_mcp_server.py` tries it. It failed before this change.
 - **`quackd[lerobot]` and `quackd[lerobot-vla]` stop below LeRobot's new motor library.** The first
   asked for `lerobot[feetech]>=0.6` with no ceiling and the second stopped only at 0.7, so a fresh install
   would have taken LeRobot's next release the day it appeared. LeRobot's main branch calls itself 0.6.2 and
@@ -49,12 +108,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   0.6.1 is what they install today. A wheel already on PyPI keeps the requirement it shipped with.
   `tests/test_workspace.py` fails if a ceiling goes, or if the version `upstream_api.py` was read at moves
   and leaves it behind. It failed before this change.
-- **A `--camera-url` that answers with anything but a JPEG or a PNG is refused now.** On Microduck and
-  Open Duck a WEBP, BMP, GIF or TIFF used to work, and refusing it in a patch is RELEASING.md's safety
-  exception: the decoders a camera could choose among run in the process that moves the body, and the
-  entry under Security says what that reached. What changes for you: the camera's error now says
-  `the camera did not answer with a JPEG or a PNG`, so serve one of those two. Huebot's page already
-  asked for them. `tests/test_image_formats.py` reads the refusal back. It failed before this change.
+- **A `--camera-url` that answers with anything but a JPEG or a PNG is refused now.** On Microduck, Open
+  Duck and Huebot a WEBP, BMP, GIF or TIFF used to work, though Huebot's page already asked for a JPEG or a
+  PNG. Refusing it in a patch rests on a broad reading of RELEASING.md's safety exception: these decoders
+  run in the process that moves the body, and the entry under Security says what that reached. What
+  changes for you: the camera's error now says `the camera did not answer with a JPEG or a PNG`, so serve
+  one of those two. `tests/test_image_formats.py` reads the refusal back. It failed before this change.
 - **A picture that claims to be enormous no longer ends a run.** AlohaMini, XLeRobot, ToddlerBot, MOSS
   and rosbridge let Pillow's `DecompressionBombError` out of `get_frame`, whose contract is to answer
   None, so one JPEG header from the far end could do it. rosbridge did the same for any picture it
@@ -94,11 +153,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Pillow 13, then the tests that decode pictures on the Pillow a PyPI install gets, and the fresh install
   nightly already ran the whole suite on 13. The other 12 were in `virtualenv`, which leaves with
   `pre-commit` and six other packages (under Fixed). The last five, in `transformers`, `setuptools` and
-  `torch`, stay until LeRobot's next release, because forcing them is worse than having them: LeRobot's own
-  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer `transformers`
-  loads pi0 and pi05 checkpoints with a random vision tower and only a warning. Nothing in quackd reaches
-  those five. `.github/dependabot.yml` no longer ignores Pillow, and ignores LeRobot from 0.6.2. A wheel asks
-  for none of this, which is the first entry under Known limitations.
+  `torch`, stay in the lock until LeRobot's next release, and their alerts are dismissed on GitHub as not
+  used, since nothing in quackd reaches them. Forcing `transformers` is worse than having it: LeRobot's own
+  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer one loads pi0
+  and pi05 checkpoints with a random vision tower and only a warning. LeRobot 0.6.1 caps the other two as
+  well, and `torch` 2.11 caps `setuptools`. `.github/dependabot.yml` no longer ignores Pillow, ignores
+  LeRobot from 0.6.2, and ignores `dm-tree` from 0.1.10, whose numpy floor on Python 3.14 LeRobot's cap
+  rules out and which had failed the `uv` job on every run since 30 October. Apart from `quackd[dev]`, a
+  wheel asks for none of this, as Known limitations says.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
   did not show, the exact command, the quackd version and the full terminal trace, and
@@ -115,20 +177,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and that every `quackd` line in them parses.
 - **The SO-101's run sheet is on the pages.**
   [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
-  experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
+  experiments, 34 of which have no folder, so their lines were written down nowhere a reader could find
   them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
-  on its card, and that every `quackd` line on the page parses.
-- **The pages say LLM too, and `docs/models/` is `docs/llms/`.** Every page, ADR, design note and
-  comment that meant an LLM now says so, and where the word covered policies as well they say LLMs and
-  policies. `scripts/models_docs.py` is `scripts/llms_docs.py`, and ADR-0031, ADR-0040 and ADR-0062 have
-  new file names. A published PyPI page's link into `docs/models/` no longer resolves, as happened when
-  the pages moved in 0.16.1. What is a simulator's, a policy's, a detector's or a board's keeps its word,
-  and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
-  word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
-  as their runs printed them, and so do the recorded transcripts under `docs/assets/`.
-- **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
-  prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
-  the counters was captured again by running its command.
+  on the sheet, and that every `quackd` line on the page parses.
 
 ### Known limitations
 
@@ -141,34 +192,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   animated PNG from that robot's camera. They keep `setuptools` 81 and `torch` 2.11 as well, and
   `[lerobot-vla]` keeps `transformers` 5.5.4, and nothing in quackd reaches the advisories on those three.
   A fresh install with no LeRobot in it gets Pillow 13.
-
-## [0.31.3] — 2026-11-04
-
-0.31.3 fixes how a run ends when the arm stops answering, which is what cutting its supply does. What
-changes for you: nothing to do. A run that loses the arm ends on one line and no longer in a Python
-traceback, at the end of a by-hand run nobody is told to reach into its jaws, and a chat is told why.
-None of this has met an arm.
-
-### Fixed
-
-- **An arm that stops answering ends a run in one line, not in a Python traceback.** A supply cut or a
-  pulled cable met by the run's own read of the arm, rather than by the heartbeat, let LeRobot's
-  `ConnectionError` through to the command, so the last thing on the screen was a page of Python, after
-  the stop, the close and the record had all run. A port that went with the supply and a read past its
-  deadline did the same. A read that fails now says `the arm did not answer: ` and what LeRobot raised,
-  as the heartbeat always has, and the run ends on that line, with the same exit code, 1, and the same
-  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `quackd run`,
-  and `tests/test_lerobot_adapter.py` tries each kind of failure. Each failed before this change. It has
-  run against the simulator's lost reads, and not on an arm.
-- **A by-hand run no longer tells somebody to reach into the jaws of an arm that stopped answering.** If
-  the arm went silent as Enter opened the gripper, the line said to take what is in it by hand and that
-  the arm was holding where it stopped, which nothing had read. It now says quackd could not confirm
-  whether the arm has torque, and to cut its power first. A gripper that refused on an arm that answered
-  says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
-- **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
-  answer of its own, so over MCP the tool only said it had failed, on `stop` too. It now answers
-  `the arm did not answer: ` and what LeRobot raised, and the stop still goes out.
-  `tests/test_mcp_server.py` tries it. It failed before this change.
+- **A `stop` does not reach an arm that has stopped answering.** It ends a running policy segment and writes
+  no goal, because a stop reads the arm before it writes to it, and a chat is told only that the arm did not
+  answer. The power switch is what stops that arm.
 
 ## [0.31.2] — 2026-11-04
 
