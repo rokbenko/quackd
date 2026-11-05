@@ -63,6 +63,9 @@ PRIVATE = re.compile(
 """What must never reach a public log: a key, or a path into somebody's home folder."""
 NOT_THE_WORD = re.compile(r"\b(?:AI\s+)?models?\b", re.IGNORECASE)
 """A log says LLM, always: Rok's rule, for what a log writes in its own words (`our_words`)."""
+VLA = "vla"
+"""The `provider` of a run `--controller vla` flew. It is `pricing.VLA_PILOT`, spelled here because
+this script imports nothing of quackd's, and a test holds the two together."""
 TABLE_START = "<!-- example-log table: written by scripts/example_log.py, do not edit by hand -->"
 TABLE_END = "<!-- end of the example-log table -->"
 NOTES = f"""\
@@ -140,9 +143,7 @@ The following command was run with quackd {version}:
 
 ## Try it yourself
 
-This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
-It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+{try_intro}
 
 ```bash
 {try_it}
@@ -159,6 +160,19 @@ with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the L
 
 </details>
 """
+
+
+TRY_ON_THE_MOCK = """\
+This runs the same {what} with no arm attached, on `lerobot:mock`, an arm that lives in memory.
+It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
+with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges."""
+
+TRY_ON_THE_SIMULATOR = """\
+This runs the same {what} with no arm attached, on `lerobot:mujoco`, the arm's simulator, against a
+policy server. Leave the first command running in a terminal of its own, and answer the second's
+questions yourself, as a person did on the arm. It shows a simulated arm and not yours. Run it from
+a checkout of this repository with quackd's `lerobot-sim` extra, and `lerobot-vla` as well if the
+policy is a checkpoint. No LLM is asked, so it costs nothing."""
 
 
 class LogError(Exception):
@@ -260,13 +274,39 @@ def _pilot(summary: dict[str, Any]) -> str:
     return f"{provider}:{llm_id}" if llm_id else str(provider)
 
 
+def _goal(summary: dict[str, Any]) -> str | None:
+    """The goal the command gave in place of a task file, if it gave one."""
+    words = summary["command"]
+    for flag in ("--goal", "-g"):
+        if flag in words[:-1]:
+            return str(words[words.index(flag) + 1])
+    return None
+
+
+def _try_intro(summary: dict[str, Any]) -> str:
+    said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
+    return said.format(what="task file" if _goal(summary) is None else "goal")
+
+
 def _try_it(summary: dict[str, Any]) -> str:
-    task = _duck_path(summary) or summary["command"][2]
-    return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory"
+    goal = _goal(summary)
+    task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or summary["command"][2]
+    if summary.get("provider") != VLA:
+        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory"
+    # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
+    # is tried on the simulator, against the policy it ran
+    served = (summary.get("policy") or {}).get("policy") or "scripted:hold"
+    return (
+        f"quackd policy serve --policy {served}\n"
+        f"quackd run {task} --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 "
+        "--controller vla --no-memory"
+    )
 
 
 def _task_file(summary: dict[str, Any], folder: Path) -> str:
     path = _duck_path(summary)
+    if _goal(summary) is not None:
+        return "none, the command gave a goal"
     if path is None:
         return f"`{summary['duck']}`, which ships with quackd"
     inside = path.removeprefix("docs/examples/lerobot/")
@@ -280,17 +320,20 @@ def _numbers(summary: dict[str, Any], folder: Path, run_folder: str) -> str:
     cost = summary.get("cost_usd")
     step = ((summary.get("final_state") or {}).get("extras") or {}).get("step_deg")
     moved = summary.get("first_motion_s")
+    # a VLA pilot's run asks no LLM: its pilot takes turns, and nothing waited for an answer
+    vla = summary.get("provider") == VLA
+    waiting = [] if vla else [("Waiting for the LLM", _seconds(summary.get("llm_latency_s")))]
     rows = [
         ("quackd version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
         ("Robot", f"`{summary['robot']}` ({summary.get('transport')})"),
-        ("LLM", f"`{_pilot(summary)}`"),
+        ("Pilot" if vla else "LLM", f"`{_pilot(summary)}`"),
         ("Task file", _task_file(summary, folder)),
         ("Steps", summary.get("steps")),
-        ("LLM calls", summary.get("llm_calls")),
+        ("Turns" if vla else "LLM calls", summary.get("llm_calls")),
         ("Total time", _seconds(summary.get("wall_s"))),
         ("Connecting", _seconds(summary.get("connect_s"))),
-        ("Waiting for the LLM", _seconds(summary.get("llm_latency_s"))),
+        *waiting,
         ("First motion", "no motion" if moved is None else f"{moved:.1f} s after the start"),
         ("Tokens", f"{usage.get('input_tokens', 0):,} in, {usage.get('output_tokens', 0):,} out"),
         ("Cost at list price", "not recorded" if cost is None else f"${cost:.4f}"),
@@ -345,6 +388,7 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         command=command,
         numbers=_numbers(summary, folder, media["run_folder"]),
         frames=_frames(int(media["frames"])),
+        try_intro=_try_intro(summary),
         try_it=_try_it(summary),
         lines=trace.count("\n") + 1,
         fence_trace=_fence(trace),

@@ -69,6 +69,28 @@ WENT_WRONG = {
 }
 """What a run the arm walked out on leaves behind: nothing it never got as far as."""
 
+A_VLA_RUN = {
+    **{key: value for key, value in GOOD.items() if key != "model"},
+    "provider": "vla",
+    "llm_id": "scripted:goal",
+    "llm_calls": 5,
+    "llm_latency_s": 0.004,
+    "usage": {"input_tokens": 0, "output_tokens": 0},
+    "cost_usd": 0.0,
+    "policy": {"server": "http://127.0.0.1:9875", "policy": "scripted:sweep"},
+    "command": [
+        "quackd",
+        "run",
+        "--goal",
+        "hold the arm where it is",
+        "--robot",
+        "arm-01",
+        "--controller",
+        "vla",
+    ],
+}
+"""A run `--controller vla` flew, from a goal as E197's and E198's lines do."""
+
 NOTES = {
     "hook": "It asked for a lot. It got a little.",
     "goal_met": "Yes",
@@ -271,6 +293,57 @@ def test_the_numbers_say_llm(tmp_path: Path) -> None:
     assert "| LLM | `openai:gpt-6-sol` |" in text
     assert "| LLM calls | 6 |" in text
     assert "| Waiting for the LLM | 20.4 s |" in text
+
+
+def test_a_vla_run_is_logged_in_turns_and_tried_on_the_simulator(tmp_path: Path) -> None:
+    """Its pilot is a rule, so the numbers name no LLM, and `lerobot:mock` reaches no policy
+    server, so a line that tried it there would be refused. The trace below it keeps what the
+    run printed, whatever that said."""
+    root = _tree(tmp_path / "examples")
+    _logged(root, "e001", A_VLA_RUN)
+    text = script.render_log(root, _experiment(root, "E001"))
+    numbers = text.split("## The numbers")[1].split("## What the robot saw")[0]
+    assert "| Pilot | `vla:scripted:goal` |" in numbers and "| Turns | 5 |" in numbers
+    assert "LLM" not in numbers
+    assert "| Task file | none, the command gave a goal |" in numbers
+    tried = text.split("## Try it yourself")[1].split("## Full terminal trace")[0]
+    assert "This runs the same goal with no arm attached, on `lerobot:mujoco`" in tried
+    assert "No LLM is asked, so it costs nothing." in tried
+    assert "--llm" not in tried and "lerobot:mock" not in tried
+    assert (
+        "quackd policy serve --policy scripted:sweep\n"
+        'quackd run --goal "hold the arm where it is" --robot lerobot:mujoco '
+        "--policy-url http://127.0.0.1:9875 --controller vla --no-memory"
+    ) in tried
+
+
+def test_the_try_line_of_a_vla_run_is_one_quackd_takes() -> None:
+    """Read off the command itself, since a flag it does not take would only fail a reader."""
+    from typer.testing import CliRunner
+
+    from quackd.agent.providers.pricing import VLA_PILOT
+    from quackd.cli import app
+
+    assert script.VLA == VLA_PILOT, "the script spells the pilot's name, and has to spell it so"
+    runner = CliRunner()
+    run_help = " ".join(runner.invoke(app, ["run", "--help"]).output.split())
+    for flag in ("--policy-url", "--controller", "--no-memory", "--goal"):
+        assert flag in run_help, flag
+    serve_help = " ".join(runner.invoke(app, ["policy", "serve", "--help"]).output.split())
+    assert "--policy" in serve_help
+
+
+def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
+    """The line took the command's third word for a task, which beside a goal is `--goal`, so it
+    printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
+    root = _tree(tmp_path / "examples")
+    command = ["quackd", "run", "--goal", "wave at me", "--robot", "arm-01"]
+    _logged(root, "e001", {**GOOD, "command": command})
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert "This runs the same goal with no arm attached, on `lerobot:mock`" in text
+    assert (
+        'quackd run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol --no-memory'
+    ) in text
 
 
 def test_the_gif_says_how_fast_it_plays(tmp_path: Path) -> None:
