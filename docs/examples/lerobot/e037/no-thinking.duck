@@ -1,6 +1,6 @@
 # SO-101 run sheet. E037: Make a decision without thinking.
 # Run from the root of this checkout, against the arm registered as arm-01:
-#   quackd run docs/examples/lerobot/e037/no-thinking.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --decision-mode off --max-steps 4 --no-memory --run-name model
+#   quackd run docs/examples/lerobot/e037/no-thinking.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --decision-mode off --max-steps 4 --no-memory --run-name llm
 # The run sheet has all 2 runs of this file, one per --run-name.
 ---
 duck: 4

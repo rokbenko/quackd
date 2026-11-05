@@ -17,16 +17,16 @@ from collections.abc import Mapping
 from typing import Any
 
 SUMMARY = "a decision LLM that exists only in this test"
-MODEL = "stub-1"
+LLM_ID = "stub-1"
 INSTALL = "it is already here"
 
 
 class StubLLM:
-    """What `make` hands back: a name, a model, an address and one method."""
+    """What `make` hands back: a name, an LLM, an address and one method."""
 
-    def __init__(self, name: str, model: str | None, url: str | None) -> None:
+    def __init__(self, name: str, llm_id: str | None, url: str | None) -> None:
         self.name = name
-        self.model = model or MODEL
+        self.llm_id = llm_id or LLM_ID
         self.url = url
         self.calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
         self.answers: dict[str, Any] = {}
@@ -35,7 +35,7 @@ class StubLLM:
         self, state: Mapping[str, str], questions: Mapping[str, Mapping[str, Any]]
     ) -> Any:
         self.calls.append((dict(state), dict(questions)))
-        # A plain mapping, the way a server's JSON and an in-process model both answer.
+        # A plain mapping, the way a server's JSON and an in-process LLM both answer.
         return {"answers": dict(self.answers)}
 
 
@@ -43,7 +43,7 @@ class StubLLM:
 built: list[StubLLM] = []
 
 
-def make(spec: Any, *, url: str | None = None, model: str | None = None) -> StubLLM:
-    llm = StubLLM(spec.name, model, url)
+def make(spec: Any, *, url: str | None = None, llm_id: str | None = None) -> StubLLM:
+    llm = StubLLM(spec.name, llm_id, url)
     built.append(llm)
     return llm

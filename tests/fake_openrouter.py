@@ -7,7 +7,7 @@ documents: a tool call, `reasoning` and `reasoning_details` beside it, and a `us
 `cost`. Anything else is a 404, which is how a stray `/responses` request shows up.
 
 It proves what quackd sends and what it makes of an answer shaped like OpenRouter's. It proves
-nothing about OpenRouter, and nothing that passes against it has ever reached a real model.
+nothing about OpenRouter, and nothing that passes against it has ever reached a real LLM.
 
 By hand, from the repository root:
 
@@ -40,8 +40,8 @@ CORS = {
 }
 
 
-def model(
-    model_id: str,
+def llm(
+    llm_id: str,
     *,
     tools: bool = True,
     tool_choice: bool = True,
@@ -51,7 +51,7 @@ def model(
     cache_read: str | None = "0.0000002",
     expires: str | None = None,
 ) -> dict[str, Any]:
-    """One entry of the model list, in the shape `GET /api/v1/models` answers with."""
+    """One entry of the LLM list, in the shape `GET /api/v1/models` answers with."""
     supported = ["max_tokens", "temperature"]
     supported += ["tools"] if tools else []
     supported += ["tool_choice"] if tool_choice else []
@@ -59,9 +59,9 @@ def model(
     if cache_read is not None:
         pricing["input_cache_read"] = cache_read
     return {
-        "id": model_id,
-        "canonical_slug": model_id,
-        "name": f"Stand-in: {model_id}",
+        "id": llm_id,
+        "canonical_slug": llm_id,
+        "name": f"Stand-in: {llm_id}",
         "context_length": 131072,
         "architecture": {
             "modality": "text+image->text" if image else "text->text",
@@ -76,14 +76,14 @@ def model(
 
 #: The list a test runs against unless it hands in its own: one entry per way an id quackd does
 #: not carry can be taken or refused. Every id is under an author no real list has.
-MODELS: list[dict[str, Any]] = [
-    model("quackd-stub/tool-model"),
-    model("quackd-stub/tool-model:free", prompt="0", completion="0", cache_read=None),
-    model("quackd-stub/no-tool-choice", tool_choice=False),
-    model("quackd-stub/text-only", image=False),
-    model("quackd-stub/no-tools", tools=False, tool_choice=False),
-    model("quackd-stub/expired", expires="2000-01-01"),
-    model("quackd-stub/variable", prompt="-1", completion="-1", cache_read=None),
+LLMS: list[dict[str, Any]] = [
+    llm("quackd-stub/tool-model"),
+    llm("quackd-stub/tool-model:free", prompt="0", completion="0", cache_read=None),
+    llm("quackd-stub/no-tool-choice", tool_choice=False),
+    llm("quackd-stub/text-only", image=False),
+    llm("quackd-stub/no-tools", tools=False, tool_choice=False),
+    llm("quackd-stub/expired", expires="2000-01-01"),
+    llm("quackd-stub/variable", prompt="-1", completion="-1", cache_read=None),
 ]
 
 #: Each script is the calls a pilot makes, in order, one per POST. The first is always the
@@ -97,7 +97,7 @@ SCRIPTS: dict[str, list[tuple[str, dict[str, Any]]]] = {
         ("quack", {"text": "done"}),
         ("declare_success", {"reason": "quacked and walked one step"}),
     ],
-    # past the eighth exchange, where a model that binds its thinking would see a trim
+    # past the eighth exchange, where an LLM that binds its thinking would see a trim
     "long": [
         VERDICT,
         *[("quack", {"text": f"quack {n}"}) for n in range(1, 12)],
@@ -140,7 +140,7 @@ def reasoning_details(n: int) -> list[dict[str, Any]]:
 
 
 def completion(
-    n: int, name: str, arguments: dict[str, Any], model_id: str, bill: dict[str, Any]
+    n: int, name: str, arguments: dict[str, Any], llm_id: str, bill: dict[str, Any]
 ) -> dict[str, Any]:
     """Turn `n` (from 1) as OpenRouter would answer it."""
     usage: dict[str, Any] = {
@@ -155,7 +155,7 @@ def completion(
         "id": f"gen-stand-in-{n}",
         "object": "chat.completion",
         "created": 1_791_000_000 + n,
-        "model": model_id,
+        "model": llm_id,
         "provider": "Stand-in",
         "choices": [
             {
@@ -194,8 +194,8 @@ class FakeOpenRouter:
     """The stand-in, as a context manager that serves on a free port in a daemon thread."""
 
     script: str | list[tuple[str, dict[str, Any]]] = "hello-world"
-    models: list[dict[str, Any]] = field(default_factory=lambda: list(MODELS))
-    models_body: Any = None
+    llms: list[dict[str, Any]] = field(default_factory=lambda: list(LLMS))
+    llms_body: Any = None
     """Served instead of `{"data": models}` when set: another shape, for the refusals."""
     chat: Callable[[int, dict[str, Any]], tuple[int, Any]] | None = None
     """Answers a POST instead of the script when set: `(turn, request body) -> (status, body)`."""
@@ -245,7 +245,7 @@ class FakeOpenRouter:
         if method == "OPTIONS":
             return 204, None
         if method == "GET" and path == f"{PREFIX}/models":
-            return 200, self.models_body if self.models_body is not None else {"data": self.models}
+            return 200, self.llms_body if self.llms_body is not None else {"data": self.llms}
         if method == "POST" and path == f"{PREFIX}/chat/completions":
             with self._lock:
                 self._posts += 1

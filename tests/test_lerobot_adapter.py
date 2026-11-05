@@ -917,7 +917,7 @@ def _share_of(travel: tuple[float, float], share: float) -> float:
 async def test_a_long_move_walks_its_goal_there_across_the_time_asked_for_on_the_arm(
     goals: dict[str, float], starts: dict[str, float], duration_s: float
 ) -> None:
-    """On the bench a model was asked to raise the arm slowly and declined, correctly: the verb
+    """On the bench an LLM was asked to raise the arm slowly and declined, correctly: the verb
     said `duration_s` was a budget and the arm moved at its capped speed whatever it said,
     because every tick re-sent the final goal and LeRobot's step cap was the only pace there
     was. Now the goal is walked from where the joint is to where it was asked to be, so the
@@ -2148,7 +2148,7 @@ async def test_doctor_shows_each_joint_s_travel_as_the_pilot_is_told_it() -> Non
 
 
 async def test_a_reading_past_the_travel_is_explained_to_the_pilot_in_this_arm_s_numbers() -> None:
-    """On the bench a model was handed a joint reading well past the travel line in its prompt,
+    """On the bench an LLM was handed a joint reading well past the travel line in its prompt,
     with nothing to explain it, and refused to move "on this inconsistent state". It was right
     to be suspicious and wrong about the cause: goals are clamped to the travel and readings
     are not. So `report_state` names each joint reading past it, what it reads and the limit
@@ -2191,7 +2191,7 @@ async def test_a_reading_past_the_travel_is_explained_to_the_pilot_in_this_arm_s
 async def test_report_state_puts_the_arm_s_own_facts_where_a_pilot_can_read_them() -> None:
     """A pilot reads a verb's summary text and never its data. The core verb's summary is a
     posture and a policy name, which an arm has not got, so `lerobot-lookout` asked for three
-    things no real model could have seen. The arm supplies its own `report_state`."""
+    things no real LLM could have seen. The arm supplies its own `report_state`."""
     from quackd.agent.prompts import build_observation_text
 
     adapter = LeRobotAdapter(LeRobotMock(hot_joints=("elbow_flex",)))
@@ -2201,7 +2201,7 @@ async def test_report_state_puts_the_arm_s_own_facts_where_a_pilot_can_read_them
     assert result.ok
     for expected in ("shoulder_pan", "torque on", "TOO HOT TO MOVE: elbow_flex", "holding nothing"):
         assert expected in result.summary, result.summary
-    # and it survives into the observation the model is actually handed
+    # and it survives into the observation the LLM is actually handed
     text = build_observation_text(
         step=1,
         max_steps=12,
@@ -2756,7 +2756,7 @@ async def test_a_rest_pose_past_the_travel_parks_at_the_limit_and_is_let_go_of_t
     calibration recorded, and a test here claimed that pose "is still driven to". The fake
     arm followed any goal, so it was; the real one never could, because the servo clamps
     every goal to the limits calibration wrote into it. The rest move stalled at the limit
-    and aborted the run before the first model call, and the close then kept torque on and
+    and aborted the run before the first LLM call, and the close then kept torque on and
     told a person to cut the power.
 
     So the pose is clipped into the travel, one joint below its floor and another above its
@@ -2873,7 +2873,7 @@ async def test_an_arm_folded_past_its_travel_is_at_rest_and_is_never_hauled_up_t
 ):
     """The run starts where the last one left the arm, folded, and the old rest move sent that
     fold's joint its goal. The goal was the limit, the servo drove there at full speed, and
-    the arm was hauled up out of its fold before the run had asked the model anything.
+    the arm was hauled up out of its fold before the run had asked the LLM anything.
 
     A joint reading past its limit on the side its pose was recorded is at rest, and is sent
     nothing. Here one joint is folded past its floor and another past its ceiling, and a
@@ -3551,7 +3551,7 @@ def test_the_lerobot_factory_hands_the_rest_pose_to_both_backends() -> None:
 
 def test_several_camera_urls_each_name_their_own_camera_and_no_name_repeats() -> None:
     """With one camera the name is quackd's own default and nothing depends on it. With
-    several it is the only thing telling two views apart, in the model's prompt, in a
+    several it is the only thing telling two views apart, in the LLM's prompt, in a
     policy's observation dict and in frames/NNNN-<name>.png. Two handles on one webcam is
     not two views either: it is a camera that will not open twice."""
     specs = parse_camera_urls(("opencv://1?name=top", "opencv://2?name=side"))
@@ -3592,7 +3592,7 @@ async def test_two_cameras_open_in_order_and_every_frame_carries_its_own_name() 
 
 async def test_a_stalled_second_camera_costs_its_picture_and_nothing_else() -> None:
     """A camera that stopped delivering is absent from the frames rather than an empty slot:
-    the model is shown the views that exist, and the health is where the missing one says
+    the LLM is shown the views that exist, and the health is where the missing one says
     what happened to it."""
     arm = FakeArm(camera=False)
     top, side = FakeCamera(), FakeCamera()

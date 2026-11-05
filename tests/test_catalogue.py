@@ -1,4 +1,4 @@
-"""The model catalogue, and the entries around it that have to agree.
+"""The LLM catalogue, and the entries around it that have to agree.
 
 The catalogue is data, and data rots quietly: an id nobody validates is wrong for months, which
 is exactly how quackd came to ship `gpt-5`, `grok-4` and `gemini-2.5-pro` as defaults after all
@@ -38,14 +38,14 @@ from quackd.agent.providers.factory import (
     OPENAI_COMPATIBLE,
     PROVIDER_NAMES,
     SDK_FOR,
-    default_model_for,
-    find_model,
+    default_llm_for,
+    find_llm,
+    llm_ids,
+    llms_for,
     make_provider,
-    model_ids,
-    models_for,
     parse_llm,
     resolve_llm,
-    resolve_model,
+    resolve_llm_id,
     vendor_of,
 )
 from quackd.agent.providers.local import PRESETS
@@ -62,7 +62,7 @@ GONE = {
     "kimi-k2.5",  # discontinued 2026-08-31, and answers 404
     "mistral-medium-2604",  # never an id: Mistral moved to name-major-minor
     "command-a-vision-07-2025",  # live, but its page says tool use is not supported
-    "glm-4.5v",  # a GLM vision model with no function calling
+    "glm-4.5v",  # a GLM vision LLM with no function calling
     "claude-mythos-5-1",  # invitation only
     "gpt-5.6-cyber",  # its own approval programme
     # the 2026-09-23 refresh
@@ -115,76 +115,74 @@ class FakeOpenAI:
 # ── the catalogue holds its shape ───────────────────────────────────────────────────────
 
 
-def test_every_cloud_provider_has_models_and_the_first_one_is_its_default() -> None:
+def test_every_cloud_provider_has_llms_and_the_first_one_is_its_default() -> None:
     assert set(cat.CATALOGUE) == set(CLOUD_NAMES)
     for name in CLOUD_NAMES:
-        ids = model_ids(name)
-        assert ids, f"{name} has an empty catalogue, so --llm {name}:MODEL could never be met"
-        assert default_model_for(name) == ids[0]
-        assert default_model_for(name) in ids
+        ids = llm_ids(name)
+        assert ids, f"{name} has an empty catalogue, so --llm {name}:LLM could never be met"
+        assert default_llm_for(name) == ids[0]
+        assert default_llm_for(name) in ids
 
 
 def test_nothing_without_a_catalogue_claims_a_default() -> None:
-    """`fake` is scripted and the local presets ask their server, so neither may name a model."""
+    """`fake` is scripted and the local presets ask their server, so neither may name an LLM."""
     for name in (*LOCAL_NAMES, "fake"):
-        assert default_model_for(name) is None
-        assert models_for(name) == ()
+        assert default_llm_for(name) is None
+        assert llms_for(name) == ()
 
 
-def test_model_ids_are_unique_across_every_vendor() -> None:
-    """What makes "that is a grok model, pass --llm grok:grok-4.6" possible, and truthful.
+def test_llm_ids_are_unique_across_every_vendor() -> None:
+    """What makes "that is a grok LLM, pass --llm grok:grok-4.6" possible, and truthful.
 
     It is also what lets a bare id name its own vendor: `--llm claude-opus-5` can only infer
     `anthropic` because no second vendor lists that id, and the day one does, this test is
     what says so rather than a reader getting quietly sent to the wrong house."""
     seen: dict[str, str] = {}
     for name in CLOUD_NAMES:
-        for model_id in model_ids(name):
-            assert model_id not in seen, (
-                f"{model_id} is listed by both {seen.get(model_id)} and {name}"
-            )
-            seen[model_id] = name
-    for model_id, name in seen.items():
-        assert vendor_of(model_id) == name
+        for llm_id in llm_ids(name):
+            assert llm_id not in seen, f"{llm_id} is listed by both {seen.get(llm_id)} and {name}"
+            seen[llm_id] = name
+    for llm_id, name in seen.items():
+        assert vendor_of(llm_id) == name
 
 
 def test_every_status_is_one_of_the_five() -> None:
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             assert m.status in cat.STATUSES, f"{m.id} has status {m.status!r}"
 
 
 def test_only_openai_names_an_api_and_only_ever_responses() -> None:
     """The hint exists because OpenAI has two APIs. Nobody else here has a second one to pick."""
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             if name == "openai":
                 assert m.api in (None, "chat", "responses")
             else:
                 assert m.api is None, f"{m.id} names an API, and {name} has only one"
-    assert any(m.api == "responses" for m in models_for("openai")), (
-        "no OpenAI model is marked responses, so the hint is dead code and the tests for it lie"
+    assert any(m.api == "responses" for m in llms_for("openai")), (
+        "no OpenAI LLM is marked responses, so the hint is dead code and the tests for it lie"
     )
 
 
-def test_only_anthropic_and_openrouter_mark_a_model_that_refuses_a_forced_call() -> None:
+def test_only_anthropic_and_openrouter_mark_an_llm_that_refuses_a_forced_call() -> None:
     """Every other vendor's `tool_choice` is decided per vendor (TOOL_CHOICE below, and the
-    provider classes), so the per-model flag is read by `anthropic.py` and `openrouter.py` alone
+    provider classes), so the per-LLM flag is read by `anthropic.py` and `openrouter.py` alone
     and a row elsewhere setting it would be read by nothing. On OpenRouter only a Claude row may
     carry it: the refusal is Anthropic's, and nobody has seen another upstream make it."""
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             if name not in ("anthropic", "openrouter"):
                 assert m.forced_tools is True, f"{m.id} sets forced_tools and {name} never reads it"
             elif name == "openrouter" and not m.forced_tools:
-                assert m.id.startswith("anthropic/"), f"{m.id} is marked and is not a Claude model"
+                assert m.id.startswith("anthropic/"), f"{m.id} is marked and is not a Claude LLM"
     for name in ("anthropic", "openrouter"):
-        assert any(not m.forced_tools for m in models_for(name)), (
+        assert any(not m.forced_tools for m in llms_for(name)), (
             f"no {name} row is marked, so the flag is dead code there and the tests for it lie"
         )
 
 
-#: The OpenRouter rows that are the same model as a row a native vendor carries, spelled the
+#: The OpenRouter rows that are the same LLM as a row a native vendor carries, spelled the
 #: way each spells it. Sonnet 5.5 has no twin: the Anthropic tuple does not carry it yet.
 TWINS = {
     "openai/gpt-6-sol": ("openai", "gpt-6-sol"),
@@ -196,42 +194,42 @@ TWINS = {
 
 
 def test_an_openrouter_row_refuses_a_forced_call_wherever_its_native_twin_does() -> None:
-    """The same model behind a router is the same model: a Claude row that takes `auto` from
+    """The same LLM behind a router is the same LLM: a Claude row that takes `auto` from
     Anthropic and `required` through OpenRouter would be asked to do what it already refused."""
-    for model_id, (vendor, native) in TWINS.items():
-        row, twin = find_model("openrouter", model_id), find_model(vendor, native)
-        assert row is not None and twin is not None, model_id
-        assert row.forced_tools is twin.forced_tools, model_id
-        assert row.vision is twin.vision, model_id
-    assert set(TWINS) | {"anthropic/claude-sonnet-5.5"} == set(model_ids("openrouter"))
+    for llm_id, (vendor, native) in TWINS.items():
+        row, twin = find_llm("openrouter", llm_id), find_llm(vendor, native)
+        assert row is not None and twin is not None, llm_id
+        assert row.forced_tools is twin.forced_tools, llm_id
+        assert row.vision is twin.vision, llm_id
+    assert set(TWINS) | {"anthropic/claude-sonnet-5.5"} == set(llm_ids("openrouter"))
 
 
 def test_openrouter_ids_name_their_author_and_no_native_id_has_a_slash() -> None:
     """What lets a slash say "this is OpenRouter's" in a refusal, and a bare
     `--llm anthropic/claude-opus-5.5` find its vendor."""
     for name in CLOUD_NAMES:
-        for model_id in model_ids(name):
+        for llm_id in llm_ids(name):
             if name == "openrouter":
-                assert re.fullmatch(r"[a-z0-9-]+/[a-z0-9.-]+", model_id), model_id
+                assert re.fullmatch(r"[a-z0-9-]+/[a-z0-9.-]+", llm_id), llm_id
             else:
-                assert "/" not in model_id, f"{model_id} would read as an OpenRouter id"
+                assert "/" not in llm_id, f"{llm_id} would read as an OpenRouter id"
 
 
 def test_the_open_ended_vendors_are_catalogue_vendors_with_a_list_of_their_own() -> None:
     assert set(cat.OPEN_ENDED) <= set(CLOUD_NAMES)
     for name in cat.OPEN_ENDED:
-        assert models_for(name), f"{name} would have no default"
+        assert llms_for(name), f"{name} would have no default"
 
 
 def test_an_openrouter_row_says_the_day_its_rate_was_read() -> None:
     """Its rows were read on a day of their own, and the record must not date them to the day
     every other vendor's were."""
-    for m in models_for("openrouter"):
+    for m in llms_for("openrouter"):
         assert m.price is not None and m.price.checked == cat.OPENROUTER_PRICES_CHECKED, m.id
         assert m.price.record()["checked"] == cat.OPENROUTER_PRICES_CHECKED
 
 
-def test_only_anthropic_marks_a_model_by_how_it_takes_effort_or_thinking() -> None:
+def test_only_anthropic_marks_an_llm_by_how_it_takes_effort_or_thinking() -> None:
     """`binds_thinking` is Anthropic's alone, like `forced_tools`: every other vendor's request
     is shaped by its provider class, and a row elsewhere setting it would be read by nothing.
     `effort` and `effort_levels` are read for Anthropic's rows and OpenAI's, by `--effort`
@@ -240,7 +238,7 @@ def test_only_anthropic_marks_a_model_by_how_it_takes_effort_or_thinking() -> No
     from quackd.agent.providers.factory import EFFORTS
 
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             if m.effort_levels is not None:
                 assert m.effort, f"{m.id} names effort levels and takes no effort"
                 assert set(m.effort_levels) < set(EFFORTS), m.id
@@ -253,14 +251,14 @@ def test_only_anthropic_marks_a_model_by_how_it_takes_effort_or_thinking() -> No
 
 
 def test_no_retired_id_has_crept_back() -> None:
-    listed = {m.id for name in CLOUD_NAMES for m in models_for(name)}
+    listed = {m.id for name in CLOUD_NAMES for m in llms_for(name)}
     assert not (listed & GONE), f"the catalogue lists ids known to be gone: {sorted(listed & GONE)}"
 
 
 def test_labels_say_something_the_id_does_not() -> None:
-    """A dropdown of raw ids is a dropdown nobody can read, so every model carries a label."""
+    """A dropdown of raw ids is a dropdown nobody can read, so every LLM carries a label."""
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             assert m.label and m.label != m.id
 
 
@@ -269,18 +267,18 @@ def test_labels_say_something_the_id_does_not() -> None:
 
 def test_an_unknown_id_is_refused_with_the_list_and_where_to_find_it() -> None:
     with pytest.raises(ProviderError) as e:
-        resolve_model("openai", "gpt-nope")
+        resolve_llm_id("openai", "gpt-nope")
     message = str(e.value)
     assert "openai" in message and "gpt-nope" in message
-    assert default_model_for("openai") in message and "(default)" in message
-    assert "list-models" in message
-    for model_id in model_ids("openai"):
-        assert model_id in message, f"{model_id} is valid but the refusal does not offer it"
+    assert default_llm_for("openai") in message and "(default)" in message
+    assert "list-llms" in message
+    for llm_id in llm_ids("openai"):
+        assert llm_id in message, f"{llm_id} is valid but the refusal does not offer it"
 
 
-def _refusal(provider: str, model: str) -> str:
+def _refusal(provider: str, llm_id: str) -> str:
     with pytest.raises(ProviderError) as e:
-        resolve_model(provider, model)
+        resolve_llm_id(provider, llm_id)
     return str(e.value)
 
 
@@ -288,37 +286,37 @@ def test_another_vendors_id_says_whose_it_is() -> None:
     """The mistake that looks like no mistake: a real id, at the wrong vendor. Telling the reader
     only that it is unknown would send them hunting for a typo that is not there."""
     message = _refusal("openai", "grok-4.6")
-    assert "is a grok model" in message and "--llm grok:grok-4.6" in message
+    assert "is a grok LLM" in message and "--llm grok:grok-4.6" in message
     # and an id belonging to nobody says nothing about vendors, because there is nothing to say
     assert "is a" not in _refusal("openai", "gpt-nope").split("Valid ids")[0].replace(
-        "is a model", ""
+        "is an LLM", ""
     )
 
 
 def test_the_refusal_names_where_the_id_came_from() -> None:
-    """Three places can name a model and the hunt for each is a different hunt, so the refusal
+    """Three places can name an LLM and the hunt for each is a different hunt, so the refusal
     carries the source with it. The default is `--llm`, because that is where a reader who has
     just typed something wrong almost always typed it."""
     assert "--llm" in str(_refusal("openai", "nope"))
     with pytest.raises(ProviderError, match=LLM_ENV):
-        resolve_model("openai", "nope", source=LLM_ENV)
+        resolve_llm_id("openai", "nope", source=LLM_ENV)
     with pytest.raises(ProviderError, match=r"robot duck-a \(robots.json\)"):
-        resolve_model("openai", "nope", source="robot duck-a (robots.json)")
+        resolve_llm_id("openai", "nope", source="robot duck-a (robots.json)")
 
 
-def test_no_model_means_the_default_and_local_presets_are_left_alone() -> None:
-    assert resolve_model("openai", None) == default_model_for("openai")
-    assert resolve_model("openai", "") == default_model_for("openai")
+def test_no_llm_means_the_default_and_local_presets_are_left_alone() -> None:
+    assert resolve_llm_id("openai", None) == default_llm_for("openai")
+    assert resolve_llm_id("openai", "") == default_llm_for("openai")
     # free text, both directions: a local server serves what it serves
-    assert resolve_model("ollama", "qwen3:8b") == "qwen3:8b"
+    assert resolve_llm_id("ollama", "qwen3:8b") == "qwen3:8b"
     # None here means ask the server, which is not the same as "use the default"
-    assert resolve_model("ollama", None) is None
-    assert resolve_model("local", "anything at all") == "anything at all"
+    assert resolve_llm_id("ollama", None) is None
+    assert resolve_llm_id("local", "anything at all") == "anything at all"
 
 
 def test_an_unknown_provider_is_not_this_functions_business() -> None:
     """`make_provider` raises "unknown provider" for that, and it must keep winning."""
-    assert resolve_model("hal", "whatever") == "whatever"
+    assert resolve_llm_id("hal", "whatever") == "whatever"
 
 
 # ── one flag, parsed ────────────────────────────────────────────────────────────────────
@@ -344,7 +342,7 @@ def test_an_unknown_provider_is_not_this_functions_business() -> None:
     ],
     ids=[
         "a-bare-vendor",
-        "a-vendor-and-a-model",
+        "a-vendor-and-an-llm",
         "a-bare-listed-id-infers-its-vendor",
         "and-so-does-another-vendors",
         "the-split-is-at-the-first-colon",
@@ -365,21 +363,21 @@ def test_every_shape_the_one_flag_takes(spec: str | None, expected: tuple[str, s
 
     `ollama:llama3:8b` is the row that is easy to get wrong and expensive to get wrong quietly:
     Ollama's own tags carry a colon, so a split on the last one would ask the server for
-    `llama3` and get a different model than the reader named, with nothing anywhere saying so.
+    `llama3` and get a different LLM than the reader named, with nothing anywhere saying so.
     """
     assert parse_llm(spec) == expected
 
 
-def test_a_bare_word_that_is_neither_a_vendor_nor_a_model_is_refused() -> None:
-    """And says the catalogue was searched, because a bare model id IS a legal spec: without
+def test_a_bare_word_that_is_neither_a_vendor_nor_an_llm_is_refused() -> None:
+    """And says the catalogue was searched, because a bare LLM id IS a legal spec: without
     that sentence the reader cannot tell whether they mistyped or whether bare ids are simply
     not allowed."""
     with pytest.raises(ProviderError) as e:
         parse_llm("hal9000")
     message = str(e.value)
     assert "unknown provider 'hal9000'" in message
-    assert "no vendor here lists a model of that name" in message
-    example = default_model_for("anthropic")
+    assert "no vendor here lists an LLM of that name" in message
+    example = default_llm_for("anthropic")
     assert "--llm anthropic," in message and f"--llm anthropic:{example}" in message
 
 
@@ -393,10 +391,10 @@ def test_a_bad_vendor_before_a_colon_names_the_whole_spec_back() -> None:
     assert "no vendor here lists" not in message
 
 
-def test_the_model_half_is_checked_against_the_vendor_that_was_named() -> None:
+def test_the_llm_half_is_checked_against_the_vendor_that_was_named() -> None:
     with pytest.raises(ProviderError) as e:
         parse_llm("openai:grok-4.6")
-    assert "is a grok model" in str(e.value)
+    assert "is a grok LLM" in str(e.value)
 
 
 # ── OpenRouter: a list that is not the whole list ───────────────────────────────────────
@@ -410,56 +408,56 @@ def test_openrouter_takes_a_well_formed_id_it_does_not_list_without_the_network(
     from quackd.agent.providers import openrouter
 
     def no_network(*a: Any, **kw: Any) -> Any:  # pragma: no cover - the failure it reports
-        raise AssertionError("resolve_model fetched OpenRouter's list")
+        raise AssertionError("resolve_llm_id fetched OpenRouter's list")
 
-    monkeypatch.setattr(openrouter, "fetch_models", no_network)
-    for model_id in ("qwen/qwen3.8-flash", "google/gemma-4-31b-it:free", "Anthropic/Claude-X"):
-        assert resolve_model("openrouter", model_id) == model_id
-    assert resolve_model("openrouter", None) == "openai/gpt-6-sol"
+    monkeypatch.setattr(openrouter, "fetch_llms", no_network)
+    for llm_id in ("qwen/qwen3.8-flash", "google/gemma-4-31b-it:free", "Anthropic/Claude-X"):
+        assert resolve_llm_id("openrouter", llm_id) == llm_id
+    assert resolve_llm_id("openrouter", None) == "openai/gpt-6-sol"
 
 
 @pytest.mark.parametrize(
-    ("model_id", "why"),
+    ("llm_id", "why"),
     [
-        ("~anthropic/claude-opus-latest", "newest model of its family"),
-        ("openrouter/auto", "routers choose the model per request"),
-        ("openrouter/free", "routers choose the model per request"),
-        ("OpenRouter/auto", "routers choose the model per request"),
+        ("~anthropic/claude-opus-latest", "newest LLM of its family"),
+        ("openrouter/auto", "routers choose the LLM per request"),
+        ("openrouter/free", "routers choose the LLM per request"),
+        ("OpenRouter/auto", "routers choose the LLM per request"),
         ("openai/gpt-6-sol:batch", "Batch API"),
         ("x-ai/grok-4.7:nitro", "priority rate"),
         ("x-ai/grok-4.7:floor", "flex rate"),
         ("x-ai/grok-4.7:exacto", "does not list"),
         ("anthropic/claude-sonnet-5.5:thinking", "`reasoning` parameter"),
-        ("anthropic/claude-sonnet-5.5:extended", "no model currently offers it"),
+        ("anthropic/claude-sonnet-5.5:extended", "no LLM currently offers it"),
         ("anthropic/claude-sonnet-5.5:online", "web_search"),
         ("google/gemma-4-31b-it:FREE", ":free is the only one"),
         ("google/gemma-4-31b-it:free:nitro", ":free is the only one"),
         ("google/gemma-4-31b-it:", "bare colon"),
-        ("gpt-6-sol", "AUTHOR/MODEL"),
-        ("openai/gpt 6", "AUTHOR/MODEL"),
-        ("a/b/c", "AUTHOR/MODEL"),
+        ("gpt-6-sol", "AUTHOR/LLM"),
+        ("openai/gpt 6", "AUTHOR/LLM"),
+        ("a/b/c", "AUTHOR/LLM"),
     ],
 )
 def test_openrouter_refuses_these_shapes_on_their_spelling(
-    model_id: str, why: str, monkeypatch: pytest.MonkeyPatch
+    llm_id: str, why: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Offline and before any key: each of these is refused on its spelling, with the reason
     and with where it came from, so a reader with no key and no network still hears it."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError) as e:
-        resolve_model("openrouter", model_id, source="robot duck-a (robots.json)")
+        resolve_llm_id("openrouter", llm_id, source="robot duck-a (robots.json)")
     message = str(e.value)
-    assert why in message and repr(model_id) in message
-    assert "robot duck-a (robots.json)" in message and "list-models --llm openrouter" in message
-    # It names the rows quackd carries and points at list-models, and says nothing of other ids.
+    assert why in message and repr(llm_id) in message
+    assert "robot duck-a (robots.json)" in message and "list-llms --llm openrouter" in message
+    # It names the rows quackd carries and points at list-llms, and says nothing of other ids.
     # 0.17.0 said any other id with tool calling on the list works too, which the refused shape
     # in this very message contradicts when OpenRouter lists it, as it lists `~` aliases, its
     # routers and `:batch` ids.
-    rows = ", ".join(model_ids("openrouter"))
-    assert message.endswith(f". quackd lists {rows}. See `quackd list-models --llm openrouter`.")
+    rows = ", ".join(llm_ids("openrouter"))
+    assert message.endswith(f". quackd lists {rows}. See `quackd list-llms --llm openrouter`.")
     assert "works too" not in message and "other id" not in message.lower()
     with pytest.raises(ProviderError, match="is refused"):
-        make_provider("openrouter", model=model_id)
+        make_provider("openrouter", llm_id=llm_id)
 
 
 def test_every_refusal_reason_is_reachable() -> None:
@@ -467,8 +465,8 @@ def test_every_refusal_reason_is_reachable() -> None:
     from quackd.agent.providers.factory import OPENROUTER_REFUSED, _open_ended_refusal
 
     printed = {
-        _open_ended_refusal(model_id)
-        for model_id in (
+        _open_ended_refusal(llm_id)
+        for llm_id in (
             "~a/b",
             "openrouter/auto",
             *(f"a/b{suffix}" for suffix in OPENROUTER_REFUSED if suffix.startswith(":")),
@@ -495,33 +493,33 @@ def test_a_slash_in_the_vendor_half_points_at_openrouter() -> None:
     assert "openrouter" not in str(e.value).split("Vendors:")[0].lower()
 
 
-def test_an_openrouter_id_named_at_the_vendor_whose_model_it_is_says_whose_it_is() -> None:
+def test_an_openrouter_id_named_at_the_vendor_whose_llm_it_is_says_whose_it_is() -> None:
     """`--llm anthropic:anthropic/claude-opus-5.5` is the native vendor asked for a router's
-    spelling of its own model."""
+    spelling of its own LLM."""
     listed = _refusal("anthropic", "anthropic/claude-opus-5.5")
     assert "--llm openrouter:anthropic/claude-opus-5.5" in listed
     unlisted = _refusal("anthropic", "anthropic/claude-mythos-9")
     assert "--llm openrouter:anthropic/claude-mythos-9" in unlisted
     # and the converse: a native id named at OpenRouter is refused for its shape
-    assert "AUTHOR/MODEL" in _refusal("openrouter", "claude-opus-5-5")
+    assert "AUTHOR/LLM" in _refusal("openrouter", "claude-opus-5-5")
 
 
 def test_completion_can_ask_which_vendor_without_paying_for_the_lookup() -> None:
     """Shell completion has to answer while the id after the colon is still half typed, so a
     half-finished id must not be refused on the way to naming its vendor."""
-    assert parse_llm("openai:gpt-5.6-so", check_model=False) == ("openai", "gpt-5.6-so")
-    assert parse_llm("openai:grok-4.6", check_model=False) == ("openai", "grok-4.6")
+    assert parse_llm("openai:gpt-5.6-so", check_llm=False) == ("openai", "gpt-5.6-so")
+    assert parse_llm("openai:grok-4.6", check_llm=False) == ("openai", "grok-4.6")
 
 
 # ── the factory refuses before it spends anything ───────────────────────────────────────
 
 
-def test_a_bad_model_is_refused_before_the_key_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Order matters. With the model checked second, a reader with no key would be told about
-    the key, fix that, and only then be told the model was wrong all along."""
+def test_a_bad_llm_is_refused_before_the_key_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Order matters. With the LLM checked second, a reader with no key would be told about
+    the key, fix that, and only then be told the LLM was wrong all along."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(ProviderError, match="unknown model"):
-        make_provider("openai", model="gpt-nope")
+    with pytest.raises(ProviderError, match="unknown LLM"):
+        make_provider("openai", llm_id="gpt-nope")
 
 
 def test_a_pinned_spec_from_the_wrong_vendor_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -574,8 +572,8 @@ def test_where_a_pilot_may_be_named_and_which_place_wins(
         monkeypatch.delenv(LLM_ENV, raising=False)
     else:
         monkeypatch.setenv(LLM_ENV, env)
-    vendor, model, where = resolve_llm(flag, stored, robot="duck-a")
-    assert (vendor, model) == expected
+    vendor, llm_id, where = resolve_llm(flag, stored, robot="duck-a")
+    assert (vendor, llm_id) == expected
     assert where.startswith(source), where
 
 
@@ -589,9 +587,9 @@ def test_the_source_phrase_says_which_robot_when_one_was_named(
     assert resolve_llm(None, "anthropic")[2] == "robots.json"
 
 
-def test_the_scripted_pilot_ignores_a_model_rather_than_refusing_it() -> None:
-    """`--llm fake` has no model to pick, and failing a demo over an unused half is rude."""
-    assert make_provider("fake", model="gpt-nope", duck_name="hello-world").name == "fake"
+def test_the_scripted_pilot_ignores_an_llm_rather_than_refusing_it() -> None:
+    """`--llm fake` has no LLM to pick, and failing a demo over an unused half is rude."""
+    assert make_provider("fake", llm_id="gpt-nope", duck_name="hello-world").name == "fake"
 
 
 def test_an_unknown_provider_still_says_unknown_provider() -> None:
@@ -605,14 +603,14 @@ def test_the_local_branch_is_handed_exactly_what_it_was_before(
     """Free text reaches a local preset untouched, including an id no cloud vendor would take."""
     recorded: dict[str, Any] = {}
 
-    def _record(self: Any, model: str | None = None, **kwargs: Any) -> None:
-        recorded["model"] = model
+    def _record(self: Any, llm_id: str | None = None, **kwargs: Any) -> None:
+        recorded["model"] = llm_id
         recorded.update(kwargs)
         self.name = "vllm"
-        self.model = model
+        self.llm_id = llm_id
 
     monkeypatch.setattr("quackd.agent.providers.local.LocalProvider.__init__", _record)
-    make_provider("vllm", model="Qwen/Qwen3-8B", base_url="http://gpu:8000/v1", vision=True)
+    make_provider("vllm", llm_id="Qwen/Qwen3-8B", base_url="http://gpu:8000/v1", vision=True)
     assert recorded == {
         "model": "Qwen/Qwen3-8B",
         "preset": "vllm",
@@ -663,31 +661,31 @@ def test_every_extra_exists_in_the_packaging_and_installs_the_right_sdk() -> Non
         )
 
 
-def test_a_model_that_takes_no_image_is_not_sent_one() -> None:
+def test_an_llm_that_takes_no_image_is_not_sent_one() -> None:
     """The camera frame is the one thing a catalogue entry changes about a running provider.
 
-    A model whose vendor documents no image input gets the detections as text instead, the way a
-    local model already does, rather than a 400 on the first turn. The flag is a default, not a
+    An LLM whose vendor documents no image input gets the detections as text instead, the way a
+    local LLM already does, rather than a 400 on the first turn. The flag is a default, not a
     verdict: `--vision` and `--no-vision` still decide when a reader has an opinion.
     """
     from quackd.agent.providers.mistral import MistralProvider
 
-    assert MistralProvider(model="codestral-2508", client=FakeOpenAI()).supports_vision is False
-    assert MistralProvider(model="mistral-large-2512", client=FakeOpenAI()).supports_vision is True
-    forced = MistralProvider(model="codestral-2508", client=FakeOpenAI(), vision=True)
+    assert MistralProvider(llm_id="codestral-2508", client=FakeOpenAI()).supports_vision is False
+    assert MistralProvider(llm_id="mistral-large-2512", client=FakeOpenAI()).supports_vision is True
+    forced = MistralProvider(llm_id="codestral-2508", client=FakeOpenAI(), vision=True)
     assert forced.supports_vision is True, "--vision must still win over the catalogue"
-    refused = MistralProvider(model="mistral-large-2512", client=FakeOpenAI(), vision=False)
+    refused = MistralProvider(llm_id="mistral-large-2512", client=FakeOpenAI(), vision=False)
     assert refused.supports_vision is False, "--no-vision must still win over the catalogue"
 
 
 def test_every_vendor_agrees_with_itself_about_images() -> None:
     """Whatever a vendor's entry claims, the provider it builds must report the same thing, or
-    `quackd list-models` and the run would disagree about what gets sent."""
+    `quackd list-llms` and the run would disagree about what gets sent."""
     for name in sorted(OPENAI_COMPATIBLE):
         module = importlib.import_module(f"quackd.agent.providers.{name}")
         vendor = getattr(module, OPENAI_COMPATIBLE[name])
-        for m in models_for(name):
-            assert vendor(model=m.id, client=FakeOpenAI()).supports_vision is m.vision, m.id
+        for m in llms_for(name):
+            assert vendor(llm_id=m.id, client=FakeOpenAI()).supports_vision is m.vision, m.id
 
 
 @pytest.mark.parametrize("name", sorted(OPENAI_COMPATIBLE))
@@ -701,7 +699,7 @@ def test_each_openai_shaped_vendor_is_wired_the_same_way(name: str) -> None:
         "a key goes to this address, so it is not going over plain http"
     )
     assert vendor.default_tool_choice == TOOL_CHOICE[name]
-    assert vendor(client=FakeOpenAI()).model == default_model_for(name)
+    assert vendor(client=FakeOpenAI()).llm_id == default_llm_for(name)
 
 
 @pytest.mark.parametrize("name", sorted(OPENAI_COMPATIBLE))
@@ -778,4 +776,4 @@ def test_the_local_presets_are_the_ones_the_catalogue_excuses() -> None:
     """The catalogue and `local.py` keep separate lists, and they must name the same servers."""
     assert set(cat.LOCAL_NAMES) == set(PRESETS)
     for name in cat.LOCAL_NAMES:
-        assert models_for(name) == ()
+        assert llms_for(name) == ()

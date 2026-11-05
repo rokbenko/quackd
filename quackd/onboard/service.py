@@ -539,10 +539,10 @@ class Service:
         from quackd.safety import deny_all
 
         brain = self.file.brain
-        vendor, model, _source = resolve_llm(None, brain.llm, robot=self.file.passport.name)
+        vendor, llm_id, _source = resolve_llm(None, brain.llm, robot=self.file.passport.name)
         provider = make_provider(
             vendor,
-            model=model,
+            llm_id=llm_id,
             source="robot.yaml brain.llm",
             duck_name=duck.name,
             goal=duck.body if kind == "goal" else None,

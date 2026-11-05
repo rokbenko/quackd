@@ -25,7 +25,7 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli
+from quackd import cli, ui
 from quackd.agent.loop import RunConfig, RunResult, run_duck
 from quackd.agent.providers import pricing
 from quackd.agent.providers import vla as V
@@ -41,9 +41,9 @@ from quackd.agent.providers.base import (
 from quackd.agent.providers.vla import VlaProvider
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB
-from quackd.log import a_person_was_asked
-from quackd.safety import allow_all
+from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB, Budgets
+from quackd.log import LineLog, LogEvent, a_person_was_asked, render_lines
+from quackd.safety import Budget, BudgetExceeded, allow_all
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import LeRobotMock
 from quackd_lerobot.policy import server as S
@@ -155,13 +155,117 @@ async def test_a_person_who_says_yes_is_the_only_success(tmp_path: Path) -> None
 
 
 async def test_it_costs_nothing_and_says_so(tmp_path: Path) -> None:
-    """No model is asked, so no token is counted, and the run is priced at the scripted
+    """No LLM is asked, so no token is counted, and the run is priced at the scripted
     pilot's rate rather than left unpriced."""
     result = await _run(tmp_path, judge=_person(True))
     assert result.usage == Usage()
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["provider"] == V.NAME and summary["cost_usd"] == 0.0
     assert summary["price"]["source"] == pricing.FAKE.source
+
+
+async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
+    """The line under the verdict and the line at the top of each step are what a person reads
+    a run by, and `LLM calls 5` on a run that asked no LLM is false. Its pilot took turns, and
+    `quackd log` prints the same line from the record."""
+    result = await _run(tmp_path, judge=_person(True))
+    summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    events = _events(result)
+    end = next(event for event in events if event["kind"] == "run_end")
+    for counters in (cli.run_counters(summary), cli.run_counters(end)):
+        assert f"turns {summary['llm_calls']}" in counters
+        assert not [counter for counter in counters if "LLM" in counter], counters
+        moved = next(counter for counter in counters if counter.startswith("first motion"))
+        assert moved.endswith(f"after {summary['first_motion_llm_calls']} turns")
+    tops = [
+        str(event["text"]).split("\n", 1)[0] for event in events if event["kind"] == "observation"
+    ]
+    assert tops, "no step of this run was observed"
+    for top in tops:
+        assert " · turns " in top and "LLM" not in top, top
+
+
+async def test_no_line_of_its_record_says_an_llm_was_asked(tmp_path: Path) -> None:
+    """Replayed whole, its prompt included, as `quackd log --prompt` and the page's History tell
+    it, and the live line through every answer it gave, because a label that says `LLM` on a run
+    with no LLM in it is as false as a counter that does. The record's own keys stay."""
+    result = await _run(tmp_path, judge=_person(True))
+    events = _events(result)
+    made: list[str] = []
+    replay = LineLog(lambda text, _style: made.append(text), prompt=True)
+    answers = []
+    for event in events:
+        data = {k: v for k, v in event.items() if k not in ("t", "kind")}
+        replay(LogEvent(str(event["kind"]), float(event["t"]), data))
+        if event["kind"] == "llm":
+            answers.append(ui._answered(data))
+    told = "\n".join(made)
+    assert "provider=vla pilot=scripted:stack" in told
+    assert "pilot>  step 0:" in told
+    assert "40 turns" in told, "the prompt's budget line"
+    assert not re.search(r"\bLLMs?\b|\bllm\b", told, re.IGNORECASE), told
+    assert answers and all(answer.startswith("the pilot chose ") for answer in answers), answers
+
+
+def test_a_budget_it_runs_out_of_names_the_key_and_what_it_counted() -> None:
+    """A person raises `max_llm_calls` in the task file, so the key stays in the sentence, and on
+    this run it held the pilot's turns. Any other run's sentence is what it always was, which the
+    run sheet quotes."""
+    turns = Budget(Budgets(max_llm_calls=1), calls_word="turns")
+    turns.note_llm_call()
+    with pytest.raises(BudgetExceeded) as caught:
+        turns.check()
+    assert str(caught.value) == "max_llm_calls (1) reached, which counts turns here"
+    calls = Budget(Budgets(max_llm_calls=1))
+    calls.note_llm_call()
+    with pytest.raises(BudgetExceeded) as caught:
+        calls.check()
+    assert str(caught.value) == "max_llm_calls (1) reached"
+
+
+def test_another_pilot_keeps_the_words_of_an_llm() -> None:
+    """`--llm fake` stands in for an LLM, and a transcript's lines are a contract with whatever
+    reads an MCP result, so only the VLA pilot's lines are told apart."""
+    start = {"duck": "d", "provider": "fake", "llm_id": "scripted:d", "transport": "mock"}
+    ((head, _), *_) = render_lines(LogEvent("run_start", 0.0, start))
+    assert "provider=fake LLM=scripted:d" in head
+    asked = {"step": 0, "messages": 1, "provider": "fake", "llm_id": "scripted:d"}
+    ((line, _),) = render_lines(LogEvent("llm_request", 0.0, asked))
+    assert line.startswith("llm>  ")
+    said = {"provider": "fake", "text": "hm", "tool_calls": [{"name": "stop", "arguments": {}}]}
+    assert render_lines(LogEvent("llm", 0.0, said))[0][0].startswith("llm<  ")
+    assert ui._answered(said) == "the LLM chose stop()"
+    assert ui._answered({"provider": "fake"}) == "the LLM answered without a call"
+    assert ui._answered({"provider": V.NAME}) == "the pilot answered without a call"
+    assert render_lines(LogEvent("llm", 0.0, {**said, "provider": V.NAME}))[0][0].startswith(
+        "pilot<"
+    )
+
+
+def test_one_turn_is_one_turn_and_a_pilot_llm_still_says_what_it_did() -> None:
+    """Only the VLA pilot is told apart, and `--llm fake` stands in for an LLM so it keeps the
+    LLM's counters, which the pages quote. The policy's seconds stay in the split for both."""
+    end = {
+        "steps": 1,
+        "llm_calls": 1,
+        "wall_s": 3.0,
+        "llm_latency_s": 2.0,
+        "llm_latency_p50_s": 2.0,
+        "llm_latency_p90_s": 2.0,
+        "llm_latency_max_s": 2.0,
+        "first_motion_s": 3.0,
+        "first_motion_llm_calls": 1,
+        "policy": {"segments": 1, "wall_s": 1.0},
+    }
+    for provider in ("fake", "anthropic"):
+        said = cli.run_counters({**end, "provider": provider})
+        assert said[1] == "LLM calls 1" and "time 3.0 s (LLM 2.0 s, policy 1.0 s)" in said
+        assert "LLM calls p50 2.0 s, p90 2.0 s, max 2.0 s" in said
+        assert "first motion at 3.0 s, after 1 LLM call" in said
+    said = cli.run_counters({**end, "provider": V.NAME})
+    assert said[1] == "turns 1" and "time 3.0 s (policy 1.0 s)" in said
+    assert "first motion at 3.0 s, after 1 turn" in said
+    assert not [counter for counter in said if "LLM" in counter], said
 
 
 async def test_a_person_who_says_no_fails_the_run(tmp_path: Path) -> None:
@@ -385,7 +489,7 @@ class _Claims:
     """A pilot that says it cannot judge and declares success anyway."""
 
     name = "claims"
-    model = "scripted"
+    llm_id = "scripted"
     supports_vision = False
 
     def judge_question(self, history: Any, *, cut_short: str | None = None) -> str | None:
@@ -490,7 +594,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(
             (*GOAL, *ARM, "--llm", "fake", "--image", "x.png"),
             "so --llm and --image would do nothing",
-            id="a-model",
+            id="an-llm",
         ),
         # no pilot reads a part, so asking for one would do nothing, while --no-play says what
         # is so and is never named with the flags that do nothing
@@ -498,7 +602,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(
             (*GOAL, *ARM, "--llm", "fake", "--no-play"),
             "so --llm would do nothing",
-            id="a-model-and-no-play",
+            id="an-llm-and-no-play",
         ),
         pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
         pytest.param(
@@ -507,7 +611,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(("--goal", "one\ntwo", *ARM), "one line of plain text", id="two-lines"),
         pytest.param(
             (*GOAL, *ARM, "--decision-llm", "jev"),
-            "no model for a decision LLM to step in front of, and --decision-llm names one",
+            "no pilot LLM for a decision LLM to step in front of, and --decision-llm names one",
             id="decision-llm",
         ),
         # frames build a decision LLM whatever the mode, and this pilot has none to show one
@@ -521,7 +625,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
                 "off",
                 "--decision-frames",
             ),
-            "no model for a decision LLM to step in front of, and --decision-llm names one",
+            "no pilot LLM for a decision LLM to step in front of, and --decision-llm names one",
             id="decision-frames",
         ),
     ],
@@ -744,7 +848,7 @@ def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
     assert rows == [("decide", True), ("confirm", True), ("judge", said)]
     (judged,) = [e for e in events if e["kind"] == "prompt" and e["what"] == "judge"]
     assert "'hold still'" in judged["question"]
-    assert "The task is done when" not in judged["question"], "a goal's success lines are a model's"
+    assert "The task is done when" not in judged["question"], "a goal's success lines are an LLM's"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["provider"] == V.NAME and summary["cost_usd"] == 0.0
     assert summary["policy"]["segments"] == 1

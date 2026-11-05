@@ -1,6 +1,6 @@
 """Every line the plain log renderer can draw, as named cases.
 
-The MCP tool result is made of these exact strings (`docs/guides/mcp.md`) and a model reads them on
+The MCP tool result is made of these exact strings (`docs/guides/mcp.md`) and an LLM reads them on
 every call, so the terminal view may be redrawn but `render_lines` may not move under it.
 One case per branch, named, so a failing diff says which branch drifted rather than dumping
 two hundred lines side by side.
@@ -36,7 +36,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 0.0,
                 duck="find-and-kick",
                 provider="anthropic",
-                model="claude-opus-5",
+                llm_id="claude-opus-5",
                 transport="sim2d",
                 adapter="microduck",
                 tools=["walk", "kick", "quack"],
@@ -48,7 +48,9 @@ def events() -> list[tuple[str, LogEvent]]:
         ),
         (
             "run_start_bare",
-            _e("run_start", 0.0, duck="hello-world", provider="fake", model=None, transport="mock"),
+            _e(
+                "run_start", 0.0, duck="hello-world", provider="fake", llm_id=None, transport="mock"
+            ),
         ),
         # ── observation ──
         ("observation", _e("observation", 0.1, step=0, text="[step 0/5]\nstate: standing")),
@@ -57,7 +59,7 @@ def events() -> list[tuple[str, LogEvent]]:
         # ── llm_request ──
         (
             "llm_request",
-            _e("llm_request", 0.2, step=2, messages=7, images=1, provider="openai", model="gpt-5"),
+            _e("llm_request", 0.2, step=2, messages=7, images=1, provider="openai", llm_id="gpt-5"),
         ),
         (
             "llm_request_reprompt",
@@ -67,7 +69,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 step=2,
                 messages=8,
                 provider="openai",
-                model="gpt-5",
+                llm_id="gpt-5",
                 reprompt=True,
             ),
         ),
@@ -80,7 +82,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 messages=7,
                 images=1,
                 provider="anthropic",
-                model="claude-opus-5-5",
+                llm_id="claude-opus-5-5",
                 attempt=2,
             ),
         ),
@@ -146,9 +148,9 @@ def events() -> list[tuple[str, LogEvent]]:
             ),
         ),
         (
-            # A model the catalogue has no rate for: both figures are None, not 0.0, and no
+            # An LLM the catalogue has no rate for: both figures are None, not 0.0, and no
             # dollar sign may appear anywhere on the line. Printing `$0.00` for a frontier
-            # model is the one failure here that costs somebody real money, so it is frozen.
+            # LLM is the one failure here that costs somebody real money, so it is frozen.
             "llm_unpriced",
             _e(
                 "llm",
@@ -174,7 +176,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 0.3,
                 mode="on",
                 llm="jev",
-                model="jev-1.13.0",
+                llm_id="jev-1.13.0",
                 latency_s=0.213,
                 gate="taken",
                 choice="gripper(open=false)",
@@ -208,7 +210,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 0.3,
                 mode="shadow",
                 llm="openai",
-                model="gpt-6-luna",
+                llm_id="gpt-6-luna",
                 latency_s=0.31,
                 idle_s=7.5,
                 gate="refused",
@@ -248,7 +250,7 @@ def events() -> list[tuple[str, LogEvent]]:
         ),
         # ── decision: what the question cost, measured and guessed ──
         (
-            # The whole argument for a stepper is the ratio between this and the model call it
+            # The whole argument for a stepper is the ratio between this and the pilot LLM call it
             # stands in for, so the figure rides in the same parenthesis as the seconds.
             "decision_billed",
             _e(
@@ -256,7 +258,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 0.3,
                 mode="on",
                 llm="jev",
-                model="jev-1.13.0",
+                llm_id="jev-1.13.0",
                 latency_s=0.11,
                 gate="taken",
                 choice="gripper(open=false)",
@@ -313,7 +315,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 decision_choice="report_state",
                 decision_confidence=0.88,
                 decision_latency_s=0.2,
-                model_verb="report_state",
+                llm_verb="report_state",
                 agree=True,
                 llm_latency_s=8.2,
             ),
@@ -326,7 +328,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 decision_choice="stop",
                 decision_confidence=0.71,
                 decision_latency_s=0.3,
-                model_verb="move_joints",
+                llm_verb="move_joints",
                 agree=False,
                 llm_latency_s=6.9,
             ),
@@ -343,7 +345,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 decision_gate="refused",
                 refused=["next_verb"],
                 decision_latency_s=0.31,
-                model_verb="report_state",
+                llm_verb="report_state",
                 agree=False,
                 llm_latency_s=7.4,
             ),
@@ -367,7 +369,7 @@ def events() -> list[tuple[str, LogEvent]]:
             _e("verb_start", 0.5, name="walk_to", params={"target": "ball"}, nested=True),
         ),
         ("verb_start_mcp", _e("verb_start", 0.5, name="quack", params={}, source="mcp")),
-        # The stepper chose this verb itself and the model never saw the turn, which is the one
+        # The stepper chose this verb itself and the pilot LLM never saw the turn, which is the one
         # thing a reader of the log has to be able to tell from a verb the pilot asked for.
         (
             "verb_start_decision",
@@ -745,7 +747,7 @@ def host_detector_start() -> LogEvent:
         0.0,
         duck="find-and-kick",
         provider="ollama",
-        model="qwen3:8b",
+        llm_id="qwen3:8b",
         transport="bridge",
         adapter="toddlerbot",
         detector="yolo@host",
@@ -772,7 +774,7 @@ def played_start() -> LogEvent:
         0.0,
         duck="e049-t-rex",
         provider="openai",
-        model="gpt-6-astra",
+        llm_id="gpt-6-astra",
         transport="real",
         adapter="lerobot",
         contract={"play": False},

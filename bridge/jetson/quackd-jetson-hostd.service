@@ -31,7 +31,7 @@ WorkingDirectory=/var/lib/quackd-jetson-hostd
 ExecStart=/usr/bin/python3 /opt/quackd/quackd_jetson_hostd.py --bind 127.0.0.1 --port 9874 --camera csi --fps 5 --size 640x480 --token-file /etc/quackd/jetson-hostd.token
 
 # This is the process to lose. On a robot whose own computer this board is, the robot's
-# control daemon and a model server may share it, and a model server or a detector saturating
+# control daemon and an LLM server may share it, and an LLM server or a detector saturating
 # the board can starve a fifty hertz control loop. So this yields: a lower CPU priority than
 # either, a memory ceiling, and an OOM score that makes the kernel take this first. Losing it
 # costs quackd a camera, detections and the board's health; losing the control loop mid-step

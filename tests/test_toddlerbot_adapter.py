@@ -4,7 +4,7 @@ quackd's first full humanoid, and the manifest is mostly absences. Three of them
 point of this file: there is no text to speech, so `say` does not exist; there is no walk
 checkpoint in the repository, so locomotion does not exist unless the daemon says one is
 staged; and there is no get-up policy, so a fall is terminal and every moving verb has to say
-so rather than letting a model thrash a fallen robot against the floor.
+so rather than letting an LLM thrash a fallen robot against the floor.
 """
 
 from __future__ import annotations
@@ -266,7 +266,7 @@ async def test_the_mock_refuses_what_this_body_cannot_do() -> None:
 
 async def test_a_fallen_robot_is_told_to_wait_for_a_human() -> None:
     """There is no get-up policy for this body, so the refusal names no verb: `stand_up` does
-    not exist and offering it would invite a model to thrash a fallen humanoid."""
+    not exist and offering it would invite an LLM to thrash a fallen humanoid."""
     adapter = ToddlerBotAdapter(ToddlerBotMock(fallen=True))
     manifest = await adapter.connect()
     ex = _executor(adapter, manifest)
@@ -434,7 +434,7 @@ def test_only_the_builds_quackd_will_drive_are_listed() -> None:
 
 def test_the_manifest_declares_exactly_this_set_and_no_more() -> None:
     """Pinned on purpose. A verb that appears here without anyone deciding to add it is a
-    verb the model will be offered on a body that cannot get up if it falls."""
+    verb the LLM will be offered on a body that cannot get up if it falls."""
     full = toddlerbot_manifest("bridge", camera=True, neck=True, gripper=True, walk=True)
     assert set(full.verb_names()) == {
         "report_state",

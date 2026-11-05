@@ -28,7 +28,7 @@ names is now driven clipped into the travel, and a joint recorded past the trave
 its edge or anywhere beyond it.
 
 **Amended 2026-09-23, the same afternoon:** the decision below that made `duration_s` a budget
-is reversed, because a budget left the step cap as the only pace the arm had, and a model on
+is reversed, because a budget left the step cap as the only pace the arm had, and an LLM on
 the bench asked to raise the arm slowly read the verb's text correctly and declined.
 `duration_s` is now how long the motion should take: `move_joints` reads the arm once and walks
 its goal from there to the goal across that time, one target a tick, then sends the goal itself

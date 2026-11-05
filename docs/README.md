@@ -8,11 +8,11 @@ that, sorted by what you came to do. What has run on a real robot and what has n
 
 - [The first run on an SO-101 arm](adapters/lerobot/first-run.md): from an empty laptop to a
   wave, written for somebody who has never run quackd or LeRobot.
-- [FAQ](faq.md): the simulators, models and providers, seeing what happened, real robots,
+- [FAQ](faq.md): the simulators, LLMs and providers, seeing what happened, real robots,
   driving it from somewhere else, security and privacy, what it can and cannot drive, and the
   name.
 - [Safety](concepts/safety.md): read it before anything with a motor.
-- [Models](models/README.md): which models quackd can fly a robot with, which can decide for
+- [LLMs and policies](llms/README.md): which LLMs quackd can fly a robot with, which can decide for
   it and which can drive the arm, and how to name each one.
 
 ## Guides
@@ -25,8 +25,8 @@ How to do one thing with quackd.
 | [The page: quackd ui](guides/web-ui.md) | a goal or a chat from a browser or a phone, with every option of `run` and `drive`, the robot's questions and a Stop, and how a phone reaches it |
 | [Pilot your robots from Claude](guides/mcp.md) | `quackd serve-mcp`: a robot, or a flock of them, as MCP tools that Claude Code or Claude Desktop pilots |
 | [Local and open-source LLMs](guides/local-llms.md) | Ollama, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible server as the pilot |
-| [OpenRouter](guides/openrouter.md) | one key for other vendors' models as the pilot: which ids quackd takes and refuses, where a prompt goes, and what a turn is billed |
-| [Decision LLMs](guides/decision-llms/README.md) | the optional discrete stepper in front of the model, with a page for each one quackd names: [Jev](guides/decision-llms/jev.md), [OpenAI's Decisions API](guides/decision-llms/openai.md), [Kev](guides/decision-llms/kev.md), [Von](guides/decision-llms/von.md), [OpenJev](guides/decision-llms/openjev.md), [OpenDecision](guides/decision-llms/opendecision.md), [local](guides/decision-llms/local.md) and [Laya](guides/decision-llms/laya.md) |
+| [OpenRouter](guides/openrouter.md) | one key for other vendors' LLMs as the pilot: which ids quackd takes and refuses, where a prompt goes, and what a turn is billed |
+| [Decision LLMs](guides/decision-llms/README.md) | the optional discrete stepper in front of the pilot LLM, with a page for each one quackd names: [Jev](guides/decision-llms/jev.md), [OpenAI's Decisions API](guides/decision-llms/openai.md), [Kev](guides/decision-llms/kev.md), [Von](guides/decision-llms/von.md), [OpenJev](guides/decision-llms/openjev.md), [OpenDecision](guides/decision-llms/opendecision.md), [local](guides/decision-llms/local.md) and [Laya](guides/decision-llms/laya.md) |
 | [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `quackd policy serve` |
 | [Registered robots and flocks](guides/registry.md) | a name for a robot, and for a flock, kept between runs |
 | [Memory](guides/memory.md) | what a robot keeps between runs |
@@ -37,20 +37,21 @@ How to do one thing with quackd.
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
 | [An NVIDIA Jetson](guides/jetson.md) | a board quackd reaches with `--host`, and the one `quackd onboard`, Robot Passport's service, runs on |
 
-## Models
+## LLMs and policies
 
-Robots have [adapters/](adapters/), and models have [models/](models/README.md): a page for
-each of the three roles a model can have in a run and one for the companies behind them.
-Their tables are rendered from the code by `scripts/models_docs.py`, so they say what this
+Robots have [adapters/](adapters/), and LLMs have [llms/](llms/README.md): a page for the three
+roles one can have in a run, one for each LLM's role and one for the companies behind them. The
+third role is a learned policy, which is no LLM, so its page is with the guides.
+Their tables are rendered from the code by `scripts/llms_docs.py`, so they say what this
 build takes.
 
 | Page | What it covers |
 |---|---|
-| [Models](models/README.md) | the three roles side by side, how one run uses all three, and how to choose |
-| [Pilot LLMs](models/pilot-llms.md) | every vendor `--llm` takes and every model id, with its extra, its key, its address and its rate |
-| [Decision LLMs](models/decision-llms.md) | every decision LLM `--decision-llm` names, where it runs, its key and its rate |
-| [VLAs and the other learned policies](models/vlas.md) | the policy types the arm's policy server serves, where they run, and what is not served and why |
-| [Who makes what](models/vendors.md) | each company and project, the roles it fills, and the key and the extra it needs |
+| [LLMs and policies](llms/README.md) | the three roles side by side, how one run uses all three, and how to choose |
+| [Pilot LLMs](llms/pilot-llms.md) | every vendor `--llm` takes and every LLM id, with its extra, its key, its address and its rate |
+| [Decision LLMs](llms/decision-llms.md) | every decision LLM `--decision-llm` names, where it runs, its key and its rate |
+| [VLAs and the other learned policies](guides/vlas.md) | the policy types the arm's policy server serves, where they run, and what is not served and why |
+| [Who makes what](llms/vendors.md) | each company and project, the roles it fills, and the key and the extra it needs |
 
 How to set each one up is a guide: [local LLMs](guides/local-llms.md),
 [OpenRouter](guides/openrouter.md), [decision LLMs](guides/decision-llms/README.md) and
@@ -157,12 +158,13 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
 - `concepts/` for how quackd works, and why.
-- `models/` for which models quackd names, a page for each role and one for the companies.
-  Their tables are rendered from the code by `scripts/models_docs.py`, so a row is changed
-  there and never in a table. How to set a model up is a guide.
+- `llms/` for which LLMs quackd names, a page for each of their roles and one for the companies. Their
+  tables, and the policy types' in `guides/vlas.md`, are rendered from the code by
+  `scripts/llms_docs.py`, so a row is changed there and never in a table. How to set one up is a
+  guide.
 - `passport/` for anything about Robot Passport, the protocol and quackd's part in it, kept in one
   folder so it can leave quackd whole.
 - `adr/` for a decision, numbered after the last one.
 
 Then link it from this page. A test fails while any page under `guides/`, `adapters/`,
-`reference/`, `concepts/`, `models/` or `passport/` is missing from it.
+`reference/`, `concepts/`, `llms/` or `passport/` is missing from it.

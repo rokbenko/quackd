@@ -18,7 +18,7 @@ to leave out, and how to take part while revealing as little as possible.
 | the LAN record | anybody on the same LAN | the robot key's short id, which never changes, beside the current beacon id and its passport's digest |
 | the passport | anybody near enough to say hello, with any passport at all, and anybody on its LAN | whatever its owner put in it, and the owner key that signed it |
 | talk | the robot it talks to, and anybody who can read the LAN or listen to the link | what it says |
-| the robot's brain | the provider of the model `brain:` names | what the brain is shown of the robots it meets |
+| the robot's brain | the provider of the LLM `brain:` names | what the brain is shown of the robots it meets |
 | quackd's own records | whoever can read the robot's folder | the robots it met, when, and what they said |
 
 A beacon never carries an owner, a name of a person, or a place. What the passport carries beyond
@@ -82,8 +82,8 @@ On the robot, in its folder, and nowhere else:
   stranger's words included, because the record is for a person.
 
 Nothing is sent anywhere else, with one exception you choose: whatever the brain is shown goes to
-the model `brain:` names. With a cloud model, its provider sees the facts of the robots met and what
-known robots said. A model server you run yourself keeps all of it on your own network.
+the LLM `brain:` names. With a cloud LLM, its provider sees the facts of the robots met and what
+known robots said. An LLM server you run yourself keeps all of it on your own network.
 
 quackd never sends a camera frame over talk: a `share` is a sentence, never a picture.
 

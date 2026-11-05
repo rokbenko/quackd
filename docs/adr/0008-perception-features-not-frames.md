@@ -59,10 +59,10 @@ name too (`frames/0007-top.png` where a single camera writes `frames/0007.png`).
 This does not change the decision, and the three things it rests on are untouched:
 
 - The pilot still reads features. The summary line is still the designed path, and a text-only
-  model still gets the whole task through it.
+  LLM still gets the whole task through it.
 - The `Detector` still runs on one camera, the first url, the one `--fov-deg` describes. A
   bearing is only meaningful from the lens it was measured on, so when that camera is the one
-  that stalls the line reports nothing seen even though the other views still reach the model.
+  that stalls the line reports nothing seen even though the other views still reach the LLM.
 - The verbs that steer by sight still read that one camera at ~10 Hz, for the reason this ADR
   was written: fetching every camera inside that loop would spend the deadman window on pixels.
 
@@ -83,7 +83,7 @@ not what the robot can see, they are what the person asking already had, and the
 in a section of its own (`## The picture(s) that came with this task`) rather than mixing them
 into the camera's. In the request they are labelled `task picture <name>:` and sent first, and
 the camera frames that follow are named whenever a task picture is present, because the one
-failure worth designing against is a model that answers about the drawing when it was asked
+failure worth designing against is an LLM that answers about the drawing when it was asked
 about the desk.
 
 So the three things above are untouched. The pilot still reads features, and the summary line is
@@ -94,5 +94,5 @@ deadman window on nothing else.
 The cost is the same kind as the note above, and smaller. A task picture is one more picture per
 request for the whole run rather than one more per step: the count is fixed when the run starts,
 it does not grow, and it does not ride on the two-exchange image window, because it is attached
-once and then simply never trimmed. A pilot whose model takes no images is refused the flag
+once and then simply never trimmed. A pilot whose LLM takes no images is refused the flag
 before the run starts rather than handed a task about a picture it will never see.

@@ -6,7 +6,7 @@ about. "Draw what is in the picture" is not a sentence a robot's own camera can 
 
 Everything here is re-encoded to PNG before it goes anywhere. Every provider quackd speaks to
 already takes a PNG, `NamedPng` promises one, and the copy kept beside the transcript is then
-byte for byte what the model was sent rather than a source file it was derived from. The cost
+byte for byte what the LLM was sent rather than a source file it was derived from. The cost
 is that a photograph is re-compressed on its way in, which is also where it is made small
 enough to send.
 """
@@ -68,7 +68,7 @@ def _flatten(img: Image.Image) -> Image.Image:
 
     A transparent pixel keeps whatever colour is stored underneath it, which for a drawing
     exported the ordinary way is black. So a sketch of a circle on a transparent background
-    became a solid black rectangle: one colour, no circle, nothing raised, and the model was
+    became a solid black rectangle: one colour, no circle, nothing raised, and the LLM was
     handed that as the thing it had been asked to draw. Compositing onto white first is what
     makes the exported drawing look like the drawing.
 
@@ -133,7 +133,7 @@ def _names(paths: Sequence[str]) -> list[str]:
     """What each picture is called on the wire: its file name, and its place in the list when
     two files share one.
 
-    The model is told a name and the task refers to the picture by what it shows, so the name
+    The LLM is told a name and the task refers to the picture by what it shows, so the name
     has to be the one the person typed. Two directories with a `sketch.png` in each would
     otherwise both arrive as `sketch.png`, and a task naming one of them would be ambiguous in
     exactly the way a label exists to prevent."""

@@ -1,7 +1,7 @@
 """The run slot and the control connection: which run gets the robot, and who may ask.
 
 A run here is a stand-in with the loop's two handles the slot touches, its executor's abort and
-its stop reason, so the rules are checked without a model or a body: one run at a time, a goal
+its stop reason, so the rules are checked without an LLM or a body: one run at a time, a goal
 takes the slot from a meeting and never from a goal, meetings are bounded by the hour, by robot
 and by the owner's word on strangers, and a meeting its robots left ends after the linger.
 """
@@ -237,7 +237,7 @@ def test_a_client_that_says_hello_slowly_is_cut_off_and_a_goals_reads_wait(
 ) -> None:
     """A client without the token held a slot for as long as it sent a byte every few seconds,
     and eight of them locked the owner out of stop and status. And a goal's reads kept the
-    hello's five seconds, so any model turn longer than that ended the goal."""
+    hello's five seconds, so any LLM turn longer than that ended the goal."""
     import socket
     import time
 

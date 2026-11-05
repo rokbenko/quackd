@@ -6,7 +6,7 @@
 Both outputs come from one afternoon: 2026-09-15, run `20260915-145349-goal`, an SO-101
 follower arm on `lerobot:real` told *wave to the camera with an extended arm* and piloted by
 OpenAI's `gpt-6-astra`. The GIF is a phone pointed at the bench. The PNG is three of the ten
-webcam frames the model itself was sent, which is a different picture of the same minute: one
+webcam frames the LLM itself was sent, which is a different picture of the same minute: one
 shows what the arm did, the other shows what the pilot had to go on.
 
 Neither input is in this repository and neither ever will be. The phone video is 23 MB and the
@@ -61,7 +61,7 @@ FINAL_DELAY_CS = 100  # a beat on the last frame before the loop restarts
 
 #: Which of the run's ten frames the sheet shows, and what each one is of. `0000` is the
 #: observation before the first call, `0003` the one after the arm extended, `0009` the one
-#: after `stop`. The middle one is why the model's success reason says it checked the wave
+#: after `stop`. The middle one is why the LLM's success reason says it checked the wave
 #: against joint angles: the arm it had just raised runs off the top of its own picture.
 PICKS: tuple[tuple[str, str], ...] = (
     ("0000", "step 0, before the first call"),

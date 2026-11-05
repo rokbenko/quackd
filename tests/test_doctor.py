@@ -122,7 +122,7 @@ def test_doctor_pins_an_openrouter_id_it_does_not_carry_without_asking_openroute
     assert refused.exit_code == 0, refused.output
     flat = " ".join(refused.output.split())
     assert "'~anthropic/claude-opus-latest' from QUACKD_LLM is refused" in flat
-    assert "newest model of its family" in flat
+    assert "newest LLM of its family" in flat
 
 
 def test_doctor_shows_a_robot_manifest() -> None:
@@ -136,7 +136,7 @@ def test_doctor_shows_a_robot_manifest() -> None:
 # ── the report, and the renderer that is not allowed to know anything it does not ───────
 
 
-_REAL_PROBE_MODELS = doctor._probe_models
+_REAL_PROBE_LLMS = doctor._probe_llms
 _REAL_PROBE_PLACEMENT = doctor._probe_placement
 """Captured before `_no_network` replaces them. A few tests below are about these two functions
 rather than about a report, and without this they would assert against the stubs and pass
@@ -155,18 +155,18 @@ class _NoBoard:
 
 
 def _no_placement(root_url: str, timeout_s: float = 1.5) -> Any:
-    raise AssertionError(f"this test asked an Ollama at {root_url} where its models are")
+    raise AssertionError(f"this test asked an Ollama at {root_url} where its LLMs are")
 
 
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """doctor probes five local servers at 1.5 s each, asks an Ollama that is up where its
-    models are, and reaches the daemon on a board when one is named. Nothing here is about
+    LLMs are, and reaches the daemon on a board when one is named. Nothing here is about
     whether any of those is running on the machine the suite runs on, and a suite that waits
     eight seconds to find out is a suite nobody runs. The placement probe and the board raise
     rather than answer, so a test that meant to fake one and forgot cannot pass by reaching a
     real one."""
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     monkeypatch.setattr(doctor, "_probe_placement", _no_placement)
     monkeypatch.setattr(doctor, "_host_client", _NoBoard)
 
@@ -240,7 +240,7 @@ def test_the_transports_section_is_every_adapters_and_names_each_backend(
     one robot's. Its heading used to call them the Microduck's backends and say to pass
     `--robot microduck:<name>`, which a row for the arm's simulator made untrue, so each row
     names its own `adapter:backend` and the heading claims no body."""
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     report = doctor.collect()
     rows = {row.name: row for row in report.transports}
     assert "lerobot:mujoco" in rows, sorted(rows)
@@ -670,7 +670,7 @@ def test_a_host_that_is_down_fails_the_report_with_a_row_saying_what_was_tried(
     assert report.host.error is not None and address in report.host.error
     assert report.host.hello is None and report.host.jetson is None
     assert [s.state for s in report.host.servers] == ["down"] * 4, (
-        "a daemon that is down still has the board's model servers asked: one can be up without it"
+        "a daemon that is down still has the board's LLM servers asked: one can be up without it"
     )
     out = _rendered(report)
     assert f"host at {address}" in out and "Jetson at" not in out
@@ -678,7 +678,7 @@ def test_a_host_that_is_down_fails_the_report_with_a_row_saying_what_was_tried(
     assert "FAILURE" in out and " ".join(report.host.error.split()) in out
 
 
-def test_a_board_name_that_finds_no_address_has_no_model_server_asked_there(
+def test_a_board_name_that_finds_no_address_has_no_llm_server_asked_there(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Four rows of "not running" under a host row saying no machine by that name exists would
@@ -700,7 +700,7 @@ def test_a_board_name_that_finds_no_address_has_no_model_server_asked_there(
 
     monkeypatch.setattr(socket, "getaddrinfo", lookup)
     monkeypatch.setattr(doctor, "_host_client", HostClient)
-    monkeypatch.setattr(doctor, "_probe_models", probe)
+    monkeypatch.setattr(doctor, "_probe_llms", probe)
     monkeypatch.delenv("QUACKD_BASE_URL", raising=False)
     report = doctor.collect(host="nosuch-jetson.invalid")
     assert report.ok is False and report.host is not None
@@ -777,7 +777,7 @@ def test_nothing_the_board_reports_changes_the_verdict(hostd: FakeHostd) -> None
     out = _rendered(report)
     assert "SUCCESS" in out
     for warning in (
-        "swap none. A model that does not fit in memory cannot load",
+        "swap none. An LLM that does not fit in memory cannot load",
         "health the camera's last frame is 3.2s old",
         "yolov8n.pt on cpu: the board's torch sees no CUDA",
     ):
@@ -981,7 +981,7 @@ def test_the_servers_table_asks_the_presets_on_the_host(
         probed.append(url)
         return "down", "not running"
 
-    monkeypatch.setattr(doctor, "_probe_models", probe)
+    monkeypatch.setattr(doctor, "_probe_llms", probe)
     monkeypatch.setenv("QUACKD_BASE_URL", "http://me:hunter2@gpu-box:8000/v1")
     said: list[str] = []
     report = doctor.collect(host=hostd.address, progress=said.append)
@@ -1035,7 +1035,7 @@ def test_the_host_section_survives_a_codepage_that_cannot_carry_it(
     assert "Jetson at" in out and ORIN_NANO in out
 
 
-# ── where Ollama put its models ─────────────────────────────────────────────────────────
+# ── where Ollama put its LLMs ─────────────────────────────────────────────────────────
 
 ALL_GPU = PlacementRow("qwen3:8b", 5 * GIB, 5 * GIB)
 PARTIAL = PlacementRow("llama3.3:70b", 40 * GIB, 15 * GIB)
@@ -1049,19 +1049,19 @@ def _ollama_up(
     list it returns fills with every root the placement probe is asked about."""
     asked: list[str] = []
 
-    def models(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+    def llms(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
         return ("up", "qwen3:8b") if ":11434/" in url else ("down", "not running")
 
     def placement(root: str, timeout_s: float = 1.5) -> tuple[list[PlacementRow], str]:
         asked.append(root)
         return rows, note
 
-    monkeypatch.setattr(doctor, "_probe_models", models)
+    monkeypatch.setattr(doctor, "_probe_llms", llms)
     monkeypatch.setattr(doctor, "_probe_placement", placement)
     return asked
 
 
-def test_ollama_on_the_jetson_says_where_each_model_sits(
+def test_ollama_on_the_jetson_says_where_each_llm_sits(
     hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """All on the GPU, a share of it, or on the CPU with the fix the Jetson page gives for the
@@ -1078,19 +1078,19 @@ def test_ollama_on_the_jetson_says_where_each_model_sits(
     ]
     out = _rendered(report)
     for needle in (
-        "where ollama put its models (GET /api/ps)",
+        "where ollama put its LLMs (GET /api/ps)",
         "qwen3:8b all on the GPU, 5.0 GiB",
         "llama3.3:70b 37% on the GPU, the rest on the CPU",
         "tinyllama on the CPU: the generic arm64 build of Ollama has no Tegra CUDA, and the "
         "official installer picks the JetPack build (docs/guides/jetson.md)",
     ):
         assert needle in out, needle
-    assert report.ok is True, "a model on the CPU is slow, not broken"
+    assert report.ok is True, "an LLM on the CPU is slow, not broken"
     payload = report.to_dict()
     row = next(s for s in payload["servers"] if s["preset"] == "ollama")
     assert [p["where"] for p in row["placement"]] == ["gpu", "partial", "cpu"]
     assert row["placement"][1] == {
-        "model": "llama3.3:70b",
+        "llm_id": "llama3.3:70b",
         "size": 40 * GIB,
         "size_vram": 15 * GIB,
         "gpu_pct": 37,
@@ -1112,15 +1112,15 @@ def test_ollama_on_this_machine_on_its_cpu_is_a_note_not_the_jetson_pitfall(
 
 
 def test_an_ollama_with_nothing_loaded_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
-    _ollama_up(monkeypatch, [], "nothing loaded yet: Ollama loads a model on its first request")
+    _ollama_up(monkeypatch, [], "nothing loaded yet: Ollama loads an LLM on its first request")
     report = doctor.collect()
     assert report.ok is True
-    assert "loaded nothing loaded yet: Ollama loads a model on its first request" in _rendered(
+    assert "loaded nothing loaded yet: Ollama loads an LLM on its first request" in _rendered(
         report
     )
 
 
-def test_a_model_ollama_did_not_place_is_named_and_flattened(
+def test_an_llm_ollama_did_not_place_is_named_and_flattened(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The note can name what another machine's Ollama sent, so it is flattened like every other
@@ -1132,7 +1132,7 @@ def test_a_model_ollama_did_not_place_is_named_and_flattened(
     assert "loaded llama [2J3b is loaded, and /api/ps did not say" in out
 
 
-def test_a_server_that_is_down_is_never_asked_where_its_models_are() -> None:
+def test_a_server_that_is_down_is_never_asked_where_its_llms_are() -> None:
     """The placement probe raises in this file unless a test fakes it, so reaching this line
     means it was not called for an ollama row that is down."""
     report = doctor.collect()
@@ -1153,7 +1153,7 @@ def test_a_server_that_is_down_is_never_asked_where_its_models_are() -> None:
 def test_a_split_never_rounds_into_all_or_nothing(
     size: int, vram: int, where: str, pct: int
 ) -> None:
-    """99.9% is not all on the GPU and 0.1% is not all on the CPU: each is a model split
+    """99.9% is not all on the GPU and 0.1% is not all on the CPU: each is an LLM split
     across both, which is the case worth a warning."""
     got = PlacementRow("m", size, vram)
     assert (got.where, got.gpu_pct) == (where, pct)
@@ -1178,7 +1178,7 @@ def test_ollamas_own_api_is_the_preset_without_v1(url: str, root: str) -> None:
 @pytest.fixture
 def canned() -> Iterator[Callable[..., str]]:
     """A loopback server that answers one path with one body, for the two probes that read
-    whatever a model server sends. `canned(path, body, status=200)` returns its root URL."""
+    whatever an LLM server sends. `canned(path, body, status=200)` returns its root URL."""
     routes: dict[str, tuple[int, bytes]] = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -1219,23 +1219,23 @@ def canned() -> Iterator[Callable[..., str]]:
             "up",
             "qwen3:8b, gemma3:4b",
         ),
-        (b'{"object": "list", "data": null}', "up", "no models loaded"),
-        (b'{"object": "list"}', "up", "no models loaded"),
-        (b'[{"id": "qwen3:8b"}]', "http", "not a list of models"),
-        (b'{"data": "qwen3:8b"}', "http", "not a list of models"),
-        (b'"hello"', "http", "not a list of models"),
+        (b'{"object": "list", "data": null}', "up", "no LLMs loaded"),
+        (b'{"object": "list"}', "up", "no LLMs loaded"),
+        (b'[{"id": "qwen3:8b"}]', "http", "not a list of LLMs"),
+        (b'{"data": "qwen3:8b"}', "http", "not a list of LLMs"),
+        (b'"hello"', "http", "not a list of LLMs"),
         (b"<html>it works</html>", "down", "not running"),
     ],
 )
-def test_a_models_reply_of_any_shape_is_a_row_and_never_an_exception(
+def test_an_llms_reply_of_any_shape_is_a_row_and_never_an_exception(
     canned: Callable[..., str], body: bytes, state: str, detail: str
 ) -> None:
     """`payload.get("data", [])` sat outside the try, so a JSON list, or `"data": null` from an
     Ollama with nothing pulled, raised out of `collect()` and took the whole report with it. A
     body that is not JSON keeps the row it always had: a dev web server's index page on 8000 or
-    8080 is no model server there."""
+    8080 is no LLM server there."""
     root = canned("/v1/models", body)
-    got_state, got_detail = _REAL_PROBE_MODELS(f"{root}/v1")
+    got_state, got_detail = _REAL_PROBE_LLMS(f"{root}/v1")
     assert got_state == state and detail in got_detail
 
 
@@ -1248,12 +1248,12 @@ def test_a_list_reply_on_a_real_socket_leaves_the_report_standing(
     monkeypatch.setenv("QUACKD_BASE_URL", f"{root}/v1")
 
     def only_the_canned_one(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
-        return _REAL_PROBE_MODELS(url) if url.startswith(root) else ("down", "not running")
+        return _REAL_PROBE_LLMS(url) if url.startswith(root) else ("down", "not running")
 
-    monkeypatch.setattr(doctor, "_probe_models", only_the_canned_one)
+    monkeypatch.setattr(doctor, "_probe_llms", only_the_canned_one)
     report = doctor.collect()
     local = next(s for s in report.servers if s.preset == "local")
-    assert local.state == "http" and "not a list of models" in local.detail
+    assert local.state == "http" and "not a list of LLMs" in local.detail
     assert report.ok is True
 
 
@@ -1266,12 +1266,12 @@ def test_the_placement_probe_reads_ollamas_own_api(canned: Callable[..., str]) -
             {"name": "broken", "size": "big", "size_vram": 0},
             {"name": "empty", "size": 0, "size_vram": 0},
             {"name": "flagged", "size": True, "size_vram": True},
-            "not a model",
+            "not an LLM",
         ]
     }
     root = canned("/api/ps", json.dumps(body).encode())
     rows, note = _REAL_PROBE_PLACEMENT(root)
-    assert [(r.model, r.where) for r in rows] == [
+    assert [(r.llm_id, r.where) for r in rows] == [
         ("qwen3:8b", "gpu"),
         ("llama3.3:70b", "partial"),
         ("tinyllama", "cpu"),

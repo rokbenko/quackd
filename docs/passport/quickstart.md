@@ -28,7 +28,7 @@ Without it uv stops with `the current Python version (3.10.12) does not satisfy 
    advertise. On anything else it stops and says why, and on another robot's Linux computer
    `quackd onboard --board generic` names the computer instead.
 2. **About six questions**: the robot's name, what it is, its owner's label and contact, how a
-   person stops it, its brain, a provider and model with its key typed hidden or a model server's
+   person stops it, its brain, a provider and LLM with its key typed hidden or an LLM server's
    URL, and how close another robot must come before the two meet.
 3. **One file**, `robot.yaml`, every section with a comment that says what it does, and `robot.env`
    beside it with the brain's key, both readable by you alone.
@@ -211,7 +211,7 @@ its model (e.g. g1-edu) [unknown]: sim-humanoid
 who owns it, as other robots should read it [my robots]: Example lab
 how to reach its owner (a URL or an e-mail address, or nothing): 
 how a person standing next to it stops it, in one sentence: Press the red button on its back.
-its brain, as --llm spells it (e.g. local:MODEL, anthropic): fake
+its brain, as --llm spells it (e.g. local:LLM, anthropic): fake
 the brain's address, for an OpenAI-compatible server (or nothing): 
 how close, in metres, another robot comes before they meet [2]: 
 ✓ wrote /home/robot/sim/one/robot.yaml

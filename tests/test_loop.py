@@ -76,7 +76,7 @@ GOLDEN_HELLO = ["assess_task", "quack", "walk", "quack", "declare_success"]
 
 
 async def test_run_start_records_the_extra_body(hello_duck: DuckFile, tmp_path: Path) -> None:
-    """A run whose model was told not to think reads nothing like one that was, and the
+    """A run whose LLM was told not to think reads nothing like one that was, and the
     transcript is the only place a reader can tell which of the two they are holding. The
     emit is a `getattr`, which would record None for ever if the attribute were renamed."""
     body = {"chat_template_kwargs": {"enable_thinking": False}}
@@ -108,7 +108,7 @@ async def test_the_extra_body_reaches_the_record_with_no_credential_in_it(
     `QUACKD_EXTRA_BODY`, so no amount of argv redaction reaches it, and a run directory is
     pasted into issues and copied off a bench machine.
 
-    The shape survives, because the thing a reader came for is which fields the model was
+    The shape survives, because the thing a reader came for is which fields the LLM was
     sent; only the values that would have to be rotated go."""
     provider = FakeProvider.for_duck(hello_duck.name)
     provider.extra_body = {  # type: ignore[attr-defined]
@@ -138,7 +138,7 @@ async def test_hello_world_golden(hello_duck: DuckFile, tmp_path: Path) -> None:
         )
     )
     assert result.outcome == "success", result.reason
-    # hello-world allows 5 llm calls and the verdict is the fifth: it fits, exactly
+    # hello-world allows 5 LLM calls and the verdict is the fifth: it fits, exactly
     assert result.steps == 3 and result.llm_calls == 5
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     kinds = [e["kind"] for e in events]
@@ -157,7 +157,7 @@ async def test_hello_world_golden(hello_duck: DuckFile, tmp_path: Path) -> None:
 
 class NoToolProvider:
     name = "no-tool"
-    model = "x"
+    llm_id = "x"
     supports_vision = False
 
     async def step(
@@ -168,7 +168,7 @@ class NoToolProvider:
 
 class ClockAdvancingProvider:
     name = "clock-advancing"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(
@@ -249,7 +249,7 @@ class HangsPastTheMinutes:
     the way a call to a vendor that hung does."""
 
     name = "hangs"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(self, transport: MockTransport, seconds: float) -> None:
@@ -347,7 +347,7 @@ async def test_a_max_steps_override_reaches_the_prompt_as_well_as_the_observatio
 
 async def test_every_observation_says_its_step_once(hello_duck: DuckFile, tmp_path: Path) -> None:
     """The header puts the step in front of the budget's own line, which starts with the same
-    step, so every observation a pilot was handed read `[step 3/40 · step 3/40, llm calls ...]`.
+    step, so every observation a pilot was handed read `[step 3/40 · step 3/40, LLM calls ...]`.
     It says it once, and the rest of the budget line is still there."""
     result = await run_duck(
         RunConfig(
@@ -363,7 +363,7 @@ async def test_every_observation_says_its_step_once(hello_duck: DuckFile, tmp_pa
     assert len(headers) > 1, "the run made too few observations to show anything"
     for header in headers:
         assert header.startswith("[step ") and header.count("step ") == 1, header
-        assert " · llm calls " in header, header
+        assert " · LLM calls " in header, header
 
 
 async def test_disallowed_verb_is_feedback(hello_duck: DuckFile, tmp_path: Path) -> None:
@@ -421,10 +421,10 @@ async def test_dry_run_touches_nothing(hello_duck: DuckFile, tmp_path: Path) -> 
 
 
 class ThinkingProvider:
-    """A model that reasons out loud, which no scripted strategy does."""
+    """An LLM that reasons out loud, which no scripted strategy does."""
 
     name = "thinker"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(self, *calls: ToolCall) -> None:
@@ -448,7 +448,7 @@ class ThinkingProvider:
 async def test_the_transcript_carries_the_whole_conversation(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """Every step the run takes on the model's behalf is a line: what was asked, what it
+    """Every step the run takes on the LLM's behalf is a line: what was asked, what it
     thought, what it answered, what the executor decided, what went to the robot."""
     result = await run_duck(
         RunConfig(
@@ -510,7 +510,7 @@ async def test_a_provider_that_fails_says_so_instead_of_exiting_unexpectedly(
     to end with `loop exited unexpectedly` and no record of the call that failed."""
 
     class Failing:
-        name, model, supports_vision = "failing", "test", False
+        name, llm_id, supports_vision = "failing", "test", False
 
         async def step(self, system: str, history: Any, tools: Any) -> ProviderTurn:
             raise ProviderError("anthropic: rate limited (retry-after 7s)")
@@ -542,7 +542,7 @@ async def test_a_cancelled_run_ends_as_an_abort_that_still_stops_and_records(
     the log work claimed to have removed. The CLI's second Ctrl-C is this path."""
 
     class Stalling:
-        name, model, supports_vision = "stalling", "test", False
+        name, llm_id, supports_vision = "stalling", "test", False
 
         async def step(self, system: str, history: Any, tools: Any) -> ProviderTurn:
             await asyncio.sleep(10)
@@ -685,11 +685,11 @@ async def test_the_summary_counts_the_events_a_broken_console_dropped(
 async def test_thinking_on_the_reprompt_turn_is_recorded(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """The re-prompt is a second call to the model in the same step, and nothing asserted
+    """The re-prompt is a second call to the LLM in the same step, and nothing asserted
     that the request was marked as one or that its answer's reasoning was kept."""
 
     class Dithering:
-        name, model, supports_vision = "dithering", "test", False
+        name, llm_id, supports_vision = "dithering", "test", False
 
         def __init__(self) -> None:
             self.calls = 0
@@ -722,15 +722,15 @@ async def test_thinking_on_the_reprompt_turn_is_recorded(
     assert enforce["text"] == "You must call exactly one tool. Choose now."
 
 
-async def test_a_turn_a_fallback_answered_is_recorded_with_the_model_that_answered(
+async def test_a_turn_a_fallback_answered_is_recorded_with_the_llm_that_answered(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """A server-side refusal fallback re-runs a declined turn on another model and the provider
+    """A server-side refusal fallback re-runs a declined turn on another LLM and the provider
     says which. The record keeps it on that turn and only that turn, so every other `llm` line,
     and every transcript written before the field existed, reads exactly as it did."""
 
     class FellBack:
-        name, model, supports_vision = "stub", "asked-for", False
+        name, llm_id, supports_vision = "stub", "asked-for", False
 
         def __init__(self) -> None:
             self.calls = 0
@@ -753,7 +753,7 @@ async def test_a_turn_a_fallback_answered_is_recorded_with_the_model_that_answer
     )
     assert result.outcome == "success"
     llm = [e for e in Transcript.read(result.run_dir / "transcript.jsonl") if e["kind"] == "llm"]
-    assert llm[0]["served_by"] == "answered-instead" and llm[0]["model"] == "asked-for"
+    assert llm[0]["served_by"] == "answered-instead" and llm[0]["llm_id"] == "asked-for"
     assert "served_by" not in llm[1]
 
 
@@ -854,7 +854,7 @@ class CapturingProvider:
     """Records the system prompt and every observation, then declares success."""
 
     name = "capturing"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(self) -> None:
@@ -871,13 +871,13 @@ class CapturingProvider:
         )
 
 
-async def test_the_stand_ins_a_robot_declares_are_told_to_the_model(
+async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """`extras.assumptions` is what a backend says quackd is standing in for. It reached the
     transcript and `FakeProvider`, and no further: every real provider sends `obs.text`, which
     is built from `state.summary()`, and neither had a branch for it. So the docs said a
-    transcript never implies more than happened while the model was told nothing at all.
+    transcript never implies more than happened while the LLM was told nothing at all.
     """
     from quackd.transport.base import DuckState
 
@@ -1015,7 +1015,7 @@ async def test_a_verb_before_any_verdict_is_refused_and_the_pilot_is_told_why(
         """A pilot that reaches for a leg before it has judged the task."""
 
         name = "impatient"
-        model = "test"
+        llm_id = "test"
         supports_vision = False
 
         def __init__(self) -> None:
@@ -1816,7 +1816,7 @@ def _says_no(_why: str) -> bool:
 class ExplodingProvider:
     """A pilot whose call raises whatever it was handed."""
 
-    name, model, supports_vision = "exploding", "test", False
+    name, llm_id, supports_vision = "exploding", "test", False
 
     def __init__(self, error: BaseException) -> None:
         self.error = error
@@ -1828,7 +1828,7 @@ class ExplodingProvider:
 class StallingProvider:
     """A pilot that never answers, so the run can be cancelled while it waits."""
 
-    name, model, supports_vision = "stalling", "test", False
+    name, llm_id, supports_vision = "stalling", "test", False
 
     async def step(self, system: Any, history: Any, tools: Any) -> ProviderTurn:
         await asyncio.sleep(10)
@@ -2074,11 +2074,11 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(tmp_path: Path) ->
     assert mock.torque is True, "and the arm it never moved is left holding itself up"
 
 
-async def test_a_run_whose_first_rest_move_fails_never_asks_the_model_anything(
+async def test_a_run_whose_first_rest_move_fails_never_asks_the_llm_anything(
     tmp_path: Path,
 ) -> None:
     """A run starts from the pose it will end at, so the pilot improvises from the same arm
-    every time. An arm that cannot get there is in an unknown place, and paying a model to
+    every time. An arm that cannot get there is in an unknown place, and paying an LLM to
     improvise from that is worse than not starting at all: the abort happens before the first
     request, so the run costs nothing and the record still says why."""
     stalled = "shoulder_lift is at -90 with a goal of -40"
@@ -2094,7 +2094,7 @@ async def test_a_run_whose_first_rest_move_fails_never_asks_the_model_anything(
     )
     assert result.outcome == "aborted", result.reason
     assert "did not reach its rest pose" in result.reason and stalled in result.reason
-    assert result.llm_calls == 0, "no model was asked anything"
+    assert result.llm_calls == 0, "no LLM was asked anything"
     assert mock.actions == [], "the move stalled, so nothing was ever sent to a joint"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert events[0]["kind"] == "run_start", "the abort is inside the run, not before it"
@@ -2257,7 +2257,7 @@ class SeeingProvider:
     that is what a pilot that cannot take an image looks like to the loop."""
 
     name = "seeing"
-    model = "test"
+    llm_id = "test"
     supports_vision = True
 
     def __init__(self, *script: ToolCall, vision: bool = True) -> None:
@@ -2327,7 +2327,7 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
 ) -> None:
     """Encoding a frame to PNG holds whichever thread does it, and a body's heartbeat waits on
     the event loop's for an answer: a second of encoding there was a heartbeat reported as not
-    answering. Every turn's frames are encoded and written in a worker thread, the model is sent
+    answering. Every turn's frames are encoded and written in a worker thread, the LLM is sent
     the bytes that wrote them, and the record reads as it did: each turn's frames, numbered in
     turn, before the observation they were taken for."""
     import threading
@@ -2363,13 +2363,13 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
     ), turns
 
 
-async def test_each_picture_is_encoded_once_and_the_model_is_sent_the_file(
+async def test_each_picture_is_encoded_once_and_the_llm_is_sent_the_file(
     hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A turn's picture used to be encoded twice, once for `frames/` and once more for the
     request: the same pixels through the same encoder, a second time, on a worker thread a
     body's heartbeat shares the machine with. It is encoded once now. Every PNG encoded in the
-    run is a file in `frames/`, and what the model is sent of a picture is that file's bytes,
+    run is a file in `frames/`, and what the LLM is sent of a picture is that file's bytes,
     so the picture a reader opens afterwards is the one the pilot was shown."""
     encodes: list[str] = []
     save = Image.Image.save
@@ -2496,18 +2496,18 @@ class DarkeningDuck(TwoCameraDuck):
 
 
 @pytest.mark.parametrize("body", ["two-cameras", "no-vision", "goes-dark", "lit-prose-turn"])
-async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated(
+async def test_a_binding_llm_is_never_sent_a_thinking_block_a_trim_invalidated(
     body: str, hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """Through the real Claude provider. A block is bound to every message before it, so it is
     valid exactly while those messages are sent as they were on the call that produced it, and
     a trim that takes a frame away from one of them invalidates it. Anthropic's `drop_block`
     drops the first failing block and every one after it, so a stale block left in the history
-    would cost the model all of its reasoning from then on. The loop leaves out the leading run
+    would cost the LLM all of its reasoning from then on. The loop leaves out the leading run
     that ends at the last invalid block, from the trim call on: the latest assistant message is
     never touched, a block once left out never comes back, and a trim that took no frame away,
     as with `--no-vision`, leaves nothing out. `lit-prose-turn` is a body whose only frame
-    arrives on a turn the model answers in prose, trimmed on the very call that re-prompts it:
+    arrives on a turn the LLM answers in prose, trimmed on the very call that re-prompts it:
     a prose turn has no block of its own, no block was ever bound to that frame, and nothing
     may be left out for it."""
     from quackd.agent.providers.anthropic import AnthropicProvider
@@ -2549,7 +2549,9 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
         )
 
     client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
-    provider = AnthropicProvider(model="claude-opus-5-5", client=client, vision=body != "no-vision")
+    provider = AnthropicProvider(
+        llm_id="claude-opus-5-5", client=client, vision=body != "no-vision"
+    )
     provider.frame_trim_period = period
     transport = {
         "goes-dark": lambda: DarkeningDuck(),
@@ -2705,8 +2707,8 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
         )
 
     client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
-    model = "claude-opus-5-5" if period > 1 else "claude-sonnet-5"
-    provider = AnthropicProvider(model=model, client=client, vision=body != "no-vision")
+    llm_id = "claude-opus-5-5" if period > 1 else "claude-sonnet-5"
+    provider = AnthropicProvider(llm_id=llm_id, client=client, vision=body != "no-vision")
     provider.frame_trim_period = period
     assert provider.caches, "QUACKD_ANTHROPIC_CACHE switched it off in this environment"
     transport = {
@@ -2769,7 +2771,7 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
 # step, it ages, and the trim above drops it. One of these is none of those things. It is
 # fixed for the whole run, it is what the task is about, and no lens on the body can answer
 # "draw what is in the picture". So it rides the first observation and no other, nothing
-# trims it, and the bytes the model was sent are written beside the transcript rather than
+# trims it, and the bytes the LLM was sent are written beside the transcript rather than
 # the file they were made from.
 
 
@@ -2867,7 +2869,7 @@ async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
     assert requests[-1]["with_image"] == keep
 
 
-async def test_a_task_picture_is_written_beside_the_transcript_as_the_model_got_it(
+async def test_a_task_picture_is_written_beside_the_transcript_as_the_llm_got_it(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """They go in their own directory rather than among the frames: `frames/` is numbered by
@@ -2915,7 +2917,7 @@ async def test_the_record_says_which_pictures_the_run_was_given_and_how_often(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """Two numbers, in the two places a reader looks. `run_start` names what the command line
-    handed this run, once, at the top where the model and the robot are named. Every
+    handed this run, once, at the top where the LLM and the robot are named. Every
     `llm_request` says how many rode that particular request, beside the count of camera
     frames, because that is the line somebody reads when a bill is larger than they expected
     and the two kinds of picture cost the same."""
@@ -2949,7 +2951,7 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
 ) -> None:
     """A picture arrives in the same message as a photograph of the room, so the pilot is told
     in words which is which and what each one is called. The names are the ones the person
-    typed, because the task refers to a picture by what it shows and the model has to be able
+    typed, because the task refers to a picture by what it shows and the LLM has to be able
     to match the sentence to the file.
 
     A run with no `--image` must read exactly as it did before there was a flag for it, which
@@ -3142,7 +3144,7 @@ class ScriptedPerson:
 
 def _by_hand(mock: LeRobotMock, person: ScriptedPerson, runs: Path, **extra: Any) -> RunConfig:
     """A by-hand run of the arm task, with a pilot that declares success and counts its
-    calls: several of these tests are about a run that must never reach the model at all."""
+    calls: several of these tests are about a run that must never reach the LLM at all."""
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
         duck=_arm_duck(),
@@ -3203,7 +3205,7 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
 async def test_the_time_a_person_takes_is_not_the_pilots_budget(tmp_path: Path) -> None:
     """`max_minutes` starts before the rest move, and an arm can then sit released while
     somebody goes to find the pencil the task is about. That waiting used to be spent out of
-    the budget the model gets for the task, so a five minute task with a ten minute person in
+    the budget the LLM gets for the task, so a five minute task with a ten minute person in
     front of it ended on `max_minutes` without the pilot having been asked anything at all.
 
     The clock is restarted after `take_hold`, which is the moment the run actually begins. The
@@ -3221,7 +3223,7 @@ async def test_the_time_a_person_takes_is_not_the_pilots_budget(tmp_path: Path) 
     )
 
 
-async def test_nobody_places_the_arm_so_nothing_is_ever_asked_of_the_model(
+async def test_nobody_places_the_arm_so_nothing_is_ever_asked_of_the_llm(
     tmp_path: Path,
 ) -> None:
     """An arm released for a person who is not there is limp at its rest pose with nobody
@@ -3237,7 +3239,7 @@ async def test_nobody_places_the_arm_so_nothing_is_ever_asked_of_the_model(
     result = await run_duck(cfg)
     assert result.outcome == "aborted"
     assert result.reason == AgentLoop.NOBODY_PLACED_IT
-    assert cfg.provider.calls == 0, "the model was never asked anything"  # type: ignore[attr-defined]
+    assert cfg.provider.calls == 0, "the LLM was never asked anything"  # type: ignore[attr-defined]
     assert result.llm_calls == 0
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3280,7 +3282,7 @@ async def test_an_arm_with_no_recorded_rest_pose_is_never_handed_over(tmp_path: 
 
     The CLI refuses this before connecting, with `quackd robot rest-pose NAME` as the fix.
     This is the same refusal reached through the loop, which is where an MCP session or a test
-    arrives, and the run ends before the model is asked anything."""
+    arrives, and the run ends before the LLM is asked anything."""
     mock = LeRobotMock()  # no rest pose recorded for this arm
     person = ScriptedPerson(mock, places=PLACED)
     cfg = _by_hand(mock, person, tmp_path)
@@ -4900,7 +4902,7 @@ async def test_an_arm_placed_past_its_travel_stays_in_your_hands_and_every_line_
     assert result.outcome == "aborted"
     assert result.reason.startswith(f"{AgentLoop.NOT_TAKEN_HOLD}: wrist_flex reads"), result.reason
     assert "only with wrist_flex inside its travel" in result.reason, result.reason
-    assert cfg.provider.calls == 0, "the model was asked something"  # type: ignore[attr-defined]
+    assert cfg.provider.calls == 0, "the LLM was asked something"  # type: ignore[attr-defined]
     assert person.said == [result.reason, AgentLoop.STILL_IN_YOUR_HANDS], person.said
     assert [ask[0] for ask in person.asked] == [AgentLoop.PLACE_IT], person.asked
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -5692,14 +5694,14 @@ class FailsAfterOneAnswer(ThinkingProvider):
         return await super().step(system, history, tools)
 
 
-class UnlistedModel(ThinkingProvider):
-    """A real vendor and a model the catalogue has never heard of.
+class UnlistedLLM(ThinkingProvider):
+    """A real vendor and an LLM the catalogue has never heard of.
 
-    Not an exotic case: it is every model in the week after it launches, and every private
+    Not an exotic case: it is every LLM in the week after it launches, and every private
     deployment name a company puts in front of one."""
 
     name = "openai"
-    model = "gpt-not-a-model-yet"
+    llm_id = "gpt-not-an-llm-yet"
 
 
 def _quack_then_done() -> ThinkingProvider:
@@ -5777,7 +5779,7 @@ async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
     assert summary["connect_s"] >= 0
 
 
-async def test_the_seconds_spent_waiting_on_the_model_count_the_call_that_raised(
+async def test_the_seconds_spent_waiting_on_the_llm_count_the_call_that_raised(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """`llm_latency_s` is the largest number in most runs, and a reader used to have to add it
@@ -5822,9 +5824,9 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
 ) -> None:
     """A total says where a run's time went and nothing about the calls that spent it, and the
     question a person standing by the robot asks first is how long it took to do anything. So
-    the summary carries the model's median, ninetieth percentile and longest call, by nearest
+    the summary carries the LLM's median, ninetieth percentile and longest call, by nearest
     rank over the calls that answered, and when the first verb that moves the body was handed
-    over, on the record's own clock and after how many model calls. Read off the run's own
+    over, on the record's own clock and after how many LLM calls. Read off the run's own
     records rather than off a clock the test keeps, so no figure here is a timing guess. A dry
     run hands nothing over, so nothing in it moved."""
     from quackd.latency import nearest_rank
@@ -5932,10 +5934,10 @@ async def test_a_price_on_the_run_beats_one_in_the_environment(
     )
 
 
-async def test_a_model_quackd_has_no_rate_for_records_null_and_never_zero(
+async def test_an_llm_quackd_has_no_rate_for_records_null_and_never_zero(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """The expensive kind of wrong. `$0.00` beside a frontier model reads as a free run, and
+    """The expensive kind of wrong. `$0.00` beside a frontier LLM reads as a free run, and
     somebody adding up a week of them believes it and goes on running them; `null` reads as a
     question and gets asked. If an unpriced run and a genuinely free one both said zero,
     neither number would mean anything.
@@ -5945,7 +5947,7 @@ async def test_a_model_quackd_has_no_rate_for_records_null_and_never_zero(
     result = await run_duck(
         RunConfig(
             duck=hello_duck,
-            provider=UnlistedModel(
+            provider=UnlistedLLM(
                 ToolCall(name="quack", arguments={"text": "hi"}),
                 ToolCall(name="declare_success", arguments={"reason": "quacked"}),
             ),
@@ -5991,7 +5993,7 @@ class BillingProvider(ThinkingProvider):
     per call from `bills`, None where that call came back without one."""
 
     name = "openrouter"
-    model = "openai/gpt-6-sol"
+    llm_id = "openai/gpt-6-sol"
     bills_per_call = True
 
     def __init__(
@@ -6066,14 +6068,14 @@ async def test_a_price_on_the_run_beats_what_the_vendor_billed(
     assert "billed_calls" not in result.summary
 
 
-async def test_a_listed_rate_prices_a_model_the_catalogue_does_not_carry(
+async def test_a_listed_rate_prices_an_llm_the_catalogue_does_not_carry(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
     """An OpenRouter id quackd does not carry is priced at the rate OpenRouter's list gave it,
     and the record says so and when it was read."""
     listed = Price(0.15, 0.47, source="openrouter", checked="2026-10-06")
     provider = _billed([None, None], listed_price=listed)
-    provider.model = "qwen/qwen3.8-flash"
+    provider.llm_id = "qwen/qwen3.8-flash"
     result = await run_duck(
         RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
@@ -6093,7 +6095,7 @@ async def test_one_call_nobody_could_price_leaves_the_run_unpriced(
     with every turn. The first call that brings neither a bill nor a rate makes the total
     unknown from then on: a total that skipped it would be believed as the whole bill."""
     provider = _billed([0.001, None])
-    provider.model = "qwen/qwen3.8-flash"
+    provider.llm_id = "qwen/qwen3.8-flash"
     result = await run_duck(
         RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
@@ -6168,13 +6170,13 @@ async def test_a_call_that_failed_after_it_was_billed_is_in_the_total(
 async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run_unpriced(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """The other side of a billed failure: tokens reported and no bill, on a model with no rate.
+    """The other side of a billed failure: tokens reported and no bill, on an LLM with no rate.
     That call cannot be priced, so the total is unknown from then on, as it is for a turn, and
     the record does not say `billed` about a cost nobody billed."""
     raised = ProviderError("openrouter: the provider failed partway through the answer")
     raised.usage = Usage(input_tokens=40, output_tokens=3)
     provider = FailsBilled(raised)
-    provider.model = "qwen/qwen3.8-flash"  # no catalogue rate, and the list gave none
+    provider.llm_id = "qwen/qwen3.8-flash"  # no catalogue rate, and the list gave none
     summary, events = await _run_that_fails(hello_duck, tmp_path, provider)
     (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
     assert failed["cost_usd"] is None and failed["cost_usd_total"] is None
@@ -6208,7 +6210,7 @@ async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
 
     unpriced = Listed("quackd-stub/variable", vision=False, tool_choice=True, price=None)
     provider = OpenRouterProvider(
-        model="quackd-stub/variable",
+        llm_id="quackd-stub/variable",
         listed=unpriced,
         client=NS(chat=NS(completions=NS(create=create))),
     )
@@ -6349,7 +6351,7 @@ async def test_a_name_with_nothing_to_slug_is_refused_before_a_directory_exists(
     assert not runs.exists(), "nothing was written for a run that never started"
 
 
-# ── a turn the model's API could not answer is asked again (ADR-0059) ────────────────────
+# ── a turn the LLM's API could not answer is asked again (ADR-0059) ────────────────────
 
 
 class FlakyProvider:
@@ -6362,7 +6364,7 @@ class FlakyProvider:
     def __init__(self, plan: Sequence[BaseException | None], duck: str = "hello-world") -> None:
         self.plan = list(plan)
         self.answers = FakeProvider.for_duck(duck)
-        self.name, self.model, self.supports_vision = "flaky", "test", False
+        self.name, self.llm_id, self.supports_vision = "flaky", "test", False
         self.sent: list[list[dict[str, Any]]] = []
         self.on_failure: Callable[[], None] | None = None
 
@@ -6408,7 +6410,7 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
 ) -> None:
     """A 429 used to end the run: the SDK's two quick retries, then `error` and the fold. Now
     the loop waits and asks the same turn again, and the try sends exactly what the failed one
-    did, since a model that binds its replayed thinking to the history refuses any other. The
+    did, since an LLM that binds its replayed thinking to the history refuses any other. The
     turn is charged once, and every try is on the record."""
     clean = await run_duck(
         RunConfig(
@@ -6439,7 +6441,7 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
     assert notes.count(said) == 1, notes
 
 
-async def test_a_retry_is_not_charged_to_the_task_s_model_calls(
+async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(
     hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """With `max_llm_calls` at exactly the turns the task takes, three tries asked again
@@ -6677,7 +6679,7 @@ async def test_a_wait_past_the_task_s_minutes_ends_the_run_without_waiting(
 async def test_a_connection_that_never_answered_is_not_asked_again(
     hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
-    """A connection that failed before the model answered once is as often a wrong address or
+    """A connection that failed before the LLM answered once is as often a wrong address or
     a server that is not running as a dropped one, and two minutes of asking again help
     neither. It gets the two quick tries the SDK used to give it, half a second and a second
     apart, and when those fail too the run ends with the provider's own error, and a note says
@@ -6723,10 +6725,10 @@ async def test_a_first_connection_that_comes_back_on_a_quick_try_runs_on(
     [sdk.APIConnectionError("Connection error."), sdk.APITimeoutError("Request timed out.")],
     ids=["connection", "timeout"],
 )
-async def test_a_connection_that_drops_after_the_model_has_answered_is_asked_again(
+async def test_a_connection_that_drops_after_the_llm_has_answered_is_asked_again(
     dropped: BaseException, hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
-    """Once the model has answered, the address was right, and a connection that drops or a
+    """Once the LLM has answered, the address was right, and a connection that drops or a
     call that times out is the network or the vendor having a moment: asked again."""
     provider = FlakyProvider([None, sdk.wrapped(dropped)])
     result = await run_duck(
@@ -6761,13 +6763,13 @@ async def test_the_wait_before_asking_again_ends_on_an_abort_and_says_which_ende
     assert asyncio.get_running_loop().time() - started < 5
 
 
-# ── a first press reaches a model call and a fold nobody asked for ───────────────────────
+# ── a first press reaches an LLM call and a fold nobody asked for ───────────────────────
 
 
-async def test_a_press_while_the_model_is_thinking_ends_the_run_without_waiting_for_it(
+async def test_a_press_while_the_llm_is_thinking_ends_the_run_without_waiting_for_it(
     tmp_path: Path,
 ) -> None:
-    """The first Ctrl-C used to wait for the model's answer, which can take a minute: the abort
+    """The first Ctrl-C used to wait for the LLM's answer, which can take a minute: the abort
     was read only once the call came back. The call is raced against the abort now, as a verb
     is, so the run ends `aborted` at once, the call on the record as cut short, and the arm is
     folded and let go of at its pose as at any end."""
@@ -6790,7 +6792,7 @@ async def test_a_press_while_the_model_is_thinking_ends_the_run_without_waiting_
     started = clock.time()
     result = await loop.run()
     await pressing
-    assert clock.time() - started < 5, "the run waited for the model's answer"
+    assert clock.time() - started < 5, "the run waited for the LLM's answer"
     assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
     cut = next(e for e in _events(result.run_dir, "llm") if "error" in e)
     assert cut["error"] == "Aborted: kill switch", cut

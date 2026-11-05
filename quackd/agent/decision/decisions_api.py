@@ -30,7 +30,7 @@ and a company's key has no business there. The SDK reads more than the key out o
 environment, and every piece of it is answered here rather than left to its defaults:
 
 - `OPENAI_BASE_URL`, which it follows whenever it is handed no address. quackd's own local
-  presets read the same variable as the address of a model server on your own machine
+  presets read the same variable as the address of an LLM server on your own machine
   (`providers/local.py`, and the address order in `docs/guides/local-llms.md`), so it may well
   be set on the very machine that names this row, and the hosted key would follow it there. So
   an address is handed over on every build, the one the row or the flag says, with `/v1` on the
@@ -257,7 +257,7 @@ def to_input(state: Mapping[str, str], frames: Sequence[DecisionFrame] = ()) -> 
     """The state as OpenAI's `input`: the same JSON object the stepper measures as
     `state_chars`, character for character, so that number is the size of what was sent.
 
-    With its letters as letters (`base.state_text`). The `input` is text the API hands its model as
+    With its letters as letters (`base.state_text`). The `input` is text the API hands its LLM as
     it is and never decodes, so JSON's escapes went to `gpt-6-luna` as written, a goal in Slovenian
     as runs of `\\u017e` and every `last` field's dash as `\\u2014`, longer to bill and stranger
     to read than the letters the state holds.
@@ -424,7 +424,7 @@ def to_result(data: Mapping[str, Any], asked: Mapping[str, str]) -> dict[str, An
     What every number says is the stepper's to judge, for this row as for every other
     (`stepper._probability`), so the numbers pass through as they came. A question with nothing
     kept for it is a question nobody answered. Where the stepper routes on it, `next_verb`,
-    `done` or `need_human`, that hands the turn to the model on `unreadable`; `feasible` it only
+    `done` or `need_human`, that hands the turn to the pilot on `unreadable`; `feasible` it only
     records, so a missing `feasible` is recorded as nothing and the turn goes on, as it does on
     every row. `usage` and `model` are passed through untouched: `stepper._usage` already reads
     `input_tokens` off a mapping, which is the field OpenAI bills by."""
@@ -479,15 +479,15 @@ class DecisionsAPILLM:
         self,
         spec: DecisionSpec,
         *,
-        model: str | None = None,
+        llm_id: str | None = None,
         url: str | None = None,
         frames: bool = False,
     ) -> None:
         self.name = spec.name
-        self.model: str = model or spec.model or ""
-        if not self.model:
+        self.llm_id: str = llm_id or spec.llm_id or ""
+        if not self.llm_id:
             raise DecisionError(
-                f"--decision-llm {spec.name} names no model: say which, as {spec.name}:MODEL"
+                f"--decision-llm {spec.name} names no LLM: say which, as {spec.name}:LLM"
             )
         # The whitespace around it taken off, as the CLI takes it off, and blank read as unset,
         # as `factory.resolve_decision_url` reads it: the address every rule below decides on
@@ -622,7 +622,7 @@ class DecisionsAPILLM:
         if frames and not (self.frames and is_openai_host(self.url or "")):
             # A `ValueError` rather than a `DecisionError`, which is a sentence while the CLI is
             # still reading its flags: this is a caller's mistake met mid-run, and the stepper
-            # records a turn that raises it by its type and hands the turn to the model.
+            # records a turn that raises it by its type and hands the turn to the pilot.
             raise ValueError(
                 f"--decision-llm {self.name} was not built to be shown the camera at OpenAI's own "
                 "address, so it is handed no frame and nothing was sent"
@@ -633,7 +633,7 @@ class DecisionsAPILLM:
                 f"{MAX_IMAGES}, so nothing was sent"
             )
         asked = to_questions(questions)
-        body = {"model": self.model, "input": to_input(state, frames), "questions": asked}
+        body = {"model": self.llm_id, "input": to_input(state, frames), "questions": asked}
         if timeout_s is None:
             data = await self._post(body, None)
         else:

@@ -137,7 +137,7 @@ body:
     id: decision_llm
     attributes:
       label: A decision LLM, if you ran one with --decision-mode shadow
-      description: Which one, how long it took to answer, and how often it agreed with the model.
+      description: Which one, how long it took to answer, and how often it agreed with the pilot LLM.
   - type: input
     id: camera
     attributes:

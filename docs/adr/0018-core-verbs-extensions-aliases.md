@@ -52,7 +52,7 @@ backticked in the README.
   gain `canonical`, so replays and the flock one-claimant check key on a stable name.
 - **The bundled starter ducks stay on the old spellings** (they are also still `duck: 0`),
   so `uvx quackd run find-and-kick --provider fake`, the fake pilot, the hello-world golden
-  transcript and the tool names cloud models see are unchanged in 0.4.
+  transcript and the tool names cloud LLMs see are unchanged in 0.4.
 
 ## Consequences
 

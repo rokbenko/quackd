@@ -45,7 +45,7 @@ Whether anybody is watching stays the session's question, put before the first t
 the body.
 
 **drive takes run's flags for its goals, given once for the session.** `--base-url`,
-`--api-key`, `--vision`, `--extra-body`, `--effort` and `--price` reach the pilot's model.
+`--api-key`, `--vision`, `--extra-body`, `--effort` and `--price` reach the pilot's LLM.
 `--max-steps` is each goal's, within what the session has left. `--play`, `--memory` and
 `--memory-dir` and `--fov-deg` reach every goal, and `--policy-url`, `--policy-token`,
 `--accept-other-frame` and `--async-chunks` the arm. `--controller`, `--decision-mode` and
@@ -81,7 +81,7 @@ where it has one. A `.duck` that does not allow `manipulate` is refused before t
 starts. The person driving is asked before the segment whether the body should try, about the
 segment itself, which a goal allows behind the confirm gate as `quackd run --goal` does, and after
 it whether the arm did it. Only their yes makes the goal a success. A VLA pilot is refused with
-`--yes`, `--dry-run`, a pipe, a model's flag, `--play`, `--effort` and a goal's stepper, as a run
+`--yes`, `--dry-run`, a pipe, a pilot LLM's flag, `--play`, `--effort` and a goal's stepper, as a run
 refuses it, and `--decision-llm` alone is let through as the fast lane. The seconds a policy
 drives the body are the session's: each goal's are charged to it, and each goal is held to what is
 left. A session without a `.duck` has the schema's ceiling of them, an hour, where a task's
@@ -112,6 +112,6 @@ default is two minutes, for the reason it has a task's highest budgets.
 - A session with a policy server says so in its `run_start`, as a run does.
 - A goal's question from inside a composite, a gated `kick` as `approach_and`'s `then`, waits
   inside the composite's own time and is taken back when that runs out, recorded as unanswered.
-- A local pilot in a session with `--host` asks the board's model server, as a run's does, where
+- A local pilot in a session with `--host` asks the board's LLM server, as a run's does, where
   it asked this computer's.
 - `quackd log` replays the verbs and does not yet draw drive's own lines.

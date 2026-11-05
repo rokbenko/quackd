@@ -1,7 +1,7 @@
 """A `laya` that loads no weights.
 
-The in-process decision LLM is the one backend with no wire between quackd and the model, so
-the only way to test the seam is to stand where the model would be. Installed into
+The in-process decision LLM is the one backend with no wire between quackd and the LLM, so
+the only way to test the seam is to stand where the LLM would be. Installed into
 `sys.modules` for the life of one test, because the real package pulls torch and a suite that
 imported it would be testing a download.
 
@@ -74,7 +74,7 @@ class FakeRouter:
         if self.raises is not None:
             raise self.raises
         answers = self.script.pop(0) if self.script else self.answers
-        # The real shape: `laya/agent.py` hardcodes the model string, counts the input with
+        # The real shape: `laya/agent.py` hardcodes the LLM string, counts the input with
         # `int(attention_mask.sum())` and hardcodes the output at zero, and `Router.predict`
         # adds `routing` on top. A fake without `usage` had quackd's estimate path under test
         # and its measured path untested, which is backwards for this backend.

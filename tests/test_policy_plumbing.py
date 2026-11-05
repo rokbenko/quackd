@@ -423,7 +423,7 @@ def test_the_counter_line_says_what_the_policy_did_and_nothing_without_one() -> 
     # a hand-edited record is a shorter line, never a traceback
     assert _policy_counter("nonsense") is None
     assert _policy_counter({"segments": "x", "chunks": 3}) == "policy 0 segments"
-    # a policy never handed the arm: its segments alone, and no policy time beside the model's
+    # a policy never handed the arm: its segments alone, and no policy time beside the LLM's
     idle = run_counters({**end, "policy": {**block, "segments": 0, "seconds": 0.0, "wall_s": 0.0}})
     assert "policy 0 segments" in idle and "policy 0" not in idle[3], idle
 

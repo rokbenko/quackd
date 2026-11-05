@@ -7,7 +7,7 @@ provider SDK. To run it, sync an environment with the extra and run pytest there
 
 No key and no network. `tests/fake_openrouter.py` answers every request on 127.0.0.1, so what
 this proves is what quackd puts on the wire through the SDK and what it makes of an answer in
-OpenRouter's documented shape. It proves nothing about OpenRouter, and no OpenRouter model has
+OpenRouter's documented shape. It proves nothing about OpenRouter, and no OpenRouter LLM has
 answered a real quackd request.
 """
 
@@ -22,7 +22,7 @@ pytest.importorskip("openai")
 
 from typer.testing import CliRunner
 
-from quackd.agent.providers.catalogue import Price, find_model
+from quackd.agent.providers.catalogue import Price, find_llm
 from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
@@ -133,7 +133,7 @@ def test_each_turn_is_recorded_at_what_it_was_billed_and_the_rest_at_the_rate(
     assert result.exit_code == 0, result.output
     events = _events(tmp_path)
     calls = [e for e in events if e["kind"] == "llm"]
-    rate = find_model("openrouter", "openai/gpt-6-sol").price  # type: ignore[union-attr]
+    rate = find_llm("openrouter", "openai/gpt-6-sol").price  # type: ignore[union-attr]
     assert rate is not None
     expected = [0.0011, 0.0002 + 0.003, 0.0013, None, None]
     running = 0.0
@@ -210,18 +210,18 @@ def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    ("model_id", "why"),
+    ("llm_id", "why"),
     [
         ("quackd-stub/no-tools", "without tool calling"),
         ("quackd-stub/expired", "expired on OpenRouter on 2000-01-01"),
-        ("quackd-stub/not-there", "is not on OpenRouter's model list"),
+        ("quackd-stub/not-there", "is not on OpenRouter's LLM list"),
     ],
 )
 def test_an_id_the_list_says_cannot_pilot_is_refused_before_any_turn(
-    model_id: str, why: str, tmp_path: Path
+    llm_id: str, why: str, tmp_path: Path
 ) -> None:
     with FakeOpenRouter() as stand_in:
-        result = _run(stand_in, tmp_path, llm=f"openrouter:{model_id}")
+        result = _run(stand_in, tmp_path, llm=f"openrouter:{llm_id}")
     assert result.exit_code == 1
     assert why in " ".join(result.output.split())
     assert len(stand_in.gets()) == 1 and stand_in.posts() == []
@@ -234,7 +234,7 @@ def test_a_refused_shape_asks_nothing_at_all_and_needs_no_key(
     with FakeOpenRouter() as stand_in:
         result = _run(stand_in, tmp_path, llm="openrouter:~anthropic/claude-opus-latest")
     assert result.exit_code == 1
-    assert "newest model of its family" in " ".join(result.output.split())
+    assert "newest LLM of its family" in " ".join(result.output.split())
     assert stand_in.requests == []
 
 
@@ -311,7 +311,7 @@ def test_a_turn_that_failed_after_it_was_billed_is_in_the_run_total(tmp_path: Pa
 def test_a_claude_row_is_asked_and_keeps_its_reasoning_past_eight_exchanges(
     tmp_path: Path,
 ) -> None:
-    """Where the native provider trims old frames in steps of eight for these models, this one
+    """Where the native provider trims old frames in steps of eight for these LLMs, this one
     trims on every call, on OpenRouter's word that binding is not enforced through it. What can
     be checked here is that every turn's reasoning still goes back, in order, on a run long
     enough to cross that line, and that the row is asked with `auto` from first to last."""

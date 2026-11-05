@@ -3,11 +3,11 @@
  *
  * This is the browser's version of `quackd/agent/loop.py`, `quackd/verbs/core.py` and
  * `quackd/safety.py`, kept deliberately small so the whole idea fits on one screen. The
- * model never sees a joint, a motor or a pixel. It sees a list of verbs the robot's own
+ * LLM never sees a joint, a motor or a pixel. It sees a list of verbs the robot's own
  * manifest declares, one observation per turn, and a contract: which verbs are allowed,
  * how many steps it gets, and how long. It answers with exactly one verb per turn. The
  * executor checks that verb against the contract before the robot moves, and the run stops
- * when the budget is spent whatever the model thinks.
+ * when the budget is spent whatever the LLM thinks.
  *
  * The `Runtime` underneath owns the 50 Hz clock. Verbs ask it for simulated seconds; it
  * paces those against the wall clock so the page shows real time and a recording plays
@@ -120,9 +120,9 @@ export class Runtime {
 // ── the same checks pydantic makes on the Python side ──────────────────────────────────
 
 /**
- * Check a model's arguments against the schema they were offered, and say what is wrong.
+ * Check an LLM's arguments against the schema they were offered, and say what is wrong.
  *
- * The schemas were sent to the vendor and never enforced here, so a model that ignored one
+ * The schemas were sent to the vendor and never enforced here, so an LLM that ignored one
  * got whatever it asked for: `duration_s: 1e6` became ten million awaited slices and hung the
  * tab, and `duration_s: "soon"` produced NaN, ran no loop at all, and reported success.
  * Python refuses both at the verb boundary, with `extra="forbid"` and real bounds.
@@ -398,7 +398,7 @@ export async function pilot({ runtime, goal, provider, contract = DEFAULT_CONTRA
         signal,
       });
     } catch (error) {
-      // An abort during the model's turn is not a provider failure. Without the signal on the
+      // An abort during the LLM's turn is not a provider failure. Without the signal on the
       // fetch this arrived seconds late, after a response nobody wanted and the visitor's own
       // key had already been billed for.
       if (signal?.aborted) { onEvent({ kind: "end", outcome: "aborted", reason: abortedBecause(signal) }); return; }
@@ -418,7 +418,7 @@ export async function pilot({ runtime, goal, provider, contract = DEFAULT_CONTRA
     }
     const verb = VERBS[call.name];
     if (!verb || !contract.allow.includes(call.name)) {
-      // Refused, and the run continues: the model is told and may choose differently. This
+      // Refused, and the run continues: the LLM is told and may choose differently. This
       // is the executor's job, and the reason a contract is worth having.
       last = { name: call.name, ok: false, summary: `refused: ${call.name} is not in this task's allowlist` };
       onEvent({ kind: "result", ...last });

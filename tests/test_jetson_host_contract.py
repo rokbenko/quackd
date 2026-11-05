@@ -304,8 +304,8 @@ def test_doctor_reads_the_real_daemon_into_a_jetson_report(
 ) -> None:
     """The whole path `quackd doctor --host` takes: the daemon's `/hello`, `/healthz` and
     `/board`, the client's parsing, and doctor's parsers turning raw text into the section. The
-    model servers are the one thing stubbed, since the presets would be probed on loopback."""
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    LLM servers are the one thing stubbed, since the presets would be probed on loopback."""
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     monkeypatch.setattr(doctor, "_host_client", HostClient)
     report = doctor.collect(host=board.address, host_token=TOKEN)
     assert report.ok is True

@@ -1,4 +1,4 @@
-# ADR-0040: A discrete stepper in front of the model
+# ADR-0040: A discrete stepper in front of the pilot LLM
 
 **Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0010](0010-providers.md) (what a provider is, and what quackd asks of one) and [ADR-0032](0032-datasheets-and-the-verdict.md) (the feasibility verdict and why it is prose) · Implemented in `quackd/agent/decision/` and one hook in `quackd/agent/loop.py` ([page](../guides/decision-llms/README.md))
 
@@ -23,16 +23,16 @@ exception written by hand. `manipulate` narrowed to a task file's instructions i
 the rule, one label per instruction, and the stepper is offered it and never takes it, in `on`
 as in shadow (`SHADOW_ONLY` in `stepper.py`). It is confirm-gated, and under `--yes` nobody is
 asked at that gate, so a stepper that cleared the confirm floor would start a learned policy
-driving the arm with no person and no model involved. An answer that clears every other gate
-ends on `gate: shadow_only`, the model takes the turn, and a turn that offered it writes a
+driving the arm with no person and no pilot involved. An answer that clears every other gate
+ends on `gate: shadow_only`, the pilot LLM takes the turn, and a turn that offered it writes a
 `decision_shadow` record in `on` mode as in shadow, which is the agreement rate a decision to
 promote it would need.
 
 **Amended 2026-10-10 by [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md):** a question the decision LLM declines is a gate of its own.
 OpenAI's Decisions API may refuse any one question rather than answer it, and the stepper reads
-that before any answer: the turn goes to the model on `refused`, whichever of the four was
+that before any answer: the turn goes to the pilot LLM on `refused`, whichever of the four was
 declined, `feasible` included, with the names on the record and the summary counting
-`refusals`. It is one more way a turn reaches the model. `unreadable` also takes in more than it
+`refusals`. It is one more way a turn reaches the pilot LLM. `unreadable` also takes in more than it
 did: a confidence or a Noul that is not a number from 0 to 1, a number written as text or one on
 a scale of its own, and a `next_verb` with no choice in it, which used to read as a confident
 `escalate`. And a request a second Ctrl-C or a flock's cancel cuts off ends on a gate of its own,
@@ -49,33 +49,33 @@ and the summary's `decision` block `frames` and `frames_sent`. Every other run i
 nothing else. No gate and no floor changes.
 
 **Amended 2026-10-26 by [ADR-0064](0064-a-run-says-where-its-seconds-went-and-waits-for-less.md):** in `--decision-mode shadow` the stepper is
-asked beside the model's call rather than in front of it, since its answer changes
+asked beside the pilot LLM's call rather than in front of it, since its answer changes
 nothing there, and its `decision` record follows the turn's `llm` record. A request still
-out when the model's call ends the run is cut off on the gate `interrupted`. In `on` it is
+out when the pilot LLM's call ends the run is cut off on the gate `interrupted`. In `on` it is
 still asked first.
 
 ## Context
 
 quackd's loop asks one question a turn — which single tool call now — and pays a frontier
-model's full latency for it whether the answer is `report_state` or a six-joint pose. On the
+LLM's full latency for it whether the answer is `report_state` or a six-joint pose. On the
 SO-101 run at the top of `README.md` that is 62.1 seconds of a 78.8 second run spent waiting on
-the model, against 12.2 seconds of the arm moving. It is the single largest cost in a quackd run
+the LLM, against 12.2 seconds of the arm moving. It is the single largest cost in a quackd run
 and it has been since there was a loop.
 
 Not all of those turns are the same kind of question. `move_joints` with three angles is an act
-of authorship: the model reads a datasheet, picks numbers inside a travel limit, and writes
+of authorship: the LLM reads a datasheet, picks numbers inside a travel limit, and writes
 them. `report_state` is a choice among five things the arm can do, and so is `stop`, and so is
-shutting the gripper. A frontier model answers the second kind perfectly well, and pays the same
+shutting the gripper. A frontier LLM answers the second kind perfectly well, and pays the same
 six seconds to do it.
 
-[TypeSafe's Jev](https://docs.typesafe.ai/introduction) is a *System One* model: typed questions
+[TypeSafe's Jev](https://docs.typesafe.ai/introduction) is a *System One* LLM: typed questions
 evaluated against a named state, returning a value and a probability distribution, with no text
 generation anywhere in it. It answers the second kind of question and cannot answer the first,
 which is the property this decision rests on.
 
 The risk is obvious and it is the reason this repository exists. quackd's whole argument is that
-a language model names a skill and never writes a motor command
-([ADR-0011](0011-hardware-verb-mapping.md)). Putting a cheaper, smaller model anywhere near the
+an LLM names a skill and never writes a motor command
+([ADR-0011](0011-hardware-verb-mapping.md)). Putting a cheaper, smaller LLM anywhere near the
 decision loop is only defensible if there is a line it structurally cannot cross.
 
 ## Decision
@@ -94,7 +94,7 @@ decision loop is only defensible if there is a line it structurally cannot cross
 - **What it may answer is decided from each tool's JSON Schema and nothing else.** A verb is a
   choice when every parameter is a closed set — an enum, a constant or a boolean — or is inert,
   meaning optional, defaulting to null and accepting null, so omitting it chooses nothing.
-  Everything else is a number, and a number is the model's. The rule is computed, not curated,
+  Everything else is a number, and a number is the pilot LLM's. The rule is computed, not curated,
   so a body quackd has never shipped is classified by the same sentence as the seven that ship,
   and a frozen table test makes a new verb say which side it falls on.
 
@@ -112,12 +112,12 @@ decision loop is only defensible if there is a line it structurally cannot cross
 - **No meta tool is a choice, and that is a safety property rather than an accident.**
   `assess_task`, `declare_success`, `declare_failure`, `remember` and `tell` all take a required
   free string. So the stepper cannot end a run, cannot record a feasibility verdict, cannot
-  write to memory and cannot speak to a flock. Every ending goes through the model or through a
+  write to memory and cannot speak to a flock. Every ending goes through the pilot LLM or through a
   budget.
 
-- **A turn the stepper answers appends nothing to the model's history.** Not an exchange with no
-  decision — nothing at all. `self.history` is what the model has seen, and that is now true
-  rather than nearly true. The model is told what happened in one line on the observation it is
+- **A turn the stepper answers appends nothing to the pilot LLM's history.** Not an exchange with no
+  decision — nothing at all. `self.history` is what the pilot LLM has seen, and that is now true
+  rather than nearly true. The pilot LLM is told what happened in one line on the observation it is
   next shown, naming the verbs and saying who chose them.
 
 - **It is offered only what the executor would run this turn.** The label set is computed from
@@ -132,12 +132,12 @@ decision loop is only defensible if there is a line it structurally cannot cross
   system on purpose: a wrong `stop` costs one step and a wrong anything-else costs a move nobody
   chose.
 
-- **A run always reaches the model.** The stepper never answers twice running with the same
+- **A run always reaches the pilot LLM.** The stepper never answers twice running with the same
   call, and never more than eight turns in a row. Both hand the turn back and start counting
   again.
 
 - **`--jev shadow` before `--jev on`.** Shadow asks on every turn, records the answer beside the
-  model's, and changes nothing about the run, so it is safe on hardware and it is how any claim
+  pilot LLM's, and changes nothing about the run, so it is safe on hardware and it is how any claim
   about speed or agreement gets earned.
 
 ## Why not
@@ -145,19 +145,19 @@ decision loop is only defensible if there is a line it structurally cannot cross
 - **A `SteppedProvider` wrapping `cfg.provider`.** This is the shape that presents itself: zero
   diff to the loop, the stepper returns a synthetic `ProviderTurn`, everything downstream is
   unchanged. It is wrong four ways and all four matter. The loop writes a `Decision`
-  unconditionally, so the stepper's call would be replayed to the model as its own words — and
-  on Gemini as a `function_call` with no `thought_signature`, which that model refuses the next
-  turn over. It would charge `max_llm_calls` for a turn that made no model call. The `llm` trace
-  record would claim the model answered, with a fabricated `usage`. And a provider cannot see
+  unconditionally, so the stepper's call would be replayed to the pilot LLM as its own words — and
+  on Gemini as a `function_call` with no `thought_signature`, which that LLM refuses the next
+  turn over. It would charge `max_llm_calls` for a turn that made no pilot LLM call. The `llm` trace
+  record would claim the pilot LLM answered, with a fabricated `usage`. And a provider cannot see
   `executor.cleared`, so it could not avoid offering a verb the verdict gate is about to refuse.
 
 - **Recording the stepper's turn as an exchange with `decision=None`.** Wire-safe, and still
   wrong. Every observation ends `Choose exactly one tool.`, so a history containing turns where
-  the model was told that and produced nothing is in-context training against the one invariant
-  the loop enforces. The model would keep paying for observations it never saw, which inverts
+  the pilot LLM was told that and produced nothing is in-context training against the one invariant
+  the loop enforces. The pilot LLM would keep paying for observations it never saw, which inverts
   the cost argument the feature exists for. And `keep_images_for_last_n` counts exchanges, so
   two stepper turns in a row would push both of the arm's camera frames out of context — the
-  model going blind precisely because something else was driving.
+  pilot LLM going blind precisely because something else was driving.
 
 - **Letting it write the feasibility verdict.** `feasible|infeasible|uncertain` is a textbook
   Choice and it is asked on every turn, but only recorded. `assess_task` needs a written reason,
@@ -165,11 +165,11 @@ decision loop is only defensible if there is a line it structurally cannot cross
   a figure the datasheet does not publish ([ADR-0032](0032-datasheets-and-the-verdict.md)). A
   verdict with an empty `needs` passes that guard trivially and silently disables it. And an
   `uncertain` verdict puts its reason to the person in the room; an empty question is not a
-  question. The version this argues for is a stepper that *checks* the model's verdict, not one
+  question. The version this argues for is a stepper that *checks* the pilot LLM's verdict, not one
   that writes it, and the recorded Choice is how that case gets made or dropped.
 
 - **`--jev` on `record` or on `serve-mcp`.** `quackd record` makes the recordings in this
-  repository and has to stay reproducible without a network call. Over MCP the model is the
+  repository and has to stay reproducible without a network call. Over MCP the pilot LLM is the
   client, so quackd has no think path to put anything in front of.
 
 - **Evaluating preconditions in the stepper.** It would stop the stepper choosing `place` on an

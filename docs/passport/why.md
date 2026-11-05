@@ -51,7 +51,7 @@ toy-sized robot has no computer on board that can run quackd, so neither carries
   each other's address on a network.
 - **Checked before a word.** Both robots check the other's passport and key before either says
   anything.
-- **A stranger's words never reach a model.** A brain hears a robot nobody pinned as the closed
+- **A stranger's words never reach an LLM.** A brain hears a robot nobody pinned as the closed
   facts of its passport, and free talk needs a person's pin.
 - **A passport is a claim.** A signature proves who made it, never that it is true, and every
   figure carries its source: quackd's datasheet rule, carried to strangers.

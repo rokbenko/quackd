@@ -4,7 +4,7 @@
 is the 0.3 flock: several simulated Microducks in one arena on one lockstep clock, refereed
 deterministically. It exists so that cooperation is *inspectable*: every message between ducks
 travels over a tiny in-process bus and lands in a transcript, the kicker is chosen by an
-auction rather than by model vibes, and the LLM contributes at most one planning call for the
+auction rather than by LLM vibes, and the LLM contributes at most one planning call for the
 whole run. Simulator only, and still is.
 
 **The pilots** (`pilots.py`, `talk.py`) are the 0.9 flock: one whole `AgentLoop` per body, on

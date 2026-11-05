@@ -9,7 +9,7 @@ It exists for two reasons, and the second is the important one.
 
 **A verb is episodic and this robot is not.** `RealWorld.step()` is a no-op, so nothing times
 out and nothing re-arms: the last commanded pose is held forever. A humanoid frozen mid-stride
-while a language model thinks is a humanoid on the floor, so the loop has to run continuously
+while an LLM thinks is a humanoid on the floor, so the loop has to run continuously
 and quackd's intents only nudge what it is doing.
 
 **Upstream protects nothing, and its shutdown drops the robot.** Verified at the pinned commit:
@@ -878,7 +878,7 @@ class Handler(socketserver.StreamRequestHandler):
         if not authed:
             raise _Refused(ERR_BAD_TOKEN, "say bot.hello with a token first")
         # Only a method that drives the robot feeds the deadman. Reading state, health or a
-        # frame is a question, not driving: a client whose model stalled mid-verb, or which
+        # frame is a question, not driving: a client whose LLM stalled mid-verb, or which
         # polls while it thinks, would otherwise hold the deadman off for as long as it kept
         # asking. WALK is latched, so the robot would go on walking with nobody steering it,
         # which is the exact failure the deadman exists for.

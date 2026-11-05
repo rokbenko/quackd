@@ -74,7 +74,7 @@ def parse_duck_text(text: str, path: str | None = None) -> DuckFile:
     except ValidationError as e:
         raise DuckParseError(_format_validation_error(e), path) from None
     if not body.strip():
-        raise DuckParseError("body is empty: the LLM needs task instructions", path)
+        raise DuckParseError("body is empty: a task file needs task instructions", path)
     return DuckFile(frontmatter=frontmatter, body=body, path=path)
 
 
@@ -165,7 +165,7 @@ def duck_from_goal(
         abort_when=["Battery below 15%", "Same verb fails 3 times in a row"],
         persona="Practical and honest: say so when you cannot do something.",
     )
-    # the words the model reads live in one module, and this paragraph names verbs, so it is
+    # the words the LLM reads live in one module, and this paragraph names verbs, so it is
     # written from the allowlist granted above rather than from the duck this used to assume
     from quackd.agent.prompts import goal_strategy
 

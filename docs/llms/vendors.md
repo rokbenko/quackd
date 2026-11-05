@@ -1,10 +1,10 @@
 # Who makes what
 
-The same lists as the other pages, turned around: every company and project whose models quackd
+The same lists as the other pages, turned around: every company and project whose LLMs and policies quackd
 can use, which of the three roles each one fills, and the key and the extra it needs. A company
 that fills two roles, as OpenAI does, is one row.
 
-<!-- generated: vendor-roles, by scripts/models_docs.py from the three catalogues. Change a row there and run the script, not this table. -->
+<!-- generated: vendor-roles, by scripts/llms_docs.py from the three catalogues. Change a row there and run the script, not this table. -->
 
 | Who | Pilot, `--llm` | Decision LLM, `--decision-llm` | Learned policy, its `type` | Key | Extra |
 |---|---|---|---|---|---|
@@ -48,7 +48,7 @@ Only where something is worth knowing before you sign up or install.
 
 `GEMINI_API_KEY`, and quackd reads `GOOGLE_API_KEY` when that is empty, as Google's own SDK does.
 The catalogue carries Gemini Robotics-ER 2 as a pilot row, `gemini:gemini-robotics-er-2-preview`,
-which is Google's embodied-reasoning model and a planner rather than a VLA. pi0 and pi05 use
+which is Google's embodied-reasoning LLM and a planner rather than a VLA. pi0 and pi05 use
 Google's PaliGemma tokenizer, `google/paligemma-3b-pt-224`, which is gated on the Hub: accept its
 licence there, and give the machine that serves them a Hub token that has been granted it.
 
@@ -65,20 +65,20 @@ fetched from the Hub at a revision you name, through LeRobot, Hugging Face's rob
 and SmolVLA is Hugging Face's own. A Hugging Face Inference Endpoint can run quackd's policy
 server on a GPU Hugging Face rents by the hour, through `quackd policy endpoint`, which has met
 only the test suite's stand-ins. A Hub token, from `hf auth login` or `HF_TOKEN`, is what reaches
-a gated repository and what starts and reaches an endpoint ([vlas.md](vlas.md)).
+a gated repository and what starts and reaches an endpoint ([guides/vlas.md](../guides/vlas.md)).
 
 ### NVIDIA
 
 GR00T N1.7 is served as LeRobot's `groot` type. Its backbone's tokenizer,
 `nvidia/Cosmos-Reason2-2B`, is gated on the Hub, and its weights are under the NVIDIA Open Model
-License. An NVIDIA Jetson is something else: a board quackd reaches with `--host` for its model
+License. An NVIDIA Jetson is something else: a board quackd reaches with `--host` for its LLM
 server, camera and detector ([guides/jetson.md](../guides/jetson.md)).
 
 ### Physical Intelligence
 
 pi0 and pi05 are served as LeRobot's ports of them. pi0-FAST is not, because its policy runs the
 FAST tokenizer's own code from the Hub, and the Pi API, a hosted beta behind a waitlist since
-2026-10-13, has no public protocol to speak ([vlas.md](vlas.md#not-served-and-why)).
+2026-10-13, has no public protocol to speak ([guides/vlas.md](../guides/vlas.md#not-served-and-why)).
 
 ### TypeSafe
 
@@ -87,8 +87,8 @@ by TypeSafe, with `TYPESAFE_API_KEY` and `quackd[decision]`.
 
 ### OpenRouter
 
-One key, `OPENROUTER_API_KEY`, for other vendors' models as the pilot, and a turn is costed at
-what OpenRouter billed. **No OpenRouter model has answered a real quackd request.** Its guide
+One key, `OPENROUTER_API_KEY`, for other vendors' LLMs as the pilot, and a turn is costed at
+what OpenRouter billed. **No OpenRouter LLM has answered a real quackd request.** Its guide
 is [guides/openrouter.md](../guides/openrouter.md).
 
 ### Black Forest Labs

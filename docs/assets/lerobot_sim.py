@@ -218,23 +218,23 @@ def wave_pilot(adapter: Any) -> FakeProvider:
             calls.extend(plan())
         return calls[min(step, len(calls) - 1)]
 
-    return FakeProvider(strategy=strategy, model="scripted:wave")
+    return FakeProvider(strategy=strategy, llm_id="scripted:wave")
 
 
 def pilot_for(spec: str | None, adapter: Any) -> LLMProvider:
     """`--llm` as `quackd run` reads it, with no `--llm` and `fake` both meaning the script."""
-    vendor, model = parse_llm(spec)
+    vendor, llm_id = parse_llm(spec)
     if vendor == "fake":
         return wave_pilot(adapter)
-    return make_provider(vendor, model=model, goal=GOAL)
+    return make_provider(vendor, llm_id=llm_id, goal=GOAL)
 
 
 def pilot_label(provider: LLMProvider) -> str:
-    return "the scripted pilot" if isinstance(provider, FakeProvider) else provider.model
+    return "the scripted pilot" if isinstance(provider, FakeProvider) else provider.llm_id
 
 
 def front_header(provider: LLMProvider) -> str:
-    """What the right view is to this pilot. A model that takes images is sent that camera's
+    """What the right view is to this pilot. An LLM that takes images is sent that camera's
     frame at every turn, and the scripted pilot, which reads numbers, is sent none."""
     if getattr(provider, "supports_vision", False):
         return f"{FRONT} camera, what {pilot_label(provider)} is sent"

@@ -1,6 +1,6 @@
 """`--host`: which board a command uses, where that was said, and what one board cannot be.
 
-The noun is one machine: its model server, its camera, its detector and its health. These
+The noun is one machine: its LLM server, its camera, its detector and its health. These
 tests hold the parts that exist before any of the board's data is read: the order the three
 places that can name a board are tried in, the refusal of a fleet (one board cannot be every
 member's camera), the local preset moving to the board, and the token staying out of every
@@ -409,7 +409,7 @@ def test_a_hand_edited_bad_host_does_not_stop_a_run_of_another_robot(tmp_path: P
 @pytest.fixture
 def pilots(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """What `make_provider` was asked for, answered with the scripted pilot so the run
-    completes without a model server or the OpenAI SDK."""
+    completes without an LLM server or the OpenAI SDK."""
     from quackd.agent.providers import factory
 
     seen: list[dict[str, Any]] = []
@@ -483,7 +483,7 @@ def _local_run(tmp_path: Path, *args: str) -> Any:
     )
 
 
-def test_the_host_a_run_names_or_its_robot_stored_reaches_the_model_preset(
+def test_the_host_a_run_names_or_its_robot_stored_reaches_the_llm_preset(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     pilots: list[dict[str, Any]],
@@ -664,8 +664,8 @@ def test_the_commands_that_register_a_board_say_so_in_their_own_help(command: li
     assert "never reaches the run record" not in text
 
 
-@pytest.mark.parametrize("command", [["record"], ["list-models"]], ids=" ".join)
+@pytest.mark.parametrize("command", [["record"], ["list-llms"]], ids=" ".join)
 def test_the_commands_with_no_board_to_use_do_not_offer_one(command: list[str]) -> None:
-    """`record` pins the simulator and `list-models` reads a catalogue; neither has a camera,
+    """`record` pins the simulator and `list-llms` reads a catalogue; neither has a camera,
     a detector or a board's health to use."""
     assert "--host" not in help_text([*command, "--help"])

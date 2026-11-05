@@ -49,7 +49,7 @@ body:
         - "glm"
         - "meta"
         - "openrouter"
-        - "a local model (ollama, vllm, llamacpp, lmstudio, local)"
+        - "a local LLM (ollama, vllm, llamacpp, lmstudio, local)"
         - "a real robot"
   - type: textarea
     id: notes

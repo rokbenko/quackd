@@ -150,7 +150,7 @@ def test_a_published_transcript_carries_nothing_from_the_machine_it_ran_on(path:
     """These are somebody else's runs, copied out of their `runs/` directory by hand.
 
     `run_start` carries the two paths a run knows about, and the prompt, the thinking and the
-    verb results carry whatever the model and the robot said, so the sweep reads the whole
+    verb results carry whatever the LLM and the robot said, so the sweep reads the whole
     file rather than the two fields anybody thought to scrub."""
     rows = _rows(path)
     start = rows[0]
@@ -224,7 +224,7 @@ def test_the_published_row_agrees_with_the_run_it_links(path: Path) -> None:
 
     Every figure in the row comes out of `run_end`, except the text fallbacks, which are a
     count of the `llm` rows the loop had to rescue a call from. That column is the one a
-    reader uses to decide whether a small model can be trusted with the loop at all, so it is
+    reader uses to decide whether a small LLM can be trusted with the loop at all, so it is
     counted here rather than believed."""
     rows = _rows(path)
     end = rows[-1]

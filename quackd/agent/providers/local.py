@@ -1,13 +1,13 @@
-"""Local and open-source models as the duck's brain: llama.cpp, vLLM, Ollama, LM Studio.
+"""Local and open-source LLMs as the duck's brain: llama.cpp, vLLM, Ollama, LM Studio.
 
 They all speak OpenAI's Chat Completions format, so this is the OpenAI provider with the
-knobs turned for servers that are pickier and models that are weaker at tool calling:
+knobs turned for servers that are pickier and LLMs that are weaker at tool calling:
 no key needed, a preset base URL per server, `tool_choice="auto"` and no
-`parallel_tool_calls` field, vision off unless asked, model discovery from `/v1/models`,
-and a text fallback that rescues a tool call a small model wrote as plain JSON.
+`parallel_tool_calls` field, vision off unless asked, LLM discovery from `/v1/models`,
+and a text fallback that rescues a tool call a small LLM wrote as plain JSON.
 
-A preset's address can move to another machine with `--host` (`on_host`), which is how a
-model served on a Jetson's GPU is reached from the laptop without typing its URL.
+A preset's address can move to another machine with `--host` (`on_host`), which is how an
+LLM served on a Jetson's GPU is reached from the laptop without typing its URL.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def on_host(url: str, host: str) -> str:
     is `http://jetson.local:11434/v1`.
 
     `host` is anything `--host` takes: the machine alone, `machine:port`, or `[v6]:port`.
-    The port in it belongs to quackd's daemon on the board, never to the model server, so it
+    The port in it belongs to quackd's daemon on the board, never to the LLM server, so it
     is dropped: Ollama on a Jetson listens on 11434 whatever port the daemon was given. An
     IPv6 address comes back in brackets, the only way a URL can carry one. A userinfo in
     `url` is kept, though no preset has one.
@@ -90,8 +90,8 @@ def split_thinking(text: str) -> tuple[str | None, str]:
     """`<think>...</think>` out of a reply, as (thinking, the rest).
 
     A server that does not separate reasoning (llama.cpp without `--reasoning-format`, LM
-    Studio with separation off, vLLM without a parser) leaves the model's thoughts inline in
-    `content`. Left there they would be shown as the answer and replayed to the model next
+    Studio with separation off, vLLM without a parser) leaves the LLM's thoughts inline in
+    `content`. Left there they would be shown as the answer and replayed to the LLM next
     turn as something it said. An opening tag with no closing one is thinking to the end of
     the reply: a max_tokens cut mid-thought must not turn a half-finished thought into the
     answer."""
@@ -133,14 +133,14 @@ def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
     name = next((obj[k] for k in _NAME_KEYS if isinstance(obj.get(k), str)), None)
     if name is None or name not in tool_names:
         return None
-    # Not `{}` for what cannot be read: that is a call with its defaults, on nothing the model
+    # Not `{}` for what cannot be read: that is a call with its defaults, on nothing the LLM
     # said.
     args: Any = next((obj[k] for k in _ARGS_KEYS if k in obj), {})
     return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
 def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:
-    """A tool call a model wrote as JSON text instead of a native tool call, or None."""
+    """A tool call an LLM wrote as JSON text instead of a native tool call, or None."""
     for obj in _candidates(text or ""):
         call = _as_call(obj, tool_names)
         if call is not None:
@@ -149,7 +149,7 @@ def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | Non
 
 
 class LocalProvider(OpenAIProvider):
-    """A model on a server you run: one of the four presets, or `local` at any address.
+    """An LLM on a server you run: one of the four presets, or `local` at any address.
 
     Where the server is, the first rung that is set wins, and nothing is probed:
 
@@ -163,8 +163,8 @@ class LocalProvider(OpenAIProvider):
     A URL given anywhere is used as given, and a host only ever moves a preset. That is why
     `local`, which has no preset address, refuses a host on its own and asks for
     `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
-    registered with this robot is a decision about this run, and beats a `.env` line naming a
-    model server's URL; `QUACKD_HOST` is the board you usually use, and must not.
+    registered with this robot is a decision about this run, and beats a `.env` line naming an
+    LLM server's URL; `QUACKD_HOST` is the board you usually use, and must not.
 
     `OPENAI_BASE_URL` is a rung of this ladder and nothing more: an address quackd chose to read
     for a server you run, not the address the SDK found for itself, so the SDK's own variables
@@ -184,7 +184,7 @@ class LocalProvider(OpenAIProvider):
 
     def __init__(
         self,
-        model: str | None = None,
+        llm_id: str | None = None,
         *,
         preset: str = "local",
         base_url: str | None = None,
@@ -205,7 +205,7 @@ class LocalProvider(OpenAIProvider):
         if vision is None:
             vision = os.environ.get("QUACKD_VISION", "0").lower() not in ("", "0", "false", "no")
         super().__init__(
-            model or "",
+            llm_id or "",
             client=client,
             api_key=api_key,
             base_url=url,
@@ -246,13 +246,13 @@ class LocalProvider(OpenAIProvider):
         plain HTTP included, whenever it sat in the same `.env`."""
         return "not-needed"
 
-    async def ensure_model(self) -> str:
-        """Discover the served model when none was given (`/v1/models`, first entry).
+    async def ensure_llm(self) -> str:
+        """Discover the served LLM when none was given (`/v1/models`, first entry).
 
         A failure names the address the client was handed, as a refusal may quote it, rather than
         the one this provider was given, since that is where the request went."""
-        if self.model:
-            return self.model
+        if self.llm_id:
+            return self.llm_id
         try:
             page = await self.client.models.list()
         except Exception as e:
@@ -260,31 +260,31 @@ class LocalProvider(OpenAIProvider):
             if redirected is not None:
                 raise redirected from e
             raise ProviderError(
-                f"{self.name}: cannot list models at {_quoted(self.client_address())} "
-                f"({type(e).__name__}: {e}). Is the server running? Pass --llm <preset>:<model> "
+                f"{self.name}: cannot list LLMs at {_quoted(self.client_address())} "
+                f"({type(e).__name__}: {e}). Is the server running? Pass --llm <preset>:<llm> "
                 "to skip discovery."
             ) from e
         ids = [str(getattr(m, "id", "")) for m in (getattr(page, "data", None) or [])]
         ids = [i for i in ids if i]
         if not ids:
             raise ProviderError(
-                f"{self.name}: the server at {_quoted(self.client_address())} lists no models. "
-                "Load one (e.g. `ollama pull qwen3:8b`) or pass --llm <preset>:<model>."
+                f"{self.name}: the server at {_quoted(self.client_address())} lists no LLMs. "
+                "Load one (e.g. `ollama pull qwen3:8b`) or pass --llm <preset>:<llm>."
             )
-        self.model = ids[0]
-        return self.model
+        self.llm_id = ids[0]
+        return self.llm_id
 
     async def step(
         self, system: str, history: list[Any], tools: list[dict[str, Any]]
     ) -> ProviderTurn:
-        await self.ensure_model()
+        await self.ensure_llm()
         return await super().step(system, history, tools)
 
     def _normalise(self, turn: ProviderTurn) -> ProviderTurn:
         """Split inline `<think>` off before anything else reads the text.
 
         It runs here, not after `super().step()`, because the JSON text fallback reads
-        `turn.text`: a model that weighs a verb in its reasoning and then rejects it
+        `turn.text`: an LLM that weighs a verb in its reasoning and then rejects it
         (`<think>maybe {"name": "kick"} but no</think>I will wait.`) would otherwise have
         that call parsed out of the discarded thought and executed.
         """

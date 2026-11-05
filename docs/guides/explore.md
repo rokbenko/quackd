@@ -8,7 +8,7 @@ and why they stop to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map
 
 ![A Microduck in its simulator finding the ball in the room it did not start in](../assets/explore.gif)
 
-*The scripted pilot, not a model:
+*The scripted pilot, not an LLM:
 `quackd record find-the-ball --room two-rooms --llm fake --seed 3 --gif-size 320`. Left, the room
 from above, with the floor its map has not seen yet shaded. Right, the duck's camera.*
 
@@ -40,19 +40,19 @@ $ quackd --no-color run find-the-ball --room two-rooms --llm fake --yes --seed 3
 →  send    look x4 over 1.5 s (x 0.766..1, y -0.643..0.643, z 0)
 →  send    stop
 →  send    move x11 over 1.0 s (vx 0, vy 0, wz -1)
-✓  result  find ok: find: found the ball: ball dead ahead ~0.87 m; marked 'ball' where it stands, facing it: 2 stops, 29 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (39.3 s sim, 1.6 s wall, 300 intents)
+✓  result  find ok: find: found the ball: ball dead ahead ~0.87 m; marked 'ball' where it stands, facing it: 2 stops, 29 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (39.3 s sim, 2.2 s wall, 300 intents)
 ▶  verb    go_to(target='ball', stop_distance=0.3)
 ✓  result  go_to ok: reached the ball: ~0.30 m away, bearing +0° (3.9 s sim, 0.4 s wall, 40 intents)
 ▶  verb    say(text='The ball was about 0.9 m from the spot I marked ball.')
 ✓  result  say ok: said 'The ball was about 0.9 m from the spot I marked ball.' as [chirp] (0.0 s, 1 intent)
 ▶  verb    go_to_place(name='start')
-✓  result  go_to_place ok: go_to_place: 0.07 m from 'start' by its map, facing within 20° of the way it faced there; walked 1.5 m in 16 s, 1 stop, 0 re-plans (16.0 s sim, 0.4 s wall, 156 intents)
+✓  result  go_to_place ok: go_to_place: 0.07 m from 'start' by its map, facing within 20° of the way it faced there; walked 1.5 m in 16 s, 1 stop, 0 re-plans (16.0 s sim, 0.9 s wall, 156 intents)
 ┌─ ✓ SUCCESS ─────────────────────────────────────────────────────────────────────────────────────┐
 │ found the ball, walked up to it, said where, and came back                                      │
-│ steps 4 · llm calls 6 · tokens 12261+96 · time 2.7 s (model 0.0 s) · model calls p50 0.0 s, p90 │
-│ 0.0 s, max 0.0 s · first motion at 0.1 s, after 2 model calls · cost $0                         │
-│ run dir  runs\20261027-191546-find-the-ball                                                     │
-│ gif      runs\20261027-191546-find-the-ball\run.gif                                             │
+│ steps 4 · LLM calls 6 · tokens 12261+96 · time 4.1 s (LLM 0.0 s) · LLM calls p50 0.0 s, p90 0.0 │
+│ s, max 0.0 s · first motion at 0.2 s, after 2 LLM calls · cost $0                               │
+│ run dir  runs\20261104-204212-find-the-ball                                                     │
+│ gif      runs\20261104-204212-find-the-ball\run.gif                                             │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +63,7 @@ the ball. It turned to face it, saw it again dead ahead, and marked the spot it 
 `ball`, facing the ball. The pilot then walked up to the ball with `go_to`, said where it was, and
 walked back to `start`, which `find` had marked where it began.
 
-The scripted pilot is a rule, so it does the same every time on the same seed. A model pilots the
+The scripted pilot is a rule, so it does the same every time on the same seed. An LLM pilots the
 same task with `--llm anthropic` or any other, and decides between the verbs itself.
 
 ## Mark a spot, explore, come back

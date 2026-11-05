@@ -1,6 +1,6 @@
 # ADR-0046: The Jetson is reached, not run on
 
-**Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the model's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
+**Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local LLM is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the LLM's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
 
 **Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
 one quackd command runs on a robot's own Jetson now, `quackd onboard`, Robot Passport's service,
@@ -25,18 +25,18 @@ Two days later that is the wrong direction, for two reasons.
 
 The first is what a Jetson is for. On its own the board is already a robot's computer and its
 GPU. What quackd adds is using the board, and what is on it, from the laptop where the person
-running the task already is: the model on its GPU, the board's health, frames from a camera on
+running the task already is: the LLM on its GPU, the board's health, frames from a camera on
 it, and detections computed on its GPU. None of that needs quackd on the board. The onboard work
 gave the first two only to a quackd running on the board, and a local preset could already reach
-a model server on the board from anywhere with `--base-url`.
+an LLM server on the board from anywhere with `--base-url`.
 
 The second is the arrangement the image existed for. ADR-0044 called it the interesting one: a
-ToddlerBot's own Jetson holding its control daemon, a model server and quackd, three processes
-on one board. It is also the risky one. A model server saturating the board's CPU and memory bus
+ToddlerBot's own Jetson holding its control daemon, an LLM server and quackd, three processes
+on one board. It is also the risky one. An LLM server saturating the board's CPU and memory bus
 is exactly the load that can starve a fifty hertz control loop, and on a humanoid a starved loop
 is a fall. ADR-0044's Consequences named that as the first thing a person with a board should
 measure, and nobody here has a board. Moving quackd off the board does not end that contest,
-because a model server or a detector can still share a robot's board, but it takes quackd out of
+because an LLM server or a detector can still share a robot's board, but it takes quackd out of
 it and makes the sharing a choice rather than the page's headline.
 
 ## Decision
@@ -62,7 +62,7 @@ and what started: a camera, a detector, whether the board is a Tegra, and why an
 path, and a test that reads its source fails if one appears. It is written for Python 3.10,
 which is JetPack 6's system Python, imports nothing from quackd, and imports OpenCV, Pillow,
 torch and ultralytics only where it uses them, so a board without one of them starts anyway and
-says in `/hello` what it lacks. The model server is still the person's own install, Ollama or
+says in `/hello` what it lacks. The LLM server is still the person's own install, Ollama or
 another, as it was under ADR-0044.
 
 **The daemon ships raw text, and quackd does the reading.** `/board` is five files, three device
@@ -75,12 +75,12 @@ a file somebody copies onto a board by hand, and quackd is a release. A reading 
 a board nobody here has seen is then fixed in the release, and the daemon never has to learn
 quackd's labels or its lens.
 
-**HTTP for everything, and no ssh inside quackd.** quackd reaches the daemon and the model
+**HTTP for everything, and no ssh inside quackd.** quackd reaches the daemon and the LLM
 server over plain HTTP and holds no login to the board. ssh stays what it was in 0.13, the
 tunnel a person opens, now with the daemon's port in it, after which `--host 127.0.0.1` reaches
 both through it. `bridge/jetson/README.md` has the line.
 
-**A local preset's model server moves to the board.** `ollama`, `vllm`, `llamacpp` and
+**A local preset's LLM server moves to the board.** `ollama`, `vllm`, `llamacpp` and
 `lmstudio` keep their own port and path, and their `localhost` becomes the machine the host
 names. The port in `--host` is the daemon's, and it is dropped. `LocalProvider`'s docstring is
 the order:
@@ -97,8 +97,8 @@ the order:
 > A URL given anywhere is used as given, and a host only ever moves a preset. That is why
 > `local`, which has no preset address, refuses a host on its own and asks for
 > `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
-> registered with this robot is a decision about this run, and beats a `.env` line naming a
-> model server's URL; `QUACKD_HOST` is the board you usually use, and must not.
+> registered with this robot is a decision about this run, and beats a `.env` line naming an
+> LLM server's URL; `QUACKD_HOST` is the board you usually use, and must not.
 
 `make_provider` hands the host to the local provider and to no vendor, and decision LLMs are not
 moved: `--decision-url` already reaches a server on the board.
@@ -111,7 +111,7 @@ camera task on a blind body is not refused for a camera the run will have. A bli
 `search_scan` and `approach_and` where its mobility and intents allow. A body with a camera of
 its own keeps its primary view, because its bearings are calibrated for that lens and a board on
 a bench says nothing about which way the robot faces. The board's frame is then an extra view
-named `host`, which the model is shown and the detector never reads. A frame older than two
+named `host`, which the LLM is shown and the detector never reads. A frame older than two
 seconds is dropped, and a snapshot that fails costs the picture and never the run, which is the
 Open Duck camera's rule.
 
@@ -149,12 +149,12 @@ fleet is several bodies. `--host`, or a host stored with a member, is refused fo
 `--flock`, a task file with a `flock:` block and several robots alike, in `run` and in
 `serve-mcp`, before anything connects. `QUACKD_HOST` is not refused. It is the board you usually
 use rather than a claim about these bodies, and for a fleet it moves only the local presets'
-model server. `--detector` is refused for a fleet as well.
+LLM server. `--detector` is refused for a fleet as well.
 
 **A board that does not answer refuses the run.** `run` and `serve-mcp` ask the daemon for
 `/hello` before anything is built, and refuse while nothing is powered when it does not answer,
 because a run given `--host` was promised a camera or a detector it would not have. Somebody who
-wants only the model on the board keeps `--base-url`, which asks nothing of the daemon.
+wants only the LLM on the board keeps `--base-url`, which asks nothing of the daemon.
 
 **`quackd doctor` reads the board over the network, and never this machine's files.** The
 section appears only when a host is named, by the flag, by the robot `--robot` names or by
@@ -163,7 +163,7 @@ on, the daemon's health, and, parsed from `/board`, the board's model, the L4T r
 JetPack that is, the memory it shares with the GPU, whether the only swap is zram, the GPU
 device node, the power mode and the GPU's load from one `tegrastats` line. The four local
 presets are probed at the host, and an Ollama that answers is asked `/api/ps` where each loaded
-model sits: all on the GPU, a share of it, or on the CPU, which on a Tegra is the generic arm64
+LLM sits: all on the GPU, a share of it, or on the CPU, which on a Tegra is the generic arm64
 build's pitfall. A host that does not answer fails the report the way a bad `--address` does,
 and nothing the board says ever changes the verdict. doctor no longer opens `/proc` or runs a
 subprocess on the machine it runs on, and a test that parses `doctor.py` keeps it that way. In
@@ -217,17 +217,17 @@ ball. Asked for by name it runs, and the header row says it was asked for on a s
   NVIDIA's torch, detects on CUDA, and how long a detection takes there. How long a snapshot
   and a detection take over a robot's Wi-Fi, inside `go_to`'s steering loop, which re-sends its
   last twist for 0.3 s while it waits and no longer, so a slower round trip lets the body stop
-  between frames. Whether a model server and the detector on a robot's own board leave its fifty
+  between frames. Whether an LLM server and the detector on a robot's own board leave its fifty
   hertz loop alone. The unit runs the daemon at `Nice=10`, under `MemoryMax=2G` and first in
   line for the OOM killer (`OOMScoreAdjust=500`), which is a precaution and not a measurement.
   And whether a real board's files and `tegrastats` line look like the fixtures, which were
   written from NVIDIA's documentation.
-- **The contention caveat changes subject.** It was about quackd sharing a robot's board with a
-  model server. quackd is off the board now, and the caveat is about a model server or the
+- **The contention caveat changes subject.** It was about quackd sharing a robot's board with an
+  LLM server. quackd is off the board now, and the caveat is about an LLM server or the
   detector on a robot's own board. Of the seven bodies, the ToddlerBot is still the only one
   that carries a Jetson.
 - **A fleet cannot use a board.** `--host`, or a host stored with any member, refuses a fleet
-  before anything connects. A fleet that wants the model server on a board still reaches it
+  before anything connects. A fleet that wants the LLM server on a board still reaches it
   through `QUACKD_HOST` or `--base-url`.
 - **`quackd doctor --json` moved the board.** It is `host.jetson` now, beside the hello, the
   health and the presets asked at the host. A script that read 0.13's top-level `jetson` key

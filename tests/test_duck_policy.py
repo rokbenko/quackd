@@ -659,7 +659,7 @@ async def test_an_mcp_session_narrows_at_connect_and_on_load_and_carries_the_sec
     """With no task the verb takes any words and runs the default segment under the default
     total. A task loaded narrows it to its own, and a second one narrows from the arm's verb.
     The seconds a policy has driven the arm are the session's from the start: the first load
-    keeps what was spent with no task, and the second what the first spent, as steps and model
+    keeps what was spent with no task, and the second what the first spent, as steps and LLM
     calls are kept."""
     from quackd.mcp_server import build_server
 
@@ -795,7 +795,7 @@ async def _stepper(llm: Any) -> tuple[Stepper, LeRobotAdapter]:
 async def test_the_stepper_is_offered_each_segment_and_takes_none_however_sure_it_is() -> None:
     """`manipulate` answers to the confirm floor, and under `--yes` nobody is asked there, so
     an answer that cleared it would start a segment with nobody involved. It clears every gate
-    a taken answer clears, is recorded as having done so, and the turn goes to the model."""
+    a taken answer clears, is recorded as having done so, and the turn goes to the pilot LLM."""
     choice = _said(INSTRUCTIONS[1])[0]
     stepper, adapter = await _stepper(_fake(answers=fake_systemone.turn(choice, 0.99)))
     advice = await stepper.advise(await _observation(adapter), cleared=True, budget=BUDGET)
@@ -826,7 +826,7 @@ class _Seen:
         self.texts: list[str] = []
 
     name = property(lambda self: self.inner.name)
-    model = property(lambda self: self.inner.model)
+    llm_id = property(lambda self: self.inner.llm_id)
     supports_vision = property(lambda self: self.inner.supports_vision)
 
     async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
@@ -867,8 +867,8 @@ async def test_a_run_compares_every_segment_the_stepper_would_start_and_starts_n
     tmp_path: Path, mode: str
 ) -> None:
     """With the stub sure of a segment every turn and every confirm answered yes: in shadow
-    and in on alike, the segments are the model's, the stepper's answer on each of those turns
-    is recorded beside the model's, and the model and the stepper were shown the same verb."""
+    and in on alike, the segments are the pilot LLM's, the stepper's answer on each of those turns
+    is recorded beside the pilot's, and the pilot and the stepper were shown the same verb."""
     result, pilot = await _run(tmp_path, mode)
     assert result.outcome == "success", result.outcome
     segments = [r for r in _records(result, "verb_start") if r["name"] == POLICY_VERB]
@@ -878,13 +878,13 @@ async def test_a_run_compares_every_segment_the_stepper_would_start_and_starts_n
     assert not any((r.get("call") or {}).get("name") == POLICY_VERB for r in asked)
     compared = _records(result, "decision_shadow")
     choice = _said(INSTRUCTIONS[0])[0]
-    on_segments = [r for r in compared if r["model_verb"] == POLICY_VERB]
+    on_segments = [r for r in compared if r["llm_verb"] == POLICY_VERB]
     assert [r["agree"] for r in on_segments] == [True, False], compared
     assert all(r["decision_choice"] == choice and not r["would_have_acted"] for r in compared)
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["decision"]["taken"] == 0
 
-    # the schema the model was handed is the one the stepper enumerated
+    # the schema the pilot LLM was handed is the one the stepper enumerated
     shown = [t for tools in pilot.tools for t in tools if t["name"] == POLICY_VERB]
     assert shown and all(t == shown[0] for t in shown)
     offered = {label for r in asked for label in r["labels"] if label.startswith(POLICY_VERB)}

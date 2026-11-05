@@ -1,6 +1,6 @@
 # ADR-0041: The record says when it ran and what it cost
 
-**Status:** accepted, amended · **Date:** 2026-09-21 · Extends [ADR-0029](0029-tracing.md) (one event stream, and what it records) and [ADR-0031](0031-model-catalogue.md) (the catalogue is where model data lives) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper's summary block, and its consequence that the speed and cost figures in `docs/jev.md` are an estimate) · Implemented in `quackd/agent/providers/pricing.py`, with changes in the loop, the stepper and both console views
+**Status:** accepted, amended · **Date:** 2026-09-21 · Extends [ADR-0029](0029-tracing.md) (one event stream, and what it records) and [ADR-0031](0031-llm-catalogue.md) (the catalogue is where LLM data lives) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's summary block, and its consequence that the speed and cost figures in `docs/jev.md` are an estimate) · Implemented in `quackd/agent/providers/pricing.py`, with changes in the loop, the stepper and both console views
 
 **Amended 2026-09-22 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** `quackd trace` below
 is `quackd log`. The old spelling still runs, hidden from `--help`, prints one yellow line
@@ -14,7 +14,7 @@ and `decision_shadow`, and the five `jev_*` fields on the shadow record are `dec
 summary's `jev` block is `decision` and carries `llm` and `url`; `QUACKD_JEV_PRICE` is
 `QUACKD_DECISION_PRICE`. Read "TypeSafe" in the stepper's costing below as "whichever decision
 LLM answered": a server you run reports no bill and is costed at the self-hosted `$0` the rest
-of quackd already uses for a local model, so the estimate and its `~` exist only where a
+of quackd already uses for a local LLM, so the estimate and its `~` exist only where a
 non-zero rate does, which today is Jev alone.
 
 **Amended 2026-10-06 by [ADR-0050](0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md):** a call can be costed at what
@@ -40,7 +40,7 @@ cost counter keeps its `~` for a stepper total above zero. Nothing else in this 
 
 **Amended 2026-10-26 by [ADR-0063](0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md) and [ADR-0064](0064-a-run-says-where-its-seconds-went-and-waits-for-less.md):** the cache buckets
 below are no longer empty on Claude, whose requests now mark the prompt for the cache. The
-summary also says how the model's answered calls spread (`llm_latency_p50_s`,
+summary also says how the pilot LLM's answered calls spread (`llm_latency_p50_s`,
 `llm_latency_p90_s` and `llm_latency_max_s`, and the same three in the stepper's block)
 and when the body first moved (`first_motion_s` and `first_motion_llm_calls`), and
 `run_start` what the pilot was asked to reason at (`effort`) and what became of its
@@ -49,20 +49,20 @@ warm-up (`pilot_warm`).
 ## Context
 
 The one hardware run this project has is at the top of `README.md`, and the sentence that
-matters most about it is this one: *"Ten model calls, 3.3 to 8.2 seconds each, 62.1 seconds in
+matters most about it is this one: *"Ten LLM calls, 3.3 to 8.2 seconds each, 62.1 seconds in
 all, which is 79% of the run. The arm moved for 12.2 seconds, which is 15%."* That 62.1 was
 added up by hand, out of the `latency_s` on ten `llm` records, because nothing in quackd
 totalled it. `summary.json` gave `steps`, `llm_calls`, a token count and `elapsed_s`, and
 `elapsed_s` is the budget's clock rather than the wall's.
-[ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) is built on that ratio and
+[ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) is built on that ratio and
 `docs/jev.md` quotes it three times, so the number this project's newest argument rests on was
 the one number a run did not record.
 
 Money was worse, because it was declared out of scope. `docs/jev.md` line 494 says **"quackd
 counts tokens and has never computed money"**, and the rest of that section is arithmetic the
 reader is expected to do against a rate card they first have to go and find. Meanwhile
-[ADR-0031](0031-model-catalogue.md) had already decided that what quackd knows about a model
-belongs in one curated table, and that table held 115 models without the one field anybody
+[ADR-0031](0031-llm-catalogue.md) had already decided that what quackd knows about an LLM
+belongs in one curated table, and that table held 115 LLMs without the one field anybody
 converts a token count into. A reader looking at `in=10730 out=96` cannot tell a ten cent run
 from a ten dollar one without a browser open beside the terminal.
 
@@ -95,7 +95,7 @@ the directory name is what somebody types back into `quackd trace`.
   So there are two clocks and each is named for what it measures: `wall_s` for how long a
   person waited, `elapsed_s` for how much of the budget the robot spent. `connect_s` and
   `llm_latency_s` split the wall into the parts worth arguing about, and `llm_latency_s` is
-  summed over every model call including one that raised, because a call that failed slowly
+  summed over every LLM call including one that raised, because a call that failed slowly
   still cost the run its seconds.
 
 - **A run can be named, and the name is validated before anything else happens.**
@@ -123,12 +123,12 @@ the directory name is what somebody types back into `quackd trace`.
   normalisation lives in the adapters rather than in the arithmetic.
 
 - **Rates live in the catalogue, `--price` and `QUACKD_PRICE` override them, and unknown is
-  recorded as `null`.** A rate is model data, so by [ADR-0031](0031-model-catalogue.md) it
-  belongs in the same table as the id and the vision flag: 112 of the 115 models carry one,
+  recorded as `null`.** A rate is LLM data, so by [ADR-0031](0031-llm-catalogue.md) it
+  belongs in the same table as the id and the vision flag: 112 of the 115 LLMs carry one,
   read off the vendor's own page on `PRICES_CHECKED`. `None` means the vendor publishes no
-  per-token rate, never that a model is free; a genuinely free model is `Price(0.0, 0.0)`, and
+  per-token rate, never that an LLM is free; a genuinely free LLM is `Price(0.0, 0.0)`, and
   four of them are. An override is a flag or a variable rather than a second table because the
-  cases are personal: a negotiated rate, a paid endpoint behind a local preset, a model the
+  cases are personal: a negotiated rate, a paid endpoint behind a local preset, an LLM the
   catalogue has never heard of. An override beats `fake` too, which is how the whole cost path
   gets exercised end to end with no key and no bill. Where a cache rate is unpublished,
   `cost_usd` charges that traffic at the full input rate, because a bill that is too low is the
@@ -177,12 +177,12 @@ the directory name is what somebody types back into `quackd trace`.
   quackd would have to subtract on those two in order to add on the third. The subtraction
   happens in one place instead, inside `cost_usd`, where it is arithmetic rather than meaning.
 
-- **Pricing an unknown model at zero.** A missing rate and a free model are different facts and
+- **Pricing an unknown LLM at zero.** A missing rate and a free LLM are different facts and
   only one of them is good news. Cohere is the live case rather than a hypothetical: the
   Command A family is sold as dedicated instances by the hour, so there is no per-token figure
-  to record, and the family includes the model quackd defaults to for that vendor. A zero there
+  to record, and the family includes the LLM quackd defaults to for that vendor. A zero there
   would print `$0` for capacity somebody is paying for by the hour. `null`, a `cost unpriced`
-  counter, and one dim line naming the provider and the model and telling you to pass `--price`
+  counter, and one dim line naming the provider and the LLM and telling you to pass `--price`
   is a worse-looking answer and a true one.
 
 - **Recomputing cost at replay from today's catalogue.** Then a run's cost would change every
@@ -216,7 +216,7 @@ on Anthropic those buckets are zero and this is a correction waiting for the cal
 caching on; where a vendor caches by itself the cached slice of the prompt is now recorded and
 charged at the cache rate instead of disappearing into the full one.
 
-**Three Cohere models have no published rate, and one of them is that vendor's default.**
+**Three Cohere LLMs have no published rate, and one of them is that vendor's default.**
 `command-a-plus-05-2026`, `command-a-03-2025` and `command-a-reasoning-08-2025` report
 `cost_usd: null` and print `cost unpriced`. This is not an omission waiting to be filled in by
 somebody diligent, it is what Cohere publish, so no test may assert that every vendor default
@@ -225,7 +225,7 @@ carries a price.
 **Every rate is only as current as `PRICES_CHECKED`, and the table is flat.** Today that date is
 2026-09-21, and it is written into every run that used a catalogue rate so that a figure can
 be aged rather than merely doubted. Vendors move rates, and several of them charge in ways
-four numbers cannot express: xAI and the Gemini Pro models double above a 200k prompt and
+four numbers cannot express: xAI and the Gemini Pro LLMs double above a 200k prompt and
 OpenAI's flagships above 272k, repricing the whole request rather than the excess; DeepSeek
 halve everything outside their peak hours; batch, priority, provisioned and free tiers are
 choices a caller makes that quackd cannot see. The table records the standard on-demand rate
@@ -235,7 +235,7 @@ anybody whose bill does not look like this table, and the `source` written into 
 how a reader tells the two apart.
 
 **The stepper's cost is a measurement only when TypeSafe reports one.**
-[ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) said the figures in `docs/jev.md`
+[ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) said the figures in `docs/jev.md`
 are an estimate, and that stays true of the run level projections on that page. What changes is
 narrower: where the API returns a token count, the cost in the record is computed from it, and
 where it does not, the record says so. Nobody has yet asked TypeSafe's production API for a

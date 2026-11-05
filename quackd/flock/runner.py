@@ -224,7 +224,7 @@ async def run_flock(
         wedges={k: w.model_dump() for k, w in wedges.items()},
         robots={name: spec.key for name, spec in specs.items()},
         provider=provider.name,
-        model=provider.model,
+        llm_id=provider.llm_id,
         llm_calls=llm_calls,
         fallback=fallback,
         usage=usage.model_dump(),
@@ -334,7 +334,7 @@ async def run_flock(
         "ball_displacement_m": round(truth, 3),
         "planner": {
             "provider": provider.name,
-            "model": provider.model,
+            "llm_id": provider.llm_id,
             "llm_calls": llm_calls,
             "fallback": fallback,
             "usage": usage.model_dump(),

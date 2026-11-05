@@ -1,4 +1,4 @@
-# ADR-0014: Local and open-source models are the OpenAI provider with relaxed knobs
+# ADR-0014: Local and open-source LLMs are the OpenAI provider with relaxed knobs
 
 **Status:** accepted · **Date:** 2026-08-29
 
@@ -8,7 +8,7 @@ Asked on Discord: are local LLMs (llama.cpp, vLLM) supported? Every popular loca
 (llama.cpp `llama-server`, vLLM, Ollama, LM Studio) exposes OpenAI's Chat Completions API
 with tools, but the cloud OpenAI provider hard-required a key, pinned the base URL, and
 sent `tool_choice="required"` and `parallel_tool_calls=False`, which some servers reject and
-some models ignore. Small models also tend to write tool calls as plain JSON text.
+some LLMs ignore. Small LLMs also tend to write tool calls as plain JSON text.
 
 ## Decision
 
@@ -16,7 +16,7 @@ some models ignore. Small models also tend to write tool calls as plain JSON tex
   name: `local` (address required), `ollama`, `vllm`, `llamacpp`, `lmstudio` (default
   addresses). `--base-url` / `QUACKD_BASE_URL` override; `--api-key` / `LOCAL_API_KEY`
   optional, `"not-needed"` otherwise (the SDK insists on a string).
-- Model: `--model` / `QUACKD_MODEL`, else the first id from `client.models.list()`.
+- LLM: `--model` / `QUACKD_MODEL`, else the first id from `client.models.list()`.
 - Tool calling: `tool_choice="auto"` (env `QUACKD_TOOL_CHOICE`: `auto`, `required`, `none`
   to omit), no `parallel_tool_calls` field, and a **text fallback** that parses one JSON
   object (`name`/`tool`/`function` + `arguments`/`parameters`/`args`/`input`, bare or
@@ -31,6 +31,6 @@ some models ignore. Small models also tend to write tool calls as plain JSON tex
 ## Consequences
 
 - One class, one wire format, five names. No new dependency: the `openai` extra is the client.
-- Weak models degrade the task, never the robot: the executor still validates every call.
-- We do not claim any local model pilots well; `docs/local-llms.md` says so and asks for
+- Weak LLMs degrade the task, never the robot: the executor still validates every call.
+- We do not claim any local LLM pilots well; `docs/local-llms.md` says so and asks for
   transcripts.

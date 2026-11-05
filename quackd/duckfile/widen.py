@@ -1,12 +1,12 @@
 """Whether one task file gives a pilot more than another, for `quackd serve-mcp --lock-duckfile`.
 
-`robot_load_duckfile` is a tool the model holds, and by default a contract it loads replaces the one
+`robot_load_duckfile` is a tool the LLM holds, and by default a contract it loads replaces the one
 the server started with: the allowlist and the limits become the new file's, and only what has been
 spent carries over. That is what lets a client move on to the next task. An operator who started the
-server to hold the model to one file can say so, and then a file that asks for more is refused.
+server to hold the LLM to one file can say so, and then a file that asks for more is refused.
 
 Only what the executor enforces is compared. A file's prose, its success criteria and its advisory
-abort lines are words to the model and gate nothing, so a file may reword them. The datasheet is the
+abort lines are words to the LLM and gate nothing, so a file may reword them. The datasheet is the
 one thing compared by being different at all, since it feeds the verdict the gate waits for and
 there is no ordering of "more" among corrections to a body's sheet.
 """

@@ -112,13 +112,13 @@ async def test_the_price_you_passed_reaches_every_member(tmp_path: Path) -> None
 async def test_one_unpriced_member_makes_the_whole_flock_bill_unpriced(tmp_path: Path) -> None:
     """A total that quietly left a robot out would read as a cheaper flock rather than an
     incomplete one, so one member quackd cannot price makes the flock figure None. The member
-    is made unpriceable the way a real one would be: a real vendor name and a model id no
+    is made unpriceable the way a real one would be: a real vendor name and an LLM id no
     catalogue has ever listed."""
     roster = _roster()
     providers = _providers(roster)
     first = next(iter(providers.values()))
     first.name = "openai"
-    first.model = "a-model-no-catalogue-lists"
+    first.llm_id = "an-llm-no-catalogue-lists"
     result = await _run(tmp_path, roster=roster, providers=providers)
     summary = _summary(result)
     assert summary["cost_usd"] is None
@@ -325,7 +325,7 @@ async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
         "wall_s",
         "llm_latency_s",
         "provider",
-        "model",
+        "llm_id",
         "robot",
         "run_dir",
         "log_dropped",
@@ -400,7 +400,7 @@ async def test_the_first_exception_stops_the_others_and_names_itself(
 
 async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> None:
     class _Angry:
-        name, model, supports_vision = "angry", "none", False
+        name, llm_id, supports_vision = "angry", "none", False
 
         async def step(self, system: str, history: list[Exchange], tools: list[Any]) -> Any:
             raise RuntimeError("429 from the vendor")
@@ -412,8 +412,8 @@ async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> N
     assert result.outcome == "error"
     assert "429 from the vendor" in result.per_member["arm"]["reason"]
     # A member that raised never reaches its own `return RunResult(...)`, and the flock used
-    # to throw away the wall clock, the model seconds and the bill that member had already
-    # measured. A flock of priced models then read `cost_usd: null` on the strength of one of
+    # to throw away the wall clock, the LLM seconds and the bill that member had already
+    # measured. A flock of priced LLMs then read `cost_usd: null` on the strength of one of
     # them being interrupted, which is a bill going missing rather than a bill being unknown.
     for name in ("duck", "arm"):
         member = result.per_member[name]
@@ -425,7 +425,7 @@ async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> N
 async def test_the_kill_switch_reaches_every_member(tmp_path: Path) -> None:
     """One event, every executor: Ctrl-C stops every body, not the one in front.
 
-    A pilot mid-verb is cancelled and sent a stop; one waiting on its model notices at its
+    A pilot mid-verb is cancelled and sent a stop; one waiting on its LLM notices at its
     next turn, exactly as a solo run does."""
 
     roster = _roster()
@@ -533,7 +533,7 @@ async def test_each_member_gets_its_own_view_and_the_flock_gets_one(tmp_path: Pa
 
 def test_usage_is_summed_across_the_members(tmp_path: Path) -> None:
     class _Costly:
-        name, model, supports_vision = "costly", "none", False
+        name, llm_id, supports_vision = "costly", "none", False
 
         async def step(self, system: str, history: list[Exchange], tools: list[Any]) -> Any:
             return ProviderTurn(
@@ -565,7 +565,7 @@ async def test_a_cancelled_flock_records_every_member_rather_than_crashing(
     result used to leave a `KeyError` where the interrupt should have been."""
 
     class _Slow:
-        name, model, supports_vision = "slow", "none", False
+        name, llm_id, supports_vision = "slow", "none", False
 
         async def step(self, system: str, history: list[Exchange], tools: list[Any]) -> Any:
             await asyncio.sleep(30)

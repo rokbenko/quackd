@@ -14,7 +14,7 @@ arrived look identical unless somebody compares the goal with the position.
 
 `move_joints` also paces its travel, because the step cap is a ceiling on speed and never a
 speed anybody chose. Re-sending the final goal every tick moves every joint at the cap, which
-made "move it slowly" a request the arm could not honour, and a model on the bench read the
+made "move it slowly" a request the arm could not honour, and an LLM on the bench read the
 verb's text correctly and declined. So the goal it sends walks from where the arm is to where it
 was asked to be across `duration_s` (`_drive`), and the cap only decides when a move asked to
 be quicker than the arm allows ends later than asked.
@@ -1268,7 +1268,7 @@ async def report_state(ctx: VerbContext, _: NoParams) -> VerbResult:
     """What this arm knows, in the sentence rather than in the data.
 
     A pilot reads a verb's summary text and never its data: the dump goes to the transcript
-    and to an MCP client, and the observation the model is handed carries the summary. The
+    and to an MCP client, and the observation the LLM is handed carries the summary. The
     core verb's summary is a posture and a policy name, which on a bolted-down arm is two
     facts it has not got and none of the four it has. So this one says them."""
     state = await ctx.transport.get_state()

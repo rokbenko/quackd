@@ -5,8 +5,8 @@ of a transcript did the arithmetic by hand against a rate card they had to go an
 `quackd/agent/providers/pricing.py` is that arithmetic and this file holds it to the three rules
 it promises, because each of them fails silently and expensively when it breaks:
 
-- **An unknown rate is `None`, never zero.** Four Cohere models genuinely have no published
-  per-token rate, and one of them is Cohere's default. Printing `$0.00` for a frontier model is
+- **An unknown rate is `None`, never zero.** Four Cohere LLMs genuinely have no published
+  per-token rate, and one of them is Cohere's default. Printing `$0.00` for a frontier LLM is
   the failure here that costs somebody real money, so the tests below assert the `None` rather
   than tolerate it.
 - **Where a rate is missing but tokens are not, the estimate goes UP.** An unpublished cache rate
@@ -35,6 +35,7 @@ from quackd.agent.providers.pricing import (
     PRICE_ENV,
     SCRIPTED,
     SELF_HOSTED,
+    VLA_PILOT,
     TurnCost,
     cost_usd,
     fmt_usd,
@@ -171,23 +172,23 @@ def test_the_scripted_pilot_is_free_rather_than_unpriced() -> None:
 
 
 def test_the_vla_pilot_is_free_as_the_scripted_one_is() -> None:
-    """`--controller vla` asks no model: a rule hands the policy its instructions and a person
+    """`--controller vla` asks no LLM: a rule hands the policy its instructions and a person
     judges the arm, so it is priced as `--llm fake` is and prints `$0`. The pricing module may
     not import the pilot, which imports pydantic, so the name is spelled in both places and
     held together here."""
     from quackd.agent.providers import vla
 
-    assert vla.NAME in SCRIPTED
+    assert vla.NAME == VLA_PILOT and vla.NAME in SCRIPTED
     assert price_for(vla.NAME, "scripted:stack-blocks") == FAKE
     assert resolve_price(vla.NAME, "scripted:goal") == FAKE
     assert fmt_usd(cost_usd({"input_tokens": 0, "output_tokens": 0}, FAKE)) == "$0"
 
 
-def test_every_local_preset_is_free_whatever_model_it_serves() -> None:
+def test_every_local_preset_is_free_whatever_llm_it_serves() -> None:
     """A local server serves whatever you pulled, so there is no id to look up: the rate follows
     from the provider alone, and the electricity is not billed per token."""
     for name in cat.LOCAL_NAMES:
-        price = price_for(name, "some-model-nobody-catalogued:8b")
+        price = price_for(name, "some-llm-nobody-catalogued:8b")
         assert price == SELF_HOSTED, name
         assert price is not None and price.source == "self-hosted"
         assert (price.input, price.output, price.cache_read, price.cache_write) == (
@@ -198,14 +199,14 @@ def test_every_local_preset_is_free_whatever_model_it_serves() -> None:
         )
 
 
-def test_a_catalogued_model_returns_the_rate_the_catalogue_holds() -> None:
-    spec = cat.find_model("anthropic", "claude-opus-5")
+def test_a_catalogued_llm_returns_the_rate_the_catalogue_holds() -> None:
+    spec = cat.find_llm("anthropic", "claude-opus-5")
     assert spec is not None and spec.price is not None
     assert price_for("anthropic", "claude-opus-5") is spec.price
 
 
 def test_an_id_the_vendor_does_not_list_has_no_rate() -> None:
-    """A typo must not inherit some other model's rate, and it must not be free either."""
+    """A typo must not inherit some other LLM's rate, and it must not be free either."""
     assert price_for("openai", "gpt-nope") is None
 
 
@@ -242,7 +243,7 @@ def test_an_empty_environment_variable_reads_as_unset(monkeypatch: pytest.Monkey
     developer's `.env` and `load_dotenv` does not overwrite a name already in the environment.
     Empty therefore has to mean unset here, or every test in the suite would be priced by it."""
     monkeypatch.setenv(PRICE_ENV, "")
-    spec = cat.find_model("anthropic", "claude-opus-5")
+    spec = cat.find_llm("anthropic", "claude-opus-5")
     assert spec is not None
     assert resolve_price("anthropic", "claude-opus-5") is spec.price
     monkeypatch.setenv(PRICE_ENV, "   ")
@@ -259,8 +260,8 @@ def test_the_flag_wins_over_the_variable_when_both_are_set(
     assert price == Price(1.0, 2.0, source="--price")
 
 
-def test_an_uncatalogued_model_with_no_override_stays_unpriced() -> None:
-    """The whole reason `--price` exists: a model quackd has never heard of reports nothing
+def test_an_uncatalogued_llm_with_no_override_stays_unpriced() -> None:
+    """The whole reason `--price` exists: an LLM quackd has never heard of reports nothing
     rather than reporting nothing owed."""
     assert resolve_price("cohere", "command-a-plus-05-2026") is None
 
@@ -372,7 +373,7 @@ def test_a_cost_keeps_more_places_than_it_prints_so_a_sum_of_them_is_not_biased(
 def test_a_real_cost_below_the_printing_floor_is_not_recorded_as_zero() -> None:
     """`fmt_usd` has a `<$0.000001` branch for a bill too small to print, and while the
     arithmetic rounded to six places that branch was unreachable: anything smaller had already
-    become exactly 0.0 and read as free. One token of a cheap model is a real charge."""
+    become exactly 0.0 and read as free. One token of a cheap LLM is a real charge."""
     dust = cost_usd({"input_tokens": 1}, Price(0.042, 0.0, source="published"))
     assert dust > 0
     assert fmt_usd(dust) == "<$0.000001"
@@ -388,7 +389,7 @@ def test_no_price_reads_as_unpriced_rather_than_as_zero() -> None:
 
 
 def test_a_run_that_genuinely_cost_nothing_is_a_plain_dollar_zero() -> None:
-    """`--llm fake` and a local model, which are free by what they are. Not `$0.00`: there
+    """`--llm fake` and a local LLM, which are free by what they are. Not `$0.00`: there
     is no column to line up with, this sits beside `steps 7` on one counter line."""
     assert fmt_usd(0) == "$0"
     assert fmt_usd(0.0) == "$0"
@@ -423,7 +424,7 @@ def _catalogued_prices() -> list[tuple[str, Price]]:
     return [
         (m.id, m.price)
         for name in cat.CLOUD_NAMES
-        for m in cat.models_for(name)
+        for m in cat.llms_for(name)
         if m.price is not None
     ]
 
@@ -431,30 +432,30 @@ def _catalogued_prices() -> list[tuple[str, Price]]:
 def test_every_published_rate_is_a_non_negative_number() -> None:
     """A typed minus sign in a table of 115 rows is invisible on review and would net off
     against the rest of a run."""
-    for model_id, price in _catalogued_prices():
+    for llm_id, price in _catalogued_prices():
         for field in ("input", "output", "cache_read", "cache_write"):
             rate = getattr(price, field)
             if rate is not None:
-                assert isinstance(rate, float), f"{model_id}.{field} is not a float"
-                assert rate >= 0, f"{model_id}.{field} is {rate}"
+                assert isinstance(rate, float), f"{llm_id}.{field} is not a float"
+                assert rate >= 0, f"{llm_id}.{field} is {rate}"
 
 
 def test_a_cache_read_is_never_dearer_than_the_full_input_rate() -> None:
     """Reading a cache is the discount every vendor sells it as, so a read rate above its own
     input rate is a transcription error rather than a pricing model: it is the shape of two
     columns copied out of a table in the wrong order."""
-    for model_id, price in _catalogued_prices():
+    for llm_id, price in _catalogued_prices():
         if price.cache_read is not None:
             assert price.cache_read <= price.input, (
-                f"{model_id} charges more to read its cache than to send a fresh prompt"
+                f"{llm_id} charges more to read its cache than to send a fresh prompt"
             )
 
 
-def test_every_catalogued_model_carries_a_source_of_catalogue() -> None:
+def test_every_catalogued_llm_carries_a_source_of_catalogue() -> None:
     """`source` is what a reader of an old `summary.json` uses to tell a rate off this table
     from one somebody passed on the day."""
-    for model_id, price in _catalogued_prices():
-        assert price.source == "catalogue", f"{model_id} claims its rate came from somewhere else"
+    for llm_id, price in _catalogued_prices():
+        assert price.source == "catalogue", f"{llm_id} claims its rate came from somewhere else"
 
 
 def test_the_rate_record_carries_the_checked_date_only_for_a_catalogued_rate() -> None:
@@ -478,7 +479,7 @@ def test_the_date_the_rates_were_checked_is_a_real_date() -> None:
     assert checked.year >= 2025
 
 
-def test_four_cohere_models_are_the_only_unpriced_ones() -> None:
+def test_four_cohere_llms_are_the_only_unpriced_ones() -> None:
     """The case `None` was built for, rather than four rows somebody forgot.
 
     Cohere sell Command A, A+, A Reasoning and North Mini Code as dedicated instances by the
@@ -488,7 +489,7 @@ def test_four_cohere_models_are_the_only_unpriced_ones() -> None:
     state. Everything else in the catalogue is priced off its vendor's own page, so
     this list is the exception and stating it here is what stops a future edit quietly filling
     the gap with a zero."""
-    unpriced = {m.id for name in cat.CLOUD_NAMES for m in cat.models_for(name) if m.price is None}
+    unpriced = {m.id for name in cat.CLOUD_NAMES for m in cat.llms_for(name) if m.price is None}
     assert unpriced == {
         "command-a-plus-05-2026",
         "command-a-03-2025",
@@ -497,24 +498,24 @@ def test_four_cohere_models_are_the_only_unpriced_ones() -> None:
     }
 
 
-def test_coheres_default_model_is_one_of_the_unpriced_ones() -> None:
+def test_coheres_default_llm_is_one_of_the_unpriced_ones() -> None:
     """Which is why no test anywhere may assert that every vendor default has a price: `quackd
-    run --llm cohere` with no model half reports `cost_usd: null` and says `cost unpriced`,
+    run --llm cohere` with no LLM half reports `cost_usd: null` and says `cost unpriced`,
     and that is the correct answer rather than a gap to be closed."""
-    default = cat.default_model_for("cohere")
+    default = cat.default_llm_for("cohere")
     assert default == "command-a-plus-05-2026"
     assert price_for("cohere", default) is None
-    spec = cat.find_model("cohere", default)
+    spec = cat.find_llm("cohere", default)
     assert spec is not None and spec.price is None
 
 
-def test_a_model_that_is_genuinely_free_is_priced_at_zero_rather_than_left_unpriced() -> None:
-    """The other half of the same distinction. Several GLM Flash models and Mistral's Leanstral
+def test_an_llm_that_is_genuinely_free_is_priced_at_zero_rather_than_left_unpriced() -> None:
+    """The other half of the same distinction. Several GLM Flash LLMs and Mistral's Leanstral
     really are free, and they carry a `Price(0, 0)` so a run on one prints `$0` instead of
     refusing to answer."""
-    for provider, model_id in (("glm", "glm-4.7-flash"), ("mistral", "labs-leanstral-1-5")):
-        price = price_for(provider, model_id)
-        assert price is not None, f"{model_id} is free, which is not the same as unpriced"
+    for provider, llm_id in (("glm", "glm-4.7-flash"), ("mistral", "labs-leanstral-1-5")):
+        price = price_for(provider, llm_id)
+        assert price is not None, f"{llm_id} is free, which is not the same as unpriced"
         assert (price.input, price.output) == (0.0, 0.0)
         assert fmt_usd(cost_usd({"input_tokens": 100_000, "output_tokens": 5000}, price)) == "$0"
 
@@ -560,7 +561,7 @@ def test_every_openrouter_row_was_read_off_openrouters_list_on_its_own_date() ->
     """And every other row on `PRICES_CHECKED`, but for one added since, which says the later day
     its rate was read rather than be dated to a reading it never had."""
     for name in cat.CLOUD_NAMES:
-        for m in cat.models_for(name):
+        for m in cat.llms_for(name):
             if m.price is None:
                 continue
             if name == "openrouter":

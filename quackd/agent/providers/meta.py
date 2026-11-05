@@ -2,11 +2,11 @@
 
 Not Llama. Meta retired the hosted Llama API in July 2026 and what stands at
 `https://api.meta.ai/v1` now serves Muse Spark, drop-in compatible with the OpenAI SDK. The
-catalogue carries the model names, including the contributor-tier ones, whose labels say plainly
+catalogue carries the LLM names, including the contributor-tier ones, whose labels say plainly
 that the discount is paid for by letting Meta train on what you send.
 
 `tool_choice` is left at `auto`, the only value Meta's tool-calling page accepts (`none`,
-`required` and a named choice each return a 400), so the model is allowed a call rather than
+`required` and a named choice each return a 400), so the LLM is allowed a call rather than
 made to make one. `parallel_tool_calls=False` is sent, which the same page documents as the way
 to get one call per turn; its default is to allow several.
 

@@ -1,6 +1,6 @@
 """Nearest-rank percentiles for the seconds a run spent waiting on something.
 
-`summary.json` has carried one total per clock since ADR-0041: `llm_latency_s` for the model,
+`summary.json` has carried one total per clock since ADR-0041: `llm_latency_s` for the pilot LLM,
 `latency_s` in the stepper's block. A total says where a run's time went and nothing about the
 calls that spent it, and ten calls of six seconds and one of sixty beside nine of one add up the
 same. Somebody deciding whether a pilot feels slow wants the typical call and the bad one, so a

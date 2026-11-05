@@ -47,8 +47,8 @@ class HeartbeatError(TransportError):
 
 
 DEFAULT_CAMERA_NAME = "camera"
-"""What a single frame is called when the transport names no camera. Never shown to a
-model: a camera's name is only spoken when a body has more than one."""
+"""What a single frame is called when the transport names no camera. Never shown to an
+LLM: a camera's name is only spoken when a body has more than one."""
 
 FRAME_HEAD_YAW_DEG = "quackd.head_yaw_deg"
 """The key in a frame's `info` under which a body that knows it records where its camera pointed
@@ -61,7 +61,7 @@ handed out from memory can be older than the head's last move (`frame_head_yaw_o
 class CameraFrame:
     """One camera's newest picture, and which camera it came from.
 
-    `name` is what the model, the transcript file and a policy's observation tell two
+    `name` is what the LLM, the transcript file and a policy's observation tell two
     views apart by, so it is required here even though a one-camera body never shows it.
 
     `primary` is carried rather than inferred from the position in the list. A camera that
@@ -282,8 +282,8 @@ def camera_names_of(transport: Any) -> list[str]:
 def primary_of(frames: Sequence[CameraFrame]) -> Image.Image | None:
     """The view the detections describe, or None when that camera gave nothing this time.
 
-    None with frames still in the list is a real state: the other cameras are worth showing a
-    model even when the one the bearings are calibrated for has stopped answering."""
+    None with frames still in the list is a real state: the other cameras are worth showing an
+    LLM even when the one the bearings are calibrated for has stopped answering."""
     return next((f.image for f in frames if f.primary), None)
 
 

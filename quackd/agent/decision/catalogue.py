@@ -10,7 +10,7 @@ reached with `--decision-llm local --decision-url`.
 One row speaks something else. OpenAI's Decisions API asks the same kind of question in its own
 shape, at `POST /v1/decisions`, so `openai` is a row with a backend of its own, `DECISIONS_API`,
 and the translation lives in `decisions_api.py` rather than here. It is still a row: its address,
-its key variable, its model and its rate are data like everybody else's.
+its key variable, its LLM and its rate are data like everybody else's.
 
 `factory.py` builds them; this file only says which ones exist. The split is the one
 `adapters/catalogue.py` makes and for the same reason: `quackd doctor` renders the whole table
@@ -36,8 +36,8 @@ middle one is the whole reason the other two are safe to choose between."""
 
 ENTRY_POINT_GROUP = "quackd.decision_llms"
 """Where an installed decision LLM announces itself. One entry per name, its name to its
-module, and that module carries `make(spec, *, url, model)` and describes itself with
-`SUMMARY`, `MODEL`, `URL`, `KEY_ENV` and `EXTRA`."""
+module, and that module carries `make(spec, *, url, llm_id)` and describes itself with
+`SUMMARY`, `LLM_ID`, `URL`, `KEY_ENV` and `EXTRA`."""
 
 SYSTEM_ONE = "systemone"
 """Reached over HTTP with `typesafe_sdk`, which is the protocol's own client. Every server
@@ -74,15 +74,15 @@ class DecisionSpec:
     """The variable holding its key. `None` is a server that wants no key, and the client
     sends `NO_KEY` instead, so a hosted key sitting in somebody's `.env` is never sent to a
     server on their own machine."""
-    model: str | None = None
+    llm_id: str | None = None
     """The id sent when the spec names none. `None` means name one yourself."""
-    model_env: str | None = None
-    """A variable the SDK itself reads for the model, honoured only where the SDK owns the
+    llm_env: str | None = None
+    """A variable the SDK itself reads for the LLM, honoured only where the SDK owns the
     address too. One row has one, and nothing else should grow one."""
     price: Price | None = None
     """What a question costs. `None` is not free and not unknown: it is a server you run, and
     `factory.resolve_decision_price` turns it into the self-hosted rate the rest of quackd
-    already uses for a model on your own machine."""
+    already uses for an LLM on your own machine."""
     extra: str | None = "decision"
     """The `quackd[...]` that installs the client. `None` for a plugin, which is installed by
     definition if it was found."""
@@ -111,17 +111,17 @@ PRESETS: dict[str, DecisionSpec] = {
     "jev": DecisionSpec(
         name="jev",
         backend=SYSTEM_ONE,
-        summary="TypeSafe's Jev, hosted: the System One model the format is named after",
+        summary="TypeSafe's Jev, hosted: the System One LLM the format is named after",
         install="quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)",
         url=None,  # the SDK's own default; TYPESAFE_BASE_URL is how you move it
         key_env="TYPESAFE_API_KEY",
         # Pinned, not `jev-latest`. The aliases move, and a run whose decision LLM changed
-        # under it is a run whose transcript describes a model that is no longer the one that
+        # under it is a run whose transcript describes an LLM that is no longer the one that
         # answered. `--decision-llm jev:jev-latest` is how you ask for a moving one.
-        model="jev-1.13.0",
-        model_env="TYPESAFE_DEFAULT_MODEL",
+        llm_id="jev-1.13.0",
+        llm_env="TYPESAFE_DEFAULT_MODEL",
         # TypeSafe charge $0.042 per million input tokens and do not charge for output
-        # ([their models page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
+        # ([their LLMs page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
         # two rows here with a published rate, `openai` the other: every other one is a server
         # you run yourself.
         price=Price(input=0.042, output=0.0, source="published"),
@@ -138,14 +138,14 @@ PRESETS: dict[str, DecisionSpec] = {
         # An address, unlike `jev`'s `None`, and the backend hands the SDK `<url>/v1` on every
         # build whatever was typed. Left to itself the SDK reads `OPENAI_BASE_URL` when it is
         # given no address, and quackd's own local presets read that variable as the address of
-        # a model server on your own machine (`providers/local.py`), so it may well be set where
+        # an LLM server on your own machine (`providers/local.py`), so it may well be set where
         # this row runs, and the hosted key would follow it there. Holding the address here is
         # also what lets `doctor` print where the key goes.
         url="https://api.openai.com",
         key_env="OPENAI_API_KEY",
-        # The only model the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08.
+        # The only LLM the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08.
         # Whether the name moves under a run is on the row's page as an assumption.
-        model="gpt-6-luna",
+        llm_id="gpt-6-luna",
         # OpenAI charge $0.10 per million input tokens and nothing for output, cache reads or
         # cache writes, by the same guide on the same day:
         # https://developers.openai.com/api/docs/guides/decisions
@@ -179,7 +179,7 @@ PRESETS: dict[str, DecisionSpec] = {
         # is 8008, so a reader who runs it bare lands elsewhere and `--decision-url` is how
         # they say where.
         url="http://127.0.0.1:8009",
-        model="kev-latest",
+        llm_id="kev-latest",
     ),
     "von": DecisionSpec(
         name="von",
@@ -190,7 +190,7 @@ PRESETS: dict[str, DecisionSpec] = {
         # is set. A command a reader copies should not open a port to the network.
         install="pip install von-sdk && von serve --host 127.0.0.1 --port 8000",
         url="http://127.0.0.1:8000",
-        model="von-latest",
+        llm_id="von-latest",
     ),
     "openjev": DecisionSpec(
         name="openjev",
@@ -212,7 +212,7 @@ PRESETS: dict[str, DecisionSpec] = {
         # `jev-preview` -- and a pinned Jev version is refused with a 400. That is exactly
         # why the id lives in the row: a shared default would have been wrong here on every
         # single request.
-        model="openjev-latest",
+        llm_id="openjev-latest",
     ),
     "opendecision": DecisionSpec(
         name="opendecision",
@@ -220,9 +220,9 @@ PRESETS: dict[str, DecisionSpec] = {
         summary="OpenDecision, self-hosted: a zero-shot encoder that runs without a GPU",
         install="pip install OpenDecision && opendecision serve",
         url="http://127.0.0.1:8000",
-        # Ignored: it serves one model and names it in the answer. Sent anyway, because the
+        # Ignored: it serves one LLM and names it in the answer. Sent anyway, because the
         # record should say what quackd asked for and not what the SDK would have filled in.
-        model="opendecision",
+        llm_id="opendecision",
     ),
     "local": DecisionSpec(
         name="local",
@@ -230,7 +230,7 @@ PRESETS: dict[str, DecisionSpec] = {
         summary="any other server that speaks /v1/systemone, at --decision-url",
         install="--decision-url http://host:port (or QUACKD_DECISION_URL)",
         url=None,  # refused without one, the way `--llm local` is
-        model=None,  # the server names its own, and `local:<id>` is how you say which
+        llm_id=None,  # the server names its own, and `local:<id>` is how you say which
     ),
     "laya": DecisionSpec(
         name="laya",
@@ -243,7 +243,7 @@ PRESETS: dict[str, DecisionSpec] = {
         # Its own name for the decision-tuned checkpoint. Not `laya`, which is an alias for
         # the plain English one: the names that reach a servo are worth being exact about.
         # `multilingual` is the other, and `--decision-llm laya:multilingual` asks for it.
-        model="typed-decisions",
+        llm_id="typed-decisions",
         extra="laya",
         sdk="laya",
     ),

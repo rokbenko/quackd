@@ -108,7 +108,7 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   is a lease on the twist rather than a mode, re-asserted by `Runtime.start` every 50 Hz
   control tick immediately before the physics reads it, which is what lets a key take the
   robot mid-run without cancelling anything first. A key that would *move* the robot aborts
-  the run and the model request in flight — the signal reaches `fetch`, so no answer arrives
+  the run and the LLM request in flight — the signal reaches `fetch`, so no answer arrives
   after the duck was taken back; what the abort cannot promise is the bill, because these are
   plain non-streaming POSTs and a vendor may already have generated the turn — and
   the transcript records the handover naming the key; a key that only reads, `O` and the two
@@ -205,8 +205,8 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   downloads. The last sentence no
   longer stands as written: the page was opened in a real browser while this work was done, and
   it boots clean, wears its fonts and its mark, and walks the duck under a held `W`. What has
-  still never been watched is a model driving a whole run, a key barging in out of one, and the
-  recording — so the bullet's claim survives for everything downstream of a model answering,
+  still never been watched is an LLM driving a whole run, a key barging in out of one, and the
+  recording — so the bullet's claim survives for everything downstream of an LLM answering,
   and not for the page itself.
 - None of this makes a hardware claim. It is a better simulator, not a robot: the Microduck
   rows in `docs/adapter-status.md` that say "never run on a duck" still say it.

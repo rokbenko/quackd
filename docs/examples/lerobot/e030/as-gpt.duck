@@ -1,4 +1,4 @@
-# SO-101 run sheet. E030: Impersonate another model.
+# SO-101 run sheet. E030: Impersonate another LLM.
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e030/as-gpt.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm anthropic:claude-opus-5-5 --max-steps 8 --no-memory --run-name claude-opus-5-5
 ---

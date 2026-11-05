@@ -1,4 +1,4 @@
-"""Two ways to answer `watch` without a model: at its seam, and where OpenAI's client would be.
+"""Two ways to answer `watch` without an LLM: at its seam, and where OpenAI's client would be.
 
 `ScriptedEyes` stands where `quackd.agent.decision.eyes.DecisionEyes` stands (`watch.Eyes`) and
 answers from a script, which is how a test puts `watch` through one exit at a time on a body that
@@ -10,7 +10,7 @@ the copy kept, the line in the record, the translation out and back. It decodes 
 request carries and finds the orange ball in it with quackd's own `ColorBlobDetector`, and
 answers where it is as a distribution over the sectors `watch` asks about, so a test can close
 the loop on a simulator and read the world's own truth after it. It is a far better perceiver
-than any model: what it proves is that the frame sent is the one the head was pointing at, upright
+than any LLM: what it proves is that the frame sent is the one the head was pointing at, upright
 and fresh, and that the head follows what the frame shows, and nothing about how well a decision
 LLM sees.
 """
@@ -115,7 +115,7 @@ class ScriptedEyes:
     a frame block, before the item is read, as the real eyes count one before the request."""
 
     name = "scripted"
-    model = "scripted"
+    llm_id = "scripted"
 
     def __init__(self, script: list[Any] | None = None, *, default: Any = None) -> None:
         self.script = list(script or [])

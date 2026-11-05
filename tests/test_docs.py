@@ -20,8 +20,8 @@ from quackd.agent.providers.factory import (
     KEY_ENV,
     KEY_FALLBACKS,
     LOCAL_NAMES,
-    default_model_for,
-    models_for,
+    default_llm_for,
+    llms_for,
 )
 from quackd.verbs.registry import default_registry
 from quackd_microduck import upstream_api as up
@@ -611,9 +611,9 @@ def test_readme_promises() -> None:
         "quackd flock create",
         "Non goals for now",
         "--llm ollama",
-        "quackd list-models",
+        "quackd list-llms",
         "docs/guides/local-llms.md",
-        "| Local models (",
+        "| Local LLMs (",
         "--flock",
         "flock-kick",
         "docs/guides/flock.md",
@@ -637,11 +637,11 @@ def test_the_readme_defaults_row_names_every_catalogue_default() -> None:
     This cannot stop the row being wrong the day a vendor moves, but it can stop the row being
     wrong the day quackd itself moves, which is what happened to `gpt-5`, `grok-4` and
     `gemini-2.5-pro`: the code changed under a sentence nobody re-read."""
-    row = next((line for line in README.splitlines() if line.startswith("| Model |")), None)
-    assert row, "the README's Configuration table has no Model row"
+    row = next((line for line in README.splitlines() if line.startswith("| LLM |")), None)
+    assert row, "the README's Configuration table has no LLM row"
     for name in CLOUD_NAMES:
-        default = default_model_for(name)
-        assert f"`{default}`" in row, f"the Model row does not name {name}'s default, {default}"
+        default = default_llm_for(name)
+        assert f"`{default}`" in row, f"the LLM row does not name {name}'s default, {default}"
 
 
 def test_every_provider_key_is_named_where_keys_are_configured() -> None:
@@ -664,28 +664,29 @@ def test_every_key_a_vendor_falls_back_to_is_named_where_keys_are_configured() -
 
 
 def test_the_catalogue_is_documented_where_it_is_configured() -> None:
-    """The same rule the log is held to, for the thing that now decides every run's model."""
+    """The same rule the log is held to, for the thing that now decides every run's LLM."""
     for path, needles in (
-        ("README.md", ("quackd list-models", "catalogue")),
-        ("docs/faq.md", ("quackd list-models", "catalogue")),
-        (".env.example", ("QUACKD_LLM", "list-models")),
+        ("README.md", ("quackd list-llms", "catalogue")),
+        ("docs/faq.md", ("quackd list-llms", "catalogue")),
+        (".env.example", ("QUACKD_LLM", "list-llms")),
         ("docs/guides/local-llms.md", ("catalogue",)),
         # the one place the answer is that there is no answer, which is worth saying out loud
-        ("docs/guides/mcp.md", ("selects no model", "QUACKD_LLM")),
+        ("docs/guides/mcp.md", ("selects no LLM", "QUACKD_LLM")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
             assert needle in text, f"{path} does not mention {needle!r}"
 
 
-def test_the_list_models_row_names_every_kind_it_lists() -> None:
-    """`--kind` is how a reader finds the decision LLMs and the policy types from a terminal, so
-    the command table says each one it takes."""
-    from quackd.cli import MODEL_KINDS
+def test_the_list_llms_row_names_every_kind_it_lists() -> None:
+    """`--kind` is how a reader finds the decision LLMs from a terminal, so the command table
+    says each one it takes, and where the policy types went."""
+    from quackd.cli import LLM_KINDS
 
-    row = next(line for line in README.splitlines() if line.startswith("| `quackd list-models` |"))
-    for kind in MODEL_KINDS:
-        assert f"`--kind {kind}`" in row, f"the README's list-models row never names --kind {kind}"
+    row = next(line for line in README.splitlines() if line.startswith("| `quackd list-llms` |"))
+    for kind in LLM_KINDS:
+        assert f"`--kind {kind}`" in row, f"the README's list-llms row never names --kind {kind}"
+    assert "`quackd policy list`" in row
 
 
 #: The one dash the README is allowed: the leading one of a blockquote attribution,
@@ -780,8 +781,8 @@ def test_the_docs_describe_every_log_event_the_code_emits() -> None:
 
 
 def test_the_mcp_doc_describes_the_envelope_the_server_puts_round_a_call() -> None:
-    """A model reading a tool result sees the server's own kinds first and last. They belong
-    in the page the model's operator reads, not only in the one about the run loop."""
+    """An LLM reading a tool result sees the server's own kinds first and last. They belong
+    in the page the LLM's operator reads, not only in the one about the run loop."""
     emitted = _emitted_kinds("mcp_server.py")
     doc = (REPO / "docs" / "guides" / "mcp.md").read_text(encoding="utf-8")
     architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
@@ -873,7 +874,7 @@ def test_how_long_a_run_waits_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         (
             "README.md",
-            ("--effort", "QUACKD_ANTHROPIC_CACHE", "model calls p50", "first motion at"),
+            ("--effort", "QUACKD_ANTHROPIC_CACHE", "LLM calls p50", "first motion at"),
         ),
         (".env.example", ("--effort", "QUACKD_ANTHROPIC_CACHE=")),
         (
@@ -887,7 +888,7 @@ def test_how_long_a_run_waits_is_documented_where_it_is_configured() -> None:
             ),
         ),
         ("docs/concepts/safety.md", ("bounded by the same minutes", "max_minutes")),
-        ("docs/guides/decision-llms/README.md", ("asked beside the model's call",)),
+        ("docs/guides/decision-llms/README.md", ("asked beside the pilot LLM's call",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -922,7 +923,7 @@ def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
 
 def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
     """The same rule again, for the four flags and the four variables that decide whether a
-    discrete stepper answers a turn before the model is ever called, and whether it is shown the
+    discrete stepper answers a turn before the pilot LLM is ever called, and whether it is shown the
     camera when it does.
 
     There are many decision LLMs now rather than one, so the names a reader has to be able to
@@ -967,7 +968,7 @@ def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
 
 
 def test_task_pictures_are_documented_where_they_are_configured() -> None:
-    """A flag whose whole point is that the model can see the thing has to be findable by
+    """A flag whose whole point is that the LLM can see the thing has to be findable by
     somebody who has the thing and does not know the flag exists. The README quickstart is
     where an arm owner starts, so it is named there as well as in the reference pages."""
     for path, needles in (
@@ -1150,7 +1151,9 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
 
     rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
     row = next(
-        line for line in rows if line.startswith("| `quackd policy serve\\|check\\|endpoint`")
+        line
+        for line in rows
+        if line.startswith("| `quackd policy list\\|serve\\|check\\|endpoint`")
     )
     for needle in ("endpoint up NAME --policy", "--policy-url hf:NAME", "never created one"):
         assert needle in row, f"the README's policy row does not say {needle!r}"
@@ -1260,7 +1263,7 @@ def test_nothing_names_an_address_for_hugging_face_but_the_code() -> None:
 
 
 def test_the_controller_is_documented_where_it_is_configured() -> None:
-    """`--controller vla` takes the model out of a run and leaves its success to a person, so
+    """`--controller vla` takes the LLM out of a run and leaves its success to a person, so
     somebody choosing it has to find what it asks of them: the front page's `run` row and its
     Policy row, the arm's page where the policy server is, the safety page that says who the
     record says was asked (a `judge` prompt), the page that draws the record, and the MCP page,
@@ -1698,12 +1701,12 @@ def test_the_openrouter_page_agrees_with_the_code() -> None:
     """The guide quotes the code: the rows, how each is asked, its rates, the key, the extra,
     the address, both headers and every refusal. Each is read back off the page here, so a row
     or a reason that changes in one place and not the other fails the suite."""
-    from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, models_for
+    from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, llms_for
     from quackd.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENROUTER_REFUSED
     from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
 
     page = OPENROUTER_PAGE.read_text(encoding="utf-8")
-    rows = models_for("openrouter")
+    rows = llms_for("openrouter")
     for m in rows:
         assert m.price is not None
         asked = "required" if m.forced_tools else "auto"
@@ -1723,29 +1726,31 @@ def test_the_openrouter_page_agrees_with_the_code() -> None:
         assert f"| {why} |" in page, f"the page does not give the reason for {shape}"
     assert "\n## VERIFIED" in page and "\n## UNVERIFIED" in page
     assert "**Nothing here has ever answered a real robot.**" in page
-    assert "**No OpenRouter model has answered a real quackd request.**" in page
+    assert "**No OpenRouter LLM has answered a real quackd request.**" in page
 
 
 def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
     """In the same words everywhere, until somebody runs one: a vendor tested only against a
     stand-in reads exactly like one that has been flown, unless a page says otherwise."""
-    sentence = "no openrouter model has answered a real quackd request"
+    sentence = "no openrouter llm has answered a real quackd request"
     pages = [
         REPO / "README.md",
         REPO / "docs" / "faq.md",
         OPENROUTER_PAGE,
         REPO / "web" / "README.md",
         REPO / "web" / "src" / "providers.js",
-        REPO / "docs" / "models" / "README.md",
-        REPO / "docs" / "models" / "pilot-llms.md",
-        REPO / "docs" / "models" / "vendors.md",
+        REPO / "docs" / "llms" / "README.md",
+        REPO / "docs" / "llms" / "pilot-llms.md",
+        REPO / "docs" / "llms" / "vendors.md",
         *sorted((REPO / "docs" / "adr").glob("0050-*.md")),
     ]
     assert len(pages) == 9, "ADR-0050 is missing"
     for page in pages:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
-    assert sentence in _one_line(_release_note("0.17.0")), "0.17.0's release note does not say so"
+    # A released note keeps the words it shipped with, which came before the word changed.
+    shipped = "no openrouter model has answered a real quackd request"
+    assert shipped in _one_line(_release_note("0.17.0")), "0.17.0's release note does not say so"
 
 
 def test_the_pypi_summary_names_every_robot() -> None:
@@ -1808,7 +1813,7 @@ def test_no_living_document_claims_the_wrong_number_of_starters() -> None:
 
 def test_the_arm_guide_gives_the_duck_it_has_the_reader_load() -> None:
     """M09 of the arm's first-run guide has the reader load `arm-look.duck` over MCP and quotes
-    what loading it answers, down to `step 0/8, llm calls 0/8, 0.0/3 min`, and the file itself
+    what loading it answers, down to `step 0/8, LLM calls 0/8, 0.0/3 min`, and the file itself
     was nowhere, not on the page and not in `ducks/`. The page gives it now, straight after the
     sentence that names it, and this holds the file to that sentence and to the budget the
     quoted note shows."""
@@ -1826,7 +1831,7 @@ def test_the_arm_guide_gives_the_duck_it_has_the_reader_load() -> None:
     assert contract.verbs.allow == ["observe", "report_state", "stop"]
     budgets = contract.budgets
     assert (budgets.max_steps, budgets.max_minutes, budgets.max_llm_calls) == (8, 3, 8)
-    assert "step 0/8, llm calls 0/8, 0.0/3 min" in guide, "M09 no longer quotes that budget"
+    assert "step 0/8, LLM calls 0/8, 0.0/3 min" in guide, "M09 no longer quotes that budget"
 
 
 def test_no_living_document_quotes_an_exact_test_count() -> None:
@@ -1999,9 +2004,9 @@ def test_the_readme_hero_is_the_real_arm_and_its_caption_says_when_and_who() -> 
     """The front door's most checkable claim, and the one a well meaning edit would soften.
 
     Until 2026-09-15 the hero was a render of a duck walked by the scripted pilot, and every
-    honest caption said so. It is a phone recording of a real arm under a real model now. The
+    honest caption said so. It is a phone recording of a real arm under a real LLM now. The
     needles rather than the wording, so the prose stays free: which file, and that the caption
-    dates it, names the model and names the body. And that it does not call itself scripted,
+    dates it, names the LLM and names the body. And that it does not call itself scripted,
     which is the one word that would make it the old claim again."""
     gifs = re.findall(
         r'src="https://raw\.githubusercontent\.com/rokbenko/quackd/main/(docs/assets/[^"?]+\.gif)',
@@ -2024,7 +2029,7 @@ def test_the_readme_hero_is_the_real_arm_and_its_caption_says_when_and_who() -> 
 
 def test_every_file_in_docs_assets_has_a_row_in_its_catalogue() -> None:
     """`docs/assets/README.md` is where a reader finds out how a picture was made and whether
-    a model or a script drove it. An asset with no row is a picture with no provenance, which
+    an LLM or a script drove it. An asset with no row is a picture with no provenance, which
     for a recording of a real robot is the difference between evidence and decoration."""
     catalogue = (REPO / "docs" / "assets" / "README.md").read_text(encoding="utf-8")
     for asset in sorted((REPO / "docs" / "assets").iterdir()):
@@ -2032,7 +2037,7 @@ def test_every_file_in_docs_assets_has_a_row_in_its_catalogue() -> None:
             continue
         assert f"| `{asset.name}` |" in catalogue, (
             f"docs/assets/{asset.name} has no row in docs/assets/README.md: say what it is "
-            "and how it was made, and whether the pilot in it was a model or the script."
+            "and how it was made, and whether the pilot in it was an LLM or the script."
         )
 
 
@@ -2063,30 +2068,30 @@ def test_the_readme_opens_with_its_name_and_only_the_browser_demo_shows_its_mark
 #: simulator on film (`docs/assets/lerobot-sim.gif`). The README carried three of them, in its
 #: status table, its limitations and its help wanted, and the change that embedded the film in
 #: that same README fixed the assets catalogue's copy and none of these. The last has been
-#: false since `lerobot.gif`, a model on the real arm, and was missed then too.
+#: false since `lerobot.gif`, an LLM on the real arm, and was missed then too.
 _RETIRED_RECORDING_CLAIMS = (
-    "no real model recording has yet been made in any simulator",
-    "the only recording in this repository with a model in the loop",
+    "no real LLM recording has yet been made in any simulator",
+    "the only recording in this repository with an LLM in the loop",
     "every simulator recording here is the scripted pilot",
-    "the one recording here with a model in it",
+    "the one recording here with an LLM in it",
     "none has yet been recorded in any simulator",
     "every *simulator* recording here is driven by the scripted pilot",
     "not an llm, like every other asset here",
 )
 
 
-def test_no_living_document_still_says_no_model_has_been_filmed_in_a_simulator() -> None:
+def test_no_living_document_still_says_no_llm_has_been_filmed_in_a_simulator() -> None:
     """A claim about the pictures, spelled once per page, and a page that keeps it says the
     opposite of a figure it may be showing a few screens up.
 
     The other half holds the catalogue to the same fact, so the two move together: a film
-    re-recorded with the scripted pilot takes the model out of its row, and this test then
+    re-recorded with the scripted pilot takes the LLM out of its row, and this test then
     says which claims have come true again."""
     catalogue = (REPO / "docs" / "assets" / "README.md").read_text(encoding="utf-8")
     row = re.search(r"^\| `lerobot-sim\.gif` \| (.*?) \|", catalogue, flags=re.MULTILINE)
     assert row is not None, "docs/assets/README.md has no row for lerobot-sim.gif"
     assert "gpt-6-sol" in row.group(1), (
-        "the lerobot-sim.gif row no longer names the model that flew it. If the film is the "
+        "the lerobot-sim.gif row no longer names the LLM that flew it. If the film is the "
         "scripted pilot now, the claims in _RETIRED_RECORDING_CLAIMS are true again: take "
         "them out of this test and put the sentences back where the pages need them."
     )
@@ -2712,7 +2717,7 @@ _HOST_CLAIMS_THE_CODE_NEVER_MADE = (
     ),
     (
         "gets four things from it",
-        "the model comes from the person's own server, a preset moved to the board, and the "
+        "the LLM comes from the person's own server, a preset moved to the board, and the "
         "daemon has no route to it",
     ),
     (
@@ -2849,7 +2854,7 @@ def test_every_relative_link_and_anchor_in_the_markdown_resolves() -> None:
     assert not broken, "links that go nowhere:\n" + "\n".join(broken)
 
 
-MAPPED_FOLDERS = ("guides", "adapters", "reference", "concepts", "models", "passport")
+MAPPED_FOLDERS = ("guides", "adapters", "reference", "concepts", "llms", "passport")
 """The folders under docs/ whose every page docs/README.md links, and whose rule it states."""
 
 
@@ -2902,7 +2907,7 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
     path = REPO / "docs" / "guides" / "decision-llms" / f"{name}.md"
     assert path.exists(), f"every preset has a page: docs/guides/decision-llms/{name}.md is missing"
     page = path.read_text(encoding="utf-8")
-    for field in ("url", "model", "key_env", "install"):
+    for field in ("url", "llm_id", "key_env", "install"):
         value = getattr(spec, field)
         if value is not None:
             assert value in page, f"{path.name} does not carry the row's {field}: {value!r}"
@@ -3187,8 +3192,8 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     """Windows refuses a connection to a port on the same machine that nothing listens on only
     after longer than the stepper's second, so a decision server nobody started is a turn the
     stepper's own bound ends. Its record then says what the record says of a server too slow to
-    answer. In `on` the turn waits out its second before the model is asked, because the stepper
-    is asked first, and in shadow the second runs beside the model's call, which goes out at once
+    answer. In `on` the turn waits out its second before the pilot LLM is asked, because the stepper
+    is asked first, and in shadow the second runs beside the pilot's call, which goes out at once
     (`AgentLoop._settle_beside`). The hub said only that such a server costs a turn and never the
     run, and then that it costs the second in either mode, which shadow no longer does.
 
@@ -3206,8 +3211,8 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     assert windows, "the hub no longer says what a server nobody started costs on Windows"
     assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
     assert "not listening" in windows[0], windows[0]
-    assert "In `on` the stepper is asked before the model" in windows[0], windows[0]
-    assert "In `shadow` it is asked beside the model's call" in windows[0], windows[0]
+    assert "In `on` the stepper is asked before the pilot LLM" in windows[0], windows[0]
+    assert "In `shadow` it is asked beside the pilot LLM's call" in windows[0], windows[0]
     assert "either mode" not in windows[0], windows[0]
     opening = windows[0].split(". ", 1)[0]
     assert "on your own machine" in opening, f"the hub says more than was timed: {opening}"
@@ -3295,7 +3300,7 @@ def test_no_living_document_credits_all_four_confidence_floors_to_typesafe() -> 
     # reads on their own terminal is the most live site there is.
     sources = [
         *sorted((REPO / "quackd").rglob("*.py")),
-        REPO / "docs" / "adr" / "0040-a-discrete-stepper-in-front-of-the-model.md",
+        REPO / "docs" / "adr" / "0040-a-discrete-stepper-in-front-of-the-pilot-llm.md",
         REPO / "docs" / "adr" / "0043-decision-llms-are-a-wire-format-and-a-data-row.md",
     ]
     for path in _living_docs() + sources:
@@ -3396,22 +3401,22 @@ _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
         "colour ranges are the *simulator's*",
         "the detector's ranges are the duck simulators', and the arm's simulator has no ball",
     ),
-    # the arm simulator's film is the first of a cloud model in a simulator, not of a model:
-    # the four transcripts under docs/assets/transcripts are local models on microduck:sim2d
+    # the arm simulator's film is the first of a cloud LLM in a simulator, not of an LLM:
+    # the four transcripts under docs/assets/transcripts are local LLMs on microduck:sim2d
     (
-        "the first recording in this repository of a model in a simulator",
-        "the transcripts in docs/assets are local models on sim2d, so the film is the first "
-        "cloud model filmed in a simulator, not the first model in one",
+        "the first recording in this repository of an LLM in a simulator",
+        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
+        "cloud LLM filmed in a simulator, not the first LLM in one",
     ),
     (
-        "the first recording here of a model in a simulator",
-        "the transcripts in docs/assets are local models on sim2d, so the film is the first "
-        "cloud model filmed in a simulator, not the first model in one",
+        "the first recording here of an LLM in a simulator",
+        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
+        "cloud LLM filmed in a simulator, not the first LLM in one",
     ),
     (
-        "the first model recorded in a simulator here",
-        "the transcripts in docs/assets are local models on sim2d, so the film is the first "
-        "cloud model filmed in a simulator, not the first model in one",
+        "the first LLM recorded in a simulator here",
+        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
+        "cloud LLM filmed in a simulator, not the first LLM in one",
     ),
     (
         "that an so-101 is rehearsed",
@@ -4083,13 +4088,13 @@ def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
         )
 
 
-def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_model_that_flew_one() -> None:
+def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_llm_that_flew_one() -> None:
     """On 2026-09-29 OpenAI's `gpt-6-sol` flew the lab arm's twin with `quackd run --goal` and
     `--policy-url`, and handed a trained ACT two `manipulate` segments. The release note, the
     README's status row and ADR-0048 each say in one sentence what has never run with a trained
-    checkpoint, and all three went on counting a model flying with a policy in it after that run,
+    checkpoint, and all three went on counting an LLM flying with a policy in it after that run,
     because nothing read them against it. Each now names the run, and no sentence of theirs that
-    says never with a trained checkpoint names a model flying."""
+    says never with a trained checkpoint names an LLM flying."""
     release = _release_note("0.16.0")
     adr = (REPO / "docs" / "adr" / "0048-policies-are-the-arms-executor.md").read_text(
         encoding="utf-8"
@@ -4106,9 +4111,9 @@ def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_model_that_flew
         never = [s for s in sentences if "never" in s and "trained checkpoint" in s]
         assert never, f"{name} no longer says what has never run with a trained checkpoint"
         flown = [s for s in never if "flying" in s or "flew" in s]
-        assert not flown, f"{name} says a model flying with a policy never had one: {flown}"
+        assert not flown, f"{name} says an LLM flying with a policy never had one: {flown}"
         assert "2026-09-29" in text and "`quackd run --goal`" in _one_line(text), (
-            f"{name} does not name the goal run in which a model flew a trained ACT"
+            f"{name} does not name the goal run in which an LLM flew a trained ACT"
         )
 
 
@@ -4470,18 +4475,19 @@ def test_releasing_md_runs_no_line_past_its_wrap() -> None:
     assert not long, f"{name} runs these lines past its wrap: {long}"
 
 
-# ── the models pages, and the code they render ─────────────────────────────────────────────
+# ── the LLM pages, and the code they render ─────────────────────────────────────────────
 
-MODELS_DOCS = REPO / "docs" / "models"
+DOCS = REPO / "docs"
+LLMS_DOCS = DOCS / "llms"
 
 
-def _models_docs_script() -> ModuleType:
-    """`scripts/models_docs.py`, loaded by path as `test_web.py` loads the browser's generator:
+def _llms_docs_script() -> ModuleType:
+    """`scripts/llms_docs.py`, loaded by path as `test_web.py` loads the browser's generator:
     `scripts/` is not a package, and this keeps the script a script."""
     import importlib.util
 
-    script = REPO / "scripts" / "models_docs.py"
-    spec = importlib.util.spec_from_file_location("models_docs", script)
+    script = REPO / "scripts" / "llms_docs.py"
+    spec = importlib.util.spec_from_file_location("llms_docs", script)
     assert spec and spec.loader, f"{script} could not be loaded as a module"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -4489,7 +4495,7 @@ def _models_docs_script() -> ModuleType:
 
 
 def _connect_docs_script() -> ModuleType:
-    """`scripts/connect_docs.py`, loaded by path as `scripts/models_docs.py` is."""
+    """`scripts/connect_docs.py`, loaded by path as `scripts/llms_docs.py` is."""
     import importlib.util
 
     script = REPO / "scripts" / "connect_docs.py"
@@ -4518,45 +4524,44 @@ def test_the_web_ui_guides_connect_table_is_what_scripts_connect_docs_writes() -
             assert f"| `{info.name}:{backend}` |" in committed, f"no row for {info.name}:{backend}"
 
 
-def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
-    """Every table of models on those pages is a catalogue rendered, and a rendered table that
+def test_the_llms_pages_are_what_scripts_llms_docs_writes() -> None:
+    """Every table on those pages is a catalogue rendered, and a rendered table that
     nothing renders again is a stale table with a comment on it. So the script runs here over
     every page, and what it would write is compared with what is committed."""
-    script = _models_docs_script()
+    script = _llms_docs_script()
     for page in script.PAGES:
-        committed = (MODELS_DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
+        committed = (DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
         assert script.rewrite(committed, page) == committed, (
-            f"docs/models/{page} is not what scripts/models_docs.py writes from the code: run "
-            "uv run --no-sync python scripts/models_docs.py and commit what it changes"
+            f"docs/{page} is not what scripts/llms_docs.py writes from the code: run "
+            "uv run --no-sync python scripts/llms_docs.py and commit what it changes"
         )
 
 
 def test_every_block_the_script_renders_is_on_one_page_once() -> None:
     """A block rendered onto no page is a table nobody reads, and one on two pages is two
     places to look for the same row."""
-    script = _models_docs_script()
+    script = _llms_docs_script()
     placed = [name for blocks in script.PAGES.values() for name in blocks]
     assert sorted(placed) == sorted(script.BLOCKS), "a block is rendered onto no page, or two"
-    for path in sorted(MODELS_DOCS.glob("*.md")):
+    for path in sorted([*LLMS_DOCS.glob("*.md"), DOCS / "guides" / "vlas.md"]):
         found = re.findall(
             r"^<!-- generated: ([a-z0-9-]+)\b", path.read_text(encoding="utf-8"), flags=re.M
         )
-        assert tuple(found) == script.PAGES.get(path.name, ()), (
-            f"docs/models/{path.name} carries the blocks {found}"
-        )
+        page = path.relative_to(DOCS).as_posix()
+        assert tuple(found) == script.PAGES.get(page, ()), f"docs/{page} carries the blocks {found}"
 
 
-def test_the_models_pages_name_every_row_in_the_code() -> None:
+def test_the_llms_pages_name_every_row_in_the_code() -> None:
     """Read off the pages directly rather than through the script, because a renderer that
     dropped a row would agree with itself."""
-    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    pilots = (LLMS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
     for name in CLOUD_NAMES:
         assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for --llm {name}"
-        for m in models_for(name):
+        for m in llms_for(name):
             assert f"`{name}:{m.id}`" in pilots, f"pilot-llms.md never names {name}:{m.id}"
     for name in LOCAL_NAMES:
         assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for the {name} preset"
-    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    decisions = (LLMS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
     for name in PRESET_NAMES:
         assert f"| `{name}` |" in decisions, f"decision-llms.md has no row for {name}"
         assert f"(../guides/decision-llms/{name}.md)" in decisions, (
@@ -4567,36 +4572,36 @@ def test_the_models_pages_name_every_row_in_the_code() -> None:
 def test_a_rate_read_on_a_day_of_its_own_is_dated_so_on_the_page() -> None:
     """The page dated every rate but OpenRouter's to the catalogue's own read, so a row added
     after it, `gpt-6.1-sol` among them, was dated to a day nobody had read its rate."""
-    pilots = " ".join((MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8").split())
+    pilots = " ".join((LLMS_DOCS / "pilot-llms.md").read_text(encoding="utf-8").split())
     for name in CLOUD_NAMES:
-        for m in models_for(name):
+        for m in llms_for(name):
             day = m.price.checked if m.price is not None else None
             if day not in (None, PRICES_CHECKED, OPENROUTER_PRICES_CHECKED):
                 assert f"`{name}:{m.id}`'s on {day}" in pilots, f"{name}:{m.id}, read on {day}"
 
 
-def test_the_models_pages_say_what_has_never_run() -> None:
+def test_the_llms_pages_say_what_has_never_run() -> None:
     """The sentences the guides they summarise carry, in the same words, so a page that lists
     a vendor cannot read as if it had been flown when it has only met a stand-in."""
-    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
-    assert "**No OpenRouter model has answered a real quackd request.**" in pilots
-    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    pilots = (LLMS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    assert "**No OpenRouter LLM has answered a real quackd request.**" in pilots
+    decisions = (LLMS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
     assert "**Nothing here has ever answered a real robot.**" in decisions
 
 
 def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
     """The catalogue's size was typed into the README, the FAQ and the architecture page by
     hand, and nothing read it back, so the day a row was added three pages would have kept a
-    number the catalogue no longer had. The models page renders its own count, and every other
+    number the catalogue no longer had. The LLMs page renders its own count, and every other
     one is held to the rows here: the ids, the ones priced and the ones not."""
-    rows = [m for name in CLOUD_NAMES for m in models_for(name)]
+    rows = [m for name in CLOUD_NAMES for m in llms_for(name)]
     priced = sum(1 for m in rows if m.price is not None)
     unpriced = _NUMBER_WORDS.get(len(rows) - priced, str(len(rows) - priced))
     counted = 0
     for path in [*_living_docs(), REPO / "web" / "README.md"]:
         prose = " ".join(_prose(path.read_text(encoding="utf-8")).replace(">", " ").split())
-        totals = re.findall(r"\b(\d+) (?:model )?ids\b", prose)
-        totals += re.findall(r"\bcatalogue's (\d+) models\b", prose)
+        totals = re.findall(r"\b(\d+) (?:LLM )?ids\b", prose)
+        totals += re.findall(r"\bcatalogue's (\d+) LLMs\b", prose)
         for n in totals:
             counted += 1
             assert int(n) == len(rows), (
@@ -4606,7 +4611,7 @@ def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
             assert (int(have), int(of)) == (priced, len(rows)), (
                 f"{path.name} says {have} of {of} ids are priced, and {priced} of {len(rows)} are"
             )
-        for word in re.findall(r"\b(\w+) of the catalogue's \d+ models are unpriced\b", prose):
+        for word in re.findall(r"\b(\w+) of the catalogue's \d+ LLMs are unpriced\b", prose):
             assert word.lower() == unpriced, (
                 f"{path.name} says {word} of the catalogue's ids are unpriced, not {unpriced}"
             )
@@ -4644,18 +4649,22 @@ def test_no_living_document_claims_the_wrong_number_of_policy_types() -> None:
                 )
 
 
-def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
-    """The three kinds of model were spread over some twenty-five places in the README, and a
-    reader asking which models quackd takes had no one section to read."""
+def test_the_readme_says_which_llms_work_after_which_robots_work() -> None:
+    """The three kinds were spread over some twenty-five places in the README, and a
+    reader asking which LLMs and policies quackd takes had no one section to read."""
     from quackd.adapters.policies import FAMILIES
 
     headings = re.findall(r"^## (.+)$", _prose(README), flags=re.M)
     robots = headings.index("Which robots work")
-    assert headings[robots + 1] == "Which models work", "the models section must follow the robots"
-    assert "- [Which models work](#which-models-work)" in README, "the contents do not list it"
-    section = README.split("\n## Which models work\n", 1)[1].split("\n## ", 1)[0]
+    assert headings[robots + 1] == "Which LLMs and policies work", (
+        "that section must follow the robots"
+    )
+    assert "- [Which LLMs and policies work](#which-llms-and-policies-work)" in README, (
+        "the contents do not list it"
+    )
+    section = README.split("\n## Which LLMs and policies work\n", 1)[1].split("\n## ", 1)[0]
     for needle in (
-        "docs/models/README.md",
+        "docs/llms/README.md",
         "### Pilot LLMs",
         "### Decision LLMs",
         "### Learned policies and VLAs",
@@ -4663,15 +4672,15 @@ def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
         "quackd policy endpoint up",
         "--decision-mode shadow",
     ):
-        assert needle in section, f"the README's models section does not say {needle!r}"
+        assert needle in section, f"the README's LLMs section does not say {needle!r}"
     for family in FAMILIES:
         assert family.label in section or f" {family.type}" in section, (
-            f"the README's models section never names {family.label}"
+            f"the README's LLMs section never names {family.label}"
         )
 
 
 def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -> None:
-    """The pilots' table moved into the models section whole, and is held there row by row:
+    """The pilots' table moved into that section whole, and is held there row by row:
     each cloud vendor's row names its extra, its key and the `--llm` that runs it."""
     section = README.split("\n### Pilot LLMs\n", 1)[1].split("\n### ", 1)[0]
     rows = [line for line in section.splitlines() if line.startswith("| ")]
@@ -4770,7 +4779,7 @@ def test_the_arms_getting_started_says_what_the_task_files_say() -> None:
         assert line in (examples / duck).read_text(encoding="utf-8"), f"{duck} says otherwise"
 
 
-def test_the_arms_steps_name_the_row_list_models_prints_first(
+def test_the_arms_steps_name_the_row_list_llms_prints_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The install step tells a reader what the first row has to be, as its check that the install
@@ -4780,7 +4789,7 @@ def test_the_arms_steps_name_the_row_list_models_prints_first(
     from quackd.cli import app
 
     monkeypatch.setenv("COLUMNS", "220")
-    result = CliRunner().invoke(app, ["list-models", "--llm", "openai"])
+    result = CliRunner().invoke(app, ["list-llms", "--llm", "openai"])
     assert result.exit_code == 0, result.output
     first = next(line for line in result.output.splitlines() if "gpt-" in line)
     assert "gpt-6-sol" in first and "default" in first, first

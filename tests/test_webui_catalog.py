@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from quackd.agent.providers.catalogue import PROVIDER_NAMES, default_model_for
+from quackd.agent.providers.catalogue import PROVIDER_NAMES, default_llm_for
 from quackd.doctor import EXTRAS
 from quackd.webui import catalog
 
@@ -28,9 +28,9 @@ def test_the_robots_are_list_adapters_own_rows() -> None:
 
 def test_the_pilots_are_the_catalogues_own() -> None:
     assert catalog.vendors() == tuple(PROVIDER_NAMES)
-    assert catalog.default_model("anthropic") == default_model_for("anthropic")
-    assert catalog.models("anthropic")[0].id == default_model_for("anthropic")
-    assert catalog.models("ollama") == [], "a local server serves what it was started with"
+    assert catalog.default_model("anthropic") == default_llm_for("anthropic")
+    assert catalog.llms("anthropic")[0].id == default_llm_for("anthropic")
+    assert catalog.llms("ollama") == [], "a local server serves what it was started with"
     assert "ollama" in catalog.local_presets()
     assert catalog.decision_llms() and catalog.policy_families()
 

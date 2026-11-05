@@ -104,7 +104,7 @@ folded beside it.
 There were two ways to get there and both are bad. A person can record a different rest pose,
 which means teaching the arm a number for a position they could reach out and set in two
 seconds, and which then becomes the pose every later run and every teardown folds to. Or the
-pilot can jog there through `move_joints`, which spends model calls and budget getting to the
+pilot can jog there through `move_joints`, which spends LLM calls and budget getting to the
 place where the task begins, one [ADR-0036](0036-what-the-arm-does-not-say.md) step cap per
 tick, and ends somewhere approximate anyway.
 
@@ -113,7 +113,7 @@ position-controlled arm torque is the only thing holding it up.
 [ADR-0036](0036-what-the-arm-does-not-say.md) closed its decision with the flat sentence that
 quackd never disables torque, and meant it: every gap that ADR closed was a gap between an LLM
 and a servo. This is not that. A person standing at the arm with both hands on it is a
-different situation from a model three seconds away, and it is the only situation in which
+different situation from an LLM three seconds away, and it is the only situation in which
 letting go is a service rather than a drop.
 
 ## Decision
@@ -180,7 +180,7 @@ letting go is a service rather than a drop.
   after can put it down. Where a run ends limp anyway, `close()` prints the new `LIMP_IN_HAND`
   note instead of the torque note, because telling somebody holding a limp arm that it is
   holding itself up is the single wrong answer that gets an arm dropped.
-- **No verb asks for any of this, and no model can.** `let_go` and `take_hold` are not verbs,
+- **No verb asks for any of this, and no LLM can.** `let_go` and `take_hold` are not verbs,
   are not reachable over MCP, and are deliberately not on the `RobotAdapter` protocol, which is
   runtime-checkable and structural: a method there is a method all seven bodies must carry, and
   six of them are never handed to a person. A body that can be declares
@@ -200,7 +200,7 @@ letting go is a service rather than a drop.
 - The trace gains `hand_off`, with `stage` one of `released`, `held`, `skipped` or `unloaded`,
   so a transcript says which of the two waits a run got through. `_hand_over()` restarts the
   budget after the person is done, because an arm can stand waiting while somebody goes to find
-  a pencil and that used to be spent out of the `max_minutes` the model gets for the task.
+  a pencil and that used to be spent out of the `max_minutes` the LLM gets for the task.
 - [ADR-0036](0036-what-the-arm-does-not-say.md) is amended rather than reversed, and carries
   the amendment. What that ADR said quackd never does is now one clause shorter and no more:
   the adapter still never calibrates, still refuses an arm with no calibration file, and still

@@ -499,7 +499,7 @@ publishes, and a package published from anywhere else needs none of it: see the 
      the one-liner for a body that does not park.
    - `make()` calls `one_camera_url()` unless the body genuinely reads several cameras, in
      which case it keeps the whole tuple, implements `get_frames()`, and gives each frame the
-     name its url asked for, because that name is what the model, a pick policy observation
+     name its url asked for, because that name is what the LLM, a pick policy observation
      and `frames/NNNN-<name>.png` tell the views apart by.
 3. `mock.py`, and a test that runs every verb through an `Executor` on it.
 4. `upstream_api.py` with pinned links and `UPSTREAMS` naming it; a row in

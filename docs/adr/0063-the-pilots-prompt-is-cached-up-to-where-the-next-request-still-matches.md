@@ -5,7 +5,7 @@
 ## Context
 
 Rok asked on 2026-10-25 for a command line that answers as close to real time as it can, and
-the arm run in the README says where its seconds go: 62.1 of 78.8 waiting on the model, over ten
+the arm run in the README says where its seconds go: 62.1 of 78.8 waiting on the LLM, over ten
 calls. Every one of those calls sent the whole request again at the full input rate. The system
 prompt and the tool schemas are the same on every call of a run, and most of a long run's
 history is the same from one call to the next, but nothing quackd sent asked Anthropic to cache
@@ -14,9 +14,9 @@ the catalogue priced nothing.
 
 Anthropic caches only what a request marks, with at most four breakpoints. A read looks back
 twenty block positions at most from a marker, a run of tool_use or tool_result blocks counting
-as one, and a prefix under the model's minimum, 512 tokens on Opus 5.5, is never cached. The
+as one, and a prefix under the LLM's minimum, 512 tokens on Opus 5.5, is never cached. The
 obvious marker, one at the end of each request, is the one quackd cannot use: the loop trims its
-history on every call, on most models dropping the oldest picture still sent, and on Opus 5.5
+history on every call, on most LLMs dropping the oldest picture still sent, and on Opus 5.5
 and Fable 5.1 every eighth exchange, when the pictures go and the thinking the trim invalidates
 is left out (`BINDING_TRIM_PERIOD`). Past the first block a trim changes, the next call reads
 nothing back, and the write it paid for was a quarter more than the input it replaced.
@@ -45,7 +45,7 @@ nothing back, and the write it paid for was a quarter more than the input it rep
 5. **Anthropic's binding check ignores the markers.** Its check of a replayed thinking block
    ignores cache_control markers, added, moved and removed alike, so the binding oracle compares
    requests with them stripped, as the API does, and still passes on every body.
-6. **A wrong guess costs a write or two and never a wrong request.** A model that answers in
+6. **A wrong guess costs a write or two and never a wrong request.** An LLM that answers in
    prose is asked again rather than answered, which the foresight does not see coming: the
    re-prompt adds two exchanges where it counted one, so the trim's cut can move by both, and
    the entries that call and the next one write can go unread. A retry resends the same marked
@@ -69,8 +69,8 @@ nothing back, and the write it paid for was a quarter more than the input it rep
 ## Consequences
 
 - From a run's second Claude call on, the part of its request that matches the last call is
-  meant to be billed at the model's cache read rate, a tenth of its input rate on most Claude
-  models, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, and written once at a quarter
+  meant to be billed at the LLM's cache read rate, a tenth of its input rate on most Claude
+  LLMs, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, and written once at a quarter
   more. How much of a run's bill that saves is not measured. The check is one paid run per vendor
   with the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd`
   and `latency_s` per call.

@@ -42,7 +42,7 @@ are bigger mobile robots, humanoids and robots on four legs, and nearly all of t
 NVIDIA Jetson that can run quackd itself.
 
 ADR-0046 kept quackd off the Jetson for reasons about driving: the deciding half of quackd is
-better on the laptop where the person is, and a model server beside a fifty hertz control loop can
+better on the laptop where the person is, and an LLM server beside a fifty hertz control loop can
 starve it. Neither reason is about identity, and identity belongs to the body, which is the one
 thing that is there when two robots meet.
 
@@ -107,7 +107,7 @@ the condition for talking either way.
 **Trust is still a person's pin.** Three tiers: a stranger, a known robot (one a person pinned, or
 any robot an owner they pinned signed), and the same owner (signed by this robot's own owner key).
 The flock tier goes, since one quackd is one robot now. A stranger's passport reaches the brain in
-its closed members only, under a name made from its key, and its sentences never reach a model.
+its closed members only, under a name made from its key, and its sentences never reach an LLM.
 Free talk needs a pin. The courtesy handler stands as ADR-0057 made it.
 
 **An idle robot meets, and a busy one notices.** A verified robot near an idle one starts a
@@ -197,7 +197,7 @@ refused and why Bluetooth waited.
 - **A stolen robot carries its sealed owner key.** A thief can guess passphrases offline against
   scrypt, and the robot's key speaks until its passport expires. There is no revocation yet, so a
   shorter `--days` is the only lever.
-- **Strangers cost model calls.** Meetings are capped per hour, a meeting with a robot met in the
+- **Strangers cost LLM calls.** Meetings are capped per hour, a meeting with a robot met in the
   last ten minutes does not start again, and the robot's file can keep strangers out of meetings.
 - **`quackd[onboard]` is a new extra:** zeroconf and an OpenAI-compatible client everywhere, bleak
   and dbus-fast on Linux alone, so the Bluetooth half runs on Linux and nowhere else. It is in

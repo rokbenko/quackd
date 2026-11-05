@@ -10,7 +10,7 @@ names, which is why they share a directory and a version: a flock that names a r
 registered is the one broken state either file can be in, and it is reported rather than
 repaired.
 
-Reads are strict, unlike `RobotMemory`'s. Memory is notes a model wrote and a bad line there
+Reads are strict, unlike `RobotMemory`'s. Memory is notes an LLM wrote and a bad line there
 is worth skipping; this is configuration a person wrote, and a silently-dropped field would
 send a robot to the wrong address. A typo names its own field and stops the command.
 
@@ -248,13 +248,13 @@ class RobotEntry(BaseModel):
     it and returns to it before torque is released. None for every body quackd does not park."""
     llm: str | None = None
     """The pilot a run uses for this robot when `--llm` is absent, in the same shape `--llm`
-    takes: a vendor on its own (`anthropic`), or a vendor and a model id
+    takes: a vendor on its own (`anthropic`), or a vendor and an LLM id
     (`anthropic:claude-opus-4-5`). `--llm` on the line beats this, and this beats
-    `QUACKD_LLM`. Stored canonically, so a bare listed model id is written back with its
+    `QUACKD_LLM`. Stored canonically, so a bare listed LLM id is written back with its
     vendor in front: `--llm claude-opus-4-5` lands here as `anthropic:claude-opus-4-5`."""
     host: str | None = None
     """The board this robot uses and quackd never runs on (`--host`): the machine its local
-    model server, host camera and host detector are reached on, as `jetson.local` or
+    LLM server, host camera and host detector are reached on, as `jetson.local` or
     `jetson.local:9874`. `--host` on the line beats this, and this beats `QUACKD_HOST`."""
     host_token: str | None = None
     """The token that board's daemon was started with. Kept apart from `token`, which is the
@@ -290,14 +290,14 @@ class RobotEntry(BaseModel):
             return data
         folded = dict(data)
         provider = folded.pop("provider", None)
-        model = folded.pop("model", None)
+        llm_id = folded.pop("model", None)
         # A `model` with no `provider` beside it named no pilot and must not start naming one.
         # Under the old pair the vendor came from the flag or from the default, and the default
-        # was `fake`, which ignores a model id entirely -- so such an entry did nothing unless
+        # was `fake`, which ignores an LLM id entirely -- so such an entry did nothing unless
         # a `--provider` was also typed. Read as a spec it would do two things instead, both
         # bad: `{"model": "mistral"}` would become the paid Mistral API for a run that used to
         # cost nothing, and `{"model": "gpt-4-turbo"}` would be a vendor quackd cannot resolve.
-        folded["llm"] = f"{provider}:{model}" if provider and model else (provider or None)
+        folded["llm"] = f"{provider}:{llm_id}" if provider and llm_id else (provider or None)
         return folded
 
     @field_validator("spec")
@@ -411,8 +411,8 @@ class RobotEntry(BaseModel):
         refused here is refused by `quackd robot list`, `show`, `remove` and by the very
         `quackd robot edit` that would fix it. One bad line would take the whole file down and
         leave no command able to mend it. That is a worse failure than a robot that refuses on
-        the day it is run, and it is reachable by ordinary means: a catalogue that retires a
-        model id, a vendor quackd drops, or a hand-edited file.
+        the day it is run, and it is reachable by ordinary means: a catalogue that retires an
+        LLM id, a vendor quackd drops, or a hand-edited file.
 
         So this canonicalises what it can -- a bare listed id gains its vendor, a vendor is
         folded to lower case -- and leaves the rest alone."""
@@ -424,10 +424,10 @@ class RobotEntry(BaseModel):
         from quackd.agent.providers.factory import parse_llm
 
         try:
-            vendor, model = parse_llm(str(value), source="llm", check_model=False)
+            vendor, llm_id = parse_llm(str(value), source="llm", check_llm=False)
         except ProviderError:
             return str(value).strip()
-        return f"{vendor}:{model}" if model else vendor
+        return f"{vendor}:{llm_id}" if llm_id else vendor
 
     @property
     def adapter(self) -> str:
@@ -640,7 +640,7 @@ class Resolved:
 
     @property
     def llm(self) -> str | None:
-        """The pilot this robot was registered with, `vendor` or `vendor:model`, or None for
+        """The pilot this robot was registered with, `vendor` or `vendor:llm`, or None for
         a bare spec: nothing was registered, so there is nothing to have recorded."""
         return self.entry.llm if self.entry is not None else None
 
@@ -816,7 +816,7 @@ class Registry:
         # file including this command; but a spec handed in here is one somebody is choosing
         # now, and a choice made now can be checked now. Checking the whole entry instead
         # would put the bricking back: editing the note on a robot whose stored pilot names a
-        # retired model would fail on the pilot.
+        # retired LLM would fail on the pilot.
         if (named := changes.get("llm")) is not None:
             _check_llm(str(named))
         # The body being set, and the board, by the same rule and for the same reason: a robot

@@ -1,7 +1,7 @@
 """The command somebody typed, written down without the secrets in it.
 
 A run's record said what quackd did and never what it was asked to do. The flags are half the
-story of any run: which robot, which model, which budget, whether it was a dry run, what the
+story of any run: which robot, which LLM, which budget, whether it was a dry run, what the
 task was called. Reading a transcript a month later and having to guess at them is the same
 gap the wall clock had, and it is closed the same way, by writing the thing down once at the
 top.

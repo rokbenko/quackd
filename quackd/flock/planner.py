@@ -4,7 +4,7 @@
 its own provider, which is the whole difference between the two kinds.)
 
 Wedges are ALWAYS computed deterministically (an equal partition of the circle over the
-sorted member names — the model does not get to draw geometry). A real provider gets one
+sorted member names — the LLM does not get to draw geometry). A real provider gets one
 `plan_flock_task` call to tune the task knobs, asked for with whatever `tool_choice` that
 provider sends every call, so forced where it can force one and only asked for where it cannot;
 a call that fails, or a reply with no `plan_flock_task` call in it, falls back to the
@@ -83,7 +83,7 @@ async def plan_flock_task(
     """Returns (task, wedges, usage, llm_calls, fallback_used, spent). Wedges are split over the
     members that can move (`wedge_members`); a member with no wedge sweeps its whole range.
 
-    `event_log` narrates the one model call this run makes, as the same `llm_request`/`llm` pair
+    `event_log` narrates the one LLM call this run makes, as the same `llm_request`/`llm` pair
     a solo run emits, so a flock's transcript reads like any other run's."""
     wedges = equal_wedges(wedge_members or members)
     task = default_task(duck, task_id)
@@ -116,11 +116,11 @@ async def plan_flock_task(
     )
     fallback = False
     usage = Usage()
-    # the planner is one model call like any other, so it is priced like any other: a rate a
+    # the planner is one LLM call like any other, so it is priced like any other: a rate a
     # person named, else what the vendor billed, else the rate times its tokens
     rate = resolve_price(
         provider.name,
-        provider.model,
+        provider.llm_id,
         override=price,
         listed=getattr(provider, "listed_price", None),
     )
@@ -132,7 +132,7 @@ async def plan_flock_task(
         "llm_request",
         step=0,
         provider=provider.name,
-        model=provider.model,
+        llm_id=provider.llm_id,
         messages=1,
         images=0,
         reprompt=False,
@@ -151,7 +151,7 @@ async def plan_flock_task(
             "llm",
             step=0,
             provider=provider.name,
-            model=provider.model,
+            llm_id=provider.llm_id,
             text=turn.text,
             thinking=turn.thinking,
             tool_calls=[tc.model_dump() for tc in turn.tool_calls],
@@ -168,7 +168,7 @@ async def plan_flock_task(
         if call is None:
             raise ValueError("no plan_flock_task call in the reply")
         # per-field: numeric arguments clamp into range, the rest validate individually,
-        # so one bad argument never discards the model's valid choices
+        # so one bad argument never discards the LLM's valid choices
         dropped: dict[str, Any] = {}
         for k, v in call.arguments.items():
             if k not in TUNABLE:
@@ -203,7 +203,7 @@ async def plan_flock_task(
                 "llm",
                 step=0,
                 provider=provider.name,
-                model=provider.model,
+                llm_id=provider.llm_id,
                 error=f"{type(e).__name__}: {e}",
                 latency_s=round(time.perf_counter() - started, 3),
                 **cost,

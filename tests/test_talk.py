@@ -42,7 +42,7 @@ class _Script:
     """A provider that plays a fixed list of tool calls and records what it was told."""
 
     name = "fake"
-    model = "scripted"
+    llm_id = "scripted"
     supports_vision = False
 
     def __init__(self, calls: list[ToolCall]) -> None:

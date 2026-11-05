@@ -5,7 +5,7 @@ An idle robot's brain runs the standing meeting task when a robot it may talk to
 but never from another goal. Every run is a `quackd run` in all but where it came from: the same
 loop, the same executor and its gates, the same record, with the robots nearby read through the
 `NearbyLike` seam straight from this robot's talk. Each run has a thread and an event loop of its
-own, so a hung model call holds that thread and never the service.
+own, so a hung LLM call holds that thread and never the service.
 
 Meetings are bounded three ways, since a stranger costs an attacker nothing to make: no more than
 `per_hour` an hour, never the same robot twice in `COOLDOWN_S`, and none with a stranger unless

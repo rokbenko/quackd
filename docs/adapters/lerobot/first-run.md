@@ -2,7 +2,7 @@
 
 This is the long way round, written for somebody who owns or can borrow an SO-101 and has
 never run quackd or LeRobot. It starts with an empty laptop and ends with the arm noticing
-you on a webcam and waving, driven by whichever model you choose to bring.
+you on a webcam and waving, driven by whichever LLM you choose to bring.
 
 Three documents cover this arm and they do different jobs:
 
@@ -37,8 +37,8 @@ Three documents cover this arm and they do different jobs:
 > [What to report](#14-what-to-report) still matters most, whether or not the arm waves.
 
 This page is in two parts, and they are two ways of driving the same arm rather than two
-different jobs. **Part 1 is the terminal**, `quackd run` with a model you bring and a key in a
-file. **Part 2 is Claude**, where the arm arrives as a set of tools in a chat and the model you
+different jobs. **Part 1 is the terminal**, `quackd run` with an LLM you bring and a key in a
+file. **Part 2 is Claude**, where the arm arrives as a set of tools in a chat and the LLM you
 are already talking to is the pilot. Part 1 comes first because it is the path an arm has
 actually been down. Part 2 repeats the commands the two share rather than sending you back for
 them, so it reads straight through, and links here for the long explanations.
@@ -54,7 +54,7 @@ bench is a surprise.
 
 **There is no `wave` verb.** This body's whole vocabulary is `report_state`, `move_joints`,
 `gripper`, `place` and `stop`, plus `observe` when a camera is configured. A wave has to be
-invented by the model out of several `move_joints` calls, live, the first time you ask. That
+invented by the LLM out of several `move_joints` calls, live, the first time you ask. That
 improvisation is the thing being tested. It is not a feature that already exists.
 
 **The camera cannot look for you.** No SO-101 has one built in, and quackd does not put one
@@ -62,10 +62,10 @@ on the arm: it is a USB webcam that plugs into your computer, aimed once and the
 body has no neck and no `search_scan`. "Finds you" means you are already inside a frame that
 never moves, so you position yourself rather than the arm.
 
-**Whether it can see you at all depends on the model you bring.** quackd's bundled detector
+**Whether it can see you at all depends on the LLM you bring.** quackd's bundled detector
 is a colour threshold carrying the simulator's own ranges, so on a real desk `person` means
-"a saturated blue thing" and nothing else. A model that accepts images sees the actual
-webcam frame every step and can simply look. A model that does not gets one line of text.
+"a saturated blue thing" and nothing else. An LLM that accepts images sees the actual
+webcam frame every step and can simply look. An LLM that does not gets one line of text.
 [Choose your pilot](#03-choose-your-pilot) is where that decision gets made, and
 [Wave to me](#12-wave-to-me) is where it pays off or does not.
 
@@ -96,7 +96,7 @@ Two reflexes, and they matter more than anything you type:
   is short on ports.
 - **A USB webcam, and something to prop it up and aim it.** A small tripod, a clip, a stack
   of books. The arm cannot move the camera for you.
-- **Something strongly blue to wear**, if the model you are bringing does not take images.
+- **Something strongly blue to wear**, if the LLM you are bringing does not take images.
   Section 03 explains why, and it is the difference between the arm seeing you and not.
 - **A way to cut power fast.** A power strip with its own switch, or a firm decision about
   which plug you are going to pull.
@@ -104,7 +104,7 @@ Two reflexes, and they matter more than anything you type:
   may connect your own laptop, and which supply that specific arm takes. Motors and supplies
   vary between builds and neither LeRobot nor quackd reads the voltage, so neither can warn
   you.
-- **A key for one cloud vendor, or a local model server.** Section 03.
+- **A key for one cloud vendor, or a local LLM server.** Section 03.
 
 <br>
 
@@ -123,7 +123,7 @@ uv pip install "quackd[lerobot]"
 ```
 
 Add the extra for whichever pilot you picked in the next section, in the same install. The
-arm and the model are independent choices:
+arm and the LLM are independent choices:
 
 ```bash
 uv pip install "quackd[lerobot,anthropic]"   # or openai, gemini, grok, mistral, deepseek, ...
@@ -157,18 +157,18 @@ motor. `quackd[lerobot]` asks for `lerobot[feetech]` for exactly that reason.
 
 ### 03. Choose your pilot
 
-quackd never ships a model. You bring one, and the choice is one flag, `--llm VENDOR[:MODEL]`.
+quackd never ships an LLM. You bring one, and the choice is one flag, `--llm VENDOR[:LLM]`.
 Twelve cloud vendors have a name you can pass it, five local presets cover the common
-self-hosted servers, and `fake` is a scripted pilot that needs no key and is not a model at
-all. The vendor on its own means that vendor's default model, `--llm openai:gpt-6-astra` names
+self-hosted servers, and `fake` is a scripted pilot that needs no key and is not an LLM at
+all. The vendor on its own means that vendor's default LLM, `--llm openai:gpt-6-astra` names
 one, and a catalogue id unique to its vendor needs no vendor in front of it, so
 `--llm gpt-6-astra` is the same run.
 
-`quackd doctor` prints a row per provider with the extra, the key it found and the model it
-would use, and `quackd list-models` prints every model id quackd knows for every vendor.
-OpenRouter can also take an id `list-models` does not print, checked against OpenRouter's own
-model list when a run starts unless quackd refuses its spelling first
-([guides/openrouter.md](../../guides/openrouter.md)). No OpenRouter model has answered a real
+`quackd doctor` prints a row per provider with the extra, the key it found and the LLM it
+would use, and `quackd list-llms` prints every LLM id quackd knows for every vendor.
+OpenRouter can also take an id `list-llms` does not print, checked against OpenRouter's own
+LLM list when a run starts unless quackd refuses its spelling first
+([guides/openrouter.md](../../guides/openrouter.md)). No OpenRouter LLM has answered a real
 quackd request, on this arm or anywhere else.
 
 #### A cloud vendor
@@ -186,7 +186,7 @@ refused a run, a dry run included, before anything connects.
 
 > [!NOTE]
 > The vendor for Claude is spelled `anthropic`. There is no `--llm claude`, although
-> `--llm claude-opus-5` works, because a model id unique to its vendor names that vendor on its
+> `--llm claude-opus-5` works, because an LLM id unique to its vendor names that vendor on its
 > own. An unknown name is refused before anything connects, and the message says both shapes
 > that would have worked and lists every vendor.
 
@@ -241,7 +241,7 @@ and last two characters, which is the quickest way to see whether your file was 
 > file would have found no key at all on either. Copy the name out of
 > [`.env.example`](../../../.env.example) rather than typing it.
 
-#### A local model, no key
+#### A local LLM, no key
 
 Five presets, all of them served by the `openai` extra because they all speak the OpenAI
 wire format. Start your server, then name the preset:
@@ -264,28 +264,28 @@ including the JSON text fallback quackd uses when a server is weak at native too
 
 #### The one that decides whether the arm can see you
 
-Whether the camera frame reaches the model at all is a per-provider default:
+Whether the camera frame reaches the LLM at all is a per-provider default:
 
-| Pilot | Frame reaches the model? |
+| Pilot | Frame reaches the LLM? |
 |---|---|
-| A cloud vendor, default model | Yes, on every step, for most vendors |
-| A cloud model marked `no frames` | No. The text detections go instead, silently |
-| An OpenRouter id quackd does not carry | When OpenRouter's model list says it takes images |
+| A cloud vendor, default LLM | Yes, on every step, for most vendors |
+| A cloud LLM marked `no frames` | No. The text detections go instead, silently |
+| An OpenRouter id quackd does not carry | When OpenRouter's LLM list says it takes images |
 | Any local preset | **No by default.** `--vision` turns it on |
-| `--llm fake` | Never. It is a rule, not a model |
+| `--llm fake` | Never. It is a rule, not an LLM |
 
-`quackd list-models` prints `no frames` in the notes column for the models that do not take
+`quackd list-llms` prints `no frames` in the notes column for the LLMs that do not take
 images, and it is worth reading before you promise yourself the arm will see anything. One
-vendor's own default model is marked that way, so a bare `--llm glm` run never sees the
+vendor's own default LLM is marked that way, so a bare `--llm glm` run never sees the
 webcam.
 
 `--vision` and `--no-vision` override all of it in both directions. A local pilot that is
-meant to look at you needs `--vision` **and** a vision-capable model loaded in the server.
+meant to look at you needs `--vision` **and** a vision-capable LLM loaded in the server.
 
 #### The scripted pilot, and its one job
 
-`--llm fake` is the default and needs no key, no extra and no network. It is not a
-model: it is a small set of rules that picks its script from the task file's name, or from a
+`--llm fake` is the default and needs no key, no extra and no network. It is not an
+LLM: it is a small set of rules that picks its script from the task file's name, or from a
 few keywords in a goal.
 
 > [!CAUTION]
@@ -296,18 +296,18 @@ few keywords in a goal.
 > where it started, and exits 0, with no refusal printed to warn you. Worse, a goal containing
 > the word *person* selects the patrol script, which reaches for verbs this body does not
 > have and gets refused one at a time. Use `fake` to prove the wiring in section 08, and a
-> real model for anything that has to think.
+> real LLM for anything that has to think.
 
 > [!NOTE]
 > There is a third thing you can put in the loop and it is not a pilot. `--decision-llm` adds an
-> optional non-generative stepper in front of whichever model you picked, for the turns whose
+> optional non-generative stepper in front of whichever LLM you picked, for the turns whose
 > answer is a choice among calls this arm already has. It is off unless you name one, it needs
 > `quackd[decision]` (or `quackd[laya]`, or for [`openai`](../../guides/decision-llms/openai.md)
 > the `quackd[openai]` an OpenAI pilot already has) and, for the hosted
 > [`jev`](../../guides/decision-llms/jev.md) and `openai`, a key of its own, and it never authors a
 > joint angle. Leave it off until the arm has waved: the first run is about proving the arm, the
 > port and the camera, and one more moving part between you and the arm is the opposite of what a
-> first run wants. [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) is how to
+> first run wants. [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-pilot-llm) is how to
 > add one afterwards, and [guides/decision-llms/README.md](../../guides/decision-llms/README.md) is
 > where they live, one page each.
 
@@ -528,7 +528,7 @@ it. A servo on this arm is never driven past the limits calibration wrote into i
 outside them is a pose the arm can rest in and cannot be driven back to. That is the bench of
 2026-09-23. The arm's calibration had never seen the shoulder folded all the way back, the
 rest pose lay about 20 degrees past the floor of that joint's travel, and the rest move could
-not get there: runs aborted before the first model call, every run that got to its end kept
+not get there: runs aborted before the first LLM call, every run that got to its end kept
 torque on and finished at the power switch, and the `stop` at the end of a run hauled the
 folded shoulder up out of its fold.
 
@@ -553,7 +553,7 @@ as meaning a different pose too.
 
 | When | What happens |
 |---|---|
-| The start of a run | the arm is driven to the pose before the pilot is given control, so what a model improvises from is the same arm every time. A run that cannot get there aborts before a single LLM call is made |
+| The start of a run | the arm is driven to the pose before the pilot is given control, so what an LLM improvises from is the same arm every time. A run that cannot get there aborts before a single LLM call is made |
 | The end of a run | between the `stop` and the disconnect, on every exit path there is: success, failure, infeasible, out of budget, an abort, an error, and Ctrl-C |
 | Torque, at the end | released only where the arm is known to have reached the pose. Where it has not, a run at a terminal first asks you, for 60 seconds, to clear the arm's way and press Enter, and folds it once more, and only if that fold misses too asks, for another 60, whether to take torque off where the arm stands, which drops it into your hands. Otherwise, or with no Enter, quackd turns LeRobot's disconnect flag off, leaves the arm holding itself up, and says so in one line that names `quackd robot release arm-01` |
 | A fold past the travel | the arm is driven to the edge of the travel instead, which counts as reaching the pose, and torque is released there. A joint already folded past the edge is at rest where it is and is sent nothing. The run says once which joint is free to settle the rest of the way, `doctor` prints the same sentence under its table with the `rest pose` row green, and an MCP session logs it |
@@ -745,9 +745,9 @@ terminal to ask on it refuses, with `--yes` or without.
 #### Or start from a pose you set by hand
 
 The rest pose is one shape, and every run so far begins there. That is exactly what you want
-when the question is what a model does with a known arm, and exactly what you do not want when
+when the question is what an LLM does with a known arm, and exactly what you do not want when
 the work starts somewhere else: a pencil already between the jaws, the tip already on the
-paper, the arm already over the corner of the desk where the task happens. Asking a model to
+paper, the arm already over the corner of the desk where the task happens. Asking an LLM to
 get there costs several moves, lands somewhere slightly different every time, and cannot put
 anything into the gripper at all, because nobody is there to hand it over.
 
@@ -794,7 +794,7 @@ What happens, in order, and the order is the whole of the feature:
    on and the rest off, it names the joints that hold, says the rest is limp, and tells you to
    keep hold of the arm and cut its power.
 6. **The pilot runs**, from your pose rather than from the fold. The budget clock restarts
-   here, so the time you spent finding the pencil is not taken out of the model's minutes.
+   here, so the time you spent finding the pencil is not taken out of the LLM's minutes.
 7. **At the end the arm holds where it ended**, and quackd asks you to take out whatever is in
    the gripper before it opens the gripper, waiting up to two minutes for an answer.
 8. **Then the ordinary teardown**: the rest move, and torque released there.
@@ -827,7 +827,7 @@ a run that started at it. The refusal names the joint and the gap, the run abort
 pilot's first turn, and torque stays on, because an arm that moved is still an arm that is
 holding itself up.
 
-**What the pilot is told.** A by-hand run adds a section to the system prompt, so the model is
+**What the pilot is told.** A by-hand run adds a section to the system prompt, so the LLM is
 not left to infer a strange starting shape from the joint angles alone:
 
 ```
@@ -850,7 +850,7 @@ gripper's included, so the jaws are commanded to exactly the width your fingers 
 and are never squeezed tighter. quackd then calls nothing held, and it is right not to:
 holding on this arm is inferred from the gripper having been *told* to close and then settling
 short of shut, and a goal of 35 out of 100 is not a close. So `report_state` reads `holding
-nothing` with a pencil plainly in the jaws, and the observation the model reads says the same.
+nothing` with a pencil plainly in the jaws, and the observation the LLM reads says the same.
 That is not a bug to work around. If the task needs a real hold rather than a resting width,
 the pilot closes the gripper on what is already between the jaws with the `gripper` verb, and
 from that moment the arm reports it as held.
@@ -978,7 +978,7 @@ Every run writes `runs/<timestamp>-<name>/` with the full transcript, every fram
 captured, a summary, and `terminal.txt`, which is everything that was on the terminal during
 the run as plain text, opening with the command that started it. `quackd log` replays any of
 it afterwards, and the summary now says when the run started and ended, how much of it was
-spent waiting on the model, and what the model calls cost.
+spent waiting on the LLM, and what the LLM calls cost.
 
 > [!TIP]
 > **Name your runs if you are doing more than a few.** `--run-name "example 1"` puts the name
@@ -1056,17 +1056,17 @@ before the arm is energised:
 
 | Rule | Why |
 |---|---|
-| With several, every url carries `?name=`, and the names differ | the name is the only thing telling two views apart, in what the model is shown, in a pick policy's observation, and in `frames/NNNN-<name>.png` |
+| With several, every url carries `?name=`, and the names differ | the name is the only thing telling two views apart, in what the LLM is shown, in a pick policy's observation, and in `frames/NNNN-<name>.png` |
 | An index may not repeat | two handles on one webcam is not two views, it is a camera that will not open twice |
 | The **first** url is the primary | it is the camera `--fov-deg` describes, the one the `camera:` detections line reports, and the only one the verbs that steer by sight read. Those run at 10 Hz, and fetching every camera there would blow the deadman window |
 | A second camera that will not open refuses the whole connect | it happens before the arm is energised, and it lets go of the first camera on the way out |
 
-Every frame reaches the model on every step, each one labelled with its camera name, on
+Every frame reaches the LLM on every step, each one labelled with its camera name, on
 Claude, both OpenAI APIs, Gemini, and any OpenAI-compatible local server with `--vision` on.
 
 A camera that stalls later costs its own picture and nothing else: the others keep arriving,
 and `report_state` and `doctor` name which one went, in a `camera <name>` row each. If the one
-that died is the **primary**, the other views still reach the model, and the detections line
+that died is the **primary**, the other views still reach the LLM, and the detections line
 reports nothing seen, because a bearing read off a different lens would point somewhere else.
 
 > [!NOTE]
@@ -1077,7 +1077,7 @@ reports nothing seen, because a bearing read off a different lens would point so
 > it is there.
 
 > [!WARNING]
-> A local server, or the model inside it, may accept only one image per message. If a server
+> A local server, or the LLM inside it, may accept only one image per message. If a server
 > rejects a request that carries two frames, go back to a single `--camera-url`: nothing in
 > quackd can make a one-image endpoint take two.
 
@@ -1109,7 +1109,7 @@ degrees rather than to wave:
 ```
 
 A wave is several of those in a row, alternating about a neutral pose. Read three things
-off it. That the model reached for the verbs you expected, with arguments
+off it. That the LLM reached for the verbs you expected, with arguments
 that look sane. That the joint goals are small rather than enormous. And that the arm
 answered every heartbeat for the length of the run, because an arm that drops out here would
 have dropped out mid move in the next section.
@@ -1135,12 +1135,12 @@ the other moves nothing
   rehearse the task with --dry-run, then run it again with --by-hand
 ```
 
-Do what the hint says, in that order. Rehearse from the rest pose, read the verbs the model
+Do what the hint says, in that order. Rehearse from the rest pose, read the verbs the LLM
 reached for, and then make the real run the hand-placed one. The refusal lands before quackd
 connects, so typing both out of habit costs you the message and nothing else.
 
 > [!NOTE]
-> `--max-steps` counts verb executions, not model calls. `assess_task` and the declarations
+> `--max-steps` counts verb executions, not LLM calls. `assess_task` and the declarations
 > cost no step. `max_llm_calls` and `max_minutes` exist too, but only a `.duck` file can set
 > them.
 
@@ -1152,7 +1152,7 @@ From here the [hardware checklist](hardware-checklist.md) is the authority on or
 and on what a hand stays near. What follows is the same five checks expressed as commands.
 
 Drop `--dry-run`, keep `--max-steps` small, and watch the arm rather than the terminal. The
-first movement of each of these runs is not the model's: the arm travels to the rest pose you
+first movement of each of these runs is not the LLM's: the arm travels to the rest pose you
 recorded before the pilot is given control, and returns to it at the end.
 
 > [!CAUTION]
@@ -1180,7 +1180,7 @@ quackd run --goal "roll the wrist ten degrees and stop" --robot arm-01 \
   --llm openai --max-steps 3
 ```
 
-It takes as long as the model asks for in `duration_s`, anywhere from 0.2 to 12 seconds, which
+It takes as long as the LLM asks for in `duration_s`, anywhere from 0.2 to 12 seconds, which
 is five seconds when it names none, and then stops. However short the time asked for, the arm
 moves at most five degrees per action re-sent ten times a second, so fifty degrees a second and
 ten degrees in a fifth of a second, and `QUACKD_LEROBOT_MAX_STEP_DEG` lowers that if it looks
@@ -1201,9 +1201,9 @@ Use any body joint except `wrist_roll`, whose recorded travel is the whole turn.
 
 > [!NOTE]
 > This one maps imperfectly to a goal run, and it is worth knowing why. You are trying to
-> test quackd's range gate, but the model chooses the number, so it may talk itself out of
+> test quackd's range gate, but the LLM chooses the number, so it may talk itself out of
 > the attempt first, or pick a different joint. If the refusal you get is the pilot's rather
-> than the executor's, you have learned something about the model and nothing about the
+> than the executor's, you have learned something about the LLM and nothing about the
 > gate. Over MCP you send the number yourself, which is
 > [M11](#m11-prove-the-safety-net).
 
@@ -1296,13 +1296,13 @@ quackd run --goal "wave to me" --robot arm-01 --fov-deg 62 --llm openai --max-st
 your own lens's horizontal field of view, and if you do not know it, leave the flag off and
 read the uncalibrated warning every detection line will carry.
 
-What should happen: the model reads an observation that includes the camera, answers
+What should happen: the LLM reads an observation that includes the camera, answers
 `assess_task` with a verdict, and then issues several small `move_joints` calls alternating
 about a neutral pose, before stopping. The motion is genuinely the arm's own joints doing
 something nobody scripted. That is the whole thesis under test.
 
-If the model answers `uncertain`, the run stops and asks you, and no verb moves the arm until
-you answer. The question carries the model's reason, here one of the kind a model gives:
+If the LLM answers `uncertain`, the run stops and asks you, and no verb moves the arm until
+you answer. The question carries the LLM's reason, here one of the kind an LLM gives:
 
 ```
 The pilot is not sure this robot can do the task: The task turns on how wide the gripper
@@ -1310,11 +1310,11 @@ opens, which its datasheet does not publish.
 Go ahead anyway? [y/N]:
 ```
 
-Answer `y` and the model is told that a person read its doubt and said go, and not to assess
+Answer `y` and the LLM is told that a person read its doubt and said go, and not to assess
 again on that doubt, only on something new it sees. Answer `n`, or just press Enter, and the
-run ends there. `--yes` on `quackd run` answers go without asking anybody, and the model is
+run ends there. `--yes` on `quackd run` answers go without asking anybody, and the LLM is
 told that instead. The arm's datasheet publishes a reach of 0.4 m, an estimate from the maker's
-URDF, and where a task turns on a figure the sheet leaves out, the model is told to answer
+URDF, and where a task turns on a figure the sheet leaves out, the LLM is told to answer
 `uncertain` and name the figure rather than decline.
 
 It is also the part that has now happened once. On 2026-09-15 `gpt-6-astra` answered a bare
@@ -1322,7 +1322,7 @@ It is also the part that has now happened once. On 2026-09-15 `gpt-6-astra` answ
 a later run with a wider gesture: `shoulder_lift` at -39 and `elbow_flex` between 24 and 30,
 the whole forearm moving rather than the wrist alone. Another run opened and closed the
 gripper, and one mimed a duck quacking with it. None of that is a script in quackd. What your
-model does with the same sentence is its own.
+LLM does with the same sentence is its own.
 
 For a first attempt, a goal that says more gives you a better idea of what is coming:
 
@@ -1334,7 +1334,7 @@ move especially small. Do not touch the gripper. Then return to the start and st
   --robot arm-01 --llm openai --max-steps 12
 ```
 
-quackd's own ceilings hold underneath whatever the model decides. It cannot put a joint
+quackd's own ceilings hold underneath whatever the LLM decides. It cannot put a joint
 outside its calibrated range, and it cannot move faster than the step cap, however the
 request is phrased. What quackd does not cap is force, so the sweep still has to be clear and
 your hands still have to be out of it.
@@ -1343,18 +1343,18 @@ your hands still have to be out of it.
 
 This is the honest part, and it differs by pilot.
 
-**A model that takes images** receives the webcam frame on every step and can simply look and
-decide. Only the last few exchanges keep their image, two on most models and up to nine on
+**An LLM that takes images** receives the webcam frame on every step and can simply look and
+decide. Only the last few exchanges keep their image, two on most LLMs and up to nine on
 Claude Opus 5.5 and Fable 5.1, so it cannot compare a frame from a dozen steps ago, but it can
 see you now.
 
 Aiming is the part that went wrong on the bench, and it is worth learning from. The webcam was
-framed on the gripper, which cropped the raised arm out of the picture, so the model checked
+framed on the gripper, which cropped the raised arm out of the picture, so the LLM checked
 its own waves against the joint angles in `report_state` rather than against anything it could
 see. It still waved. It could not watch itself do it. Point the camera at the volume the
 arm will move through, not at the end of it, or add a second view as in section 09.
 
-**A model that does not** receives one line of text built by quackd's colour detector, and
+**An LLM that does not** receives one line of text built by quackd's colour detector, and
 that detector carries the simulator's ranges. It emits exactly four labels and `person`
 means a saturated blue region, not a human. Wear a strong blue top and fill a decent share
 of the frame and you will read as `person at bearing 12° left ~1.40 m`. Wear grey and the
@@ -1392,7 +1392,7 @@ picture attached to its first observation and to no other, labelled `task pictur
 in front of the image itself and ahead of any camera frame in the same message. Nothing trims it
 out of the history afterwards, which is the difference that matters: only the last two exchanges
 keep their camera frame, or up to nine on Claude Opus 5.5 and Fable 5.1, and a task picture is
-still in front of the model on the last step of a long run. The system prompt gains a section
+still in front of the LLM on the last step of a long run. The system prompt gains a section
 naming which pictures came with the task and saying, in as many words, that they are not what
 the robot can see. The log counts them in the request line, so you can tell at a glance that
 they are still going:
@@ -1405,7 +1405,7 @@ llm>    step 0: 1 messages (1 with image, 1 task picture) to fake scripted:goal
 1568 pixels on its longest edge and under one and a half megabytes, and written to
 `runs/<timestamp>-<name>/images/00-sketch.png` beside the transcript, with a `task_image` line
 in `transcript.jsonl` naming the file, the original name and the byte count. The copy is
-therefore what the model was actually sent rather than the file you pointed at, which is what
+therefore what the LLM was actually sent rather than the file you pointed at, which is what
 makes it worth keeping. Two pictures with the same basename are numbered apart rather than
 overwriting each other.
 
@@ -1414,18 +1414,18 @@ directory exists:
 
 ```
 ✗ error: fake scripted:goal does not take images, so it cannot be given 1 picture
-  quackd list-models marks the models that take no frames; --vision overrides it where
-the vendor does take them, and a local model needs --vision
+  quackd list-llms marks the LLMs that take no frames; --vision overrides it where
+the vendor does take them, and a local LLM needs --vision
 ```
 
-Silently dropping them is the failure this refusal is here to prevent. A model handed "draw
+Silently dropping them is the failure this refusal is here to prevent. An LLM handed "draw
 what is in the picture" with no picture improvises something plausible, and the only sign of
 why would be a drawing that has nothing to do with your sketch. The same rule covers the
 pilots this page has already met. `--llm fake` never takes images, so the scripted pilot
-needs `--vision` before it will accept one, and it still does nothing with it. A local model
+needs `--vision` before it will accept one, and it still does nothing with it. A local LLM
 needs `--vision`, or `QUACKD_VISION=1` in the environment, and it needs an actual
-vision-capable model loaded in the server behind that flag. A cloud model marked `no frames`
-in `quackd list-models` needs `--vision` too, and only where the vendor really does take them.
+vision-capable LLM loaded in the server behind that flag. A cloud LLM marked `no frames`
+in `quackd list-llms` needs `--vision` too, and only where the vendor really does take them.
 
 Both starts take a picture, and the second is the one this flag was written for:
 
@@ -1434,17 +1434,17 @@ quackd run --goal "draw what is in the picture on the paper in front of you" \
   --robot arm-01 --llm openai --image sketch.png --by-hand
 ```
 
-Started from the rest pose, the model has the sketch and an empty gripper, and the first
+Started from the rest pose, the LLM has the sketch and an empty gripper, and the first
 problem it has to solve is getting hold of a pencil nobody gave it. Started
 [by hand](#or-start-from-a-pose-you-set-by-hand), you put the pencil in the jaws yourself and
-set the tip on the paper, so the model begins with the sketch, a known contact point and
+set the tip on the paper, so the LLM begins with the sketch, a known contact point and
 nothing to improvise except the drawing. Neither of those has been tried on a real arm, and the
 second one is where a pencil either stays put through a move or does not.
 
 #### Making it repeatable
 
 A `.duck` file turns the goal into a contract with an allowlist, a budget and a success test
-that the model cannot talk its way out of. It is also the provider-agnostic way to carry this
+that the LLM cannot talk its way out of. It is also the provider-agnostic way to carry this
 task around, because `providers:` is a tested-with note rather than a restriction:
 
 ```markdown
@@ -1559,9 +1559,9 @@ into something true of the SO-101:
 - **Which end of the gripper's 0..100 range is open.** On the bench, 100 is open: commanded
   100 it reported 98, and closed it settled at 3. Everything quackd believes about holding
   rests on this being the same on your arm.
-- **Which model you used, and whether it could tell you were there.** `gpt-6-astra` waved, and
+- **Which LLM you used, and whether it could tell you were there.** `gpt-6-astra` waved, and
   it verified its own waves from joint readings rather than from the picture, because the
-  camera was framed on the gripper. Whether a model can actually see you, on a camera aimed
+  camera was framed on the gripper. Whether an LLM can actually see you, on a camera aimed
   properly, is still open.
 
 Two more arrived with [`--by-hand`](#or-start-from-a-pose-you-set-by-hand), and both of them
@@ -1619,7 +1619,7 @@ most of that page is a description rather than a record.
 
 <br>
 
-### 15. Optional: put a decision LLM in front of the model
+### 15. Optional: put a decision LLM in front of the pilot LLM
 
 The last thing to add at the bench, on purpose, and optional on purpose. Everything above is
 about proving one arm, one port, one camera and one rest pose, and a first run wants fewer
@@ -1632,7 +1632,7 @@ A **decision LLM** is not a second pilot. It generates no text at all: you hand 
 typed question, and it hands back which option and how confident it is. So it can answer *which
 verb now* on the turns where the answer is one of the calls this arm already has, and it can
 never author a joint angle, because there is nowhere in its answer for a number to come from.
-Every pose, every sentence and the feasibility verdict stay with the model you chose in section
+Every pose, every sentence and the feasibility verdict stay with the pilot LLM you chose in section
 03. The full argument is on [guides/decision-llms/README.md](../../guides/decision-llms/README.md);
     this section is the arm.
 
@@ -1654,7 +1654,7 @@ extras every row says `missing`, which is the expected state and not a problem.
 #### Shadow first, on this arm
 
 **Do not start with `--decision-mode on`.** Start with `shadow`, which asks a decision LLM every
-turn, writes down what it would have chosen beside what the model actually chose, and lets
+turn, writes down what it would have chosen beside what the pilot LLM actually chose, and lets
 nothing it says reach the arm:
 
 ```bash
@@ -1665,11 +1665,11 @@ quackd run lerobot-lookout --robot arm-01 --llm openai \
 The run is byte for byte the run it would have been without the flag. What you get extra is a
 `decide=` line per turn in the log and a `decision_shadow` record per turn in the transcript,
 each carrying what the decision LLM chose, how confident it was, how long it took, and what the
-model chose on the same reading:
+pilot LLM chose on the same reading:
 
 ```
-·  decide= report_state 0.97 vs model assess_task: differs (0.00 s against 0.0 s)
-·  decide= report_state 0.97 vs model report_state: agrees (0.00 s against 0.0 s)
+·  decide= report_state 0.97 vs pilot LLM assess_task: differs (0.00 s against 0.0 s)
+·  decide= report_state 0.97 vs pilot LLM report_state: agrees (0.00 s against 0.0 s)
 ```
 
 Those two are real lines, from `lerobot-lookout` on the mock arm with a fake standing in for
@@ -1696,7 +1696,7 @@ confident enough about is executed from its answer, and the log says where the v
 ```
    decide  report_state 0.97 >= 0.60 (0.00 s, ~821 tok ~$0.000034)
 ▶  verb    report_state() from decision
-   decide  repeat, to the model (0.00 s, ~916 tok ~$0.000038)
+   decide  repeat, to the pilot LLM (0.00 s, ~916 tok ~$0.000038)
 ```
 
 Real lines again, from the same mock arm and the same fake, so read the numbers the way that
@@ -1708,7 +1708,7 @@ answering instantly rather than anything measured.
 `from decision` is the attribution that matters when you read a transcript later: who chose a
 verb is on the record rather than inferred. The third line is a gate doing its job, the one that
 refuses to let a stepper answer the same verb twice running. A turn it is not confident enough
-about, or one whose answer is a number, goes to the model exactly as before.
+about, or one whose answer is a number, goes to the pilot LLM exactly as before.
 
 > [!WARNING]
 > **The confidence floors were shaped around Jev, and this arm has never tested any of them.**
@@ -1748,7 +1748,7 @@ about it. For a first look from this page:
   `--decision-url` points quackd at one on any address.
 
 If the extra or the key is missing the run says so once, before it connects to the arm, and
-carries on without a stepper. The arm is driven either way, because the model is the pilot
+carries on without a stepper. The arm is driven either way, because the LLM you chose is the pilot
 either way.
 
 <br>
@@ -1767,10 +1767,10 @@ off your calibration, the rest move, the refusals and the close, running over a 
 of the SO-101 in MuJoCo instead of over LeRobot. A task file rehearsed on it goes through the
 lines that will drive your arm.
 
-![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
+![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the LLM was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
 
 *The README hero's goal, `Wave to the camera with an extended arm`, on the simulator's generic
-arm, piloted by OpenAI's `gpt-6-sol`, with the front camera the model was sent on the right
+arm, piloted by OpenAI's `gpt-6-sol`, with the front camera the LLM was sent on the right
 ([how it was made](../../assets/README.md)).*
 
 **Install it** into the same environment, or into a 3.11 one, since it needs neither LeRobot nor
@@ -1795,7 +1795,7 @@ $ quackd robot twin arm-01
 
 An arm registered with a rest pose and neither a pilot nor a camera, as the lab's `arm-01` is,
 gets `copied from arm-01: rest pose` and then `arm-01 has no pilot or camera to copy`, and a
-hint that ends `--llm VENDOR[:MODEL]`, since its twin has no pilot to rehearse with until you
+hint that ends `--llm VENDOR[:LLM]`, since its twin has no pilot to rehearse with until you
 name one.
 
 Take the warning seriously if an older quackd shares `~/.quackd` with this one: it cannot read
@@ -1848,13 +1848,13 @@ quackd preflight lerobot-lookout
 |    2 | success |     1 | at the rest pose |      - |   $0 | pass   |
 +--------------------------------------------------------------------+
   no lerobot-lookout.sim.yaml beside it, so only the close was judged
-model cost $0 over 3 runs
+LLM cost $0 over 3 runs
 sim dt 0.01 s
 ✓ 1 file passed preflight
 ```
 
-The scripted pilot is enough for the lookout. For a task you mean to hand a real model, rehearse
-with that model, `--llm openai` and so on, because what the model reaches for is half of what a
+The scripted pilot is enough for the lookout. For a task you mean to hand a real LLM, rehearse
+with that LLM, `--llm openai` and so on, because what the LLM reaches for is half of what a
 rehearsal is for, and each seed then costs what a run costs. A `<task>.sim.yaml` beside the file
 lays out the table and says what has to be so when a run ends, such as a block lifted or a joint
 moved, judged by where things really went rather than by what the pilot said:
@@ -1904,12 +1904,12 @@ something else on the arm is exactly what [section 14](#14-what-to-report) asks 
 
 ### 17. Optional: hand the arm to a learned policy
 
-Everything above has a model choosing every verb, about once every six seconds on this arm.
+Everything above has an LLM choosing every verb, about once every six seconds on this arm.
 That is the right rate for deciding what to do next and the wrong one for closing a gripper on
 a pen, where what the jaws touch changes in tenths of a second. A learned policy, an ACT you
 trained on your own demonstrations or a vision-language-action model such as SmolVLA, reads the
 arm and its cameras many times a second and answers with goals for every motor. quackd puts it
-under the model rather than in its place: the model hands it one short subtask at a time with
+under the LLM rather than in its place: the LLM hands it one short subtask at a time with
 `manipulate`, and judges from a fresh look at the arm whether it did it.
 
 > [!WARNING]
@@ -1955,7 +1955,7 @@ $ quackd run --goal "swing the wrist" --robot arm-01-sim --policy-url http://127
 
 The server was asked what it serves before anything connected, and the header and the record
 name it. The scripted pilot never calls `manipulate`, so that is all this run proves. To see a
-segment, give the run a model, `--llm openai` and so on, whose prompt then has a section on its
+segment, give the run an LLM, `--llm openai` and so on, whose prompt then has a section on its
 executor: one short subtask a call, and a fresh look after each. A `--goal` run allows
 `manipulate` only behind a confirm, so you are asked before every segment when you run it from
 a terminal. `--yes`, or a pipe or file on stdin, answers in your place, and nobody is asked.
@@ -1966,7 +1966,7 @@ puts it, settled clear of its table ([the arm's page](README.md#running-it)). Th
 arm's was recorded folded, past what its calibration lets `shoulder_lift` be driven to
 ([section 07](#07-record-the-rest-pose)) and past its model's stop too, so the twin starts with
 that joint settled just off the stop, outside its travel, and `manipulate` refuses with
-`Move shoulder_lift inside its travel first`. A model moves the joint in with `move_joints` when
+`Move shoulder_lift inside its travel first`. An LLM moves the joint in with `move_joints` when
 it reads that, and an MCP client can do the same before its first segment. After a small move in
 and two segments, the close parked the joint at the edge of its travel, in the pose the twin
 settled to there, and let it go. After a larger move the rest move can set the gripper down on
@@ -1976,7 +1976,7 @@ any segment runs. The lasting fix is to calibrate the arm again folded, the benc
 [PLAN.md](../../../PLAN.md) that reads the calibrated value at each of the arm's stops, and record
 the rest pose again after it.
 
-**Or take the model out altogether.** `--controller vla` is a scripted pilot that hands the
+**Or take the LLM out altogether.** `--controller vla` is a scripted pilot that hands the
 policy each instruction a `duck: 3` task file lists, or the goal as the only one, and then asks
 you `Did the arm do it?`. Only your yes is a success, so it needs you at the terminal and refuses
 anything that would answer for you:
@@ -2028,13 +2028,13 @@ and from the arm it is a number nobody has yet: send it back with the rest of
 
 Everything above is the command line. This is the same arm, the same executor and the same
 contract, reached from a chat instead. `quackd serve-mcp` hands Claude Code or Claude Desktop
-nine `robot_*` tools over a local pipe, and the model you are chatting with picks the verbs.
-quackd chooses no model here and reads no key of yours.
+nine `robot_*` tools over a local pipe, and the LLM you are chatting with picks the verbs.
+quackd chooses no LLM here and reads no key of yours.
 
 > [!NOTE]
-> Part 1's [section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) has no mirror
+> Part 1's [section 15](#15-optional-put-a-decision-llm-in-front-of-the-pilot-llm) has no mirror
 > here, and that is structural rather than an omission. `--decision-llm` puts a stepper in front
-> of the model inside quackd's own loop, and over MCP there is no such loop: the model is the
+> of the pilot LLM inside quackd's own loop, and over MCP there is no such loop: the pilot LLM is the
 > client, so the deciding happens in Claude and quackd hands out tools and enforces the
 > contract. The flag and its two companions belong to `quackd run`
 > ([guides/mcp.md](../../guides/mcp.md)).
@@ -2072,13 +2072,13 @@ whoever is holding the controls.
 The arm does not change. Nothing underneath a tool call changes. What changes is who decides
 what happens next, and where you watch it happen. One thing does happen before the first tool
 call: spawning the server drives the arm to its rest pose, where one is recorded, before the
-model gets a turn, and a session that cannot reach it refuses to open.
+LLM gets a turn, and a session that cannot reach it refuses to open.
 
-**The model in your client is the pilot.** Your client spawns `quackd serve-mcp` as a
+**The LLM in your client is the pilot.** Your client spawns `quackd serve-mcp` as a
 subprocess and talks to it over stdio, so the thinking happens in the session you are already
-sitting in. quackd chooses no model here and reads no API key. There is no `--llm`,
-and `quackd list-models` has nothing to say about an MCP session, because both
-belong to the commands that bring a model of their own. [Choosing a pilot](#03-choose-your-pilot)
+sitting in. quackd chooses no LLM here and reads no API key. There is no `--llm`,
+and `quackd list-llms` has nothing to say about an MCP session, because both
+belong to the commands that bring an LLM of their own. [Choosing a pilot](#03-choose-your-pilot)
 is a decision you do not make in this part. You made it when you opened Claude Code or Claude
 Desktop.
 
@@ -2108,10 +2108,10 @@ with a sentence appended about what to do about it here: a verdict refusal ends
 `call robot_assess_task(robot='arm-01', verdict=...) first`, a confirm refusal ends by telling
 you to start the server with `--yes`, and a budget refusal arrives prefixed `budget exhausted`.
 None of those sentences reaches a terminal run, where the confirm gate asks you rather than
-refusing. There is no `declare_success` tool. The model says it is finished in the chat, in
+refusing. There is no `declare_success` tool. The LLM says it is finished in the chat, in
 prose, and what that is worth is your judgement rather than quackd's.
 
-**What the server tells the model before it has called anything.** This arrives at connect, as
+**What the server tells the LLM before it has called anything.** This arrives at connect, as
 the server's instructions, and it is what the pilot is working from on its first turn:
 
 ```
@@ -2136,21 +2136,21 @@ name is handed the same paragraph.
 
 **One sentence in there is generic and wrong for this body.** `Prefer composite verbs
 (search_scan, go_to) over micro-managing velocities` is advice for something with a base and a
-neck. An arm bolted to a table has neither verb, and never will. The model finds that out from
+neck. An arm bolted to a table has neither verb, and never will. The LLM finds that out from
 `robot_list_verbs`, which is exactly why the same paragraph tells it to call that first and
 says the manifest is the whole vocabulary. Expect a first turn that lists the verbs and drops
 the idea without comment.
 
-**There is no per-step camera frame.** A `quackd run` loop with a model that takes images puts
-the webcam picture in front of the pilot on every step, and a model that takes none is refused
+**There is no per-step camera frame.** A `quackd run` loop with an LLM that takes images puts
+the webcam picture in front of the pilot on every step, and an LLM that takes none is refused
 the picture rather than handed it. An MCP session does not put a frame anywhere by itself. The
-model sees one when it calls `robot_observe` and its contract allows that verb, and at no other
+LLM sees one when it calls `robot_observe` and its contract allows that verb, and at no other
 moment, so looking is a deliberate act here rather than something that happens to it. A loaded
 `.duck` can take the tool away: under `lerobot-lookout`, the contract Part 2 loads later on this
 same page, `observe` comes back `"allowed": false` and the call returns words.
 
 **There is no Ctrl-C kill switch.** Part 1's [section 11](#11-prove-the-safety-net) leans on
-one, and it does not exist in a chat window. Three things you can reach for: the model calling
+one, and it does not exist in a chat window. Three things you can reach for: the LLM calling
 `robot_run_verb(verb="stop")`, you closing the session, and the power switch. The first costs a
 budget step like every other verb and is refused once the budget is spent, which five minutes
 from the arm's connect leaves you the other two. The second parks the arm on the way out at the
@@ -2160,7 +2160,7 @@ the arm is not at that pose ([M10](#m10-rehearse-with---dry-run)). The third rel
 the arm falls from wherever it was holding. Support it by hand before you cut, and keep your
 fingers out of the jaws. The heartbeat is the one thing here that acts without being asked: one
 missed ping sends a stop and shuts the session. A contract's `abort_when` is not the same
-mechanism. It is checked only when the model runs a verb, it needs a loaded `.duck` to exist at
+mechanism. It is checked only when the LLM runs a verb, it needs a loaded `.duck` to exist at
 all, so a bare session has none, and it shuts the session rather than sending a stop of its own.
 
 **A hard kill parks nothing.** Task Manager, `taskkill /F` or a SIGKILL takes the process away
@@ -2176,7 +2176,7 @@ definition not its rest pose, so take its weight first and keep your fingers out
 
 **Nothing run-shaped is written to disk.** No `runs/` directory, no `transcript.jsonl`, no
 `frames/`, no `terminal.txt`. The record of an MCP session is the chat itself, the server's own log on stderr, and
-whatever the model chose to keep with `robot_remember`, which appends one line per note to
+whatever the LLM chose to keep with `robot_remember`, which appends one line per note to
 `~/.quackd/memory/<name>.jsonl` ([guides/memory.md](../../guides/memory.md)).
 
 **The budget clock starts when the server has connected the arm.** Without a loaded `.duck` a
@@ -2191,13 +2191,13 @@ intuition does not carry here.
 
 **An `uncertain` verdict does not end anything here.** In Part 1 it ended a run: one of the
 bench's dry runs on 2026-09-15 stopped because the pilot answered `uncertain` and the person at
-the keyboard answered no. Over MCP there is no terminal to ask at, so the model asks you in the
+the keyboard answered no. Over MCP there is no terminal to ask at, so the LLM asks you in the
 chat and then answers `robot_assess_task` again with what you told it. The gate is the same
 gate. The question arrives where you are already reading instead.
 
 **The three things this arm cannot do are still those three, and the third changes shape.**
 There is no `wave` verb and the camera cannot look for you, whoever is piloting. Part 1's third
-one is that whether it can see you at all depends on the model you bring, and over MCP the pilot
+one is that whether it can see you at all depends on the LLM you bring, and over MCP the pilot
 takes images by construction, so that half resolves itself and what is left of it is the bundled
 detector: a colour threshold carrying the simulator's own ranges rather than a person detector.
 [Section 00](#00-read-this-first) has all three in full.
@@ -2240,15 +2240,15 @@ know which half of this guide you are reading.
   plug you are going to pull. It carries more weight here than it does in Part 1, because an MCP
   session has no Ctrl-C kill switch the way a `quackd run` does, and because once
   [section M07](#m07-record-the-rest-pose) has recorded a rest pose the session drives the arm to
-  it twice on its own, with no verb and no model involved: once as the client starts the server,
+  it twice on its own, with no verb and no LLM involved: once as the client starts the server,
   before a single tool is offered, and again as you quit the client. Hands clear before either.
 - **Permission, and the arm's own parts list.** Whoever runs the lab confirms that you may
   connect your own laptop, and which supply that specific arm takes. Motors and supplies vary
   between builds and neither LeRobot nor quackd reads the voltage, so neither can warn you.
 
 **What drops off the list is the key.** Part 1's last bullet asks for a cloud vendor's key or a
-local model server, because `quackd run` has to go and find a model. In MCP mode quackd picks no
-model and reads no key: the pilot is the model you are already chatting with, so the account you
+local LLM server, because `quackd run` has to go and find an LLM. In MCP mode quackd picks no
+LLM and reads no key: the pilot is the LLM you are already chatting with, so the account you
 signed into the client with is all of it. The blue top goes with it, since that bullet is there
 for a pilot that cannot take images and this one can.
 
@@ -2299,7 +2299,7 @@ on Windows especially, often with none of your shell's PATH.
 ### M03. Choose your client
 
 [Section 03](#03-choose-your-pilot) was a flag and a key. This one is neither. quackd picks no
-model in MCP mode and reads no key, so there is no pilot to choose: whichever model you are
+LLM in MCP mode and reads no key, so there is no pilot to choose: whichever LLM you are
 already chatting with is the one that will move the arm. What you choose here is the client,
 and how that client launches the server.
 
@@ -2312,7 +2312,7 @@ by now the registry is carrying that for you. [guides/mcp.md](../../guides/mcp.m
 things that would have to land before your phone could reach this, and none of them are built.
 
 > [!WARNING]
-> Starting that server moves the arm. Before the client's model can call a single tool, the
+> Starting that server moves the arm. Before the client's LLM can call a single tool, the
 > server drives the arm to the rest pose you recorded in
 > [section M07](#m07-record-the-rest-pose), and it refuses to start at all if it cannot get
 > there. Opening Claude Code or Claude Desktop is therefore the same act as starting a run:
@@ -2467,15 +2467,15 @@ File modified: C:\Users\<you>\.claude.json [project: D:\Development\quackd]
 > registry in [section M09](#m09-add-the-camera), or change anything in that `args` list,
 > restart it: `/mcp` in Claude Code, or a new session. In Desktop, restart the app. Nothing
 > warns you that you are talking to the old one. The contract is the one thing a live server
-> can swap without a restart, and the model is who does it: `robot_load_duckfile` adopts a new
+> can swap without a restart, and the LLM is who does it: `robot_load_duckfile` adopts a new
 > `.duck` in place, taking the allowlist, the budget and the datasheet corrections with it,
 > changing which verbs `robot_list_verbs` reports as allowed, starting a new task and shutting
 > the verdict gate again.
 
 > [!NOTE]
-> `--llm` and `quackd list-models` play no part here. They belong to `quackd
+> `--llm` and `quackd list-llms` play no part here. They belong to `quackd
 > run`, and `serve-mcp` takes neither. The consequence is worth spelling out: whichever
-> model you are chatting with is flying the arm, and a model that cannot accept images cannot
+> LLM you are chatting with is flying the arm, and an LLM that cannot accept images cannot
 > use the frame `robot_observe` hands back. [Section M09](#m09-add-the-camera) is where that
 > matters.
 
@@ -2577,8 +2577,8 @@ about to configure will. The probe of `lerobot:real` before it had no name to go
 adapter's default id, `arm-01`, which is why this page registers the arm under that name.
 
 **`--llm` is optional on `quackd robot add` here, and an MCP session ignores it.** The
-registry's stored pilot only matters to `quackd run`. In MCP mode quackd picks no model and reads
-no key: the model you are chatting with is the pilot, and nothing in the registry has a say in
+registry's stored pilot only matters to `quackd run`. In MCP mode quackd picks no LLM and reads
+no key: the LLM you are chatting with is the pilot, and nothing in the registry has a say in
 that.
 
 **What the registry is carrying for you is the address, the cameras, the token and the rest
@@ -2657,7 +2657,7 @@ that connected, ran one verb and closed:
 ```
 
 Park, hold, park, let go. The first `rest` is the connect, the `stop` and the second `rest` are
-the teardown in that order, and `close` is the port. Neither end is the model's to skip.
+the teardown in that order, and `close` is the port. Neither end is the LLM's to skip.
 
 **A dry run is the same line with the parks taken out:**
 
@@ -2713,7 +2713,7 @@ and cut its power. Then start again.
 > is in `quackd run`, so the power switch is the one that always works. Once the session has
 > ended and the port is free, `quackd robot release arm-01` at a terminal puts the arm down
 > without the switch, folding it to its rest pose and letting go of it there. No MCP tool can:
-> taking torque off is a command a person types, never a call a model makes.
+> taking torque off is a command a person types, never a call an LLM makes.
 
 
 **Three things here were captured against the mock arm and in the test suite.** The park at
@@ -2731,14 +2731,14 @@ whether the fold held with torque off and whether the park at the end put it bac
 
 ### M08. The first session
 
-The twin of [section 08](#08-the-first-task), and like that one, no verb the model can reach
+The twin of [section 08](#08-the-first-task), and like that one, no verb the LLM can reach
 here moves a joint. The server itself does: it drives the arm to the rest pose as it connects,
 and again as the client quits, so have your hands clear when you start the server and when you
 quit. This is the first time Claude talks to your arm: reading, listing, one refusal, one note
 kept.
 
 **Start the server with the contract already loaded.** `lerobot-lookout` allows `report_state`
-and `stop` and nothing else, so no verb the model can call moves a joint even if it talks itself
+and `stop` and nothing else, so no verb the LLM can call moves a joint even if it talks itself
 into trying, which is what you want the first time. `stop` is not quite nothing: on an arm that
 is already energised it re-sends the present position as the goal of every body joint inside its
 travel, so the arm holds where it is. It does not energise a limp arm. Writing a goal to a servo
@@ -2770,7 +2770,7 @@ one resolves against a working directory nobody chose.
 > its joints are, whether torque is on and whether anything reads hot. Do not move anything.
 
 The server's instructions ask for `robot_list_verbs` first and `robot_recall` early. What
-follows takes them in a reader-friendly order instead, and your model may vary it either way.
+follows takes them in a reader-friendly order instead, and your LLM may vary it either way.
 Everything quoted below was captured against the mock arm, so the numbers are the mock's.
 
 **`robot_recall` comes first here**, because those instructions ask for it early. On a first
@@ -2799,7 +2799,7 @@ part to read:
 `"backend": "mock"` is the tell that this was not a real arm, and `contract` is the duck you
 loaded at startup. The same row carries `vendor`, `embodiment`, `mobility`, a `digest`,
 `health_reason` and `aborted`, plus `datasheet` and `datasheet_text`, the structured and
-one-paragraph versions of what this body is. Those two are what the model weighs a task against
+one-paragraph versions of what this body is. Those two are what the LLM weighs a task against
 at `robot_assess_task` in [M10](#m10-rehearse-with---dry-run).
 
 **`robot_list_verbs` is the body's list with the contract's answer on each row.** Eight verbs
@@ -2841,15 +2841,15 @@ reason [section 06](#06-first-contact) gives. The log comes back with it:
 tool    robot_run_verb verb='report_state', params={} on arm-01
 verb    report_state() from mcp
 <-      report_state ok: shoulder_pan 0, shoulder_lift -90, elbow_flex 90, wrist_flex 0, wrist_roll 0, gripper 100; torque on; hottest shoulder_pan 30°C; holding nothing (0.0 s, 0 intents)
-done    ok in 0.0 s budget: step 1/12, llm calls 0/12, 0.0/3 min
+done    ok in 0.0 s budget: step 1/12, LLM calls 0/12, 0.0/3 min
 ```
 
 Read it downwards. The `tool` line is the call your client made, arguments and all. The `verb`
 line is what quackd turned it into, and `from mcp` says a client asked rather than a run loop.
 The `<-` line is the result, with the wall time and the count of intents sent to the arm, zero
 because reading state sends nothing. The `done` line is the budget, and those numbers are
-`lerobot-lookout`'s rather than the default: 12 steps, 12 model calls, 3 minutes. `llm calls`
-reads `0/12` all session, because quackd makes none of them. You are the model.
+`lerobot-lookout`'s rather than the default: 12 steps, 12 LLM calls, 3 minutes. `LLM calls`
+reads `0/12` all session, because quackd makes none of them. You are the LLM.
 
 **Then ask it to move something, and watch the contract refuse:**
 
@@ -2858,7 +2858,7 @@ verb 'move_joints' is not in this duck's allowlist (report_state, stop)
 ```
 
 That is the contract doing its job rather than something broken. It arrives as a result with
-`ok: false` rather than as an error, so the model reads it, knows why, and carries on. The
+`ok: false` rather than as an error, so the LLM reads it, knows why, and carries on. The
 log says it twice, once as `gate    allowlist: refused` and once as the result, and ends
 `done    FAIL in 0.0 s`. A refusal at the allowlist gate costs no step, which is why the `done`
 line still reads `step 1/12`.
@@ -2933,7 +2933,7 @@ and says so on every detection line. `62` is one camera module's figure: use you
 > the session already open has no camera and `robot_list_verbs` still does not list `observe`.
 > `/mcp` in Claude Code reconnects it, and in Claude Desktop you restart the app. Both move the
 > arm. Closing the session drives it to its recorded rest pose and then releases torque, and the
-> reconnect drives it to that pose again before the client's model gets a verb, so nobody should be
+> reconnect drives it to that pose again before the client's LLM gets a verb, so nobody should be
 > in reach when you press it. This is the most likely "why has nothing changed" moment in Part 2.
 
 > [!IMPORTANT]
@@ -2945,9 +2945,9 @@ and says so on every detection line. `62` is one camera module's figure: use you
 > way round is to leave the flag alone and load `arm-look.duck` with `robot_load_duckfile`, which
 > this section introduces further down, since that contract does allow `observe`.
 
-**`robot_observe` is a look the model asked for.** In a `quackd run` the frame arrives in every
-observation whether the task asked for it or not. Over MCP nothing arrives unless the model asks,
-and asking is `robot_observe`: one call, one frame, at the moment the model decided it wanted to
+**`robot_observe` is a look the LLM asked for.** In a `quackd run` the frame arrives in every
+observation whether the task asked for it or not. Over MCP nothing arrives unless the LLM asks,
+and asking is `robot_observe`: one call, one frame, at the moment the LLM decided it wanted to
 see. On a real SO-101 that is the only way to ask on purpose, because the static manifest
 `quackd run` validates a task against cannot know you plugged a webcam in, so `observe` cannot be
 in the allowlist there at all.
@@ -2969,13 +2969,13 @@ log:
 tool    robot_observe  on arm-01
 verb    observe() from mcp
 <-      observe ok: frame captured; ball at bearing 30° left ~0.58 m (0.0 s, 0 intents)
-done    ok in 0.0 s budget: step 1/40, llm calls 0/40, 0.0/5 min
+done    ok in 0.0 s budget: step 1/40, LLM calls 0/40, 0.0/5 min
 ```
 
 > [!NOTE]
 > That ball is the mock's synthetic scene and nothing on a real desk will produce that line. The
 > detector behind it is a colour threshold carrying the simulator's own ranges, so on your desk it
-> will usually report nothing, and say so. The picture is still the picture, and a model that takes
+> will usually report nothing, and say so. The picture is still the picture, and an LLM that takes
 > images can ignore the sentence. [Section 12](#12-wave-to-me) has what it can and cannot see.
 
 **A `.duck` that allows `observe` loads here, and the same contract is refused by `quackd run` on
@@ -3013,18 +3013,18 @@ Look once with `observe`, read your joints with `report_state`, and say in one s
 camera shows and where the joints are.
 ```
 
-Ask the client to load it by absolute path, which is the model calling `robot_load_duckfile`, and
+Ask the client to load it by absolute path, which is the LLM calling `robot_load_duckfile`, and
 the `note` that comes back reads, on the mock arm again:
 
 ```
-"note": "The executor now enforces this contract for every call to arm-01. This is a new task: assess it with robot_assess_task before anything moves. What this session already spent still counts: step 0/8, llm calls 0/8, 0.0/3 min."
+"note": "The executor now enforces this contract for every call to arm-01. This is a new task: assess it with robot_assess_task before anything moves. What this session already spent still counts: step 0/8, LLM calls 0/8, 0.0/3 min."
 ```
 
 The first contract a session adopts starts its budget fresh, whatever that last sentence says.
 The numbers are the proof: `step 0/8` in a session whose `robot_observe` had already counted
 `step 1/40`. The carry-over line is boilerplate the tool appends whenever a budget object existed,
 which on a first adoption it always has. A second and later load is where it is true, and there
-the spent steps, the llm calls and the clock all cross into the new contract, so its budget lands
+the spent steps, the LLM calls and the clock all cross into the new contract, so its budget lands
 part spent from the moment it arrives.
 
 **Read "first" as the first adoption rather than the first `robot_load_duckfile`**, because a
@@ -3078,7 +3078,7 @@ heartbeat keeps its round trip going, and the read-only verbs genuinely read the
 is withheld is every verb that is not marked read-only, which is wider than the ones that move a
 joint. `stop` carries no such flag and neither does `say`, so both are skipped as well: a `stop`
 asked for during a rehearsal reaches no servo, and the only thing that actually stops the arm
-while you are rehearsing is cutting its power. So ask the model for `report_state` first,
+while you are rehearsing is cutting its power. So ask the LLM for `report_state` first,
 because that reading is the proof there is something real on the other end. Captured against the
 mock arm, so the numbers are the mock's and yours will be your own arm's:
 
@@ -3102,7 +3102,7 @@ tool    robot_run_verb verb='move_joints', params={'positions': {'wrist_roll': 1
 verb    move_joints(positions={'wrist_roll': 10}, duration_s=2) from mcp
 gate    dry_run: skipped would run move_joints, sent nothing (positions={'wrist_roll': 10.0}, duration_s=2)
 <-      move_joints ok: [dry-run] move_joints not sent (0.0 s, 0 intents)
-done    ok in 0.0 s budget: step 2/40, llm calls 0/40, 0.0/5 min
+done    ok in 0.0 s budget: step 2/40, LLM calls 0/40, 0.0/5 min
 ```
 
 The `gate dry_run` line is the place the call stopped. Everything above it happened: the tool
@@ -3131,7 +3131,7 @@ body is refused until `robot_assess_task` has recorded a verdict the gate accept
 arm's own datasheet does not meet is refused as well, further down. `uncertain` and
 `infeasible` are recorded verdicts too and motion stays refused on both. Loading a `.duck`
 starts a new task and wants a new verdict. Asked to move a joint before it has judged, the
-model is handed this:
+LLM is handed this:
 
 ```
 move_joints moves the body, and no feasibility verdict has been recorded for this task yet: record a verdict first (feasible, infeasible or uncertain): call robot_assess_task(robot='arm-01', verdict=...) first
@@ -3142,7 +3142,7 @@ tool    robot_run_verb verb='move_joints', params={'positions': {'wrist_roll': 1
 verb    move_joints(positions={'wrist_roll': 10}) from mcp
 gate    verdict: refused move_joints moves the body, and no feasibility verdict has been recorded for this task yet: record a verdict first (feasible, infeasible or uncertain)
 <-      move_joints REFUSED: move_joints moves the body, and no feasibility verdict has been recorded for this task yet: record a verdict first (feasible, infeasible or uncertain) (0.0 s, 0 intents)
-done    FAIL in 0.0 s budget: step 0/40, llm calls 0/40, 0.0/5 min
+done    FAIL in 0.0 s budget: step 0/40, LLM calls 0/40, 0.0/5 min
 ```
 
 That pair, and the `uncertain` blocks further down, come from a plain session with no
@@ -3150,7 +3150,7 @@ That pair, and the `uncertain` blocks further down, come from a plain session wi
 rehearsal's `step 2/40` above rather than carrying on from it. The gate is the same one either
 way.
 
-`step 0/40` is worth noticing for its own sake. A refusal at this gate costs no step, so a model
+`step 0/40` is worth noticing for its own sake. A refusal at this gate costs no step, so an LLM
 that stalls here is not burning the session down while it works out what to do. That holds for
 this gate and the ones above it rather than for refusals in general: the step is counted before
 a verb's preconditions and its joint ranges are checked, so a refusal from below that point does
@@ -3175,7 +3175,7 @@ answers `"pending": true` and this note:
 recorded as uncertain, which does not clear verbs that move the body. There is no terminal here: ask the person you are chatting with, then call robot_assess_task again with feasible on your own responsibility, or with infeasible.
 ```
 
-Meanwhile a verb that moves the body gets the refusal with the model's own reason quoted back
+Meanwhile a verb that moves the body gets the refusal with the LLM's own reason quoted back
 at it:
 
 ```
@@ -3185,7 +3185,7 @@ move_joints moves the body, and the verdict is uncertain and nobody has cleared 
 Compare that with the terminal. On the bench on 2026-09-15 one dry run ended right here,
 because [section 10](#10-rehearse-with---dry-run) asks the person at the keyboard and they said
 no, and a no ends the run. Over MCP nothing ends that way. You are in the conversation, so the
-model asks you, you answer in the chat, and it calls `robot_assess_task` again. On `feasible`
+LLM asks you, you answer in the chat, and it calls `robot_assess_task` again. On `feasible`
 the gate opens and the session carries on from where it stopped. On `infeasible` it does not:
 the tool answers that nothing on that arm will move for this task, names any robot in the flock
 that meets what the task needs, and the gate stays shut for the rest of that task.
@@ -3205,7 +3205,7 @@ it opens the gate. A zero asks for nothing too, which is why the `work_height_m`
 held against it.
 
 > [!NOTE]
-> A model handed a long verb list and a vague sentence answers `uncertain` more often than one
+> An LLM handed a long verb list and a vague sentence answers `uncertain` more often than one
 > given a narrow contract, which is why [M08](#m08-the-first-session) started with a `.duck`
 > loaded rather than with a free-form goal. If a session keeps stalling at the gate, load a
 > contract with `robot_load_duckfile` and ask again.
@@ -3223,7 +3223,7 @@ held against it.
 
 Take `--dry-run` off the server command and restart it, because a running server keeps the flags it
 started with: `/mcp` in Claude Code, or restart Desktop. The first movement is still not the
-model's, because connecting parks the arm at the pose you recorded in [section
+LLM's, because connecting parks the arm at the pose you recorded in [section
 M07](#m07-record-the-rest-pose). A server asked for an arm with no rest pose recorded refuses to
 start at all, so there is always a pose to park at, and if the arm cannot reach it, `connect()`
 closes the transport and refuses to start the server, saying the arm did not reach its rest
@@ -3267,13 +3267,13 @@ tool    robot_run_verb verb='move_joints', params={'positions': {'wrist_roll': 1
 verb    move_joints(positions={'wrist_roll': 10}, duration_s=2) from mcp
 ->      joint x21 over 2.0 s (positions {'wrist_roll': 0.0}/{'wrist_roll': 0.5}/{'wrist_roll': 1.0}..., duration_s 2)
 <-      move_joints ok: moved wrist_roll=10 (0.0 s, 21 intents)
-done    ok in 0.0 s budget: step 3/40, llm calls 0/40, 0.0/5 min
+done    ok in 0.0 s budget: step 3/40, LLM calls 0/40, 0.0/5 min
 ```
 
 Read the `->` line rather than the others. It is every intent that actually reached the arm,
 folded into one line: 21 goals across the two seconds asked for, the first three shown, each
 half a degree further along than the last, so that the wrist arrives when the time is up rather
-than as fast as the step cap allows. The rest are the model asking, the executor answering, and
+than as fast as the step cap allows. The rest are the LLM asking, the executor answering, and
 the budget after the call. The mock's move takes no time, `0.0 s`, and an arm's takes the two
 seconds. The server's stderr carries these same lines with a `quackd-mcp INFO arm-01: ` prefix
 on each, as the heartbeat block in check 4 shows.
@@ -3293,8 +3293,8 @@ move_joints: shoulder_pan=170.0 is outside this arm's calibrated range -100.0..1
 ```
 
 **This is the check [Part 1](#11-prove-the-safety-net) could not make properly.** On a `--goal` run
-the model picks the number, so a refusal that came from the pilot rather than the executor teaches
-you about the model and nothing about the gate. Here you send 170 yourself and the executor
+the LLM picks the number, so a refusal that came from the pilot rather than the executor teaches
+you about the LLM and nothing about the gate. Here you send 170 yourself and the executor
 answers, which is the clearest reason there is to be driving this arm from a client.
 
 `-100.0..100.0` is the mock's range, and a real arm's comes off the calibration file you wrote
@@ -3359,7 +3359,7 @@ terminal running `quackd run`, and an MCP session has no terminal of its own:
   every body joint inside its travel, so the arm holds where it is rather than sagging. It
   answers `stopped (velocity zeroed)` on the mock. A `move_joints`, a `gripper` or a `place`
   already in flight ends at its next tick rather than sending another goal over the hold, and
-  comes back saying `a stop was sent while it ran`. In practice a model can rarely call it
+  comes back saying `a stop was sent while it ran`. In practice an LLM can rarely call it
   mid-move, because it is still waiting for that `move_joints` tool call to return, and only a
   client that runs two calls at once can send it. `stop` is what you reach for between verbs, and
   cutting power is what you reach for during one.
@@ -3437,14 +3437,14 @@ robot list in the chat and read two lines of the answer, captured against the mo
 **What `null` buys you is every verb that is neither `confirm` nor `dangerous`.** The confirm gate
 is still shut without `--yes`, and on the mock arm `pick` is the verb behind it, which
 [M11](#m11-prove-the-safety-net) ends on. `null` also takes the success test away, and there is no
-`declare_success` tool over MCP in any case, so the wave ends with the model saying it waved.
+`declare_success` tool over MCP in any case, so the wave ends with the LLM saying it waved.
 Nothing checks that, and the only record of what ran is the chat and the server's stderr log
 that [M08](#m08-the-first-session) locates.
 
 **What it costs is a budget you did not choose.** A bare session runs on 40 verb steps and five
 minutes, and the `done` line of every call carries both, as
-`budget: step 1/40, llm calls 0/40, 0.0/5 min`. The middle column stays at zero because quackd
-calls no model here. The five minutes starts when the server the client spawned has connected
+`budget: step 1/40, LLM calls 0/40, 0.0/5 min`. The middle column stays at zero because quackd
+calls no LLM here. The five minutes starts when the server the client spawned has connected
 the arm, not at your first verb.
 
 > [!WARNING]
@@ -3455,7 +3455,7 @@ the arm, not at your first verb.
 > though its `note` still says `What this session already spent still counts` and then prints a
 > counter reading zero, as [M09](#m09-add-the-camera) captured. That sentence is true of a second
 > load, which does carry the spend over, and wrong about the first. Loading is also a new task, so
-> the verdict gate shuts until the model answers for it. Restarting gives you a fresh clock as
+> the verdict gate shuts until the LLM answers for it. Restarting gives you a fresh clock as
 > well, and walks the arm to the rest pose twice on the way, so step out of reach first.
 
 **Then type a sentence.** This works:
@@ -3473,12 +3473,12 @@ now, in small moves of about a second each. Keep wrist_roll especially small, do
 gripper, then return to the start and stop.
 ```
 
-**What should happen** is that the model lists the verbs, reads the arm with `report_state`,
+**What should happen** is that the LLM lists the verbs, reads the arm with `report_state`,
 looks if it has a camera, answers `robot_assess_task` with a verdict because nothing that moves
 the body runs before it does, and then issues several small `move_joints` calls alternating
 about a neutral pose. Nobody wrote a wave. That is the thesis, and [section 12](#12-wave-to-me)
 has what the bench arm did with it on 2026-09-15. No MCP session has yet driven a real arm, so
-what your client's model does with that sentence is the open part.
+what your client's LLM does with that sentence is the open part.
 
 quackd's ceilings hold underneath whatever it decides: no joint outside its calibrated range,
 nothing faster than the step cap. Force is not capped, so the sweep has to be clear and your hands
@@ -3488,13 +3488,13 @@ to interrupt a move already running. `stop` spends a budget step like any other 
 the 40 steps or the five minutes are gone it is refused too, and the last resort is the one the
 rest of this page uses, which is to hold the arm and cut its power.
 
-**Whether it can see you** differs in one way that matters. The frame reaches the model only
+**Whether it can see you** differs in one way that matters. The frame reaches the LLM only
 when it calls `robot_observe`, so ask for a look or it will work from joint readings alone.
 That is what happened on the bench, where the webcam was framed on the gripper and cropped the
 raised arm out of the picture. [M09](#m09-add-the-camera) has the aiming and the detector.
 
 **Giving it a picture** is shorter here than on the command line. There is no `--image` on
-`serve-mcp`. You attach the picture to your chat message and it reaches the model directly
+`serve-mcp`. You attach the picture to your chat message and it reaches the LLM directly
 without passing through quackd, which therefore neither sees it, resizes it nor records it.
 That is also why there is no copy afterwards. `--image` and `--vision` are `quackd run` flags.
 
@@ -3528,9 +3528,9 @@ the server and the session.
 | the server will not start, and the log says the command was not found | the path is wrong, or a desktop app cannot see your shell `PATH` | give the absolute path from [M02](#m02-install-quackd). A desktop client has no shell and starts in a directory you did not choose |
 | `adapter 'lerobot' needs an extra` | the client launched a different environment from the one you installed into | check the command is your venv's own `quackd`, and that the same venv's `python --version` is 3.12 or newer |
 | the session refuses to start, and the log says `the arm did not reach its rest pose` | it could not get home, so not one tool was ever offered | clear whatever stopped it, then, with a hand under the arm while it connects, run `quackd robot release arm-01` at a terminal, which folds the arm to its rest pose and lets go of it there, or hold the arm and cut its power. Then start the session again. The refusal carries the closing note, which says whether torque was left on or the arm is limp in your hands ([M07](#m07-record-the-rest-pose)) |
-| a verb refused with `no feasibility verdict has been recorded for this task yet` | the verdict gate, shut until the model answers for this body | ask it to call `robot_assess_task` first ([M10](#m10-rehearse-with---dry-run)) |
-| the same verb refused with `the verdict is uncertain and nobody has cleared it` | uncertain does not clear anything that moves the body, and there is no terminal here to ask on | answer the model in the chat, and let it record again on its own responsibility ([M10](#m10-rehearse-with---dry-run)) |
-| a `feasible` verdict refused with `this body does not meet what you said the task needs` | the model's own `needs` asked for more than this arm's sheet has, most often `mobility` any for a task that goes nowhere, and the gate stays shut | ask it to correct the need, `none` for a task that goes nowhere, and answer again, or to answer `uncertain` ([M10](#m10-rehearse-with---dry-run)) |
+| a verb refused with `no feasibility verdict has been recorded for this task yet` | the verdict gate, shut until the LLM answers for this body | ask it to call `robot_assess_task` first ([M10](#m10-rehearse-with---dry-run)) |
+| the same verb refused with `the verdict is uncertain and nobody has cleared it` | uncertain does not clear anything that moves the body, and there is no terminal here to ask on | answer the LLM in the chat, and let it record again on its own responsibility ([M10](#m10-rehearse-with---dry-run)) |
+| a `feasible` verdict refused with `this body does not meet what you said the task needs` | the LLM's own `needs` asked for more than this arm's sheet has, most often `mobility` any for a task that goes nowhere, and the gate stays shut | ask it to correct the need, `none` for a task that goes nowhere, and answer again, or to answer `uncertain` ([M10](#m10-rehearse-with---dry-run)) |
 | `verb 'move_joints' is not in this duck's allowlist` | the loaded contract does not allow it, which is the contract doing its job | widen the `.duck` and load it again, or ask for a verb it does allow ([M08](#m08-the-first-session)) |
 | a verb refused with `this verb needs human confirmation` | a confirm-class verb, and there is no terminal here to ask on. On this arm `pick` and `manipulate` are, whenever `--policy-url` names a policy server | restart the server with `--yes` in its command, which is the only way to answer that gate from a chat client |
 | `budget exhausted` | the session has spent its steps or its minutes | the paragraphs under this table are about this row |
@@ -3549,7 +3549,7 @@ you asked for the first verb. A session you opened, then spent ten minutes talki
 out of minutes before the arm has moved at all.
 
 This is what it looks like, captured against the mock arm on a contract whose budgets were
-one step, four model calls and three minutes, so the numbers are small enough to watch. The
+one step, four LLM calls and three minutes, so the numbers are small enough to watch. The
 first call went through and returned the state:
 
 ```
@@ -3577,7 +3577,7 @@ to the rest pose before it lets any torque go, or to cut the arm's power.
 **Loading a `.duck` restarts the clock**, the first time. `robot_load_duckfile` on a session
 that has not adopted a contract yet hands the executor the contract's budget and starts
 counting from zero, because a task's five minutes should be the task's rather than whatever
-was left of the session's. A second load refunds nothing already spent: the steps, the model
+was left of the session's. A second load refunds nothing already spent: the steps, the LLM
 calls and the clock carry across from the first contract. The limits do not. They become the
 new contract's, so a pilot that has spent a narrow budget can load a wider file and carry on,
 with the spend it already has counted against the wider ceiling.
@@ -3651,7 +3651,7 @@ alone can answer. What is particular here is that the client's lifecycle is what
 The fourth is open for a different reason: the verdict gate has fired on hardware, once on
 2026-09-15, when a dry run ended because the pilot answered `uncertain` and the person at the
 keyboard said no, and in twelve runs on 2026-09-23 that stopped at its y/N question, always at a
-terminal. What has never happened is a chat client's model answering it.
+terminal. What has never happened is a chat client's LLM answering it.
 
 - **Did the connect-time park work?** Before the client was offered a single tool, the server
   drove the arm to the pose you recorded in [M07](#m07-record-the-rest-pose). Say whether it got
@@ -3671,7 +3671,7 @@ terminal. What has never happened is a chat client's model answering it.
   behaviour and quackd cannot promise either. Stand clear, watch the arm and the stderr log,
   and say which one you saw.
 - **Did the feasibility gate help, or get in the way?** `robot_assess_task` has to be answered
-  before anything moves. Say how often the model answered `uncertain` before you cleared it, and
+  before anything moves. Say how often the LLM answered `uncertain` before you cleared it, and
   whether the verdict it wrote matched what the arm then did.
 
 > [!CAUTION]

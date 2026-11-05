@@ -255,7 +255,7 @@ broke.
 > link dies while no pad is connected, which is every run over MCP and every run nobody holds a
 > pad for. Nothing else quackd does matters if it is not there.
 
-The command, since this step never named one. `--llm fake` answers a free-form goal with a fixed script that ignores it, so it needs a real model:
+The command, since this step never named one. `--llm fake` answers a free-form goal with a fixed script that ignores it, so it needs a real LLM:
 
 ```bash
 quackd run --goal "walk in place with small steps, do not turn, then stop" \

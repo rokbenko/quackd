@@ -11,14 +11,14 @@ whom, every threat considered and what stops it, and, as plainly, what nothing h
 
 The stance underneath all of it: **a passport is a claim its owner signed, a signature proves who
 made it, and no message from a peer can move a robot except through a short, bounded rule its owner
-chose.** quackd adds its own: the executor has never trusted the model, and it does not start
+chose.** quackd adds its own: the executor has never trusted the LLM, and it does not start
 trusting peers.
 
 ## What is worth protecting
 
 - **The people near the robot, and its body.** Nothing a stranger sends may move a robot in a way its
   owner did not allow, or keep it from stopping.
-- **The robot's task, and its brain's prompt.** A peer must not derail the task, and a language model
+- **The robot's task, and its brain's prompt.** A peer must not derail the task, and an LLM
   must not take a stranger's words as its instructions.
 - **The keys.** The robot key speaks for the robot, and the owner key vouches for every robot its
   owner has.
@@ -73,7 +73,7 @@ an owner's passphrase.
 
 ## Prompt injection
 
-A robot's brain is a language model, and it reads whatever it is given as possible instructions. A
+A robot's brain is an LLM, and it reads whatever it is given as possible instructions. A
 passport's `name`, its `cannot` lines and every `say` are text a stranger wrote. So:
 
 - **A stranger's free text never reaches the brain.** It sees a stranger's closed-vocabulary members
@@ -85,7 +85,7 @@ passport's `name`, its `cannot` lines and every `say` are text a stranger wrote.
 - **A meeting can do almost nothing.** Its brain may report the robot's state, stop it, and speak, and
   a goal's brain is told never to move because a robot asked.
 - **The brain was never trusted.** quackd's executor has refused anything outside the allowlist, the
-  budget and the gates since [ADR-0012](../adr/0012-safety-executor.md), whatever the model asked.
+  budget and the gates since [ADR-0012](../adr/0012-safety-executor.md), whatever the LLM asked.
 
 ## How the passport sits on quackd's executor
 

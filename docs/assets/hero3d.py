@@ -17,7 +17,7 @@ pose the robot actually reached, and corrects.
 **Right, quackd off.** The identical world, the identical robot, the identical walking
 policy, and no quackd. Nothing in a Microduck reads English. It takes a twist, which is
 three numbers, and nine learned policies, so a typed sentence has nowhere to go and the duck
-stands there. That is not a rigged comparison against a worse model. There is no model,
+stands there. That is not a rigged comparison against a worse LLM. There is no LLM,
 because before quackd there was nowhere to put one.
 
 A chase camera on a 25 cm robot shows a duck walking rather than a square, so each pane

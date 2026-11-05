@@ -95,7 +95,7 @@ FRAME_QUALITY = 70
 
 TEXT_CAP = 4000
 """The characters a string in an `event` keeps. The transcript keeps all of it; a page reading a
-prompt or a model's whole reply follows the run directory, and a pipe is no place for megabytes."""
+prompt or an LLM's whole reply follows the run directory, and a pipe is no place for megabytes."""
 
 ITEMS_CAP = 100
 DEPTH_CAP = 8

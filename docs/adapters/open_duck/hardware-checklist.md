@@ -156,7 +156,7 @@ without moving, which is a perfectly good first result and the one to prefer. On
 ## 8. Walk in place, feet still off the ground
 
 This is the first thing that moves a leg. `--llm fake` has no script for a free-form
-goal, so this one needs a real model:
+goal, so this one needs a real LLM:
 
 ```bash
 quackd run --goal "walk in place with small forward steps, do not turn, then stop" \

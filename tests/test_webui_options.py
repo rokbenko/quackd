@@ -98,8 +98,8 @@ def test_the_panels_come_in_the_order_help_shows_them() -> None:
     assert by_panel("run")["Task"][0].kind == "task"
 
 
-def test_a_vla_pilot_takes_no_model_and_no_decision_llm_however_it_was_chosen() -> None:
-    """`quackd run` refuses a model's flag, a picture and --play beside --controller vla, and
+def test_a_vla_pilot_takes_no_llm_and_no_decision_llm_however_it_was_chosen() -> None:
+    """`quackd run` refuses an LLM's flag, a picture and --play beside --controller vla, and
     the Policies screen chooses a VLA without passing through Setup's pilot section."""
     values = {
         "robot": "lerobot:mujoco",

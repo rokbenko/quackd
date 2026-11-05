@@ -512,7 +512,7 @@ def test_a_name_with_no_address_is_unresolved_and_says_so(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The one failure that says nothing else at that name can be reached either, which is
-    what lets `doctor` skip the model servers there. The lookup is refused here rather than
+    what lets `doctor` skip the LLM servers there. The lookup is refused here rather than
     made, because a real one for a missing name can take seconds to fail."""
     real = socket.getaddrinfo
 

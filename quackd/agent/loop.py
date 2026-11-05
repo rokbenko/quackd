@@ -68,7 +68,7 @@ from quackd.agent.providers.base import (
     transient_failure,
 )
 from quackd.agent.providers.catalogue import Price
-from quackd.agent.providers.pricing import resolve_price, turn_cost
+from quackd.agent.providers.pricing import VLA_PILOT, resolve_price, turn_cost
 from quackd.agent.transcript import Transcript, new_run_dir, run_label
 from quackd.answers import answered
 from quackd.command import command_line, redacted_body, redacted_url
@@ -137,7 +137,7 @@ Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "erro
 REPROMPT = "You must call exactly one tool. Choose now."
 
 ASK_AGAIN_AFTER_S = (5.0, 15.0, 30.0, 60.0)
-"""How long the loop waits before it asks the model's API the same turn again, try by try, after
+"""How long the loop waits before it asks the LLM's API the same turn again, try by try, after
 a failure `transient_failure` says is worth asking again: a rate limit, an overloaded or failing
 server, a request that timed out, a connection that dropped. The SDKs are built to retry
 nothing of their own (`NO_SDK_RETRIES`), so these are the only waits a failed call meets: they
@@ -147,7 +147,7 @@ have on the first (ADR-0059)."""
 
 FIRST_CONNECTION_TRIES_S = (0.5, 1.0)
 """The waits before the two quick tries more a call gets when its connection failed, or timed
-out, before the model's API had answered once in the run. The SDKs gave a call these two of
+out, before the LLM's API had answered once in the run. The SDKs gave a call these two of
 their own, and a connection that drops as a run starts was often back by the second; they are
 the loop's now, stoppable and on the record. After them a connection that never answered ends
 the run (`GAVE_UP_NEVER_ANSWERED`), since it is as often a wrong address as a dropped one."""
@@ -166,37 +166,37 @@ anthropic SDK's at any length, so a call that fails after one may already have w
 and a first Ctrl-C does not reach into those waits; the second does."""
 
 ASKING_AGAIN = (
-    "the model's API could not answer this turn ({why}), so quackd waits and asks it the same "
+    "the LLM's API could not answer this turn ({why}), so quackd waits and asks it the same "
     "turn again, up to {tries} times. Nothing moves the robot while it waits, the heartbeat goes "
     "on watching it, and Ctrl-C or q ends the run instead"
 )
 """Said once a run, before its first wait. Each try after that is a line of the log's own, from
 the failed call's `llm` record and its `retry_in_s`."""
 
-STOPPED_WAITING = "stopped waiting to ask the model's API again: {reason}"
+STOPPED_WAITING = "stopped waiting to ask the LLM's API again: {reason}"
 """A wait to ask again that the kill switch, the heartbeat or a flock ended. The run then ends
 `aborted`, for that reason, and the robot is put down as at the end of any run."""
 
 GAVE_UP_TRIES = (
-    "the model's API could not answer this turn in {tries} tries ({why}), so the run ends here"
+    "the LLM's API could not answer this turn in {tries} tries ({why}), so the run ends here"
 )
 GAVE_UP_TIME = (
-    "the model's API could not answer this turn ({why}), and waiting {seconds:.0f} s to ask it "
+    "the LLM's API could not answer this turn ({why}), and waiting {seconds:.0f} s to ask it "
     "again would run past the task's max_minutes, so the run ends here"
 )
 GAVE_UP_TOO_LONG = (
-    "the model's API could not answer this turn ({why}) and asked to be left {seconds:.0f} s, "
+    "the LLM's API could not answer this turn ({why}) and asked to be left {seconds:.0f} s, "
     "longer than the {longest:.0f} s quackd waits with a robot connected, so the run ends here"
 )
 """The three ways asking again gives up. Each is the message of the `ProviderError` the run then
 ends with, raised from the provider's own, so `run_end` says why there was no further try."""
 
 GAVE_UP_NEVER_ANSWERED = (
-    "the model's API has not answered once in this run ({why}, {tries} tries), which is as often "
+    "the LLM's API has not answered once in this run ({why}, {tries} tries), which is as often "
     "a wrong address or a server that is not running as a dropped connection, so it is not asked "
     "again"
 )
-"""A connection that failed, or timed out, before the model had answered once, and again on
+"""A connection that failed, or timed out, before the LLM had answered once, and again on
 each of the quick tries after (`FIRST_CONNECTION_TRIES_S`). Asking again for two minutes is no
 help to an endpoint that was never right, so the run ends with the provider's own error, and
 this note says why it was not asked again. A status such as a 429 from a server that never
@@ -247,7 +247,7 @@ async def _guarded(call: Awaitable[T]) -> tuple[T | None, BaseException | None]:
 async def _guarded_ask(ask: Callable[[], Awaitable[T]]) -> tuple[T | None, BaseException | None]:
     """`_guarded`, with the call made inside the task rather than before it. A task cancelled
     before its first step runs not a line of it, so a call made outside would be a coroutine
-    nobody ever awaited: the shadow stepper's, on a turn that ended before the model's request
+    nobody ever awaited: the shadow stepper's, on a turn that ended before the pilot LLM's request
     went out."""
     return await _guarded(ask())
 
@@ -475,8 +475,8 @@ class RunConfig:
 
     `off` is every run made before there was a flag for it and every run that does not ask for
     one, and on that path no `Stepper` is built and no vendor SDK is imported. `shadow` asks it
-    every turn, records the answer beside the model's, and changes nothing. `on` lets it take
-    the turns it is confident about; every pose and every sentence is still the model's
+    every turn, records the answer beside the pilot LLM's, and changes nothing. `on` lets it take
+    the turns it is confident about; every pose and every sentence is still the pilot LLM's
     (`docs/guides/decision-llms/README.md`).
 
     *Which* decision LLM answers is a separate field, `decision_llm` below, chosen with
@@ -513,7 +513,7 @@ class RunConfig:
     It exists for a bench session: a hundred runs on one arm in one afternoon are a hundred
     directories that differ only in a timestamp nobody wrote down."""
     price: str | None = None
-    """What the model costs, as `--price` spells it, overriding the catalogue and
+    """What the LLM costs, as `--price` spells it, overriding the catalogue and
     `QUACKD_PRICE` (`providers.pricing`). None asks the catalogue, which is the usual path."""
     host: dict[str, Any] | None = None
     """The board `--host` named, as `HostHello.record` describes it for `run_start`: its
@@ -607,7 +607,7 @@ class AgentLoop:
             )
             # and the duck with it, because the system prompt is built from `self.duck` while
             # the executor and the observation header read `self.fm`. On 2026-09-15 a
-            # `--max-steps 10` run on the arm told the model `Budgets: 40 steps` above an
+            # `--max-steps 10` run on the arm told the LLM `Budgets: 40 steps` above an
             # observation header that said `step 0/10`: it planned against four times the
             # budget the run actually stopped at, and every `--max-steps` run before this one
             # did the same.
@@ -619,17 +619,17 @@ class AgentLoop:
         self.play, self.play_from = resolve_play(self.fm.play, cfg.play)
         # `getattr`, because a config whose provider is None is a real and supported one: a
         # run that will refuse before its first turn (a body that turned out to have no camera)
-        # never needs a model and is built without one. It prices as unpriced, which is the
+        # never needs an LLM and is built without one. It prices as unpriced, which is the
         # truth about a run that called nothing.
         self.price: Price | None = resolve_price(
             getattr(cfg.provider, "name", "") or "",
-            getattr(cfg.provider, "model", "") or "",
+            getattr(cfg.provider, "llm_id", "") or "",
             override=cfg.price,
             listed=getattr(cfg.provider, "listed_price", None),
         )
         """What this run is priced at: `--price`, `QUACKD_PRICE`, the catalogue, or the rate
-        an open-ended vendor read off its own list for a model the catalogue does not carry
-        (`providers.pricing`). None where nobody publishes a rate for this model, which is not
+        an open-ended vendor read off its own list for an LLM the catalogue does not carry
+        (`providers.pricing`). None where nobody publishes a rate for this LLM, which is not
         the same as free. Resolved here, before the run directory is made and before anything
         connects, because an unparsable price should cost you a sentence rather than a run."""
         self.run_dir = cfg.run_dir or new_run_dir(
@@ -645,6 +645,9 @@ class AgentLoop:
             self.fm.budgets,
             now=cfg.transport.now,
             policy_total_s=self.fm.effective_policy.total_s,
+            calls_word="turns"
+            if getattr(cfg.provider, "name", "") == VLA_PILOT
+            else Budget.calls_word,
         )
         self.registry = cfg.registry or default_registry()
         self.executor = Executor(
@@ -699,13 +702,13 @@ class AgentLoop:
         rest move runs at both ends, and the note is about the pose rather than the move."""
         self.usage = Usage()
         self.llm_latency_s = 0.0
-        """Seconds this run spent waiting on the model, every call including the ones that
+        """Seconds this run spent waiting on the LLM, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
         self.llm_answered_s: list[float] = []
         """The seconds of each call that answered, in order, which the summary's percentiles
         are read off (`quackd.latency.spread`). A call that raised is in the total above and not
-        here: its seconds are how long a failure took, not how long the model takes to answer."""
+        here: its seconds are how long a failure took, not how long the LLM takes to answer."""
         self._cache_point: tuple[int, Literal["observation", "decision"]] | None = None
         """Where the last call marked the end of what the next would send unchanged, as an index
         into `history` and the half of that exchange, for `_with_cache_point` to carry when the
@@ -715,19 +718,19 @@ class AgentLoop:
         charged to `max_llm_calls`, since each is the same turn again, and written into the
         summary only when there was one."""
         self.llm_retry_wait_s = 0.0
-        """The seconds spent waiting to ask again, which `llm_latency_s` leaves out: no model
+        """The seconds spent waiting to ask again, which `llm_latency_s` leaves out: no LLM
         was asked anything in them."""
         self._provider_answered = False
-        """Whether the model's API has answered once this run, with a turn or with a status such
+        """Whether the LLM's API has answered once this run, with a turn or with a status such
         as a 529, which is what tells a connection that dropped from one that was never right
         (`GAVE_UP_NEVER_ANSWERED`): a server that sent a status back is there."""
         self._said_asking_again = False
         """Whether this run has said `ASKING_AGAIN`, which it says once, before its first wait."""
         bills = bool(getattr(cfg.provider, "bills_per_call", False))
         self.cost_usd: float | None = 0.0 if self.price is not None or bills else None
-        """What the model has cost so far, or None when there is no rate to cost it at.
+        """What the LLM has cost so far, or None when there is no rate to cost it at.
 
-        None is load-bearing: a model quackd has no rate for must not report `$0.00`, which
+        None is load-bearing: an LLM quackd has no rate for must not report `$0.00`, which
         would read as a free run rather than an unpriced one. A provider that bills per call
         (OpenRouter) starts at $0 even with no rate, because a bill can come with every turn,
         and the total turns to None the first time a turn comes back with neither."""
@@ -755,14 +758,14 @@ class AgentLoop:
         release left it, or one whose torque write went out and was not confirmed, which may
         move or drop."""
         self.stepped: list[str] = []
-        """Verbs the discrete stepper chose since the model was last asked, in the words the
-        model will be given.
+        """Verbs the discrete stepper chose since the pilot LLM was last asked, in the words the
+        pilot will be given.
 
-        Cleared the moment the model chooses again, because from then on its own history says
+        Cleared the moment the pilot LLM chooses again, because from then on its own history says
         what happened. This is the whole of what a stepper turn leaves in the conversation:
-        no `Exchange`, no `Decision`, nothing a provider replays to the model as something it
+        no `Exchange`, no `Decision`, nothing a provider replays to the pilot LLM as something it
         said. Writing one would put an unsigned tool call in an assistant turn, which Gemini
-        refuses outright, and would teach every other model that answering nothing is fine."""
+        refuses outright, and would teach every other LLM that answering nothing is fine."""
         self.highlights: list[str] = []
         """Verb results worth carrying into the episode memory (the last few that went ok)."""
         self.summary: dict[str, Any] = {}
@@ -819,7 +822,7 @@ class AgentLoop:
             return
         self._emit("prompt", what=what, question=question, answer=answer, **asked_on(asker))
 
-    async def _ask_the_model(
+    async def _ask_the_llm(
         self,
         system: str,
         history: list[Exchange],
@@ -827,11 +830,11 @@ class AgentLoop:
         *,
         reprompt: bool,
     ) -> tuple[ProviderTurn, float, int]:
-        """Ask the model for this turn, and ask it again while its API cannot answer for now.
+        """Ask the LLM for this turn, and ask it again while its API cannot answer for now.
 
         Returns the turn, the seconds the call that answered took, and which try it was. The
         turn is charged and put in `history` once, by the caller, before the first try, so each
-        try sends the same request: a model that binds its replayed thinking to the history it
+        try sends the same request: an LLM that binds its replayed thinking to the history it
         is given would refuse a different one, and a retry is not a new turn to charge to
         `max_llm_calls` either (ADR-0059).
 
@@ -855,7 +858,7 @@ class AgentLoop:
                 "llm_request",
                 step=self.budget.steps,
                 provider=cfg.provider.name,
-                model=cfg.provider.model,
+                llm_id=cfg.provider.llm_id,
                 messages=len(history),
                 images=sum(len(ex.observation.images) for ex in history),
                 with_image=sum(1 for ex in history if ex.observation.images),
@@ -873,7 +876,7 @@ class AgentLoop:
                 # BaseException, not Exception. The second Ctrl-C raises a bare
                 # KeyboardInterrupt and a flock cancels its members, and both land here: with
                 # `Exception` the wait was dropped from `llm_latency_s` AND no `llm` record was
-                # written, so the seconds a person actually spent waiting on a hanging model
+                # written, so the seconds a person actually spent waiting on a hanging LLM
                 # could not even be recovered by hand. That is the one case the number exists
                 # for.
                 #
@@ -906,7 +909,7 @@ class AgentLoop:
                     "llm",
                     step=self.budget.steps,
                     provider=cfg.provider.name,
-                    model=cfg.provider.model,
+                    llm_id=cfg.provider.llm_id,
                     error=f"{type(e).__name__}: {e}",
                     latency_s=latency_s,
                     **({"attempt": attempt} if attempt > 1 else {}),
@@ -948,7 +951,7 @@ class AgentLoop:
             attempt += 1
 
     def _note_answer(self, turn: ProviderTurn, latency_s: float, attempt: int) -> dict[str, Any]:
-        """A call the model answered, added to the run's totals and written down as its `llm`
+        """A call the LLM answered, added to the run's totals and written down as its `llm`
         record, and returned as the turn's `last_llm`: what it took and cost, for the shadow
         record beside it.
 
@@ -973,7 +976,7 @@ class AgentLoop:
             "llm",
             step=self.budget.steps,
             provider=cfg.provider.name,
-            model=cfg.provider.model,
+            llm_id=cfg.provider.llm_id,
             text=turn.text,
             tool_calls=[tc.model_dump() for tc in turn.tool_calls],
             usage=turn_usage,
@@ -984,7 +987,7 @@ class AgentLoop:
             llm_calls=self.budget.llm_calls,
             cost_usd=costed.usd,
             cost_usd_total=self.cost_usd,
-            # only when a server-side fallback answered, so every turn the model asked for took,
+            # only when a server-side fallback answered, so every turn the LLM asked for took,
             # and every transcript from before this, reads as it did
             **({"served_by": turn.served_by} if turn.served_by else {}),
             # and by the same rule, only when the cost is what the vendor billed
@@ -997,7 +1000,7 @@ class AgentLoop:
     async def _unless_stopped(self, call: Awaitable[T], *, minutes: bool = False) -> T:
         """`call`, unless the run's abort is set first: then `Aborted`, the call cancelled.
 
-        A model's answer can take a minute, and the first Ctrl-C used to wait for it: the abort
+        An LLM's answer can take a minute, and the first Ctrl-C used to wait for it: the abort
         was read only once the call came back. Raced against the abort instead, as a verb is
         raced, the call goes the moment the kill switch, a failing heartbeat or a flock's stop
         sets it, and is waited out before `Aborted` goes up, so nothing it started is still
@@ -1044,9 +1047,9 @@ class AgentLoop:
         """Wait until the task's minutes are spent, and return the budget's own sentence for it.
 
         Read off the budget's clock, which `check_time` is the one reading of, every heartbeat
-        period: a model call is not a place to be sharper than the heartbeat that watches the
-        robot through it. On a simulator that clock is the simulator's and stands still while a
-        model thinks, so a simulated run is never cut off here, only past its minutes in a verb,
+        period: an LLM call is not a place to be sharper than the heartbeat that watches the
+        robot through it. On a simulator that clock is the simulator's and stands still while an
+        LLM thinks, so a simulated run is never cut off here, only past its minutes in a verb,
         as it always was."""
         period = max(self.cfg.heartbeat_period_s, 0.01)
         while True:
@@ -1063,12 +1066,12 @@ class AgentLoop:
         *,
         cancel: bool = False,
     ) -> Advice | None:
-        """A shadow stepper's answer, asked beside the model's call, settled and on the record.
+        """A shadow stepper's answer, asked beside the pilot LLM's call, settled and on the record.
 
-        Once the model's answer is on the record the stepper's is awaited, raced against the stop
+        Once the pilot's answer is on the record the stepper's is awaited, raced against the stop
         as it was when it was asked first, and it has nearly always come by then, being bounded
         by its own second. Not before: a stop that ended that wait would end the run with a call
-        the model answered, and its vendor billed, missing from the transcript and the cost.
+        the LLM answered, and its vendor billed, missing from the transcript and the cost.
         Where the turn ended some other way, a stop, the task's minutes or a failed call, it is
         cancelled instead, and an answer that had already come is kept all the same. Either way
         the `decision` line is the one the stepper's own `finally` writes when it is asked first:
@@ -1076,7 +1079,7 @@ class AgentLoop:
         the turn's `llm_request` and `llm` lines, which the step number ties together.
 
         A Ctrl-C that landed in the stepper's own task is raised here, in the run's, once that
-        line is written (`_guarded`). Until then the run was waiting on the model's call, which
+        line is written (`_guarded`). Until then the run was waiting on the pilot LLM's call, which
         under `quackd run` the first Ctrl-C has cut short already: the kill switch hears that
         one and sets the abort (`_unless_stopped`)."""
         advice: Advice | None = None
@@ -1099,7 +1102,7 @@ class AgentLoop:
     def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
         """What follows try `attempt` of the full schedule failing for a reason worth asking
         again: the seconds to wait before asking, the sentence the run gives up with, or None
-        for a connection that failed, or timed out, before the model had answered once this
+        for a connection that failed, or timed out, before the LLM had answered once this
         run, which gets the quick tries instead (`FIRST_CONNECTION_TRIES_S`) and is then raised
         as it is (`GAVE_UP_NEVER_ANSWERED`).
 
@@ -1164,7 +1167,7 @@ class AgentLoop:
         decision LLM is shown of this step is filed under the same number as the step's PNG.
 
         And the PNG bytes each file was written with, in `frames` order, which are the bytes the
-        model is sent of them (`SavedFrame`): empty where there were no frames."""
+        LLM is sent of them (`SavedFrame`): empty where there were no frames."""
         if not frames:
             return None, []
         number = self.transcript.frame_count
@@ -1583,7 +1586,7 @@ class AgentLoop:
         hand.say(f"{held.reason}, you can let go. {_joints_line(held.joints)}")
         # The person's time is not the pilot's. `max_minutes` starts before the rest move, and
         # an arm can sit waiting for somebody to come back from finding a pencil, which used to
-        # be spent out of the budget the model gets for the task.
+        # be spent out of the budget the LLM gets for the task.
         self.budget.start()
         return True
 
@@ -1953,8 +1956,8 @@ class AgentLoop:
 
         `last_verb`/`last_result` are the most recent of anybody's and go into the features,
         which is what the discrete stepper reads: it is deciding what to do next and wants the
-        world as it actually is. `mine` is the last verb the *model* chose, and goes into the
-        text, because the text becomes the tool_result answering the model's own tool call and
+        world as it actually is. `mine` is the last verb the *pilot* chose, and goes into the
+        text, because the text becomes the tool_result answering the pilot LLM's own tool call and
         has to carry that call's outcome. Without a stepper the two are always the same and
         every observation is byte-identical to what it was.
 
@@ -1982,11 +1985,11 @@ class AgentLoop:
         pngs: list[bytes] = []
         if frames:
             # saved even when the primary gave nothing, because the other views are still what
-            # the model is about to be shown. Off the loop's thread: a body's heartbeat waits on
+            # the LLM is about to be shown. Off the loop's thread: a body's heartbeat waits on
             # that thread. The detector above and the provider's own SDK stay where they are,
             # the first because only a board's detector waits on anything, the second because
             # it is somebody else's code. Each picture is encoded once, in that save, and the
-            # bytes it wrote are the ones the model is sent below.
+            # bytes it wrote are the ones the LLM is sent below.
             number, pngs = await self._on_frames_off_loop(
                 frames, f"step {self.budget.steps}: {last_verb or 'start'}"
             )
@@ -2124,7 +2127,7 @@ class AgentLoop:
                 "decision_price": stepper.price.record(),
                 "decision_llm": {
                     "name": stepper.name,
-                    "model": stepper.model,
+                    "llm_id": stepper.llm_id,
                     "url": redacted_url(stepper.url) if stepper.url is not None else None,
                     # whether this run shows it the camera (`--decision-frames`), said before the
                     # first frame goes, and on a run that shows none too
@@ -2136,7 +2139,7 @@ class AgentLoop:
                 "decision_price": self.eyes.price.record(),
                 "decision_llm": {
                     "name": self.eyes.name,
-                    "model": self.eyes.model,
+                    "llm_id": self.eyes.llm_id,
                     "url": self.eyes.url,
                     "frames": True,
                 },
@@ -2157,7 +2160,7 @@ class AgentLoop:
             block = {
                 "mode": "off",
                 "llm": self.eyes.name,
-                "model": self.eyes.model,
+                "llm_id": self.eyes.llm_id,
                 "url": self.eyes.url,
                 "frames": True,
                 "usage": {"input_tokens": 0, "output_tokens": 0},
@@ -2202,7 +2205,7 @@ class AgentLoop:
         if not self.cfg.provider.supports_vision:
             self._note(
                 f"{len(self.cfg.task_images)} picture(s) came with this task and "
-                f"{self.cfg.provider.name} {self.cfg.provider.model} cannot see: they were "
+                f"{self.cfg.provider.name} {self.cfg.provider.llm_id} cannot see: they were "
                 "not sent, and the task has to stand on its words alone"
             )
             return []
@@ -2217,7 +2220,7 @@ class AgentLoop:
         """Record the pilot's verdict. Returns what it hears back, and the reason the run ends
         with when the verdict ends it.
 
-        A model cannot clear its own uncertainty: `assess_task` has no `human` field, and one
+        An LLM cannot clear its own uncertainty: `assess_task` has no `human` field, and one
         that arrives with it is refused rather than quietly dropped."""
         if "human" in arguments:
             return VerbResult.fail(
@@ -2408,7 +2411,7 @@ class AgentLoop:
         text = str(arguments.get("text", "")).strip()
         tags_raw = arguments.get("tags") or []
         tags = [str(t) for t in tags_raw] if isinstance(tags_raw, list) else []
-        # where the robot stands, read off the robot and never from the model's arguments
+        # where the robot stands, read off the robot and never from the LLM's arguments
         book = self.executor.place_book()
         fix = book.source.fix() if book is not None else None
         where = where_record(fix) if fix is not None and fix.localized else None
@@ -2533,7 +2536,7 @@ class AgentLoop:
         one is foreseen by the very rule that will build it (`_with_cache_point`)."""
         history = self.history if history is None else history
         n = self.cfg.keep_images_for_last_n
-        # A model that binds each replayed thinking block to everything before it (Claude Opus
+        # An LLM that binds each replayed thinking block to everything before it (Claude Opus
         # 5.5, Fable 5.1) is trimmed in steps rather than on every call, because a trim that
         # takes a frame away edits the older messages and so invalidates the blocks produced
         # while that frame was still sent. From the trim call on, those blocks are left out,
@@ -2586,8 +2589,8 @@ class AgentLoop:
         any other.
 
         A prompt cache is read only as far as a request matches one it has seen, and quackd's own
-        trim edits older messages: on most models every call, as the oldest picture still sent
-        goes, and on a model that binds its thinking every eighth, when the pictures go and the
+        trim edits older messages: on most LLMs every call, as the oldest picture still sent
+        goes, and on an LLM that binds its thinking every eighth, when the pictures go and the
         thinking that trim invalidates is left out. A marker at the end of every request would sit
         past that edit on those calls, so the next would read nothing back and the write would be
         paid for nothing. So the rule that builds every request is asked what the next one will
@@ -2599,7 +2602,7 @@ class AgentLoop:
 
         A cache read looks back only twenty blocks from a marker for the entry an earlier request
         wrote. The marker moves one exchange a call, three blocks, except around a trim: forward
-        from before the trim to the end of the request on the call after it, which on a model
+        from before the trim to the end of the request on the call after it, which on an LLM
         trimmed every eighth exchange is more than twenty blocks, and back to before the next trim
         on the call ahead of it, where looking back finds nothing at all. So the previous call's
         marker goes out again beside this one, on the block it was on, which this call sends as
@@ -2607,7 +2610,7 @@ class AgentLoop:
         writes what is new for the next. Two in the messages and one on the system prompt, under
         Anthropic's four.
 
-        A guess about the next answer only. A model that answers this turn in prose is asked
+        A guess about the next answer only. An LLM that answers this turn in prose is asked
         again rather than answered, which adds two exchanges where the guess counted one, so the
         trim's cut can move by both and this call's write and the next one's can go unread: a
         cache write or two, and never a wrong request. A retry resends the same marked copy
@@ -2700,7 +2703,7 @@ class AgentLoop:
             # `max_minutes` is checked against and all it is. `wall_s` is the run as
             # somebody standing next to the robot experienced it, connect and teardown
             # included. `llm_latency_s` is how much of that was spent waiting on the
-            # model, which on the arm was 62.1 seconds of 78.8 and had to be added up by
+            # LLM, which on the arm was 62.1 seconds of 78.8 and had to be added up by
             # hand to say so.
             "elapsed_s": round(self.budget.elapsed_s, 2),
             "started_at": self.transcript.started_at_iso,
@@ -2709,14 +2712,14 @@ class AgentLoop:
             "connect_s": connect_s,
             "llm_latency_s": round(self.llm_latency_s, 3),
             # The typical call and the bad one beside the total, by nearest rank over the
-            # calls that answered, only where one did, so a run that never asked the model
+            # calls that answered, only where one did, so a run that never asked the LLM
             # anything says nothing it did not measure (`quackd.latency`).
             **{
                 f"llm_latency_{figure}_s": seconds
                 for figure, seconds in (spread(self.llm_answered_s) or {}).items()
             },
             # How long the robot took to do anything at all, on this record's clock with the
-            # connect in it, and after how many model calls: null where nothing moved, a dry
+            # connect in it, and after how many LLM calls: null where nothing moved, a dry
             # run among them, since it hands nothing over (`Executor.first_motion_at`).
             "first_motion_s": (
                 self.transcript.at(moved)
@@ -2736,7 +2739,7 @@ class AgentLoop:
                 else {}
             ),
             "usage": self.usage.model_dump(),
-            # What it cost and what it was costed at. `cost_usd` is the model only: the
+            # What it cost and what it was costed at. `cost_usd` is the pilot LLM only: the
             # stepper bills separately and keeps its figure in its own block below.
             "price": self.price.record() if self.price is not None else None,
             "cost_usd": self.cost_usd,
@@ -2744,7 +2747,7 @@ class AgentLoop:
             # the rate above times their tokens, only where any were
             **({"billed_calls": self.billed_calls} if self.billed_calls else {}),
             "provider": cfg.provider.name,
-            "model": cfg.provider.model,
+            "llm_id": cfg.provider.llm_id,
             "transport": backend_name(cfg.transport),
             "robot": manifest.id if manifest is not None else None,
             "dry_run": cfg.dry_run,
@@ -2843,7 +2846,7 @@ class AgentLoop:
             if manifest is not None:
                 # a v2 task file corrects the body's own sheet for the build in front of it, and it
                 # does so here, before anything reads a manifest: the executor, the detector, the
-                # prompt and the transcript all see the one the model was told about
+                # prompt and the transcript all see the one the LLM was told about
                 manifest = apply_datasheet_override(manifest, self.fm.datasheet)
             if manifest is not None:
                 if cfg.registry is None:
@@ -2917,7 +2920,7 @@ class AgentLoop:
             if dropped:
                 allow = [n for n in allow if n in registry]
                 self._note(f"this robot does not have {', '.join(dropped)}; running without")
-            # One reading, before the budget starts, for two things the model has to be told at the
+            # One reading, before the budget starts, for two things the LLM has to be told at the
             # top: whether anything on this robot can see a fall, and what quackd is standing in
             # for on this backend. Both are the robot's own words about itself.
             first_state = await cfg.transport.get_state()
@@ -2952,7 +2955,7 @@ class AgentLoop:
             # The task file's word on the body's learned policy, made into the verb itself: its
             # listed instructions the only ones `manipulate` takes, its segment the one the
             # verb runs and its timeout covers. Here, between the allowlist becoming final and
-            # the tools being built, because the model's tools, the stepper's choices and the
+            # the tools being built, because the pilot LLM's tools, the stepper's choices and the
             # executor's check are all read off this one registry from now on.
             narrow_policy_verb(registry, self.fm, cfg.transport)
             tools = registry.tool_schemas(allow) + META_TOOLS
@@ -2976,7 +2979,7 @@ class AgentLoop:
             if cfg.decision != "off":
                 # A mode with nobody to answer it is a caller that asked for a decision LLM and
                 # never built one, which is a bug in the CLI rather than a run to start quietly
-                # with every choice going to the model anyway.
+                # with every choice going to the pilot LLM anyway.
                 if cfg.decision_llm is None or cfg.decision_price is None:
                     raise ValueError(
                         f"decision={cfg.decision!r} needs both decision_llm and decision_price: "
@@ -3024,6 +3027,7 @@ class AgentLoop:
                 # as `_observe` decides whether an observation carries the frames it read
                 sees=bool(cfg.provider.supports_vision),
                 play=self.play,
+                calls_word=self.budget.calls_word,
             )
             system += getattr(cfg.provider, "prompt_hint", "") or ""  # e.g. the local JSON fallback
             # before `run_start`, so a reader of the record meets the pictures the task is
@@ -3034,8 +3038,8 @@ class AgentLoop:
                 duck=self.fm.name,
                 duck_path=self.duck.path,
                 provider=cfg.provider.name,
-                model=cfg.provider.model,
-                # Fields a passthrough added to every request (#12). A run whose model was told not
+                llm_id=cfg.provider.llm_id,
+                # Fields a passthrough added to every request (#12). A run whose LLM was told not
                 # to think reads very differently from one that was, and the transcript is the only
                 # place a reader can tell which they are holding.
                 # Credential-shaped keys taken out on the way in. `--extra-body` is
@@ -3043,7 +3047,7 @@ class AgentLoop:
                 # `authorization` header is the canonical such field; it also arrives
                 # from `QUACKD_EXTRA_BODY`, which no amount of argv redaction can reach.
                 extra_body=redacted_body(getattr(cfg.provider, "extra_body", None)),
-                # what every request asks the model to reason at, and whose word that was:
+                # what every request asks the LLM to reason at, and whose word that was:
                 # `--effort`, a variable, or quackd's own default, and null where nothing is sent
                 effort=getattr(cfg.provider, "asked_effort", None),
                 transport=backend_name(cfg.transport),
@@ -3077,7 +3081,7 @@ class AgentLoop:
                 # evidence the moment anybody renamed the folder or copied it off the machine.
                 run_name=cfg.run_name,
                 # What was asked for, and by what. Every flag is half the story of a run
-                # (which robot, which model, which budget, whether it was a dry run), and
+                # (which robot, which LLM, which budget, whether it was a dry run), and
                 # reading a transcript a month later used to mean guessing at them. The
                 # values of `--api-key`, `--token`, `--host-token` and `--policy-token` never
                 # appear (`quackd.command`).
@@ -3086,7 +3090,7 @@ class AgentLoop:
                 started_at=self.transcript.started_at_iso,
                 # The rate this run is costed at, written down rather than looked up later, so
                 # a replay prices it at what it cost on the day rather than at whatever the
-                # catalogue says months from now (`providers.pricing`). `null` is a model
+                # catalogue says months from now (`providers.pricing`). `null` is an LLM
                 # quackd has no rate for, and says so rather than implying a free one.
                 price=self.price.record() if self.price is not None else None,
                 # Which decision LLM answered the choices, and at what rate, for the same
@@ -3108,16 +3112,16 @@ class AgentLoop:
             last_verb: str | None = None
             last_result: VerbResult | None = None
             last_llm: dict[str, Any] = {}
-            """What the model's last answer cost, for the shadow record beside it."""
+            """What the LLM's last answer cost, for the shadow record beside it."""
             mine_verb: str | None = None
             mine_result: VerbResult | None = None
-            """The last verb the *model* chose, and what it returned.
+            """The last verb the *LLM* chose, and what it returned.
 
             Not the same as `last_verb`/`last_result`, which are the most recent of anybody's.
-            The model's next observation is the tool_result answering the model's own tool
+            The pilot LLM's next observation is the tool_result answering the pilot LLM's own tool
             call, so it has to carry that call's outcome: with a stepper running, the most
-            recent verb is usually one the model never asked for, and putting its summary
-            under the model's own tool_use id answers a question with somebody else's answer.
+            recent verb is usually one the pilot LLM never asked for, and putting its summary
+            under the pilot LLM's own tool_use id answers a question with somebody else's answer.
             What the stepper did goes in `self.stepped` instead, which says who chose it."""
             retry_prompted = False
 
@@ -3172,7 +3176,7 @@ class AgentLoop:
                     **detect_times(self.cfg.detector),
                 )
 
-                # The stepper answers first where it can. It reads the same turn the model
+                # The stepper answers first where it can. It reads the same turn the pilot LLM
                 # would have been given and nothing else: no system prompt, no history, and no
                 # picture unless this run shows it the camera (`--decision-frames`), when the
                 # primary camera's picture goes beside its state. It is only ever offered verbs
@@ -3183,7 +3187,7 @@ class AgentLoop:
                 ask: Callable[[], Awaitable[Advice]] | None = None
                 if stepper is not None:
                     # Bound now, on this reading, and asked below: at once, or in shadow beside
-                    # the model's own call.
+                    # the pilot LLM's own call.
                     ask = functools.partial(
                         stepper.advise,
                         obs,
@@ -3201,7 +3205,7 @@ class AgentLoop:
                     )
                 if ask is not None and stepper is not None and cfg.decision != "shadow":
                     try:
-                        # raced against the stop as the model's own call is, so a first Ctrl-C
+                        # raced against the stop as the pilot LLM's own call is, so a first Ctrl-C
                         # does not wait on a decision LLM's answer either (`_unless_stopped`)
                         advice = await self._unless_stopped(ask())
                     finally:
@@ -3221,9 +3225,9 @@ class AgentLoop:
 
                 call: ToolCall
                 if stepper_call is not None:
-                    # No `Exchange` and no `Decision`: this turn never enters the model's
-                    # history, so nothing the stepper chose can come back to the model as
-                    # something it said. What the model is told is `self.stepped`, on the next
+                    # No `Exchange` and no `Decision`: this turn never enters the pilot LLM's
+                    # history, so nothing the stepper chose can come back to the pilot LLM as
+                    # something it said. What the pilot LLM is told is `self.stepped`, on the next
                     # observation it is actually shown.
                     call = stepper_call
                     self.budget.note_stepper_call()
@@ -3236,20 +3240,20 @@ class AgentLoop:
                     beside: asyncio.Task[tuple[Advice | None, BaseException | None]] | None = None
                     try:
                         # may raise BudgetExceeded: then no request is made, and in shadow the
-                        # stepper is not asked either, with no answer of the model's to be
+                        # stepper is not asked either, with no answer of the pilot LLM's to be
                         # compared with
                         self.budget.note_llm_call()
                         if ask is not None and cfg.decision == "shadow":
                             # In shadow the stepper's answer changes nothing about the turn: the
-                            # model is asked whatever it says, and the two are compared
-                            # afterwards. So it is asked beside the model's own call rather than
+                            # pilot is asked whatever it says, and the two are compared
+                            # afterwards. So it is asked beside the pilot LLM's own call rather than
                             # before it, and a run being measured does not wait up to the
                             # stepper's second on every turn for the measuring. Settled once the
-                            # model's answer is on the record (`_settle_beside`).
+                            # pilot's answer is on the record (`_settle_beside`).
                             beside = asyncio.ensure_future(_guarded_ask(ask))
                         history = self._with_cache_point(self._history_for_provider())
                         # once per turn, however many tries it takes: the same history every time
-                        turn, latency_s, attempt = await self._ask_the_model(
+                        turn, latency_s, attempt = await self._ask_the_llm(
                             system, history, tools, reprompt=retry_prompted
                         )
                         # inside the try, so the stepper beside the call is settled whatever
@@ -3282,7 +3286,7 @@ class AgentLoop:
                             continue
                         outcome, reason = (
                             "failure",
-                            "the model produced no tool call twice in a row",
+                            "the LLM produced no tool call twice in a row",
                         )
                         break
                     retry_prompted = False
@@ -3301,7 +3305,7 @@ class AgentLoop:
                         cfg.decision == "shadow" or stepper.compares(advice)  # type: ignore[union-attr]
                     ):
                         # Shadow mode's whole point: what the stepper would have done, beside
-                        # what the model did, on the same reading, in one record. And in `on`
+                        # what the pilot LLM did, on the same reading, in one record. And in `on`
                         # for a turn that offered a call the stepper may never take, which is
                         # how its answers on those turns are ever measured.
                         self._emit(
@@ -3422,7 +3426,7 @@ class AgentLoop:
                         call.name,
                         call.arguments,
                         # who chose it, so the log says `from decision` and the transcript
-                        # records a verb the model never saw as the stepper's own
+                        # records a verb the pilot LLM never saw as the stepper's own
                         source="decision" if stepper_call is not None else "agent",
                     )
                 except VerdictRequired as e:
@@ -3445,14 +3449,14 @@ class AgentLoop:
                     self.highlights.append(f"{call.name}: {last_result.summary}")
                     self.highlights = self.highlights[-4:]
                 if stepper_call is not None:
-                    # the model did not choose this and will not see it in its own history,
+                    # the pilot LLM did not choose this and will not see it in its own history,
                     # so it is told once, in the observation it is next shown
                     self.stepped.append(
                         f"{call.name}({fmt_params(call.arguments)}): "
                         f"{'ok' if last_result.ok else 'FAILED'} - {last_result.summary}"
                     )
                 else:
-                    # and this one the model did choose, so its next observation is the
+                    # and this one the pilot LLM did choose, so its next observation is the
                     # tool_result answering it and must carry this outcome rather than
                     # whatever the stepper did in between
                     mine_verb, mine_result = call.name, last_result
@@ -3558,7 +3562,7 @@ class AgentLoop:
             # skipped the episode, and replaced the run's real exception with an OSError
             # Kept on the loop as well as returned, because a member that raises never
             # reaches its `return RunResult(...)` and the flock would otherwise throw away the
-            # wall clock, the model seconds and the bill it had already measured.
+            # wall clock, the LLM seconds and the bill it had already measured.
             self.summary = summary
             try:
                 self._emit("run_end", **summary)

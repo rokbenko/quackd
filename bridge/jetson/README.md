@@ -4,13 +4,13 @@ Every quackd command but one runs on your laptop, and `--host` names the board. 
 what answers there: one file, `quackd_jetson_hostd.py`, serving HTTP on port 9874. It gives the
 quackd on your laptop three things from the board: a frame from a camera on it, detections
 computed on its GPU, and the board's own health (model, L4T release, memory, swap, power mode,
-one `tegrastats` line). The fourth thing, the language model on the board's GPU, is your own
-model server (Ollama or another), and quackd reaches it through the same `--host`. The one that
+one `tegrastats` line). The fourth thing, the LLM on the board's GPU, is your own
+LLM server (Ollama or another), and quackd reaches it through the same `--host`. The one that
 does run on a robot's own Jetson, `quackd onboard`, Robot Passport's service, has nothing to do
 with this daemon
 ([docs/guides/jetson.md](../../docs/guides/jetson.md#robot-passport-on-the-board)).
 
-For the whole arrangement, which JetPack you have and which model fits which board, see
+For the whole arrangement, which JetPack you have and which LLM fits which board, see
 [`docs/guides/jetson.md`](../../docs/guides/jetson.md). This page is the reference for the daemon
 itself.
 
@@ -108,7 +108,7 @@ export QUACKD_HOST_TOKEN="$(ssh <board> cat /etc/quackd/jetson-hostd.token)"
 ssh -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434 <board>
 ```
 
-After which `--host 127.0.0.1` reaches this daemon, and the model server on the board's port
+After which `--host 127.0.0.1` reaches this daemon, and the LLM server on the board's port
 11434 (Ollama's), through the tunnel. `quackd doctor --host 127.0.0.1` shows what the board
 reported. Binding the daemon wide instead is for a network you trust, and keep the token.
 
@@ -127,7 +127,7 @@ the port off and it is 9874. Without the flag a command uses the host the robot 
 fleet: `--robots`, `--flock` or a flock duck.
 
 **`quackd doctor --host <board>`** reads `/hello`, `/healthz` and `/board`, parses the board's
-files on the laptop, and probes the four local model presets on the board rather than on the
+files on the laptop, and probes the four local LLM presets on the board rather than on the
 laptop:
 
 ```
@@ -165,7 +165,7 @@ the board reports changes the verdict.
 **`quackd run --host <board>`** asks `/hello` before anything connects, and refuses the run when
 the daemon does not answer. The camera joins whatever body the run drives. It is the primary
 view for a body with no camera of its own, and otherwise an extra view named `host`, which the
-model is shown and the detector does not read. The detector is this daemon's YOLO, `yolo@host`,
+LLM is shown and the detector does not read. The detector is this daemon's YOLO, `yolo@host`,
 on a real body when `/hello` says `detect`, and never on a simulator by itself.
 `--detector color` keeps the colour detector on the laptop, and `--detector yolo` runs YOLO on
 the laptop instead. `--detector host` asks for this one by name, even on a simulator, and is
@@ -276,7 +276,7 @@ daemon and sends them here to be detected, by itself, because a ToddlerBot is a 
 `--detector color` keeps the colour detector on the laptop instead. The board's health still
 comes from here.
 
-What to watch is contention. A model server or a detector saturating this board can starve
+What to watch is contention. An LLM server or a detector saturating this board can starve
 the control loop, and nobody has measured by how much. That is why the unit runs this daemon at
 a lower priority, under a memory ceiling, and first in line for the OOM killer: losing it costs
 quackd a camera, detections and the board's health, and losing the control loop mid-step costs

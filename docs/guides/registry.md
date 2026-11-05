@@ -42,7 +42,7 @@ quackd robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehear
 ```
 
 `add` takes `--address`, `--map-address`, `--camera-url`, `--token`, `--host` and `--host-token`
-(the same six flags `run` takes), plus `--llm VENDOR[:MODEL]` for the pilot that drives this
+(the same six flags `run` takes), plus `--llm VENDOR[:LLM]` for the pilot that drives this
 robot, and `--note` for a line only people read. `--camera-url` repeats, for the one body that
 reads more than one camera. `edit` takes the same flags, and `--clear` empties a field.
 
@@ -152,7 +152,7 @@ one camera is nine.
 ## A board it uses
 
 `--host` and `--host-token` keep the board this robot's runs reach: a machine they use and do
-not run on, such as an NVIDIA Jetson running quackd's host daemon, for the model server,
+not run on, such as an NVIDIA Jetson running quackd's host daemon, for the LLM server,
 the camera and the detector on it ([guides/jetson.md](jetson.md)).
 
 ```
@@ -468,7 +468,7 @@ $ quackd robot twin arm-01
 
 An arm registered with a rest pose and neither a pilot nor a camera, as the lab's `arm-01` is,
 gets `copied from arm-01: rest pose` and then `arm-01 has no pilot or camera to copy`, and a
-hint that ends `--llm VENDOR[:MODEL]`, since its twin has no pilot to rehearse with until you
+hint that ends `--llm VENDOR[:LLM]`, since its twin has no pilot to rehearse with until you
 name one.
 
 That warning is the one cost of a twin. quackd 0.14 and earlier check every robot in the file
@@ -587,7 +587,7 @@ Three of those fields carry more than one shape:
 |---|---|
 | `camera_url` | `null`, one url as a string, or several as a list in the order given, the first being the primary. One camera is stored as a string, so a `robots.json` written by 0.9 reads back unchanged |
 | `rest_pose` | `null`, or degrees per joint as `quackd robot rest-pose` read them off the arm. `null` on every body quackd does not park, which is every body but the LeRobot arm |
-| `llm` | `null`, a vendor on its own (`"fake"`, `"anthropic"`), or a vendor and a model (`"anthropic:claude-opus-5"`). One key, in the shape `--llm` takes, and stored canonically: a bare catalogue id is written back with its vendor in front |
+| `llm` | `null`, a vendor on its own (`"fake"`, `"anthropic"`), or a vendor and an LLM (`"anthropic:claude-opus-5"`). One key, in the shape `--llm` takes, and stored canonically: a bare catalogue id is written back with its vendor in front |
 
 **This was two keys until 0.11.** `provider` and `model` were separate, and a file written by
 0.11 or earlier still has them, because nobody re-saves `robots.json` on upgrade. It reads back
@@ -625,7 +625,7 @@ reader never sees half of it, and nothing is serialised: two commands writing at
 instant are a race and the later one wins. That is the same bargain
 [memory](memory.md) makes, for the same reason.
 
-Reads are stricter than memory's. A note a model wrote is worth skipping when it is malformed;
+Reads are stricter than memory's. A note an LLM wrote is worth skipping when it is malformed;
 a robot's address is not, so an unknown field or a broken file names itself and stops the
 command rather than being quietly dropped.
 

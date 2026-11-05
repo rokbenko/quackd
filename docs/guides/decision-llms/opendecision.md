@@ -10,7 +10,7 @@ README calls a developer preview. Every name quackd spells for it lives in its r
 **Nothing here has ever answered a real robot.**
 
 ```bash
-pip install OpenDecision && opendecision serve   # not run here: wants Python >= 3.13, and the first serve downloads the model before it listens
+pip install OpenDecision && opendecision serve   # not run here: wants Python >= 3.13, and the first serve downloads the LLM before it listens
 uv pip install "quackd[decision]"   # not run here: the client quackd posts with
 quackd run arm-grip-check --robot lerobot:mock --decision-llm opendecision --decision-mode shadow   # not run here: no decision LLM is installed on this machine
 ```
@@ -25,19 +25,19 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm opendecision --dec
 | `install` | `pip install OpenDecision && opendecision serve` |
 | `url` | `http://127.0.0.1:8000`, its own default host and port |
 | `key_env` | `none`, a server that wants no key: the client sends the literal `local` instead, so a hosted `TYPESAFE_API_KEY` sitting in the same `.env` is never posted to a port on your own machine |
-| `model` | `opendecision`, accepted and ignored by the server, sent anyway so the record says what quackd asked for |
-| `price` | `none`, which is not free and not unknown: it is a server you run, and `factory.resolve_decision_price` costs it at the self-hosted rate quackd already uses for a model on your own machine |
+| `llm_id` | `opendecision`, accepted and ignored by the server, sent anyway so the record says what quackd asked for |
+| `price` | `none`, which is not free and not unknown: it is a server you run, and `factory.resolve_decision_price` costs it at the self-hosted rate quackd already uses for an LLM on your own machine |
 | `extra` | `decision`, installed as `quackd[decision]` |
 | `sdk` | `typesafe_sdk`, the import whose presence says whether that extra is here |
 
 That is `PRESETS["opendecision"]` in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py),
-and a test reads the address, the model id, the key, the install line and the extra back off
+and a test reads the address, the LLM id, the key, the install line and the extra back off
 this page. `--decision-url` overrides the address;
-`--decision-llm opendecision:<id>` the model id.
+`--decision-llm opendecision:<id>` the LLM id.
 
 ## What it is
 
-A zero-shot natural language inference engine, not a decision-trained model: it scores your labels
+A zero-shot natural language inference engine, not a decision-trained LLM: it scores your labels
 against the state with an off-the-shelf NLI checkpoint,
 `MoritzLaurer/ModernBERT-large-zeroshot-v2.0` by default, about 400M parameters, downloaded during
 startup rather than lazily. No GPU is needed, which is why this Apache-2.0 row is in the
@@ -81,10 +81,10 @@ own. Nobody publishes a latency for it, its README included.
 
 | Name | The assumption | What quackd does |
 |---|---|---|
-| `WIRE_COMPATIBLE` | that its response keeps the shape `typesafe_sdk` parses, which it does more faithfully than anything else here, on one reading of one release | the SDK requires the `model` and `usage` keys present and tolerates null contents; quackd's own reader takes an answer as an object or as a plain mapping, and one it cannot read costs that turn as `gate: unreadable` or `gate: error` and hands it to the model rather than raising |
+| `WIRE_COMPATIBLE` | that its response keeps the shape `typesafe_sdk` parses, which it does more faithfully than anything else here, on one reading of one release | the SDK requires the `model` and `usage` keys present and tolerates null contents; quackd's own reader takes an answer as an object or as a plain mapping, and one it cannot read costs that turn as `gate: unreadable` or `gate: error` and hands it to the pilot LLM rather than raising |
 | `CONFIDENCE_MEANS_THE_SAME` | that its confidence is comparable to the one quackd's floors were set against. It is not: the floors (brake 0.50, read 0.60, motion 0.85, confirm 0.90) are two numbers TypeSafe publish with two of quackd's own set between them, all four Jev-shaped and none of them measured here, and this server computes confidence by entropy over its own distribution | nothing automatic. `--decision-mode shadow` records what it would have chosen without letting it act, which is how the floors get re-tuned |
-| `LATENCY_UNDER_ONE_SECOND` | that a four-question turn, two of them multi-pass choices on a CPU, answers inside the turn budget. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the model and the record says how long it waited |
-| `MODEL_FIELD_IGNORED` | that the model quackd names is the model that answers | it is not: the server's is chosen at startup, so the record says what quackd asked for rather than what ran, and `--model` on the server is the only place the two can be made to agree |
+| `LATENCY_UNDER_ONE_SECOND` | that a four-question turn, two of them multi-pass choices on a CPU, answers inside the turn budget. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the pilot LLM and the record says how long it waited |
+| `MODEL_FIELD_IGNORED` | that the LLM quackd names is the LLM that answers | it is not: the server's is chosen at startup, so the record says what quackd asked for rather than what ran, and `--model` on the server is the only place the two can be made to agree |
 | `USAGE_REPORTED` | whether a tokenised request length means anything as a token count | where a count is missing or is not a measurement, quackd estimates the request at four characters to the token and marks the turn `usage_estimated`, and a self-hosted row is costed at $0 either way |
 | `NO_LOCK_ON_THE_PIPELINE` | that one robot at a time is enough | quackd sends one request a turn, so a single robot is fine and a flock pointed at one instance is not |
 | `PYTHON_FLOOR` | that a 3.13-only server is one you can actually start; its interpreter floor is its own | nothing. `quackd[decision]` is a small HTTP client that runs on quackd's own Python, and the server runs in whatever environment you start it in, which here has to be a separate one |
@@ -94,7 +94,7 @@ own. Nobody publishes a latency for it, its README included.
 It has never answered a real robot: the client is exercised against a stub that speaks the same
 wire format (`tests/stub_decision_llm.py`, `tests/test_decision_llms.py`), which proves quackd's
 half of the conversation and not OpenDecision's. Without the extra, `quackd doctor` prints this
-row as `missing (quackd[decision])`, `none needed` for the key, `opendecision` for the model and
+row as `missing (quackd[decision])`, `none needed` for the key, `opendecision` for the LLM and
 `http://127.0.0.1:8000` for the url. `--decision-mode shadow` changes that.
 
 ## How to help

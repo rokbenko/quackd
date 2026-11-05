@@ -25,6 +25,18 @@ APP = str(Path(__file__).resolve().parents[1] / "quackd" / "webui" / "app.py")
 SCREENS = ("setup", "goal", "chat", "history", "robots", "memory", "policies")
 
 
+def test_history_says_turns_of_a_run_that_asked_no_llm() -> None:
+    from quackd.webui.screens.history import _caption
+
+    run = {"outcome": "success", "steps": 3, "llm_calls": 5, "wall_s": 0.4, "cost_usd": 0.0}
+    assert _caption({**run, "provider": "vla"}) == (
+        "outcome success · steps 3 · turns 5 · wall_s 0.4 · cost_usd 0.0"
+    )
+    assert _caption({**run, "provider": "fake"}) == (
+        "outcome success · steps 3 · llm_calls 5 · wall_s 0.4 · cost_usd 0.0"
+    )
+
+
 @pytest.fixture(autouse=True)
 def page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A page of its own for every test: its working folder, its setup and its job table."""
@@ -219,7 +231,7 @@ def test_the_same_as_line_names_only_what_was_chosen_and_a_vla_only_when_chosen(
     next(s for s in at.segmented_control if s.label == "Who flies it").set_value("vla").run()
     goal = next(c.value for c in at.code if c.value.startswith("quackd run"))
     assert "--controller vla" in goal
-    assert "--llm" not in goal, "run refuses a model's flag beside --controller vla"
+    assert "--llm" not in goal, "run refuses an LLM's flag beside --controller vla"
 
 
 def test_quit_at_once_is_offered_for_a_stopped_run_while_a_chat_goes_on(
@@ -267,7 +279,7 @@ def test_a_chat_under_a_vla_pilot_is_drive_flying_it(
     (chat,) = [job for job in table.all() if job.kind == "chat"]
     argv = chat.argv[chat.argv.index("drive") :]
     assert argv[argv.index("--controller") + 1] == "vla" and "--policy-url" in argv
-    assert "--llm" not in argv, "drive refuses a model's flag beside --controller vla"
+    assert "--llm" not in argv, "drive refuses an LLM's flag beside --controller vla"
     chat.end_input()
     chat.wait(30)
 

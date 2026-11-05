@@ -198,7 +198,7 @@ async def test_planner_fake_makes_zero_calls() -> None:
 
 class _PlannerStub:
     name = "stub"
-    model = "stub-1"
+    llm_id = "stub-1"
     supports_vision = False
 
     def __init__(self, turn: ProviderTurn | Exception) -> None:
@@ -279,7 +279,7 @@ async def test_the_planners_one_call_is_logged_as_a_request_and_an_answer() -> N
     assert answer["tool_calls"][0]["name"] == "plan_flock_task"
     assert answer["usage"]["input_tokens"] == 10 and answer["latency_s"] >= 0
 
-    # the fake provider never reaches a model, so it must not narrate one either
+    # the fake provider never reaches an LLM, so it must not narrate one either
     events.clear()
     await plan_flock_task(
         DUCK,
@@ -295,12 +295,12 @@ class _BillingPlannerStub(_PlannerStub):
     """A planner whose vendor says what the call was billed, the way OpenRouter does."""
 
     name = "openrouter"
-    model = "openai/gpt-6-sol"
+    llm_id = "openai/gpt-6-sol"
     bills_per_call = True
 
 
 async def test_the_planner_records_a_billed_call_at_its_bill() -> None:
-    """The planner is one model call like any other, so it is costed like one: at what the
+    """The planner is one LLM call like any other, so it is costed like one: at what the
     vendor billed where it says so, marked as such, and at a person's own rate over both."""
     from quackd.agent.providers.catalogue import Price
     from quackd.agent.providers.pricing import cost_usd

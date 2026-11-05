@@ -194,7 +194,7 @@ async def _sent_by_the_sdk_alone(stand_in: FakeOpenAIDecisions) -> Recorded:
     alone = openai.AsyncOpenAI(api_key=KEY, base_url=f"{stand_in.url}/v1", max_retries=0)
     try:
         with contextlib.suppress(openai.APIError):
-            await alone.post(decisions_api.PATH, cast_to=object, body={"model": OPENAI.model})
+            await alone.post(decisions_api.PATH, cast_to=object, body={"model": OPENAI.llm_id})
     finally:
         await alone.close()
     return stand_in.posts()[before]
@@ -220,7 +220,7 @@ def _stepper(llm: Any) -> Stepper:
         goal="a goal",
         llm=llm,
         name=llm.name,
-        model=llm.model,
+        llm_id=llm.llm_id,
         price=resolve_decision_price(OPENAI, url=llm.url),
     )
     stepper.calls["stop"] = Call(name="stop", arguments={}, label="stop")
@@ -267,11 +267,11 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
         for ambient in ("x-gateway-key", "openai-organization", "openai-project"):
             assert ambient not in post.headers, ambient
         assert set(post.body) == {"model", "input", "questions"}
-        assert post.body["model"] == OPENAI.model
+        assert post.body["model"] == OPENAI.llm_id
     start = _start(_records(tmp_path))
     assert start["decision_llm"] == {
         "name": "openai",
-        "model": OPENAI.model,
+        "model": OPENAI.llm_id,
         "url": stand_in.url,
         "frames": False,
     }
@@ -392,7 +392,7 @@ def test_the_state_and_the_questions_on_the_wire_are_the_ones_the_record_describ
     """The input is the state as one JSON string, its length the turn's `state_chars`, and the
     four questions go named, in order, translated, with the options the record says were offered
     and `escalate` last. The string holds the state's letters as letters: the dash in every
-    `last` field went to the model as JSON's six-character `\\u2014`, because OpenAI's `input` is
+    `last` field went to the LLM as JSON's six-character `\\u2014`, because OpenAI's `input` is
     text the API never decodes, and `state_chars` counted it so."""
     asked = build_questions([], {})
     with FakeOpenAIDecisions() as stand_in:
@@ -508,7 +508,7 @@ def test_a_rate_limit_is_one_request_a_turn_never_retried_and_recorded_by_its_st
     three eighths to a half of a second and the second for longer. Left to that, a turn here
     sends a second request, runs out of the stepper's second asleep before the third, and is
     recorded as a timeout, the 429 lost. With `max_retries=0` it is one request and the record
-    says what it was. A turn the stepper cannot have is the model's, and the run carries on."""
+    says what it was. A turn the stepper cannot have is the pilot LLM's, and the run carries on."""
     with FakeOpenAIDecisions(script="rate-limited") as stand_in:
         result = _run(stand_in, tmp_path)
     assert result.exit_code == 0, result.output
@@ -742,7 +742,7 @@ async def test_the_real_sdk_refuses_every_request_the_fake_refuses_on_its_behalf
         llm: Any = make_decision_llm(OPENAI, url=stand_in.url)
         with pytest.raises(TypeError):
             await llm._client.post(
-                decisions_api.PATH, cast_to=object, body={"model": OPENAI.model}, **call
+                decisions_api.PATH, cast_to=object, body={"model": OPENAI.llm_id}, **call
             )
     assert stand_in.requests == []
 
@@ -900,11 +900,11 @@ async def test_every_live_test_on_one_turn_fails_naming_a_first_turn_that_ran_ou
 async def test_a_live_test_that_reads_an_answer_fails_naming_the_question_declined(
     name: str,
 ) -> None:
-    """A `next_verb` the model declined has no choice, no confidence and no distribution. The test
+    """A `next_verb` the LLM declined has no choice, no confidence and no distribution. The test
     of the router's fields used to fail on the empty distribution with the sentence meant for a
     renamed field, and the safety claim passed. Both fail now, naming the question declined."""
     declines = FakeOpenAIDecisions(script=[answering(refuse=("next_verb",))])
-    with declines as stand_in, pytest.raises(AssertionError, match="the model declined next_verb"):
+    with declines as stand_in, pytest.raises(AssertionError, match="the LLM declined next_verb"):
         await LIVE[name](_row_at(stand_in))
 
 
@@ -954,5 +954,5 @@ async def test_the_first_live_test_prints_what_it_measured_before_it_fails(
     with FakeOpenAIDecisions(script=[failing(401)]) as stand_in, pytest.raises(AssertionError):
         await LIVE["the measurement"](_row_at(stand_in))
     printed = capsys.readouterr().out
-    assert f"{OPENAI.name} {OPENAI.model}:" in printed
+    assert f"{OPENAI.name} {OPENAI.llm_id}:" in printed
     assert "error: AuthenticationError: HTTP 401" in printed

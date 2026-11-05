@@ -88,7 +88,7 @@ a stale reading into a heartbeat failure.
 
 A command-line flag saying `--camera` is a claim by an operator. If the manifest turns that
 into an `observe` verb and nothing behind it can produce a frame, the robot has been made to
-lie, and the model will believe it. The same applies to a walk checkpoint that is not staged
+lie, and the LLM will believe it. The same applies to a walk checkpoint that is not staged
 and a gripper the build does not have.
 
 **What to do:** report what actually loaded, and narrow the manifest from that. A verb that is

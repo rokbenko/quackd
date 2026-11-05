@@ -28,7 +28,7 @@ from quackd.agent.providers.base import (
     ProviderTurn,
     ToolCall,
 )
-from quackd.agent.providers.catalogue import default_model_for, find_model, models_for
+from quackd.agent.providers.catalogue import default_llm_for, find_llm, llms_for
 from quackd.agent.providers.factory import make_provider
 from quackd.agent.providers.gemini import (
     UNSUPPORTED_SCHEMA_KEYS,
@@ -197,7 +197,7 @@ async def test_anthropic_request_and_response_mapping() -> None:
             ),
         )
     )
-    p = AnthropicProvider(model="claude-opus-5", client=client, effort="medium")
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client, effort="medium")
     turn = await p.step("SYS", history(), TOOLS)
     assert client.beta_used
     kw = client.kwargs
@@ -205,7 +205,7 @@ async def test_anthropic_request_and_response_mapping() -> None:
     assert kw["system"] == [{"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]
     assert kw["tool_choice"] == {"type": "any", "disable_parallel_tool_use": True}
     assert kw["output_config"] == {"effort": "medium"}
-    # adaptive is the model's default; `display` is what makes the blocks carry text at all,
+    # adaptive is the LLM's default; `display` is what makes the blocks carry text at all,
     # and without it the log's "what it thought" would be blank on every turn
     assert kw["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert kw["betas"] == ["server-side-fallback-2026-07-01"] and kw["fallbacks"] == "default"
@@ -239,7 +239,7 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
 
     monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
     client = FakeAnthropic(anthropic_response())
-    p = AnthropicProvider(model="claude-opus-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client)
     sent = []
     for _ in range(2):
         await p.step("SYS", history(), TOOLS)
@@ -252,7 +252,7 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
     for off in ("0", "false", "no"):
         monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
         plain = FakeAnthropic(anthropic_response())
-        await AnthropicProvider(model="claude-opus-5", client=plain).step("SYS", history(), TOOLS)
+        await AnthropicProvider(llm_id="claude-opus-5", client=plain).step("SYS", history(), TOOLS)
         assert plain.kwargs["system"] == "SYS", off
 
 
@@ -269,13 +269,13 @@ async def test_anthropic_opted_out_of_its_cache_marks_none_of_the_points_the_loo
 
     monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
     on = FakeAnthropic(anthropic_response())
-    await AnthropicProvider(model="claude-opus-5", client=on).step("SYS", marked, TOOLS)
+    await AnthropicProvider(llm_id="claude-opus-5", client=on).step("SYS", marked, TOOLS)
     assert json.dumps(on.kwargs, default=str).count('"cache_control"') == 3
 
     for off in ("0", "false", "no"):
         monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
         plain = FakeAnthropic(anthropic_response())
-        await AnthropicProvider(model="claude-opus-5", client=plain).step("SYS", marked, TOOLS)
+        await AnthropicProvider(llm_id="claude-opus-5", client=plain).step("SYS", marked, TOOLS)
         assert "cache_control" not in json.dumps(plain.kwargs, default=str), off
 
 
@@ -323,7 +323,7 @@ async def test_anthropic_falls_back_to_plain_endpoint_on_old_sdk() -> None:
     client = FakeAnthropic(
         anthropic_response(NS(type="tool_use", id="1", name="walk", input={})), beta_ok=False
     )
-    p = AnthropicProvider(model="claude-opus-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client)
     await p.step("S", history()[:1], TOOLS)
     assert not client.beta_used and p.fallbacks is False
     assert "fallbacks" not in client.kwargs
@@ -377,7 +377,7 @@ def openai_response(name: str, args: str, content: str | None = None) -> Any:
 
 async def test_openai_request_and_response_mapping() -> None:
     client = FakeOpenAI(openai_response("walk", json.dumps({"vx": 0.3})))
-    p = OpenAIProvider(model="gpt-5", client=client)
+    p = OpenAIProvider(llm_id="gpt-5", client=client)
     turn = await p.step("SYS", history(), TOOLS)
     kw = client.kwargs
     assert kw["tool_choice"] == "required" and kw["parallel_tool_calls"] is False
@@ -466,7 +466,7 @@ def _no_effort_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("QUACKD_OPENAI_REASONING_EFFORT", raising=False)
 
 
-#: An OpenAI model the catalogue does not route to Responses, so the 400 reader is what moves
+#: An OpenAI LLM the catalogue does not route to Responses, so the 400 reader is what moves
 #: a run that uses it. Spelled once because the test below depends on that staying true.
 UNHINTED = "gpt-5.6-sol"
 
@@ -474,23 +474,23 @@ UNHINTED = "gpt-5.6-sol"
 async def test_openai_switches_to_responses_when_chat_refuses_function_tools(
     _no_effort_env: None,
 ) -> None:
-    """A model that will not take function tools on Chat Completions at any effort.
+    """An LLM that will not take function tools on Chat Completions at any effort.
 
     Every verb quackd has is a function tool, so this is not a degraded path, it is no path.
     The provider must take the API at its word, move to Responses, and STAY there: retrying
     chat every turn would pay a failed call per step for the length of the run.
 
     The other remedy that 400 offers is a dead end and is deliberately not taken: measured on
-    gpt-6-astra, `reasoning_effort="none"` comes back as unsupported for that model, and the
+    gpt-6-astra, `reasoning_effort="none"` comes back as unsupported for that LLM, and the
     tools are refused at low, medium, high and xhigh alike.
 
-    The model here must be one the catalogue does NOT mark `responses`, or the provider would
-    start there and this would assert nothing. That is the point of the pair: a hinted model
+    The LLM here must be one the catalogue does NOT mark `responses`, or the provider would
+    start there and this would assert nothing. That is the point of the pair: a hinted LLM
     skips the failed call, and an unhinted one still learns from the 400.
     """
     client = RefusesToolsOnChat(responses_result("walk", json.dumps({"vx": 0.2})))
-    assert find_model("openai", UNHINTED).api is None, "this test needs a model that starts on chat"
-    p = OpenAIProvider(model=UNHINTED, client=client)
+    assert find_llm("openai", UNHINTED).api is None, "this test needs an LLM that starts on chat"
+    p = OpenAIProvider(llm_id=UNHINTED, client=client)
     turn = await p.step("SYS", history(), TOOLS)
     assert turn.tool_calls == [ToolCall(id="call_r1", name="walk", arguments={"vx": 0.2})]
     assert p.api == "responses", "the switch must stick for the rest of the run"
@@ -504,20 +504,20 @@ async def test_openai_switches_to_responses_when_chat_refuses_function_tools(
     assert kw["tools"][0]["name"] == "walk", "Responses tools are flat, not nested"
 
 
-async def test_a_catalogue_hinted_model_starts_on_responses_and_pays_no_failed_call(
+async def test_a_catalogue_hinted_llm_starts_on_responses_and_pays_no_failed_call(
     _no_effort_env: None,
 ) -> None:
     """The other half of the pair above: what the catalogue already knows, nobody pays to learn.
 
     `gpt-6-astra` is marked `responses`, so the run must open on Responses. The stub raises the
     refusal on chat, so a provider that guessed wrong would leave a chat call behind, and the
-    assertion below is that it leaves none. For a model that is Responses *only* this is not an
+    assertion below is that it leaves none. For an LLM that is Responses *only* this is not an
     optimisation at all: its refusal is worded differently, `_wants_the_responses_api` does not
     match it, and reading the 400 would never get there.
     """
-    assert find_model("openai", "gpt-6-astra").api == "responses"
+    assert find_llm("openai", "gpt-6-astra").api == "responses"
     client = RefusesToolsOnChat(responses_result("walk", json.dumps({"vx": 0.2})))
-    p = OpenAIProvider(model="gpt-6-astra", client=client)
+    p = OpenAIProvider(llm_id="gpt-6-astra", client=client)
     turn = await p.step("SYS", history(), TOOLS)
     assert turn.tool_calls == [ToolCall(id="call_r1", name="walk", arguments={"vx": 0.2})]
     assert client.chat_calls == [], "the catalogue said so, nothing had to be spent finding out"
@@ -529,16 +529,16 @@ async def test_an_explicit_api_outranks_the_catalogue_and_the_environment(
 ) -> None:
     """`api=` wins over the hint, and the hint wins over the environment.
 
-    That order is not arbitrary. `QUACKD_OPENAI_API=chat` set for one model must not send a model
+    That order is not arbitrary. `QUACKD_OPENAI_API=chat` set for one LLM must not send an LLM
     with no Chat Completions at all to an endpoint that will refuse it, so the environment loses
     to the catalogue. A caller who passes `api=` is holding something more specific than either.
     """
     monkeypatch.setenv("QUACKD_OPENAI_API", "chat")
-    assert OpenAIProvider(model="gpt-6-astra", client=FakeOpenAI(None)).api == "responses"
-    assert OpenAIProvider(model="gpt-6-astra", client=FakeOpenAI(None), api="chat").api == "chat"
-    assert OpenAIProvider(model=UNHINTED, client=FakeOpenAI(None)).api == "chat"
+    assert OpenAIProvider(llm_id="gpt-6-astra", client=FakeOpenAI(None)).api == "responses"
+    assert OpenAIProvider(llm_id="gpt-6-astra", client=FakeOpenAI(None), api="chat").api == "chat"
+    assert OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(None)).api == "chat"
     monkeypatch.setenv("QUACKD_OPENAI_API", "responses")
-    assert OpenAIProvider(model=UNHINTED, client=FakeOpenAI(None)).api == "responses"
+    assert OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(None)).api == "responses"
 
 
 async def test_openai_responses_round_trip_shapes(_no_effort_env: None) -> None:
@@ -548,7 +548,7 @@ async def test_openai_responses_round_trip_shapes(_no_effort_env: None) -> None:
     `ToolCall.id` and what the loop hands back. Sending the item `id` instead is a 400.
     """
     client = RefusesToolsOnChat(responses_result("walk", '{"vx": 0.3}', text="going"))
-    p = OpenAIProvider(model="gpt-6-astra", client=client)
+    p = OpenAIProvider(llm_id="gpt-6-astra", client=client)
     turn = await p.step("SYS", history(), TOOLS)
     items = client.responses_calls[0]["input"]
     kinds = [i.get("type") or i.get("role") for i in items]
@@ -589,7 +589,7 @@ def test_openai_responses_names_each_camera_before_its_picture() -> None:
 
 async def test_openai_responses_bad_json_arguments_do_not_crash(_no_effort_env: None) -> None:
     client = RefusesToolsOnChat(responses_result("walk", "{not json"))
-    p = OpenAIProvider(model="gpt-6-astra", client=client)
+    p = OpenAIProvider(llm_id="gpt-6-astra", client=client)
     turn = await p.step("SYS", history()[:1], TOOLS)
     assert "_unparsed" in turn.tool_calls[0].arguments
 
@@ -612,7 +612,7 @@ async def test_a_responses_refusal_part_is_a_turn_with_no_call_that_says_so(
     an empty one with no call: the record showed a pilot that said nothing where the vendor
     had said no. It now reads as an Anthropic or OpenRouter refusal does."""
     client = RefusesToolsOnChat(responses_refusal())
-    turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    turn = await OpenAIProvider(llm_id="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == []
     assert turn.text == "[refusal] I can't help with that."
     assert turn.stop_reason == "refusal" and turn.refused
@@ -623,7 +623,7 @@ async def test_a_refusal_part_beside_a_call_keeps_the_call(_no_effort_env: None)
     declare. The call is the turn's answer and is kept; the refusal is said beside it."""
     stop = NS(type="function_call", call_id="call_r2", name="stop", arguments="{}")
     client = RefusesToolsOnChat(responses_refusal(beside=stop))
-    turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    turn = await OpenAIProvider(llm_id="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == [ToolCall(id="call_r2", name="stop", arguments={})]
     assert turn.text == "[refusal] I can't help with that."
     assert turn.stop_reason == "tool_calls" and turn.refused
@@ -637,7 +637,7 @@ async def test_a_chat_completions_refusal_is_a_turn_with_no_call_that_says_so() 
         choices=[NS(message=message, finish_reason="stop")],
         usage=NS(prompt_tokens=50, completion_tokens=9),
     )
-    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id="gpt-5", client=FakeOpenAI(response)).step(
         "SYS", history(), TOOLS
     )
     assert turn.tool_calls == []
@@ -654,7 +654,7 @@ async def test_a_chat_completions_refusal_keeps_the_words_and_the_call_beside_it
         choices=[NS(message=message, finish_reason="tool_calls")],
         usage=NS(prompt_tokens=50, completion_tokens=9),
     )
-    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id="gpt-5", client=FakeOpenAI(response)).step(
         "SYS", history(), TOOLS
     )
     assert turn.tool_calls == [ToolCall(id="call_c1", name="stop", arguments={})]
@@ -670,7 +670,7 @@ async def test_a_refusal_keeps_the_reason_its_vendor_named() -> None:
         choices=[NS(message=message, finish_reason="content_filter")],
         usage=NS(prompt_tokens=50, completion_tokens=9),
     )
-    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id="gpt-5", client=FakeOpenAI(response)).step(
         "SYS", history(), TOOLS
     )
     assert turn.text == "[refusal] I can't help with that."
@@ -745,7 +745,7 @@ async def test_a_vendors_no_is_never_read_for_a_call(response: Any, _no_effort_e
             raise AssertionError(f"a vendor's no was read for a call: {turn.text!r}")
 
     client = RefusesToolsOnChat(response)
-    turn = await Rescues(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    turn = await Rescues(llm_id="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == []
 
 
@@ -758,7 +758,7 @@ async def test_a_native_call_in_a_filtered_answer_still_runs(
     the reason the filter named."""
     client: Any
     if api == "chat":
-        model = "gpt-5"
+        llm_id = "gpt-5"
         stop = NS(id="call_f2", function=NS(name="stop", arguments="{}"))
         client = FakeOpenAI(
             NS(
@@ -772,7 +772,7 @@ async def test_a_native_call_in_a_filtered_answer_still_runs(
             )
         )
     else:
-        model = "gpt-6-astra"
+        llm_id = "gpt-6-astra"
         client = RefusesToolsOnChat(
             NS(
                 output=[NS(type="function_call", call_id="call_f2", name="stop", arguments="{}")],
@@ -781,7 +781,7 @@ async def test_a_native_call_in_a_filtered_answer_still_runs(
                 usage=NS(input_tokens=11, output_tokens=4),
             )
         )
-    turn = await OpenAIProvider(model=model, client=client).step("SYS", history(), TOOLS)
+    turn = await OpenAIProvider(llm_id=llm_id, client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == [ToolCall(id="call_f2", name="stop", arguments={})]
     assert turn.stop_reason == "content_filter" and not turn.refused
 
@@ -796,7 +796,7 @@ async def test_openai_does_not_swallow_an_unrelated_bad_request(_no_effort_env: 
 
             self.chat = NS(completions=NS(create=create))
 
-    p = OpenAIProvider(model="gpt-5", client=Broken())
+    p = OpenAIProvider(llm_id="gpt-5", client=Broken())
     with pytest.raises(ProviderError, match="context_length_exceeded"):
         await p.step("SYS", history(), TOOLS)
     assert p.api == "chat", "an unrelated failure must not move the run to another API"
@@ -804,7 +804,7 @@ async def test_openai_does_not_swallow_an_unrelated_bad_request(_no_effort_env: 
 
 async def test_openai_reasoning_effort_can_be_set_by_hand() -> None:
     client = FakeOpenAI(openai_response("stop", "{}"))
-    p = OpenAIProvider(model="gpt-5", client=client, reasoning_effort="low")
+    p = OpenAIProvider(llm_id="gpt-5", client=client, reasoning_effort="low")
     await p.step("SYS", history(), TOOLS)
     assert client.kwargs["reasoning_effort"] == "low"
 
@@ -819,10 +819,10 @@ async def test_extra_body_reaches_the_chat_body() -> None:
     """Nothing is added unless it was asked for, and what was asked for arrives as the SDK's
     own `extra_body`, which merges it into the top level of the request."""
     client = FakeOpenAI(openai_response("stop", "{}"))
-    await OpenAIProvider(model="gpt-5", client=client).step("SYS", history(), TOOLS)
+    await OpenAIProvider(llm_id="gpt-5", client=client).step("SYS", history(), TOOLS)
     assert "extra_body" not in client.kwargs
 
-    await OpenAIProvider(model="gpt-5", client=client, extra_body=BODY).step(
+    await OpenAIProvider(llm_id="gpt-5", client=client, extra_body=BODY).step(
         "SYS", history(), TOOLS
     )
     assert client.kwargs["extra_body"] == BODY
@@ -833,7 +833,7 @@ async def test_extra_body_survives_the_switch_to_responses(_no_effort_env: None)
     passthrough has to still be there afterwards. A knob that quietly stops working halfway
     through a run is worse than one the server ignores, which is why it is sent on both."""
     client = RefusesToolsOnChat(responses_result("walk", '{"vx": 0.2}'))
-    p = OpenAIProvider(model=UNHINTED, client=client, extra_body=BODY)
+    p = OpenAIProvider(llm_id=UNHINTED, client=client, extra_body=BODY)
     turn = await p.step("SYS", history(), TOOLS)
     assert p.api == "responses" and turn.tool_calls[0].name == "walk"
     assert client.chat_calls[0]["extra_body"] == BODY
@@ -843,13 +843,13 @@ async def test_extra_body_survives_the_switch_to_responses(_no_effort_env: None)
 async def test_extra_body_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QUACKD_EXTRA_BODY", BODY_JSON)
     client = FakeOpenAI(openai_response("stop", "{}"))
-    await OpenAIProvider(model="gpt-5", client=client).step("SYS", history(), TOOLS)
+    await OpenAIProvider(llm_id="gpt-5", client=client).step("SYS", history(), TOOLS)
     assert client.kwargs["extra_body"] == BODY
 
     # blanked rather than deleted, which is what a commented-out `.env` line leaves behind
     monkeypatch.setenv("QUACKD_EXTRA_BODY", "   ")
     client = FakeOpenAI(openai_response("stop", "{}"))
-    await OpenAIProvider(model="gpt-5", client=client).step("SYS", history(), TOOLS)
+    await OpenAIProvider(llm_id="gpt-5", client=client).step("SYS", history(), TOOLS)
     assert "extra_body" not in client.kwargs
 
 
@@ -859,13 +859,13 @@ async def test_the_flag_outranks_the_environment(monkeypatch: pytest.MonkeyPatch
     how a `.env` line is silenced for a single run."""
     monkeypatch.setenv("QUACKD_EXTRA_BODY", '{"from": "the environment"}')
     client = FakeOpenAI(openai_response("stop", "{}"))
-    await OpenAIProvider(model="gpt-5", client=client, extra_body=BODY).step(
+    await OpenAIProvider(llm_id="gpt-5", client=client, extra_body=BODY).step(
         "SYS", history(), TOOLS
     )
     assert client.kwargs["extra_body"] == BODY
 
     client = FakeOpenAI(openai_response("stop", "{}"))
-    await OpenAIProvider(model="gpt-5", client=client, extra_body={}).step("SYS", history(), TOOLS)
+    await OpenAIProvider(llm_id="gpt-5", client=client, extra_body={}).step("SYS", history(), TOOLS)
     assert "extra_body" not in client.kwargs
 
 
@@ -875,12 +875,12 @@ def test_extra_body_must_be_a_json_object(bad: str, monkeypatch: pytest.MonkeyPa
     and a line in a `.env` they have forgotten want different answers."""
     monkeypatch.setenv("QUACKD_EXTRA_BODY", bad)
     with pytest.raises(ProviderError, match="QUACKD_EXTRA_BODY"):
-        OpenAIProvider(model="gpt-5", client=FakeOpenAI(None))
+        OpenAIProvider(llm_id="gpt-5", client=FakeOpenAI(None))
 
     monkeypatch.setenv("QUACKD_EXTRA_BODY", "")
     with pytest.raises(ProviderError, match="--extra-body"):
         # the parse is what fails, before the SDK this machine does not have is imported
-        make_provider("vllm", model="m", base_url="http://gpu:8000/v1", extra_body=bad)
+        make_provider("vllm", llm_id="m", base_url="http://gpu:8000/v1", extra_body=bad)
 
 
 @pytest.mark.parametrize("provider", ["openai", "grok", "vllm", "openrouter"])
@@ -894,21 +894,21 @@ def test_extra_body_reaches_every_provider_that_speaks_openais_api(
 
     def record(self: Any, *a: Any, **kw: Any) -> None:
         seen.update(kw)
-        self.name, self.model, self.supports_vision = provider, "m", False
+        self.name, self.llm_id, self.supports_vision = provider, "m", False
 
     monkeypatch.setattr(OpenAIProvider, "__init__", record)
-    make_provider(provider, model=None, base_url="http://host:8000/v1", extra_body=BODY_JSON)
+    make_provider(provider, llm_id=None, base_url="http://host:8000/v1", extra_body=BODY_JSON)
     assert seen["extra_body"] == BODY, f"{provider} was not handed the parsed object"
 
 
 @pytest.mark.parametrize("key", ["model", "messages", "input", "instructions", "tools", "stream"])
 def test_extra_body_refuses_the_keys_quackd_owns(key: str) -> None:
-    """`model` would put a model on the wire that `run_start` does not name, and `stream`
+    """`model` would put an LLM on the wire that `run_start` does not name, and `stream`
     changes the shape of the reply without telling the SDK, which then fails on the content
     type long after the robot has connected."""
     with pytest.raises(ProviderError, match=re.escape(repr(key))):
         make_provider(
-            "vllm", model="m", base_url="http://gpu:8000/v1", extra_body=json.dumps({key: "x"})
+            "vllm", llm_id="m", base_url="http://gpu:8000/v1", extra_body=json.dumps({key: "x"})
         )
 
 
@@ -920,7 +920,7 @@ def test_extra_body_lets_you_override_what_quackd_sends() -> None:
 
 
 async def test_openai_bad_json_arguments_do_not_crash() -> None:
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("walk", "{not json")))
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("walk", "{not json")))
     turn = await p.step("S", history()[:1], TOOLS)
     assert "_unparsed" in turn.tool_calls[0].arguments
 
@@ -932,9 +932,9 @@ NOT_AN_OBJECT = ["[1, 2]", '"text"', "42", "true", "1.5", "[]"]
 async def test_arguments_that_are_not_an_object_reach_the_gate_on_chat(raw: str) -> None:
     """JSON, and not the object a tool's arguments have to be, was a pydantic error out of
     `ToolCall`: no `ProviderError`, no retry, and the run ended on a traceback's words because one
-    model sent one odd call. Invalid JSON already went to the params gate, which tells the pilot
+    LLM sent one odd call. Invalid JSON already went to the params gate, which tells the pilot
     what was wrong and lets it try again, and this is the same mistake."""
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("walk", raw)))
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("walk", raw)))
     turn = await p.step("S", history()[:1], TOOLS)
     assert turn.tool_calls[0].arguments == {"_unparsed": raw}
 
@@ -946,9 +946,9 @@ def test_arguments_that_are_not_an_object_reach_the_gate_on_responses(raw: str) 
 
 
 async def test_a_call_with_no_arguments_is_a_call_with_none() -> None:
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", None)))  # type: ignore[arg-type]
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("stop", None)))  # type: ignore[arg-type]
     assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("stop", "{}")))
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("stop", "{}")))
     assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {}
 
 
@@ -957,8 +957,8 @@ async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaul
     raw: str,
 ) -> None:
     """A turn cut off before its arguments comes as a blank, and running the verb with its defaults
-    opened the arm's gripper on nothing the model said. The gate refuses it, as it always did."""
-    p = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(openai_response("gripper", raw)))
+    opened the arm's gripper on nothing the LLM said. The gate refuses it, as it always did."""
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("gripper", raw)))
     assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
     assert parse_responses(responses_result("gripper", raw)).tool_calls[0].arguments == {
         "_unparsed": raw
@@ -1025,7 +1025,7 @@ def test_openai_history_without_images_has_no_extra_user_turn() -> None:
 def test_grok_is_openai_with_xai_endpoint() -> None:
     p = GrokProvider(client=FakeOpenAI(None))
     assert p.name == "grok" and p.base_url == "https://api.x.ai/v1"
-    assert p.model == default_model_for("grok"), "no model means the catalogue's first entry"
+    assert p.llm_id == default_llm_for("grok"), "no LLM means the catalogue's first entry"
 
 
 def test_missing_keys_are_clear(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1059,7 +1059,7 @@ def gemini_response(**usage: Any) -> Any:
     """One `walk` call, and whatever counts the caller cares about on `usage_metadata`.
 
     Only the fields a test names exist on the namespace, which is the point: google-genai
-    leaves a count off the object entirely when the model has no thoughts or no cache, so a
+    leaves a count off the object entirely when the LLM has no thoughts or no cache, so a
     parser that reached for one directly would fail on the ordinary response rather than on
     an exotic one.
     """
@@ -1079,7 +1079,7 @@ async def test_gemini_request_and_response_mapping() -> None:
     client = FakeGemini(response)
     turn = await GeminiProvider(client=client).step("SYS", history(), TOOLS)
     kw = client.kwargs
-    assert kw["model"] == default_model_for("gemini")
+    assert kw["model"] == default_llm_for("gemini")
     assert kw["config"]["system_instruction"] == "SYS"
     assert kw["config"]["tool_config"] == {"function_calling_config": {"mode": "ANY"}}
     decl = kw["config"]["tools"][0]["function_declarations"][0]
@@ -1222,7 +1222,7 @@ def test_factory_reports_missing_extra_or_key(monkeypatch: pytest.MonkeyPatch) -
         make_provider("openai")
 
 
-# ── what the model thought: the `thinking` field the log shows ──────────────────────────
+# ── what the LLM thought: the `thinking` field the log shows ──────────────────────────
 
 
 class BadRequestError(Exception):
@@ -1268,8 +1268,8 @@ async def test_anthropic_all_empty_thinking_is_none_not_a_blank_line() -> None:
     assert turn.thinking is None
 
 
-async def test_anthropic_retries_once_without_thinking_on_an_older_model() -> None:
-    """A model older than Claude 4.6 rejects the parameter. Losing the thinking text is
+async def test_anthropic_retries_once_without_thinking_on_an_older_llm() -> None:
+    """An LLM older than Claude 4.6 rejects the parameter. Losing the thinking text is
     acceptable; losing the run because the log asked for it is not."""
     calls: list[dict[str, Any]] = []
 
@@ -1280,7 +1280,7 @@ async def test_anthropic_retries_once_without_thinking_on_an_older_model() -> No
         return anthropic_response(tool_use_block())
 
     client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
-    p = AnthropicProvider(model="claude-opus-4-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-opus-4-5", client=client, fallbacks=False)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert len(calls) == 2 and "thinking" in calls[0] and "thinking" not in calls[1]
@@ -1330,7 +1330,7 @@ async def test_a_400_about_a_replayed_thinking_block_does_not_disable_thinking()
 
 async def test_the_real_sdk_message_shape_still_matches_a_top_level_thinking_complaint() -> None:
     """The same wrapping, but the API's sentence names the `thinking` parameter itself: this
-    one is the old model the retry was written for."""
+    one is the old LLM the retry was written for."""
     calls: list[dict[str, Any]] = []
 
     async def create(**kwargs: Any) -> Any:
@@ -1340,7 +1340,7 @@ async def test_the_real_sdk_message_shape_still_matches_a_top_level_thinking_com
         return anthropic_response(tool_use_block())
 
     client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
-    p = AnthropicProvider(model="claude-opus-4-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-opus-4-5", client=client, fallbacks=False)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert len(calls) == 2 and p.thinking_display is None
@@ -1373,7 +1373,7 @@ def test_anthropic_thinking_display_is_configurable(monkeypatch: pytest.MonkeyPa
     assert AnthropicProvider(client=FakeAnthropic(None)).thinking_display == "omitted"
 
 
-# ── a Claude model that will not be forced to call a tool ───────────────────────────────
+# ── a Claude LLM that will not be forced to call a tool ───────────────────────────────
 
 #: The sentence the API answers a forced call with on Claude Opus 5.5 and Claude Fable 5.1,
 #: copied from Anthropic's Opus 5.5 migration guide on 2026-09-23. Quoted rather than
@@ -1381,76 +1381,76 @@ def test_anthropic_thinking_display_is_configurable(monkeypatch: pytest.MonkeyPa
 REFUSES_FORCED = 'tool_choice: type "tool" and "any" are not supported for this model.'
 
 
-@pytest.mark.parametrize("spec", models_for("anthropic"), ids=lambda m: m.id)
+@pytest.mark.parametrize("spec", llms_for("anthropic"), ids=lambda m: m.id)
 async def test_each_claude_row_is_asked_the_way_the_catalogue_says(spec: Any) -> None:
     """A row the catalogue marks is asked with `auto` from its first turn, and pays no failed
     call to be told; every other row is still made to call a tool. One call per turn both ways."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
-    await AnthropicProvider(model=spec.id, client=client).step("S", history()[:1], TOOLS)
+    await AnthropicProvider(llm_id=spec.id, client=client).step("S", history()[:1], TOOLS)
     expected = "any" if spec.forced_tools else "auto"
     assert client.kwargs["tool_choice"] == {"type": expected, "disable_parallel_tool_use": True}
 
 
-def test_the_claude_models_that_refuse_a_forced_call_are_marked() -> None:
+def test_the_claude_llms_that_refuse_a_forced_call_are_marked() -> None:
     """Both are documented by the vendor, and one of them is the default: left unmarked, every
     bare `--llm anthropic` run would open on a failed call."""
-    assert default_model_for("anthropic") == "claude-opus-5-5"
-    for model_id in ("claude-opus-5-5", "claude-fable-5-1"):
-        spec = find_model("anthropic", model_id)
-        assert spec is not None and spec.forced_tools is False, model_id
+    assert default_llm_for("anthropic") == "claude-opus-5-5"
+    for llm_id in ("claude-opus-5-5", "claude-fable-5-1"):
+        spec = find_llm("anthropic", llm_id)
+        assert spec is not None and spec.forced_tools is False, llm_id
 
 
-@pytest.mark.parametrize("spec", models_for("anthropic"), ids=lambda m: m.id)
+@pytest.mark.parametrize("spec", llms_for("anthropic"), ids=lambda m: m.id)
 async def test_effort_goes_only_to_the_claude_rows_that_take_it(spec: Any) -> None:
-    """Haiku 4.5 and Sonnet 4.5 are not on Anthropic's list of models that take
+    """Haiku 4.5 and Sonnet 4.5 are not on Anthropic's list of LLMs that take
     `output_config.effort`, and quackd sent it to them on every call."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
-    await AnthropicProvider(model=spec.id, client=client, effort="medium").step(
+    await AnthropicProvider(llm_id=spec.id, client=client, effort="medium").step(
         "S", history()[:1], TOOLS
     )
     assert ("output_config" in client.kwargs) is spec.effort
     assert {"claude-haiku-4-5", "claude-sonnet-4-5"} == {
-        m.id for m in models_for("anthropic") if not m.effort
+        m.id for m in llms_for("anthropic") if not m.effort
     }
 
 
-async def test_the_sentence_the_4_5_models_send_about_thinking_is_read_as_a_refusal() -> None:
+async def test_the_sentence_the_4_5_llms_send_about_thinking_is_read_as_a_refusal() -> None:
     """Anthropic's errors page gives it word for word, and it opens with "adaptive". The
     anchored match written for the older wording never saw it, so the one retry that exists for
-    exactly these models did not fire and their first call failed on every run."""
+    exactly these LLMs did not fire and their first call failed on every run."""
     client, calls = _recording(
         lambda kw: "adaptive thinking is not supported on this model" if "thinking" in kw else None
     )
-    p = AnthropicProvider(model="claude-haiku-4-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-haiku-4-5", client=client, fallbacks=False)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert len(calls) == 2 and "thinking" not in calls[1]
     assert p.thinking_display is None
 
 
-def test_the_claude_models_that_bind_their_thinking_are_trimmed_in_steps() -> None:
+def test_the_claude_llms_that_bind_their_thinking_are_trimmed_in_steps() -> None:
     """Opus 5.5 and Fable 5.1 refuse a replayed thinking block once anything before it has
     changed, and the loop's frame trim changes earlier messages from the third call on. Those
     two, and only those, ask the loop to trim in steps rather than every call."""
-    marked = {m.id for m in models_for("anthropic") if m.binds_thinking}
+    marked = {m.id for m in llms_for("anthropic") if m.binds_thinking}
     assert marked == {"claude-opus-5-5", "claude-fable-5-1"}
-    for spec in models_for("anthropic"):
-        p = AnthropicProvider(model=spec.id, client=FakeAnthropic(None))
+    for spec in llms_for("anthropic"):
+        p = AnthropicProvider(llm_id=spec.id, client=FakeAnthropic(None))
         assert p.binds_thinking is spec.binds_thinking, spec.id
         assert p.frame_trim_period == (BINDING_TRIM_PERIOD if spec.binds_thinking else 1)
-    unknown = AnthropicProvider(model="claude-not-in-this-build", client=FakeAnthropic(None))
+    unknown = AnthropicProvider(llm_id="claude-not-in-this-build", client=FakeAnthropic(None))
     assert unknown.frame_trim_period == 1
 
 
 @pytest.mark.parametrize("fallbacks", [True, False], ids=["fallbacks", "no-fallbacks"])
-async def test_a_binding_model_asks_for_a_stale_block_to_be_dropped_not_refused(
+async def test_a_binding_llm_asks_for_a_stale_block_to_be_dropped_not_refused(
     fallbacks: bool,
 ) -> None:
     """Each step of the trim invalidates the blocks replayed after it. `drop_block` has the API
     discard those rather than answer the request with a 400, and it only exists behind its own
-    beta, so a binding model goes to the beta endpoint even with fallbacks off."""
+    beta, so a binding LLM goes to the beta endpoint even with fallbacks off."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
-    p = AnthropicProvider(model="claude-opus-5-5", client=client, fallbacks=fallbacks)
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client, fallbacks=fallbacks)
     await p.step("S", history()[:1], TOOLS)
     assert client.beta_used
     kw = client.kwargs
@@ -1460,35 +1460,35 @@ async def test_a_binding_model_asks_for_a_stale_block_to_be_dropped_not_refused(
     assert ("fallbacks" in kw) is fallbacks
 
     plain = FakeAnthropic(anthropic_response(tool_use_block()))
-    await AnthropicProvider(model="claude-opus-5", client=plain, fallbacks=fallbacks).step(
+    await AnthropicProvider(llm_id="claude-opus-5", client=plain, fallbacks=fallbacks).step(
         "S", history()[:1], TOOLS
     )
     assert "block_binding" not in plain.kwargs["thinking"]
     assert BINDING_BETA not in plain.kwargs.get("betas", [])
 
 
-async def test_a_binding_model_whose_thinking_is_refused_is_told_not_quietly_unbound() -> None:
+async def test_a_binding_llm_whose_thinking_is_refused_is_told_not_quietly_unbound() -> None:
     """Opus 5.5 and Fable 5.1 think whether they are asked to or not, so asking again without
     `thinking` would keep the bound blocks and lose only `block_binding`, and the first trim of
     an old frame would be a 400 nine turns later. The refusal is raised as it came, once, and
-    the other models keep their retry."""
+    the other LLMs keep their retry."""
     client, calls = _recording(lambda kw: ADAPTIVE_REFUSED if "thinking" in kw else None)
-    p = AnthropicProvider(model="claude-opus-5-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client, fallbacks=False)
     with pytest.raises(ProviderError, match="adaptive thinking is not supported"):
         await p.step("S", history()[:1], TOOLS)
     assert len(calls) == 1 and p.binds_thinking is True
 
     client, calls = _recording(lambda kw: ADAPTIVE_REFUSED if "thinking" in kw else None)
-    q = AnthropicProvider(model="claude-opus-4-5", client=client, fallbacks=False)
+    q = AnthropicProvider(llm_id="claude-opus-4-5", client=client, fallbacks=False)
     await q.step("S", history()[:1], TOOLS)
     assert len(calls) == 2 and "thinking" not in calls[1]
 
 
-async def test_a_binding_model_asks_to_bind_even_with_no_thinking_display() -> None:
-    """`QUACKD_THINKING_DISPLAY=` sends no display, and the model thinks anyway; the field that
+async def test_a_binding_llm_asks_to_bind_even_with_no_thinking_display() -> None:
+    """`QUACKD_THINKING_DISPLAY=` sends no display, and the LLM thinks anyway; the field that
     keeps a stale block from being a 400 has to go out regardless."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
-    p = AnthropicProvider(model="claude-opus-5-5", client=client, thinking_display="")
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client, thinking_display="")
     await p.step("S", history()[:1], TOOLS)
     assert client.kwargs["thinking"] == {
         "type": "adaptive",
@@ -1497,11 +1497,11 @@ async def test_a_binding_model_asks_to_bind_even_with_no_thinking_display() -> N
 
 
 def test_leaving_a_turn_s_thinking_out_keeps_everything_else_it_said() -> None:
-    """What the loop hands a binding model for a turn a trim invalidated: the same turn with
+    """What the loop hands a binding LLM for a turn a trim invalidated: the same turn with
     both kinds of thinking block gone, and the call and the text where they were, in order.
     A turn with no block list to filter, as a provider other than this one records, passes
     through as it came."""
-    p = AnthropicProvider(model="claude-opus-5-5", client=FakeAnthropic(None))
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=FakeAnthropic(None))
     call = ToolCall(id="t1", name="walk", arguments={"vx": 0.1})
     raw = [
         {"type": "thinking", "thinking": "the bench is left", "signature": "s1"},
@@ -1518,10 +1518,10 @@ def test_leaving_a_turn_s_thinking_out_keeps_everything_else_it_said() -> None:
 
 
 async def test_an_sdk_too_old_for_fallbacks_keeps_the_binding_beta() -> None:
-    """An SDK that predates `fallbacks` still sends betas. A binding model keeps its own, and
+    """An SDK that predates `fallbacks` still sends betas. A binding LLM keeps its own, and
     with it `block_binding`: without them the first trim of an old frame is a 400."""
     client = FakeAnthropic(anthropic_response(tool_use_block()), beta_ok=False)
-    p = AnthropicProvider(model="claude-opus-5-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client)
     await p.step("S", history()[:1], TOOLS)
     assert client.beta_used and client.kwargs["betas"] == [BINDING_BETA]
     assert "fallbacks" not in client.kwargs
@@ -1542,27 +1542,27 @@ async def test_a_type_error_naming_fallbacks_once_they_are_off_is_raised_not_ret
         raise TypeError("fallbacks: 'NoneType' object is not iterable")
 
     async def plain(**_: Any) -> Any:
-        raise AssertionError("a binding model reached the plain endpoint")
+        raise AssertionError("a binding LLM reached the plain endpoint")
 
     client = NS(messages=NS(create=plain), beta=NS(messages=NS(create=beta)))
-    p = AnthropicProvider(model="claude-opus-5-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client)
     with pytest.raises(ProviderError, match="TypeError"):
         await p.step("S", history()[:1], TOOLS)
     assert len(beta_calls) == 2, "asked again more than once"
     assert "fallbacks" in beta_calls[0] and "fallbacks" not in beta_calls[1]
 
 
-async def test_an_sdk_too_old_for_betas_refuses_a_binding_model_up_front() -> None:
-    """Without betas there is no `block_binding`, and a binding model's first trim of an old
+async def test_an_sdk_too_old_for_betas_refuses_a_binding_llm_up_front() -> None:
+    """Without betas there is no `block_binding`, and a binding LLM's first trim of an old
     frame would be a 400 nine turns in. It is said on the first call instead."""
     client = FakeAnthropic(anthropic_response(tool_use_block()), beta_ok=False, predates="betas")
-    p = AnthropicProvider(model="claude-opus-5-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5-5", client=client)
     with pytest.raises(ProviderError, match="sends no betas"):
         await p.step("S", history()[:1], TOOLS)
     assert client.kwargs == {}, "nothing reached the plain endpoint"
 
     plain = FakeAnthropic(anthropic_response(tool_use_block()), beta_ok=False, predates="betas")
-    q = AnthropicProvider(model="claude-opus-5", client=plain)
+    q = AnthropicProvider(llm_id="claude-opus-5", client=plain)
     await q.step("S", history()[:1], TOOLS)
     assert not plain.beta_used and "fallbacks" not in plain.kwargs and q.fallbacks is False
 
@@ -1573,7 +1573,7 @@ async def test_deepseek_turns_thinking_off_and_insists_on_its_one_call() -> None
     from quackd.agent.providers.deepseek import DeepSeekProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
-    await DeepSeekProvider(model="deepseek-flash", client=client).step("S", history(), TOOLS)
+    await DeepSeekProvider(llm_id="deepseek-flash", client=client).step("S", history(), TOOLS)
     assert client.kwargs["tool_choice"] == "required"
     assert client.kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
     assert "parallel_tool_calls" not in client.kwargs
@@ -1583,11 +1583,11 @@ async def test_a_deepseek_extra_body_goes_over_the_thinking_default_not_instead_
     from quackd.agent.providers.deepseek import DeepSeekProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
-    p = DeepSeekProvider(model="deepseek-flash", client=client, extra_body={"top_p": 0.5})
+    p = DeepSeekProvider(llm_id="deepseek-flash", client=client, extra_body={"top_p": 0.5})
     await p.step("S", history()[:1], TOOLS)
     assert client.kwargs["extra_body"] == {"thinking": {"type": "disabled"}, "top_p": 0.5}
     p = DeepSeekProvider(
-        model="deepseek-flash", client=client, extra_body={"thinking": {"type": "enabled"}}
+        llm_id="deepseek-flash", client=client, extra_body={"thinking": {"type": "enabled"}}
     )
     await p.step("S", history()[:1], TOOLS)
     assert client.kwargs["extra_body"] == {"thinking": {"type": "enabled"}}, (
@@ -1600,7 +1600,7 @@ async def test_meta_is_asked_for_one_call_per_turn() -> None:
     from quackd.agent.providers.meta import MetaProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
-    await MetaProvider(model="muse-spark-1.3", client=client).step("S", history()[:1], TOOLS)
+    await MetaProvider(llm_id="muse-spark-1.3", client=client).step("S", history()[:1], TOOLS)
     assert client.kwargs["parallel_tool_calls"] is False
     assert client.kwargs["tool_choice"] == "auto"
 
@@ -1620,11 +1620,11 @@ def _recording(fail_when: Callable[[dict[str, Any]], str | None]) -> tuple[Any, 
 
 
 async def test_a_refused_forced_call_is_asked_again_with_auto_and_stays_asked() -> None:
-    """A model the catalogue does not mark learns it from the 400, once, for the whole run."""
+    """An LLM the catalogue does not mark learns it from the 400, once, for the whole run."""
     client, calls = _recording(
         lambda kw: REFUSES_FORCED if kw["tool_choice"]["type"] == "any" else None
     )
-    p = AnthropicProvider(model="claude-a-model-this-build-has-not-heard-of", client=client)
+    p = AnthropicProvider(llm_id="claude-an-llm-this-build-has-not-heard-of", client=client)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert [c["tool_choice"]["type"] for c in calls] == ["any", "auto"]
@@ -1639,22 +1639,22 @@ async def test_a_tool_choice_complaint_auto_cannot_fix_is_raised_after_one_reque
     client, calls = _recording(
         lambda kw: "tool_choice.name: Input should be the name of a tool the request declares"
     )
-    p = AnthropicProvider(model="claude-opus-5", client=client)
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client)
     with pytest.raises(ProviderError, match="bad request"):
         await p.step("S", history()[:1], TOOLS)
     assert len(calls) == 1 and p.forced_tools is True
 
 
-async def test_a_model_that_refuses_auto_as_well_ends_the_turn_rather_than_looping() -> None:
+async def test_an_llm_that_refuses_auto_as_well_ends_the_turn_rather_than_looping() -> None:
     client, calls = _recording(lambda kw: REFUSES_FORCED)
-    p = AnthropicProvider(model="claude-opus-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client, fallbacks=False)
     with pytest.raises(ProviderError, match="not supported"):
         await p.step("S", history()[:1], TOOLS)
     assert [c["tool_choice"]["type"] for c in calls] == ["any", "auto"]
 
 
 async def test_both_repairs_can_happen_on_one_turn_and_each_happens_once() -> None:
-    """An old model refuses `thinking` and a new one refuses a forced call; nothing ships that
+    """An old LLM refuses `thinking` and a new one refuses a forced call; nothing ships that
     does both, and the retry must still end rather than go round again."""
 
     def complaint(kw: dict[str, Any]) -> str | None:
@@ -1663,39 +1663,39 @@ async def test_both_repairs_can_happen_on_one_turn_and_each_happens_once() -> No
         return REFUSES_FORCED if kw["tool_choice"]["type"] == "any" else None
 
     client, calls = _recording(complaint)
-    p = AnthropicProvider(model="claude-opus-5", client=client, fallbacks=False)
+    p = AnthropicProvider(llm_id="claude-opus-5", client=client, fallbacks=False)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert len(calls) == 3
     assert "thinking" not in calls[2] and calls[2]["tool_choice"]["type"] == "auto"
 
 
-# ── which model answered, when a refusal fallback took the turn ─────────────────────────
+# ── which LLM answered, when a refusal fallback took the turn ─────────────────────────
 
 
-def _answered(*kinds: str, model: str, as_dicts: bool = False) -> Any:
+def _answered(*kinds: str, llm_id: str, as_dicts: bool = False) -> Any:
     entries = [{"type": k} if as_dicts else NS(type=k) for k in kinds]
     usage = NS(input_tokens=10, output_tokens=5, iterations=entries)
     response = anthropic_response(tool_use_block(), usage=usage)
-    response.model = model
+    response.model = llm_id
     return response
 
 
 @pytest.mark.parametrize("as_dicts", [False, True], ids=["objects", "dicts"])
-async def test_a_turn_a_fallback_answered_names_the_model_that_answered_it(as_dicts: bool) -> None:
+async def test_a_turn_a_fallback_answered_names_the_llm_that_answered_it(as_dicts: bool) -> None:
     client = FakeAnthropic(
-        _answered("message", "fallback_message", model="claude-opus-4-8", as_dicts=as_dicts)
+        _answered("message", "fallback_message", llm_id="claude-opus-4-8", as_dicts=as_dicts)
     )
-    turn = await AnthropicProvider(model="claude-opus-5-5", client=client).step(
+    turn = await AnthropicProvider(llm_id="claude-opus-5-5", client=client).step(
         "S", history()[:1], TOOLS
     )
     assert turn.served_by == "claude-opus-4-8"
 
 
-async def test_a_turn_the_model_asked_for_took_names_nobody_even_when_the_id_differs() -> None:
-    """An alias comes back as its dated snapshot, which is the same model and no fallback."""
-    client = FakeAnthropic(_answered("message", model="claude-haiku-4-5-20251001"))
-    turn = await AnthropicProvider(model="claude-haiku-4-5", client=client).step(
+async def test_a_turn_the_llm_asked_for_took_names_nobody_even_when_the_id_differs() -> None:
+    """An alias comes back as its dated snapshot, which is the same LLM and no fallback."""
+    client = FakeAnthropic(_answered("message", llm_id="claude-haiku-4-5-20251001"))
+    turn = await AnthropicProvider(llm_id="claude-haiku-4-5", client=client).step(
         "S", history()[:1], TOOLS
     )
     assert turn.served_by is None
@@ -1711,7 +1711,7 @@ async def test_openai_reads_reasoning_from_either_field(field: str) -> None:
     response = openai_response("walk", "{}")
     setattr(response.choices[0].message, field, "  I should walk  ")
     response.usage.completion_tokens_details = NS(reasoning_tokens=44)
-    turn = await OpenAIProvider(model=UNHINTED, client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(response)).step(
         "S", history()[:1], TOOLS
     )
     assert turn.thinking == "I should walk" and turn.usage.reasoning_tokens == 44
@@ -1719,14 +1719,14 @@ async def test_openai_reads_reasoning_from_either_field(field: str) -> None:
 
 async def test_openai_without_reasoning_reports_none() -> None:
     client = FakeOpenAI(openai_response("walk", "{}"))
-    turn = await OpenAIProvider(model=UNHINTED, client=client).step("S", history()[:1], TOOLS)
+    turn = await OpenAIProvider(llm_id=UNHINTED, client=client).step("S", history()[:1], TOOLS)
     assert turn.thinking is None and turn.usage.reasoning_tokens == 0
 
 
 async def test_openai_ignores_a_non_string_reasoning_field() -> None:
     response = openai_response("walk", "{}")
     response.choices[0].message.reasoning = {"summary": "an object, not text"}
-    turn = await OpenAIProvider(model=UNHINTED, client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(response)).step(
         "S", history()[:1], TOOLS
     )
     assert turn.thinking is None
@@ -1734,7 +1734,7 @@ async def test_openai_ignores_a_non_string_reasoning_field() -> None:
 
 async def test_local_splits_inline_think_tags_out_of_the_answer() -> None:
     """A server with no reasoning separation leaves `<think>` in `content`, where it would be
-    shown as the answer and replayed to the model next turn as something it said."""
+    shown as the answer and replayed to the LLM next turn as something it said."""
     from quackd.agent.providers.local import LocalProvider
 
     response = openai_response("walk", "{}", content="<think>ball is left</think>turning left")
@@ -1755,11 +1755,11 @@ async def test_gemini_asks_for_thoughts_and_keeps_them_out_of_the_text() -> None
     turn = await GeminiProvider(client=client).step("SYS", history()[:1], TOOLS)
     assert client.kwargs["config"]["thinking_config"] == {"include_thoughts": True}
     assert turn.thinking == "I will walk"
-    assert turn.text == "walking now"  # a thought is not something the model said
+    assert turn.text == "walking now"  # a thought is not something the LLM said
     assert turn.usage.reasoning_tokens == 9
 
 
-async def test_gemini_retries_once_without_thoughts_on_a_model_without_them() -> None:
+async def test_gemini_retries_once_without_thoughts_on_an_llm_without_them() -> None:
     seen: list[dict[str, Any]] = []
     answered = NS(
         candidates=[
@@ -1778,7 +1778,7 @@ async def test_gemini_retries_once_without_thoughts_on_a_model_without_them() ->
         return answered
 
     client = NS(aio=NS(models=NS(generate_content=generate_content)))
-    p = GeminiProvider(model="gemini-2.0-flash", client=client)
+    p = GeminiProvider(llm_id="gemini-2.0-flash", client=client)
     turn = await p.step("S", history()[:1], TOOLS)
     assert [tc.name for tc in turn.tool_calls] == ["walk"]
     assert len(seen) == 2 and not p.include_thoughts
@@ -1794,7 +1794,7 @@ async def test_gemini_other_errors_still_raise() -> None:
 
 
 async def test_gemini_does_not_retry_a_rate_limit_that_mentions_thinking() -> None:
-    """Only INVALID_ARGUMENT means "this model has no thoughts". A 429 that happens to say
+    """Only INVALID_ARGUMENT means "this LLM has no thoughts". A 429 that happens to say
     the word would otherwise buy a second, equally rate-limited request and give up thought
     summaries for the rest of the run."""
     calls: list[dict[str, Any]] = []
@@ -1823,7 +1823,7 @@ def test_gemini_thoughts_can_be_turned_off(monkeypatch: pytest.MonkeyPatch) -> N
     "build",
     [
         pytest.param(
-            lambda: OpenAIProvider(model=UNHINTED, client=FakeOpenAI(NS(choices=[], usage=None))),
+            lambda: OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(NS(choices=[], usage=None))),
             id="openai",
         ),
         pytest.param(
@@ -1936,7 +1936,7 @@ async def test_anthropic_reasoning_tokens_are_a_slice_of_an_output_total_already
     """`output_tokens` is what Anthropic bills and calls inclusive; `output_tokens_details` is
     a read-only decomposition of that same number. So the thinking count is recorded for the
     reader and added to nothing: folding it into the output the way Gemini's has to be folded
-    would charge the output rate twice for every thought the model had.
+    would charge the output rate twice for every thought the LLM had.
     """
     usage = NS(input_tokens=120, output_tokens=30, output_tokens_details=NS(thinking_tokens=18))
     client = FakeAnthropic(anthropic_response(tool_use_block(), usage=usage))
@@ -1956,7 +1956,7 @@ async def test_openai_chat_keeps_the_prompt_total_and_names_its_cached_slices() 
     """
     response = openai_response("walk", "{}")
     response.usage.prompt_tokens_details = NS(cached_tokens=40, cache_write_tokens=8)
-    turn = await OpenAIProvider(model=UNHINTED, client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(response)).step(
         "S", history()[:1], TOOLS
     )
     assert turn.usage.input_tokens == 50, "unchanged: the cached part was always inside it"
@@ -1973,7 +1973,7 @@ async def test_openai_responses_names_the_cached_slices_under_its_own_spelling(
     """
     result = responses_result("walk", '{"vx": 0.2}')
     result.usage.input_tokens_details = NS(cached_tokens=7, cache_write_tokens=2)
-    p = OpenAIProvider(model="gpt-6-astra", client=RefusesToolsOnChat(result))
+    p = OpenAIProvider(llm_id="gpt-6-astra", client=RefusesToolsOnChat(result))
     turn = await p.step("SYS", history()[:1], TOOLS)
     assert turn.usage.input_tokens == 11, "the prompt total already contains the cached part"
     assert turn.usage.cache_read_tokens == 7 and turn.usage.cache_write_tokens == 2
@@ -1984,7 +1984,7 @@ async def test_gemini_bills_the_thoughts_beside_the_answer_and_names_its_cached_
     candidates, three addends, so `candidates_token_count` cannot already contain the thinking.
     quackd's `output_tokens` is everything generated at the output rate, so the two are summed
     here and nowhere else: before that, a thinking Gemini run under-reported its output by
-    however much it thought, which on a reasoning model is most of what it generated.
+    however much it thought, which on a reasoning LLM is most of what it generated.
 
     `reasoning_tokens` stays the slice of that sum the vendor counted apart, never a third
     number to price. The prompt side needs no such addition: `prompt_token_count` is the
@@ -2014,13 +2014,13 @@ async def test_gemini_bills_the_thoughts_beside_the_answer_and_names_its_cached_
         ),
         pytest.param(
             lambda: OpenAIProvider(
-                model=UNHINTED, client=FakeOpenAI(openai_response("walk", "{}"))
+                llm_id=UNHINTED, client=FakeOpenAI(openai_response("walk", "{}"))
             ),
             id="openai",
         ),
         pytest.param(
             lambda: OpenAIProvider(
-                model="gpt-6-astra", client=RefusesToolsOnChat(responses_result("walk", "{}"))
+                llm_id="gpt-6-astra", client=RefusesToolsOnChat(responses_result("walk", "{}"))
             ),
             id="openai-responses",
         ),
@@ -2039,7 +2039,7 @@ async def test_a_usage_object_with_none_of_the_cache_fields_still_parses(
     an SDK older than the fields, a gateway that forwards the two counts it knows about. The
     buckets have to read as 0 there, the way the malformed-response test above asks for an
     error rather than a traceback, because a `getattr` that reached for one directly would take
-    the run down at its first model call on the common case rather than on a rare one.
+    the run down at its first LLM call on the common case rather than on a rare one.
     """
     turn = await build().step("S", history()[:1], TOOLS)
     assert turn.usage.cache_read_tokens == 0 and turn.usage.cache_write_tokens == 0
@@ -2058,7 +2058,7 @@ async def test_a_usage_object_with_none_of_the_cache_fields_still_parses(
 def test_anthropic_sends_the_task_picture_first_and_names_the_frame_behind_it() -> None:
     """The label has to be the block immediately before the picture it introduces, so the
     order of the blocks is the whole guarantee: a renderer that sent both labels and then both
-    pictures would carry every right word and still hand the model the sketch as its view of
+    pictures would carry every right word and still hand the LLM the sketch as its view of
     the room."""
     content = a_messages(task_picture_history())[0]["content"]
     assert [b["type"] for b in content] == ["text", "image", "text", "image", "text"]
@@ -2234,10 +2234,10 @@ def openrouter_response(
     )
 
 
-def or_entry(model_id: str = "qwen/qwen3.8-flash", **over: Any) -> dict[str, Any]:
-    """One entry of OpenRouter's model list, for an id the catalogue does not carry."""
+def or_entry(llm_id: str = "qwen/qwen3.8-flash", **over: Any) -> dict[str, Any]:
+    """One entry of OpenRouter's LLM list, for an id the catalogue does not carry."""
     entry: dict[str, Any] = {
-        "id": model_id,
+        "id": llm_id,
         "architecture": {"input_modalities": ["text", "image"]},
         "pricing": {"prompt": "0.0000001", "completion": "0.00000047", "input_cache_read": "1e-8"},
         "supported_parameters": ["tools", "tool_choice", "max_tokens"],
@@ -2248,7 +2248,7 @@ def or_entry(model_id: str = "qwen/qwen3.8-flash", **over: Any) -> dict[str, Any
 
 
 class Listing(list[dict[str, Any]]):
-    """OpenRouter's model list as a test hands it in, which remembers every address that asked.
+    """OpenRouter's LLM list as a test hands it in, which remembers every address that asked.
 
     Change it before the first provider is built: the list is read once per process."""
 
@@ -2267,7 +2267,7 @@ def or_list(monkeypatch: pytest.MonkeyPatch) -> Listing:
         entries.fetched.append(base_url)
         return list(entries)
 
-    monkeypatch.setattr(openrouter, "fetch_models", fetch)
+    monkeypatch.setattr(openrouter, "fetch_llms", fetch)
     return entries
 
 
@@ -2301,18 +2301,18 @@ def test_openrouter_builds_its_client_with_quackds_attribution(
     assert sent == {"Authorization": "Bearer xai-test"}, "Grok was built with headers it never had"
 
 
-@pytest.mark.parametrize("spec", models_for("openrouter"), ids=lambda m: m.id)
+@pytest.mark.parametrize("spec", llms_for("openrouter"), ids=lambda m: m.id)
 def test_a_curated_openrouter_row_never_asks_the_network(spec: Any) -> None:
     """The six rows the catalogue carries are priced and described already. The conftest guard
     fails a fetch from openrouter.ai, so building one here proves it reached for nothing."""
-    p = OpenRouterProvider(model=spec.id, client=FakeOpenAI(None))
+    p = OpenRouterProvider(llm_id=spec.id, client=FakeOpenAI(None))
     assert p.listed is None and p.listed_price is None
     assert p.supports_vision is spec.vision
 
 
 def test_an_unlisted_id_takes_its_images_and_its_price_from_the_list(or_list: Listing) -> None:
     or_list.append(or_entry("quackd-stub/text-only", architecture={"input_modalities": ["text"]}))
-    p = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    p = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     assert p.supports_vision is True
     price = p.listed_price
     assert price is not None and price.source == "openrouter"
@@ -2322,22 +2322,22 @@ def test_an_unlisted_id_takes_its_images_and_its_price_from_the_list(or_list: Li
     assert price.checked is not None and len(price.checked) == 10, "today's date, ISO"
     assert or_list.fetched == ["https://openrouter.ai/api/v1"]
 
-    blind = OpenRouterProvider(model="quackd-stub/text-only", client=FakeOpenAI(None))
+    blind = OpenRouterProvider(llm_id="quackd-stub/text-only", client=FakeOpenAI(None))
     assert blind.supports_vision is False, "a text-only entry is sent no frames"
     assert OpenRouterProvider(
-        model="quackd-stub/text-only", client=FakeOpenAI(None), vision=True
+        llm_id="quackd-stub/text-only", client=FakeOpenAI(None), vision=True
     ).supports_vision, "--vision still wins over the list"
 
 
 def test_an_unlisted_id_the_list_lacks_is_refused_with_the_nearest_it_has(
     or_list: Listing, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Before the key: a model that does not exist is the reader's to fix first."""
+    """Before the key: an LLM that does not exist is the reader's to fix first."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError) as e:
-        OpenRouterProvider(model="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flsh", source="QUACKD_LLM")
     message = str(e.value)
-    assert "'qwen/qwen3.8-flsh' from QUACKD_LLM is not on OpenRouter's model list" in message
+    assert "'qwen/qwen3.8-flsh' from QUACKD_LLM is not on OpenRouter's LLM list" in message
     assert "Nearest on the list: qwen/qwen3.8-flash" in message
     assert "OPENROUTER_API_KEY" not in message
 
@@ -2356,20 +2356,20 @@ def test_an_unlisted_id_the_list_says_cannot_pilot_is_refused_before_the_key(
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     or_list[:] = [entry]
     with pytest.raises(ProviderError, match=why):
-        OpenRouterProvider(model="qwen/qwen3.8-flash")
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flash")
 
 
 def test_an_expiry_still_ahead_is_taken(or_list: Listing) -> None:
-    """The model answers today and the run is today. The catalogue keeps such a model out of
+    """The LLM answers today and the run is today. The catalogue keeps such an LLM out of
     its own rows; the list is not the catalogue."""
     or_list[:] = [or_entry(expiration_date="2999-01-01")]
-    assert OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    assert OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
 
 
 def test_an_unreachable_list_names_the_host_before_any_key_is_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A real fetch, at a port nothing listens on: refused, never read as "no such model"."""
+    """A real fetch, at a port nothing listens on: refused, never read as "no such LLM"."""
     import socket
 
     with socket.socket() as s:
@@ -2377,17 +2377,17 @@ def test_an_unreachable_list_names_the_host_before_any_key_is_read(
         port = s.getsockname()[1]
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError) as e:
-        OpenRouterProvider(model="qwen/qwen3.8-flash", base_url=f"http://127.0.0.1:{port}/api/v1")
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flash", base_url=f"http://127.0.0.1:{port}/api/v1")
     assert f"could not reach 127.0.0.1:{port}" in str(e.value)
-    assert "not on OpenRouter's model list" not in str(e.value)
+    assert "not on OpenRouter's LLM list" not in str(e.value)
 
 
 def test_the_list_is_read_once_per_process_and_per_address(or_list: Listing) -> None:
     """Preflight builds a provider for every file and seed, and a flock one per member."""
     for _ in range(3):
-        OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     OpenRouterProvider(
-        model="qwen/qwen3.8-flash", client=FakeOpenAI(None), base_url="http://elsewhere/api/v1/"
+        llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None), base_url="http://elsewhere/api/v1/"
     )
     assert or_list.fetched == ["https://openrouter.ai/api/v1", "http://elsewhere/api/v1"]
 
@@ -2397,12 +2397,12 @@ def test_the_list_is_asked_for_by_quackd_with_no_key() -> None:
     looks like Anthropic's client with a list in Anthropic's shape; the attribution headers; and
     no key, which has not been read yet and which the list does not need."""
     from quackd import __version__
-    from quackd.agent.providers.openrouter import fetch_models
+    from quackd.agent.providers.openrouter import fetch_llms
     from tests.fake_openrouter import FakeOpenRouter
 
     with FakeOpenRouter() as stand_in:
-        models = fetch_models(stand_in.base_url)
-    assert models[0]["id"] == "quackd-stub/tool-model"
+        llms = fetch_llms(stand_in.base_url)
+    assert llms[0]["id"] == "quackd-stub/tool-model"
     (asked,) = stand_in.gets()
     assert asked.path == "/api/v1/models"
     assert asked.headers["user-agent"] == f"quackd/{__version__}"
@@ -2419,24 +2419,24 @@ def test_the_list_is_asked_for_by_quackd_with_no_key() -> None:
             {"data": [{"id": "anthropic/x-ai/grok-4.7", "type": "model"}], "has_more": False},
             "no entry says which parameters it supports",
         ),
-        ({"data": []}, "no models in it"),
-        ({"type": "list", "models": [{"id": "a/b"}]}, "no models in it"),
-        ([{"id": "a/b", "supported_parameters": ["tools"]}], "no models in it"),
+        ({"data": []}, "no LLMs in it"),
+        ({"type": "list", "models": [{"id": "a/b"}]}, "no LLMs in it"),
+        ([{"id": "a/b", "supported_parameters": ["tools"]}], "no LLMs in it"),
         ({"data": [{"name": "no id", "supported_parameters": []}]}, "an entry with no id"),
     ],
     ids=["anthropic-shaped", "empty", "no-data", "a-bare-list", "an-entry-with-no-id"],
 )
 def test_a_list_in_another_shape_is_refused_not_read_as_absent(body: Any, why: str) -> None:
-    """Read as OpenRouter's, any of these would turn "the list is wrong" into "your model does
-    not exist" or "your model has no tool calling", and send the reader to fix the wrong thing."""
-    from quackd.agent.providers.openrouter import fetch_models
+    """Read as OpenRouter's, any of these would turn "the list is wrong" into "your LLM does
+    not exist" or "your LLM has no tool calling", and send the reader to fix the wrong thing."""
+    from quackd.agent.providers.openrouter import fetch_llms
     from tests.fake_openrouter import FakeOpenRouter
 
     with (
-        FakeOpenRouter(models_body=body) as stand_in,
-        pytest.raises(ProviderError, match=f"did not answer with OpenRouter's model list: {why}"),
+        FakeOpenRouter(llms_body=body) as stand_in,
+        pytest.raises(ProviderError, match=f"did not answer with OpenRouter's LLM list: {why}"),
     ):
-        fetch_models(stand_in.base_url)
+        fetch_llms(stand_in.base_url)
 
 
 def test_a_variable_price_on_the_list_is_unpriced_not_negative(or_list: Listing) -> None:
@@ -2448,21 +2448,21 @@ def test_a_variable_price_on_the_list_is_unpriced_not_negative(or_list: Listing)
     free = listed_price({"prompt": "0", "completion": "0"}, checked="2026-10-06")
     assert free is not None and (free.input, free.output) == (0.0, 0.0), "free is $0, not None"
     or_list[:] = [or_entry(pricing={"prompt": "-1", "completion": "-1"})]
-    p = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    p = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     assert p.listed_price is None
 
 
 # ── what an OpenRouter request carries ──
 
 
-@pytest.mark.parametrize("spec", models_for("openrouter"), ids=lambda m: m.id)
+@pytest.mark.parametrize("spec", llms_for("openrouter"), ids=lambda m: m.id)
 async def test_openrouter_insists_on_one_call_except_on_the_rows_that_refuse_one(
     spec: Any,
 ) -> None:
     client = FakeOpenAI(openrouter_response())
-    await OpenRouterProvider(model=spec.id, client=client).step("S", history(), TOOLS)
+    await OpenRouterProvider(llm_id=spec.id, client=client).step("S", history(), TOOLS)
     assert client.kwargs["tool_choice"] == ("required" if spec.forced_tools else "auto")
-    assert "parallel_tool_calls" not in client.kwargs, "13 of 465 models listed it"
+    assert "parallel_tool_calls" not in client.kwargs, "13 of 465 LLMs listed it"
     assert client.kwargs["extra_body"] == {"provider": {"require_parameters": True}}
     assert client.kwargs["model"] == spec.id
 
@@ -2472,15 +2472,15 @@ async def test_openrouter_insists_on_one_call_except_on_the_rows_that_refuse_one
     [(["tools", "tool_choice"], "auto"), (["tools"], None)],
     ids=["asked", "no-field-at-all"],
 )
-async def test_an_unlisted_model_is_asked_rather_than_told(
+async def test_an_unlisted_llm_is_asked_rather_than_told(
     supported: list[str], tool_choice: str | None, or_list: Listing
 ) -> None:
     """Nobody here has seen how each upstream words a refusal of a forced call, so an id quackd
-    does not carry is asked, the way a local model is. Where its entry lists no `tool_choice`,
+    does not carry is asked, the way a local LLM is. Where its entry lists no `tool_choice`,
     the field is not sent: `require_parameters` would route a request carrying it nowhere."""
     or_list[:] = [or_entry(supported_parameters=supported)]
     client = FakeOpenAI(openrouter_response())
-    await OpenRouterProvider(model="qwen/qwen3.8-flash", client=client).step("S", history(), TOOLS)
+    await OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=client).step("S", history(), TOOLS)
     assert client.kwargs.get("tool_choice") == tool_choice
     assert ("tool_choice" in client.kwargs) is (tool_choice is not None)
 
@@ -2511,10 +2511,10 @@ async def test_an_extra_body_can_still_replace_the_tool_choice() -> None:
     assert client.kwargs["extra_body"]["tool_choice"] == "auto"
 
 
-def test_openrouter_refuses_a_model_fallback_list_from_either_door(
+def test_openrouter_refuses_an_llm_fallback_list_from_either_door(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`models` would let OpenRouter answer with a model `run_start` does not name. Refused
+    """`models` would let OpenRouter answer with an LLM `run_start` does not name. Refused
     before the key, and each door says which it was."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError, match=r"--extra-body: 'models' is refused on openrouter"):
@@ -2597,7 +2597,7 @@ def test_reasoning_details_go_back_on_their_own_assistant_message_unchanged() ->
     assert assistants[0]["reasoning_details"] == DETAILS
     assert assistants[0]["tool_calls"][0]["id"] == "call-1"
     assert "reasoning_details" not in assistants[1], "a turn that brought none is sent none"
-    base = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(None))
+    base = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(None))
     plain = base._params("S", [first, second, third], TOOLS)["messages"]
     assert all("reasoning_details" not in m for m in plain)
     assert plain == o_messages("S", [first, second, third]), "the hook changes nothing elsewhere"
@@ -2680,7 +2680,7 @@ async def test_the_billed_cost_is_read_off_the_usage(usage: dict[str, Any], bill
 async def test_no_other_vendor_reports_a_bill() -> None:
     """`billed_usd` is OpenRouter's alone: the same usage read by the OpenAI provider is tokens."""
     response = openrouter_response(cost=0.5)
-    turn = await OpenAIProvider(model=UNHINTED, client=FakeOpenAI(response)).step(
+    turn = await OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(response)).step(
         "S", history(), TOOLS
     )
     assert turn.billed_usd is None
@@ -2792,11 +2792,11 @@ def test_a_list_reply_that_is_not_one_is_refused_not_a_traceback(
 ) -> None:
     """A captive portal and a connection cut partway are what a list fetched over a hotel's
     network looks like. Both stop the run in a sentence, before any key or robot."""
-    from quackd.agent.providers.openrouter import fetch_models
+    from quackd.agent.providers.openrouter import fetch_llms
 
     with RawServer(answer) as server, pytest.raises(ProviderError) as e:
-        fetch_models(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=5.0)
-    assert f"could not read the model list from 127.0.0.1:{server.port}" in str(e.value)
+        fetch_llms(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=5.0)
+    assert f"could not read the LLM list from 127.0.0.1:{server.port}" in str(e.value)
 
 
 def test_a_list_that_trickles_in_is_refused_when_its_time_is_up() -> None:
@@ -2804,21 +2804,21 @@ def test_a_list_that_trickles_in_is_refused_when_its_time_is_up() -> None:
     per-read socket timeout and would otherwise hold a run as long as the server liked."""
     import time
 
-    from quackd.agent.providers.openrouter import fetch_models
+    from quackd.agent.providers.openrouter import fetch_llms
 
     started = time.monotonic()
     with RawServer(_drip) as server, pytest.raises(ProviderError) as e:
-        fetch_models(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=1.0)
+        fetch_llms(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=1.0)
     assert time.monotonic() - started < 3.0
-    assert "did not answer the model list within 1 s" in str(e.value)
+    assert "did not answer the LLM list within 1 s" in str(e.value)
 
 
 def test_a_base_url_with_no_scheme_is_refused_not_a_traceback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    with pytest.raises(ProviderError, match="could not read the model list"):
-        OpenRouterProvider(model="qwen/qwen3.8-flash", base_url="example.invalid/api/v1")
+    with pytest.raises(ProviderError, match="could not read the LLM list"):
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flash", base_url="example.invalid/api/v1")
 
 
 @pytest.mark.parametrize("blank", ["", "  "], ids=["empty", "spaces"])
@@ -2829,16 +2829,16 @@ def test_a_blank_base_url_reads_openrouters_own_list_and_sends_there(
     client: both are OpenRouter's own. One of spaces used to be asked for the list as it was."""
     from quackd.agent.providers.openrouter import BASE_URL
 
-    provider = OpenRouterProvider(model="qwen/qwen3.8-flash", base_url=blank, client=object())
+    provider = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", base_url=blank, client=object())
     assert or_list.fetched == [BASE_URL]
     assert provider.client_address() == BASE_URL
 
 
-def test_a_model_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_taken(
+def test_an_llm_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_taken(
     or_list: Listing,
 ) -> None:
-    """The line itself, on a day the test names: OpenRouter's expiry date is the first day a
-    model is gone, so a run on that day is refused, and a run the day before it is not."""
+    """The line itself, on a day the test names: OpenRouter's expiry date is the first day an
+    LLM is gone, so a run on that day is refused, and a run the day before it is not."""
     import datetime as dt
 
     from quackd.agent.providers.openrouter import admit
@@ -2856,7 +2856,7 @@ def test_a_model_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_
 def test_a_list_that_could_not_be_read_is_asked_for_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed fetch is not kept. Kept, it would turn "the host was down" into "your model does
+    """A failed fetch is not kept. Kept, it would turn "the host was down" into "your LLM does
     not exist" for every later provider in the process: a preflight sweep, a flock's members."""
     from quackd.agent.providers import openrouter
 
@@ -2868,10 +2868,10 @@ def test_a_list_that_could_not_be_read_is_asked_for_again(
             raise ProviderError("openrouter: could not reach openrouter.ai (down for a moment)")
         return [or_entry()]
 
-    monkeypatch.setattr(openrouter, "fetch_models", fetch)
+    monkeypatch.setattr(openrouter, "fetch_llms", fetch)
     with pytest.raises(ProviderError, match="could not reach"):
-        OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
-    again = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    again = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     assert again.listed is not None and len(asked) == 2
 
 
@@ -2881,8 +2881,8 @@ def test_the_factory_tells_the_list_check_where_the_id_came_from(
     """Through `make_provider`, the way a run builds it: an id pinned in `QUACKD_LLM` that the
     list lacks is refused as coming from there, not from a flag nobody typed."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    with pytest.raises(ProviderError, match="from QUACKD_LLM is not on OpenRouter's model list"):
-        make_provider("openrouter", model="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+    with pytest.raises(ProviderError, match="from QUACKD_LLM is not on OpenRouter's LLM list"):
+        make_provider("openrouter", llm_id="qwen/qwen3.8-flsh", source="QUACKD_LLM")
 
 
 # ── a failure keeps the SDK's own error beneath it, for the loop to judge ──────────────
@@ -2904,7 +2904,7 @@ def _anthropic_client(boom: Any) -> Any:
 
 def _openai_client(boom: Any) -> Any:
     return OpenAIProvider(
-        model="gpt-5",
+        llm_id="gpt-5",
         client=NS(chat=NS(completions=NS(create=boom)), responses=NS(create=boom)),
     )
 

@@ -148,7 +148,7 @@ def test_a_hand_edited_line_is_skipped_not_fatal(tmp_path: Path, junk: str) -> N
 
 def test_a_refreshed_note_becomes_the_newest_note(tmp_path: Path) -> None:
     """`recall` and the cap both read file order, so a refresh that left the entry where it
-    was made "the newest notes" a lie: the note the model just repeated sorted oldest."""
+    was made "the newest notes" a lie: the note the LLM just repeated sorted oldest."""
     mem = RobotMemory("microduck:sim2d", tmp_path)
     mem.remember("the sofa is on the left", now=1.0)
     for i in range(3):
@@ -209,7 +209,7 @@ async def test_remember_tool_saves_a_note_without_spending_a_step(
     assert "memory" in kinds
     mem_event = next(e for e in events if e["kind"] == "memory")
     assert mem_event["ok"] and mem_event["text"] == "quacking first works"
-    # the model heard back about it on the next observation
+    # the LLM heard back about it on the next observation
     obs_after = [e for e in events if e["kind"] == "observation"][-1]
     assert "remembered for future runs: quacking first works" in obs_after["text"]
     # and the file now has the note plus the episode quackd wrote at the end
@@ -311,7 +311,7 @@ async def test_dry_run_writes_no_note_either(hello_duck: DuckFile, tmp_path: Pat
     )
     assert mem.entries() == [], "a dry run must not leave a note behind"
     assert not mem.path.exists()
-    # and the model is told plainly, in the same shape a dry-run verb answers in
+    # and the LLM is told plainly, in the same shape a dry-run verb answers in
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     obs = [e for e in events if e["kind"] == "observation"][-1]
     assert "[dry-run] not saved: learned in a dry run" in obs["text"]

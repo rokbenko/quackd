@@ -34,9 +34,9 @@ now is a different object. Every intent sent to the robot goes through it, which
 hundred lines for one twenty second `go_to`, so the record carries the body's own movement.
 Every gate the executor closed is in it, with the state it fired on. Since
 [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) it carries three clocks and a
-cost per model call, which is exactly what the sentence at the top of `README.md` about where
+cost per LLM call, which is exactly what the sentence at the top of `README.md` about where
 78.8 seconds of one hardware run went had to do without. That run is the SO-101 of 2026-09-15
-under 0.9.0, where neither `wall_s` nor `llm_latency_s` existed, so the 62.1 seconds the model
+under 0.9.0, where neither `wall_s` nor `llm_latency_s` existed, so the 62.1 seconds the LLM
 took is a sum somebody did by hand down a column of ten per-call figures in the README's own
 table. A run recorded today carries that number in `run_end` and in `summary.json`, which is the
 argument for the clocks and for this: the number was always in the run and only the record was
@@ -58,7 +58,7 @@ acknowledgement, and the two halves of a `--by-hand` handover. The record kept w
 caused (`gate.answer`, `assess.human`, the `hand_off` stages) and never the exchange itself, and
 it could not have caught the answer anyway: the question is written to stderr and the answer is
 echoed by the terminal, so no view of quackd's ever prints it and no pipe ever sees it. A run
-also knew nothing about what it had been asked to do. Which robot, which model, which budget,
+also knew nothing about what it had been asked to do. Which robot, which LLM, which budget,
 whether it was a dry run: half the story of any run is in the flags, and reading a directory a
 month later meant guessing at them. Both gaps close the same way the wall clock's did in
 ADR-0041, by writing the thing down once at the top.
@@ -124,10 +124,10 @@ ADR-0041, by writing the thing down once at the top.
 
 - **The MCP result key was replaced outright rather than doubled.** `robot_run_verb`,
   `robot_observe`, `robot_say` and `robot_assess_task` come back with `log` and nothing named
-  `trace`. The reader there is a model, and it learns the key from the tool description on every
+  `trace`. The reader there is an LLM, and it learns the key from the tool description on every
   session rather than from a changelog, so there is nobody to warn and no yellow line to print.
   A result carrying both spellings would hand it a second copy of up to thirty lines on every
-  call that touched a robot, paid for in context each time. One key, described where a model
+  call that touched a robot, paid for in context each time. One key, described where an LLM
   actually reads. `robot_observe` is the one of the four that is not a dictionary at all,
   because it has pictures to hand over: it answers with content blocks, so its log arrives as a
   text block opening `log:` and a client looking there for a key of either spelling finds none.
@@ -145,7 +145,7 @@ ADR-0041, by writing the thing down once at the top.
   Every C0 control except tab and newline, and DEL, is dropped on the way into the file. Rich
   strips a list of its own and ESC is not on it, so an escape that arrived inside *text* rather
   than from a style went straight through, and the text here is not ours: it is the goal
-  somebody typed, the body of a `.duck` fetched off the internet, whatever the model said it was
+  somebody typed, the body of a `.duck` fetched off the internet, whatever the LLM said it was
   thinking and an error message from a robot. `ESC[2J` in any of those clears the screen of
   whoever reads the file with `cat`, `ESC]0;...BEL` retitles their window. Dropped rather than
   escaped, because this file is read by a person and not parsed, and nothing is lost by it:
@@ -289,7 +289,7 @@ command line in it is redacted by flag name: a key passed as `--api-key` or `--t
 and a password or a credential-named query parameter inside a `--base-url`, an `--address` or a
 `--camera-url` is too. Nothing else on the screen is, and the list of exceptions matters less
 than the rule: a key in an environment variable that an error message echoed, a key typed inside
-`--extra-body`, a model's reasoning about a private task, a path with somebody's name in it are
+`--extra-body`, an LLM's reasoning about a private task, a path with somebody's name in it are
 all on the screen and therefore in the file. `terminal.txt` is the screen rather than the
 record, so `--no-log` takes the narration out of the file exactly as it takes it off the
 terminal, and a run that prints outside quackd's two consoles, a bare `print` or a library
@@ -342,4 +342,4 @@ is the more faithful of the two, which is the better direction for this to fail 
 still a difference between two things this ADR keeps calling copies of each other. The sink
 borrows the printing console's `encoding` so that Rich picks the same glyphs for both, which
 settles the box drawing and the ticks quackd chooses; it does not settle a character that came in
-from a goal, a model or a robot.
+from a goal, an LLM or a robot.

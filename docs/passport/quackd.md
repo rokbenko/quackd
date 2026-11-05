@@ -49,7 +49,7 @@ its model (e.g. g1-edu) [unknown]: sim-humanoid
 who owns it, as other robots should read it [my robots]: Example lab
 how to reach its owner (a URL or an e-mail address, or nothing): 
 how a person standing next to it stops it, in one sentence: Press the red button on its back.
-its brain, as --llm spells it (e.g. local:MODEL, anthropic): fake
+its brain, as --llm spells it (e.g. local:LLM, anthropic): fake
 the brain's address, for an OpenAI-compatible server (or nothing): 
 how close, in metres, another robot comes before they meet [2]: 
 ✓ wrote /home/robot/sim/one/robot.yaml
@@ -209,7 +209,7 @@ passport:
 # robot:                    # a body quackd can drive, by its adapter:
 #   adapter: toddlerbot:bridge
 
-# The model that talks for this robot. Its key goes in robot.env, never in this file.
+# The LLM that talks for this robot. Its key goes in robot.env, never in this file.
 brain:
   llm: "fake"
   # base_url: URL
@@ -234,7 +234,7 @@ lan:
 | `onboard` | the file's own version, `1` | no |
 | `passport` | the robot's name, maker, owner label and contact, its body with every figure as `[value, confidence, source]`, its skills, what it cannot do and its safety | yes: after a change, `quackd onboard sign` |
 | `robot` | the `adapter` and `address` of a body quackd drives, when there is one: left out, the robot talks and moves nothing | no |
-| `brain` | `llm` and `base_url`: the model the robot's brain runs on. Its key is in `robot.env`, never here | no |
+| `brain` | `llm` and `base_url`: the LLM the robot's brain runs on. Its key is in `robot.env`, never here | no |
 | `meeting` | `task`, the standing task a meeting runs; `with_strangers`, whether it meets robots nobody pinned; `per_hour`, how many meetings an hour at most | no |
 | `trust` | `pins`, one line each, and `strangers_may_pause` | no |
 | `radio` | `meet_within_m`, 2.0 by default; `rssi_at_1m`, -59; `advertise`; `rotate_min`, 15 | no |
@@ -410,7 +410,7 @@ three places. A robot that fails the `hello` is refused and written down. A robo
 placed in a tier and can be talked to. And when this robot is idle, its brain may hold a
 **meeting**, a short run of its own, if all of these hold:
 
-- `brain:` names a model;
+- `brain:` names an LLM;
 - `meeting.per_hour` meetings have not happened in the last hour;
 - this robot has not met that one in the last ten minutes;
 - the other robot is known or of the same owner, or `meeting.with_strangers` is `true`, which it is
@@ -513,33 +513,33 @@ record: /home/robot/sim/one/runs/20261028-201835-goal
 observing
 observing
 waiting on fake scripted:goal:greet
-the model chose assess_task(verdict='feasible', reason='scripted pilot: a rule 
+the LLM chose assess_task(verdict='feasible', reason='scripted pilot: a rule 
 has no judgement of the body, so i...', limits_consulted=[], estimates=[], 
 needs={})
 observing
 waiting on fake scripted:goal:greet (last call 0.0 s)
-the model chose tell(to='stranger-0406f179', text='hello from a quackd robot, 
+the LLM chose tell(to='stranger-0406f179', text='hello from a quackd robot, 
 staying where I am')
 talk the pilot -> stranger-0406f179: hello from a quackd robot, staying where I 
 am
 observing
 waiting on fake scripted:goal:greet (last call 0.0 s)
-the model chose report_state()
+the LLM chose report_state()
 report_state()
 observing
 observing
 waiting on fake scripted:goal:greet (last call 3.0 s)
-the model chose report_state()
+the LLM chose report_state()
 report_state()
 observing
 observing
 waiting on fake scripted:goal:greet (last call 3.0 s)
-the model chose report_state()
+the LLM chose report_state()
 report_state()
 observing
 observing
 waiting on fake scripted:goal:greet (last call 3.0 s)
-the model chose declare_success(reason='told stranger-0406f179: hello from a 
+the LLM chose declare_success(reason='told stranger-0406f179: hello from a 
 quackd robot, stayin...')
 finishing
 ✓ success: told stranger-0406f179: hello from a quackd robot, staying where I 

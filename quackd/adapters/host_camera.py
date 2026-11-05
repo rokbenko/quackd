@@ -16,7 +16,7 @@ manifest at connect.
 The rule for which view is primary: the host's frame is primary only when the body has no
 camera of its own. A body with cameras keeps its primary, because the bearings are calibrated for
 that lens and a Jetson on a bench says nothing about which way the robot faces. The host's frame
-is then an extra view named `host`, which the model is shown every step and which `observe`
+is then an extra view named `host`, which the LLM is shown every step and which `observe`
 lists with the others, while the detections still come from the body's own primary lens.
 
 A frame from the board older than `quackd.host.STALE_AFTER_S` is dropped, and so is one that

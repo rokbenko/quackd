@@ -246,8 +246,8 @@ grammar for `--robot` to save one command.
 **`quackd preflight` rehearses task files on a simulator, and refuses anything else before it is
 built.** A robot for which `is_simulator` is False is refused with a pointer to `robot twin`,
 before the factory makes anything, because a real arm refused after it was built would already
-have had its port opened. So is a pilot nobody named, since the scripted one rehearses nothing a
-model would do and runs only when `--llm fake` is typed. Each file is validated against the
+have had its port opened. So is a pilot nobody named, since the scripted one rehearses nothing an
+LLM would do and runs only when `--llm fake` is typed. Each file is validated against the
 simulator's manifest, connected and closed a few times with the fault plan, then run once per
 seed through the agent loop with memory off, in a loop of preflight's own that keeps the
 transport, because what a run is judged by is on it. A run passes when nothing escaped, no bus
@@ -280,7 +280,7 @@ motor names, and LeRobot recommends the new_calib arm it describes. When the pla
 Menagerie's `wrist_roll` joint range and its actuator's control range also disagreed with each
 other.
 
-**A free-running clock.** Time would pass while the pilot thinks, so a slow model and a fast one
+**A free-running clock.** Time would pass while the pilot thinks, so a slow LLM and a fast one
 would meet different worlds, a busy laptop would change the physics, and no seed would repeat a
 run. Lockstep costs nothing an arm rehearsal needs: a position-controlled arm holds its goal
 while nobody writes to it, and what a rate does on the real bus is a question only the bench

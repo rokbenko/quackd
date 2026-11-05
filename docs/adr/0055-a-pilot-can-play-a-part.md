@@ -31,7 +31,7 @@ part at every turn:
 - 0.12.0's prompt still said "Not published: mass, reach. Decline any task that hinges on any of
   them", which 0.14.0 removed.
 
-The same model played along when a task named the body's action. On 2026-09-15 `--goal "Go into
+The same LLM played along when a task named the body's action. On 2026-09-15 `--goal "Go into
 a duck pose and quack with the gripper"` was judged feasible and mimed with the arm, and the same
 day "Imagine you're a duck that quacks" moved nothing and declared success with a quack typed
 into its reason. Every refusal recorded on the arm quoted quackd's own words back: the
@@ -75,12 +75,12 @@ one of them saying the robot is "capable of human or animal like capabilities".
   `--controller vla`, with `--play`, or with a played file unless `--no-play` turns its part off.
   Then the policy flies the file's instructions and the record says play was off.
 - **OpenAI refusals reach the record.** A refusal part on the Responses API and a `refusal` field
-  on Chat Completions were dropped, so a model's refusal looked like a model saying nothing. They
+  on Chat Completions were dropped, so an LLM's refusal looked like an LLM saying nothing. They
   now read `[refusal]` and the refusal's own words, as Anthropic's and OpenRouter's already did,
   and a Responses refusal part with no words still makes the turn a refusal. That tells a refusal
-  returned in the API's refusal channel, a safety refusal the model wrote, from a pilot that says
+  returned in the API's refusal channel, a safety refusal the LLM wrote, from a pilot that says
   in its answer that it cannot play the part. The bench counts both. A call quoted in a refusal is
-  words, so a local model's text is never read for one in a turn that carries a refusal, or that
+  words, so a local LLM's text is never read for one in a turn that carries a refusal, or that
   a content filter cut short.
 - **The examples opt in where the task is to show something.** 118 of the 223 files under
   `docs/examples/lerobot` are `duck: 4` with `play: true`, and lose the success line, the persona

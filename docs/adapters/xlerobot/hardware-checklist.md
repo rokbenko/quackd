@@ -40,7 +40,7 @@ e-stop, and nothing reports a battery, so no run will ever abort on a flat one. 
 
 There is no command that runs one verb. Either drive the daemon from an MCP client
 (`quackd serve-mcp --robot xlerobot:zmq --address tcp://<host>:5555`, then `robot_run_verb`, which is
-what these steps assume) or give a model a goal narrow enough to reach one verb
+what these steps assume) or give an LLM a goal narrow enough to reach one verb
 (`quackd run --goal "..." --robot xlerobot:zmq --address tcp://<host>:5555 --llm anthropic
 --max-steps 3`). `--llm fake` will not do: it answers a free-form goal with a fixed
 script that ignores it.

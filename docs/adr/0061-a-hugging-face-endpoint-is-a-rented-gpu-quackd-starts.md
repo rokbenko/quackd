@@ -8,7 +8,7 @@ SmolVLA and pi05 want a GPU, and the one way quackd offered to give them one was
 your own reached through `ssh -L` ([ADR-0048](0048-policies-are-the-arms-executor.md)): rent it,
 install Python 3.12 and the server's extra, start `quackd policy serve`, open a tunnel, and copy
 the token across. On 2026-10-25 Rok asked for one vendor that serves many vision-language-action
-policies, the way `--llm openrouter` reaches many models. Nobody hosts VLAs as a service: Hugging
+policies, the way `--llm openrouter` reaches many LLMs. Nobody hosts VLAs as a service: Hugging
 Face's Inference Providers serve no robotics model, NVIDIA hosts no GR00T API, Physical
 Intelligence's API is behind a waitlist, and the Gemini Robotics VLA is partner-only. What plays
 that role is LeRobot's checkpoint format on the Hub, with Hugging Face's Inference Endpoints, a

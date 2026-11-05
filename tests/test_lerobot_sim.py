@@ -3047,7 +3047,7 @@ def test_doctor_and_release_on_a_registered_simulated_arm_say_it_is_the_simulato
     from quackd.cli import app
 
     monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     given = tmp_path / "arm-sim.json"
     given.write_text(json.dumps(_synthetic(_arm(mjcf))), encoding="utf-8")
     reg = ["--registry-dir", str(tmp_path / "registry")]
@@ -3141,7 +3141,7 @@ def test_doctor_connects_a_registered_simulator_that_was_given_no_address(
     from quackd.cli import app
 
     monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = ["--registry-dir", str(tmp_path / "registry")]
     runner = CliRunner()
     added = runner.invoke(app, ["robot", "add", "arm-sim", "lerobot:mujoco", *reg])

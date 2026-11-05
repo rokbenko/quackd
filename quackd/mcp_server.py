@@ -7,7 +7,7 @@ several robots (`--robots duck=microduck:sim2d,arm=lerobot:mock`): eight `robot_
 tools take a robot name and every robot has its own executor, budget, heartbeat and
 contract. stdout is the wire, and every log line goes to stderr.
 
-The model here is the client, so what it thinks never reaches this process. What quackd can
+The LLM here is the client, so what it thinks never reaches this process. What quackd can
 see it narrates (`quackd.log`): each call that reaches an executor comes back with a
 `log` list saying which gates fired, which intents went to the robot, what came back and
 how long it took, and the same lines go to stderr. `--no-log` or `QUACKD_LOG=0` turns
@@ -302,10 +302,10 @@ class RobotSession:
     def adopt(self, duck: DuckFile) -> None:
         """Take on a task contract. Loading a second one never refunds the first.
 
-        `robot_load_duckfile` is a tool the *model* holds, so a fresh `Budget` here was the
+        `robot_load_duckfile` is a tool the *LLM* holds, so a fresh `Budget` here was the
         way out of one: a pilot that had spent its steps, or been refused a verb, could load
         a wider duck and start counting from zero. The limits become the new contract's. The
-        steps, the llm calls, the clock and the failure tallies stay the session's. The seconds
+        steps, the LLM calls, the clock and the failure tallies stay the session's. The seconds
         a learned policy has driven the body stay the session's from the first load on, since
         a session with no task has a policy budget of its own to spend first."""
         # "First contract" used to be spelled `budget is None`, which stopped being true when
@@ -325,7 +325,7 @@ class RobotSession:
         if spent is not None:
             # the seconds a policy has driven the body are the body's and not the task's, the
             # first load's included: a session with no task spends the default total, and a
-            # load that zeroed it would hand the model a fresh `policy.total_s` for the price
+            # load that zeroed it would hand the LLM a fresh `policy.total_s` for the price
             # of a tool call
             self.executor.budget.policy_s = spent.policy_s
         if first or spent is None:
@@ -534,7 +534,7 @@ class RobotSession:
         }
         if verdict.verdict == "uncertain":
             # `--yes` answers a confirm gate because there is no terminal to ask on. Here
-            # there is a person, reachable through the model, which is better than a flag.
+            # there is a person, reachable through the LLM, which is better than a flag.
             payload["note"] = (
                 "recorded as uncertain, which does not clear verbs that move the body. There "
                 "is no terminal here: ask the person you are chatting with, then call "
@@ -1371,7 +1371,7 @@ def fleet_from_flags(
         if probe.frontmatter.flock is not None:
             raise SystemExit(
                 "flock ducks are not available over MCP yet (the MCP client is one pilot, "
-                "a flock needs a coordinator, and a pilot flock has one model per robot "
+                "a flock needs a coordinator, and a pilot flock has one LLM per robot "
                 "rather than one for all of them). Run it with: quackd run " + duckfile
             )
         if isinstance(probe.frontmatter.robots, str):

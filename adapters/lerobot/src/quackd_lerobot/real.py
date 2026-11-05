@@ -423,7 +423,7 @@ def parse_camera_urls(
     """Every `--camera-url` this arm was given, in order. The first is the primary.
 
     With one camera this is `parse_camera_url` and nothing more. With several, each url has
-    to name its own camera and the names have to differ, because the name is what the model
+    to name its own camera and the names have to differ, because the name is what the LLM
     reading two pictures, a policy's observation dict and `frames/NNNN-<name>.png` all tell
     them apart by. An index may only appear once: two handles on one webcam is not two
     views, it is a camera that will not open twice. `label` and `hint` are
@@ -438,7 +438,7 @@ def parse_camera_urls(
             raise _camera_refusal(
                 f"it has no ?name= and {len(specs)} cameras were given. With several, every "
                 "url names its own camera, opencv://1?name=top --camera-url "
-                "opencv://2?name=side, because the name is what the model, a pick policy "
+                "opencv://2?name=side, because the name is what the LLM, a pick policy "
                 "and frames/NNNN-<name>.png tell them apart by",
                 spec.url,
                 label,
@@ -2339,7 +2339,7 @@ class LeRobotReal:
         """Every camera's newest frame, primary first, each under its own name.
 
         A camera that gave nothing this time is simply absent from the list rather than an
-        empty slot: the model is shown the views that exist, and `camera_health()` is where
+        empty slot: the LLM is shown the views that exist, and `camera_health()` is where
         the one that stopped says so."""
         primary = self._primary_name()
         frames = []
@@ -3029,7 +3029,7 @@ class LeRobotReal:
         by torque alone would drop it, and the person asking for this with `--by-hand` has
         their hands nowhere near it yet.
 
-        `anywhere` is the second door, and a person opens it, never a verb or a model: the
+        `anywhere` is the second door, and a person opens it, never a verb or an LLM: the
         question `quackd robot release` and the end of a run put only after the arm's fold
         missed twice, or before connecting to an arm with no rest pose to fold to
         (`quackd.release`), both at a terminal, both after telling the person the arm will drop

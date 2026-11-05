@@ -324,7 +324,7 @@ class OccupancyGrid:
         robot: Pose2D | None = None,
         places: Sequence[tuple[str, float, float]] = (),
     ) -> str:
-        """The grid as lines a terminal or a model reads: `cells_across` columns at most, the top
+        """The grid as lines a terminal or an LLM reads: `cells_across` columns at most, the top
         line the highest y, the robot an arrow pointing its heading, and each place a letter with
         its name below. x is right and y is up, and the map has no north."""
         factor = max(1, math.ceil(self.width / max(1, cells_across)))

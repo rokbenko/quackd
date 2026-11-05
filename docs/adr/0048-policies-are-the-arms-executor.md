@@ -1,6 +1,6 @@
 # ADR-0048: Policies are the arm's executor, and quackd owns the bus
 
-**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
+**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
 
 **Amended 2026-10-25:** [ADR-0060](0060-hugging-face-serves-many-vlas.md) extends what the server
 serves past the three types named below, ACT, SmolVLA and pi05, one family at a time and each
@@ -17,10 +17,10 @@ named nowhere else. The user still starts any other server, and a child process 
 
 ## Context
 
-A language model on the SO-101 decides about once every six seconds. The run at the top of the
-README spent 62 of its 79 seconds waiting on the model, over ten calls. That is the right rate
+An LLM on the SO-101 decides about once every six seconds. The run at the top of the
+README spent 62 of its 79 seconds waiting on the LLM, over ten calls. That is the right rate
 for choosing what to do next and the wrong one for contact, where what the gripper touches
-changes in tenths of a second: Rok reports a pen grasp that a model drove turn by turn, and that
+changes in tenths of a second: Rok reports a pen grasp that an LLM drove turn by turn, and that
 failed after twelve turns.
 LeRobot's learned policies are made for exactly that part: a vision-language-action policy such
 as SmolVLA or Pi0.5, or an ACT trained on a person's own demonstrations, reads the arm and its
@@ -28,7 +28,7 @@ cameras many times a second and answers with goals for every motor. What none of
 judgement of the task. A policy is told one short subtask, in the words it was trained on, and
 it says nothing about whether it did it.
 
-So the arm gets two loops above its servos. A model plans, one subtask at a time, and judges
+So the arm gets two loops above its servos. An LLM plans, one subtask at a time, and judges
 each from a fresh look at the arm. A policy executes each subtask for a short segment. Before
 this decision `pick` already handed the arm to a policy, but nothing in production loaded one:
 `make()` had no policy parameter, no flag named one, `load_policy()` had no caller, and it could
@@ -59,7 +59,7 @@ record: this is.
 
 ## Decision
 
-**A learned policy is the arm's executor, and the model is its planner.** Two of the arm's own
+**A learned policy is the arm's executor, and the LLM is its planner.** Two of the arm's own
 verbs hand it the arm for one segment. `manipulate(instruction)` takes the subtask in a few
 words and runs for its seconds, 10 s unless a task file says otherwise (`MANIPULATE_S`), or
 until its chunks are played, the policy says it is done, or the arm stops moving under it for
@@ -88,7 +88,7 @@ chunk. The policy's calls run on a worker of their own, never on the bus's threa
 simulator the policy's answer costs no sim time and is let go its declared latency later, where
 it would have landed on the arm, so a rehearsal plays the arm's trajectory and proves no rate.
 This is the steering tier of [ADR-0003](0003-three-loops.md), run at the policy's rate rather
-than the composites' 10 Hz, and it calls no model. The reflexes are still each servo's own
+than the composites' 10 Hz, and it calls no LLM. The reflexes are still each servo's own
 position controller.
 
 **Every tick is judged before it sends.** A hot joint, torque off, a camera that gave no frame,
@@ -222,16 +222,16 @@ by either name. Before this the core named a body's verbs only to say which of t
 **The stepper is shown `manipulate` and never takes it.** Narrowed to a list, it is a closed set,
 and which subtask comes next is exactly a between-segment choice. But it is confirm-gated, and
 under `--yes` nobody is asked at that gate, so a stepper that cleared the confirm floor would
-start a learned policy driving the arm with no person and no model involved. It is offered, an
-answer that clears every other gate ends on `gate: shadow_only` (`SHADOW_ONLY`), the model takes
+start a learned policy driving the arm with no person and no pilot involved. It is offered, an
+answer that clears every other gate ends on `gate: shadow_only` (`SHADOW_ONLY`), the pilot LLM takes
 the turn, and in `--decision-mode on` as in shadow a `decision_shadow` record sets the two
 answers side by side on every turn that offered one. That is a curated exception to
-[ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md)'s computed classification, and
+[ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)'s computed classification, and
 promoting it needs a measured agreement rate and a decision of its own.
 
-**Two controllers.** `--controller llm`, the default, is the model `--llm` names deciding each
+**Two controllers.** `--controller llm`, the default, is the LLM `--llm` names deciding each
 subtask, with `manipulate` in its vocabulary when `--policy-url` gives the arm a policy.
-`--controller vla` is a scripted pilot (`providers/vla.py`) with no model at all. It answers
+`--controller vla` is a scripted pilot (`providers/vla.py`) with no LLM at all. It answers
 `assess_task` with `uncertain`, so a person decides whether the arm tries, hands the policy
 each of the task file's instructions in order, or the `--goal` as the only one, with one
 `manipulate` apiece through the same narrowed verb, confirm gate and budget as any pilot's, and
@@ -244,7 +244,7 @@ and the verdict's, is asked on the event loop's own thread, so the heartbeat doe
 while the person answers, and the arm holds where its last segment left it, as a servo holds
 the last goal it was sent. It is refused before anything connects wherever nobody could answer,
 with `--yes`, with no terminal, over MCP, and with `--dry-run`, and beside a decision LLM or a
-flag for a model or a picture it would ignore. It reads the verb's result and the person's
+flag for a pilot LLM or a picture it would ignore. It reads the verb's result and the person's
 answer, never the simulator's truth.
 
 **FLUX 3 Action is not claimed.** It is on LeRobot's main branch only, after 0.6.1, and needs
@@ -342,9 +342,9 @@ always was.
   `--decision-mode shadow` has run beside one, by hand, on 2026-09-28 and again on the released
   0.16.0 on 2026-09-29: `gpt-6-sol` flew the twin with that ACT served and a stub decision LLM
   loaded as a plugin, which was asked on every turn, and a `decision_shadow` record set its
-  answer beside the model's on each. A second stub, one that always picks `manipulate`, chose
+  answer beside the pilot LLM's on each. A second stub, one that always picks `manipulate`, chose
   it on every turn that offered it, in shadow and in `on`, and each ended on
-  `gate: shadow_only` with the model taking the turn. No real decision LLM has run beside a
+  `gate: shadow_only` with the pilot LLM taking the turn. No real decision LLM has run beside a
   policy.
 - **Only the bench can say how fast the loop runs on the real bus with a server inferring on the
   same laptop.** Torch's threads and the bus's worker share one CPU there, and nothing timed on
@@ -375,5 +375,5 @@ always was.
 - [ADR-0003](0003-three-loops.md), [ADR-0004](0004-verb-registry.md),
   [ADR-0017](0017-robot-adapters-and-manifest.md), [ADR-0018](0018-core-verbs-extensions-aliases.md),
   [ADR-0036](0036-what-the-arm-does-not-say.md) and
-  [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) each carry a note pointing here,
+  [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) each carry a note pointing here,
   and none of their decisions is reversed: each is extended or narrowed as its note says.

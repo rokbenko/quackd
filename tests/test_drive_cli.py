@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from quackd.agent.transcript import Transcript
-from quackd.cli import app
+from quackd.cli import app, run_counters
 from quackd.drive.run import SESSION_BUDGETS, DriveArgs, run_drive, session_duck
 from quackd.duckfile.schema import Budgets
 
@@ -45,6 +45,39 @@ def test_a_piped_drive_runs_each_line_and_its_record_replays(tmp_path: Path) -> 
     replay = runner.invoke(app, ["--no-color", "log", str(run)])
     assert replay.exit_code == 0, replay.output
     assert "a pipe named this call" in replay.output
+
+
+def test_a_sessions_record_adds_up_what_its_goals_spent(tmp_path: Path) -> None:
+    """A session wrote neither its goals' calls nor their tokens, and `quackd log` read the two
+    missing keys as zeros, so it said `LLM calls 0 · tokens 0+0` under a session that had flown
+    a goal. Each goal's own record is what the session's is held to here."""
+    args = ["--no-color", "drive", "--robot", "microduck:mock", "--llm", "fake"]
+    goals = "find the ball\nfind the ball again\nquit\n"
+    result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path), "--yes"], input=goals)
+    assert result.exit_code == 0, result.output
+    (run,) = tmp_path.glob("*-drive")
+    flown = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (run / "goals").glob("*/summary.json")
+    ]
+    assert len(flown) == 2, "with fewer than two there is nothing to add up"
+    calls = sum(goal["llm_calls"] for goal in flown)
+    tokens = sum(goal["usage"]["input_tokens"] for goal in flown)
+    out = sum(goal["usage"]["output_tokens"] for goal in flown)
+    assert calls > 0
+    summary = _summary_of(tmp_path)
+    assert summary["provider"] == "fake" and summary["llm_calls"] == calls
+    assert (summary["usage"]["input_tokens"], summary["usage"]["output_tokens"]) == (tokens, out)
+    replay = " ".join(runner.invoke(app, ["--no-color", "log", str(run)]).output.split())
+    assert f"LLM calls {calls} · tokens {tokens}+{out}" in replay
+
+
+def test_a_session_with_no_goal_says_it_spent_nothing(tmp_path: Path) -> None:
+    args = ["--no-color", "drive", "--robot", "microduck:mock", "--llm", "fake"]
+    result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path)], input="stand\nquit\n")
+    assert result.exit_code == 0, result.output
+    summary = _summary_of(tmp_path)
+    assert (summary["llm_calls"], summary["usage"]) == (0, {})
 
 
 def test_drive_names_the_one_robot_it_drives_before_the_first_line(tmp_path: Path) -> None:
@@ -218,7 +251,9 @@ async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
     monkeypatch.setattr(commands, "offers_for", offers_for)
     monkeypatch.setattr(factory, "parse_decision_llm", lambda name: (object(), None))
     monkeypatch.setattr(factory, "decision_llm_is_available", lambda spec, url=None: (True, ""))
-    monkeypatch.setattr(factory, "make_decision_llm", lambda spec, model=None, url=None: _Decider())
+    monkeypatch.setattr(
+        factory, "make_decision_llm", lambda spec, llm_id=None, url=None: _Decider()
+    )
     duck = tmp_path / "gated.duck"
     duck.write_text(GATED_KICK, encoding="utf-8")
     args = DriveArgs(
@@ -248,7 +283,7 @@ POLICY = ["--policy-url", "http://127.0.0.1:9"]
         (["--controller", "vla", *POLICY, "--effort", "low"], "--effort says how hard"),
         (
             ["--controller", "vla", *POLICY, "--decision-llm", "kev", "--decision-mode", "on"],
-            "runs no model for a decision LLM to step in front of, and --decision-mode",
+            "runs no pilot LLM for a decision LLM to step in front of, and --decision-mode",
         ),
         (["--controller", "nope"], "--controller is llm or vla, not 'nope'"),
         (["--price", "lots"], "--price"),
@@ -493,10 +528,10 @@ async def test_frames_give_every_goal_watch_and_say_where_a_frame_goes(
     assert any("--decision-frames:" in line for line in said), said
 
 
-async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_model(
+async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The robot's registered pilot and `QUACKD_LLM` name a model a VLA session never asks, so
+    """The robot's registered pilot and `QUACKD_LLM` name an LLM a VLA session never asks, so
     neither is resolved, and a key missing for it refuses nothing."""
     from quackd.agent.providers.vla import VlaProvider
 
@@ -513,7 +548,10 @@ async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_m
     assert isinstance(pilot, VlaProvider) and pilot.instructions == ("pick up the red cube",)
     events = Transcript.read(run_dir / "transcript.jsonl")
     start = next(e for e in events if e["kind"] == "run_start")
-    assert (start["provider"], start["model"]) == ("vla", "scripted:goal")
+    assert (start["provider"], start["llm_id"]) == ("vla", "scripted:goal")
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["provider"] == "vla"
+    assert run_counters(summary)[1] == "turns 0", "the record of a session that asks no LLM"
 
 
 async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_none(

@@ -403,7 +403,7 @@ async def test_a_local_preset_that_reads_openai_base_url_is_sent_nothing_ambient
     placeholder key and nothing the SDK reads for itself, never the gateway's credential in the
     clear."""
     monkeypatch.setenv("OPENAI_BASE_URL", BOARD)
-    provider = make_provider("ollama", model="qwen3:8b")
+    provider = make_provider("ollama", llm_id="qwen3:8b")
     await _one_turn(provider)
     (request,) = wire.requests
     assert str(request.url) == f"{BOARD}/chat/completions"
@@ -443,15 +443,15 @@ async def test_an_address_given_with_base_url_is_sent_the_key_alone(
 # ── a server you run ────────────────────────────────────────────────────────────────────────
 
 
-async def test_a_local_model_on_a_board_over_plain_http_is_sent_the_key_and_nothing_else(
+async def test_a_local_llm_on_a_board_over_plain_http_is_sent_the_key_and_nothing_else(
     wire: Wire, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The case this was found on: `--llm ollama --host jetson.local`, a model server on a Jetson,
+    """The case this was found on: `--llm ollama --host jetson.local`, an LLM server on a Jetson,
     reached over plain HTTP, where every header crosses the network in the clear. Before, it was
     sent the gateway's authorization in place of the key, the gateway's own credential, and
     OpenAI's account headers."""
     monkeypatch.setenv("LOCAL_API_KEY", KEY)
-    provider = make_provider("ollama", model="qwen3:8b", host="jetson.local")
+    provider = make_provider("ollama", llm_id="qwen3:8b", host="jetson.local")
     await _one_turn(provider)
     (request,) = wire.requests
     assert str(request.url) == f"{BOARD}/chat/completions"
@@ -465,7 +465,7 @@ async def test_a_board_with_no_local_key_is_sent_the_placeholder_and_never_opena
 ) -> None:
     """With no `LOCAL_API_KEY`, a server you run is sent `not-needed`. It used to be sent
     `OPENAI_API_KEY` whenever that was set, so the board above got a hosted key in the clear."""
-    provider = make_provider("ollama", model="qwen3:8b", host="jetson.local")
+    provider = make_provider("ollama", llm_id="qwen3:8b", host="jetson.local")
     await _one_turn(provider)
     assert wire.every("authorization") == ["Bearer not-needed"]
     assert wire.carrying(OPENAI_KEY) == []
@@ -474,7 +474,7 @@ async def test_a_board_with_no_local_key_is_sent_the_placeholder_and_never_opena
 def test_a_whole_run_on_a_board_sends_the_key_on_every_turn_and_nothing_ambient(
     wire: Wire, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run` end to end, through the CLI, with a local model on a Jetson over plain HTTP:
+    """`quackd run` end to end, through the CLI, with a local LLM on a Jetson over plain HTTP:
     every turn the run asked carried the key once and nothing the SDK read for itself."""
     script = SCRIPTS["hello-world"]
     wire.script = lambda n: completion(n, *script[n - 1], "qwen3", {})
@@ -612,13 +612,13 @@ async def test_a_redirect_is_never_followed_so_nothing_reaches_where_it_points(
     )
 
 
-@pytest.mark.parametrize("model", ["served-model", None], ids=["a turn", "discovery"])
+@pytest.mark.parametrize("llm_id", ["served-model", None], ids=["a turn", "discovery"])
 async def test_a_server_that_moved_to_https_is_named_with_the_address_to_give(
-    model: str | None, wire: Wire, monkeypatch: pytest.MonkeyPatch
+    llm_id: str | None, wire: Wire, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A model server behind a proxy that sends every plain-HTTP request on to its HTTPS twin
+    """An LLM server behind a proxy that sends every plain-HTTP request on to its HTTPS twin
     used to be followed there, quietly. It is not now, so the sentence says where it pointed and
-    the `--base-url` that reaches it, whether the first request was a turn or the model list."""
+    the `--base-url` that reaches it, whether the first request was a turn or the LLM list."""
 
     def upgrade(request: Any) -> Any:
         if request.url.scheme == "http":
@@ -628,11 +628,11 @@ async def test_a_server_that_moved_to_https_is_named_with_the_address_to_give(
 
     wire.respond = upgrade
     monkeypatch.setenv("LOCAL_API_KEY", KEY)
-    provider = make_provider("vllm", model=model, base_url="http://llm.stand-in.invalid/v1")
+    provider = make_provider("vllm", llm_id=llm_id, base_url="http://llm.stand-in.invalid/v1")
     with pytest.raises(ProviderError) as e:
         await provider.step(SYSTEM, [], TOOLS)
     assert len(wire.requests) == 1
-    path = "chat/completions" if model else "models"
+    path = "chat/completions" if llm_id else "models"
     assert str(e.value) == (
         "vllm: http://llm.stand-in.invalid/v1 answered with a redirect (308) to "
         f"https://llm.stand-in.invalid/v1/{path}, so it was not followed: if the server is there "

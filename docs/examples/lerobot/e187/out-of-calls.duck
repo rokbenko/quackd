@@ -4,7 +4,7 @@
 ---
 duck: 1
 name: e187-out-of-calls
-description: "Five waves on a budget of three model calls."
+description: "Five waves on a budget of three LLM calls."
 author: rok
 requires: [move_joints]
 verbs:

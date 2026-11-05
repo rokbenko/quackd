@@ -1,6 +1,6 @@
-# ADR-0059: A turn the model's API could not answer is asked again
+# ADR-0059: A turn the LLM's API could not answer is asked again
 
-**Status:** accepted · **Date:** 2026-10-23 · Extends [ADR-0012](0012-safety-executor.md) (the kill switch, the heartbeat and the teardown every run ends with) · Implemented in `quackd/agent/providers/base.py` (`transient_failure`), `quackd/agent/loop.py` (`_ask_the_model`), and in `quackd/log.py`, `quackd/ui.py` and `quackd/cli.py` (`run_counters`) for what a person sees ([safety](../concepts/safety.md#when-the-models-api-fails))
+**Status:** accepted · **Date:** 2026-10-23 · Extends [ADR-0012](0012-safety-executor.md) (the kill switch, the heartbeat and the teardown every run ends with) · Implemented in `quackd/agent/providers/base.py` (`transient_failure`), `quackd/agent/loop.py` (`_ask_the_llm`), and in `quackd/log.py`, `quackd/ui.py` and `quackd/cli.py` (`run_counters`) for what a person sees ([safety](../concepts/safety.md#when-the-llms-api-fails))
 
 **Amended 2026-10-23:** the two separate changes the consequences below name were made the same
 day, at Rok's word.
@@ -29,19 +29,19 @@ long as the vendor's own clock allows.
 
 ## Context
 
-On 2026-10-23 Rok asked what a run does when its goal fails for a reason that is not the model
+On 2026-10-23 Rok asked what a run does when its goal fails for a reason that is not the LLM
 refusing the work: an error, or whatever else could go wrong. Rok wanted such a run to try again
 where trying again could work, and to end with the arm at its rest pose where it could not.
 
 The second half was already so: every way a run ends goes through one teardown that stops the
 robot and folds the arm to its rest pose
 ([ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md) has the release). Most of
-the first half was too. A verb that raises, times out or is refused is handed back to the model
-as a failed result, and the model chooses again; a serial packet the arm garbled is read again
+the first half was too. A verb that raises, times out or is refused is handed back to the LLM
+as a failed result, and the LLM chooses again; a serial packet the arm garbled is read again
 by the bus before anything gives up (upstream's `num_read_retries`, and quackd's own `num_retry`
 on the torque and temperature registers).
 
-What ended a run at once was the model's API. A rate limit (429), Anthropic's 529 "overloaded",
+What ended a run at once was the LLM's API. A rate limit (429), Anthropic's 529 "overloaded",
 a 5xx, a timeout or a dropped connection reached the loop as a `ProviderError` and ended the run
 `error` after whatever retries the SDK made of its own: two for anthropic and openai, about half
 a second and a second apart unless the API asked for longer, and none for gemini. An overloaded
@@ -56,15 +56,15 @@ reason that had nothing to do with the task or the robot.
    `transient_failure` follows that `__cause__` chain to it. A status of 408, 429 or any 5xx,
    529 included, is worth asking again, unless the API says `x-should-retry: false`; with no
    status, a timeout or a lost connection is, by the class names in the MRO. Everything else is
-   permanent and ends the run at once as before: a bad request, a key that does not work, a
-   model that does not exist, a refused redirect, an answer quackd could not read as a turn, a
+   permanent and ends the run at once as before: a bad request, a key that does not work, an
+   LLM that does not exist, a refused redirect, an answer quackd could not read as a turn, a
    missing extra. So is a request quackd built wrong, though the SDKs raise it as a lost
    connection: it is found beneath their `APIConnectionError` (`BUILT_WRONG_ERRORS`). The
    message is never read, so nothing quackd raised itself is ever asked again. An implicit
    `__context__` is not followed.
 
 2. **The same turn is asked again, unchanged.** The history is built once per turn and resent
-   byte for byte, so a model that binds its replayed thinking to what came before it sees the
+   byte for byte, so an LLM that binds its replayed thinking to what came before it sees the
    request it would have seen. The waits are `ASK_AGAIN_AFTER_S` = 5, 15, 30 and 60 s, so five
    tries in all and 110 s of waiting unless the API asks for longer. Each scheduled wait loses up
    to a quarter at random (`ASK_AGAIN_JITTER`), so a flock on one key spreads out, and no wait is
@@ -81,14 +81,14 @@ reason that had nothing to do with the task or the robot.
    that answered with one is there.
 
 4. **The robot holds still, and the run stays stoppable.** Nothing is sent to the robot while the
-   run waits: it is the same idle state as a model taking a minute to think, and the heartbeat
+   run waits: it is the same idle state as an LLM taking a minute to think, and the heartbeat
    keeps watching the body as its own task. Ctrl-C, `q`, a heartbeat that fails and a flock that
    stops its members all set the run's abort flag, which ends the wait at once as `aborted`, and
    the teardown folds the arm as it does for every abort. A failure that arrives after the flag was
    set is not asked again. The second Ctrl-C still ends the run as an interrupt.
 
 5. **A retry is not charged to `max_llm_calls`.** That budget is the task author's bound on how
-   many turns the model takes, and a retry is the same turn asked again. Charging it would let
+   many turns the LLM takes, and a retry is the same turn asked again. Charging it would let
    one busy minute at a vendor spend a task's turns: `hello-world`, which fits its five calls
    exactly, would end `budget` after a single 429. The tries are bounded already, by the
    schedule's length and, on a real robot, by `max_minutes`. A simulator's clock, which
@@ -113,7 +113,7 @@ reason that had nothing to do with the task or the robot.
   own retries have the same gap, and neither sends an idempotency key.
 - The SDKs' own retries still come first, inside the call. The anthropic SDK honours a
   `retry-after` of any length and the openai SDK one up to 120 s, so a call can wait minutes
-  before it fails, counted as the model's seconds rather than as quackd's waits and out of reach
+  before it fails, counted as the LLM's seconds rather than as quackd's waits and out of reach
   of a first Ctrl-C, which only the second ends. Building the SDK clients with `max_retries=0`,
   so that quackd's loop is the only one that retries, is a separate change, and it would also
   take away the quick retries a first connection has now.

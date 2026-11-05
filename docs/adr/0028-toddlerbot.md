@@ -40,7 +40,7 @@ torqued holding its last target instead.
 - **quackd ships the daemon, and it owns the loop.** `bridge/toddlerbot/` runs the fifty hertz
   loop continuously; quackd's intents steer what it is already doing. This is not only because
   there is no API to speak to, which would be the ADR-0024 argument on its own. It is because
-  a verb is episodic and this body is not: a humanoid frozen mid-stride while a model thinks is
+  a verb is episodic and this body is not: a humanoid frozen mid-stride while an LLM thinks is
   a humanoid on the floor.
 - **The daemon carries seven mechanisms upstream has not got**, each one because a specific
   read said so: a clamp against the joint limits, because `set_motor_target` clamps nothing and
@@ -90,10 +90,10 @@ torqued holding its last target instead.
   only printed, so `battery_percent` is `None` and a battery abort can never fire.
 - **A fall is terminal and every layer says so.** There is no recovery policy, so `stand_up` is
   not declared, the precondition names no verb and tells a human to stand the robot up, and the
-  starter task tells the model to stop rather than thrash. This is the Open Duck precedent, on a
+  starter task tells the LLM to stop rather than thrash. This is the Open Duck precedent, on a
   body four times the mass.
-- **No raw joint verb.** The `joint` intent is not declared. Thirty unclamped radians from a
-  language model, on a machine in multi-turn mode with no current limit and no position limit,
+- **No raw joint verb.** The `joint` intent is not declared. Thirty unclamped radians from an
+  LLM, on a machine in multi-turn mode with no current limit and no position limit,
   is the exact failure this project exists to prevent. quackd offers named moves and the daemon
   owns every trajectory.
 - **quackd curates the motion list, and says that it is curating.** Five of the nine shipped

@@ -1,6 +1,6 @@
 """Every word the LLM reads, in one place.
 
-The system prompt carries the contract (in prose the model can act on) and the `.duck`
+The system prompt carries the contract (in prose the LLM can act on) and the `.duck`
 body verbatim. Each turn's observation is compact and structured — features, not frames —
 with the image attached separately for providers that can see. One tool call per turn is
 stated here *and* enforced by the loop; saying it is not the same as trusting it.
@@ -273,7 +273,7 @@ def goal_strategy(allow: Sequence[str], *, memory: bool = False) -> str:
     It used to name `observe`, `search_scan` and `go_to` whatever the body was. On 2026-09-15
     an SO-101 arm read all three in a prompt whose allowlist two lines above listed none of
     them, and whose executor would have refused each one: the arm has no camera verb it is
-    granted, no scan and no composite. The model worked it out and looked with `report_state`
+    granted, no scan and no composite. The LLM worked it out and looked with `report_state`
     instead, which is not a thing to rely on.
 
     Every verb named here is in `allow`. A body with neither looking verb is told to look with
@@ -412,7 +412,7 @@ def play_paragraphs(
     `--play`). It exists because the prompt says what the body is, and a task that said "You
     are a cat" asked the pilot to be what the prompt had just told it it was not, with nothing
     to say that acting the part out with the body was the task. Every refusal recorded on the
-    arm quoted quackd's own words back. On 2026-09-15 the same model mimed a duck with
+    arm quoted quackd's own words back. On 2026-09-15 the same LLM mimed a duck with
     the gripper when the goal named the pose, and typed a quack and moved nothing when the goal
     said "Imagine you're a duck that quacks".
 
@@ -526,7 +526,7 @@ def play_paragraphs(
         "joints and any camera pictures show it, then what the moves were meant to show.",
         "When the task asks what is true, about you or about what happened, the answer is the "
         "true one whatever the part.",
-        "When the part is a real person, product or AI model, play your idea of them and say "
+        "When the part is a real person, product or LLM, play your idea of them and say "
         "that it is your idea, and "
         + (
             "nothing you say claims you are anyone or anything you are not."
@@ -803,9 +803,13 @@ def build_system_prompt(
     adapter: str | None = None,
     sees: bool = False,
     play: bool = False,
+    calls_word: str = "LLM calls",
 ) -> str:
     """`memory_text` is what the robot remembers from earlier runs (`RobotMemory.recall`);
     None means memory is off for this run, "" means on but empty.
+
+    `calls_word` is what the budget's `max_llm_calls` counts (`Budget.calls_word`): `turns` on a
+    VLA pilot's run, which nothing reads this prompt on but a person reading the record.
 
     `play` is whether the task may give the pilot a part to play, as the run decided it: the
     task file's `play`, or `--play` and `--no-play` over it. Passed in rather than read off
@@ -937,13 +941,13 @@ above.
         # Deliberately only the arena. What the body is, and what its legs can do, differs
         # between the real duck and the kinematic stand-in behind this one backend name, and
         # both describe themselves in the stand-ins block below. Saying it here as well
-        # contradicted one of them: this told the model it was driving "a real biped on its
+        # contradicted one of them: this told the LLM it was driving "a real biped on its
         # own learned gait" even when it was driving the puppet.
-        # Nobody is in this arena, and the model has to be told so outright. `search_scan`
+        # Nobody is in this arena, and the LLM has to be told so outright. `search_scan`
         # still offers `person` as a target, because one shared verb registry serves the
         # cartoon (which has a person), a real camera through YOLO, and this; and the head
         # camera's colour detector still carries the person hue band for the same reason. So
-        # a model left to infer it would reasonably scan for somebody and never stop.
+        # an LLM left to infer it would reasonably scan for somebody and never stop.
         sim_note = (
             "\nYou are in the physics simulator (MuJoCo): a 2 m arena with low walls and an "
             "orange ball that rolls when kicked. Nobody is in the arena with you: there is no "
@@ -1001,7 +1005,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 ## Rules (enforced by the executor — not optional)
 - Call exactly one tool per turn. Never zero, never two.
 - Only these verbs are allowed: {", ".join(fm.verbs.allow)}. Anything else is refused.
-- Budgets: {fm.budgets.max_steps} steps, {fm.budgets.max_minutes:g} minutes, {fm.budgets.max_llm_calls} LLM calls. The run stops when any is hit.
+- Budgets: {fm.budgets.max_steps} steps, {fm.budgets.max_minutes:g} minutes, {fm.budgets.max_llm_calls} {calls_word}. The run stops when any is hit.
 - Verbs marked confirm ({", ".join(asks) or "none"}) ask a human before running.
 - Before the first verb that moves the body, call `assess_task` with your verdict on whether this body can do this task at all, judged against its datasheet below: `feasible`, `infeasible` (the run ends, nothing moves) or `uncertain` (a human is asked). The verdict is about the body, not the view: not having found the target yet is not by itself a reason for `uncertain`. It is one when a limit turns on that unseen thing's mass or size, or on a figure the datasheet does not publish. Until then {before_verdict}. Assess again later if what you see changes your mind.
 - When a success criterion is met, call `declare_success`. If the task turns out impossible while doing it, call `declare_failure`.
@@ -1072,7 +1076,7 @@ def build_observation_text(
 ) -> str:
     head = f"step {step}/{max_steps}"
     # the budget's own line starts with the same step (`Budget.status`), and every observation
-    # said it twice: `[step 3/40 · step 3/40, llm calls 3/40, ...]`
+    # said it twice: `[step 3/40 · step 3/40, LLM calls 3/40, ...]`
     lines = [
         f"[{head} · {budget_status.removeprefix(f'{head}, ')}]",
         f"state: {state.summary()}",
@@ -1099,8 +1103,8 @@ def build_observation_text(
         # talk glue, which also left a stranger's words out (docs/passport/security.md)
         lines.extend(nearby)
     if stepped:
-        # Turns the discrete stepper answered while the model was not asked (`--decision-mode on`).
-        # None of it is in the model's history, because none of it is anything the model
+        # Turns the discrete stepper answered while the pilot LLM was not asked (`--decision-mode on`).
+        # None of it is in the pilot LLM's history, because none of it is anything the pilot LLM
         # said, so this line is the whole of what it knows about that time. It has to say
         # who chose them: a pilot that thinks it closed the gripper itself will not think
         # to check.

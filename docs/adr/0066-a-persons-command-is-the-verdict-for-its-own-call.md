@@ -6,10 +6,10 @@
 
 [ADR-0032](0032-datasheets-and-the-verdict.md) holds every pilot to a verdict before the first
 verb that moves the body. The pilot judges the task against the body's datasheet, and nothing
-that moves runs until it has, because a model that never asked whether the body can do the task
+that moves runs until it has, because an LLM that never asked whether the body can do the task
 will try anyway. In a drive session ([ADR-0065](0065-a-person-drives-one-robot-a-command-at-a-time.md))
-a person names one call, "kick left". That judgement is the person's, made for that call, and a
-model asked to make it again would cost seconds on every command. The gate cannot simply be
+a person names one call, "kick left". That judgement is the person's, made for that call, and an
+LLM asked to make it again would cost seconds on every command. The gate cannot simply be
 off, either: the record has to say who cleared each motion, and a pipe must never be recorded as
 a person.
 
@@ -50,7 +50,7 @@ a person.
 
 - **A verdict for the whole session.** A `feasible` recorded once would clear every later call,
   a pilot's among them, on a judgement nobody made about them.
-- **The pilot's verdict for each command.** Seconds and a model call per command, for a
+- **The pilot's verdict for each command.** Seconds and an LLM call per command, for a
   judgement the person had just made.
 - **No gate in drive.** The record would not say who cleared a motion, and a pipe would clear
   it in a person's name.

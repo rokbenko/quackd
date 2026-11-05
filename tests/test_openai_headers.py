@@ -4,7 +4,7 @@ OpenAI's SDK adds by itself, and the address all of it goes to.
 The SDK reads `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` out of the
 environment and adds them to every request, wherever the client points. A gateway's
 `Authorization` line in the first replaced the vendor's key, and it, the gateway's other lines and
-OpenAI's account headers went to every vendor built on the SDK and to every model server you run.
+OpenAI's account headers went to every vendor built on the SDK and to every LLM server you run.
 They go now where the SDK itself would send them and nowhere else: OpenAI's own API, and the
 address `OPENAI_BASE_URL` gives `--llm openai` when it is asked for no other.
 `quackd.agent.providers.openai_headers` holds the rule, and `OpenAIProvider._build_client` builds
@@ -461,7 +461,7 @@ def test_base_url_moves_the_rule_with_the_address(
 def test_a_preset_moved_to_a_board_is_judged_where_it_was_moved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`--host` moves a preset's model server to another machine, a Jetson over plain HTTP, and
+    """`--host` moves a preset's LLM server to another machine, a Jetson over plain HTTP, and
     that is the address the headers are decided on."""
     _gateway(monkeypatch)
     _provider, fake = _built(monkeypatch, "ollama", release="3.22", host="jetson.local")
@@ -801,7 +801,7 @@ def test_a_redirect_says_where_it_pointed_and_how_to_go_there(
     names neither a redirect nor where it pointed. The sentence says both, and the way to give
     the address it implies: `--base-url`, or `OPENAI_BASE_URL` for the provider that took its
     address from there. Any other failure keeps the SDK's words."""
-    vllm, _fake = _built(monkeypatch, "vllm", base_url="http://llm.example/v1", model="m")
+    vllm, _fake = _built(monkeypatch, "vllm", base_url="http://llm.example/v1", llm_id="m")
     error = _redirect(
         308, "https://llm.example/v1/chat/completions", "http://llm.example/v1/chat/completions"
     )

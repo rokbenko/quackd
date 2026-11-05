@@ -229,7 +229,7 @@ Over MCP on 2026-09-28, with `scripted:sweep` served:
 do refused: shoulder_lift reads -99.4, outside its calibrated travel of -84.2..84.2, so the policy was not started. A joint outside its travel is left out of every goal a policy sends, because the one goal its servo takes there is the end of its travel, and the policy could never move it. Move shoulder_lift inside its travel first
 ```
 
-A pilot that can call `move_joints`, a model under `--controller llm` or an MCP client, moves the
+A pilot that can call `move_joints`, an LLM under `--controller llm` or an MCP client, moves the
 joint inside first, as that run did, to `shoulder_lift` -40, `elbow_flex` 40 and `wrist_flex` 0,
 and its two segments then ran. The same run made in-process ended with the rest move parking the
 joint at the edge of its travel, in the pose the twin settled to there, and the close letting it
@@ -246,7 +246,7 @@ subtasks it may be told, how long each segment runs and how long they run in all
 ([reference/duck-spec.md](../reference/duck-spec.md#policy-v3)). A `--goal` run given `--policy-url`
 allows `manipulate` too, and asks you before each segment when it runs at a terminal. `--yes`, or a
 pipe or file on stdin, answers in your place, and nobody is asked. With `--controller vla` no
-model is involved at all: a scripted pilot hands the policy each listed instruction in turn
+LLM is involved at all: a scripted pilot hands the policy each listed instruction in turn
 and then asks you whether the arm did it ([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 A goal in `quackd drive` given `--policy-url` does the same, asking you at its keyboard or in the
 page, and under `--controller vla` each line you type is its one instruction
@@ -450,7 +450,8 @@ N1.7, each allowed the processor steps read for it at LeRobot 0.6.1 and no other
 X-VLA in its `auto` action mode alone ([below](#x-vla)) and a GR00T whose every action group is
 joints ([below](#gr00t-n17)). Any other type is refused before a byte of its weights is fetched,
 and pi0-FAST in a sentence of its own ([below](#pi0-and-why-not-pi0-fast)). MolmoAct2 is not
-served yet ([below](#molmoact2)).
+served yet ([below](#molmoact2)). `quackd policy list` prints the types and the ones refused, on
+a machine with no LeRobot.
 
 ### SmolVLA and ACT
 

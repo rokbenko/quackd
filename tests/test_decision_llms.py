@@ -42,8 +42,8 @@ from quackd.agent.decision.factory import (
     make_decision_llm,
     parse_decision_llm,
     preset_names,
+    resolve_decision_llm,
     resolve_decision_mode,
-    resolve_decision_model,
     resolve_decision_price,
     resolve_decision_url,
 )
@@ -66,7 +66,7 @@ async def _advise_with(
     answer is read and a registry of verbs would only be scenery."""
 
     class Says:
-        name, model, url = "probe", "p", None
+        name, llm_id, url = "probe", "p", None
 
         async def decide(self, state: Any, questions: Any) -> Any:
             return {"answers": answers or {}}
@@ -99,17 +99,17 @@ def test_every_preset_row_is_complete() -> None:
         assert spec.sdk, f"{name}: no import to probe, so doctor cannot say if it is here"
 
 
-def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_a_model_variable() -> None:
+def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_an_llm_variable() -> None:
     """The things that belong to a vendor rather than to a format. Two rows are hosted, so two
     carry a key and a published rate, and a third growing either is the table drifting back
-    towards one-module-per-vendor. The model variable is the one SDK's own that quackd honours
+    towards one-module-per-vendor. The LLM variable is the one SDK's own that quackd honours
     where that SDK owns the address, which is `jev` alone: `openai`'s backend always hands its
     SDK an address."""
     for name, spec in PRESETS.items():
         hosted = name in ("jev", "openai")
         assert bool(spec.key_env) is hosted, f"{name}: key_env"
         assert bool(spec.price) is hosted, f"{name}: price"
-        assert bool(spec.model_env) is (name == "jev"), f"{name}: model_env"
+        assert bool(spec.llm_env) is (name == "jev"), f"{name}: llm_env"
 
 
 def test_only_openai_may_be_shown_a_picture() -> None:
@@ -139,14 +139,14 @@ def test_only_the_two_rows_that_are_told_an_address_lack_one() -> None:
     assert {name for name, spec in PRESETS.items() if spec.url is None} == {"jev", "local", "laya"}
 
 
-def test_the_hosted_model_is_pinned_and_the_open_ones_are_named() -> None:
-    """A moving alias is a run whose transcript describes a model that is no longer the one
+def test_the_hosted_llm_is_pinned_and_the_open_ones_are_named() -> None:
+    """A moving alias is a run whose transcript describes an LLM that is no longer the one
     that answered. And the open servers do not share an id: OpenJev refuses a pinned Jev
     version with a 400, so a shared default would have been wrong there on every request."""
-    assert PRESETS["jev"].model == "jev-1.13.0"
-    assert PRESETS["openai"].model == "gpt-6-luna"
-    assert PRESETS["openjev"].model != PRESETS["jev"].model
-    assert PRESETS["local"].model is None
+    assert PRESETS["jev"].llm_id == "jev-1.13.0"
+    assert PRESETS["openai"].llm_id == "gpt-6-luna"
+    assert PRESETS["openjev"].llm_id != PRESETS["jev"].llm_id
+    assert PRESETS["local"].llm_id is None
 
 
 def test_the_extras_the_table_names_exist_and_install_what_it_says() -> None:
@@ -206,7 +206,7 @@ def test_importing_the_package_imports_no_backend() -> None:
 
 
 @pytest.mark.parametrize(
-    ("spec", "name", "model"),
+    ("spec", "name", "llm_id"),
     [
         ("jev", "jev", None),
         ("jev:jev-latest", "jev", "jev-latest"),
@@ -216,11 +216,11 @@ def test_importing_the_package_imports_no_backend() -> None:
         ("local:my-own-build", "local", "my-own-build"),
     ],
 )
-def test_a_spec_is_a_name_and_maybe_a_model(spec: str, name: str, model: str | None) -> None:
+def test_a_spec_is_a_name_and_maybe_an_llm(spec: str, name: str, llm_id: str | None) -> None:
     parsed = parse_decision_llm(spec)
     assert parsed is not None
     found, asked = parsed
-    assert (found.name, asked) == (name, model)
+    assert (found.name, asked) == (name, llm_id)
 
 
 @pytest.mark.parametrize("spec", ["off", "OFF", "", "   "])
@@ -276,14 +276,14 @@ def test_the_refusal_names_the_variable_when_the_variable_is_wrong(
         parse_decision_llm(None)
 
 
-def test_a_model_keeps_its_own_colons() -> None:
+def test_an_llm_keeps_its_own_colons() -> None:
     """Split at the first colon only. A checkpoint named like an Ollama tag is still one
     name, and cutting it in half would ask a server for something it does not serve."""
-    parsed = parse_decision_llm("local:org/model:v2")
-    assert parsed is not None and parsed[1] == "org/model:v2"
+    parsed = parse_decision_llm("local:org/llm:v2")
+    assert parsed is not None and parsed[1] == "org/llm:v2"
 
 
-def test_a_trailing_colon_is_the_default_model() -> None:
+def test_a_trailing_colon_is_the_default_llm() -> None:
     """Shell completion offers `kev:` as a prefix, and a reader may well press enter on it."""
     parsed = parse_decision_llm("kev:")
     assert parsed is not None and parsed[1] is None
@@ -336,7 +336,7 @@ def test_a_mode_from_a_variable_with_nothing_to_run_it_names_the_variable(
         resolve_decision_mode(None, named=False)
 
 
-# ── the address, the model and the rate ─────────────────────────────────────────────────
+# ── the address, the LLM and the rate ─────────────────────────────────────────────────
 
 
 def test_the_address_falls_back_from_flag_to_variable_to_row(
@@ -357,24 +357,24 @@ def test_the_hosted_row_has_no_address_of_its_own(monkeypatch: pytest.MonkeyPatc
     assert resolve_decision_url(PRESETS["jev"], None) is None
 
 
-def test_the_model_variable_moves_the_hosted_row_and_nothing_else(
+def test_the_llm_variable_moves_the_hosted_row_and_nothing_else(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`TYPESAFE_DEFAULT_MODEL` is the SDK's own, so it is honoured exactly where the SDK owns
     the address too. A stray one must not retarget a server on somebody's own machine."""
     monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-preview")
-    assert resolve_decision_model(PRESETS["jev"], None) == "jev-preview"
-    assert resolve_decision_model(PRESETS["kev"], None) == PRESETS["kev"].model
+    assert resolve_decision_llm(PRESETS["jev"], None) == "jev-preview"
+    assert resolve_decision_llm(PRESETS["kev"], None) == PRESETS["kev"].llm_id
 
 
-def test_a_named_model_beats_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_named_llm_beats_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TYPESAFE_DEFAULT_MODEL", "jev-preview")
-    assert resolve_decision_model(PRESETS["jev"], "jev-1.13.0") == "jev-1.13.0"
+    assert resolve_decision_llm(PRESETS["jev"], "jev-1.13.0") == "jev-1.13.0"
 
 
 def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
-    """Not `None`, which quackd reserves for "there is a rate and nobody here knows it". A
-    model on your own machine bills you in electricity, and that is the same `$0` the rest of
+    """Not `None`, which quackd reserves for "there is a rate and nobody here knows it". An
+    LLM on your own machine bills you in electricity, and that is the same `$0` the rest of
     quackd already prices a local pilot at.
 
     OpenAI's rate was read on a day of its own, and the record says which: without its own
@@ -454,7 +454,7 @@ def test_a_server_you_run_gets_a_word_for_a_key_and_its_own_port(
     llm = make_decision_llm(PRESETS["kev"])
     assert fake.api_key == "local"
     assert fake.base_url == "http://127.0.0.1:8009"
-    assert llm.model == "kev-latest" and llm.name == "kev"
+    assert llm.llm_id == "kev-latest" and llm.name == "kev"
 
 
 def test_the_hosted_one_is_handed_no_key_and_no_address(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -469,9 +469,9 @@ def test_the_hosted_one_is_handed_no_key_and_no_address(monkeypatch: pytest.Monk
 
 def test_the_address_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
-    llm = make_decision_llm(PRESETS["local"], url="http://gpu.local:9001", model="my-build")
+    llm = make_decision_llm(PRESETS["local"], url="http://gpu.local:9001", llm_id="my-build")
     assert fake.base_url == "http://gpu.local:9001"
-    assert llm.url == "http://gpu.local:9001" and llm.model == "my-build"
+    assert llm.url == "http://gpu.local:9001" and llm.llm_id == "my-build"
 
 
 def test_the_clients_own_clock_sits_above_the_steppers_second(
@@ -557,7 +557,7 @@ async def test_the_in_process_one_loads_once_and_asks_for_the_decision_checkpoin
 ) -> None:
     """Loading costs seconds against a timeout of one, so a second load would be a turn lost
     every turn. And the checkpoint asked for is the decision-tuned one: its plain name is an
-    alias for the English model, which is a different thing that would answer anyway."""
+    alias for the English LLM, which is a different thing that would answer anyway."""
     router = fake_laya.install(monkeypatch, fake_laya.FakeRouter(answers=fake_laya.turn("stop")))
     llm = make_decision_llm(PRESETS["laya"])
     await llm.decide({"goal": "a"}, {})
@@ -677,7 +677,7 @@ async def test_a_plugin_is_built_and_asked(plugin: Any) -> None:
     stub.built.clear()
     llm = make_decision_llm(find_preset("stub"), url="http://elsewhere:1234")
     assert stub.built and stub.built[-1] is llm
-    assert llm.url == "http://elsewhere:1234" and llm.model == "stub-1"
+    assert llm.url == "http://elsewhere:1234" and llm.llm_id == "stub-1"
     await llm.decide({"goal": "x"}, {"next_verb": {"type": "choice"}})
     assert llm.calls[0][0] == {"goal": "x"}
 
@@ -743,9 +743,9 @@ async def test_a_question_nobody_answered_is_not_an_answer_of_no(answers: dict[s
     """The two Nouls stop a run and ask for a person, and read as zero they say the opposite.
 
     A backend that answers only `next_verb` -- a plugin under construction, a server that
-    dropped a field, a model with no Nouls at all -- used to have both gates default to 0.0,
+    dropped a field, an LLM with no Nouls at all -- used to have both gates default to 0.0,
     which is "certainly not finished, certainly nobody needed", and those are exactly the two
-    answers that let a verb through. A question nobody answered hands the turn to the model.
+    answers that let a verb through. A question nobody answered hands the turn to the LLM.
     """
     advice = await _advise_with(answers)
     assert advice.record["gate"] == "unreadable"
@@ -805,14 +805,14 @@ async def test_a_number_that_is_no_probability_is_unreadable_on_every_row(
 
 
 async def test_the_state_is_measured_and_shown_with_its_letters_as_letters() -> None:
-    """A letter outside ASCII is one character, to the measure and to the model. `state_chars`
+    """A letter outside ASCII is one character, to the measure and to the LLM. `state_chars`
     used to count JSON's six-character escape for it, so a goal in Slovenian measured longer than
     the same goal in ASCII, and the flock's chatter, written into the state as JSON of its own,
     reached the backend as escapes."""
     shown: list[dict[str, str]] = []
 
     class Keeps:
-        name, model, url = "probe", "p", None
+        name, llm_id, url = "probe", "p", None
 
         async def decide(self, state: Any, questions: Any) -> Any:
             shown.append(dict(state))
@@ -894,11 +894,11 @@ async def test_the_record_holds_no_number_json_cannot_spell(
 
 async def test_a_backend_that_never_answers_costs_one_turn_and_not_the_run() -> None:
     """The page promises a second. The SDK's own per-request default is ten, its retry budget
-    is a different clock again, and a model in this process has no timeout at all, so the only
+    is a different clock again, and an LLM in this process has no timeout at all, so the only
     place the promise can be kept is the seam."""
 
     class Hangs:
-        name, model, url = "hangs", "h", None
+        name, llm_id, url = "hangs", "h", None
 
         async def decide(self, state: Any, questions: Any) -> Any:
             await asyncio.sleep(30)
@@ -924,7 +924,7 @@ def test_the_address_variable_never_retargets_the_hosted_row(
 def test_a_hosted_row_at_an_address_you_typed_is_a_server_you_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`--decision-llm jev --decision-url http://localhost:8009` means Jev's model id at my
+    """`--decision-llm jev --decision-url http://localhost:8009` means Jev's LLM id at my
     address, and a company's API key has no business going there."""
     fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
     monkeypatch.setenv("TYPESAFE_API_KEY", "sk-hosted-and-private")

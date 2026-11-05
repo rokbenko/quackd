@@ -96,7 +96,7 @@ Also in scope:
   robot connects, naming the release and never the value. The key itself goes wherever the pilot is
   pointed, which is what `--base-url` is for, and `--llm openai` sends its key to whatever
   `OPENAI_BASE_URL` names, as the SDK always has, so a board named there is sent `OPENAI_API_KEY` in
-  the clear: a model server you run is reached with a local preset, which sends it no hosted key.
+  the clear: an LLM server you run is reached with a local preset, which sends it no hosted key.
   Where a project's `.env` chose that address and the key came from your shell, quackd says so on
   stderr, naming the variable and the host, and goes on: it is your call and it may be on purpose.
   What would be a security issue: a line of `OPENAI_CUSTOM_HEADERS`, or `OPENAI_ORG_ID` or
@@ -200,7 +200,7 @@ Also in scope:
   `quackd run --goal`'s goal does. The session's `transcript.jsonl` keeps every line typed as a
   command as it was typed, and each answer to a question in the row of the call it answered.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
-  sentences a model wrote about a place it has been, it persists between runs, and it is
+  sentences an LLM wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never
   reads it, so a note cannot widen an allowlist, lift a budget or open a confirm gate. What
   would be a security issue: memory reaching the executor, a note from one robot appearing
@@ -235,9 +235,9 @@ Also in scope:
   stored, never logged and never proxied: there is no server here to proxy it through, and
   nothing in `web/src` writes to browser storage. The vendors a key can reach are exactly the
   entries of `PROVIDERS` in `web/src/providers.js`, each one contacted only once the visitor
-  picks it, and the model list offered beside them is generated from the same catalogue the CLI
+  picks it, and the LLM list offered beside them is generated from the same catalogue the CLI
   ships (`web/src/catalogue.js`, written by `web/build_catalogue.py`), so the page cannot name
-  an address or a model this repository does not. What that leaves is the page itself. It
+  an address or an LLM this repository does not. What that leaves is the page itself. It
   loads three payloads from `cdn.jsdelivr.net` at pinned versions, plus a stylesheet from
   `fonts.googleapis.com` and the two webfonts it names from `fonts.gstatic.com`, all with no
   subresource integrity and no content security policy, and any script running in the page can
@@ -253,7 +253,7 @@ Also in scope:
   quackd server sits between the input and the vendor there either. Anthropic's
   `anthropic-dangerous-direct-browser-access` header, which the page sends, is opting out of
   the vendor's own guard against exactly this. OpenRouter is a router, so what a visitor
-  sends it also reaches the provider it picks for the model, and the page names quackd to it
+  sends it also reaches the provider it picks for the LLM, and the page names quackd to it
   in two headers (`HTTP-Referer` and `X-OpenRouter-Title`) and says nothing about the visitor.
   Use a key with a spend cap, or pick Local and
   nothing leaves the machine. What the demo cannot do: it is a simulation with no transport to
@@ -362,7 +362,7 @@ Also in scope:
   URL, a transcript, a run's command line or `--json`, it scrubs the token out of every reply
   before an error or `quackd doctor` can repeat it, and it ignores `HTTP_PROXY` and follows no
   redirect, since either would carry the token header somewhere other than the board. The
-  model server that `--host` also reaches is your own install on the board and authenticates
+  LLM server that `--host` also reaches is your own install on the board and authenticates
   nothing: keep Ollama's `OLLAMA_HOST` on `127.0.0.1:11434` and reach it and the daemon from
   the laptop with `ssh -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434`, the way you reach a
   robot's bridge. What would be a security issue: a way to move anything through the daemon, a

@@ -77,7 +77,7 @@ own default and quackd kept that default: `quackd robot rest-pose`, and the park
 ends of a run that goes with it, exist because of those falls. One dry run aborted with `the
 arm did not answer: TimeoutError` after a single heartbeat round trip failed, and nothing like
 it happened again. One dry run aborted because the pilot answered `uncertain` and the human
-said no. The camera framed the gripper and cropped the raised arm, so the model checked its own
+said no. The camera framed the gripper and cropped the raised arm, so the LLM checked its own
 waves against joint readings rather than against the picture. And four questions came back
 unanswered: whether the holding band is anywhere near right, what a joint reads after ten
 minutes of work, whether a stall is caught when you cause one on purpose, and whether 5 degrees

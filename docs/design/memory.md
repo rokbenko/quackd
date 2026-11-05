@@ -22,7 +22,7 @@ gaps and this was not among them, which is its own small failure: a gap nobody h
 down is a gap nobody is accounting for.
 
 The thesis does not change. The LLM picks verbs, the robot's own controllers move, quackd
-enforces the contract. What changes is what the model knows when it starts picking.
+enforces the contract. What changes is what the LLM knows when it starts picking.
 
 ## What this release is not
 
@@ -38,11 +38,11 @@ Recorded in [ADR-0025](../adr/0025-memory-between-runs.md); the short version:
 | Decision | Why |
 |---|---|
 | One append-only JSONL file per robot, keyed `adapter:backend` | A note about a 2 m cartoon arena is wrong for a living room. The simulator and a real duck must never share notes, and `adapter:backend` is the key both `quackd run` and `serve-mcp` already have |
-| Two kinds of entry, one chosen and one automatic | A model that has to be asked to remember will forget, and a log nobody curates is the only kind that stays honest. Notes are what the pilot decided to keep, episodes are what happened whether it noticed or not |
+| Two kinds of entry, one chosen and one automatic | An LLM that has to be asked to remember will forget, and a log nobody curates is the only kind that stays honest. Notes are what the pilot decided to keep, episodes are what happened whether it noticed or not |
 | `remember` is a meta tool, not a verb | ADR-0017 says the vocabulary comes from the manifest. A verb that moves nothing does not belong in a manifest, so `remember` sits next to `declare_success`, costs an LLM call and no step, and is absent from every allowlist |
 | Newest wins, capped, no retrieval | A vector store means an embedding model in the default install, a second thing to keep in sync, and a search index over a handful of sentences about a toy duck. Twenty notes and five episodes fit in the prompt and cost nothing to maintain |
 | The starter ducks ask for the note inside the strategy | A prompt-level hint alone was ignored: Qwen 2.5 Coder 14B read the memory block and never wrote to it across four runs. A `remember` in the last numbered step was followed on the first |
-| The executor never reads memory | A note is text a model wrote. Letting it reach the allowlist, the budgets or a confirm gate would make the safety layer argue with the thing it exists to distrust |
+| The executor never reads memory | A note is text an LLM wrote. Letting it reach the allowlist, the budgets or a confirm gate would make the safety layer argue with the thing it exists to distrust |
 | Memory off removes the heading, the tool and the episode | So the scaffolding's cost is auditable against any previous transcript rather than believed to be small. It does *not* make the whole prompt byte-for-byte what it was, because the starter ducks' own bodies now ask for a `remember` either way (see below) |
 
 ## What the work found
@@ -67,10 +67,10 @@ either arrived.
   permanent conclusion drawn from verb results it had invented.
 - **A refreshed note sorted as the oldest.** Repeating a sentence refreshes its timestamp and
   left it where it sat, and both the prompt's newest-first window and the cap read *file*
-  order. The note the model had just chosen to repeat was the first one evicted.
+  order. The note the LLM had just chosen to repeat was the first one evicted.
 - **`quackd memory show --raw` did not print the file as is**, which is its only job: it
   went through Rich, so a note reading `the ball is [bold]behind[/bold] the sofa` printed as
-  `the ball is behind the sofa`. A note is text a model wrote and can contain anything.
+  `the ball is behind the sofa`. A note is text an LLM wrote and can contain anything.
 - **`quackd memory --robot <bad spec>` printed a Python traceback**, where every other
   command taking `--robot` answers in one line through `_fail`. The whole command group
   shipped with no test, which is how two of its three subcommands were wrong.
@@ -95,7 +95,7 @@ either arrived.
   of the two notes. Renaming a temporary file over the old one makes it *atomic*, which is
   not the same claim. The docstring now says which of the two it is, and why that is the
   accepted price of a file you can also edit in a text editor.
-- **The prompt told the model `remember` "is free".** It costs an LLM call, out of the same
+- **The prompt told the LLM `remember` "is free".** It costs an LLM call, out of the same
   budget every other turn draws on, and the ADR and docs both said so.
 - **With `--no-memory` the MCP server still told the pilot to call `robot_recall` early**, a
   tool that would answer "memory is off": an instruction to waste a turn.
@@ -121,7 +121,7 @@ either arrived.
 - **The README said no live local server had ever been run.** PR #5's evidence *is* a live
   local server run. The claim was true when written and this release makes it false, so it
   now says whose machine it was and that no transcript from it is in the repository. That is
-  the first local-model evidence this project has had, and it arrived in a footnote.
+  the first local-LLM evidence this project has had, and it arrived in a footnote.
 
 Each of these is fixed, and the ones no test could see became tests. A living document *or a
 Python string a user reads* may not claim a number of `robot_*` tools the server disagrees
@@ -133,8 +133,8 @@ is how two of its three subcommands came to be wrong.
 
 ## What is still not true
 
-- **No cloud model has ever called `remember`.** The scripted pilot has no script for it, so
-  `--llm fake` accumulates episodes and never writes a note. The only evidence a model
+- **No cloud LLM has ever called `remember`.** The scripted pilot has no script for it, so
+  `--llm fake` accumulates episodes and never writes a note. The only evidence an LLM
   uses the tool at all is the contributor's Qwen 2.5 Coder 14B runs on `find-and-kick`,
   seeds 5 and 6.
 - **`--no-memory` does not silence the ducks.** The seven starter tasks ask for a `remember`
@@ -159,6 +159,6 @@ is how two of its three subcommands came to be wrong.
 
 ## Only a human can do these
 
-Run any of this against a real robot, and run `remember` against a cloud model. The first is
+Run any of this against a real robot, and run `remember` against a cloud LLM. The first is
 the same wall every release has hit. The second needs an API key this repository has never
 had.

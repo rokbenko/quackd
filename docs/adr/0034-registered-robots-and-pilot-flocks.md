@@ -34,8 +34,8 @@ machinery those two ADRs built had nothing to run on.
 `camera_url`, an optional `provider` and `model` for the pilot that drives it, and a note.
 `--registry-dir` beats `QUACKD_REGISTRY_DIR` beats `~/.quackd`, the same precedence
 `--memory-dir` has. Reads are strict, so a hand-edited typo names the field and stops the
-command, where memory's are lenient: this is configuration a person wrote rather than notes a
-model wrote. Writes go to a temporary file renamed over the old one, unserialised, last rename
+command, where memory's are lenient: this is configuration a person wrote rather than notes an
+LLM wrote. Writes go to a temporary file renamed over the old one, unserialised, last rename
 wins: the same accepted race as memory, for the same reason, that the file stays one a person
 can open. `quackd robot list --probe` connects to each and says whether it answered.
 
@@ -47,7 +47,7 @@ listing it.
 
 **There are two kinds of flock, and the task file says which.** `flock.allocation.method`
 takes `auction`, the default and unchanged (the 0.3 coordinator, sim2d Microducks,
-deterministic, at most one model call), or `pilots`. `--flock N` is always the auction,
+deterministic, at most one LLM call), or `pilots`. `--flock N` is always the auction,
 `--flock <name>` runs a stored flock, and a task file with no `flock:` block run under a name
 is pilots. An auction is 2 to 4 members because its arena holds four. A pilot flock is 2 to 8
 because nothing is shared and the bound is what one terminal can show.
@@ -59,7 +59,7 @@ coordinator, so a seed does not make a pilot flock reproducible, and nothing arb
 because the members do. Any backend, same bodies or different ones.
 
 **`tell` is a meta tool and `TALK` is a bus message.** `tell(to, text)` sits beside
-`assess_task`, `declare_success` and `remember`: it moves nothing, costs no step and one model
+`assess_task`, `declare_success` and `remember`: it moves nothing, costs no step and one LLM
 call, and reaches the addressee in its next observation under "Messages from your flock". The
 system prompt gains a "Your flock" section naming every peer with the one-paragraph form of
 its datasheet, so a pilot deciding who does which half is reading data rather than guessing.
@@ -100,7 +100,7 @@ than one global value for all of them. No new MCP tools.
   [ADR-0015](0015-flock-deterministic-coordinator.md) said it would cost, and it is why the
   auction is still what the kick demo runs.
 - Nothing here has run on hardware. The mixed-body case is exercised on mock backends, and
-  `tell` has been exercised by the scripted pilot and by no real model.
+  `tell` has been exercised by the scripted pilot and by no real LLM.
 - No distributed clock, so no `--bus` flag for either kind. `MqttBus` carries `TALK` like every
   other kind, and nothing has carried a flock between machines.
 - Tokens sit in plain text in `~/.quackd/robots.json`, masked in everything quackd prints.

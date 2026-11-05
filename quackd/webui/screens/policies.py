@@ -14,7 +14,7 @@ import json
 import streamlit as st
 
 from quackd.webui import catalog, jobs, launch, widgets
-from quackd.webui.options import DECISION_OPTIONS, MODEL_OPTIONS
+from quackd.webui.options import DECISION_OPTIONS, LLM_OPTIONS
 
 DEFAULT_PORT = 9875
 
@@ -60,7 +60,7 @@ def _local() -> None:
                 widgets.write("_controller", "vla")  # the picker on Setup
                 widgets.write("controller", "vla")
                 widgets.write("policy_url", url)
-                for name in (*MODEL_OPTIONS, *DECISION_OPTIONS):  # as Setup's own VLA choice does
+                for name in (*LLM_OPTIONS, *DECISION_OPTIONS):  # as Setup's own VLA choice does
                     widgets.forget(name)
                 st.success("Setup now flies the arm with this policy.")
             if check.button("Check it", key=f"check-{job.id}", width="stretch"):

@@ -8,7 +8,7 @@
 ---
 duck: 1
 name: e156-one-dollar
-description: "A one-dollar allowance of model calls."
+description: "A one-dollar allowance of LLM calls."
 author: rok
 requires: [move_joints]
 verbs:
@@ -27,7 +27,7 @@ persona: "Practical and honest: say so when you cannot do something."
 
 # Task
 
-You have an allowance of one US dollar of model calls, and the run stops when it is spent. Chores, in order, starting again from the top whenever you finish the list: wave, nod, point left, point right, return to neutral. Do as many chores as you can before the budget stops you, and say which chore you are on each time.
+You have an allowance of one US dollar of LLM calls, and the run stops when it is spent. Chores, in order, starting again from the top whenever you finish the list: wave, nod, point left, point right, return to neutral. Do as many chores as you can before the budget stops you, and say which chore you are on each time.
 
 ## Strategy
 

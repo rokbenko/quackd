@@ -34,7 +34,7 @@ body:
   - type: textarea
     id: description
     attributes:
-      label: LLM-facing description (one or two sentences the model will read)
+      label: LLM-facing description (one or two sentences the LLM will read)
     validations:
       required: true
   - type: textarea

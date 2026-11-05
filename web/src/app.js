@@ -3,7 +3,7 @@
  *
  * Two things can drive this robot and both are always live. The keyboard writes a twist —
  * three numbers, vx, vy, wz — plus a head angle, which is the entire interface the hardware
- * has. quackd's switch adds a layer above that: a model reads an English sentence and picks
+ * has. quackd's switch adds a layer above that: an LLM reads an English sentence and picks
  * from the robot's own verbs, and the executor checks each one against a contract before
  * anything moves. Underneath there are two learned policies — one stands the duck up, one
  * walks it — and a scripted kick that is quackd's own, not a policy. None of it reads
@@ -41,7 +41,7 @@ const ui = {
   goalForm: $("goal-form"), goal: $("goal"), run: $("run"), stopRun: $("stop-run"),
   reset: $("reset"), toggle: $("quackd-on"), toggleLabel: $("toggle-label"),
   toggleNote: $("toggle-note"), keyBox: $("key-box"),
-  provider: $("provider"), model: $("model"), modelText: $("model-text"),
+  provider: $("provider"), llm: $("llm"), llmText: $("llm-text"),
   key: $("key"), baseUrl: $("base-url"),
   providerNote: $("provider-note"), record: $("record"), save: $("save"), share: $("share"),
   clear: $("clear"),
@@ -188,7 +188,7 @@ function paintReadout() {
   const fmt = (t) => t.map((v) => v.toFixed(2)).join(", ");
   const asked = duck.commanded, sent = duck.sent;
   // The gait floor is otherwise invisible. A strafe is ALWAYS lifted — GAIT_FLOOR.vy is 0.30
-  // and MAX_VY is 0.20 — which is the most legible demonstration on the page of why the model
+  // and MAX_VY is 0.20 — which is the most legible demonstration on the page of why the LLM
   // is told to read the pose it reached, not the numbers it sent.
   const differs = sent.some((v, i) => Math.abs(v - asked[i]) > 1e-6);
   ui.readout.textContent =
@@ -200,7 +200,7 @@ function paintReadout() {
 // ── the switch: the language layer, and nothing else ────────────────────────────────────
 
 const ON_NOTE =
-  "A model reads your sentence and picks from the robot's own verbs. The executor checks " +
+  "An LLM reads your sentence and picks from the robot's own verbs. The executor checks " +
   "every one against the contract before anything moves.";
 const OFF_NOTE =
   "Nothing here reads English. The duck takes a twist — three numbers — and you are " +
@@ -216,7 +216,7 @@ function applyToggle() {
   const on = ui.toggle.checked;
   ui.toggleLabel.textContent = on ? "quackd is on" : "quackd is off";
   ui.toggleNote.textContent = on ? ON_NOTE : OFF_NOTE;
-  ui.keyBox.hidden = !on;                 // no model is called, so no key is needed
+  ui.keyBox.hidden = !on;                 // no LLM is called, so no key is needed
   ui.run.textContent = on ? "Run" : "Send";
   document.body.classList.toggle("no-quackd", !on);
 }
@@ -250,13 +250,13 @@ function refuse(goal) {
 async function run(goal) {
   let provider;
   try {
-    const model = chosenModel();
+    const llmId = chosenLlm();
     provider = makeProvider({
       provider: ui.provider.value,
       key: ui.key.value.trim(),
-      model,
+      llmId,
       baseUrl: ui.baseUrl.value.trim(),
-      // The catalogue knows which OpenAI models refuse function tools on Chat Completions, so
+      // The catalogue knows which OpenAI LLMs refuse function tools on Chat Completions, so
       // the run opens on the API that will answer instead of paying a 400 to find out.
     });
   } catch (error) {
@@ -348,7 +348,7 @@ function say(event) {
       line("note", "the duck is back where it started");
       break;
     // The hand's discrete acts only. W/A/S/D and Q/E write nothing on purpose: one line per
-    // keypress would bury the model's reasoning. A verb leaves a line; a twist leaves a
+    // keypress would bury the LLM's reasoning. A verb leaves a line; a twist leaves a
     // number, and the readout is where driving is recorded.
     case "handover":
       line("handover", `<b>you took the controls</b> <kbd>${escape(event.key)}</kbd>`);
@@ -602,19 +602,19 @@ for (const [id, spec] of Object.entries(PROVIDERS)) {
 }
 
 /**
- * Rebuild #model for one vendor, grouped by status and defaulted to the vendor's own default.
+ * Rebuild #llm for one vendor, grouped by status and defaulted to the vendor's own default.
  *
- * The field used to be free text with one id pre-filled, so every other model this build knows
+ * The field used to be free text with one id pre-filled, so every other LLM this build knows
  * was something you had to have read the source to name, and a typo reached the vendor before
  * anything said so. The list is `catalogue.js`, generated from the Python that is the single
- * source of truth, so the page offers exactly what `quackd list-models` does.
+ * source of truth, so the page offers exactly what `quackd list-llms` does.
  *
  * createElement throughout. A label is vendor copy — "Z.ai GLM 5.2 (hosted by Mistral)" — and
  * innerHTML would make a `<` in one of them markup.
  */
-function fillModels(provider) {
+function fillLlms(provider) {
   const catalogue = CATALOGUE[provider];
-  ui.model.replaceChildren();
+  ui.llm.replaceChildren();
   if (!catalogue) return;
   for (const status of STATUS_ORDER) {
     const entries = catalogue.entries.filter((entry) => entry.status === status);
@@ -627,14 +627,14 @@ function fillModels(provider) {
       option.textContent = entry.label;
       group.append(option);
     }
-    ui.model.append(group);
+    ui.llm.append(group);
   }
-  ui.model.value = catalogue.default;
+  ui.llm.value = catalogue.default;
 }
 
-/** Whichever of the two model controls is the live one. */
-function chosenModel() {
-  return ui.model.hidden ? ui.modelText.value.trim() : ui.model.value;
+/** Whichever of the two LLM controls is the live one. */
+function chosenLlm() {
+  return ui.llm.hidden ? ui.llmText.value.trim() : ui.llm.value;
 }
 
 function applyProvider() {
@@ -643,10 +643,10 @@ function applyProvider() {
   // A vendor quackd keeps a list for gets the list; a local server gets the free-text box,
   // because it serves whatever you pulled and there is no list to keep.
   const fromCatalogue = Boolean(CATALOGUE[provider]);
-  fillModels(provider);
-  ui.model.hidden = !fromCatalogue;
-  ui.modelText.hidden = fromCatalogue;
-  if (!fromCatalogue) ui.modelText.value = spec.defaultModel;
+  fillLlms(provider);
+  ui.llm.hidden = !fromCatalogue;
+  ui.llmText.hidden = fromCatalogue;
+  if (!fromCatalogue) ui.llmText.value = spec.defaultLlm;
   // Cleared on every change, in both directions. Disabling the field left the value readable,
   // so a key pasted for Anthropic was still there when the visitor switched to a local server
   // and went out as a bearer token to whatever host they had typed in the box below.

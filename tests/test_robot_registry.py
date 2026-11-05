@@ -224,7 +224,7 @@ def test_a_pilot_the_shelf_cannot_resolve_is_kept_rather_than_refused() -> None:
     `update_robot` reads every entry before it writes one, so an entry refused on the way in
     would be refused by `quackd robot list`, `show`, `remove` and by the `quackd robot edit`
     that would mend it: one bad line would take the file down and leave no command able to fix
-    it. A vendor quackd drops, or a model id a catalogue retires, both arrive that way."""
+    it. A vendor quackd drops, or an LLM id a catalogue retires, both arrive that way."""
     assert _entry(llm="hal9000").llm == "hal9000"
 
 
@@ -258,11 +258,11 @@ def test_one_unreadable_pilot_does_not_take_the_other_robots_with_it(tmp_path: P
     ],
     ids=[
         "a-vendor-alone",
-        "a-vendor-and-a-model",
-        "a-model-alone-named-no-pilot",
+        "a-vendor-and-an-llm",
+        "an-llm-alone-named-no-pilot",
         "neither",
-        "a-null-model",
-        "a-model-alone-that-shares-a-vendors-name",
+        "a-null-llm",
+        "an-llm-alone-that-shares-a-vendors-name",
     ],
 )
 def test_a_file_written_before_the_two_flags_became_one_still_reads(
@@ -276,7 +276,7 @@ def test_a_file_written_before_the_two_flags_became_one_still_reads(
 
     A `model` with no `provider` is the case worth pinning. It named no pilot under the old
     pair, because the vendor came from the flag or from the default and the default was `fake`,
-    which ignores a model id. So it names none now either: read as a spec, `{"model":
+    which ignores an LLM id. So it names none now either: read as a spec, `{"model":
     "mistral"}` would quietly move a run that cost nothing onto a paid API.
     """
     entry = RobotEntry.model_validate({"name": "duck-a", "spec": "microduck:mock", **legacy})
@@ -336,12 +336,12 @@ def test_a_file_that_says_it_both_ways_is_refused(tmp_path: Path) -> None:
 )
 def test_the_pilot_is_stored_in_one_spelling(given: str, stored: str) -> None:
     """Two entries meaning the same pilot must not read as two different pilots, so the shelf
-    keeps one spelling: the vendor lowercased and in front, the model half left exactly as the
+    keeps one spelling: the vendor lowercased and in front, the LLM half left exactly as the
     vendor ships it (`Qwen/Qwen3-8B` folded is a 404), and an Ollama tag's own colon intact."""
     assert _entry(llm=given).llm == stored
 
 
-def test_a_model_the_catalogue_no_longer_lists_still_comes_off_the_shelf(tmp_path: Path) -> None:
+def test_an_llm_the_catalogue_no_longer_lists_still_comes_off_the_shelf(tmp_path: Path) -> None:
     """Strict at the door, lenient on the shelf, and this is the lenient half.
 
     The catalogue moves under a file that does not: a vendor retires an id and every entry

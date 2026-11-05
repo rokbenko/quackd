@@ -5,7 +5,7 @@ moment the process exited. `RobotMemory` is the small, honest fix: one append-on
 file per robot (adapter:backend, so a simulated duck and a real one never share notes),
 holding two kinds of entry —
 
-- **notes** the model chose to keep (`remember`: "the ball is usually near the left wall"),
+- **notes** the LLM chose to keep (`remember`: "the ball is usually near the left wall"),
 - **episodes** quackd writes itself at the end of every run (outcome, reason, highlights).
 
 At the next run the newest of each are rendered into the system prompt, so the pilot
@@ -177,8 +177,8 @@ class RobotMemory:
         where: dict[str, Any] | None = None,
     ) -> MemoryEntry:
         """Save one short fact. The same sentence twice refreshes the old entry instead of
-        duplicating it, so a model that repeats itself does not fill the file. `where` is where
-        the robot stood, read off the robot by the caller and never taken from the model, and a
+        duplicating it, so an LLM that repeats itself does not fill the file. `where` is where
+        the robot stood, read off the robot by the caller and never taken from the LLM, and a
         refreshed note takes the newer one, since that is where it was last true."""
         clean = " ".join(str(text).split())[:NOTE_MAX_CHARS]
         if not clean:

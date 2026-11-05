@@ -14,7 +14,7 @@ their talk in small frames. [discovery.md](discovery.md#the-bluetooth-link)
 **Board.** The computer `quackd onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind
 goes into the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
 
-**Brain.** The language model a robot runs on, named under `brain:` in `robot.yaml`, which holds its
+**Brain.** The LLM a robot runs on, named under `brain:` in `robot.yaml`, which holds its
 meetings and its goals. [quackd.md](quackd.md#talking)
 
 **Channel.** A way two robots exchange talk: an HTTP inbox on a LAN, or a Bluetooth link.

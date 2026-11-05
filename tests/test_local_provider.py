@@ -33,7 +33,7 @@ NAMES = {"walk_to", "kick"}
 
 
 class FakeClient:
-    def __init__(self, response: Any = None, models: list[str] | None = None) -> None:
+    def __init__(self, response: Any = None, llms: list[str] | None = None) -> None:
         self.kwargs: dict[str, Any] = {}
         self.listed = 0
 
@@ -41,12 +41,12 @@ class FakeClient:
             self.kwargs = kwargs
             return response
 
-        async def list_models() -> Any:
+        async def list_llms() -> Any:
             self.listed += 1
-            return NS(data=[NS(id=m) for m in (models or [])])
+            return NS(data=[NS(id=m) for m in (llms or [])])
 
         self.chat = NS(completions=NS(create=create))
-        self.models = NS(list=list_models)
+        self.models = NS(list=list_llms)
 
 
 def reply(text: str | None = None, tool_calls: list[Any] | None = None) -> Any:
@@ -149,7 +149,7 @@ def test_a_host_named_for_the_run_beats_quackd_base_url_and_one_from_the_environ
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The two hosts sit on different rungs on purpose. `--host` (or the robot's own) is a
-    decision about this run and moves the preset past a model server's URL in `.env`;
+    decision about this run and moves the preset past an LLM server's URL in `.env`;
     `QUACKD_HOST` is the board you usually use, and a URL in the same `.env` is more exact."""
     typed = _address(monkeypatch, host="jetson.local", QUACKD_BASE_URL="http://env:2/v1")
     assert typed == "http://jetson.local:11434/v1"
@@ -159,7 +159,7 @@ def test_a_host_named_for_the_run_beats_quackd_base_url_and_one_from_the_environ
 
 def test_a_blank_rung_is_no_rung(monkeypatch: pytest.MonkeyPatch) -> None:
     """`QUACKD_HOST=` in a `.env` is a shell saying unset, and a blank flag is nothing typed.
-    Neither may become a machine named "" in the model server's URL."""
+    Neither may become a machine named "" in the LLM server's URL."""
     assert _address(monkeypatch, host="  ", QUACKD_HOST="") == "http://localhost:11434/v1"
 
 
@@ -183,7 +183,7 @@ def test_a_url_of_spaces_is_no_rung_either(
 def test_every_preset_moves_to_the_host_with_its_own_port_and_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The port in `--host` is the daemon's. A model server on the board listens where it
+    """The port in `--host` is the daemon's. An LLM server on the board listens where it
     always does, so each preset keeps its own, whatever port the daemon was given."""
     for preset, url in PRESETS.items():
         if url is None:
@@ -266,7 +266,7 @@ def test_make_provider_hands_the_host_to_the_local_presets_and_to_no_vendor(
 
     monkeypatch.setattr("quackd.agent.providers.local.LocalProvider", recorder("local"))
     monkeypatch.setattr("quackd.agent.providers.openai.OpenAIProvider", recorder("openai"))
-    make_provider("ollama", model="m", host="jetson.local")
+    make_provider("ollama", llm_id="m", host="jetson.local")
     assert seen["local"]["host"] == "jetson.local"
     make_provider("openai", host="jetson.local")
     assert "host" not in seen["openai"], "a vendor's API has no localhost to move"
@@ -339,7 +339,7 @@ async def test_every_camera_reaches_a_local_server_in_one_message() -> None:
     two pictures by somebody with a webcam on each side of an arm.
 
     It is also where the cost lands. Two cameras is two image parts in a single message, and
-    `docs/guides/local-llms.md` warns that a server or a model may accept only one. This says what
+    `docs/guides/local-llms.md` warns that a server or an LLM may accept only one. This says what
     quackd sends; whether a given server takes it is that server's business."""
     client = FakeClient(reply(text="{}"))
     p = LocalProvider("m", preset="ollama", client=client, vision=True)
@@ -386,25 +386,25 @@ async def test_every_camera_reaches_a_local_server_in_one_message() -> None:
     assert survivor[1]["text"] == "camera side:", "the one lens left went out unnamed"
 
 
-# ── model discovery ─────────────────────────────────────────────────────────────────────
+# ── LLM discovery ─────────────────────────────────────────────────────────────────────
 
 
-async def test_model_discovery_takes_first_served_model() -> None:
-    client = FakeClient(reply(text="{}"), models=["qwen3:8b", "llama3.2"])
+async def test_llm_discovery_takes_first_served_llm() -> None:
+    client = FakeClient(reply(text="{}"), llms=["qwen3:8b", "llama3.2"])
     p = LocalProvider(None, preset="ollama", client=client)
     await p.step("S", history(), TOOLS)
-    assert p.model == "qwen3:8b" and client.kwargs["model"] == "qwen3:8b"
+    assert p.llm_id == "qwen3:8b" and client.kwargs["model"] == "qwen3:8b"
     await p.step("S", history(), TOOLS)
     assert client.listed == 1  # discovered once
 
 
-async def test_model_discovery_with_empty_server_is_clear() -> None:
-    p = LocalProvider(None, preset="ollama", client=FakeClient(reply(text="{}"), models=[]))
-    with pytest.raises(ProviderError, match="lists no models"):
+async def test_llm_discovery_with_empty_server_is_clear() -> None:
+    p = LocalProvider(None, preset="ollama", client=FakeClient(reply(text="{}"), llms=[]))
+    with pytest.raises(ProviderError, match="lists no LLMs"):
         await p.step("S", history(), TOOLS)
 
 
-async def test_model_discovery_names_the_server_without_the_password_in_its_address(
+async def test_llm_discovery_names_the_server_without_the_password_in_its_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Both of discovery's failures name the server, and they named it as this provider was
@@ -413,10 +413,10 @@ async def test_model_discovery_names_the_server_without_the_password_in_its_addr
     for name in _ADDRESS_ENV:
         monkeypatch.delenv(name, raising=False)
     url = "http://rok:pw-SECRET@box:8000/v1"
-    empty = LocalProvider(None, preset="vllm", base_url=url, client=FakeClient(models=[]))
+    empty = LocalProvider(None, preset="vllm", base_url=url, client=FakeClient(llms=[]))
     with pytest.raises(ProviderError) as e:
-        await empty.ensure_model()
-    assert "the server at http://rok:***@box:8000/v1 lists no models" in str(e.value)
+        await empty.ensure_llm()
+    assert "the server at http://rok:***@box:8000/v1 lists no LLMs" in str(e.value)
     assert "pw-SECRET" not in str(e.value)
 
     async def refuse() -> Any:
@@ -426,8 +426,8 @@ async def test_model_discovery_names_the_server_without_the_password_in_its_addr
     down.models = NS(list=refuse)
     stopped = LocalProvider(None, preset="vllm", base_url=url, client=down)
     with pytest.raises(ProviderError) as e:
-        await stopped.ensure_model()
-    assert "cannot list models at http://rok:***@box:8000/v1" in str(e.value)
+        await stopped.ensure_llm()
+    assert "cannot list LLMs at http://rok:***@box:8000/v1" in str(e.value)
     assert "pw-SECRET" not in str(e.value)
 
 
@@ -459,7 +459,7 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
 
 @pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"', "null"])
 def test_arguments_it_cannot_read_are_kept_for_the_gate(args: str) -> None:
-    """Not `{}`, which is the call with its defaults, on nothing the model said. The gate refuses
+    """Not `{}`, which is the call with its defaults, on nothing the LLM said. The gate refuses
     them and tells the pilot, as for every other vendor."""
     call = parse_tool_call_from_text(f'{{"name": "walk_to", "arguments": {args}}}', NAMES)
     assert call is not None and list(call.arguments) == ["_unparsed"], call
@@ -479,8 +479,8 @@ async def test_no_fallback_when_nothing_parses() -> None:
     assert turn.tool_calls == [] and turn.stop_reason == "stop"
 
 
-async def test_a_tool_call_the_model_only_contemplated_in_its_thinking_is_not_executed() -> None:
-    """A small model weighs a verb out loud and rejects it. The fallback scans plain text, so
+async def test_a_tool_call_the_llm_only_contemplated_in_its_thinking_is_not_executed() -> None:
+    """A small LLM weighs a verb out loud and rejects it. The fallback scans plain text, so
     unless the reasoning is stripped first it finds the JSON in the discarded thought and the
     duck kicks."""
     text = '<think>maybe {"name": "kick", "arguments": {}} but no</think>I will wait.'
@@ -530,7 +530,7 @@ async def test_the_json_fallback_reads_the_answer_after_the_thinking() -> None:
 async def test_an_unterminated_think_tag_is_thinking_to_the_end_not_the_answer() -> None:
     """max_tokens can cut a reply mid-thought, leaving no `</think>`. Everything after the
     opening tag is still reasoning: shown as the answer it would be replayed next turn as
-    something the model said, and any verb it was still weighing would be executed."""
+    something the LLM said, and any verb it was still weighing would be executed."""
     assert split_thinking("<think>the ball is") == ("the ball is", "")
     assert split_thinking("ok<think>cut") == ("cut", "ok")
     assert split_thinking("<think>a</think>b<think>c") == ("a\n\nc", "b")
@@ -553,7 +553,7 @@ def test_factory_builds_local_presets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("quackd.agent.providers.local.LocalProvider.__init__", _record_init)
     p = make_provider(
         "vllm",
-        model="Qwen/Qwen3-8B",
+        llm_id="Qwen/Qwen3-8B",
         base_url="http://gpu:8000/v1",
         vision=True,
         extra_body='{"chat_template_kwargs": {"enable_thinking": false}}',
@@ -569,13 +569,13 @@ def test_factory_builds_local_presets(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
-def _record_init(self: Any, model: Any = None, **kw: Any) -> None:
+def _record_init(self: Any, llm_id: Any = None, **kw: Any) -> None:
     self.recorded = {
-        "model": model,
+        "model": llm_id,
         **{k: kw.get(k) for k in ("preset", "base_url", "api_key", "vision", "extra_body")},
     }
     self.name = kw.get("preset", "local")
-    self.model = model or ""
+    self.llm_id = llm_id or ""
     self.supports_vision = bool(kw.get("vision"))
 
 

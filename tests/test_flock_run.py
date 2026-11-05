@@ -90,7 +90,7 @@ async def test_flock_acceptance_seeds(tmp_path: Path) -> None:
         kinds = {e["kind"] for e in events}
         assert {"plan", "bus", "flock_start", "flock_end"} <= kinds
         summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
-        assert summary["planner"]["llm_calls"] == 0  # fake provider: zero model calls
+        assert summary["planner"]["llm_calls"] == 0  # fake provider: zero LLM calls
         assert summary["kicker"] in summary["flock"]["members"] or summary["kicker"] is None
         for name in summary["flock"]["members"]:
             assert (result.run_dir / "ducks" / name / "transcript.jsonl").exists()

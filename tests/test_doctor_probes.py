@@ -41,7 +41,7 @@ def test_every_server_is_asked_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
         everyone.wait()
         return "down", "not running"
 
-    monkeypatch.setattr(doctor, "_probe_models", waits_for_the_others)
+    monkeypatch.setattr(doctor, "_probe_llms", waits_for_the_others)
     report = doctor.collect()
     assert [s.state for s in report.servers if s.url] == ["down"] * len(_urls())
 
@@ -58,7 +58,7 @@ def test_the_rows_keep_their_order_whichever_answer_comes_first(
         time.sleep(0.05 * (len(urls) - urls.index(url)))
         return "up", f"the answer from {url}"
 
-    monkeypatch.setattr(doctor, "_probe_models", slowest_first)
+    monkeypatch.setattr(doctor, "_probe_llms", slowest_first)
     report = doctor.collect()
     assert [s.preset for s in report.servers] == list(doctor.PRESETS)
     for row in report.servers:
@@ -73,7 +73,7 @@ def test_a_probe_that_raises_still_fails_the_caller(monkeypatch: pytest.MonkeyPa
     def not_meant_to_be_asked(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
         raise AssertionError(f"asked {url}")
 
-    monkeypatch.setattr(doctor, "_probe_models", not_meant_to_be_asked)
+    monkeypatch.setattr(doctor, "_probe_llms", not_meant_to_be_asked)
     with pytest.raises(AssertionError, match="asked http://a"):
         doctor._probe_together(["http://a"])
 
@@ -91,7 +91,7 @@ def test_ctrl_c_lands_while_a_probe_is_stuck(monkeypatch: pytest.MonkeyPatch) ->
         release.wait(60)
         return "down", "not running"
 
-    monkeypatch.setattr(doctor, "_probe_models", stuck)
+    monkeypatch.setattr(doctor, "_probe_llms", stuck)
     timer = threading.Timer(0.1, _thread.interrupt_main)
     began = time.monotonic()
     timer.start()

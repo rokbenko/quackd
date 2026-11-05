@@ -39,8 +39,8 @@ from quackd.agent.providers.catalogue import (
     LOCAL_NAMES,
     OPEN_ENDED,
     PROVIDER_NAMES,
-    default_model_for,
-    models_for,
+    default_llm_for,
+    llms_for,
     vendor_of,
 )
 from quackd.answers import DID_IT, GO_AHEAD, WATCHING
@@ -197,7 +197,7 @@ def _warn_old_spellings() -> None:
     Only variables are left here. A flag or a subcommand that is gone fails loudly: Click
     refuses it, names it, and nothing runs. A variable that is gone goes quiet, and the quiet
     is the failure. `QUACKD_MODEL` is the kind of line that sits in a `.env` for a year;
-    unread, it does not stop the run, it lets the run bill a model nobody chose.
+    unread, it does not stop the run, it lets the run bill an LLM nobody chose.
     `QUACKD_TRACE=0` is the same line with the opposite sign: unread, it switches the log back
     on for the one reader who had deliberately turned it off, which is why 0.11 went on
     reading it for a release. 0.12 stops, as promised, and says so instead.
@@ -212,7 +212,7 @@ def _warn_old_spellings() -> None:
     deprecations would be a header describing a command nobody typed."""
     _DEPRECATIONS.clear()
     for gone, now in (
-        ("QUACKD_MODEL", "QUACKD_LLM=vendor:model"),
+        ("QUACKD_MODEL", "QUACKD_LLM=vendor:llm"),
         ("QUACKD_JEV", "QUACKD_DECISION_LLM"),
         ("QUACKD_TRACE", "QUACKD_LOG"),
         ("QUACKD_TRACE_THINKING", "QUACKD_LOG_THINKING"),
@@ -357,7 +357,7 @@ def _expand(patterns: list[str]) -> list[str]:
 
 def _verbose_line(msg: str) -> None:
     """A `--verbose` line, as plain text. A message can carry brackets Rich reads as markup:
-    the executor's own `[dry-run] would run ...`, and the flock planner logging a model's raw
+    the executor's own `[dry-run] would run ...`, and the flock planner logging an LLM's raw
     tool arguments. Rich deletes `[bold]` silently and raises on an unpaired `[/think]`."""
     ui.err_console.print(msg, style="dim", markup=False, highlight=False, soft_wrap=True)
 
@@ -416,28 +416,35 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
     an old flock record does gain a `time` counter from the number it was already writing.
     """
     from quackd.agent.providers.pricing import fmt_usd
-    from quackd.log import fmt_duration
+    from quackd.log import asks_no_llm, fmt_duration
 
     usage = end.get("usage") or {}
+    # A VLA pilot's run asks no LLM: its pilot takes turns handing the arm's policy one line at a
+    # time, so it counts those, and it has no LLM's seconds to split out or to spread.
+    vla = asks_no_llm(end)
+    call = "turn" if vla else "LLM call"
     # the tries quackd sent again for turns the API could not answer, which `llm_calls` does
     # not count, each being a turn it counted already (ADR-0059): only where a run had one
     retries = int(_number(end.get("llm_retries")) or 0)
-    counters = [
-        f"steps {int(_number(end.get('steps')) or 0)}",
-        f"llm calls {int(_number(end.get('llm_calls')) or 0)}"
-        + (f" (+{retries} asked again)" if retries else ""),
-        f"tokens {usage.get('input_tokens', 0)}+{usage.get('output_tokens', 0)}",
-    ]
+    counters = [f"steps {int(_number(end.get('steps')) or 0)}"]
+    # A chat session recorded before 0.32.0 did not add up what its goals spent, and each goal's
+    # own record says it, so that session names no calls and no tokens: a zero there is false.
+    if end.get("duck") != "drive" or "llm_calls" in end:
+        counters += [
+            f"{call}s {int(_number(end.get('llm_calls')) or 0)}"
+            + (f" (+{retries} asked again)" if retries else ""),
+            f"tokens {usage.get('input_tokens', 0)}+{usage.get('output_tokens', 0)}",
+        ]
     wall = _number(end.get("wall_s"))
     if wall is None:
         wall = _number(end.get("wall_elapsed_s"))
     if wall is not None:
         # The split, not just the total: on the one hardware run this project has, 62.1 of
-        # 78.8 seconds were spent waiting on the model, and that ratio is the single most
+        # 78.8 seconds were spent waiting on the pilot LLM, and that ratio is the single most
         # useful number a run produces. The stepper's seconds join it when one ran.
         spent = []
-        if (llm := _number(end.get("llm_latency_s"))) is not None:
-            spent.append(f"model {fmt_duration(llm)}")
+        if not vla and (llm := _number(end.get("llm_latency_s"))) is not None:
+            spent.append(f"LLM {fmt_duration(llm)}")
         if (stepper := _number((end.get("decision") or {}).get("latency_s"))) is not None:
             spent.append(f"stepper {fmt_duration(stepper)}")
         # and the seconds `watch` waited on its answers, a share of its verbs' own time rather
@@ -451,8 +458,8 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
         # the simulator's, and a split can never be larger than the whole
         if policy_s := _number(_block(end, "policy").get("wall_s")):
             spent.append(f"policy {fmt_duration(policy_s)}")
-        # and the seconds spent waiting to ask the API again, in which no model was asked
-        # anything and so are not the model's, only where a run waited
+        # and the seconds spent waiting to ask the API again, in which no LLM was asked
+        # anything and so are not the LLM's, only where a run waited
         if waited := _number(end.get("llm_retry_wait_s")):
             spent.append(f"waits {fmt_duration(waited)}")
         where = f" ({', '.join(spent)})" if spent else ""
@@ -460,13 +467,13 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
     # The typical answer and the bad one, which a total cannot tell apart, and how long the robot
     # took to do anything at all: each only where its keys are, so a record from before them
     # replays with exactly the counters it always had (`quackd.latency`).
-    if (calls := _spread_counter("model calls", end, "llm_latency")) is not None:
+    if not vla and (calls := _spread_counter("LLM calls", end, "llm_latency")) is not None:
         counters.append(calls)
     if (asked := _spread_counter("stepper", _block(end, "decision"), "latency")) is not None:
         counters.append(asked)
     if (first := _number(end.get("first_motion_s"))) is not None:
         made = _number(end.get("first_motion_llm_calls"))
-        after = "" if made is None else f", after {int(made)} model call{'' if made == 1 else 's'}"
+        after = "" if made is None else f", after {int(made)} {call}{'' if made == 1 else 's'}"
         counters.append(f"first motion at {fmt_duration(first)}{after}")
     if (policy := _policy_counter(end.get("policy"))) is not None:
         counters.append(policy)
@@ -477,10 +484,10 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
     # counter reading `cost unpriced` that they never had and that says nothing true about
     # them: nobody tried to price them.
     if "cost_usd" in end or decision_cost is not None:
-        model_cost = _number(end.get("cost_usd")) if end.get("cost_usd") is not None else None
+        llm_cost = _number(end.get("cost_usd")) if end.get("cost_usd") is not None else None
         estimated = bool(decision_block.get("cost_estimated")) and bool(decision_cost)
-        if model_cost is None:
-            # A model quackd has no rate for must never read as a free one, and the two
+        if llm_cost is None:
+            # A pilot LLM quackd has no rate for must never read as a free one, and the two
             # halves are reported separately rather than summed away: "unpriced" plus a
             # stepper figure is the truth, and a bare "unpriced" would throw away the half
             # that IS known.
@@ -496,13 +503,13 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
                 unpriced += f" ({payer} {'~' if estimated else ''}{fmt_usd(decision_cost)})"
             counters.append(unpriced)
         else:
-            total = model_cost + (decision_cost or 0.0)
+            total = llm_cost + (decision_cost or 0.0)
             counters.append(f"cost {'~' if estimated else ''}{fmt_usd(total)}")
     return counters
 
 
 def _spread_counter(label: str, block: Mapping[str, Any], prefix: str) -> str | None:
-    """`model calls p50 6.2 s, p90 8.2 s, max 8.2 s` from a block's `<prefix>_p50_s` and its
+    """`LLM calls p50 6.2 s, p90 8.2 s, max 8.2 s` from a block's `<prefix>_p50_s` and its
     two siblings, or None unless all three are numbers: a half-written spread is no spread."""
     from quackd.latency import SPREAD
     from quackd.log import fmt_duration
@@ -704,7 +711,7 @@ def _header_rows(
     from quackd.log import policy_row
 
     rows: list[tuple[str, Any]] = [
-        ("provider", f"{provider.name} ({provider.model or 'the first model it serves'})"),
+        ("provider", f"{provider.name} ({provider.llm_id or 'the first LLM it serves'})"),
     ]
     # only when the flag asked for it, so a header quoted anywhere from a run without one stays
     # what it was; the record has the level and where it came from on every run (`run_start`)
@@ -745,7 +752,7 @@ def _header_rows(
 def _fail(msg: str, code: int = 1, *, hint: str | None = None) -> None:
     """One line saying what went wrong, and one dim line saying where to look next.
 
-    The message routinely names an extra (`quackd[anthropic]`) or a model's own brackets, so
+    The message routinely names an extra (`quackd[anthropic]`) or an LLM's own brackets, so
     it travels as text rather than as markup Rich would eat."""
     ui.err_console.print(ui.fail_line(msg, hint=hint))
     if _FRONT is not None and _FRONT.outcome is None:
@@ -1076,8 +1083,8 @@ def _vendor_hint(vendor: str) -> str:
     """The half-line beside a vendor in shell completion: what taking it bare would mean."""
     if vendor == "fake":
         return "scripted, no key and no network"
-    default = default_model_for(vendor)
-    return f"the default, {default}" if default else "the first model the server serves"
+    default = default_llm_for(vendor)
+    return f"the default, {default}" if default else "the first LLM the server serves"
 
 
 def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
@@ -1085,9 +1092,9 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
 
     Reads the catalogue and nothing else. Every press of TAB runs this, and the factory next
     door imports pydantic, so completion that reached for it would make the shell pay for a
-    validator in order to spell a model id.
+    validator in order to spell an LLM id.
 
-    A vendor is offered twice, bare and with a colon, so one TAB takes its default model and a
+    A vendor is offered twice, bare and with a colon, so one TAB takes its default LLM and a
     second carries on into its list. After a colon the ids offered are that vendor's own, which
     is why `--llm grok:gpt` offers nothing: it would be refused, and offering it would be
     completion arguing with the parser. A bare id completes too, both because `--llm
@@ -1097,12 +1104,10 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
     head, colon, prefix = incomplete.partition(":")
     vendor = head.strip().lower()
     if colon:
-        return [
-            (f"{vendor}:{m.id}", m.label) for m in models_for(vendor) if m.id.startswith(prefix)
-        ]
+        return [(f"{vendor}:{m.id}", m.label) for m in llms_for(vendor) if m.id.startswith(prefix)]
     found = [(v, _vendor_hint(v)) for v in PROVIDER_NAMES if v.startswith(vendor)]
     found += [
-        (f"{v}:", "then a model id") for v in PROVIDER_NAMES if v != "fake" and v.startswith(vendor)
+        (f"{v}:", "then an LLM id") for v in PROVIDER_NAMES if v != "fake" and v.startswith(vendor)
     ]
     if head:
         # Only once something is typed: a bare TAB should offer the seventeen vendors, not the
@@ -1110,48 +1115,51 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
         found += [
             (m.id, f"{v}: {m.label}")
             for v in CLOUD_NAMES
-            for m in models_for(v)
+            for m in llms_for(v)
             if m.id.startswith(head)
         ]
     return found
 
 
-# ── list-models ───────────────────────────────────────────────────────────────────────────
+# ── list-llms ───────────────────────────────────────────────────────────────────────────
 
 
-MODEL_KINDS = ("pilot", "decision", "policy", "all")
-"""What `quackd list-models --kind` lists: the pilot ids `--llm` takes, the decision LLMs
-`--decision-llm` names, the policy types `quackd policy serve` serves and the ones it refuses,
-or all three. The first is the default, so the command prints what it always has."""
+LLM_KINDS = ("pilot", "decision", "all")
+"""What `quackd list-llms --kind` lists: the pilot ids `--llm` takes, the decision LLMs
+`--decision-llm` names, or both. The first is the default, so the command prints what it always
+has. A policy is no LLM, and `quackd policy list` lists those."""
 
 
-@app.command("list-models", rich_help_panel="Inspect")
-def list_models_cmd(
+@app.command("list-llms", rich_help_panel="Inspect")
+def list_llms_cmd(
     llm: str | None = typer.Option(
         None,
         "--llm",
         "-l",
-        help="One vendor only, e.g. --llm openai. A whole spec or a model id is read for its "
+        help="One vendor only, e.g. --llm openai. A whole spec or an LLM id is read for its "
         "vendor, so --llm claude-opus-5 lists anthropic. Omitted: every vendor.",
         autocompletion=_complete_llm,
     ),
     kind: str = typer.Option(
-        MODEL_KINDS[0],
+        LLM_KINDS[0],
         "--kind",
-        metavar="pilot|decision|policy|all",
-        help="Which models. pilot, the default, is the ids --llm takes, decision the decision "
-        "LLMs --decision-llm names, policy the policy types quackd policy serve serves and the "
-        "ones it refuses, and all is the three.",
+        metavar="pilot|decision|all",
+        help="Which to list. pilot, the default, is the ids --llm takes, decision the decision "
+        "LLMs --decision-llm names, and all is the two.",
     ),
     as_json: bool = _JSON,
 ) -> None:
-    """List the models quackd can use: the ids each cloud vendor offers for --llm VENDOR:MODEL,
-    and with --kind the decision LLMs and the learned policies as well."""
+    """List the LLMs quackd can use: the ids each cloud vendor offers for --llm VENDOR:LLM, and with
+    --kind the decision LLMs as well. The learned policies are quackd policy list."""
     wanted = kind.strip().lower()
-    if wanted not in MODEL_KINDS:
-        _fail(f"--kind is {', '.join(MODEL_KINDS[:-1])} or {MODEL_KINDS[-1]}, not {kind!r}")
+    if wanted not in LLM_KINDS:
+        _fail(
+            f"--kind is {', '.join(LLM_KINDS[:-1])} or {LLM_KINDS[-1]}, not {kind!r}",
+            # the kind this flag used to take, in the words of where it went
+            hint="quackd policy list lists the policy types" if wanted == "policy" else None,
+        )
         return
-    if llm is not None and wanted != MODEL_KINDS[0]:
+    if llm is not None and wanted != LLM_KINDS[0]:
         _fail(
             f"--llm narrows the pilot rows only, and --kind {wanted} lists more than those",
             hint="drop --llm, or drop --kind",
@@ -1161,8 +1169,6 @@ def list_models_cmd(
         _list_pilots(llm, as_json)
     if wanted in ("decision", "all"):
         _list_decision_llms(as_json)
-    if wanted in ("policy", "all"):
-        _list_policies(as_json)
 
 
 def _list_pilots(llm: str | None, as_json: bool) -> None:
@@ -1207,7 +1213,7 @@ def _list_pilots(llm: str | None, as_json: bool) -> None:
         }
         for name in vendors
         if provider is None or provider in CLOUD_NAMES
-        for i, m in enumerate(models_for(str(name)))
+        for i, m in enumerate(llms_for(str(name)))
     ]
     if as_json:
         for row in rows:
@@ -1215,7 +1221,7 @@ def _list_pilots(llm: str | None, as_json: bool) -> None:
         return
 
     if rows:
-        table = ui.table("models (--llm VENDOR:MODEL, QUACKD_LLM)")
+        table = ui.table("LLMs (--llm VENDOR:LLM, QUACKD_LLM)")
         table.add_column("provider", style=ui.STYLES["key"], no_wrap=True)
         # An id is meant to be copied in after the colon, so it may wrap but never elide:
         # Rich's default would put an ellipsis through the middle of the one column that has to
@@ -1248,26 +1254,26 @@ def _list_pilots(llm: str | None, as_json: bool) -> None:
     notes: list[str] = []
     if provider is None or provider in LOCAL_NAMES:
         notes.append(
-            f"{', '.join(LOCAL_NAMES)}: no catalogue. `--llm PRESET:MODEL` takes any id the "
+            f"{', '.join(LOCAL_NAMES)}: no catalogue. `--llm PRESET:LLM` takes any id the "
             "server serves, and without one quackd takes the first entry of /v1/models."
         )
     if provider is None or provider == "fake":
-        notes.append("fake: scripted, and a model after the colon is ignored.")
+        notes.append("fake: scripted, and an LLM after the colon is ignored.")
     for vendor in OPEN_ENDED:
         if provider is None or provider == vendor:
             # Nothing is fetched to print this: the list is read when a run starts, not here.
             name = {"openrouter": "OpenRouter"}.get(vendor, vendor)
             notes.append(
                 f"{vendor}: the rows above are a selection. An id quackd does not carry can be "
-                f"named as --llm {vendor}:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of "
+                f"named as --llm {vendor}:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of "
                 f"id are refused on their spelling alone. Any other is checked against {name}'s "
-                "public model list when a run starts. That list has to carry the id with tool "
+                "public LLM list when a run starts. That list has to carry the id with tool "
                 "calling, and one quackd takes is priced from it."
             )
     if pinned := os.environ.get(LLM_ENV):
         try:
-            vendor, model_id = parse_llm(pinned, source=LLM_ENV)
-            named = f"{vendor}:{model_id}" if model_id else f"{vendor}, its default model"
+            vendor, llm_id = parse_llm(pinned, source=LLM_ENV)
+            named = f"{vendor}:{llm_id}" if llm_id else f"{vendor}, its default LLM"
             notes.append(f"{LLM_ENV}={pinned} pins {named}.")
         except ProviderError as e:
             notes.append(f"{LLM_ENV}={pinned} is refused: {e}")
@@ -1288,7 +1294,7 @@ def _list_decision_llms(as_json: bool) -> None:
                         "kind": "decision",
                         "name": spec.name,
                         "backend": spec.backend,
-                        "model": spec.model,
+                        "llm_id": spec.llm_id,
                         "key_env": spec.key_env,
                         "extra": spec.extra,
                         "url": spec.url,
@@ -1298,16 +1304,16 @@ def _list_decision_llms(as_json: bool) -> None:
                 )
             )
         return
-    table = ui.table("decision LLMs (--decision-llm NAME[:MODEL], QUACKD_DECISION_LLM)")
+    table = ui.table("decision LLMs (--decision-llm NAME[:LLM], QUACKD_DECISION_LLM)")
     table.add_column("name", style=ui.STYLES["key"], no_wrap=True)
-    table.add_column("model", style=ui.STYLES["key"], overflow="fold")
+    table.add_column("LLM", style=ui.STYLES["key"], overflow="fold")
     table.add_column("key")
     table.add_column("extra")
     table.add_column("what it is", overflow="fold")
     for spec in rows:
         table.add_row(
             Text(spec.name),
-            Text(spec.model or "the server's own"),
+            Text(spec.llm_id or "the server's own"),
             Text(spec.key_env or "none"),
             Text(f"quackd[{spec.extra}]" if spec.extra else "none"),
             Text(spec.summary, style=ui.STYLES["muted"]),
@@ -1316,7 +1322,7 @@ def _list_decision_llms(as_json: bool) -> None:
     ui.console.print(
         Text(
             "Off unless a run names one. --decision-mode shadow asks it every turn and changes "
-            "nothing, which is where to start (docs/models/decision-llms.md).",
+            "nothing, which is where to start (docs/llms/decision-llms.md).",
             style=ui.STYLES["muted"],
         ),
         soft_wrap=True,
@@ -1393,7 +1399,7 @@ def _list_policies(as_json: bool) -> None:
         Text(
             f"Each type is served on Python 3.12 with {FAMILIES[0].extra}, in a process of its "
             "own and never the arm's: beside the arm, on a rented GPU or on a Hugging Face "
-            "Endpoint (docs/models/vlas.md).",
+            "Endpoint (docs/guides/vlas.md).",
             style=ui.STYLES["muted"],
         ),
         soft_wrap=True,
@@ -1796,8 +1802,8 @@ def _vla_refusal(
     Its pilot has no judgement of its own, so a person is its whole verdict: asked before the
     first segment whether the body should try, and after the last whether it did. Every flag
     that would take that person away, or leave them nothing real to judge, is refused here,
-    before anything is built, connected or written down. `ignored` are the flags given for a
-    model that this pilot would drop without a word, and `someone` whether a person can be asked
+    before anything is built, connected or written down. `ignored` are the flags given for an
+    LLM that this pilot would drop without a word, and `someone` whether a person can be asked
     at all: at the page, at the terminal, or for a drive session at its keyboard. `command` is
     the one refused, `run` or `drive`, which the words name."""
     from quackd.duckfile.schema import instruction_line
@@ -1822,7 +1828,7 @@ def _vla_refusal(
         )
     if ignored:
         return (
-            "--controller vla is a scripted pilot that asks no model and sees no picture, so "
+            "--controller vla is a scripted pilot that asks no LLM and sees no picture, so "
             f"{_and(list(ignored))} would do nothing",
             "drop it, or fly the run with --controller llm",
         )
@@ -2131,7 +2137,7 @@ def _run_impl(
     # with one member in it, because it is the fleet spelling. A host stored with a member is
     # the same claim made in robots.json, and is refused by that member's name. QUACKD_HOST is
     # not: it is the board you usually use rather than a claim about these bodies, and for a
-    # fleet it moves only the local presets' model server, which LocalProvider reads itself.
+    # fleet it moves only the local presets' LLM server, which LocalProvider reads itself.
     fleet = several or bool(robots)
     hosted = [r.entry.name for r in resolved if r.entry is not None and r.entry.host]
     if fleet and (host or "").strip():
@@ -2376,10 +2382,10 @@ def _run_impl(
         _fail(str(e))
         return
     if vla and named_decision is not None and (decision != "off" or frames):
-        # a stepper answers the turns a model would have been asked, and this pilot is no model:
+        # a stepper answers the turns a pilot LLM would have been asked, and this pilot is no LLM:
         # it would take the scripted pilot's turns with nobody having asked it to
         _fail(
-            "--controller vla runs no model for a decision LLM to step in front of, and "
+            "--controller vla runs no pilot LLM for a decision LLM to step in front of, and "
             f"{'--decision-llm' if decision_llm is not None else DECISION_LLM_ENV} names one",
             hint="drop it, or pass --decision-llm off for this run",
         )
@@ -2414,7 +2420,7 @@ def _run_impl(
             ui.console.print(
                 _warn_line(
                     f"--decision-llm {named_decision[0].name} does not apply to a flock: "
-                    "every member is piloted by its model, as before"
+                    "every member is piloted by its LLM, as before"
                     + (", and no camera frame is sent" if frames else "")
                 ),
                 soft_wrap=True,
@@ -2572,10 +2578,10 @@ def _run_impl(
     try:
         pilot: LLMProvider
         if vla and effort is not None:
-            # the scripted VLA pilot asks no model anything, so a reasoning level has nobody to
+            # the scripted VLA pilot asks no LLM anything, so a reasoning level has nobody to
             # reach, and the flag is a mistake to say rather than a setting to drop quietly
             _fail(
-                "--effort says how hard a model reasons, and --controller vla asks no model: "
+                "--effort says how hard an LLM reasons, and --controller vla asks no LLM: "
                 "the policy server drives the arm and the scripted pilot only reads it the steps"
             )
             return
@@ -2584,8 +2590,8 @@ def _run_impl(
 
             # the task file's instructions, or the goal as the one, and a task file's own words
             # for done, which the person is shown when asked whether the arm did it. A goal's
-            # are written for a model, and the goal itself is the question. The robot's
-            # registered pilot and `QUACKD_LLM` name a model this run never asks.
+            # are written for an LLM, and the goal itself is the question. The robot's
+            # registered pilot and `QUACKD_LLM` name an LLM this run never asks.
             pilot = VlaProvider(
                 [goal] if goal is not None else duck.frontmatter.effective_policy.instructions,
                 success=duck.frontmatter.success if goal is None else (),
@@ -2594,15 +2600,15 @@ def _run_impl(
         else:
             # a registered robot may name the pilot that drives it; a flag on the line still
             # wins, and `QUACKD_LLM` sits behind both. One spec carries the vendor and the
-            # model together, so there is no longer any way for half an answer to come from
+            # LLM together, so there is no longer any way for half an answer to come from
             # each place: `--llm gemini` on a robot registered against OpenAI is Gemini's
             # default, full stop.
-            vendor, model_id, llm_source = resolve_llm(
+            vendor, llm_id, llm_source = resolve_llm(
                 llm, here.llm, robot=here.entry.name if here.entry is not None else None
             )
             pilot = make_provider(
                 vendor,
-                model=model_id,
+                llm_id=llm_id,
                 source=llm_source,
                 duck_name=duck.name,
                 goal=goal,
@@ -2670,7 +2676,7 @@ def _run_impl(
             return
     # A name or a mode nobody defined is a typo and stopped the run above. One that is
     # spelled right and cannot run here is a different thing: the stepper is an optimisation,
-    # the model is the pilot either way, and a script that always names a decision LLM should
+    # the pilot flies either way, and a script that always names a decision LLM should
     # still drive the robot on a machine that has not installed it. So it says so once,
     # loudly, and carries on without it. Said before the robot is connected, so nothing is
     # energised while it is read.
@@ -2680,7 +2686,7 @@ def _run_impl(
     # a frame may go is a question of its own (`resolve_decision_frames`).
     if (decision != "off" or frames) and named_decision is not None:
         # `chosen` rather than `spec`, which in this function is the robot's.
-        chosen, decision_model = named_decision
+        chosen, decision_llm_id = named_decision
         # With the address, because whether a key is wanted can depend on where it would go:
         # `openai` sends one only to OpenAI's own API, so a run at a server you run needs none.
         available, why = decision_llm_is_available(chosen, url=decision_url)
@@ -2692,7 +2698,7 @@ def _run_impl(
         else:
             try:
                 decision_pilot = make_decision_llm(
-                    chosen, model=decision_model, url=decision_url, frames=frames
+                    chosen, llm_id=decision_llm_id, url=decision_url, frames=frames
                 )
             except DecisionError as e:
                 _fail(str(e))
@@ -2721,7 +2727,7 @@ def _run_impl(
         # and 0.9 TypeSafe publish and two are quackd's own, and all four were shaped around Jev
         # and are inherited unmeasured by every other row.
         # Refusing the flag over that would be the wrong shape of gate, because the executor
-        # binds a stepper-authored call exactly as it binds the model's. Saying it once, where
+        # binds a stepper-authored call exactly as it binds the pilot LLM's. Saying it once, where
         # the person switching it on is looking, is the right size of one.
         _warn(_DECISION_MODE_ON_UNMEASURED)
     if task_images and not pilot.supports_vision:
@@ -2729,10 +2735,10 @@ def _run_impl(
         # in the picture" with no picture, improvise something, and the only sign of why would
         # be a note in a transcript nobody reads twice.
         _fail(
-            f"{pilot.name} {pilot.model} does not take images, so it cannot be given "
+            f"{pilot.name} {pilot.llm_id} does not take images, so it cannot be given "
             f"{_plural(len(task_images), 'picture')}",
-            hint="quackd list-models marks the models that take no frames; --vision overrides "
-            "it where the vendor does take them, and a local model needs --vision",
+            hint="quackd list-llms marks the LLMs that take no frames; --vision overrides "
+            "it where the vendor does take them, and a local LLM needs --vision",
         )
         return
 
@@ -2770,7 +2776,7 @@ def _run_impl(
     )
 
     # on whether or not the log is: with --no-log this is the only thing between the
-    # header and the verdict, and a model can think for a minute
+    # header and the verdict, and an LLM can think for a minute
     status = ui.RunStatus()
     ui.install_logging()
 
@@ -2931,7 +2937,7 @@ def _run_impl(
         if front is not None:
             front.errored(str(e))
         if isinstance(summary, Mapping) and "llm_retries" in summary:
-            # A run that waited to ask the model's API again, and gave up, says beside its
+            # A run that waited to ask the LLM's API again, and gave up, says beside its
             # verdict what the waiting cost, as a run that ended any other way does under its
             # panel: how many tries went out again, and the seconds waited (ADR-0059).
             ui.err_console.print(ui.fail_line(str(e)))
@@ -2972,7 +2978,7 @@ def _run_impl(
         # leaving a reader to wonder whether the number is missing or zero.
         ui.err_console.print(
             f"cost: quackd has no published rate for {result.summary.get('provider')} "
-            f"{result.summary.get('model')}; pass --price in=N,out=N to compute one",
+            f"{result.summary.get('llm_id')}; pass --price in=N,out=N to compute one",
             style="yellow",
             markup=False,
         )
@@ -3081,10 +3087,10 @@ def _run_pilots_impl(
     try:
         providers = {}
         for name, entry in roster.items():
-            vendor, model_id, llm_source = resolve_llm(llm, entry.llm, robot=name)
+            vendor, llm_id, llm_source = resolve_llm(llm, entry.llm, robot=name)
             providers[name] = make_provider(
                 vendor,
-                model=model_id,
+                llm_id=llm_id,
                 source=llm_source,
                 duck_name=duck.name,
                 goal=goal,
@@ -3189,7 +3195,7 @@ def _run_pilots_impl(
             f"members {ok}/{len(members)} succeeded",
             f"talk {result.messages}",
             f"steps {result.steps}",
-            f"llm calls {result.llm_calls}",
+            f"LLM calls {result.llm_calls}",
             f"tokens {result.usage.input_tokens}+{result.usage.output_tokens}",
             f"time {fmt_duration(result.wall_elapsed_s)}",
             f"cost {fmt_usd(result.cost_usd)}",
@@ -3214,11 +3220,11 @@ def _pilot_header_rows(
 ) -> list[tuple[str, Any]]:
     """What is about to happen: which bodies, which pilots, and what is different about it.
     `play` is the row `quackd.log.play_row` words, as on a solo run's header."""
-    pilots = {(p.name, p.model) for p in providers.values()}
+    pilots = {(p.name, p.llm_id) for p in providers.values()}
     rows: list[tuple[str, Any]] = []
     if len(pilots) == 1:
-        name, model = pilots.pop()
-        rows.append(("provider", f"{name} ({model or 'the first model it serves'})"))
+        name, llm_id = pilots.pop()
+        rows.append(("provider", f"{name} ({llm_id or 'the first LLM it serves'})"))
     else:
         rows.append(
             (
@@ -3226,7 +3232,7 @@ def _pilot_header_rows(
                 Text(
                     NEWLINE.join(
                         f"{n:<{max(len(m) for m in roster)}}  {providers[n].name} "
-                        f"({providers[n].model or 'the first model it serves'})"
+                        f"({providers[n].llm_id or 'the first LLM it serves'})"
                         for n in roster
                     )
                 ),
@@ -3333,10 +3339,10 @@ def _run_flock_impl(
         )
     robots = {spec.name: spec.key for spec in specs if spec.name} or None
     try:
-        vendor, model_id, llm_source = resolve_llm(llm)
+        vendor, llm_id, llm_source = resolve_llm(llm)
         pilot = make_provider(
             vendor,
-            model=model_id,
+            llm_id=llm_id,
             source=llm_source,
             duck_name=duck.name,
             goal=goal,
@@ -3429,7 +3435,7 @@ def _run_flock_impl(
         coordinator.on_event = on_event
 
     rows: list[tuple[str, Any]] = [
-        ("provider", f"{pilot.name} ({pilot.model or 'the first model it serves'})"),
+        ("provider", f"{pilot.name} ({pilot.llm_id or 'the first LLM it serves'})"),
         (
             "flock",
             (f"{flock_name}: " if flock_name else "")
@@ -3518,8 +3524,8 @@ _IMAGE: list[str] = typer.Option(
     help='A picture to hand to the task, e.g. --goal "draw what is in the picture" --image '
     "sketch.png. The pilot gets it on its first turn, labelled with the file's name, and keeps "
     "it for the whole run, which is what makes it different from a camera frame. Repeatable. "
-    "Needs a pilot that takes images: `quackd list-models` marks the ones that do not, and a "
-    "local model needs --vision.",
+    "Needs a pilot that takes images: `quackd list-llms` marks the ones that do not, and a "
+    "local LLM needs --vision.",
     rich_help_panel="Task",
 )
 _GIFSIZE = typer.Option(
@@ -3565,21 +3571,21 @@ _LLM = typer.Option(
     None,
     "--llm",
     "-l",
-    help="Who pilots the robot, as VENDOR[:MODEL]. `anthropic` runs that vendor's default and "
-    "`openai:gpt-6-sol` names one; a model id unique to its vendor is enough on its own, so "
+    help="Who pilots the robot, as VENDOR[:LLM]. `anthropic` runs that vendor's default and "
+    "`openai:gpt-6-sol` names one; an LLM id unique to its vendor is enough on its own, so "
     "`claude-opus-5-5` works. `ollama:qwen3:8b` is a local server (the split is at the first "
     "colon, so a tag keeps its own), `local` needs --base-url, and `fake` is a scripted pilot "
     "with no key and no network. Vendors: " + " · ".join(PROVIDER_NAMES) + ". `quackd "
-    f"list-models` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
+    f"list-llms` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
     f"{DEFAULT_LLM}.",
     autocompletion=_complete_llm,
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _BASEURL = typer.Option(
     None,
     "--base-url",
     help="OpenAI-compatible server, e.g. http://localhost:8000/v1 (local presets).",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 # Declared once, like every option two commands share, so `run` and `serve-mcp` cannot come to
 # spell the board differently. No `envvar=`: Typer would fold QUACKD_HOST_TOKEN
@@ -3589,7 +3595,7 @@ _HOST = typer.Option(
     None,
     "--host",
     metavar="HOST[:PORT]",
-    help="A machine quackd uses and never runs on: its model server, its camera, its detector "
+    help="A machine quackd uses and never runs on: its LLM server, its camera, its detector "
     "and its health. --robot still names the body. The port is the one quackd's daemon on the "
     "board listens on, 9874 unless you changed it, and a local preset keeps its own port on "
     "that machine. Without the flag, a run uses the robot's registered host, then QUACKD_HOST.",
@@ -3620,7 +3626,7 @@ _ROBOT_HOST = typer.Option(
     None,
     "--host",
     metavar="HOST[:PORT]",
-    help="The board this robot uses and quackd never runs on: its runs reach their model "
+    help="The board this robot uses and quackd never runs on: its runs reach their LLM "
     "server, camera and detector there. The port is quackd's daemon's on the board, 9874 "
     "unless you changed it. --host on a run beats this, and this beats QUACKD_HOST.",
     rich_help_panel="Host",
@@ -3637,7 +3643,7 @@ _APIKEY = typer.Option(
     None,
     "--api-key",
     help="API key override (local servers do not need one).",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _EXTRA_BODY = typer.Option(
     None,
@@ -3646,29 +3652,29 @@ _EXTRA_BODY = typer.Option(
     "a field the server wants and quackd never sends. Qwen3 on vLLM stops thinking with "
     '\'{"chat_template_kwargs": {"enable_thinking": false}}\'. QUACKD_EXTRA_BODY does the '
     "same when the flag is absent, and spares you the shell quoting.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _EFFORT = typer.Option(
     None,
     "--effort",
     metavar="low|medium|high",
-    help="How hard the pilot's model reasons before each answer: Anthropic's effort and "
-    "OpenAI's reasoning effort, and a model server of your own's. Lower answers sooner. "
+    help="How hard the pilot's LLM reasons before each answer: Anthropic's effort and "
+    "OpenAI's reasoning effort, and an LLM server of your own's. Lower answers sooner. "
     "Beats QUACKD_EFFORT and QUACKD_OPENAI_REASONING_EFFORT, and is refused for a vendor "
-    "or a model that takes no such setting. Default: medium on Claude, the model's own on "
+    "or an LLM that takes no such setting. Default: medium on Claude, the LLM's own on "
     "OpenAI.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _VISION = typer.Option(
     None,
     "--vision/--no-vision",
-    help="Send camera frames to the model (default: on for cloud, off for local).",
-    rich_help_panel="Model",
+    help="Send camera frames to the LLM (default: on for cloud, off for local).",
+    rich_help_panel="Pilot",
 )
 
 
 def _complete_decision_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
-    """`--decision-llm` in the shell. The same shape as `--llm`: a name, then its own model.
+    """`--decision-llm` in the shell. The same shape as `--llm`: a name, then its own LLM.
 
     The names come from the table plus whatever is installed here, so a plugin a reader
     installed this morning completes without quackd having been rebuilt for it."""
@@ -3679,7 +3685,7 @@ def _complete_decision_llm(ctx: typer.Context, incomplete: str) -> list[tuple[st
     name = head.strip().lower()
     if colon:
         spec = PRESETS.get(name)
-        return [(f"{name}:{spec.model}", spec.summary)] if spec and spec.model else []
+        return [(f"{name}:{spec.llm_id}", spec.summary)] if spec and spec.llm_id else []
     return [
         (n, PRESETS[n].summary if n in PRESETS else "installed here")
         for n in preset_names()
@@ -3690,10 +3696,10 @@ def _complete_decision_llm(ctx: typer.Context, incomplete: str) -> list[tuple[st
 _DECISION_LLM = typer.Option(
     None,
     "--decision-llm",
-    help="EXPERIMENTAL: put a discrete stepper in front of the model, as NAME[:MODEL]. A "
+    help="EXPERIMENTAL: put a discrete stepper in front of the pilot LLM, as NAME[:LLM]. A "
     "decision LLM generates no text at all: it answers the turns whose answer is a choice "
     "among calls this body can make, a read, the brake, a gripper, a gaze, and hands "
-    "everything else to the model, including every pose and every sentence. `jev` is "
+    "everything else to the pilot LLM, including every pose and every sentence. `jev` is "
     "TypeSafe's and `openai` is OpenAI's Decisions API, both hosted; `kev`, `von`, `openjev` "
     "and `opendecision` are open ones you run yourself; `laya` runs inside this process; "
     "`local` is any other System One server, with --decision-url. Needs "
@@ -3702,18 +3708,18 @@ _DECISION_LLM = typer.Option(
     "for openai, and none for one you run yourself. Off unless you name one. "
     "QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _DRIVE_DECISION_LLM = typer.Option(
     None,
     "--decision-llm",
-    help="The fast lane: a line no verb names is put to this decision LLM, as NAME[:MODEL], as "
+    help="The fast lane: a line no verb names is put to this decision LLM, as NAME[:LLM], as "
     "one closed question, which of the body's calls or presets it means, or whether it is a "
     "goal for the pilot. A call it is sure of runs, and one it is less sure of is asked about "
     "first. The same names, extras and keys as `quackd run --decision-llm`. Off unless you name "
     "one. QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _DRIVE_DECISION_MODE = typer.Option(
     None,
@@ -3723,7 +3729,7 @@ _DRIVE_DECISION_MODE = typer.Option(
     "records what it would have chosen without changing anything, and off leaves the goals to "
     "the pilot. Without it every goal is flown by the pilot alone, and --decision-llm is the "
     "fast lane only. QUACKD_DECISION_MODE is not read here.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _DECISION_URL = typer.Option(
     None,
@@ -3736,17 +3742,17 @@ _DECISION_URL = typer.Option(
     "regional host OpenAI name for it (us., eu., au., ca., jp., in., sg., kr., gb. or ae. in "
     "front of api.openai.com), and the word local anywhere else. QUACKD_DECISION_URL does the "
     "same for the rows that want no key.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _DECISION_MODE = typer.Option(
     None,
     "--decision-mode",
     help="What the decision LLM's answer is allowed to do. `on`, the default once you have "
     "named one, lets it take the turns it is confident enough about. `shadow` asks it every "
-    "turn, records what it would have chosen beside what the model did, and changes nothing "
+    "turn, records what it would have chosen beside what the pilot LLM did, and changes nothing "
     "about the run: it is how you find out whether to trust one before you do. `off` is quackd "
     "as it has always been. QUACKD_DECISION_MODE does the same.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _DECISION_FRAMES = typer.Option(
     None,
@@ -3760,7 +3766,7 @@ _DECISION_FRAMES = typer.Option(
     "with no decision LLM named, any other one, or a --decision-url that is not OpenAI's, the "
     "run stops before the robot connects. --vision is about the pilot and changes nothing here. "
     "Off unless you say so. QUACKD_DECISION_FRAMES=1 does the same.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 
 
@@ -3772,7 +3778,7 @@ _DRIVE_DECISION_FRAMES = typer.Option(
     "--decision-frames does, each frame kept in that goal's own directory. Only `openai` may be "
     "shown one, and only at OpenAI's own address, or the session stops before the robot "
     "connects. The fast lane is never shown one. QUACKD_DECISION_FRAMES is not read here.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 
 
@@ -3792,32 +3798,32 @@ def _frames_asked(flag: bool | None, decision_llm: str | None) -> bool:
 
 
 CONTROLLERS = ("llm", "vla")
-"""What `--controller` takes: the model `--llm` names, or the scripted pilot of
+"""What `--controller` takes: the LLM `--llm` names, or the scripted pilot of
 `quackd.agent.providers.vla`."""
 _CONTROLLER = typer.Option(
     None,
     "--controller",
     metavar="llm|vla",
-    help="Who flies the run. llm, the default, is the model --llm names, and with --policy-url "
+    help="Who flies the run. llm, the default, is the LLM --llm names, and with --policy-url "
     "it hands the arm's learned policy one short subtask at a time. vla is a scripted pilot for "
     "a LeRobot arm with --policy-url: it tells the policy each instruction the task file lists, "
     "or the --goal as the only one, one segment each, then asks you whether the arm did it, and "
     "only your yes makes the run a success. It needs a terminal to ask on, and takes no --yes, "
-    "--dry-run, --decision-llm or model flag.",
-    rich_help_panel="Model",
+    "--dry-run, --decision-llm or LLM flag.",
+    rich_help_panel="Pilot",
 )
 _DRIVE_CONTROLLER = typer.Option(
     None,
     "--controller",
     metavar="llm|vla",
-    help="Who flies each goal. llm, the default, is the model --llm names, and with --policy-url "
+    help="Who flies each goal. llm, the default, is the LLM --llm names, and with --policy-url "
     "it hands the arm's learned policy one short subtask at a time. vla is a scripted pilot for "
     "a LeRobot arm with --policy-url: it tells the policy each goal word for word, as its one "
     "instruction, for one segment, then asks you whether the arm did it, and only your yes makes "
     "the goal a success. It needs the keyboard or the page to ask on, and takes no --yes, "
-    "--dry-run, --decision-mode, --decision-frames or model flag. --decision-llm stays the "
+    "--dry-run, --decision-mode, --decision-frames or LLM flag. --decision-llm stays the "
     "fast lane.",
-    rich_help_panel="Model",
+    rich_help_panel="Pilot",
 )
 _ROBOT = typer.Option(
     None,
@@ -3895,10 +3901,10 @@ _RUN_NAME = typer.Option(
 _PRICE = typer.Option(
     None,
     "--price",
-    help="What the model costs, in USD per million tokens: in=3,out=15[,cache_read=0.3,"
+    help="What the LLM costs, in USD per million tokens: in=3,out=15[,cache_read=0.3,"
     "cache_write=3.75]. Beats QUACKD_PRICE and the built-in rates. Use it for a negotiated "
-    "rate, a model quackd has no price for, or a paid server behind a local preset.",
-    rich_help_panel="Model",
+    "rate, an LLM quackd has no price for, or a paid server behind a local preset.",
+    rich_help_panel="Pilot",
 )
 _YES = typer.Option(
     False,
@@ -3952,7 +3958,7 @@ _CAMERA_URL: list[str] = typer.Option(
     "LeRobot arm it is a USB webcam by its OpenCV index, opencv://0, with ?width, ?height, "
     "?fps, ?fourcc, ?rotation, ?fov, ?name and ?backend=msmf for a Windows camera that lists "
     "and will not open. Find the index with lerobot-find-cameras opencv. Repeat the flag for "
-    "several cameras: every frame reaches the model each step, and the first is the primary, "
+    "several cameras: every frame reaches the LLM each step, and the first is the primary, "
     "the one --fov-deg describes and the one the detections and the steering verbs read. "
     "Only the LeRobot arm reads more than one.",
     rich_help_panel="Robot",
@@ -3962,7 +3968,7 @@ _BY_HAND = typer.Option(
     "--by-hand",
     help="Start from a pose you set yourself instead of the recorded rest pose. The arm goes "
     "to its rest pose, quackd takes torque off there, you lift it, load the gripper and press "
-    "Enter, and it holds what you left while the model works. At the end it asks before the "
+    "Enter, and it holds what you left while the LLM works. At the end it asks before the "
     "gripper opens. Needs a LeRobot arm with a rest pose recorded, and a terminal to ask on.",
     rich_help_panel="Robot",
 )
@@ -4032,7 +4038,7 @@ _LOG = typer.Option(
     None,
     "--log/--no-log",
     help="Narrate the run on stderr as it happens: the prompt, each observation, what the "
-    "model thought and answered, every executor decision, every intent sent to the robot, "
+    "LLM thought and answered, every executor decision, every intent sent to the robot, "
     "every result, tokens and timings. On by default; QUACKD_LOG=0 turns it off too. This "
     "is about what you WATCH: the run directory gets its log either way.",
     rich_help_panel="Output",
@@ -4371,11 +4377,11 @@ def preflight(
         None,
         "--llm",
         "-l",
-        help="The pilot to rehearse with, as VENDOR[:MODEL]. Default: the robot's own, then "
+        help="The pilot to rehearse with, as VENDOR[:LLM]. Default: the robot's own, then "
         f"{LLM_ENV}, and preflight refuses where neither names one: the scripted pilot runs "
         "only when typed as --llm fake.",
         autocompletion=_complete_llm,
-        rich_help_panel="Model",
+        rich_help_panel="Pilot",
     ),
     effort: str | None = _EFFORT,
     camera_url: list[str] = typer.Option(
@@ -4502,13 +4508,13 @@ def _preflight_impl(
         _fail(str(e))
         return
     try:
-        vendor, model_id, source = resolve_llm(
+        vendor, llm_id, source = resolve_llm(
             llm, here.llm, robot=here.entry.name if here.entry is not None else None
         )
         refuse_default_pilot(source)
         # one pilot built now and thrown away: a missing key or extra is a sentence before any
         # world is loaded, rather than the same error on every seed of every file
-        probe = make_provider(vendor, model=model_id, source=source, effort=effort)
+        probe = make_provider(vendor, llm_id=llm_id, source=source, effort=effort)
     except (PreflightError, ProviderError) as e:
         _fail(str(e))
         return
@@ -4521,9 +4527,9 @@ def _preflight_impl(
             return
         if not probe.supports_vision:
             _fail(
-                f"{probe.name} {probe.model} does not take images, so it cannot be given "
+                f"{probe.name} {probe.llm_id} does not take images, so it cannot be given "
                 f"{_plural(len(task_images), 'picture')}",
-                hint="quackd list-models marks the models that take no frames",
+                hint="quackd list-llms marks the LLMs that take no frames",
             )
             return
     kwargs = here.adapter_kwargs(camera_url=camera_url)
@@ -4553,7 +4559,7 @@ def _preflight_impl(
 
     def pilot(duck: Any) -> Any:
         return make_provider(
-            vendor, model=model_id, source=source, duck_name=duck.name, effort=effort
+            vendor, llm_id=llm_id, source=source, duck_name=duck.name, effort=effort
         )
 
     rehearsal = Rehearsal(
@@ -4593,11 +4599,11 @@ def _preflight_impl(
         from quackd.agent.providers.pricing import fmt_usd
 
         cost = (
-            f"model cost {fmt_usd(sum(c for c in costs if c is not None))} over "
+            f"LLM cost {fmt_usd(sum(c for c in costs if c is not None))} over "
             f"{_plural(len(runs), 'run')}"
             if all(c is not None for c in costs)
-            else f"model cost unpriced over {_plural(len(runs), 'run')}: quackd has no rate "
-            f"for {probe.name} {probe.model}"
+            else f"LLM cost unpriced over {_plural(len(runs), 'run')}: quackd has no rate "
+            f"for {probe.name} {probe.llm_id}"
         )
         ui.console.print(Text(cost, style=ui.STYLES["muted"]), soft_wrap=True)
     dt = next((r.sim_dt_s for r in reports if r.sim_dt_s is not None), None)
@@ -4948,7 +4954,7 @@ def _drive_refusal(
         return refused
     if effort is not None:
         return (
-            "--effort says how hard a model reasons, and --controller vla asks no model: the "
+            "--effort says how hard an LLM reasons, and --controller vla asks no LLM: the "
             "policy server drives the arm and the scripted pilot only reads it the steps",
             None,
         )
@@ -4959,7 +4965,7 @@ def _drive_refusal(
     mode = (decision_mode or "").strip().lower()
     if named is not None and ((mode and mode != "off") or decision_frames):
         return (
-            "--controller vla runs no model for a decision LLM to step in front of, and "
+            "--controller vla runs no pilot LLM for a decision LLM to step in front of, and "
             f"{'--decision-mode' if mode and mode != 'off' else '--decision-frames'} asks for "
             f"{'--decision-llm' if decision_llm is not None else ENV_LLM} to",
             "drop it: --decision-llm alone is the fast lane, which takes typed lines and never "
@@ -5176,7 +5182,7 @@ def log_cmd(
             prefix=f"{path.parent.name:<{width}}  " if width else "",
             prefix_style=ui.MEMBER_STYLES[i % len(ui.MEMBER_STYLES)] if width else "",
             # a replay has no CLI header in front of it, so this is where the run says what
-            # it was: which duck, which model, which robot, and how long connecting took
+            # it was: which duck, which LLM, which robot, and how long connecting took
             header=True,
         )
         end = _replay(records, view, from_step=from_step, frames=frames) or end
@@ -5249,7 +5255,7 @@ def doctor(
     With `--robot X --address Y` it also connects, which is the only way to see what a
     robot actually reports before a run does. A registered simulator is connected without
     an address too, because nothing real moves. With `--host` it asks the daemon on that board
-    what it is, reads the board's health over the network, and probes the local model
+    what it is, reads the board's health over the network, and probes the local LLM
     presets there."""
     from quackd.doctor import HostReport, collect, refused_host, render
     from quackd.host import HOST_ENV, HostChoice, resolve_host
@@ -5604,9 +5610,9 @@ def serve_mcp(
 
 policy_app = typer.Typer(
     name="policy",
-    help="A learned policy for the arm, in a process of its own: quackd policy serve starts "
-    "one, quackd policy check asks one what it serves, and quackd policy endpoint starts one "
-    "on a GPU rented from Hugging Face.",
+    help="A learned policy for the arm, in a process of its own: quackd policy list names the "
+    "types, quackd policy serve starts one, quackd policy check asks one what it serves, and "
+    "quackd policy endpoint starts one on a GPU rented from Hugging Face.",
     no_args_is_help=True,
 )
 app.add_typer(policy_app, name="policy", rich_help_panel="Serve")
@@ -5706,6 +5712,12 @@ def _serve_options(
         jpeg_quality=jpeg_quality,
         pins=tuple(pins or ()),
     )
+
+
+@policy_app.command("list")
+def policy_list(as_json: bool = _JSON) -> None:
+    """List the policy types quackd policy serve serves, and the ones it refuses with why."""
+    _list_policies(as_json)
 
 
 @policy_app.command("serve")
@@ -6793,10 +6805,10 @@ def robot_add(
         None,
         "--llm",
         "-l",
-        help="The pilot a run uses for this robot when --llm is absent, as VENDOR[:MODEL]. "
+        help="The pilot a run uses for this robot when --llm is absent, as VENDOR[:LLM]. "
         "--llm on the run beats this, and this beats QUACKD_LLM.",
         autocompletion=_complete_llm,
-        rich_help_panel="Model",
+        rich_help_panel="Pilot",
     ),
     note: str | None = typer.Option(None, "--note", help="One line for people: which one is it."),
     registry_dir: str | None = _REGISTRY_DIR,
@@ -7083,7 +7095,7 @@ def robot_twin(
     ui.console.print(
         Text(
             f"  quackd preflight <duck> --robot {target}"
-            + ("" if entry.llm else " --llm VENDOR[:MODEL]"),
+            + ("" if entry.llm else " --llm VENDOR[:LLM]"),
             style=ui.STYLES["muted"],
         )
     )
@@ -7262,9 +7274,9 @@ def robot_edit(
         None,
         "--llm",
         "-l",
-        help="The pilot, as VENDOR[:MODEL]. Replaces whatever was stored.",
+        help="The pilot, as VENDOR[:LLM]. Replaces whatever was stored.",
         autocompletion=_complete_llm,
-        rich_help_panel="Model",
+        rich_help_panel="Pilot",
     ),
     note: str | None = typer.Option(None, "--note", help="One line for people."),
     clear: list[str] = typer.Option(
@@ -10004,7 +10016,7 @@ def onboard_demo(
         False, "--offline", help="Fly both robots on the scripted pilot: no key, no network."
     ),
     llm: str | None = typer.Option(
-        None, "--llm", help="Both robots' brain, as --llm spells it, local:MODEL with --base-url."
+        None, "--llm", help="Both robots' brain, as --llm spells it, local:LLM with --base-url."
     ),
     base_url: str | None = typer.Option(
         None, "--base-url", help="The OpenAI-compatible server both brains use."

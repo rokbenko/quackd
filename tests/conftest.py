@@ -133,13 +133,13 @@ def _scratch_dir(factory: pytest.TempPathFactory, name: str) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _no_model_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_llm_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
     """Doctor asks the local servers whether they are up. Whether any is running on the machine
     the suite runs on is not what a test is about, and on Windows a closed port takes three
     seconds to say so, for a test that merely runs `quackd doctor`. A test about the answer
     replaces this with its own, and `test_doctor.py` holds the real probe for the tests about
     the probe itself."""
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
 
 
 @pytest.fixture(autouse=True)
@@ -300,7 +300,7 @@ def _log_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _no_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_llm_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """`QUACKD_LLM` pins the pilot, and `QUACKD_DECISION_LLM` switches a decision LLM on for
     every run, and `QUACKD_DECISION_FRAMES` shows it the camera. The CLI loads a developer's
     `.env` in its root callback, so one line in an untracked file could make half this suite
@@ -347,7 +347,7 @@ def _no_redirected_key_line(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_HOST` moves every local preset's model server to another machine, and the CLI
+    """`QUACKD_HOST` moves every local preset's LLM server to another machine, and the CLI
     loads a developer's `.env` in its root callback, so one line in an untracked file would
     point this suite's local-provider tests at a Jetson on somebody's desk. Its token rides
     along for the same reason. Empty reads as unset, and unlike `delenv` it survives
@@ -358,25 +358,25 @@ def _no_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_openrouter_listing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--llm openrouter:` an id quackd does not carry reads OpenRouter's public model list, and
+    """`--llm openrouter:` an id quackd does not carry reads OpenRouter's public LLM list, and
     keeps it for the life of the process. No test may reach the real one: CI has no business on
     the network, and a list that changes weekly would make an assertion true on one day only. So
     every test starts with an empty cache, and a fetch from openrouter.ai fails the test that
     made it. A list at any other address, a stand-in on 127.0.0.1, still goes through for real."""
     from quackd.agent.providers import openrouter
 
-    real = openrouter.fetch_models
+    real = openrouter.fetch_llms
 
     def guarded(base_url: str, **kwargs: object) -> list[dict[str, object]]:
         if "openrouter.ai" in base_url:
             raise AssertionError(
-                "a test reached for OpenRouter's real model list: hand it one with "
-                "`listed=`, a monkeypatched `fetch_models`, or a stand-in's base URL"
+                "a test reached for OpenRouter's real LLM list: hand it one with "
+                "`listed=`, a monkeypatched `fetch_llms`, or a stand-in's base URL"
             )
         return real(base_url, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(openrouter, "_LISTINGS", {})
-    monkeypatch.setattr(openrouter, "fetch_models", guarded)
+    monkeypatch.setattr(openrouter, "fetch_llms", guarded)
 
 
 class ReachedOpenAI(AssertionError):

@@ -7,7 +7,7 @@ inherits the house style instead of inventing a third one.
 
 Three rules run through it.
 
-**Text is data.** A model's reasoning, a robot's manifest and an error naming
+**Text is data.** An LLM's reasoning, a robot's manifest and an error naming
 ``quackd[anthropic]`` all contain square brackets, and Rich reads those as markup: it drops
 `[bold]` silently and raises on an unpaired `[/think]`. Everything here takes plain strings
 and wraps them in `rich.text.Text`, which never parses. No renderable in this file is built
@@ -171,8 +171,8 @@ def degrade(text: str, glyphs: Glyphs) -> str:
     """quackd's own decoration, spelled for the stream in hand.
 
     Only the characters this project puts in its own strings: the adapter registry's status
-    emoji, the middle dot it separates fields with, the dashes and the section sign. What a
-    model or a robot wrote is left exactly as it wrote it."""
+    emoji, the middle dot it separates fields with, the dashes and the section sign. What an
+    LLM or a robot wrote is left exactly as it wrote it."""
     if glyphs is not ASCII:
         return text
     for fancy, plain in _PLAIN.items():
@@ -266,7 +266,7 @@ its own set (`rich.control.STRIP_CONTROL_CODES`) and ESC is not in it, so an esc
 arrived inside *text* rather than from a style goes straight through: `ESC[2J` clears the
 reader's screen, `ESC]0;...BEL` retitles their window, `ESC[?1049h` swaps their buffer. The
 text is not ours. It is the goal somebody typed, the body of a `.duck` fetched off the
-internet, whatever the model said it was thinking, and an error message from a robot.
+internet, whatever the LLM said it was thinking, and an error message from a robot.
 
 Dropped rather than escaped, because this file is read by a person and not parsed, and
 `transcript.jsonl` beside it keeps every byte as it came (JSON escapes it, so it is safe
@@ -559,7 +559,7 @@ def kv_grid(rows: Iterable[tuple[str, Any]], *, key_style: str | None = None) ->
 
 
 def joined(parts: Sequence[str], glyphs: Glyphs, *, style: str | None = None) -> Text:
-    """`steps 7 · llm calls 8 · tokens 6338+128`, with a separator the stream can carry."""
+    """`steps 7 · LLM calls 8 · tokens 6338+128`, with a separator the stream can carry."""
     out = Text(style=style or STYLES["muted"])
     for i, part in enumerate(parts):
         if i:
@@ -750,7 +750,7 @@ _STEP = re.compile(r"step \d+/\d+")
 
 
 def _step_of(data: Mapping[str, Any]) -> str | None:
-    """`step 3/40`, read out of the observation the model was shown, which is the only place
+    """`step 3/40`, read out of the observation the LLM was shown, which is the only place
     the budget's two halves appear together."""
     found = _STEP.search(str(data.get("text") or "").split("\n", 1)[0])
     return found.group(0) if found else None
@@ -759,7 +759,7 @@ def _step_of(data: Mapping[str, Any]) -> str | None:
 class RunStatus:
     """The line under the log that says what the run is waiting for.
 
-    A run spends nearly all its wall clock inside two calls: a model deciding, and a verb
+    A run spends nearly all its wall clock inside two calls: an LLM deciding, and a verb
     steering a robot. The log says what happened once it has happened; until then the
     terminal had nothing, and with `--no-log` it had nothing at all between the header and
     the verdict. This reads the same event stream and keeps one transient line at the
@@ -790,7 +790,7 @@ class RunStatus:
         self._since = clock()
         self._status: Any = None
         self._last_call_s: float | None = None
-        """How long the model's previous answer took, read off its `llm` record, so a wait on
+        """How long the LLM's previous answer took, read off its `llm` record, so a wait on
         the next one says roughly how long it is likely to be. None until a call has answered."""
         self._stopping = False
 
@@ -835,7 +835,7 @@ class RunStatus:
 
     def stopping(self) -> None:
         """A person has stopped the run, and the line says so until it finishes. The kill switch
-        says nothing to the run's event stream, so it went on saying `waiting on` a model nobody
+        says nothing to the run's event stream, so it went on saying `waiting on` an LLM nobody
         was waiting for, and what the cancelled call and the verb then wrote read the same."""
         self._stopping = True
         self.update("stopping the robot")
@@ -905,13 +905,13 @@ class RunStatus:
         elif kind == "observation":
             self.update("observing", step=_step_of(data))
         elif kind == "llm_request":
-            model = data.get("model") or "the first model it serves"
+            llm_id = data.get("llm_id") or "the first LLM it serves"
             # the previous answer's seconds beside the count, because the count alone says how
             # long this wait has been and nothing about how long it is likely to be
             last = (
                 f" (last call {self._last_call_s:.1f} s)" if self._last_call_s is not None else ""
             )
-            self.update(f"waiting on {data.get('provider')} {model}{last}")
+            self.update(f"waiting on {data.get('provider')} {llm_id}{last}")
         elif kind == "llm" and "retry_in_s" in data:
             # the API could not answer the turn, and quackd waits before asking it again: the
             # line would otherwise say a verb is being chosen through a minute of nothing
@@ -944,22 +944,23 @@ class RunStatus:
 
 
 def _answered(data: Mapping[str, Any]) -> str:
-    """What the model's answer was, in the words of the line that stands until the verb starts.
+    """What the LLM's answer was, in the words of the line that stands until the verb starts.
 
-    It said "choosing a verb", which was true while the model was being asked and false by the
+    It said "choosing a verb", which was true while the LLM was being asked and false by the
     time the line said it: the `llm` record is the answer, written after the call came back. So
-    it names the call the model chose, which is what the run is about to do, or says that the
-    model answered without one, which is what the re-prompt that follows is about, or that the
+    it names the call the LLM chose, which is what the run is about to do, or says that the
+    LLM answered without one, which is what the re-prompt that follows is about, or that the
     call failed. Only the first of several calls is named and runs, and the line says so."""
-    from quackd.log import fmt_params
+    from quackd.log import asks_no_llm, fmt_params
 
     if "error" in data:
         return f"the call to {data.get('provider')} failed"
+    who = "the pilot" if asks_no_llm(data) else "the LLM"
     calls = [call for call in data.get("tool_calls") or () if isinstance(call, Mapping)]
     if not calls:
-        return "the model answered without a call"
+        return f"{who} answered without a call"
     first = calls[0]
-    chosen = f"the model chose {first.get('name')}({fmt_params(first.get('arguments'))})"
+    chosen = f"{who} chose {first.get('name')}({fmt_params(first.get('arguments'))})"
     return chosen if len(calls) == 1 else f"{chosen}, the first of {len(calls)}"
 
 

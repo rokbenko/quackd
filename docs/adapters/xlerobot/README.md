@@ -101,7 +101,7 @@ rather than the robot.
 `move`'s own default `vx` is quackd's shared 0.15 m/s, which sits between upstream's
 slow tier (0.1 m/s, 30 deg/s) and its medium one, and upstream's teleop opens at slow
 with `speed_index` at zero. quackd does not vary a core verb's defaults per robot, so
-the verb's description tells the model to ask for 0.1 explicitly on a first run. On a
+the verb's description tells the LLM to ask for 0.1 explicitly on a first run. On a
 12 kg cart that difference is worth knowing about before you find out.
 
 **`safety_authority` is `native: none` with `deadman: true`.** The host's 500 ms watchdog is

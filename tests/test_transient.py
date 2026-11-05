@@ -1,4 +1,4 @@
-"""`transient_failure`: which failures of a model's API are worth asking again, and how long the
+"""`transient_failure`: which failures of an LLM's API are worth asking again, and how long the
 API asked to wait. Read off the SDK's own exception beneath a provider's `ProviderError`, by
 status and class name, never by message (tests/sdk_errors.py has the stand-ins)."""
 
@@ -29,7 +29,7 @@ def test_a_status_worth_asking_again_is_transient(status: int) -> None:
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 413, 422, 308, 200])
 def test_a_status_that_says_no_is_permanent(status: int) -> None:
-    """A bad request, a key that does not work, a model that does not exist, a request too big,
+    """A bad request, a key that does not work, an LLM that does not exist, a request too big,
     a refused redirect, and 409, which both SDKs retry and quackd does not: none of them is
     answered differently by asking the same request again."""
     assert transient_failure(sdk.wrapped(sdk.APIStatusError(status))) is None

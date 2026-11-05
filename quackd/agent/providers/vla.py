@@ -18,7 +18,7 @@ So this pilot claims none of those either:
 
 What it reads is the observation's `last_result` and that answer, and nothing else: never the
 simulator's own truth about the table, which `quackd preflight` judges on its own. It calls no
-model, so it spends no tokens and is priced as the scripted pilot is, at nothing
+LLM, so it spends no tokens and is priced as the scripted pilot is, at nothing
 (`providers.pricing`).
 """
 
@@ -84,7 +84,7 @@ class VlaProvider:
         # the same words a task file or a goal would be
         self.instructions = tuple(instruction_line(line) for line in instructions)
         self.success = tuple(success)
-        self.model = f"scripted:{label}"
+        self.llm_id = f"scripted:{label}"
         self.calls = 0
 
     # ── what the loop asks ──────────────────────────────────────────────────────────
