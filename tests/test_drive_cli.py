@@ -52,7 +52,7 @@ def test_a_sessions_record_adds_up_what_its_goals_spent(tmp_path: Path) -> None:
     missing keys as zeros, so it said `LLM calls 0 · tokens 0+0` under a session that had flown
     a goal. Each goal's own record is what the session's is held to here."""
     args = ["--no-color", "drive", "--robot", "microduck:mock", "--llm", "fake"]
-    goals = "find the ball\nquit\n"
+    goals = "find the ball\nfind the ball again\nquit\n"
     result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path), "--yes"], input=goals)
     assert result.exit_code == 0, result.output
     (run,) = tmp_path.glob("*-drive")
@@ -60,7 +60,7 @@ def test_a_sessions_record_adds_up_what_its_goals_spent(tmp_path: Path) -> None:
         json.loads(path.read_text(encoding="utf-8"))
         for path in (run / "goals").glob("*/summary.json")
     ]
-    assert flown, "no goal was flown, so this checks nothing"
+    assert len(flown) == 2, "with fewer than two there is nothing to add up"
     calls = sum(goal["llm_calls"] for goal in flown)
     tokens = sum(goal["usage"]["input_tokens"] for goal in flown)
     out = sum(goal["usage"]["output_tokens"] for goal in flown)

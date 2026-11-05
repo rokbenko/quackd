@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import tomllib
@@ -18,6 +19,8 @@ from typing import Any
 
 import pytest
 import yaml
+
+from .conftest import help_text
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -318,32 +321,64 @@ def test_a_vla_run_is_logged_in_turns_and_tried_on_the_simulator(tmp_path: Path)
 
 
 def test_the_try_line_of_a_vla_run_is_one_quackd_takes() -> None:
-    """Read off the command itself, since a flag it does not take would only fail a reader."""
-    from typer.testing import CliRunner
-
+    """Every flag of what the log prints, read off that command's own help, since a flag it does
+    not take would only fail a reader."""
     from quackd.agent.providers.pricing import VLA_PILOT
-    from quackd.cli import app
 
     assert script.VLA == VLA_PILOT, "the script spells the pilot's name, and has to spell it so"
-    runner = CliRunner()
-    run_help = " ".join(runner.invoke(app, ["run", "--help"]).output.split())
-    for flag in ("--policy-url", "--controller", "--no-memory", "--goal"):
-        assert flag in run_help, flag
-    serve_help = " ".join(runner.invoke(app, ["policy", "serve", "--help"]).output.split())
-    assert "--policy" in serve_help
+    words = [*A_VLA_RUN["command"], "--no-play", "--accept-other-frame"]
+    serve, run = script._try_it({**A_VLA_RUN, "command": words}, {}).split("\n")
+    assert "--no-play" in run and "--accept-other-frame" in run, "what the run needed goes along"
+    for line, command in ((serve, ["policy", "serve"]), (run, ["run"])):
+        shown = help_text([*command, "--help"])
+        flags = [word for word in shlex.split(line) if word.startswith("--")]
+        assert flags, line
+        for flag in flags:
+            assert flag in shown, f"quackd {' '.join(command)} takes no {flag}"
+
+
+def test_a_vla_run_of_a_checkpoint_is_tried_with_the_line_that_served_it(tmp_path: Path) -> None:
+    """`--policy` alone is refused for a checkpoint that names another repository, and a run
+    records neither its pins nor its cameras, so the line somebody typed is the one that works,
+    and a log with no such line stops and says so rather than print one quackd refuses."""
+    root = _tree(tmp_path / "examples")
+    run = {**A_VLA_RUN, "policy": {"policy": "owner/smol@abc"}}
+    _logged(root, "e001", run)
+    with pytest.raises(script.LogError, match="quackd policy serve"):
+        script.render_log(root, _experiment(root, "E001"))
+    typed = "quackd policy serve --policy owner/smol@abc --pin base/vision@def --fps 30"
+    _logged(root, "e002", run, notes={"before": [typed]})
+    assert f"{typed}\nquackd run --goal" in script.render_log(root, _experiment(root, "E002"))
+
+
+def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
+    """A session's record holds no version, no command and no robot, and each of those was a
+    `KeyError` with no word about what to do."""
+    root = _tree(tmp_path / "examples")
+    session = {
+        "duck": "drive",
+        "drive": {"lanes": {"pilot": 1}},
+        "outcome": "success",
+        "reason": "goodbye",
+        "started_at": "2026-11-04T11:44:16.998Z",
+    }
+    _logged(root, "e001", session)
+    with pytest.raises(script.LogError, match="e001 holds a chat session's record"):
+        script.render_log(root, _experiment(root, "E001"))
 
 
 def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
     """The line took the command's third word for a task, which beside a goal is `--goal`, so it
     printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
     root = _tree(tmp_path / "examples")
-    command = ["quackd", "run", "--goal", "wave at me", "--robot", "arm-01"]
-    _logged(root, "e001", {**GOOD, "command": command})
-    text = script.render_log(root, _experiment(root, "E001"))
-    assert "This runs the same goal with no arm attached, on `lerobot:mock`" in text
-    assert (
-        'quackd run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol --no-memory'
-    ) in text
+    for number, given in (("e001", ["--goal", "wave at me"]), ("e002", ["--goal=wave at me"])):
+        command = ["quackd", "run", *given, "--robot", "arm-01"]
+        _logged(root, number, {**GOOD, "command": command})
+        text = script.render_log(root, _experiment(root, number.upper()))
+        assert "This runs the same goal with no arm attached, on `lerobot:mock`" in text
+        assert (
+            'quackd run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol --no-memory'
+        ) in text
 
 
 def test_the_gif_says_how_fast_it_plays(tmp_path: Path) -> None:

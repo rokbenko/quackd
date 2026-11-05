@@ -565,9 +565,9 @@ async def run_drive(
             "outcome": outcome,
             "reason": reason,
             "steps": executor.budget.steps if executor.budget is not None else 0,
-            # what its goals' pilot spent, added up from their own records, so `quackd log` says
-            # of a session what it says of a run. No `cost_usd`: a session's fast lane can bill
-            # as well and is not in this, so a total here would be a wrong one.
+            # the pilot's calls and tokens over its goals, which `quackd log` prints under the
+            # session. No `cost_usd`: a session's fast lane and a goal's stepper can bill as well
+            # and are not in these, so a total here would be a wrong one.
             "provider": vendor,
             "llm_calls": executor.budget.llm_calls if executor.budget is not None else 0,
             "usage": spent.model_dump() if spent is not None else {},

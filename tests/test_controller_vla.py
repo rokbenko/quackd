@@ -41,9 +41,9 @@ from quackd.agent.providers.base import (
 from quackd.agent.providers.vla import VlaProvider
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB
+from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB, Budgets
 from quackd.log import LineLog, LogEvent, a_person_was_asked, render_lines
-from quackd.safety import allow_all
+from quackd.safety import Budget, BudgetExceeded, allow_all
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import LeRobotMock
 from quackd_lerobot.policy import server as S
@@ -205,6 +205,22 @@ async def test_no_line_of_its_record_says_an_llm_was_asked(tmp_path: Path) -> No
     assert "40 turns" in told, "the prompt's budget line"
     assert not re.search(r"\bLLMs?\b|\bllm\b", told, re.IGNORECASE), told
     assert answers and all(answer.startswith("the pilot chose ") for answer in answers), answers
+
+
+def test_a_budget_it_runs_out_of_names_the_key_and_what_it_counted() -> None:
+    """A person raises `max_llm_calls` in the task file, so the key stays in the sentence, and on
+    this run it held the pilot's turns. Any other run's sentence is what it always was, which the
+    run sheet quotes."""
+    turns = Budget(Budgets(max_llm_calls=1), calls_word="turns")
+    turns.note_llm_call()
+    with pytest.raises(BudgetExceeded) as caught:
+        turns.check()
+    assert str(caught.value) == "max_llm_calls (1) reached, which counts turns here"
+    calls = Budget(Budgets(max_llm_calls=1))
+    calls.note_llm_call()
+    with pytest.raises(BudgetExceeded) as caught:
+        calls.check()
+    assert str(caught.value) == "max_llm_calls (1) reached"
 
 
 def test_another_pilot_keeps_the_words_of_an_llm() -> None:

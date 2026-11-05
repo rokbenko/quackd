@@ -41,8 +41,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `after 2 model calls`. It now says `turns 5` and `after 2 turns`, with no LLM in the split and no
   spread, and the line at the top of each step says `turns 2/40`. The rest of its record is told the
   same way: the run line reads `provider=vla pilot=scripted:stack`, the log's tags are `pilot>` and
-  `pilot<`, the live line says `the pilot chose`, the prompt's budget says `turns`, and History in
-  `quackd ui` shows `turns` for `llm_calls`. The record's own keys keep their names. On a VLA run
+  `pilot<`, the live line says `the pilot chose`, the prompt's budget says `turns`, History in
+  `quackd ui` shows `turns` for `llm_calls`, and a budget it runs out of says `max_llm_calls (3) reached,
+  which counts turns here`. The record's own keys keep their names. On a VLA run
   recorded earlier, `quackd log` tells it in these words, and leaves the steps and the prompt it
   recorded as they were. `--llm fake` keeps `LLM calls`, because it is chosen through `--llm` and stands
   in for an LLM.
@@ -60,13 +61,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
-- **`quackd log` on a chat session says what its goals spent.** It said `llm calls 0` and `tokens 0+0`
-  under any session, whatever its goals had spent, because a session's `summary.json` wrote neither. It
-  writes `provider`, `llm_calls` and `usage` now, added up from its goals, and `quackd log` prints them. A
-  session recorded earlier names no calls and no tokens, rather than a zero nobody counted. A session's
-  record has no cost of its own, because a decision LLM in its fast lane bills as well and is not
-  added in, and each goal's cost stays in that goal's record. `tests/test_drive_cli.py` holds a session's
-  record to its goals' records.
+- **`quackd log` on a chat session says what its goals' pilot spent.** It said `llm calls 0` and
+  `tokens 0+0` under any session, whatever its goals had spent, because a session's `summary.json` wrote
+  neither. It writes `provider`, `llm_calls` and `usage` now, the pilot's calls and tokens added up over its
+  goals, and `quackd log` prints them. A session recorded earlier names no calls and no tokens, rather
+  than a zero nobody counted. A session's record has no cost of its own, because a decision LLM in its
+  fast lane or a goal's stepper can bill as well and is not added in, and each goal's cost stays in that
+  goal's record. `tests/test_drive_cli.py` holds a session's record to its goals' records.
 - **A ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot.** A frame comes
   from the daemon as one line of base64, and the client read with asyncio's 64 KiB limit, so a longer line
   raised out of its read loop, which died without a word. Every request after it waited out its timeout,
@@ -94,8 +95,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A run log can be written for a VLA run and for a `--goal` line.** `scripts/example_log.py` would
   have written `LLM calls`, `Waiting for the LLM` and a `--llm` line on a VLA run such as E197's or
   E198's, and `quackd run --goal --robot lerobot:mock`, which quackd refuses, for any run with a goal. A
-  VLA run's log says `Pilot` and `Turns`, and is tried on `lerobot:mujoco` against a policy server. No
-  log already written changes.
+  VLA run's log says `Pilot` and `Turns`, and is tried on `lerobot:mujoco` against a policy server. It
+  stops with a sentence, not a `KeyError`, on a chat session's record, since it writes the log of a run,
+  so E145, E185, E186 and E203 wait until it can write one of those. No log already written changes.
 - **`uv.lock` takes `openai` 3.42.1 and `laya` 0.4.21, from Dependabot's #66.** A refresh of the lock
   changes no requirement a user installs against. CI installs neither package, so its checks say the lock
   resolves and not that either one works.

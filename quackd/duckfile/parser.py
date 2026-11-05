@@ -74,7 +74,7 @@ def parse_duck_text(text: str, path: str | None = None) -> DuckFile:
     except ValidationError as e:
         raise DuckParseError(_format_validation_error(e), path) from None
     if not body.strip():
-        raise DuckParseError("body is empty: the LLM needs task instructions", path)
+        raise DuckParseError("body is empty: a task file needs task instructions", path)
     return DuckFile(frontmatter=frontmatter, body=body, path=path)
 
 

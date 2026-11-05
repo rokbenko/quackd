@@ -588,8 +588,8 @@ def render_events(
     if k == "run_start":
         adapter = d.get("adapter")
         robot = f"{adapter}:{d.get('transport')}" if adapter else str(d.get("transport"))
-        word = "pilot" if asks_no_llm(d) else "LLM"
-        head = f"{d.get('duck')} provider={d.get('provider')} {word}={_llm_id(d)} robot={robot}"
+        flown_by = "pilot" if asks_no_llm(d) else "LLM"
+        head = f"{d.get('duck')} provider={d.get('provider')} {flown_by}={_llm_id(d)} robot={robot}"
         # Only a detector other than the colour one, which every run before there was a choice
         # used and every run on a simulator still does: those lines stay exactly as they were,
         # in every transcript already written and in every MCP result an LLM reads.

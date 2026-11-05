@@ -205,7 +205,13 @@ class Budget:
         if self.steps >= self.limits.max_steps:
             raise BudgetExceeded(f"max_steps ({self.limits.max_steps}) reached")
         if self.llm_calls >= self.limits.max_llm_calls:
-            raise BudgetExceeded(f"max_llm_calls ({self.limits.max_llm_calls}) reached")
+            # the key a person raises, by its name, which on a VLA pilot's run holds its turns
+            here = (
+                ""
+                if self.calls_word == Budget.calls_word
+                else f", which counts {self.calls_word} here"
+            )
+            raise BudgetExceeded(f"max_llm_calls ({self.limits.max_llm_calls}) reached{here}")
         self.check_time()
 
     def check_time(self) -> None:

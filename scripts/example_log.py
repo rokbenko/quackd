@@ -29,6 +29,7 @@ What to write in the notes is under How a log is written in `docs/examples/lerob
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import re
 import shutil
@@ -277,9 +278,12 @@ def _pilot(summary: dict[str, Any]) -> str:
 def _goal(summary: dict[str, Any]) -> str | None:
     """The goal the command gave in place of a task file, if it gave one."""
     words = summary["command"]
-    for flag in ("--goal", "-g"):
-        if flag in words[:-1]:
-            return str(words[words.index(flag) + 1])
+    for word, following in itertools.pairwise(words):
+        if word in ("--goal", "-g"):
+            return str(following)
+    for word in words:
+        if word.startswith("--goal="):
+            return str(word).removeprefix("--goal=")
     return None
 
 
@@ -288,19 +292,27 @@ def _try_intro(summary: dict[str, Any]) -> str:
     return said.format(what="task file" if _goal(summary) is None else "goal")
 
 
-def _try_it(summary: dict[str, Any]) -> str:
+def _try_it(summary: dict[str, Any], notes: dict[str, Any]) -> str:
     goal = _goal(summary)
-    task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or summary["command"][2]
+    words = summary["command"]
+    task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
     if summary.get("provider") != VLA:
         return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory"
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
-    # is tried on the simulator, against the policy it ran
-    served = (summary.get("policy") or {}).get("policy") or "scripted:hold"
-    return (
-        f"quackd policy serve --policy {served}\n"
-        f"quackd run {task} --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 "
-        "--controller vla --no-memory"
-    )
+    # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
+    # are in no record, so its server's line is the one somebody typed, from the notes.
+    typed = [line for line in notes.get("before") or [] if "quackd policy serve" in line]
+    served = str((summary.get("policy") or {}).get("policy") or "scripted:hold")
+    if not typed and not served.startswith("scripted:"):
+        raise LogError(
+            f"this run's policy is {served}: put the `quackd policy serve` line it ran under "
+            "`before` in the notes, because what that line pinned is in no record"
+        )
+    serve = typed[0] if typed else f"quackd policy serve --policy {served}"
+    # what the run needed of the command itself, which a try on the simulator needs as well
+    kept = [flag for flag in ("--accept-other-frame", "--no-play") if flag in words]
+    line = ["quackd run", task, "--robot lerobot:mujoco", "--policy-url http://127.0.0.1:9875"]
+    return serve + "\n" + " ".join([*line, "--controller vla", *kept, "--no-memory"])
 
 
 def _task_file(summary: dict[str, Any], folder: Path) -> str:
@@ -361,6 +373,11 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         raise LogError(f"{folder.name} has no log/notes.yaml")
     _complete(folder.name, notes)
     summary = _summary(folder)
+    if "drive" in summary:
+        raise LogError(
+            f"{folder.name} holds a chat session's record, and this script writes the log of a "
+            "run: a session has no task file, no version and no command to copy"
+        )
     media: dict[str, Any] = json.loads(_read(folder / "log" / "media.json"))
     trace = _read(folder / "log" / "terminal.txt").rstrip("\n")
     first = trace.split("\n", 1)[0]
@@ -389,7 +406,7 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         numbers=_numbers(summary, folder, media["run_folder"]),
         frames=_frames(int(media["frames"])),
         try_intro=_try_intro(summary),
-        try_it=_try_it(summary),
+        try_it=_try_it(summary, notes),
         lines=trace.count("\n") + 1,
         fence_trace=_fence(trace),
         trace=trace,

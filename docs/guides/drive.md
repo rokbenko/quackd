@@ -325,9 +325,9 @@ An answer to a question is no `command`: it is in the row of the call it answere
 questions and your answers are in that goal's own record, with `channel: web` where the page
 asked. A session whose arm has a policy server names it in `run_start`, as a run does.
 
-Its `summary.json` adds up what the pilot spent on its goals in `llm_calls` and `usage`, beside
-the `provider` that flew them, so `quackd log` says of a session what it says of a run. It also
-has a `drive` block, this one from the session above:
+Its `summary.json` adds up the pilot's calls and tokens over its goals in `llm_calls` and `usage`,
+beside the `provider` that flew them, which `quackd log` prints under the session. It also has a
+`drive` block, this one from the session above:
 
 ```json
 {
