@@ -157,7 +157,7 @@ Every pilot declares for itself. The flock succeeds only when all of them declar
 ```
 +- + SUCCESS --------------------------------------------------------------------------------------+
 | every member declared success: duck, arm, cart                                                   |
-| members 3/3 succeeded - talk 3 - steps 0 - LLM calls 9 - tokens 17936+144 - time 0.1 s - cost $0 |
+| members 3/3 succeeded - talk 3 - steps 0 - LLM calls 9 - tokens 19613+144 - time 3.3 s - cost $0 |
 +--------------------------------------------------------------------------------------------------+
 ```
 

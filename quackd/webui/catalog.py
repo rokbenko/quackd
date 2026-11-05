@@ -95,7 +95,7 @@ def llms(vendor: str) -> list[Any]:
     return list(llms_for(vendor))
 
 
-def default_model(vendor: str) -> str | None:
+def default_llm(vendor: str) -> str | None:
     from quackd.agent.providers.catalogue import default_llm_for
 
     return default_llm_for(vendor)

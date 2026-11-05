@@ -5,6 +5,7 @@ every operating system, as the refusal of a taken port does."""
 from __future__ import annotations
 
 import io
+import json
 import os
 import socket
 import stat
@@ -162,6 +163,23 @@ def test_the_saved_setup_is_kept_private(tmp_path: Path) -> None:
     assert Setup(tmp_path / "ui-setup.json").get("base_url") == "https://user:pass@example.com/v1"
     if sys.platform != "win32":
         assert stat.S_IMODE(os.stat(tmp_path / "ui-setup.json").st_mode) == 0o600
+
+
+def test_a_setup_saved_before_the_rename_keeps_what_it_chose(tmp_path: Path) -> None:
+    """Each name the pickers had before 0.32.0 reads as the one they have now, and a value
+    already under the new name stays, since that is the one saved last."""
+    from quackd.webui.state import SAVED_BEFORE, Setup
+
+    path = tmp_path / "ui-setup.json"
+    saved = {old: f"chosen as {old}" for old in SAVED_BEFORE}
+    path.write_text(json.dumps({**saved, "_vendor": "kept"}), encoding="utf-8")
+    setup = Setup(path)
+    for old, new in SAVED_BEFORE.items():
+        assert setup.get(new) == f"chosen as {old}" and setup.get(old) is None
+    assert setup.get("_vendor") == "kept"
+    (old, new), *_ = SAVED_BEFORE.items()
+    path.write_text(json.dumps({old: "older", new: "newer"}), encoding="utf-8")
+    assert Setup(path).get(new) == "newer"
 
 
 def test_quackd_ui_keeps_a_dotenv_out_of_the_pages_home_and_out_of_its_runs(

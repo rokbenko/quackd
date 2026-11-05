@@ -28,7 +28,7 @@ def test_the_robots_are_list_adapters_own_rows() -> None:
 
 def test_the_pilots_are_the_catalogues_own() -> None:
     assert catalog.vendors() == tuple(PROVIDER_NAMES)
-    assert catalog.default_model("anthropic") == default_llm_for("anthropic")
+    assert catalog.default_llm("anthropic") == default_llm_for("anthropic")
     assert catalog.llms("anthropic")[0].id == default_llm_for("anthropic")
     assert catalog.llms("ollama") == [], "a local server serves what it was started with"
     assert "ollama" in catalog.local_presets()

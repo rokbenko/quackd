@@ -788,8 +788,10 @@ async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_l
     assert agreed["agree"] is True and agreed["would_have_acted"] is True
     assert agreed["llm_latency_s"] == 8.2 and agreed["decision_choice"] == "report_state"
 
-    differed = stepper.shadow_event(advice, ToolCall(name="move_joints"), None)
+    asked = ToolCall(name="move_joints", arguments={"gripper": 40})
+    differed = stepper.shadow_event(advice, asked, None)
     assert differed["agree"] is False and differed["llm_verb"] == "move_joints"
+    assert differed["llm_arguments"] == {"gripper": 40}
 
 
 async def test_the_summary_block_counts_the_turns_it_answered() -> None:
