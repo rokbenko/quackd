@@ -47,10 +47,14 @@ FAKE = Price(0.0, 0.0, 0.0, 0.0, source="fake")
 """The scripted pilot calls nothing, so it costs nothing. Not `None`: a run that genuinely cost
 nothing should say `$0` rather than refuse to answer."""
 
-SCRIPTED = ("fake", "vla")
+VLA_PILOT = "vla"
+"""The pilot `--controller vla` flies (`providers.vla.NAME`, spelled here because that module
+imports pydantic and this one may not; a test holds the two together). No LLM is asked in its run
+and it stands in for none, so what it counts is its own turns."""
+
+SCRIPTED = ("fake", VLA_PILOT)
 """The pilots that are rules rather than LLMs, priced at `FAKE`: `--llm fake`, and the pilot
-`--controller vla` flies (`providers.vla.NAME`, spelled here because that module imports pydantic
-and this one may not; a test holds the two together)."""
+`--controller vla` flies."""
 
 SELF_HOSTED = Price(0.0, 0.0, 0.0, 0.0, source="self-hosted")
 """An LLM on your own machine bills you in electricity, not in tokens. A paid OpenAI-compatible

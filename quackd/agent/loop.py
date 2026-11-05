@@ -68,7 +68,7 @@ from quackd.agent.providers.base import (
     transient_failure,
 )
 from quackd.agent.providers.catalogue import Price
-from quackd.agent.providers.pricing import resolve_price, turn_cost
+from quackd.agent.providers.pricing import VLA_PILOT, resolve_price, turn_cost
 from quackd.agent.transcript import Transcript, new_run_dir, run_label
 from quackd.answers import answered
 from quackd.command import command_line, redacted_body, redacted_url
@@ -645,6 +645,7 @@ class AgentLoop:
             self.fm.budgets,
             now=cfg.transport.now,
             policy_total_s=self.fm.effective_policy.total_s,
+            calls_word="turns" if cfg.provider.name == VLA_PILOT else Budget.calls_word,
         )
         self.registry = cfg.registry or default_registry()
         self.executor = Executor(

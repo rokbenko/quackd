@@ -35,6 +35,7 @@ from quackd.agent.providers.pricing import (
     PRICE_ENV,
     SCRIPTED,
     SELF_HOSTED,
+    VLA_PILOT,
     TurnCost,
     cost_usd,
     fmt_usd,
@@ -177,7 +178,7 @@ def test_the_vla_pilot_is_free_as_the_scripted_one_is() -> None:
     held together here."""
     from quackd.agent.providers import vla
 
-    assert vla.NAME in SCRIPTED
+    assert vla.NAME == VLA_PILOT and vla.NAME in SCRIPTED
     assert price_for(vla.NAME, "scripted:stack-blocks") == FAKE
     assert resolve_price(vla.NAME, "scripted:goal") == FAKE
     assert fmt_usd(cost_usd({"input_tokens": 0, "output_tokens": 0}, FAKE)) == "$0"

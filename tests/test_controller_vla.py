@@ -164,6 +164,52 @@ async def test_it_costs_nothing_and_says_so(tmp_path: Path) -> None:
     assert summary["price"]["source"] == pricing.FAKE.source
 
 
+async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
+    """The line under the verdict and the line at the top of each step are what a person reads
+    a run by, and `LLM calls 5` on a run that asked no LLM is false. Its pilot took turns, and
+    `quackd log` prints the same line from the record."""
+    result = await _run(tmp_path, judge=_person(True))
+    summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    events = _events(result)
+    end = next(event for event in events if event["kind"] == "run_end")
+    for counters in (cli.run_counters(summary), cli.run_counters(end)):
+        assert f"turns {summary['llm_calls']}" in counters
+        assert not [counter for counter in counters if "LLM" in counter], counters
+        moved = next(counter for counter in counters if counter.startswith("first motion"))
+        assert moved.endswith(f"after {summary['first_motion_llm_calls']} turns")
+    tops = [
+        str(event["text"]).split("\n", 1)[0] for event in events if event["kind"] == "observation"
+    ]
+    assert tops, "no step of this run was observed"
+    for top in tops:
+        assert " · turns " in top and "LLM" not in top, top
+
+
+def test_one_turn_is_one_turn_and_a_pilot_llm_still_says_what_it_did() -> None:
+    """Only the VLA pilot is told apart, and `--llm fake` stands in for an LLM so it keeps the
+    LLM's counters, which the pages quote."""
+    end = {
+        "steps": 1,
+        "llm_calls": 1,
+        "wall_s": 3.0,
+        "llm_latency_s": 2.0,
+        "llm_latency_p50_s": 2.0,
+        "llm_latency_p90_s": 2.0,
+        "llm_latency_max_s": 2.0,
+        "first_motion_s": 3.0,
+        "first_motion_llm_calls": 1,
+    }
+    for provider in ("fake", "anthropic"):
+        said = cli.run_counters({**end, "provider": provider})
+        assert said[1] == "LLM calls 1" and "time 3.0 s (LLM 2.0 s)" in said
+        assert "LLM calls p50 2.0 s, p90 2.0 s, max 2.0 s" in said
+        assert "first motion at 3.0 s, after 1 LLM call" in said
+    said = cli.run_counters({**end, "provider": V.NAME})
+    assert said[1] == "turns 1" and "time 3.0 s" in said
+    assert "first motion at 3.0 s, after 1 turn" in said
+    assert not [counter for counter in said if "LLM" in counter], said
+
+
 async def test_a_person_who_says_no_fails_the_run(tmp_path: Path) -> None:
     result = await _run(tmp_path, judge=_person(False))
     assert result.outcome == "failure", result.reason

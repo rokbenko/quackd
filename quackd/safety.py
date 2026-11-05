@@ -190,6 +190,9 @@ class Budget:
     policy_s: float = 0.0
     """The seconds of segments spent so far, each as its verb said it ran. A segment is one
     step against `max_steps` like any verb; this is the other half of its cost."""
+    calls_word: str = "LLM calls"
+    """What `status()` calls `llm_calls`. A VLA pilot's run says `turns`, since no LLM is asked in
+    it, and `max_llm_calls` holds its turns all the same."""
 
     def start(self) -> None:
         self.started_at = self.now()
@@ -243,7 +246,7 @@ class Budget:
     def status(self) -> str:
         return (
             f"step {self.steps}/{self.limits.max_steps}, "
-            f"LLM calls {self.llm_calls}/{self.limits.max_llm_calls}, "
+            f"{self.calls_word} {self.llm_calls}/{self.limits.max_llm_calls}, "
             # absent until the stepper has answered once, so every run without one reads
             # exactly as it always has: this string is in every observation the pilot LLM is
             # handed, and `quackd log` parses it back out
