@@ -1459,7 +1459,7 @@ class Stepper:
             **({"refused": list(declined)} if declined else {}),
             "decision_latency_s": advice.record.get("latency_s"),
             "llm_verb": call.name,
-            "model_arguments": dict(call.arguments),
+            "llm_arguments": dict(call.arguments),
             # The whole call, not the verb's name. Every discrete verb worth comparing is one
             # whose arguments are the decision: `gripper(open=true)` and `gripper(open=false)`
             # are opposite instructions that share a word, and scoring them as agreement would

@@ -9,6 +9,31 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-11-05
+
+0.32.0 calls an LLM an LLM, everywhere quackd says anything, and calls a policy a policy. What quackd
+prints, what it sends the pilot, its help, its names, its records and its pages said `model` where
+they meant an LLM, and a word that also covers a servo, a simulator's MuJoCo file and a learned policy told
+a reader nothing. Now the counters read `LLM calls 6` and `time 49.5 s (LLM 20.4 s)`, the command is
+`quackd list-llms`, and `tests/test_llm_wording.py` fails if the word comes back in a sentence, outside
+what it lists with a reason.
+
+The other half of that is what is not an LLM. A run flown by `--controller vla` asks none, so it counts
+`turns` and no line of it says one was asked. The policy types moved from `quackd list-models --kind policy`
+to `quackd policy list`, and their page is `docs/guides/vlas.md`. The `--help` panel that holds `--llm` and
+`--controller` is `Pilot`, because those flags decide who flies the run.
+
+What changes for you: this breaks scripts, and it comes with no minor of warning, at the project's owner's
+word. A script that reads `model` from `summary.json`, a transcript or `--json` has to read `llm_id`. One that
+types `quackd list-models` has to type `quackd list-llms`, one that types `--kind policy` has to type `quackd
+policy list`, and one that matches a printed line has to change its words. A decision LLM you wrote yourself
+has to rename three things. A run recorded earlier still replays, because `quackd log` reads either key. What
+keeps its word is what belongs to somebody else or is no LLM: what a vendor's API takes, the `model` field of a
+robot's manifest and passport, MuJoCo, policies and detectors.
+
+Beside that, a ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot, and `quackd
+log` on a chat session says what its goals' pilot spent. None of this has met an arm or a ToddlerBot.
+
 ### Added
 
 - **`quackd policy list` lists the policy types.** These are the rows `quackd list-models --kind policy`
@@ -31,8 +56,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   change.** That is the LLM's id in `summary.json`, in `run_start`, `llm_request` and `llm`, in the
   `decision` block, `decision_llm` and `watch`, in a flock's records and in `quackd list-llms --json`
   and `quackd doctor --json`, whose `refused_model` is `refused_llm`. `decision_shadow`'s `model_verb`
-  is `llm_verb`. A run recorded earlier keeps what it wrote, and `quackd log` reads either, so an old
-  run replays as it did. This did not go through a release with both keys, which `RELEASING.md` asks of
+  is `llm_verb` and its `model_arguments` is `llm_arguments`. A run recorded earlier keeps what it wrote, and `quackd log` reads either, so an old
+  run replays as it did. An older quackd replaying a newer run does not stop, and finds no LLM's id to print. The
+  LLMs the page `quackd ui` saved in `ui-setup.json` carry over, and 0.31.3 reading a setup this version
+  saved forgets them. This did not go through a release with both keys, which `RELEASING.md` asks of
   a rename, because the project's owner chose to take the break at once. What keeps its name is what
   belongs to somebody else: the `model` a vendor's API takes and returns, `/v1/models`, and the
   `model` field of a robot's manifest and passport, which is the robot's and no LLM's.
@@ -43,10 +70,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   same way: the run line reads `provider=vla pilot=scripted:stack`, the log's tags are `pilot>` and
   `pilot<`, the live line says `the pilot chose`, the prompt's budget says `turns`, History in
   `quackd ui` shows `turns` for `llm_calls`, and a budget it runs out of says `max_llm_calls (3) reached,
-  which counts turns here`. The record's own keys keep their names. On a VLA run
-  recorded earlier, `quackd log` tells it in these words, and leaves the steps and the prompt it
-  recorded as they were. `--llm fake` keeps `LLM calls`, because it is chosen through `--llm` and stands
-  in for an LLM.
+  which counts turns here`. The record's own keys keep their names. On a VLA run recorded earlier, `quackd
+  log` tells it in these words, and leaves the steps and the prompt it recorded as they were. `--llm fake`
+  keeps `LLM calls`, because it is chosen through `--llm` and stands in for an LLM.
 - **A decision LLM you wrote yourself has to rename three things.** The module's `make(spec, *, url,
   model)` is `make(spec, *, url, llm_id)`, its `MODEL` is `LLM_ID`, and the object it returns answers to
   `llm_id`. `tests/stub_decision_llm.py` shows the new shape.
@@ -84,14 +110,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   comment that meant an LLM now says so, and where the word covered policies as well they say LLMs and
   policies. `docs/models/vlas.md` is `docs/guides/vlas.md`, because a policy is no LLM.
   `scripts/models_docs.py` is `scripts/llms_docs.py`, and ADR-0031, ADR-0040 and ADR-0062 have
-  new file names. A published PyPI page's link into `docs/models/` no longer resolves, as happened when
-  the pages moved in 0.17.0. What is a simulator's, a policy's, a detector's or a board's keeps its word,
+  new file names. A published PyPI page's link into `docs/models/`, or to one of those ADRs, no longer
+  resolves, as happened when the pages moved in 0.17.0. What is a simulator's, a policy's, a detector's or a board's keeps its word,
   and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
   word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
   as their runs printed them, and so do the recorded transcripts under `docs/assets/`.
-- **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
-  prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
-  the counters was captured again by running its command.
+- **Three pages quoted output quackd no longer prints.** The token counts in the README and in
+  `docs/guides/flock.md` had moved with the prompt, and `docs/concepts/safety.md` quoted a 529's error in
+  an older shape. The pages that quote the counters of a run anybody can repeat were captured again by
+  running their commands. Those from an arm, a Jetson or a stand-in were checked against quackd's strings.
 - **A run log can be written for a VLA run and for a `--goal` line.** `scripts/example_log.py` would
   have written `LLM calls`, `Waiting for the LLM` and a `--llm` line on a VLA run such as E197's or
   E198's, and `quackd run --goal --robot lerobot:mock`, which quackd refuses, for any run with a goal. A
@@ -9887,7 +9914,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.31.3...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/rokbenko/quackd/compare/v0.31.3...v0.32.0
 [0.31.3]: https://github.com/rokbenko/quackd/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/rokbenko/quackd/compare/v0.31.1...v0.31.2
 [0.31.1]: https://github.com/rokbenko/quackd/compare/v0.31.0...v0.31.1
