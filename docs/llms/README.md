@@ -70,8 +70,8 @@ page and the code disagree:
   by a test to the types the policy server reads.
 
 So an LLM or a policy is added, renamed or repriced there, and the script run, never in a table here. `quackd
-list-llms` prints the same rows on a terminal, `--kind decision` and `--kind policy` for the
-other two.
+list-llms` prints the LLMs' rows on a terminal, `--kind decision` for the decision LLMs, and
+`quackd policy list` the policies'.
 
 ## The guides
 

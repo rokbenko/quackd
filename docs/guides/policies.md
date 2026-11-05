@@ -450,7 +450,8 @@ N1.7, each allowed the processor steps read for it at LeRobot 0.6.1 and no other
 X-VLA in its `auto` action mode alone ([below](#x-vla)) and a GR00T whose every action group is
 joints ([below](#gr00t-n17)). Any other type is refused before a byte of its weights is fetched,
 and pi0-FAST in a sentence of its own ([below](#pi0-and-why-not-pi0-fast)). MolmoAct2 is not
-served yet ([below](#molmoact2)).
+served yet ([below](#molmoact2)). `quackd policy list` prints the types and the ones refused, on
+a machine with no LeRobot.
 
 ### SmolVLA and ACT
 

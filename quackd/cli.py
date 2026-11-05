@@ -1121,10 +1121,10 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
 # ── list-llms ───────────────────────────────────────────────────────────────────────────
 
 
-LLM_KINDS = ("pilot", "decision", "policy", "all")
+LLM_KINDS = ("pilot", "decision", "all")
 """What `quackd list-llms --kind` lists: the pilot ids `--llm` takes, the decision LLMs
-`--decision-llm` names, the policy types `quackd policy serve` serves and the ones it refuses,
-or all three. The first is the default, so the command prints what it always has."""
+`--decision-llm` names, or both. The first is the default, so the command prints what it always
+has. A policy is no LLM, and `quackd policy list` lists those."""
 
 
 @app.command("list-llms", rich_help_panel="Inspect")
@@ -1140,18 +1140,21 @@ def list_llms_cmd(
     kind: str = typer.Option(
         LLM_KINDS[0],
         "--kind",
-        metavar="pilot|decision|policy|all",
+        metavar="pilot|decision|all",
         help="Which to list. pilot, the default, is the ids --llm takes, decision the decision "
-        "LLMs --decision-llm names, policy the policy types quackd policy serve serves and the "
-        "ones it refuses, and all is the three.",
+        "LLMs --decision-llm names, and all is the two.",
     ),
     as_json: bool = _JSON,
 ) -> None:
     """List the LLMs quackd can use: the ids each cloud vendor offers for --llm VENDOR:LLM, and with
-    --kind the decision LLMs and the learned policies as well."""
+    --kind the decision LLMs as well. The learned policies are quackd policy list."""
     wanted = kind.strip().lower()
     if wanted not in LLM_KINDS:
-        _fail(f"--kind is {', '.join(LLM_KINDS[:-1])} or {LLM_KINDS[-1]}, not {kind!r}")
+        _fail(
+            f"--kind is {', '.join(LLM_KINDS[:-1])} or {LLM_KINDS[-1]}, not {kind!r}",
+            # the kind this flag used to take, in the words of where it went
+            hint="quackd policy list lists the policy types" if wanted == "policy" else None,
+        )
         return
     if llm is not None and wanted != LLM_KINDS[0]:
         _fail(
@@ -1163,8 +1166,6 @@ def list_llms_cmd(
         _list_pilots(llm, as_json)
     if wanted in ("decision", "all"):
         _list_decision_llms(as_json)
-    if wanted in ("policy", "all"):
-        _list_policies(as_json)
 
 
 def _list_pilots(llm: str | None, as_json: bool) -> None:
@@ -5606,9 +5607,9 @@ def serve_mcp(
 
 policy_app = typer.Typer(
     name="policy",
-    help="A learned policy for the arm, in a process of its own: quackd policy serve starts "
-    "one, quackd policy check asks one what it serves, and quackd policy endpoint starts one "
-    "on a GPU rented from Hugging Face.",
+    help="A learned policy for the arm, in a process of its own: quackd policy list names the "
+    "types, quackd policy serve starts one, quackd policy check asks one what it serves, and "
+    "quackd policy endpoint starts one on a GPU rented from Hugging Face.",
     no_args_is_help=True,
 )
 app.add_typer(policy_app, name="policy", rich_help_panel="Serve")
@@ -5708,6 +5709,12 @@ def _serve_options(
         jpeg_quality=jpeg_quality,
         pins=tuple(pins or ()),
     )
+
+
+@policy_app.command("list")
+def policy_list(as_json: bool = _JSON) -> None:
+    """List the policy types quackd policy serve serves, and the ones it refuses with why."""
+    _list_policies(as_json)
 
 
 @policy_app.command("serve")

@@ -679,13 +679,14 @@ def test_the_catalogue_is_documented_where_it_is_configured() -> None:
 
 
 def test_the_list_llms_row_names_every_kind_it_lists() -> None:
-    """`--kind` is how a reader finds the decision LLMs and the policy types from a terminal, so
-    the command table says each one it takes."""
+    """`--kind` is how a reader finds the decision LLMs from a terminal, so the command table
+    says each one it takes, and where the policy types went."""
     from quackd.cli import LLM_KINDS
 
     row = next(line for line in README.splitlines() if line.startswith("| `quackd list-llms` |"))
     for kind in LLM_KINDS:
         assert f"`--kind {kind}`" in row, f"the README's list-llms row never names --kind {kind}"
+    assert "`quackd policy list`" in row
 
 
 #: The one dash the README is allowed: the leading one of a blockquote attribution,
@@ -1150,7 +1151,9 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
 
     rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
     row = next(
-        line for line in rows if line.startswith("| `quackd policy serve\\|check\\|endpoint`")
+        line
+        for line in rows
+        if line.startswith("| `quackd policy list\\|serve\\|check\\|endpoint`")
     )
     for needle in ("endpoint up NAME --policy", "--policy-url hf:NAME", "never created one"):
         assert needle in row, f"the README's policy row does not say {needle!r}"

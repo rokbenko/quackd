@@ -32,6 +32,8 @@ Hugging Face rents by the hour. Why it is shaped this way is
 
 ## The families quackd serves
 
+`quackd policy list` prints these rows on a terminal, and `--json` for a script.
+
 <!-- generated: policy-served, by scripts/llms_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Type | Family | Maker | Told the subtask in words | Needs besides the extra | GPU | Licence | How far it has got |

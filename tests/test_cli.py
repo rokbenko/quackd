@@ -804,13 +804,14 @@ def test_list_llms_points_a_slashed_id_with_no_vendor_at_openrouter(_wide: None)
 
 def test_list_llms_lists_only_pilots_unless_asked(_wide: None) -> None:
     """`--kind` was added beside a command people already script against, so with no `--kind`
-    it prints the pilots alone, as it always has, and a decision LLM or a policy type is listed
-    only when asked for."""
+    it prints the pilots alone, as it always has, and a decision LLM is listed only when asked
+    for. A policy is no LLM, so not even `--kind all` lists one: `quackd policy list` does."""
     flat = " ".join(runner.invoke(app, ["list-llms"]).output.split())
     assert "decision LLMs (" not in flat and "policy types (" not in flat
     assert flat == " ".join(runner.invoke(app, ["list-llms", "--kind", "pilot"]).output.split())
     every = " ".join(runner.invoke(app, ["list-llms", "--kind", "all"]).output.split())
-    assert "LLMs (--llm" in every and "decision LLMs (" in every and "policy types (" in every
+    assert "LLMs (--llm" in every and "decision LLMs (" in every
+    assert "policy types (" not in every
 
 
 def test_list_llms_kind_decision_prints_every_preset_in_doctors_order(_wide: None) -> None:
@@ -828,15 +829,13 @@ def test_list_llms_kind_decision_prints_every_preset_in_doctors_order(_wide: Non
     assert "LLMs (--llm" not in flat, "asking for the decision LLMs printed the pilots too"
 
 
-def test_list_llms_kind_policy_needs_no_adapter(
-    _wide: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_policy_list_needs_no_adapter(_wide: None, monkeypatch: pytest.MonkeyPatch) -> None:
     """The policy rows are data in the core, so a machine with no LeRobot and no arm package
     can still be told which policies quackd serves and which it does not, and why."""
     from quackd.adapters.policies import FAMILIES, NOT_SERVED
 
     monkeypatch.setitem(sys.modules, "quackd_lerobot", None)
-    result = runner.invoke(app, ["list-llms", "--kind", "policy"])
+    result = runner.invoke(app, ["policy", "list"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     for family in FAMILIES:
@@ -846,9 +845,21 @@ def test_list_llms_kind_policy_needs_no_adapter(
     assert "never the arm's" in flat, "the note must say where a policy is served, and where not"
 
 
+def test_policy_list_json_says_which_it_serves(_wide: None) -> None:
+    """Every row keeps the `kind` it had under `quackd list-llms`, so a script that read those
+    rows changes its command and nothing else."""
+    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+
+    result = runner.invoke(app, ["policy", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    rows = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    assert {row["kind"] for row in rows} == {"policy"}
+    assert [row["type"] for row in rows if row["served"]] == [family.type for family in FAMILIES]
+    assert [row["name"] for row in rows if not row["served"]] == [r.name for r in NOT_SERVED]
+
+
 def test_list_llms_json_tags_every_row_with_its_kind(_wide: None) -> None:
     """One stream for a script, whichever kinds it asked for: every row says which it is."""
-    from quackd.adapters.policies import FAMILIES, NOT_SERVED
     from quackd.agent.decision.catalogue import PRESET_NAMES
 
     result = runner.invoke(app, ["list-llms", "--kind", "all", "--json"])
@@ -857,17 +868,16 @@ def test_list_llms_json_tags_every_row_with_its_kind(_wide: None) -> None:
     kinds = [row["kind"] for row in rows]
     assert kinds.count("pilot") == sum(len(llm_ids(name)) for name in CLOUD_NAMES)
     assert kinds.count("decision") == len(PRESET_NAMES)
-    assert kinds.count("policy") == len(FAMILIES) + len(NOT_SERVED)
-    assert kinds == sorted(kinds, key=("pilot", "decision", "policy").index), "kinds interleave"
-    served = [row for row in rows if row["kind"] == "policy" and row["served"]]
-    assert [row["type"] for row in served] == [family.type for family in FAMILIES]
+    assert kinds == sorted(kinds, key=("pilot", "decision").index), "kinds interleave"
 
 
 def test_list_llms_refuses_a_kind_it_does_not_know_and_llm_beside_another_kind() -> None:
     """`--llm` narrows the pilot table to one vendor, and has nothing to narrow in the others,
     so it is refused beside them rather than silently ignored."""
     bad = runner.invoke(app, ["list-llms", "--kind", "vla"])
-    assert bad.exit_code == 1 and "--kind is pilot, decision, policy or all" in bad.output
+    assert bad.exit_code == 1 and "--kind is pilot, decision or all" in bad.output
+    policy = " ".join(runner.invoke(app, ["list-llms", "--kind", "policy"]).output.split())
+    assert "not 'policy'" in policy and "quackd policy list lists the policy types" in policy
     both = runner.invoke(app, ["list-llms", "--kind", "decision", "--llm", "openai"])
     assert both.exit_code == 1
     assert "--llm narrows the pilot rows only" in " ".join(both.output.split())
