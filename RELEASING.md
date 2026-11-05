@@ -387,8 +387,10 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     whose `policy` line names the new version.
 16. **Dispatch the nightlies on `main`** when the release touched what they cover:
     `lerobot-sim-assets.yml` for the arm's simulator and the model it fetches,
-    `microduck-assets.yml` for the duck's physics model and its trained gait, and
-    `toddlerbot-contract.yml` for the ToddlerBot's daemon against upstream.
+    `microduck-assets.yml` for the duck's physics model and its trained gait,
+    `toddlerbot-contract.yml` for the ToddlerBot's daemon against upstream, and
+    `upstream-drift.yml` when a release moved a pin or a `READ_ON`, so the issue it keeps for
+    that upstream closes the same day rather than the next night.
 
     ```bash
     gh workflow run lerobot-sim-assets.yml --ref main -R rokbenko/quackd

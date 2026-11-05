@@ -9,6 +9,42 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **A nightly says when an upstream moved under a ref.** Every adapter cites what it reads
+  from upstream as refs pinned to a commit and a line, and nothing re-read them when upstream
+  moved: LeRobot replaced the arm's motor library on 2026-10-16 and a person noticed three weeks
+  later. `scripts/upstream_drift.py` fetches every cited file at its pin and at the branch or tag
+  the pin tracks, says which cited lines no longer read as they were read (a line that moved
+  within its file is reported and is not drift, a page that changed is not drift, a blank or
+  bracket-only line is a bad anchor to re-point), checks the version each module read against
+  PyPI and against upstream's own `pyproject.toml`, and exits 0, 1 for drift, or 2 when
+  something could not be checked, so an outage never reads as drift.
+  `.github/workflows/upstream-drift.yml` runs it every night and on demand, writes the report
+  to the run's summary, and opens one issue per upstream that drifted, labelled
+  `upstream-drift`, edited in place while the drift lasts and closed the night it is gone. The
+  first run is expected red for LeRobot and MOSS. The Open Duck's and `microduck_rl`'s modules
+  now say which branch their pin sits on (`BRANCH`), and the arm's `UPSTREAMS` lists the
+  endpoint module it had left out, so `quackd doctor`'s pins table shows 14 rows for 14
+  modules where it showed 13. `tests/test_upstream_drift.py` runs the script on fixtures,
+  reaching nothing, holds its walk to the suite's list of modules, and reads the workflow back.
+  Its first run, by hand on 2026-11-05, took 140 seconds, and six upstreams had moved:
+  LeRobot's `feetech/tables.py` is gone from its main branch, as the motor-library change says,
+  robotd's API version line changed, huggingface_hub is at 2.4.0 on PyPI where quackd read
+  1.29.0, and the AlohaMini's, MOSS's and `microduck_rl`'s files moved under their refs.
+
+### Fixed
+
+- **Three rosbridge refs pointed past the end of their file or at a closing bracket.**
+  `MSG_COMPRESSED_IMAGE` cited line 44 of a 41-line message definition, `OP_CALL_SERVICE`
+  cited line 780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift
+  job's first run found them; each now cites the line that names the thing, at the same pin.
+- **`quackd doctor` no longer cuts a long note with an ellipsis.** The upstream assumptions
+  table truncated a note that quotes a long URL, which the endpoint module's notes do, with a
+  character a cp1252 console cannot carry, so the command that is pasted into issues lost the
+  one thing the row was there to say. The column folds long words now.
+  `tests/test_doctor.py`'s codepage tests fail without this once the endpoint row is walked.
+
 ## [0.31.3] — 2026-11-05
 
 0.31.3 stops a camera's picture choosing among Pillow's decoders, stops the arm's extras below LeRobot's

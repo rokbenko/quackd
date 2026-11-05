@@ -799,6 +799,7 @@ __all__ = [
 # import is deferred so that naming the upstream costs nothing until doctor asks.
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_lerobot import upstream_api
+    from quackd_lerobot.policy import endpoint_upstream_api as endpoints
     from quackd_lerobot.policy import upstream_api as policies
     from quackd_lerobot.sim import upstream_api as so_arm100
 
@@ -807,7 +808,11 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     # not cover. The second is the arm's simulator model, which lerobot:mujoco loads and no arm
     # has been compared against. The third is LeRobot's policies, read at the version the
     # laptop runs, which the policy server loads, and has loaded a tiny random ACT and a tiny
-    # random X-VLA alone in CI.
+    # random X-VLA alone in CI. The fourth is Hugging Face's Inference Endpoints, which
+    # `quackd policy endpoint` starts a policy server on, read from the API's own document,
+    # huggingface_hub's source and Hugging Face's pages; no endpoint has been created or paid
+    # for. Every module here is walked by doctor's pins table and by the nightly drift job, so
+    # a module left out of this table is one neither ever reads.
     return (
         (
             "lerobot",
@@ -828,6 +833,14 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
             f"a trained checkpoint: read at lerobot {policies.VERSION}, and CI's policy job serves "
             "a tiny random ACT and a tiny random X-VLA alone, so SmolVLA, pi05, pi0, GR00T and "
             "tick mode have never run, nor a trained X-VLA",
+        ),
+        (
+            "Hugging Face Endpoints",
+            endpoints,
+            "docs/adapters/lerobot/README.md",
+            f"an endpoint: read at huggingface_hub {endpoints.HUB_VERSION} and the API's document, "
+            "and none has been created, so what the proxy answers while a replica starts and "
+            "whether torch finds the GPU are unverified",
         ),
     )
 

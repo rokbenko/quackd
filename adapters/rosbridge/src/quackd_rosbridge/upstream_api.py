@@ -162,7 +162,7 @@ MSG_VECTOR3 = UpstreamRef(
 MSG_COMPRESSED_IMAGE = UpstreamRef(
     "sensor_msgs/msg/CompressedImage",
     "VERIFIED",
-    msg("sensor_msgs/msg/CompressedImage.msg", 44),
+    msg("sensor_msgs/msg/CompressedImage.msg", 41),
     "{header, format, data: uint8[]}; format names the codec (jpeg, png) and pixel format",
 )
 MSG_ODOMETRY = UpstreamRef(
@@ -257,7 +257,7 @@ SERVICE_REQUEST = UpstreamRef(
 OP_CALL_SERVICE = UpstreamRef(
     "op=call_service {id, service, args}",
     "VERIFIED",
-    bridge(_PROTO, 780),
+    bridge(_PROTO, 458),
     "protocol 4.4.3; the answer is op=service_response {id, service, values, result} (4.4.4). "
     "No type on the wire: the server resolves it",
 )
@@ -285,7 +285,7 @@ SRV_TOPICS = UpstreamRef(
 SVC_GET_PARAM = UpstreamRef(
     "/rosapi/get_param",
     "VERIFIED",
-    bridge(_ROSAPI_NODE, 146),
+    bridge(_ROSAPI_NODE, 166),
     "create_service(GetParam, '~/get_param')",
 )
 SRV_GET_PARAM = UpstreamRef(

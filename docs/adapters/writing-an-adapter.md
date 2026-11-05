@@ -469,6 +469,18 @@ touch its UNVERIFIED identifiers (its own `upstream_api.py` and the backend), an
 every link must start with. `docs/adapters/<name>/README.md` must list every ref's name (a
 test checks) and carry the pin and the word "never" until someone has run it for real.
 
+A pin is a promise to re-read, and the nightly `upstream-drift` job is what keeps it. It fetches
+every file a ref cites, at the pin and at what the pin tracks, and reports each cited line that
+no longer reads as it was read, with one issue per upstream that moved
+(`scripts/upstream_drift.py`, `.github/workflows/upstream-drift.yml`). Three things make a
+module readable by it. Anchor every ref on the line that names what it cites, never a blank
+line or a closing bracket, which it reports as a bad anchor. Say which branch the pin sits on
+in a `BRANCH` constant when that is not the repository's default (`BRANCHES`, keyed
+`owner/repo`, for a second repository), and the version you read in `VERSION`, `TAG` or
+`PYPI_VERSION_READ` beside a `PACKAGE` ref when upstream releases, so a release-pinned module
+is compared with the newest release and a branch-pinned one with its branch. And list the
+module in your adapter's `UPSTREAMS`, which is the walk both `quackd doctor` and the job make.
+
 ## Status is a promise
 
 The README's status table and [adapters/status.md](status.md) get ✅ only for what
