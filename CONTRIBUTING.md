@@ -387,8 +387,8 @@ it. Four steps:
 2. **The name**, added to `DESCRIBED_BODIES` in `quackd/adapters/catalogue.py`, alphabetically.
    A test holds that list equal to the files.
 3. **The table**: `uv run --no-sync python scripts/bodies_docs.py` rewrites the described bodies
-   table in [docs/adapters/status.md](docs/adapters/status.md#described-bodies) from the files,
-   and the README's badge counts them.
+   table in [docs/adapters/status.md](docs/adapters/status.md#described-bodies) from the files.
+   The number on the README's badge is yours to change by hand, and a test holds it to the list.
 4. **A line in `CHANGELOG.md`** under `Added` in `## [Unreleased]`.
 
 Check each figure against the page it cites before you commit. The source is the only thing

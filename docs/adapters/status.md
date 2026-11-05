@@ -99,18 +99,18 @@ pilot handed one is told before it reads a single figure that nothing here moves
 one like any other robot; `quackd list-verbs --robot described:unitree-b2` shows the two verbs.
 An address, a camera, a token and a rest pose are refused, since there is no robot to reach, and
 `quackd robot list --probe` says `described: nothing to reach`.
-Every figure below was read from the maker's page on the day its source says, by one reader, and
-checked by nobody else: nothing here has met quackd on hardware, and nothing here moves.
+Every figure below was read from the page its source names, on the day it says, by one reader,
+and checked by nobody else: nothing here has met quackd on hardware, and nothing here moves.
 
 <!-- generated: described-bodies, by scripts/bodies_docs.py from quackd/adapters/bodies/*.yaml. Change a body file and run the script, not this table. -->
 
 | `--robot` | What it is | Mass | Height | Joints | Payload | Reach | Endurance | Figures from |
 |---|---|---|---|---|---|---|---|---|
-| `described:franka-research-3` | a Franka Research 3, a seven-axis torque-sensing research arm bolted upright to a table, with a two-finger Franka Hand | 18.3 kg (official) | not published | 7 (official) | 3 kg (official) | 0.855 m (official) | mains powered | Franka Research 3 datasheet v2.6 (read 2026-11-05) |
-| `described:kuka-lbr-iisy-3-r760` | a KUKA LBR iisy 3 R760, a six-axis collaborative arm bolted to a bench and run from its own controller, with torque sensors in every axis | 22.8 kg (official) | not published | 6 (official) | 3 kg (official) | 0.76 m (official) | mains powered | KUKA LBR iisy 3 R760 datasheet 0000-320-854: about 22.8 kg; KUKA LBR iisy 3 R760 datasheet 0000-320-854: 6 axes; KUKA LBR iisy 3 R760 datasheet 0000-320-854: 3 kg rated; KUKA LBR iisy 3 R760 datasheet 0000-320-854: 760 mm (read 2026-11-05) |
+| `described:franka-research-3` | a Franka Research 3, a seven-axis torque-sensing research arm bolted upright to a table, with a two-finger Franka Hand | 18.3 kg (official) | not published | 7 (official) | 3 kg (official) | 0.855 m (official) | mains powered | Franka Research 3 datasheet v2.6, July 2026 (read 2026-11-05) |
+| `described:kuka-lbr-iisy-3-r760` | a KUKA LBR iisy 3 R760, a six-axis collaborative arm bolted to a bench and run from its own controller, with torque sensors in every axis | 22.8 kg (official) | not published | 6 (official) | 3 kg (official) | 0.76 m (official) | mains powered | KUKA LBR iisy 3 R760 datasheet 0000-320-854 (read 2026-11-05) |
 | `described:kuka-lbr-iiwa-7-r800` | a KUKA LBR iiwa 7 R800, a seven-axis collaborative arm bolted to a bench and run from its own cabinet, with torque sensors in every axis | 23.9 kg (estimate) | not published | 7 (official) | 7 kg (official) | 0.8 m (official) | mains powered | KUKA's 2016 KMR iiwa presentation; kuka.com, LBR iiwa; kuka.com, LBR iiwa 7 R800 (read 2026-11-05) |
 | `described:menlo-asimov-1` | a Menlo Asimov-1, an open-source humanoid of 1.2 m with two arms, which walks on two legs and is sold as a kit | 35 kg (official) | 1.2 m (official) | 25 (official) | 15 kg (official, per arm) | not published | not published | menlo.ai, Asimov-1 specifications (read 2026-11-05) |
-| `described:noetix-bumi` | a Noetix Bumi, a small humanoid just under 1 m tall, which walks on two legs | 17 kg (official) | 0.98 m (official) | 21 (official) | none to hold with | none to hold with | 120 min (official) | web.noetixrobotics.com/docs (read 2026-11-05) |
+| `described:noetix-bumi` | a Noetix Bumi, a small humanoid just under 1 m tall, which walks on two legs | 17 kg (official) | 0.98 m (official) | 21 (official) | none to hold with | none to hold with | 120 min (official) | web.noetixrobotics.com/docs, Bumi specifications (read 2026-11-05) |
 | `described:rhoban-microban` | a Rhoban Microban, a 30 cm open-hardware humanoid you print and build, with nineteen small servos around a Raspberry Pi Zero 2 W and no hands | not published | 0.3 m (official) | 19 (official) | none to hold with | none to hold with | not published | github.com/Rhoban/microban README (read 2026-11-05) |
 | `described:unitree-b2` | a Unitree B2, an industrial quadruped the size of a large dog, with cameras and a LiDAR and nothing to grip with | 60 kg (official) | 0.645 m (official) | 12 (estimate) | none to hold with | none to hold with | 300 min (official, unloaded; under load Unitree publishes no figure) | unitree.com/b2; a dealer's listing of the B2 (read 2026-11-05) |
 | `described:unitree-g1-edu` | a Unitree G1 EDU, a humanoid of 1.3 m with two arms, which walks on two legs | 35 kg (official) | 1.32 m (official) | not published | 3 kg (official, per arm) | not published | 120 min (official) | unitree.com/g1, G1 EDU column; unitree.com/g1 (read 2026-10-28) |
@@ -134,7 +134,7 @@ an action felt right in the room. They are in the list at the foot of
 [adapters/lerobot/hardware-checklist.md](lerobot/hardware-checklist.md), which has since grown to
 ask whether a slow `move_joints` looks like one motion and arrives when its time is up, whether a
 joint let go at the edge of its travel settles onto its fold, and what the hand placed start
-and a decision LLM leave open. Those four are why that ✅ is a robot quackd has worked on
+and a decision LLM leave open. Those four are why that 🤖 is a robot quackd has worked on
 rather than a robot quackd is tested on.
 
 **Pilot flocks** (`flock.allocation.method: pilots`, `--flock NAME`) run one LLM pilot per body
@@ -175,7 +175,7 @@ Open an issue with `quackd doctor` output and the first lines of `transcript.jso
 rests on anyone remembering either. A run directory holds `terminal.txt` beside it, and that is
 not the evidence: it is the screen, a rendering of the same events that `--no-log` shortens. The
 transcript is every intent quackd sent and every answer the robot gave back, which is what
-somebody else can check. Every row above that flips from 🧪 to ✅ is one line in an
+somebody else can check. Every row above that flips from 🧪 to 🤖 is one line in an
 `upstream_api.py` and one row here. `lerobot:real` is the one that has already flipped, on one
 arm on one bench, so a second run against an SO-101 is still worth an issue: it either widens
 that row or contradicts it, and the one that contradicts it is worth more.

@@ -66,8 +66,10 @@ def _add() -> None:
         adapter = st.selectbox("Adapter", [r["name"] for r in rows], key="add:adapter")
         row = next(r for r in rows if r["name"] == adapter)
         backend = st.selectbox("Backend", list(row.get("backends") or []), key="add:backend")
-        address = st.text_input("Address", key="add:address")
-        cameras = st.text_area("Camera URLs, one per line", key="add:cameras")
+        # a described body reaches nothing, and `robot add` refuses both for one
+        reaches = catalog.drives(adapter)
+        address = st.text_input("Address", key="add:address") if reaches else ""
+        cameras = st.text_area("Camera URLs, one per line", key="add:cameras") if reaches else ""
         note = st.text_input("A note for people", key="add:note")
         block = catalog.connect(adapter, backend)
         token_env = getattr(block, "token_env", None)

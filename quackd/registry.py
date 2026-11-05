@@ -27,7 +27,7 @@ import contextlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -385,21 +385,6 @@ class RobotEntry(BaseModel):
             raise ValueError(f"{self.spec} takes one camera url; {who_takes_several()}")
         return self
 
-    @model_validator(mode="after")
-    def _a_described_body_reaches_nothing(self) -> RobotEntry:
-        """An address, a camera, a token, a rest pose or a map on a body quackd drives no part
-        of (ADR-0077) is a file saying something untrue. Refused here, at the door, in the
-        words the body's own `make()` uses, rather than at the first run after it."""
-        if self.spec_problem is not None or drives(self.adapter):
-            return self
-        for attribute, flag in _REACHES_A_ROBOT:
-            if getattr(self, attribute):
-                raise ValueError(
-                    f"{self.spec} is a described body and takes no {flag}: quackd drives no "
-                    "part of it"
-                )
-        return self
-
     @property
     def camera_urls(self) -> tuple[str, ...]:
         """Every camera this robot was registered with, primary first."""
@@ -709,6 +694,24 @@ class Resolved:
         return {"host": host, "host_token": host_token}
 
 
+def _check_reaches_nothing(entry: RobotEntry, *, fields: Collection[str] | None = None) -> None:
+    """Refuse an address, a camera, a token, a rest pose or a map for a body quackd drives no
+    part of (ADR-0077), on the way into the file, in the words the body's own `make()` uses,
+    rather than at the first run after it.
+
+    At the door and not in `RobotEntry`, as `_check_map_address` is: a hand-edited line that says
+    one is refused where it is used, by `make()`, and takes no other robot in the file down with
+    it, and `--clear address` can still mend it. `fields` is what an edit touches, since only a
+    choice made now is checked now."""
+    if entry.spec_problem is not None or drives(entry.adapter):
+        return
+    for attribute, flag in _REACHES_A_ROBOT:
+        if (fields is None or attribute in fields) and getattr(entry, attribute):
+            raise RegistryError(
+                f"{entry.spec} is a described body and takes no {flag}: quackd drives no part of it"
+            )
+
+
 def _check_map_address(spec: str, map_address: str | None) -> None:
     """Refuse a map address for a body that reads no map of the robot's own, rather than store
     one that every build of the robot would then refuse."""
@@ -820,6 +823,7 @@ class Registry:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
         _check_map_address(entry.spec, entry.map_address)
+        _check_reaches_nothing(entry)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
             # token stored with none would never be sent anywhere, and saying so now beats a 401
@@ -869,6 +873,7 @@ class Registry:
             # the address with the body it would be handed to, asked only of an edit that touches
             # either, as the board's pair is
             _check_map_address(entry.spec, entry.map_address)
+        _check_reaches_nothing(entry, fields=None if "spec" in changes else set(changes))
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:
             # `add_robot`'s pairing rule, asked only of an edit that touches the pair, so a

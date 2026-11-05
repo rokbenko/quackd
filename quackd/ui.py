@@ -709,7 +709,8 @@ def adapters_table(
 def _adapters_table(rows: Sequence[Mapping[str, Any]], g: Glyphs, title: str | None) -> Table:
     out = table(title)
     out.add_column("adapter", style=STYLES["key"], no_wrap=True)
-    out.add_column("backends")
+    # folded and never cut: a backend is a word somebody types back, and a body's name is long
+    out.add_column("backends", overflow="fold")
     # ADR-0076: the cell is the tier of every backend, rendered from the catalogue's records
     out.add_column("tier", overflow="fold")
     out.add_column("extra")

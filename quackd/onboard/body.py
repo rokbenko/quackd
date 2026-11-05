@@ -16,9 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from quackd.adapters.described import DescribedAdapter as _DescribedAdapter
-from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, verb_spec
+from quackd.adapters.manifest import Datasheet, Figure, Health, RobotManifest, verb_spec
 from quackd.onboard.config import RobotFile
+from quackd.transport.base import DuckState
 from quackd.verbs.core import CORE
+from quackd.verbs.registry import Verb
 
 #: What a robot quackd only talks for can be asked to do: say how it is, and stop talking.
 VERBS = ("report_state", "stop")
@@ -66,8 +68,18 @@ def described_manifest(file: RobotFile, backend: str = "described") -> RobotMani
 
 
 class DescribedAdapter(_DescribedAdapter):
-    """The described body of `quackd.adapters.described`, built from a robot.yaml."""
+    """The described body of `quackd.adapters.described`, built from a robot.yaml.
+
+    The robot is there, on the computer this runs on, and its own software keeps it standing, so
+    it reports that, its health is its own, and its `stop` is the core's, as it always was."""
 
     def __init__(self, file: RobotFile) -> None:
-        super().__init__(described_manifest(file))
+        standing = DuckState(policy="described", posture="standing")
+        super().__init__(described_manifest(file), state=standing)
         self._file = file
+
+    async def health(self) -> Health:
+        return Health(ok=True)
+
+    def implementations(self) -> dict[str, Verb]:
+        return {}

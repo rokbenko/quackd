@@ -9,15 +9,19 @@ verbs that move, no limits, no safety authority. The loader builds the `RobotMan
 
 The catalogue's tenth row lists the bodies as its backends, so every path that reads an
 adapter's name, `--robot`, the registry, a flock's roster, `quackd ui`, reaches one through this
-module as it reaches any other body, and nothing in the core grew a branch for them.
+module as it reaches any other body. The few that must not treat one as a robot to drive ask
+`quackd.adapters.factory.drives`: the fallback when no robot is named, a probe, the registry's
+door, the page's connect fields. The list of bodies a task could go to, and `announce`, ask the
+manifest's `extras.described`.
 """
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import AsyncIterator, Mapping, Sequence
 from functools import cache
 from importlib import resources
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from PIL import Image
@@ -29,7 +33,7 @@ from quackd.adapters.manifest import Health, RobotManifest, verb_spec
 from quackd.transport.base import Ack, DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.core import CORE
-from quackd.verbs.registry import Precondition, Verb
+from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 
 BACKENDS: tuple[str, ...] = DESCRIBED_BODIES
 """The bodies, as the factory reads a module's backends: the catalogue's list, which a test
@@ -111,7 +115,7 @@ def manifest_from(name: str, data: Mapping[str, Any], robot_id: str | None = Non
             backend=name,
             blurb=f"{str(data['blurb']).rstrip('.')}; {DRIVES_NOTHING}",
             datasheet=data["datasheet"],
-            extras={"described": True},
+            extras={"described": "maker"},
         )
     except ValidationError as e:
         raise BodyFileError(f"quackd/adapters/bodies/{name}.yaml: {e}") from e
@@ -129,7 +133,7 @@ def describe(backend: str, robot_id: str | None = None) -> RobotManifest:
 
 
 def implementations() -> dict[str, Verb]:
-    return {}
+    return {"stop": STOP}
 
 
 def conditions() -> dict[str, Precondition]:
@@ -165,16 +169,30 @@ def make(
 # ── the body in memory ──────────────────────────────────────────────────────────────────
 
 
+NOTHING_READ = "quackd reads nothing from a described body"
+"""Why its posture is unknown and what its health rests on: nothing here has heard from a robot."""
+
+
+async def _nothing_to_stop(ctx: VerbContext, _: NoParams) -> VerbResult:
+    """No intent goes anywhere, so the core's "stopped (velocity zeroed)" would be a claim."""
+    return VerbResult.success(f"nothing to stop: {DRIVES_NOTHING}")
+
+
+STOP = dataclasses.replace(CORE["stop"], execute=_nothing_to_stop)
+"""`stop` on a described body, which says so rather than report a velocity it never had."""
+
+
 class DescribedBody(MockTransport):
-    """A body in memory that stands where it is: a state to report, and nothing to move.
+    """A body in memory: a state to report, and nothing to move.
 
-    An arm has no posture to report and says so; everything else stands, since the one thing
-    known about a body nobody drives is that it is where somebody left it."""
+    Its posture is unknown, with why, and nothing reports falls, since nothing here has heard
+    from the robot: `fallen: false` from a body nobody reads is silence and not a verdict."""
 
-    def __init__(self, manifest: RobotManifest) -> None:
-        arm = manifest.mobility == "none"
-        posture: Literal["unknown", "standing"] = "unknown" if arm else "standing"
-        super().__init__(states=[DuckState(policy="described", posture=posture)])
+    def __init__(self, state: DuckState | None = None) -> None:
+        told = {"posture_reason": NOTHING_READ, "fall_detection": False}
+        super().__init__(
+            states=[state or DuckState(policy="described", posture="unknown", extras=told)]
+        )
 
 
 class DescribedAdapter:
@@ -182,8 +200,8 @@ class DescribedAdapter:
 
     name = DESCRIBED
 
-    def __init__(self, manifest: RobotManifest) -> None:
-        self.transport = DescribedBody(manifest)
+    def __init__(self, manifest: RobotManifest, *, state: DuckState | None = None) -> None:
+        self.transport = DescribedBody(state)
         self.backend = manifest.backend
         self.robot_id = manifest.id
         self._static = manifest
@@ -210,7 +228,7 @@ class DescribedAdapter:
         return await self.transport.send_intent(intent)
 
     async def health(self) -> Health:
-        return Health(ok=True)
+        return Health(ok=True, reason=NOTHING_READ)
 
     async def heartbeat(self) -> None:
         await self.transport.heartbeat()
@@ -234,7 +252,7 @@ class DescribedAdapter:
         return {}
 
     def implementations(self) -> dict[str, Verb]:
-        return {}
+        return {"stop": STOP}
 
     @property
     def mobility(self) -> str:

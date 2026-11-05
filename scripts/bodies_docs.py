@@ -59,8 +59,6 @@ def _sources(manifest: RobotManifest) -> str:
     dates: set[str] = set()
     for _label, fig, _unit in sheet.known():
         head = fig.source.split(":", 1)[0]
-        if len(head) > 40:
-            head = fig.source.split(",", 1)[0]
         if head not in heads:
             heads.append(head)
         dates.update(_READ.findall(fig.source))

@@ -236,7 +236,7 @@ Read the first line of `terminal.txt` before you paste it. The values of `--api-
 `--token`, because an environment variable reaches no part of the record.
 
 A report earns a row on this adapter's page and our thanks. Only a run on the maintainer's
-own duck flips a status to ✅, which is the same rule every other adapter lives under.
+own duck flips a status to 🤖, which is the same rule every other adapter lives under.
 
 ## Five numbers only you can measure
 

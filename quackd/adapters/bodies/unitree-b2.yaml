@@ -22,14 +22,14 @@ datasheet:
   dof:
     value: 12
     confidence: estimate
-    source: "a dealer's listing of the B2, 12 joint motors; Unitree's own page does not count them, read 2026-11-05"
+    source: "a dealer's listing of the B2: 12 joint motors; Unitree's own page does not count them, read 2026-11-05"
   endurance_min:
     value: 300
     confidence: official
     source: "unitree.com/b2: over 5 h unloaded on the 2250 Wh battery, read 2026-11-05"
     note: "unloaded; under load Unitree publishes no figure"
   not_rated:
-    - "stairs with steps above 25 cm or deeper than 40 cm, by unitree.com/b2's 20 to 25 cm step figure"
+    - "stairs with steps above 20 cm or deeper than 40 cm, by the lower end of unitree.com/b2's 20 to 25 cm step figure"
     - "slopes above 45 degrees, by unitree.com/b2's slope figure"
   cannot:
     - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"

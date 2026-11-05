@@ -286,7 +286,12 @@ def missing_needs_in(
             if want == "none":
                 continue  # nothing held: met by a body with hands, too
             has = str(facts.get("manipulator") or "unknown")
-            if not (want == "any" and has not in ("none", "unknown")) and has != want:
+            if has == "arms" and facts.get("arms") == 1:
+                # one arm with nothing on its wrist, as an industrial arm is sold: there is no
+                # second arm to close it on, and it holds nothing until somebody fits a tool
+                has = "a bare wrist"
+            holds = has not in ("none", "unknown", "a bare wrist")
+            if not (want == "any" and holds) and has != want:
                 out.append(f"manipulator = {want} (has {has})")
             continue
         if key == "terrain":

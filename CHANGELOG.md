@@ -21,7 +21,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   kind of body, and whether quackd reaches it through an SDK, a wire or a bridge of its own. The `status`
   key stays and its text is now built from the tiers, so a script that matched its old wording should
   read `tiers` instead. An adapter published from somewhere else may declare `TIERS`, `FAMILY` and
-  `ROUTE` and is printed the same way. What changes for you: nothing to do.
+  `ROUTE` and is printed the same way. What changes for you: a script that counts the rows of `--json`
+  finds ten, the tenth of `kind` `described`, and one that asks whether a machine has a robot gets the
+  answer it always got, since `installed` and `adapter_installed` are false on that row.
 - **A backend that reaches a robot names who answers for its first hardware run.** A bound or a verified
   tier carries an owner and a date, and `tests/test_described.py` refuses a catalogue row without both
   ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)). The eight
@@ -39,16 +41,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `report_state` and `stop`, and its pilot is told before any figure that the body moves only if someone
   else moves it. It lists no sensors, since quackd reads none of the robot's: what the robot carries is a
   note in its datasheet, and a board with a camera beside it (`--host`) gives it `observe`, as it gives
-  any body. An address, a camera, a token and a rest pose are refused, at `quackd robot add` as at a
-  run, since there is no robot to reach, and `quackd robot list --probe` says `described: nothing to
-  reach` with neither a tick nor a cross. `--robot described` with no body after it is refused with the
-  list. A described body is never the robot a command with no `--robot` falls back to, never counted as
-  an adapter (`quackd doctor` says `11 described bodies` beside its count of adapters installed), never
-  offered a connect block in `quackd ui`, and `described` cannot be a robot's registered name. A hint
-  that names the bodies a task could be handed to never lists one: it ends with a sentence of its own,
-  `By their makers' figures alone, described:franka-research-3 could too, and quackd drives no part of
-  it`. `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2
-  runs to the end in it.
+  any body. Its posture reads `unknown` and nothing reports its falls, and its `stop` says there is
+  nothing to stop. An address, a camera, a token and a rest pose are refused, at `quackd robot add` as
+  at a run, since there is no robot to reach, `quackd robot list --probe` says `described: nothing to
+  reach` with neither a tick nor a cross, and `quackd announce` refuses one. `--robot described` with no
+  body after it is refused with the list. A described body is never the robot a command with no `--robot`
+  falls back to, never counted as an adapter (`quackd doctor` says `11 described bodies` beside its count
+  of adapters installed), never offered a connect block in `quackd ui`, and `described` cannot be a
+  robot's registered name. Nothing that names a body to hand a task to names one: not the `could` list an
+  MCP client is given, and not a hint, which ends with a sentence of its own, `By their makers' figures
+  alone, described:franka-research-3 could too, and quackd drives no part of it`.
+  `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2 runs to the
+  end in it.
 
 ### Documentation
 
@@ -85,11 +89,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 ### Known limitations
 
 - **No described body's figures have been checked by a second reader, and none against a robot.** Each was
-  read from its maker's page on the day its source names, 2026-11-05, and the Unitree G1's on 2026-10-28,
+  read from the page its source names on the day it says, 2026-11-05, and the Unitree G1's on 2026-10-28,
   by one reader. Five choices are worth knowing. A quadruped's back load is a note and not a figure,
   because the datasheet refuses a payload on a body with no manipulator. An industrial arm that ships with
-  no gripper is declared as bare arms so that its payload and reach can be stated, and its notes say the
-  wrist is bare. The Noetix Bumi lists no manipulator at all, because Noetix publishes nothing on what
+  no gripper is declared as one bare arm so that its payload and reach can be stated, and the pilot is
+  told it holds nothing until somebody fits a tool. The Noetix Bumi lists no manipulator at all, because Noetix publishes nothing on what
   its arms can hold. Where a maker gives a range, the lower end is the figure. And two figures are marked
   `estimate` because the maker's own page does not give them: the Unitree B2's joint count, from a
   dealer's listing, and the KUKA LBR iiwa's weight, from a 2016 KUKA presentation. quackd drives none of

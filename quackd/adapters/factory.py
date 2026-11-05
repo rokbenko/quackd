@@ -31,6 +31,7 @@ from quackd.adapters.catalogue import (
     ADAPTERS,
     BY_NAME,
     ENTRY_POINT_GROUP,
+    TIERS,
     AdapterInfo,
     Connect,
     Tier,
@@ -112,18 +113,25 @@ def info(name: str) -> AdapterInfo:
 
 
 def _tiers_of(module: Any, backends: tuple[str, ...]) -> dict[str, Tier]:
-    """A third party's `TIERS`, by backend: `Tier` records, or dicts of their fields. Left out
-    whole unless every backend has one, since a row with tiers prints from them alone."""
+    """A third party's `TIERS`, by backend: `Tier` records, or dicts of their fields. Read
+    tolerantly, as `CONNECT` is, since a module quackd does not publish must not stop a command
+    that only lists it: a tier of another name, or a field that is not text, is no tier. Left
+    out whole unless every backend has one, since a row with tiers prints from them alone."""
     declared = getattr(module, "TIERS", None)
     if not isinstance(declared, Mapping):
         return {}
     found: dict[str, Tier] = {}
     for backend, tier in declared.items():
-        if isinstance(tier, Tier):
+        if isinstance(tier, Mapping):
+            try:
+                tier = Tier(**tier)
+            except TypeError:
+                continue
+        if not isinstance(tier, Tier) or tier.name not in TIERS:
+            continue
+        said = (tier.owner, tier.date, tier.note)
+        if all(field is None or isinstance(field, str) for field in said):
             found[str(backend)] = tier
-        elif isinstance(tier, dict):
-            with contextlib.suppress(TypeError):
-                found[str(backend)] = Tier(**tier)
     return found if set(found) == set(backends) else {}
 
 
@@ -171,11 +179,11 @@ ADAPTER_EXTRAS = {i.name: i.extra for i in ADAPTERS if i.extra}
 
 def drives(name: str) -> bool:
     """Whether this adapter drives a robot at all: False for the described row alone, whose
-    backends are bodies quackd lists and reasons about and moves no part of."""
-    try:
-        return info(name).kind == "adapter"
-    except (AdapterError, ImportError):
-        return True
+    backends are bodies quackd lists and reasons about and moves no part of. Read off the
+    catalogue, so asking imports nothing: a name quackd does not publish is an adapter, whatever
+    its module does when it is imported."""
+    row = BY_NAME.get(name)
+    return row is None or row.kind == "adapter"
 
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -263,7 +271,7 @@ def default_spec() -> RobotSpec:
     # nothing and reads as a run
     usable = [name for name in adapter_names() if is_installed(name) and drives(name)]
     if not usable:
-        publishes = ", ".join(n for n in BY_NAME if n != "microduck")
+        publishes = ", ".join(n for n in ADAPTER_NAMES if n != "microduck")
         raise NoRobotNamed(
             'no robot adapter is installed: uv pip install "quackd[microduck]" '
             f"(or {publishes}; quackd[robots] installs all nine), "
@@ -591,9 +599,11 @@ def list_adapters() -> list[dict[str, Any]]:
                 "status": row.status,
                 "extra": row.extra or "built-in",
                 "official": is_official(name),
-                # an adapter with no SDK to probe is usable as soon as it is here at all
-                "installed": is_installed(name) and sdk is not False,
-                "adapter_installed": is_installed(name),
+                # an adapter with no SDK to probe is usable as soon as it is here at all, and
+                # the described row, in every core, is no adapter to have: a script asking
+                # whether this machine has any robot gets the answer it always got
+                "installed": row.kind == "adapter" and is_installed(name) and sdk is not False,
+                "adapter_installed": row.kind == "adapter" and is_installed(name),
                 "sdk": sdk,
                 # ADR-0076: the tier of every backend, and ADR-0075's family and route, so a
                 # dashboard reads how far a backend got from a word rather than from a mark

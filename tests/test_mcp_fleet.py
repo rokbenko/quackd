@@ -177,6 +177,30 @@ async def test_an_infeasible_verdict_names_the_robot_that_could() -> None:
         assert fleet.sessions["cart"].executor.cleared
 
 
+async def test_a_described_body_is_never_named_as_the_robot_that_could() -> None:
+    """Told a body cannot do a task, a client is told which could and to load it on one of them.
+    It was offered a UR5e on its maker's figures, a robot nothing here can load a task on."""
+    robots = {
+        "duck": make_adapter(RobotSpec("microduck", "sim2d", "duck"), seed=1),
+        "arm": make_adapter(RobotSpec("described", "ur5e", "arm")),
+    }
+    async with connected(robots) as (client, _fleet):
+        answer = _data(
+            await client.call_tool(
+                "robot_assess_task",
+                {
+                    "verdict": "infeasible",
+                    "reason": "three kilos, a long way from the duck",
+                    "limits_consulted": ["payload_kg"],
+                    "needs": {"payload_kg": 3.0, "reach_m": 0.5},
+                    "robot": "duck",
+                },
+            )
+        )
+        assert answer["could"] == [], answer
+        assert "No robot in this flock meets what it needs" in answer["note"]
+
+
 async def test_the_instructions_describe_each_body_before_anything_connects() -> None:
     """`_instructions` runs when the server is built, which is before `connect_all`. Read
     from the static descriptions it says what each body is; without them it said `a small

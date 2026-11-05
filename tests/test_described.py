@@ -62,7 +62,7 @@ from quackd.adapters.factory import (
 from quackd.adapters.factory import describe as describe_spec
 from quackd.agent.prompts import DESCRIBED_LINE, body_lines, body_summary
 from quackd.registry import RegistryError, check_name
-from quackd.verdict import solo_hint
+from quackd.verdict import missing_needs, solo_hint
 
 FRANKA = f"{DESCRIBED}:franka-research-3"
 
@@ -101,7 +101,7 @@ def test_a_described_body_is_honest_about_itself(name: str) -> None:
     # no sensors either: a manifest's sensors are what quackd reads, a verb's requirements are
     # judged against them, and quackd reads nothing from a body it only describes
     assert m.sensors == []
-    assert m.extras == {"described": True}
+    assert m.extras == {"described": "maker"}
     assert m.blurb.endswith("; quackd drives no part of it"), m.blurb
     sheet = m.datasheet
     assert sheet is not None
@@ -125,8 +125,8 @@ def test_the_prompt_says_quackd_drives_no_part_of_it(name: str) -> None:
     first_figure = next(i for i, line in enumerate(lines) if line.startswith("- "))
     assert lines.index(DESCRIBED_LINE) < first_figure, "said before any figure"
     summary = body_summary(m)
-    assert "Quackd drives no part of this body" in summary, summary
-    assert "\n" not in summary and summary.startswith(m.model)
+    assert summary.startswith(f"{m.model}: {DESCRIBED_LINE} Its figures: "), summary
+    assert "\n" not in summary
 
 
 @pytest.mark.parametrize("name", DESCRIBED_BODIES)
@@ -136,16 +136,51 @@ async def test_the_body_connects_reports_and_stops_and_nothing_else(name: str) -
     assert adapter.name == DESCRIBED and adapter.backend == name and adapter.robot_id == name
     live = await adapter.connect()
     assert live.digest() == describe(name).digest()
+    # nothing here has heard from the robot, so it is not called standing or not fallen
     state = await adapter.get_state()
-    assert state.policy == "described"
-    assert state.posture == ("unknown" if live.mobility == "none" else "standing")
+    assert state.policy == "described" and state.posture == "unknown"
+    assert state.extras["fall_detection"] is False
+    assert state.extras["posture_reason"] == "quackd reads nothing from a described body"
     assert await adapter.get_frame() is None
-    assert (await adapter.health()).ok
+    health = await adapter.health()
+    assert health.ok and health.reason == "quackd reads nothing from a described body"
     await adapter.stop()
     rest = await adapter.go_to_rest()
     assert rest.how == "none" and "keeps no rest pose" in rest.reason, rest
-    assert adapter.implementations() == {} and adapter.preconditions() == {}
+    assert list(adapter.implementations()) == ["stop"] and adapter.preconditions() == {}
     await adapter.close()
+
+
+async def test_its_stop_says_there_is_nothing_to_stop_and_sends_nothing() -> None:
+    """The core's words are "stopped (velocity zeroed)", a claim about a velocity it never had."""
+    from quackd.safety import Executor
+    from quackd.verbs.registry import registry_from_manifest
+
+    adapter = make("unitree-b2")
+    manifest = await adapter.connect()
+    executor = Executor(registry_from_manifest(manifest, adapter), adapter, contract=None)
+    result = await executor.run_verb("stop", {})
+    assert result.ok and result.summary == "nothing to stop: quackd drives no part of it", result
+    assert adapter.transport.intents == [] and adapter.transport.stops == 0
+    await adapter.close()
+
+
+def test_a_robot_yaml_body_is_as_it_was_and_is_not_told_it_has_a_maker() -> None:
+    """`quackd onboard`'s body shares the class and none of this: the robot is there, on the
+    computer this runs on, and its figures are its owner's."""
+    from quackd.onboard import config
+    from quackd.onboard.body import DescribedAdapter as OnboardAdapter
+
+    file = config.load(Path(config.__file__).with_name("demo") / "g1-edu-mock.yaml")
+    adapter = OnboardAdapter(file)
+    assert adapter.implementations() == {}
+    assert adapter.transport.get_state is not None
+    state = adapter.transport._states[0]
+    assert state.posture == "standing" and state.extras == {}
+    manifest = adapter._static
+    assert manifest.extras == {"described": True}
+    assert DESCRIBED_LINE not in body_lines(manifest)
+    assert DESCRIBED_LINE not in body_summary(manifest)
 
 
 @pytest.mark.parametrize(
@@ -230,7 +265,9 @@ def test_a_described_body_is_reached_by_its_spec_like_any_other() -> None:
 
 def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_row() -> None:
     rows = {row["name"]: row for row in list_adapters()}
-    assert rows[DESCRIBED]["kind"] == "described" and rows[DESCRIBED]["installed"] is True
+    assert rows[DESCRIBED]["kind"] == "described"
+    # no adapter to have: a script asking whether this machine has a robot is told as it always was
+    assert rows[DESCRIBED]["installed"] is False and rows[DESCRIBED]["adapter_installed"] is False
     assert rows[DESCRIBED]["backends"] == list(DESCRIBED_BODIES)
     assert rows[DESCRIBED]["family"] == ["described"] and rows[DESCRIBED]["route"] == []
     assert rows[DESCRIBED]["extra"] == "built-in"
@@ -313,29 +350,148 @@ def test_the_row_names_no_body_by_itself() -> None:
 
 def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_path: Path) -> None:
     """Refused at the door rather than at the first run, in the words its `make()` uses."""
-    from pydantic import ValidationError
-
     from quackd.registry import Registry, RobotEntry, probe_all
 
+    registry = Registry(str(tmp_path))
     for field, flag in (
         ("address", "--address"),
         ("camera_url", "--camera-url"),
         ("token", "--token"),
-        ("map_address", "--map-address"),
     ):
-        with pytest.raises(ValidationError, match=f"takes no {flag}: quackd drives no part"):
-            RobotEntry(name="b2", spec="described:unitree-b2", **{field: "192.168.1.9"})
-    with pytest.raises(ValidationError, match="takes no rest pose: quackd drives no part"):
-        RobotEntry(name="b2", spec="described:unitree-b2", rest_pose={"elbow_flex": 1.0})
-    # a board with a camera of its own is not the robot, and a pilot is anybody's
-    registry = Registry(str(tmp_path))
+        with pytest.raises(RegistryError, match=f"takes no {flag}: quackd drives no part"):
+            registry.add_robot(
+                RobotEntry(name="b2", spec="described:unitree-b2", **{field: "192.168.1.9"})
+            )
+    with pytest.raises(RegistryError, match="takes no rest pose: quackd drives no part"):
+        registry.add_robot(
+            RobotEntry(name="b2", spec="described:unitree-b2", rest_pose={"elbow_flex": 1.0})
+        )
+    assert registry.robots() == {}, "nothing was written"
+    # a pilot is anybody's
     entry = registry.add_robot(
         RobotEntry(name="b2", spec="described:unitree-b2", llm="fake", note="in the lab")
     )
     assert entry.robot_spec.key == "described:unitree-b2"
+    with pytest.raises(RegistryError, match="takes no --address: quackd drives no part"):
+        registry.update_robot("b2", {"address": "192.168.1.9"})
+    assert registry.update_robot("b2", {"note": "moved"}).note == "moved"
     # a probe says neither reachable nor down: a tick would read as a robot that answered
     (result,) = probe_all(registry.robots().values(), timeout_s=5).values()
     assert result.reachable is None and result.detail == "described: nothing to reach"
+
+
+def test_a_hand_edited_line_takes_no_other_robot_down_and_can_be_mended(tmp_path: Path) -> None:
+    """The door is strict and the shelf is not, as for a spec this quackd cannot build: a
+    described body with an address in the file used to stop every command that read the file,
+    `robot edit` and `robot remove` among them, until somebody opened it in an editor."""
+    import json
+
+    from quackd.registry import Registry, RobotEntry
+
+    registry = Registry(str(tmp_path))
+    registry.add_robot(RobotEntry(name="duck-a", spec="microduck:mock"))
+    registry.add_robot(RobotEntry(name="b2", spec="described:unitree-b2"))
+    data = json.loads(registry.robots_path.read_text(encoding="utf-8"))
+    data["robots"]["b2"]["address"] = "192.168.1.9"
+    registry.robots_path.write_text(json.dumps(data), encoding="utf-8")
+
+    robots = registry.robots()
+    assert robots["duck-a"].robot_spec.key == "microduck:mock"
+    assert robots["b2"].address == "192.168.1.9"
+    # refused where it is used, by the body's own make
+    with pytest.raises(AdapterError, match="takes no --address"):
+        make_adapter(robots["b2"].robot_spec, **robots["b2"].adapter_kwargs())
+    # an edit of something else goes through, and the mend does
+    assert registry.update_robot("b2", {"note": "moved"}).address == "192.168.1.9"
+    assert registry.update_robot("b2", {"address": None}).address is None
+
+
+def test_one_bare_arm_is_told_it_holds_nothing_and_meets_no_need_for_hands() -> None:
+    """It was told `1 arms and no gripper: it holds by closing both on a thing`, against its own
+    notes, and offered for a task that needs arms by figures no maker publishes."""
+    ur5e = describe("ur5e")
+    said = " ".join(body_lines(ur5e))
+    assert "one arm with a bare wrist: it holds nothing until somebody fits a tool" in said
+    assert "closing both" not in said
+    assert missing_needs({"manipulator": "arms"}, ur5e) == ["manipulator = arms (has a bare wrist)"]
+    assert missing_needs({"manipulator": "any"}, ur5e) == ["manipulator = any (has a bare wrist)"]
+    assert missing_needs({"payload_kg": 5.0, "reach_m": 0.8}, ur5e) == []
+    # two arms still close on a thing, and hold by it
+    asimov = describe("menlo-asimov-1")
+    assert missing_needs({"manipulator": "arms"}, asimov) == []
+    assert "closing both" in " ".join(body_lines(asimov))
+
+
+def test_announce_refuses_a_body_that_is_on_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+    from quackd.lan import announce as lan_announce
+
+    def never(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("it announced a robot that is not here")
+
+    monkeypatch.setattr(lan_announce, "announce", never)
+    result = CliRunner().invoke(
+        app, ["announce", "--robot", "described:unitree-b2", "--for", "0.1"]
+    )
+    assert result.exit_code == 1
+    assert "no robot here to announce" in " ".join(result.output.split()), result.output
+
+
+def test_the_refusal_with_nothing_installed_names_the_nine_and_never_the_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackd.adapters import factory
+    from quackd.adapters.factory import NoRobotNamed
+
+    monkeypatch.setattr(factory, "_installed", dict)
+    with pytest.raises(NoRobotNamed) as e:
+        default_spec()
+    assert "lerobot" in str(e.value) and "moss" in str(e.value)
+    assert DESCRIBED not in str(e.value), str(e.value)
+
+
+def test_a_third_partys_import_is_not_asked_whether_it_drives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A command with no robot named asks every adapter here whether it drives, and one that
+    raises as it is imported must not take that command down."""
+    from quackd.adapters import factory
+
+    def explodes(name: str) -> Any:
+        raise RuntimeError("it imports badly")
+
+    monkeypatch.setattr(factory, "_module", explodes)
+    assert drives("acme") is True
+
+
+@pytest.mark.parametrize(
+    "tiers",
+    [
+        {"mock": {"name": "simulator"}},
+        {"mock": {"name": "rehearsed", "note": 3}},
+        {"mock": {"name": "bound", "date": dt.date(2026, 11, 5), "owner": "ann"}},
+        {"mock": {"nonsense": True}},
+        {"mock": "rehearsed"},
+        {"mock": Tier("planned")},  # type: ignore[arg-type]
+    ],
+    ids=["unknown-tier", "numeric-note", "a-date-object", "unknown-field", "a-word", "a-bad-tier"],
+)
+def test_a_third_partys_odd_tiers_are_read_as_none_and_stop_nothing(
+    monkeypatch: pytest.MonkeyPatch, tiers: dict[str, Any]
+) -> None:
+    import types
+
+    from quackd.adapters import factory
+
+    module: Any = types.ModuleType("quackd_acme")
+    module.BACKENDS = ("mock",)
+    module.STATUS = "installed here"
+    module.TIERS = tiers
+    monkeypatch.setattr(factory, "_module", lambda name: module)
+    row = factory.info("acme")
+    assert row.tiers == {} and row.status == "installed here"
 
 
 def test_the_registry_refuses_the_row_and_its_bodies_as_robot_names() -> None:
@@ -496,6 +652,12 @@ def test_the_table_prints_one_tier_to_a_line() -> None:
     buf = io.StringIO()
     Console(file=buf, width=240).print(ui.adapters_table(list_adapters()))
     lines = buf.getvalue().splitlines()
+    # a backend is a word somebody types back, so a narrow table folds it and never cuts it
+    narrow = io.StringIO()
+    Console(file=narrow, width=80).print(ui.adapters_table(list_adapters()))
+    assert "…" not in "".join(
+        line.split("│")[2] for line in narrow.getvalue().splitlines() if line.count("│") >= 4
+    ), narrow.getvalue()
     (first,) = [i for i, line in enumerate(lines) if "│ microduck" in line]
     assert "rehearsed: sim2d, mujoco (physics, needs quackd[mujoco]), mock" in lines[first]
     assert "bound" not in lines[first] and "bound: jsonrpc" in lines[first + 1], lines[first + 1]

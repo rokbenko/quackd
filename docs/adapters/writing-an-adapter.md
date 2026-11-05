@@ -486,7 +486,7 @@ test checks) and carry the pin and the word "never" until someone has run it for
 
 ## Status is a promise
 
-The README's status table and [adapters/status.md](status.md) get ✅ only for what
+The README's status table and [adapters/status.md](status.md) get 🤖 only for what
 was exercised against its real target by us. A new adapter arrives 🧪 for its SDK backend
 and stays 🧪 until a human runs it on hardware and the transcript says so. Nothing in
 this repository claims a robot moved unless one did.

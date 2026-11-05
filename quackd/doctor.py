@@ -2136,13 +2136,7 @@ def verdict(report: DoctorReport) -> Any:
         # a green machine can have no robot at all, and this line is what `README.md` sends a
         # new reader to read: saying the simulator runs on a machine where `quackd run`
         # refuses for want of one is the opposite of what this command is for.
-        installed = [
-            row["name"]
-            for row in report.adapters
-            # the described row is in every core and drives nothing, so it is not a robot
-            # this machine has (ADR-0077)
-            if row.get("adapter_installed") and row.get("kind", "adapter") == "adapter"
-        ]
+        installed = [row["name"] for row in report.adapters if row.get("adapter_installed")]
         if not installed:
             reason = (
                 "quackd itself runs here, and no robot adapter is installed: "
