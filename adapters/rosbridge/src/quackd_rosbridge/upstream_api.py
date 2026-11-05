@@ -25,6 +25,10 @@ REPO_INTERFACES = "https://github.com/ros2/common_interfaces"
 PIN_INTERFACES = "d54aa9b96dfed4922775652414e0e8fa4ee2ae40"
 REPO_URDFDOM = "https://github.com/ros/urdfdom"
 PIN_URDFDOM = "bfcf29f39cc3e0fa13e5572f36b4b8c42d4f5ce1"
+BRANCHES = {"ros/urdfdom": "master"}
+"""The branch each pin tracks where it is not the repository's default, for the nightly that
+compares them (`scripts/upstream_drift.py`). urdfdom's default is `rolling`, and the pin is on
+`master`: compared with `rolling`, every line would read as moved by accident."""
 REPO_RSP = "https://github.com/ros/robot_state_publisher"
 PIN_RSP = "5526c766f79537f233903d3d7cabd33cb97c44e6"
 READ_ON = "2026-09-02"
@@ -356,25 +360,25 @@ URDF_MASS = UpstreamRef(
     "VERIFIED",
     urdfdom(_LINK_CPP, 287),
     "parseInertial requires a mass element with a value attribute; the inertial element "
-    "itself is optional per link (line 356)",
+    "itself is optional per link (line 429)",
 )
 URDF_JOINT_TYPE = UpstreamRef(
     "joint@type in planar, floating, revolute, continuous, prismatic, fixed",
     "VERIFIED",
-    urdfdom(_JOINT_CPP, 287),
-    "the six strings parseJoint accepts, in that order",
+    urdfdom(_JOINT_CPP, 406),
+    "the six strings parseJoint accepts, in that order (lines 406 to 416)",
 )
 URDF_JOINT_LIMIT = UpstreamRef(
     "joint/limit@lower,upper,effort,velocity",
     "VERIFIED",
-    urdfdom(_JOINT_CPP, 127),
-    "lower (127), upper (143), effort (160) and velocity (175); lower and upper are optional",
+    urdfdom(_JOINT_CPP, 102),
+    "lower (102), upper (118), effort (134) and velocity (150); lower and upper are optional",
 )
 URDF_JOINT_TREE = UpstreamRef(
     "joint@name, joint/parent@link, joint/child@link",
     "VERIFIED",
-    urdfdom(_JOINT_CPP, 267),
-    "name (267), parent link (284), child link (285)",
+    urdfdom(_JOINT_CPP, 342),
+    "name (342), parent link (371), child link (386)",
 )
 
 # ── UNVERIFIED: what quackd assumes about a description it has never actually read ──────
@@ -398,7 +402,7 @@ URDF_MASS_IS_THE_BODY = UpstreamRef(
 DOF_IS_NON_FIXED_JOINTS = UpstreamRef(
     "DOF_IS_NON_FIXED_JOINTS",
     "UNVERIFIED",
-    urdfdom(_JOINT_CPP, 287),
+    urdfdom(_JOINT_CPP, 416),
     "that every joint whose type is not fixed is a degree of freedom, so wheels, casters, "
     "gripper fingers and mimic joints all count; no joints at all reports 0 and an unreadable "
     "description reports nothing",

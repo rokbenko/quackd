@@ -107,13 +107,18 @@ Touching an adapter's `upstream_api.py`? Every ref there is a permalink to a com
 and the nightly `upstream-drift` job (`scripts/upstream_drift.py`) fetches each cited file at
 its pin and at the branch or tag the pin tracks, then says which cited lines no longer read as
 they were read, in the run's summary and in one issue per upstream labelled `upstream-drift`.
-So anchor a ref on the line that names the thing, never on a blank line or a closing bracket,
-which the job reports as a bad anchor; a module whose pin sits on a branch that is not the
-default says so in a `BRANCH` constant, as the Open Duck's and `microduck_rl`'s do; and a
-module `quackd doctor` does not list in its adapter's `UPSTREAMS` is one the job never reads,
-which `tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream
-by hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network;
-the tests run the script on fixtures and reach nothing.
+So anchor a ref on the line that names the thing. A blank line or a closing bracket is a bad
+anchor, which fails the job as a broken ref, and a line that reads like others in its file is a
+weak one, which the job lists because it cannot follow it once the file changes. A module whose
+pin sits on a branch that is not the default says so in a `BRANCH` constant, as the Open Duck's
+and `microduck_rl`'s do, or in `BRANCHES`, by `owner/repo`, for a second repository; one pinned
+at a release names it in `TAG`, `RELEASE` or `VERSION`; and a module `quackd doctor` does not
+list in its adapter's `UPSTREAMS` is one the job never reads, which
+`tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream by
+hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network:
+exit 1 is drift or a broken ref, and exit 2 is a night the network did not answer. The tests run
+the script on fixtures and reach nothing. The job compares a line with itself over time, so it
+cannot tell that a line never said what its ref claims: read the line you cite, at the pin.
 
 Touching anything under `bridge/`? That is the code that runs on a robot, or on the board
 `--host` names, and there are four lots of it now (`open_duck/`, `alohamini/`,

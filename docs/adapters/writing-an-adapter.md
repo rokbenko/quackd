@@ -471,15 +471,18 @@ test checks) and carry the pin and the word "never" until someone has run it for
 
 A pin is a promise to re-read, and the nightly `upstream-drift` job is what keeps it. It fetches
 every file a ref cites, at the pin and at what the pin tracks, and reports each cited line that
-no longer reads as it was read, with one issue per upstream that moved
+no longer reads as it was read, with one issue per upstream that needs somebody
 (`scripts/upstream_drift.py`, `.github/workflows/upstream-drift.yml`). Three things make a
-module readable by it. Anchor every ref on the line that names what it cites, never a blank
-line or a closing bracket, which it reports as a bad anchor. Say which branch the pin sits on
-in a `BRANCH` constant when that is not the repository's default (`BRANCHES`, keyed
-`owner/repo`, for a second repository), and the version you read in `VERSION`, `TAG` or
-`PYPI_VERSION_READ` beside a `PACKAGE` ref when upstream releases, so a release-pinned module
-is compared with the newest release and a branch-pinned one with its branch. And list the
-module in your adapter's `UPSTREAMS`, which is the walk both `quackd doctor` and the job make.
+module readable by it. Anchor every ref on the line that names what it cites: a blank line or a
+closing bracket is a bad anchor, which it reports as a broken ref, and a line that reads like
+others in its file is a weak one, which it cannot follow once the file changes. Say which
+branch the pin sits on in a `BRANCH` constant when that is not the repository's default
+(`BRANCHES`, keyed `owner/repo`, for a second repository), and the release you read in `TAG`,
+`RELEASE` or `VERSION`, or `PYPI_VERSION_READ` beside a `PACKAGE` ref, when upstream releases,
+so a release-pinned module is compared with the newest release of its kind and a branch-pinned
+one with its branch. And list the module in your adapter's `UPSTREAMS`, which is the walk both
+`quackd doctor` and the job make. What the job cannot do is read: a line that is the only one
+of its kind and never said what your ref claims compares as the same every night.
 
 ## Status is a promise
 

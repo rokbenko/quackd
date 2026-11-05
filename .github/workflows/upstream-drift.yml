@@ -8,12 +8,18 @@ name: upstream drift
 # an upstream moved under a ref and somebody should go and read it, not that a release stops.
 # It is apart from `ci` because it needs the network, which that suite never does.
 #
-# The first run is expected red for LeRobot, whose Feetech files that pull request touched,
-# and for MOSS, whose main moves most days. That is the point, not a fault.
+# Red means one of two things, and the summary says which. Exit 1: an upstream moved, or a ref
+# of quackd's own cannot be followed, and somebody should go and read it. Exit 2: the network
+# did not answer for something and nothing else was found, so the night says nothing either way.
 #
-# The script also opens one issue per upstream that drifted, labelled `upstream-drift`, edits
-# it in place while the drift lasts and closes it the night it is gone, so the finding outlives
-# the run's logs. That is the one write this workflow makes, and only in this repository.
+# The first run is expected red for six upstreams, LeRobot among them, whose Feetech files that
+# pull request removed, and MOSS, whose main moves most days. That is the point, not a fault.
+#
+# The script also keeps one issue open per upstream that needs somebody, labelled
+# `upstream-drift`, edits it in place while that lasts and closes it the night every ref reads
+# as it was read, so the finding outlives the run's logs. A night that could not check an
+# upstream closes nothing. That is the one write this workflow makes, and only in this
+# repository.
 
 on:
   schedule:

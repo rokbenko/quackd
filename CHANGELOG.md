@@ -11,6 +11,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **Five rosbridge refs into urdfdom cited lines that say something else.** At the commit they
+  pin, `URDF_JOINT_LIMIT` cited line 127 of `joint.cpp`, a `catch` inside the parsing of `upper`,
+  for the four limit attributes, which that file reads on lines 102, 118, 134 and 150.
+  `URDF_JOINT_TREE` cited line 267, in the calibration parser, for the joint's name and its
+  parent and child links, which are on 342, 371 and 386. `URDF_JOINT_TYPE` and
+  `DOF_IS_NON_FIXED_JOINTS` cited line 287, in the mimic parser, for the six type strings, which
+  are on 406 to 416. And `URDF_MASS`'s note sent a reader to line 356 of `link.cpp` for the
+  optional inertial element, which is on 429. Each now cites the line that says it, at the same
+  pin, and the module says that pin is on urdfdom's `master`, where its default branch is
+  `rolling`. What quackd reads from a URDF did not change: the attribute names were right and
+  their line numbers were not. Found by reading the file at its pin while the drift job was
+  under review. The job itself cannot find this: it compares a line with itself over time, so a
+  line that is the only one of its kind and never said what its ref claims reads as `same`.
+- **The ref for `microduck_rl`'s model licence cites its line.** `MESH_LICENSE` cited the README
+  as a whole, so a change to the sentence it quotes read as a page that changed, which is not
+  drift. It cites line 261 at the same pin now, and the nightly reports that sentence as changed.
 - **Three rosbridge refs pointed past the end of their file or at a closing bracket.**
   `MSG_COMPRESSED_IMAGE` cited line 44 of a 41-line message definition, `OP_CALL_SERVICE`
   cited line 780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift
@@ -34,23 +50,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   from upstream as refs pinned to a commit and a line, and nothing re-read them when upstream
   moved: LeRobot replaced the arm's motor library on 2026-10-16 and a person noticed three weeks
   later. `scripts/upstream_drift.py` fetches every cited file at its pin and at the branch or tag
-  the pin tracks, says which cited lines no longer read as they were read (a line that moved
-  within its file is reported and is not drift, a page that changed is not drift, a blank or
-  bracket-only line is a bad anchor to re-point), checks the version each module read against
-  PyPI and against upstream's own `pyproject.toml`, and exits 0, 1 for drift, or 2 when
-  something could not be checked, so an outage never reads as drift.
-  `.github/workflows/upstream-drift.yml` runs it every night and on demand, writes the report
-  to the run's summary, and opens one issue per upstream that drifted, labelled
-  `upstream-drift`, edited in place while the drift lasts and closed the night it is gone. The
-  first run is expected red for LeRobot and MOSS. The Open Duck's and `microduck_rl`'s modules
-  now say which branch their pin sits on (`BRANCH`), and the arm's `UPSTREAMS` lists the
-  endpoint module it had left out, so `quackd doctor`'s pins table shows 14 rows for 14
-  modules where it showed 13. `tests/test_upstream_drift.py` runs the script on fixtures,
-  reaching nothing, holds its walk to the suite's list of modules, and reads the workflow back.
-  Its first run, by hand on 2026-11-05, took 140 seconds, and six upstreams had moved:
-  LeRobot's `feetech/tables.py` is gone from its main branch, as the motor-library change says,
-  robotd's API version line changed, huggingface_hub is at 2.4.0 on PyPI where quackd read
-  1.29.0, and the AlohaMini's, MOSS's and `microduck_rl`'s files moved under their refs.
+  the pin tracks, and tells three things apart. Drift is upstream having moved: a cited line that
+  no longer reads as it was read, a file that is gone, a newer release on PyPI than the one a
+  module read. A line that moved within its file is reported and is not drift, and neither is a
+  page that changed. A broken ref is one of quackd's own that cannot be followed: a blank or
+  bracket-only line, or a path with nothing at the pin, asked of the API as well as the raw host.
+  And a night the network did not answer is unchecked. It exits 0, 1 for drift or a broken ref,
+  which is work for somebody here, or 2 when nothing drifted and something could not be checked,
+  so an outage never reads as drift. `.github/workflows/upstream-drift.yml` runs it every night
+  and on demand, writes the report to the run's summary, and keeps one issue open per upstream
+  that needs somebody, labelled `upstream-drift`, edited in place while that lasts and closed
+  the night every ref reads as it was read. A night that could not check an upstream closes
+  nothing and rewrites nothing for it. A cited line that reads like others in its own file is
+  listed as a weak anchor, because it cannot be followed once its file changes: 35 of the 619
+  lined refs are that today. Modules say what their pin tracks where that is not the default
+  branch: `BRANCH` on the Open Duck's and `microduck_rl`'s, `BRANCHES` for urdfdom in
+  rosbridge's, and the Microduck's `RELEASE`, `daemon-v0.16.1`, is compared with the newest
+  `daemon-v` tag and not with a `main` it never tracked. The arm's `UPSTREAMS` lists the
+  endpoint module it had left out, so `quackd doctor`'s pins table shows 14 rows for 14 modules
+  where it showed 13. `tests/test_upstream_drift.py` runs the script on fixtures, reaching
+  nothing, holds its walk to the suite's list of modules, and reads the workflow back. Run by
+  hand on 2026-11-05 it took three minutes and found six upstreams moved, none broken and none
+  unchecked. LeRobot's `feetech/tables.py` is gone from its main branch, as the motor-library
+  change says, with 16 more cited lines changed. robotd is at `daemon-v0.18.5`, and its API
+  version line no longer reads 41. huggingface_hub is at 2.4.0 on PyPI where quackd read 1.29.0.
+  `microduck_rl` has rewritten the two files most of its refs cite, and its README now names a
+  licence version and a `LICENSE-MODELS.md` for its models where it had one sentence. And
+  AlohaMini's and MOSS's main branches each changed cited lines. None of these is re-read here:
+  each is an issue the first scheduled run opens.
 
 ## [0.32.0] — 2026-11-07
 
