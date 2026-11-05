@@ -25,7 +25,7 @@ from quackd.command import SECRET_FLAGS, URL_FLAGS
 COMMANDS = ("run", "drive")
 """The two commands the page drives: a goal is `run`, a chat is `drive`."""
 
-PANELS = ("Task", "Robot", "LLM", "Output", "Host", "Memory")
+PANELS = ("Task", "Robot", "Pilot", "Output", "Host", "Memory")
 """The order the page shows the panels in, `--help`'s own. Any other panel follows them."""
 
 LEFT_OUT = frozenset(

@@ -3576,13 +3576,13 @@ _LLM = typer.Option(
     f"list-llms` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
     f"{DEFAULT_LLM}.",
     autocompletion=_complete_llm,
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _BASEURL = typer.Option(
     None,
     "--base-url",
     help="OpenAI-compatible server, e.g. http://localhost:8000/v1 (local presets).",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 # Declared once, like every option two commands share, so `run` and `serve-mcp` cannot come to
 # spell the board differently. No `envvar=`: Typer would fold QUACKD_HOST_TOKEN
@@ -3640,7 +3640,7 @@ _APIKEY = typer.Option(
     None,
     "--api-key",
     help="API key override (local servers do not need one).",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _EXTRA_BODY = typer.Option(
     None,
@@ -3649,7 +3649,7 @@ _EXTRA_BODY = typer.Option(
     "a field the server wants and quackd never sends. Qwen3 on vLLM stops thinking with "
     '\'{"chat_template_kwargs": {"enable_thinking": false}}\'. QUACKD_EXTRA_BODY does the '
     "same when the flag is absent, and spares you the shell quoting.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _EFFORT = typer.Option(
     None,
@@ -3660,13 +3660,13 @@ _EFFORT = typer.Option(
     "Beats QUACKD_EFFORT and QUACKD_OPENAI_REASONING_EFFORT, and is refused for a vendor "
     "or an LLM that takes no such setting. Default: medium on Claude, the LLM's own on "
     "OpenAI.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _VISION = typer.Option(
     None,
     "--vision/--no-vision",
     help="Send camera frames to the LLM (default: on for cloud, off for local).",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 
 
@@ -3705,7 +3705,7 @@ _DECISION_LLM = typer.Option(
     "for openai, and none for one you run yourself. Off unless you name one. "
     "QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DRIVE_DECISION_LLM = typer.Option(
     None,
@@ -3716,7 +3716,7 @@ _DRIVE_DECISION_LLM = typer.Option(
     "first. The same names, extras and keys as `quackd run --decision-llm`. Off unless you name "
     "one. QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DRIVE_DECISION_MODE = typer.Option(
     None,
@@ -3726,7 +3726,7 @@ _DRIVE_DECISION_MODE = typer.Option(
     "records what it would have chosen without changing anything, and off leaves the goals to "
     "the pilot. Without it every goal is flown by the pilot alone, and --decision-llm is the "
     "fast lane only. QUACKD_DECISION_MODE is not read here.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DECISION_URL = typer.Option(
     None,
@@ -3739,7 +3739,7 @@ _DECISION_URL = typer.Option(
     "regional host OpenAI name for it (us., eu., au., ca., jp., in., sg., kr., gb. or ae. in "
     "front of api.openai.com), and the word local anywhere else. QUACKD_DECISION_URL does the "
     "same for the rows that want no key.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DECISION_MODE = typer.Option(
     None,
@@ -3749,7 +3749,7 @@ _DECISION_MODE = typer.Option(
     "turn, records what it would have chosen beside what the pilot LLM did, and changes nothing "
     "about the run: it is how you find out whether to trust one before you do. `off` is quackd "
     "as it has always been. QUACKD_DECISION_MODE does the same.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DECISION_FRAMES = typer.Option(
     None,
@@ -3763,7 +3763,7 @@ _DECISION_FRAMES = typer.Option(
     "with no decision LLM named, any other one, or a --decision-url that is not OpenAI's, the "
     "run stops before the robot connects. --vision is about the pilot and changes nothing here. "
     "Off unless you say so. QUACKD_DECISION_FRAMES=1 does the same.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 
 
@@ -3775,7 +3775,7 @@ _DRIVE_DECISION_FRAMES = typer.Option(
     "--decision-frames does, each frame kept in that goal's own directory. Only `openai` may be "
     "shown one, and only at OpenAI's own address, or the session stops before the robot "
     "connects. The fast lane is never shown one. QUACKD_DECISION_FRAMES is not read here.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 
 
@@ -3807,7 +3807,7 @@ _CONTROLLER = typer.Option(
     "or the --goal as the only one, one segment each, then asks you whether the arm did it, and "
     "only your yes makes the run a success. It needs a terminal to ask on, and takes no --yes, "
     "--dry-run, --decision-llm or LLM flag.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _DRIVE_CONTROLLER = typer.Option(
     None,
@@ -3820,7 +3820,7 @@ _DRIVE_CONTROLLER = typer.Option(
     "the goal a success. It needs the keyboard or the page to ask on, and takes no --yes, "
     "--dry-run, --decision-mode, --decision-frames or LLM flag. --decision-llm stays the "
     "fast lane.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _ROBOT = typer.Option(
     None,
@@ -3901,7 +3901,7 @@ _PRICE = typer.Option(
     help="What the LLM costs, in USD per million tokens: in=3,out=15[,cache_read=0.3,"
     "cache_write=3.75]. Beats QUACKD_PRICE and the built-in rates. Use it for a negotiated "
     "rate, an LLM quackd has no price for, or a paid server behind a local preset.",
-    rich_help_panel="LLM",
+    rich_help_panel="Pilot",
 )
 _YES = typer.Option(
     False,
@@ -4378,7 +4378,7 @@ def preflight(
         f"{LLM_ENV}, and preflight refuses where neither names one: the scripted pilot runs "
         "only when typed as --llm fake.",
         autocompletion=_complete_llm,
-        rich_help_panel="LLM",
+        rich_help_panel="Pilot",
     ),
     effort: str | None = _EFFORT,
     camera_url: list[str] = typer.Option(
@@ -6805,7 +6805,7 @@ def robot_add(
         help="The pilot a run uses for this robot when --llm is absent, as VENDOR[:LLM]. "
         "--llm on the run beats this, and this beats QUACKD_LLM.",
         autocompletion=_complete_llm,
-        rich_help_panel="LLM",
+        rich_help_panel="Pilot",
     ),
     note: str | None = typer.Option(None, "--note", help="One line for people: which one is it."),
     registry_dir: str | None = _REGISTRY_DIR,
@@ -7273,7 +7273,7 @@ def robot_edit(
         "-l",
         help="The pilot, as VENDOR[:LLM]. Replaces whatever was stored.",
         autocompletion=_complete_llm,
-        rich_help_panel="LLM",
+        rich_help_panel="Pilot",
     ),
     note: str | None = typer.Option(None, "--note", help="One line for people."),
     clear: list[str] = typer.Option(

@@ -1162,7 +1162,7 @@ def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     reads `quackd[lan]` as markup, which printed an install that does not exist."""
     out = _help(["run", "--help"])
     assert "quackd[live]" in out, "an extra a reader is meant to type must survive"
-    for group in ("Task", "LLM", "Robot", "Output", "Memory"):
+    for group in ("Task", "Pilot", "Robot", "Output", "Memory"):
         assert group in out, group
     # Two flags became one, and half a rename is worse than either shape on its own: a help
     # page still offering `--provider` sends the reader to a flag the parser will refuse.
