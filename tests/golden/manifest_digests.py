@@ -62,7 +62,9 @@ def digests() -> dict[str, Any]:
 
 
 def main() -> int:
-    GOLDEN.write_text(json.dumps(digests(), indent=0, sort_keys=True) + "\n", encoding="utf-8")
+    GOLDEN.write_text(
+        json.dumps(digests(), indent=0, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
     print(f"wrote {GOLDEN}")
     return 0
 

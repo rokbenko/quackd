@@ -1,29 +1,29 @@
 {
 "huebot": {
-"jsonrpc False kick_left": "276698429e96270b",
-"jsonrpc False kick_left,kick_right": "148db7963f187e68",
-"jsonrpc False none": "276698429e96270b",
-"jsonrpc False sit_toggle": "3b2a38d96608fa16",
-"jsonrpc False sit_toggle,kick_left,kick_right": "32f9dbb8cc63577a",
-"jsonrpc False unset": "32f9dbb8cc63577a",
-"jsonrpc True kick_left": "81683dd5df49b263",
-"jsonrpc True kick_left,kick_right": "70afbfbbfdb2aa08",
-"jsonrpc True none": "81683dd5df49b263",
-"jsonrpc True sit_toggle": "b95a0f8b0fa871cd",
-"jsonrpc True sit_toggle,kick_left,kick_right": "c010371a2fb50d58",
-"jsonrpc True unset": "c010371a2fb50d58",
-"mock False kick_left": "0ff37b9e3e89a8ca",
-"mock False kick_left,kick_right": "f3c1b8b6f59da310",
-"mock False none": "0ff37b9e3e89a8ca",
-"mock False sit_toggle": "cebe0a472491a41c",
-"mock False sit_toggle,kick_left,kick_right": "9ecb7009e92d9a80",
-"mock False unset": "9ecb7009e92d9a80",
-"mock True kick_left": "ae743d668dfdc10b",
-"mock True kick_left,kick_right": "63c970030ba4a1f5",
-"mock True none": "ae743d668dfdc10b",
-"mock True sit_toggle": "4adfef70895d209d",
-"mock True sit_toggle,kick_left,kick_right": "0b0faa9f9f6319d6",
-"mock True unset": "0b0faa9f9f6319d6"
+"jsonrpc False kick_left": "40e0c2996ac018cb",
+"jsonrpc False kick_left,kick_right": "36808d27de194a7f",
+"jsonrpc False none": "40e0c2996ac018cb",
+"jsonrpc False sit_toggle": "d7fe6dc46d13cd1f",
+"jsonrpc False sit_toggle,kick_left,kick_right": "34180a2033baf7fc",
+"jsonrpc False unset": "34180a2033baf7fc",
+"jsonrpc True kick_left": "db375e98a90b3267",
+"jsonrpc True kick_left,kick_right": "842f8884e383144a",
+"jsonrpc True none": "db375e98a90b3267",
+"jsonrpc True sit_toggle": "8c8b588ed352fe83",
+"jsonrpc True sit_toggle,kick_left,kick_right": "809399563e57fd13",
+"jsonrpc True unset": "809399563e57fd13",
+"mock False kick_left": "efd232759558023d",
+"mock False kick_left,kick_right": "052ec5a6fe244081",
+"mock False none": "efd232759558023d",
+"mock False sit_toggle": "1c05cccf1baddd9a",
+"mock False sit_toggle,kick_left,kick_right": "0eefaf6d9c923247",
+"mock False unset": "0eefaf6d9c923247",
+"mock True kick_left": "8c5842303ba5d98c",
+"mock True kick_left,kick_right": "1ed7b60671fd23ad",
+"mock True none": "8c5842303ba5d98c",
+"mock True sit_toggle": "ed940eddaaf891f6",
+"mock True sit_toggle,kick_left,kick_right": "bc30856afa38390d",
+"mock True unset": "bc30856afa38390d"
 },
 "microduck": {
 "jsonrpc False False False False 62.2": "489d1a468291f07b",
@@ -460,7 +460,37 @@
 "sim2d True True True True None": "3cd0f5f3da7bc1b0"
 },
 "verbs": {
-"0b0faa9f9f6319d6": [
+"052ec5a6fe244081": [
+"report_state",
+"stop",
+"say",
+"move",
+"kick",
+"stand_up",
+"quack"
+],
+"0eefaf6d9c923247": [
+"report_state",
+"stop",
+"say",
+"move",
+"sit",
+"stand",
+"kick",
+"stand_up",
+"quack"
+],
+"1c05cccf1baddd9a": [
+"report_state",
+"stop",
+"say",
+"move",
+"sit",
+"stand",
+"stand_up",
+"quack"
+],
+"1ed7b60671fd23ad": [
 "report_state",
 "stop",
 "say",
@@ -469,38 +499,11 @@
 "go_to",
 "search_scan",
 "approach_and",
-"sit",
-"stand",
 "kick",
 "stand_up",
 "quack"
 ],
-"0ff37b9e3e89a8ca": [
-"report_state",
-"stop",
-"say",
-"move",
-"stand_up",
-"quack"
-],
-"148db7963f187e68": [
-"report_state",
-"stop",
-"say",
-"move",
-"kick",
-"stand_up",
-"quack"
-],
-"276698429e96270b": [
-"report_state",
-"stop",
-"say",
-"move",
-"stand_up",
-"quack"
-],
-"32f9dbb8cc63577a": [
+"34180a2033baf7fc": [
 "report_state",
 "stop",
 "say",
@@ -511,13 +514,12 @@
 "stand_up",
 "quack"
 ],
-"3b2a38d96608fa16": [
+"36808d27de194a7f": [
 "report_state",
 "stop",
 "say",
 "move",
-"sit",
-"stand",
+"kick",
 "stand_up",
 "quack"
 ],
@@ -544,6 +546,14 @@
 "watch",
 "explore",
 "find"
+],
+"40e0c2996ac018cb": [
+"report_state",
+"stop",
+"say",
+"move",
+"stand_up",
+"quack"
 ],
 "479e87233b8b4298": [
 "report_state",
@@ -575,20 +585,6 @@
 "quack",
 "gaze"
 ],
-"4adfef70895d209d": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"sit",
-"stand",
-"stand_up",
-"quack"
-],
 "4f331553f29000ef": [
 "report_state",
 "stop",
@@ -610,19 +606,6 @@
 "quack",
 "gaze",
 "watch"
-],
-"63c970030ba4a1f5": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"kick",
-"stand_up",
-"quack"
 ],
 "6b43514df52ed809": [
 "report_state",
@@ -646,7 +629,22 @@
 "gaze",
 "watch"
 ],
-"70afbfbbfdb2aa08": [
+"809399563e57fd13": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"sit",
+"stand",
+"kick",
+"stand_up",
+"quack"
+],
+"842f8884e383144a": [
 "report_state",
 "stop",
 "say",
@@ -659,7 +657,7 @@
 "stand_up",
 "quack"
 ],
-"81683dd5df49b263": [
+"8c5842303ba5d98c": [
 "report_state",
 "stop",
 "say",
@@ -668,6 +666,20 @@
 "go_to",
 "search_scan",
 "approach_and",
+"stand_up",
+"quack"
+],
+"8c8b588ed352fe83": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"sit",
+"stand",
 "stand_up",
 "quack"
 ],
@@ -707,29 +719,6 @@
 "gaze",
 "watch"
 ],
-"9ecb7009e92d9a80": [
-"report_state",
-"stop",
-"say",
-"move",
-"sit",
-"stand",
-"kick",
-"stand_up",
-"quack"
-],
-"ae743d668dfdc10b": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"stand_up",
-"quack"
-],
 "b0354f9390ae10f5": [
 "report_state",
 "stop",
@@ -747,21 +736,7 @@
 "quack",
 "gaze"
 ],
-"b95a0f8b0fa871cd": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"sit",
-"stand",
-"stand_up",
-"quack"
-],
-"c010371a2fb50d58": [
+"bc30856afa38390d": [
 "report_state",
 "stop",
 "say",
@@ -798,13 +773,25 @@
 "gaze",
 "watch"
 ],
-"cebe0a472491a41c": [
+"d7fe6dc46d13cd1f": [
 "report_state",
 "stop",
 "say",
 "move",
 "sit",
 "stand",
+"stand_up",
+"quack"
+],
+"db375e98a90b3267": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
 "stand_up",
 "quack"
 ],
@@ -826,12 +813,25 @@
 "gaze",
 "watch"
 ],
-"f3c1b8b6f59da310": [
+"ed940eddaaf891f6": [
 "report_state",
 "stop",
 "say",
 "move",
-"kick",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"sit",
+"stand",
+"stand_up",
+"quack"
+],
+"efd232759558023d": [
+"report_state",
+"stop",
+"say",
+"move",
 "stand_up",
 "quack"
 ],

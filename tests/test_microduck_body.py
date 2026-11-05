@@ -59,6 +59,18 @@ def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
     assert conditions["huebot"](sitting) == "Huebot is sitting; run stand first"
 
 
+def test_a_verb_of_the_family_a_body_does_not_have_says_why() -> None:
+    """Every one: a pilot judges a task beside this list, and a task file that names one of them
+    is refused quoting it. The Microduck's list stays what a connection leaves it, so a duck on a
+    connection with everything has none."""
+    family = set(verbs_for(MICRODUCK))
+    manifest = quackd_huebot.huebot_manifest("jsonrpc")
+    assert set(manifest.not_offered()) == family - HUEBOT.verbs
+    assert all(why for why in manifest.not_offered().values())
+    assert not MICRODUCK.withheld
+    assert "not_offered" not in quackd_microduck.microduck_manifest("sim2d", places=False).extras
+
+
 async def test_a_mock_is_not_kinder_than_its_robot() -> None:
     """Huebot's mock offers what a Huebot offers: no place verb, no head and no map, whatever the
     Microduck's mock scripts."""

@@ -215,11 +215,14 @@ def manifest_for(
     extras: dict[str, Any] = {}
     # what this duck lacks here, said beside its body where the pilot judges a task; the
     # datasheet is the body's own, the same on every backend
+    not_offered = dict(body.withheld)
     if offers_places and not offers_explore:
         why = NO_SIZE_WHY if keeps_map else NO_MAP_WHY
-        extras["not_offered"] = {"explore": why, "find": why}
+        not_offered |= {"explore": why, "find": why}
     elif offers_explore and not offers_find:
-        extras["not_offered"] = {"find": NO_CAMERA_WHY}
+        not_offered["find"] = NO_CAMERA_WHY
+    if not_offered:
+        extras["not_offered"] = not_offered
     if camera and camera_fov_deg is not None:
         limits["camera_fov_deg"] = float(camera_fov_deg)
         if camera_fov_assumed:

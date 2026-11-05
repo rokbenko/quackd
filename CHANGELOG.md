@@ -68,10 +68,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   one record now, `quackd_huebot/body.py`, over one set of verbs and one transport, as
   [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says. `quackd[huebot]`,
   `--robot huebot:jsonrpc`, a registered Huebot and everything a pilot is told read as they did, and
-  every description either robot can give hashes as it did, which
-  `tests/golden/manifest_digests.json` now holds. What changes for you: nothing to do, one more package
+  the move left every description either robot can give hashing as it did, which
+  `tests/golden/manifest_digests.json` holds from here on. What changes for you: nothing to do, one more package
   in the install, and `quackd_huebot.transports` is gone, so code importing that module imports
   `quackd_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`.
+- **A Huebot says which of the family's verbs it has not got, and why.** `gaze`, `watch`, `grab`,
+  `explore` and `find` were left out with the reasons in the code's comments, so a pilot on a Huebot,
+  and a task file asking for one, heard only that the verb was not there. They are in
+  `extras.not_offered` now, as a Microduck's missing verbs have been, so the pilot reads them beside
+  the body and `quackd validate` quotes them. That changes a Huebot's digest, the fingerprint a LAN
+  announce carries, as any new line on a body's description does.
 
 ### Fixed
 

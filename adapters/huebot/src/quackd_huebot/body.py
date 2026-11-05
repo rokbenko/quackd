@@ -78,6 +78,25 @@ LOOK_REFUSED = "Huebot's shim does not answer robot.look yet, so quackd sends it
 """What a look is answered with, before anything is written (`up.SHIM_LOOK`)."""
 
 
+_NO_LOOK = "its shim does not answer robot.look yet, so quackd turns no head on it"
+_NO_PLACE = "nothing on a Huebot says where it is, and this walks by a map"
+
+WITHHELD = MappingProxyType(
+    {
+        "gaze": _NO_LOOK,
+        "watch": _NO_LOOK,
+        "grab": (
+            "its maker has not said what ground_pick does on a Huebot, or how its state says it "
+            "holds something"
+        ),
+        "explore": _NO_PLACE,
+        "find": _NO_PLACE,
+    }
+)
+"""The family's verbs Huebot does not have, and why, which `extras.not_offered` carries to the
+pilot beside its body and to a task file that asks for one (`quackd.duckfile.validate`)."""
+
+
 def _shim_line(shim: dict[str, Any]) -> str:
     """`API v41, build 0.16.1, revision d818af5`: the version, the build and the revision the
     shim answered `hello` with. The protocol lets the last two be null, so either can be
@@ -195,5 +214,6 @@ HUEBOT = Body(
     look_refused=LOOK_REFUSED,
     skill_verbs=MappingProxyType(SKILLS_OF),
     claims_deadman=_claims_deadman,
+    withheld=WITHHELD,
 )
 """Huebot: the maker's figures, the verbs it can be offered, and no simulator, map or mediad."""
