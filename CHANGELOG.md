@@ -9,6 +9,47 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **Every backend says how far it has got, in one of four words.** `quackd list-adapters` and
+  `quackd doctor` print a tier for each backend: 📄 described, a body quackd only describes; ✅ rehearsed,
+  a simulator or a mock that runs whole tasks in CI; 🧪 bound, code that reaches a real robot and has never
+  met one; and 🤖 verified, a robot that has moved under quackd, with who ran it and the first day it did.
+  The table's `status` column is now `tier`, one tier to a line, and on a console that cannot carry the
+  marks, such as a redirected Windows pipe, the two new ones read `[hw]` and `[desc]`. In `--json` each
+  row gains `kind`, `tiers`, `family` and `route`: the tier, owner, date and note of every backend, the
+  kind of body, and whether quackd reaches it through an SDK, a wire or a bridge of its own. The `status`
+  key stays and its text is now built from the tiers, so a script that matched its old wording should
+  read `tiers` instead. An adapter published from somewhere else may declare `TIERS`, `FAMILY` and
+  `ROUTE` and is printed the same way. What changes for you: nothing to do.
+- **A backend that reaches a robot names who answers for its first hardware run.** A bound or a verified
+  tier carries an owner and a date, and `tests/test_described.py` refuses a catalogue row without both
+  ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)). The eight
+  bound backends that were here before the rule say `grandfathered 0.33.0` and the day it was adopted,
+  2026-11-05, which says that nobody has named a date for any of them. `lerobot:real` is the one verified
+  backend, first run on 2026-09-15.
+- **Eleven robots quackd describes and drives no part of.** `--robot described:<name>` reaches a Unitree
+  B2, Go2 EDU and G1 EDU, a Franka Research 3, a Universal Robots UR5e, a KUKA LBR iisy 3 R760 and LBR
+  iiwa 7 R800, a Yaskawa MotoMini, a Menlo Asimov-1, a Noetix Bumi and a Rhoban Microban
+  ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). Each is one YAML in
+  the core, `quackd/adapters/bodies/<name>.yaml`, holding what its maker publishes, with a source and
+  the day it was read beside every figure, so `uv pip install quackd` alone has them. A described body
+  registers (`quackd robot add b2 described:unitree-b2`), lists its verbs, shows a pilot its datasheet,
+  takes a feasibility verdict and joins a pilot flock like any other body. It has two verbs,
+  `report_state` and `stop`, and its pilot is told before any figure that the body moves only if someone
+  else moves it. It lists no sensors, since quackd reads none of the robot's: what the robot carries is a
+  note in its datasheet, and a board with a camera beside it (`--host`) gives it `observe`, as it gives
+  any body. An address, a camera, a token and a rest pose are refused, at `quackd robot add` as at a
+  run, since there is no robot to reach, and `quackd robot list --probe` says `described: nothing to
+  reach` with neither a tick nor a cross. `--robot described` with no body after it is refused with the
+  list. A described body is never the robot a command with no `--robot` falls back to, never counted as
+  an adapter (`quackd doctor` says `11 described bodies` beside its count of adapters installed), never
+  offered a connect block in `quackd ui`, and `described` cannot be a robot's registered name. A hint
+  that names the bodies a task could be handed to never lists one: it ends with a sentence of its own,
+  `By their makers' figures alone, described:franka-research-3 could too, and quackd drives no part of
+  it`. `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2
+  runs to the end in it.
+
 ### Documentation
 
 - **Five SO-101 examples reach forward instead of raising the shoulder into the desk.** E116, E117,
@@ -29,6 +70,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   section on [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) and a
   paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code
   the three records describe lands in 0.33.0 behind them.
+- **The status page says each backend's tier, and lists the described bodies with their numbers.**
+  [docs/adapters/status.md](docs/adapters/status.md) gains a tier column held to the catalogue by a test,
+  a legend of the four tiers, and a table of the described bodies that `scripts/bodies_docs.py` renders
+  from their files, with a `--check` the suite runs. The README's legend is the four tiers, with its
+  finer words under them, its badge counts adapters, the ones run on hardware and the bodies described,
+  and a paragraph under its table says what a described body is. [CONTRIBUTING.md](CONTRIBUTING.md) gains
+  "Add a described body", four steps and no code.
+  [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) names the `TIERS`, `FAMILY`
+  and `ROUTE` a module may declare and what a catalogue row now carries, and
+  [docs/concepts/safety.md](docs/concepts/safety.md) says what stops a described body: nothing of
+  quackd's, since nothing of quackd's moves it.
+
+### Known limitations
+
+- **No described body's figures have been checked by a second reader, and none against a robot.** Each was
+  read from its maker's page on the day its source names, 2026-11-05, and the Unitree G1's on 2026-10-28,
+  by one reader. Five choices are worth knowing. A quadruped's back load is a note and not a figure,
+  because the datasheet refuses a payload on a body with no manipulator. An industrial arm that ships with
+  no gripper is declared as bare arms so that its payload and reach can be stated, and its notes say the
+  wrist is bare. The Noetix Bumi lists no manipulator at all, because Noetix publishes nothing on what
+  its arms can hold. Where a maker gives a range, the lower end is the figure. And two figures are marked
+  `estimate` because the maker's own page does not give them: the Unitree B2's joint count, from a
+  dealer's listing, and the KUKA LBR iiwa's weight, from a 2016 KUKA presentation. quackd drives none of
+  these bodies, so nothing here has been compared with one.
 
 ## [0.32.0] — 2026-11-07
 

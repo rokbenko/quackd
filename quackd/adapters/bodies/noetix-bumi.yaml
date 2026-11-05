@@ -1,0 +1,37 @@
+# Noetix Bumi (Boomy abroad): a small humanoid. quackd describes it from Noetix's documentation
+# and drives no part of it (ADR-0077). A later binding would speak its DDS SDK.
+vendor: noetix
+model: bumi
+embodiment: humanoid
+mobility: legged
+blurb: >-
+  a Noetix Bumi, a small humanoid just under 1 m tall, which walks on two legs
+datasheet:
+  manipulator: none
+  tethered: false
+  terrain: indoor
+  mass_kg:
+    value: 17
+    confidence: official
+    source: "web.noetixrobotics.com/docs, Bumi specifications: about 17 kg with the battery, read 2026-11-05"
+  height_m:
+    value: 0.98
+    confidence: official
+    source: "web.noetixrobotics.com/docs, Bumi specifications: 98 x 35 x 20 cm, read 2026-11-05"
+  dof:
+    value: 21
+    confidence: official
+    source: "web.noetixrobotics.com/docs, Bumi specifications: 21 degrees of freedom, read 2026-11-05"
+  endurance_min:
+    value: 120
+    confidence: official
+    source: "web.noetixrobotics.com/docs, Bumi specifications: 2 to 3 h on the 48 V 5100 mAh battery, the lower figure, read 2026-11-05"
+  not_rated:
+    - "rain, by Noetix's prohibitions"
+    - "stairs, by Noetix's prohibitions"
+    - "slopes above 20 degrees, by Noetix's prohibitions"
+  notes:
+    - "Noetix publishes no payload and nothing on what its arms can hold, so no manipulator is listed here"
+    - "its SDK has no stop verb; fall protection disables every joint, which drops the body (web.noetixrobotics.com/docs)"
+    - "walking speed 1 m/s by its specifications; quackd clamps nothing here because it drives nothing"
+    - "sold as Boomy outside China; Bumi is its shipping name"

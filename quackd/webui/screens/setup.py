@@ -114,7 +114,7 @@ def _robot() -> None:
             st.warning(
                 f'This adapter is not installed: uv pip install "quackd[{row.get("extra")}]"'
             )
-    if not catalog.is_simulated(backend):
+    if catalog.drives(adapter) and not catalog.is_simulated(backend):
         _connect(adapter, backend, source == "registered")
 
 

@@ -470,14 +470,41 @@ def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() ->
 
 
 def test_adapter_status_lists_every_backend() -> None:
-    from quackd.adapters.factory import BACKENDS
+    """Every row of the catalogue, the described bodies among them: a body with no row on this
+    page is one whose numbers are on no page at all."""
+    from quackd.adapters.catalogue import OFFICIAL
 
     doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
-    for adapter, backends in BACKENDS.items():
-        for backend in backends:
-            assert f"`{adapter}:{backend}`" in doc, (
-                f"docs/adapters/status.md lacks {adapter}:{backend}"
+    for row in OFFICIAL:
+        for backend in row.backends:
+            assert f"`{row.name}:{backend}`" in doc, (
+                f"docs/adapters/status.md lacks {row.name}:{backend}"
             )
+
+
+def test_adapter_status_says_the_tier_the_catalogue_says() -> None:
+    """The page's table is written by hand and the tier is not: the cell after a backend's
+    `--robot` is the catalogue's tier for it, with the owner and the date where the tier names
+    them, so the page cannot call a backend verified that the catalogue calls bound
+    (ADR-0076)."""
+    from quackd.adapters.catalogue import ADAPTERS
+
+    doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
+    for row in ADAPTERS:
+        for backend, tier in row.tiers.items():
+            cell = f"{tier.mark} {tier.name}"
+            if tier.owner:
+                cell += f" · {tier.owner} · {tier.date}"
+            assert f"| `{row.name}:{backend}` | {cell} |" in doc, (
+                f"docs/adapters/status.md does not say {row.name}:{backend} is {cell!r}"
+            )
+    for mark, name in (
+        ("🤖", "verified"),
+        ("🧪", "bound"),
+        ("✅", "rehearsed"),
+        ("📄", "described"),
+    ):
+        assert f"| {mark} **{name}** |" in doc, f"the page's legend lacks the {name} tier"
 
 
 def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
@@ -1607,12 +1634,23 @@ def test_the_counts_of_bodies_and_distributions_follow_the_adapters() -> None:
     guard read either shape. The badge is the first number a reader meets, and the number of
     distributions is what one version ships, so both follow `ADAPTER_NAMES`, the core counted in
     for the second."""
+    from quackd.adapters.catalogue import ADAPTERS, DESCRIBED_BODIES
     from quackd.adapters.factory import ADAPTER_NAMES
 
     bodies = len(ADAPTER_NAMES)
-    badge = re.search(r'badge/robots-(\d+)%20bodies[^"]*" alt="robots: (\d+) bodies', README)
+    badge = re.search(
+        r"badge/robots-(\d+)%20adapters%2C%20(\d+)%20on%20hardware%2C%20(\d+)%20described"
+        r'[^"]*" alt="robots: (\d+) adapters, (\d+) on hardware, (\d+) described"',
+        README,
+    )
     assert badge is not None, "the README has no robots badge"
-    assert (int(badge.group(1)), int(badge.group(2))) == (bodies, bodies), badge.group(0)
+    # each number is the catalogue's: the adapters, the ones with a verified backend, and the
+    # bodies quackd only describes, which are never counted among the first
+    on_hardware = sum(
+        1 for row in ADAPTERS if any(tier.name == "verified" for tier in row.tiers.values())
+    )
+    counts = (bodies, on_hardware, len(DESCRIBED_BODIES))
+    assert tuple(int(g) for g in badge.groups()) == counts + counts, badge.group(0)
     for doc in _living_docs():
         prose = _prose(doc.read_text(encoding="utf-8")).lower()
         for count, word in _NUMBER_WORDS.items():
@@ -4522,6 +4560,54 @@ def test_the_web_ui_guides_connect_table_is_what_scripts_connect_docs_writes() -
     for info in OFFICIAL:
         for backend in info.connect:
             assert f"| `{info.name}:{backend}` |" in committed, f"no row for {info.name}:{backend}"
+
+
+def _bodies_docs_script() -> ModuleType:
+    """`scripts/bodies_docs.py`, loaded by path as `scripts/llms_docs.py` is."""
+    import importlib.util
+
+    script = REPO / "scripts" / "bodies_docs.py"
+    spec = importlib.util.spec_from_file_location("bodies_docs", script)
+    assert spec and spec.loader, f"{script} could not be loaded as a module"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_described_bodies_table_is_what_scripts_bodies_docs_writes() -> None:
+    """A described body is one YAML and no code (ADR-0077), so this table is the only page its
+    numbers are on. It is the body files rendered, and read off the page directly too, since a
+    renderer that dropped a row would agree with itself."""
+    from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
+
+    script = _bodies_docs_script()
+    committed = script.PAGE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert script.rewrite(committed) == committed, (
+        "docs/adapters/status.md is not what scripts/bodies_docs.py writes from the body files: "
+        "run uv run --no-sync python scripts/bodies_docs.py and commit what it changes"
+    )
+    for body in DESCRIBED_BODIES:
+        assert f"| `{DESCRIBED}:{body}` |" in committed, f"no row for {DESCRIBED}:{body}"
+    assert script.main(["--check"]) == 0
+
+
+def test_the_readme_sends_a_reader_to_the_described_bodies() -> None:
+    """The front page's table is the nine quackd drives. The bodies it only describes are named
+    under it as what they are, with where their numbers and the way to add one live."""
+    section = README.split("\n## Which robots work\n", 1)[1].split("\n## ", 1)[0]
+    assert "**Described bodies.**" in section
+    assert "drives no part of" in section
+    assert "(docs/adapters/status.md#described-bodies)" in section
+    assert "(CONTRIBUTING.md#add-a-described-body)" in section
+    contributing = (REPO / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "\n## Add a described body\n" in contributing
+    for mark, name in (
+        ("🤖", "verified"),
+        ("🧪", "bound"),
+        ("✅", "rehearsed"),
+        ("📄", "described"),
+    ):
+        assert f"| {mark} **{name}** |" in section, f"the README's legend lacks the {name} tier"
 
 
 def test_the_llms_pages_are_what_scripts_llms_docs_writes() -> None:

@@ -138,8 +138,10 @@ ASCII = Glyphs(
 )
 
 _PLAIN = {
-    "✅": "[ok]",  # the registry's built-in tick
-    "🧪": "[exp]",  # experimental
+    "✅": "[ok]",  # the registry's built-in tick, a rehearsed backend
+    "🧪": "[exp]",  # experimental, a bound backend
+    "🤖": "[hw]",  # a verified backend, run on hardware
+    "📄": "[desc]",  # a described body, which nothing drives
     "🚧": "[wip]",
     "⏳": "[wip]",
     "⚠️": "[!]",
@@ -708,7 +710,8 @@ def _adapters_table(rows: Sequence[Mapping[str, Any]], g: Glyphs, title: str | N
     out = table(title)
     out.add_column("adapter", style=STYLES["key"], no_wrap=True)
     out.add_column("backends")
-    out.add_column("status")
+    # ADR-0076: the cell is the tier of every backend, rendered from the catalogue's records
+    out.add_column("tier", overflow="fold")
     out.add_column("extra")
     for row in rows:
         extra = Text(str(row["extra"]))
@@ -717,10 +720,25 @@ def _adapters_table(rows: Sequence[Mapping[str, Any]], g: Glyphs, title: str | N
         out.add_row(
             Text(str(row["name"])),
             Text(f" {g.dot} ".join(row["backends"])),
-            status_text(str(row["status"]), g),
+            status_text(_tier_cell(row), g),
             extra,
         )
     return out
+
+
+def _tier_cell(row: Mapping[str, Any]) -> str:
+    """The tiers of a row's backends, one tier to a line, or its status line where it declares
+    no tiers: a third party's adapter that says only `STATUS`."""
+    from quackd.adapters.catalogue import Tier, tier_groups
+
+    tiers = row.get("tiers")
+    if not tiers:
+        return str(row["status"])
+    try:
+        read = {backend: Tier.from_dict(tier) for backend, tier in tiers.items()}
+        return "\n".join(tier_groups(tuple(row["backends"]), read))
+    except (KeyError, ValueError, AttributeError):
+        return str(row["status"])
 
 
 def _install_state(row: Mapping[str, Any]) -> tuple[str, str]:

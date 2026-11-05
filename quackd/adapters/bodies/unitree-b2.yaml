@@ -1,0 +1,39 @@
+# Unitree B2: an industrial quadruped. quackd describes it from Unitree's page and drives no
+# part of it (ADR-0077). A later binding would speak unitree_sdk2 over DDS.
+vendor: unitree
+model: b2
+embodiment: quadruped
+mobility: legged
+blurb: >-
+  a Unitree B2, an industrial quadruped the size of a large dog, with cameras and a LiDAR and
+  nothing to grip with
+datasheet:
+  manipulator: none
+  tethered: false
+  terrain: outdoor
+  mass_kg:
+    value: 60
+    confidence: official
+    source: "unitree.com/b2: about 60 kg with the battery, read 2026-11-05"
+  height_m:
+    value: 0.645
+    confidence: official
+    source: "unitree.com/b2: 1098 x 450 x 645 mm standing, read 2026-11-05"
+  dof:
+    value: 12
+    confidence: estimate
+    source: "a dealer's listing of the B2, 12 joint motors; Unitree's own page does not count them, read 2026-11-05"
+  endurance_min:
+    value: 300
+    confidence: official
+    source: "unitree.com/b2: over 5 h unloaded on the 2250 Wh battery, read 2026-11-05"
+    note: "unloaded; under load Unitree publishes no figure"
+  not_rated:
+    - "stairs with steps above 25 cm or deeper than 40 cm, by unitree.com/b2's 20 to 25 cm step figure"
+    - "slopes above 45 degrees, by unitree.com/b2's slope figure"
+  cannot:
+    - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"
+  notes:
+    - "Unitree rates the back for 120 kg standing and 40 kg walking (unitree.com/b2); a back load is not a payload a hand holds, so it is a note here"
+    - "Unitree publishes no deadman, no link-loss behaviour and no hardware stop for the B2; damping is the brake its SDK offers"
+    - "it carries a 3D LiDAR, two depth cameras and two optical cameras (unitree.com/b2); quackd reads none of them"

@@ -5,24 +5,20 @@ needs none of it to introduce the robot and let its brain talk. So a robot.yaml 
 `robot:` section gets this body: a mock that reports a state and stops, under a manifest built
 from what the owner wrote. It moves nothing, because nothing here can, and its prompt says so.
 
-It is not an adapter in quackd's catalogue and no entry point names it, so it is never one of
-the robots `quackd robot add` offers.
+The body itself is `quackd.adapters.described`'s, the same one the catalogue's described
+bodies are (ADR-0077); this module only builds its manifest from a robot.yaml. A robot.yaml
+body is not in the catalogue and no entry point names it, so it is never one of the robots
+`quackd robot add` offers.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any
 
-from PIL import Image
-
-from quackd.adapters.base import RestResult
-from quackd.adapters.manifest import Datasheet, Figure, Health, RobotManifest, verb_spec
+from quackd.adapters.described import DescribedAdapter as _DescribedAdapter
+from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, verb_spec
 from quackd.onboard.config import RobotFile
-from quackd.transport.base import Ack, DuckState, Intent
-from quackd.transport.mock import MockTransport
 from quackd.verbs.core import CORE
-from quackd.verbs.registry import Precondition, Verb
 
 #: What a robot quackd only talks for can be asked to do: say how it is, and stop talking.
 VERBS = ("report_state", "stop")
@@ -69,72 +65,9 @@ def described_manifest(file: RobotFile, backend: str = "described") -> RobotMani
     )
 
 
-class DescribedBody(MockTransport):
-    """A body in memory that stands where it is: a state to report, and nothing to move."""
-
-    def __init__(self) -> None:
-        super().__init__(states=[DuckState(policy="described", posture="standing")])
-
-
-class DescribedAdapter:
-    """A `RobotAdapter` over a `DescribedBody`, for the run loop and the executor."""
-
-    name = "described"
+class DescribedAdapter(_DescribedAdapter):
+    """The described body of `quackd.adapters.described`, built from a robot.yaml."""
 
     def __init__(self, file: RobotFile) -> None:
-        self.transport = DescribedBody()
-        self.backend = "described"
-        self.robot_id = file.passport.name
+        super().__init__(described_manifest(file))
         self._file = file
-        self.manifest: RobotManifest | None = None
-
-    async def connect(self) -> RobotManifest:
-        await self.transport.connect()
-        self.manifest = described_manifest(self._file)
-        return self.manifest
-
-    async def disconnect(self) -> None:
-        await self.transport.close()
-
-    async def close(self) -> None:
-        await self.disconnect()
-
-    async def get_state(self) -> DuckState:
-        return await self.transport.get_state()
-
-    async def get_frame(self) -> Image.Image | None:
-        return None
-
-    async def send_intent(self, intent: Intent) -> Ack:
-        return await self.transport.send_intent(intent)
-
-    async def health(self) -> Health:
-        return Health(ok=True)
-
-    async def heartbeat(self) -> None:
-        await self.transport.heartbeat()
-
-    async def stop(self) -> None:
-        await self.transport.stop()
-
-    async def go_to_rest(self) -> RestResult:
-        return RestResult.none("a described body keeps no rest pose")
-
-    def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
-        return self.transport.subscribe(topic)
-
-    def now(self) -> float:
-        return self.transport.now()
-
-    async def sleep(self, seconds: float) -> None:
-        await self.transport.sleep(seconds)
-
-    def preconditions(self) -> dict[str, Precondition]:
-        return {}
-
-    def implementations(self) -> dict[str, Verb]:
-        return {}
-
-    @property
-    def mobility(self) -> str:
-        return self.manifest.mobility if self.manifest else "none"

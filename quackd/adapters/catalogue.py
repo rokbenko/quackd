@@ -1,4 +1,4 @@
-"""The nine robots quackd publishes, as data, importing none of them.
+"""The nine robots quackd publishes and the bodies it only describes, as data, importing none.
 
 `factory.py` builds robots; this file only says which ones exist. The split matters because
 `quackd list-adapters` and `quackd doctor` have to render the whole table on a machine where
@@ -8,28 +8,93 @@ not. Everything here is a string.
 An adapter that is installed also describes itself, through the `quackd.adapters` entry point
 group, and a third party's adapter is discovered that way and nowhere else. The nine below
 are only the ones quackd ships and supports, listed in a fixed order because the tables that
-print them are order sensitive and `tests/test_adapters.py` pins it.
+print them are order sensitive and `tests/test_adapters.py` pins it. The tenth row is not an
+adapter: it lists the bodies quackd describes from one YAML each and drives no part of
+(ADR-0077), so that `--robot described:<name>` parses, registers and describes like any other.
+
+Every backend carries a tier (ADR-0076): described, rehearsed, bound or verified, with an owner
+and a date where the rule asks for one. The marks the tables print come from the tier, so a ✅
+can never sit on a backend nobody has run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from typing import Literal
 
 ENTRY_POINT_GROUP = "quackd.adapters"
 """Where an installed adapter announces itself. One entry per adapter, its name to its
 module, and that module carries `describe`, `make`, `implementations` and `conditions`."""
 
+TierName = Literal["described", "rehearsed", "bound", "verified"]
+TIERS: tuple[TierName, ...] = ("described", "rehearsed", "bound", "verified")
+"""How far a backend has got, in one word (ADR-0076). `described`: a body quackd lists and
+reasons about from one YAML and drives no part of. `rehearsed`: a mock or a simulator, run in
+the suite. `bound`: a backend that reaches a real robot, whose upstream names were read at a
+pin, and that has never met one. `verified`: run on hardware, by a named person, on a date."""
+
+MARK: dict[str, str] = {"described": "📄", "rehearsed": "✅", "bound": "🧪", "verified": "🤖"}
+"""The mark each tier prints with, the same in every table that prints one."""
+
+Kind = Literal["adapter", "described"]
+Family = Literal["arm", "biped", "wheeled", "humanoid", "described"]
+FAMILIES: tuple[Family, ...] = ("arm", "biped", "wheeled", "humanoid", "described")
+"""The behaviour families bodies share code by (ADR-0075); `described` is the kind of body
+that shares none, since nothing drives it."""
+Route = Literal["sdk", "wire", "bridge"]
+ROUTES: tuple[Route, ...] = ("sdk", "wire", "bridge")
+"""How an intent reaches the robot: an SDK quackd imports, a wire quackd speaks, or a bridge
+quackd ships for the robot's own computer."""
+
+RULE_ADOPTED = "2026-11-05"
+"""The day ADR-0076's rule was adopted: the date every grandfathered backend carries."""
+GRANDFATHERED = "grandfathered 0.33.0"
+"""The owner of a bound backend that was here before the rule: a statement that nobody has
+named a date, not a date."""
+
+
+@dataclass(frozen=True)
+class Tier:
+    """One backend's tier, and who answers for it.
+
+    `owner` and `date` are who answers for a bound backend's first hardware run and when, or who
+    ran a verified one and when; both None on a rehearsed or described backend. `note` is what
+    the status cell used to say of this backend alone: what it needs, what it has met."""
+
+    name: TierName
+    owner: str | None = None
+    date: str | None = None
+    note: str = ""
+
+    @property
+    def mark(self) -> str:
+        return MARK[self.name]
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"tier": self.name, "owner": self.owner, "date": self.date, "note": self.note}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, str | None]) -> Tier:
+        """The record `to_dict` wrote, read back: what a table is handed in a `--json` row."""
+        name = data.get("tier")
+        if name not in TIERS:
+            raise ValueError(f"no tier is called {name!r}")
+        return cls(name, data.get("owner"), data.get("date"), data.get("note") or "")
+
 
 @dataclass(frozen=True)
 class AdapterInfo:
-    """One robot quackd publishes, said without importing it."""
+    """One robot quackd publishes, said without importing it, or the row of bodies it only
+    describes (`kind == "described"`)."""
 
     name: str
     backends: tuple[str, ...]
     """In order. The first is what `--robot <adapter>` means with no backend after it."""
     status: str
-    """The cell `list-adapters` and `doctor` print: how far each backend has actually got."""
+    """The cell `list-adapters` and `doctor` print: how far each backend has actually got. A row
+    that carries tiers has no status of its own: whatever is passed, it is the tiers rendered
+    (`status_line`), so the two can never disagree."""
     summary: str
     """One line for a message that has to say what this body is, in a sentence."""
     extra: str | None = None
@@ -39,6 +104,79 @@ class AdapterInfo:
     connect: Mapping[str, Connect] = field(default_factory=dict)
     """What connecting each real backend takes, by backend: the page `quackd ui` shows it beside
     the address field. A simulator or a mock needs nothing, and has no entry."""
+    kind: Kind = "adapter"
+    """`adapter` for a package that drives a robot; `described` for the one row whose backends
+    are bodies quackd describes and drives no part of."""
+    tiers: Mapping[str, Tier] = field(default_factory=dict)
+    """Each backend's tier, by backend. Empty only on a third party's row that declares none."""
+    family: tuple[str, ...] = ()
+    """The behaviour family, first the body's own and then its arms' where it has arms of a
+    kind another family drives: `("wheeled", "arm")` for a cart with two arms."""
+    route: tuple[str, ...] = ()
+    """How its real backends reach the robot, among `ROUTES`; two where a body takes two."""
+
+    def __post_init__(self) -> None:
+        if not self.tiers:
+            return
+        untiered = [backend for backend in self.backends if backend not in self.tiers]
+        if untiered:
+            raise ValueError(f"{self.name}: no tier for {', '.join(untiered)}")
+        for backend, tier in self.tiers.items():
+            if tier.name not in TIERS:
+                raise ValueError(f"{self.name}:{backend} has no tier called {tier.name!r}")
+        # a row rebuilt with fewer backends (`dataclasses.replace`) keeps the tiers of those it
+        # kept, in the backends' own order, and says what those say
+        object.__setattr__(self, "tiers", {b: self.tiers[b] for b in self.backends})
+        object.__setattr__(self, "status", status_line(self))
+
+
+def tier_groups(backends: tuple[str, ...], tiers: Mapping[str, Tier]) -> list[str]:
+    """One string per tier a row has a backend in: verified first, then rehearsed, bound and
+    described, each tier's backends in the row's own order, with each backend's note and who
+    answers for it in brackets after it.
+
+    `✅ rehearsed: sim2d, mock` and `🧪 bound: jsonrpc (never run on a duck; grandfathered
+    0.33.0)`. A grandfathered backend prints no date, since its date is the day the rule was
+    adopted and says nothing of that backend. A tier that holds every backend of the row names
+    none of them, which is the described row: its backends are already the column beside it."""
+    groups: list[str] = []
+    for tier_name in ("verified", "rehearsed", "bound", "described"):
+        named = [b for b in backends if tiers[b].name == tier_name]
+        if not named:
+            continue
+        if len(named) == len(backends) and not any(_said(tiers[b]) for b in named):
+            groups.append(f"{MARK[tier_name]} {tier_name}")
+            continue
+        parts = []
+        for backend in named:
+            said = _said(tiers[backend])
+            parts.append(backend + (f" ({'; '.join(said)})" if said else ""))
+        groups.append(f"{MARK[tier_name]} {tier_name}: {', '.join(parts)}")
+    return groups
+
+
+def _said(tier: Tier) -> list[str]:
+    """What a tier says of its backend beyond its name: the note, then who answers for it."""
+    said = [tier.note] if tier.note else []
+    if tier.owner == GRANDFATHERED:
+        said.append(GRANDFATHERED)
+    elif tier.owner or tier.date:
+        said.append(", ".join(p for p in (tier.owner, tier.date) if p))
+    return said
+
+
+def status_line(info: AdapterInfo) -> str:
+    """The status cell as one line, rendered from the tiers (`tier_groups`), which is what the
+    `status` key of a `--json` row carries. The tables print the same groups one to a line."""
+    return " · ".join(tier_groups(info.backends, info.tiers))
+
+
+def _rehearsed(note: str = "") -> Tier:
+    return Tier("rehearsed", note=note)
+
+
+def _bound(note: str, owner: str = GRANDFATHERED, date: str = RULE_ADOPTED) -> Tier:
+    return Tier("bound", owner=owner, date=date, note=note)
 
 
 @dataclass(frozen=True)
@@ -79,36 +217,55 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     AdapterInfo(
         name="microduck",
         backends=("sim2d", "mujoco", "mock", "jsonrpc"),
-        status=(
-            "✅ in the package: sim2d, mock · ✅ mujoco (physics, needs quackd[mujoco]) · "
-            "🧪 jsonrpc"
-        ),
+        status="",
         summary="a 25 cm biped duck from Pollen Robotics",
         extra="quackd[microduck]",
+        tiers={
+            "sim2d": _rehearsed(),
+            "mujoco": _rehearsed("physics, needs quackd[mujoco]"),
+            "mock": _rehearsed(),
+            "jsonrpc": _bound("every method VERIFIED at a pin, never run on a duck"),
+        },
+        family=("biped",),
+        route=("wire",),
     ),
     AdapterInfo(
         name="lerobot",
         backends=("mock", "real", "mujoco"),
-        status=(
-            "✅ in the package: mock · ✅ real (one SO-101, driven on 2026-09-15 and again on "
-            "2026-09-23; Python 3.12+) · ✅ mujoco (the real backend over a physics model of "
-            "the SO-101, needs quackd[lerobot-sim]; passes a seeded grasp sweep on the maker's "
-            "model, never compared against the arm)"
-        ),
+        status="",
         summary="an SO-101 class desktop arm driven by LeRobot",
         extra="quackd[lerobot]",
         sdk="lerobot",
+        tiers={
+            "mock": _rehearsed(),
+            "real": Tier(
+                "verified",
+                owner="rok",
+                date="2026-09-15",
+                note="one SO-101, driven on 2026-09-15 and again on 2026-09-23; Python 3.12+",
+            ),
+            "mujoco": _rehearsed(
+                "the real backend over a physics model of the SO-101, needs "
+                "quackd[lerobot-sim]; passes a seeded grasp sweep on the maker's model, never "
+                "compared against the arm"
+            ),
+        },
+        family=("arm",),
+        route=("sdk",),
     ),
     AdapterInfo(
         name="rosbridge",
         backends=("mock", "ws"),
-        status=(
-            "✅ in the package: mock · 🧪 ws via roslibpy (verified names, never run against "
-            "a bridge)"
-        ),
+        status="",
         summary="any wheeled base that speaks rosbridge",
         extra="quackd[rosbridge]",
         sdk="roslibpy",
+        tiers={
+            "mock": _rehearsed(),
+            "ws": _bound("via roslibpy, verified names, never run against a bridge"),
+        },
+        family=("wheeled",),
+        route=("sdk",),
     ),
     # Appended, never inserted: the tables that print these are order-sensitive and
     # tests/test_adapters.py pins the order. No extra: the client is stdlib, and the robot's
@@ -116,62 +273,89 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     AdapterInfo(
         name="open_duck",
         backends=("sim2d", "mock", "bridge"),
-        status=(
-            "✅ in the package: sim2d, mock · 🧪 bridge (quackd's own daemon on the duck's Pi, "
-            "never run on a robot)"
-        ),
+        status="",
         summary="an Open Duck Mini v2, the one you can build yourself",
         extra="quackd[open_duck]",
+        tiers={
+            "sim2d": _rehearsed(),
+            "mock": _rehearsed(),
+            "bridge": _bound("quackd's own daemon on the duck's Pi, never run on a robot"),
+        },
+        family=("biped",),
+        route=("bridge",),
     ),
     # XLeRobot is not an installable package, so quackd speaks its ZeroMQ host protocol rather
     # than importing it: the extra is pyzmq and nothing else (ADR-0026).
     AdapterInfo(
         name="xlerobot",
         backends=("mock", "zmq"),
-        status=(
-            "✅ in the package: mock · 🧪 zmq (wire format VERIFIED at a pinned commit, exercised "
-            "against a fake host over loopback, never run on a cart)"
-        ),
+        status="",
         summary="a dual-arm wheeled cart",
         extra="quackd[xlerobot]",
         sdk="zmq",
+        tiers={
+            "mock": _rehearsed(),
+            "zmq": _bound(
+                "wire format VERIFIED at a pinned commit, exercised against a fake host over "
+                "loopback, never run on a cart"
+            ),
+        },
+        family=("wheeled", "arm"),
+        route=("wire",),
     ),
     # Also not an installable package: a fork of LeRobot that calls itself lerobot and is not
     # on PyPI, so quackd speaks its ZeroMQ host protocol too (ADR-0027).
     AdapterInfo(
         name="alohamini",
         backends=("mock", "sim2d", "zmq"),
-        status=(
-            "✅ in the package: mock, sim2d · 🧪 zmq (wire format VERIFIED at a pinned commit, "
-            "exercised against a fake host over loopback, never run on a robot)"
-        ),
+        status="",
         summary="two arms on a lift, on a wheeled base",
         extra="quackd[alohamini]",
         sdk="zmq",
+        tiers={
+            "mock": _rehearsed(),
+            "sim2d": _rehearsed(),
+            "zmq": _bound(
+                "wire format VERIFIED at a pinned commit, exercised against a fake host over "
+                "loopback, never run on a robot"
+            ),
+        },
+        family=("wheeled", "arm"),
+        route=("wire",),
     ),
     # No network API of any kind upstream: no socket, no daemon, no IPC. So quackd ships the
     # daemon, as it does for the Open Duck Mini, and the client is stdlib (ADR-0028).
     AdapterInfo(
         name="toddlerbot",
         backends=("mock", "sim2d", "bridge"),
-        status=(
-            "✅ in the package: mock, sim2d · 🧪 bridge (quackd's own daemon on the robot, "
-            "never run on a robot)"
-        ),
+        status="",
         summary="a small open-source humanoid",
         extra="quackd[toddlerbot]",
+        tiers={
+            "mock": _rehearsed(),
+            "sim2d": _rehearsed(),
+            "bridge": _bound("quackd's own daemon on the robot, never run on a robot"),
+        },
+        family=("humanoid",),
+        route=("bridge",),
     ),
     # Huebot's own API is closed, and its maker is writing a shim for the robot that is to answer
     # the Microduck's JSON-RPC, so the client is stdlib and there is no SDK to probe.
     AdapterInfo(
         name="huebot",
         backends=("mock", "jsonrpc"),
-        status=(
-            "✅ in the package: mock · 🧪 jsonrpc (robotd's protocol, spoken to a shim its maker "
-            "is writing for the robot, never run on a robot)"
-        ),
+        status="",
         summary="a 25 cm biped from Leif Rydenfalk",
         extra="quackd[huebot]",
+        tiers={
+            "mock": _rehearsed(),
+            "jsonrpc": _bound(
+                "robotd's protocol, spoken to a shim its maker is writing for the robot, never "
+                "run on a robot"
+            ),
+        },
+        family=("biped",),
+        route=("wire",),
     ),
     # MOSS runs dimOS on the rover, and its only network surface is its own cockpit. quackd
     # speaks the cockpit, and a bridge of its own on the rover for what the cockpit has no
@@ -179,12 +363,57 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     AdapterInfo(
         name="moss",
         backends=("mock", "cockpit"),
-        status=(
-            "✅ in the package: mock · 🧪 cockpit (MOSS's own cockpit and quackd's own bridge "
-            "on the rover, never run against a rover)"
-        ),
+        status="",
         summary="a small tracked rover that picks up litter",
         extra="quackd[moss]",
+        tiers={
+            "mock": _rehearsed(),
+            "cockpit": _bound(
+                "MOSS's own cockpit and quackd's own bridge on the rover, never run against a rover"
+            ),
+        },
+        family=("wheeled",),
+        route=("wire", "bridge"),
+    ),
+)
+
+DESCRIBED = "described"
+"""The tenth row's name, and the adapter a described body is reached through:
+`--robot described:<body>`."""
+
+DESCRIBED_BODIES: tuple[str, ...] = (
+    "franka-research-3",
+    "kuka-lbr-iisy-3-r760",
+    "kuka-lbr-iiwa-7-r800",
+    "menlo-asimov-1",
+    "noetix-bumi",
+    "rhoban-microban",
+    "unitree-b2",
+    "unitree-g1-edu",
+    "unitree-go2-edu",
+    "ur5e",
+    "yaskawa-motomini",
+)
+"""The bodies quackd describes and drives no part of, one YAML each under
+`quackd/adapters/bodies/`, in alphabetical order. Strings here and files there, and a test
+holds the two lists equal: the catalogue must stay importable on a machine with nothing else,
+so it names them rather than reading the directory."""
+
+OFFICIAL = (
+    *OFFICIAL,
+    # The row that is not an adapter: every backend is a body quackd lists, registers and reasons
+    # about from its maker's figures, with report_state and stop as its only verbs (ADR-0077).
+    # Appended after the nine so that the tables' order and the count of adapters stay as they
+    # were; `kind` is what keeps "nine adapters" true.
+    AdapterInfo(
+        name=DESCRIBED,
+        backends=DESCRIBED_BODIES,
+        status="",
+        summary="robots quackd describes from one YAML each and drives no part of",
+        kind="described",
+        tiers={body: Tier("described") for body in DESCRIBED_BODIES},
+        family=("described",),
+        route=(),
     ),
 )
 
@@ -325,3 +554,8 @@ _CONNECT: dict[str, dict[str, Connect]] = {
 OFFICIAL = tuple(replace(info, connect=_CONNECT.get(info.name, {})) for info in OFFICIAL)
 
 BY_NAME: dict[str, AdapterInfo] = {info.name: info for info in OFFICIAL}
+"""Every row by name, the nine adapters first and the described row last."""
+
+ADAPTERS: tuple[AdapterInfo, ...] = tuple(info for info in OFFICIAL if info.kind == "adapter")
+"""The nine rows that are adapters: what the count of adapters, the extras and the
+distributions follow (`tests/test_docs.py` holds the badge and the pages to it)."""

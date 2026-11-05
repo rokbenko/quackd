@@ -1,0 +1,39 @@
+# KUKA LBR iisy 3 R760: a six-axis cobot on iiQKA.OS2, the arm in KUKA's education cell. quackd
+# describes it from KUKA's datasheet and drives no part of it (ADR-0077). A later binding would
+# reach it through KUKA's own ROS 2 drivers.
+vendor: kuka
+model: lbr-iisy-3-r760
+embodiment: arm
+mobility: none
+blurb: >-
+  a KUKA LBR iisy 3 R760, a six-axis collaborative arm bolted to a bench and run from its own
+  controller, with torque sensors in every axis
+datasheet:
+  manipulator: arms
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 22.8
+    confidence: official
+    source: "KUKA LBR iisy 3 R760 datasheet 0000-320-854: about 22.8 kg, read 2026-11-05"
+  dof:
+    value: 6
+    confidence: official
+    source: "KUKA LBR iisy 3 R760 datasheet 0000-320-854: 6 axes, read 2026-11-05"
+  payload_kg:
+    value: 3
+    confidence: official
+    source: "KUKA LBR iisy 3 R760 datasheet 0000-320-854: 3 kg rated, 3.34 kg at most, read 2026-11-05"
+  reach_m:
+    value: 0.760
+    confidence: official
+    source: "KUKA LBR iisy 3 R760 datasheet 0000-320-854: 760 mm, read 2026-11-05"
+  cannot:
+    - "move its base: it is bolted to a bench and mains powered"
+  notes:
+    - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
+    - "safety rated PL d, category 3, with torque sensors in every axis, by the datasheet"
+    - "joints move at 200 to 400 degrees per second by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "rated for 5 to 45 degrees C and IP30 by the datasheet; its mains voltage is not on the pages read"
+    - "KUKA's ROS 2 drivers end the connection on a missed packet, and the pendant's stop is the brake"

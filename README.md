@@ -1,7 +1,7 @@
 <h1 align="center">quackd</h1>
 
 <p align="center"><strong>One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain.</strong><br>
-<sub>quackd, pronounced “quacked”, began as the brain daemon the Microduck was missing, named like that robot's own <code>robotd</code>, <code>mediad</code>, <code>padd</code> and <code>tofd</code>. That is where the ducks come from: a task is a <code>.duck</code> file and a group of robots is a flock. Nine robots today, one of them driven on real hardware and the other eight still in a simulator or a mock, and one of them a duck you can print and build yourself.</sub></p>
+<sub>quackd, pronounced “quacked”, began as the brain daemon the Microduck was missing, named like that robot's own <code>robotd</code>, <code>mediad</code>, <code>padd</code> and <code>tofd</code>. That is where the ducks come from: a task is a <code>.duck</code> file and a group of robots is a flock. Nine robots today, one of them driven on real hardware and the other eight still in a simulator or a mock, and one of them a duck you can print and build yourself. More are described from their makers' figures and not driven at all.</sub></p>
 
 <p align="center">Register each robot once, by name. Then state a goal from a terminal or from a chat with Claude, to one robot or to a flock of them, and the same contract decides which of each robot's skills its LLM may use, how many steps it gets, and when it has to ask you first.</p>
 
@@ -11,7 +11,7 @@
   <a href="https://pypi.org/project/quackd/"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
   <a href="docs/guides/mcp.md"><img src="https://img.shields.io/badge/MCP-ready-8A2BE2" alt="MCP ready"></a>
-  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-9%20bodies%2C%201%20on%20hardware-f5c518" alt="robots: 9 bodies, 1 on hardware"></a>
+  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-9%20adapters%2C%201%20on%20hardware%2C%2011%20described-f5c518" alt="robots: 9 adapters, 1 on hardware, 11 described"></a>
 </p>
 
 <details>
@@ -505,14 +505,12 @@ Nine robots, and one table for how far each one has actually got. Each name link
 
 Each of the nine is its own package, pulled in by the extra that carries its name (`quackd[microduck]`, `quackd[lerobot]` and so on, or `quackd[robots]` for all of them), so a build knows only the bodies you asked for. `quackd list-adapters` prints the whole table either way and marks the ones this machine cannot run, whether that is the adapter missing or the library its real backend needs.
 
-| How far it has got | What that means |
+| Tier | What that means |
 |---|---|
-| 🤖 **hardware** | The real robot has moved under quackd at least once, on a day and a build this table names, with what went wrong written down beside what worked. One body carries this mark |
-| ✅ **simulator** | Runs a whole task in the bundled 2D simulator, with a seeded acceptance sweep in CI that checks the simulator's ground truth, not the LLM's claim |
-| ✅ **physics** | Runs a whole task in MuJoCo on the body's own controller, checked against the physics world's ground truth rather than the LLM's claim. On the duck that is its trained gait, and on the arm, which has no gait, it is the real backend's own code over the maker's model. Needs `quackd[mujoco]` for the duck or `quackd[lerobot-sim]` for the arm: CI runs each on a stand-in body on every push, and a nightly job fetches upstream's model for the real one |
-| ✅ **mock** | Every verb runs offline against a scripted double, in the test suite |
-| 🧪 **daemon** | The wire protocol runs end to end against the real on-robot daemon over loopback in CI. Everything except the robot is exercised |
-| 🧪 **names** | Every upstream name read from upstream source at a pinned commit, exercised against fakes. Never connected to anything real |
+| 🤖 **verified** | The real robot has moved under quackd at least once, on a day and a build this table names, with what went wrong written down beside what worked. One backend carries this mark, and the table below says **hardware** beside it |
+| 🧪 **bound** | Code that reaches a real robot and has never met one. A new one enters only with a named owner and a date for its first hardware run ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)). Two kinds. **Daemon**: the wire protocol runs end to end against the real on-robot daemon over loopback in CI, so everything except the robot is exercised. **Names**: every upstream name was read from upstream source at a pinned commit and exercised against fakes, and it has never connected to anything real |
+| ✅ **rehearsed** | Runs a whole task with no robot. Three kinds. **Simulator**: the bundled 2D simulator, with a seeded acceptance sweep in CI that checks the simulator's ground truth, not the LLM's claim. **Physics**: MuJoCo on the body's own controller, checked against the physics world's ground truth rather than the LLM's claim. On the duck that is its trained gait, and on the arm, which has no gait, it is the real backend's own code over the maker's model. It needs `quackd[mujoco]` for the duck or `quackd[lerobot-sim]` for the arm: CI runs each on a stand-in body on every push, and a nightly job fetches upstream's model for the real one. **Mock**: every verb runs offline against a scripted double, in the test suite |
+| 📄 **described** | A body quackd lists and reasons about and drives no part of: one file of its maker's published figures, with a source for each. None is in the table below. They are under it |
 
 | Robot | `--robot` | The body | How far it has got |
 |---|---|---|---|
@@ -536,6 +534,8 @@ Each of the nine is its own package, pulled in by the extra that carries its nam
 | | `huebot:jsonrpc` | the real one, over a shim its maker is writing for it, which is to answer the Microduck's protocol | 🧪 names, behind `quackd[huebot]`. Exercised against a fake shim over loopback, and nobody has seen the real one: [what it must answer](docs/adapters/huebot/README.md#what-huebots-shim-must-answer) is on its page. Its maker's page says every kit order ships before Christmas ([checklist](docs/adapters/huebot/hardware-checklist.md)) |
 | **[MOSS](docs/adapters/moss/README.md)** | `moss:mock` | a small tracked rover that picks up litter, with an arm that drops what it picks into a bin on top | ✅ mock |
 | | `moss:cockpit` | the real one, over its own cockpit and a bridge quackd ships for the rover | 🧪 names, behind `quackd[moss]`. The client is exercised against a fake of the cockpit and against quackd's own bridge in its fake mode over loopback, and against MOSS's own cockpit in its demo mode, on Windows and on Linux. Nothing has run on a rover ([checklist](docs/adapters/moss/hardware-checklist.md)) |
+
+**Described bodies.** Beyond the nine, quackd describes robots it drives no part of ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)), such as a Unitree B2, a Franka Research 3 and a Universal Robots UR5e. Each is one file of its maker's published figures, with a source and the day it was read beside every one, reached as `--robot described:unitree-b2`. You can register one, read its datasheet, have a pilot judge a task against it and plan with it in a flock. Its only verbs are `report_state` and `stop`, and its pilot is told before any figure that the body moves only if someone else moves it. Nothing here has checked a figure against a robot. [docs/adapters/status.md](docs/adapters/status.md#described-bodies) lists every one with its numbers, and [CONTRIBUTING.md](CONTRIBUTING.md#add-a-described-body) is how the next one joins: one file, no code.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/rokbenko/quackd/main/docs/assets/open-duck.gif" alt="An Open Duck Mini v2 in the simulator turns to find the ball, walks up to it and reports where it is. Left: the world from above. Right: what the duck's camera sees." width="600">

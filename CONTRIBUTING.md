@@ -365,6 +365,37 @@ What a row does not need is a benchmark. Nobody has run any of these against a r
 that says what it read and what it is assuming is worth more than one that quotes a number
 nobody here can reproduce.
 
+## Add a described body
+
+A robot nobody here can run still has a place: as a described body, one YAML under
+`quackd/adapters/bodies/` that holds what its maker publishes and nothing else
+([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). quackd lists it,
+registers it, shows a pilot its datasheet and plans with it in a flock, and drives no part of
+it. Four steps:
+
+1. **The file**, `quackd/adapters/bodies/<maker>-<model>.yaml`: `vendor`, `model`, `embodiment`,
+   `mobility`, a one-line `blurb` and a `datasheet` in the manifest's own shape. Every
+   figure carries its `value`, a `confidence` (`official` for the maker's own page, `estimate` for
+   a reseller or a reading off a picture) and a `source` that names the page and ends with the
+   day you read it, `read 2026-11-05`. What the maker does not publish is left out, never
+   guessed: the prompt then says "not published", and a task that turns on it is answered
+   `uncertain`. Put the maker's prohibitions in `not_rated` and `cannot`, and in `notes` what a
+   pilot should know before planning: how the body stops, and what it does when its link drops.
+   The loader refuses `limits`, `intents`, `verbs`, `sensors` and `safety_authority` by name,
+   because a body nobody drives cannot claim them: the sensors a manifest lists are the ones
+   quackd reads, so what the robot carries is a note too.
+2. **The name**, added to `DESCRIBED_BODIES` in `quackd/adapters/catalogue.py`, alphabetically.
+   A test holds that list equal to the files.
+3. **The table**: `uv run --no-sync python scripts/bodies_docs.py` rewrites the described bodies
+   table in [docs/adapters/status.md](docs/adapters/status.md#described-bodies) from the files,
+   and the README's badge counts them.
+4. **A line in `CHANGELOG.md`** under `Added` in `## [Unreleased]`.
+
+Check each figure against the page it cites before you commit. The source is the only thing
+standing behind the number, and no test can read a maker's page. A described body becomes a
+driven one the day somebody who owns it names a date for its first run. Until then the file is
+the whole of it.
+
 ## Add an adapter
 
 A robot joins quackd as its own distribution, built from `adapters/<name>/` and imported as
@@ -390,6 +421,7 @@ which the catalogue row carries and a test holds. A robot you cannot run can sti
 described body, one YAML under `quackd/adapters/bodies/` with its maker's figures and a source
 for each ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)),
 which is the cheapest row in the catalogue and the honest one.
+[Add a described body](#add-a-described-body) is the recipe.
 
 ## Working agreements
 

@@ -1,0 +1,33 @@
+# Unitree G1 EDU: a humanoid. quackd describes it from Unitree's page, the same figures the
+# passport demo's courier carries, and drives no part of it (ADR-0077).
+vendor: unitree
+model: g1-edu
+embodiment: humanoid
+mobility: legged
+blurb: >-
+  a Unitree G1 EDU, a humanoid of 1.3 m with two arms, which walks on two legs
+datasheet:
+  manipulator: arms
+  arms: 2
+  tethered: false
+  mass_kg:
+    value: 35
+    confidence: official
+    source: "unitree.com/g1, G1 EDU column: about 35 kg and up, read 2026-10-28"
+  height_m:
+    value: 1.32
+    confidence: official
+    source: "unitree.com/g1: 1320 mm standing, read 2026-10-28"
+  payload_kg:
+    value: 3
+    confidence: official
+    source: "unitree.com/g1, G1 EDU column: about 3 kg an arm, read 2026-10-28"
+    note: per arm
+  endurance_min:
+    value: 120
+    confidence: official
+    source: "unitree.com/g1: about 2 h a charge, read 2026-10-28"
+  notes:
+    - "it carries a camera, a LiDAR and microphones (unitree.com/g1); quackd reads none of them"
+    - "LeRobot carries a unitree_g1 robot class, and Unitree's own SDK reaches the same body; neither is bound here"
+    - "terrain, speed and what the body does when its link drops are not on the page read"

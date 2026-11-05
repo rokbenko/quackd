@@ -2136,7 +2136,13 @@ def verdict(report: DoctorReport) -> Any:
         # a green machine can have no robot at all, and this line is what `README.md` sends a
         # new reader to read: saying the simulator runs on a machine where `quackd run`
         # refuses for want of one is the opposite of what this command is for.
-        installed = [row["name"] for row in report.adapters if row.get("adapter_installed")]
+        installed = [
+            row["name"]
+            for row in report.adapters
+            # the described row is in every core and drives nothing, so it is not a robot
+            # this machine has (ADR-0077)
+            if row.get("adapter_installed") and row.get("kind", "adapter") == "adapter"
+        ]
         if not installed:
             reason = (
                 "quackd itself runs here, and no robot adapter is installed: "
@@ -2161,13 +2167,18 @@ def verdict(report: DoctorReport) -> Any:
         reason = report.host.error or f"{report.host.host} did not answer"
     else:
         reason = "the robot did not report healthy"
+    # the described row is not an adapter: its backends are bodies nothing drives, counted
+    # apart so that "9 adapters" never includes them
+    adapters = [a for a in report.adapters if a.get("kind", "adapter") == "adapter"]
+    described = sum(len(a["backends"]) for a in report.adapters if a.get("kind") == "described")
     counters = [
         f"{sum(1 for e in report.extras if e.ok)}/{len(report.extras)} extras",
         # a fraction, not a total: since every adapter became its own package the number that
         # matters is how many are here, and "9 adapters" beside a table of nine `not
         # installed` rows reads as nine you have
-        f"{sum(1 for a in report.adapters if a.get('adapter_installed'))}/"
-        f"{len(report.adapters)} adapters installed",
+        f"{sum(1 for a in adapters if a.get('adapter_installed'))}/{len(adapters)} adapters "
+        "installed",
+        f"{described} described bodies",
         f"{report.bundled_ducks} bundled ducks",
         f"{len(report.assumptions)} unverified assumptions",
     ]

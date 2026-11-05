@@ -226,6 +226,21 @@ CONNECT = {
 }
 ```
 
+### Three more, for the catalogue
+
+A row quackd publishes carries a tier for every backend, a family and a route, in
+`quackd/adapters/catalogue.py`
+([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md),
+[ADR-0075](../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). Your module may declare the same three, and
+`quackd list-adapters` then prints your tiers as it prints the nine's and `--json` carries
+them. A module that declares none keeps its `STATUS` line.
+
+| Attribute | What it is |
+|---|---|
+| `TIERS` | one entry per backend, each a `quackd.adapters.catalogue.Tier` or a dict of its fields. `name` is `rehearsed` for a simulator or a mock, `bound` for code that reaches a robot it has never met, `verified` once it has. `owner` and `date` are who answers for a bound backend's first hardware run and the day named for it, or who ran a verified one and the first day it ran. `note` is what the tier rests on. Tiers for some backends and not others are read as none |
+| `FAMILY` | `arm`, `biped`, `wheeled` or `humanoid`: the kind of body, which is its manifest's `embodiment`. A base that carries arms adds `arm` as a second entry |
+| `ROUTE` | `sdk`, `wire` or `bridge`: how an intent reaches the robot, the three routes under [Backends](#backends-mock-first-then-whichever-route-the-robot-leaves-you) |
+
 ## The manifest decides what exists
 
 A verb that is not in the manifest does not exist: not in the registry, not in the MCP
@@ -507,7 +522,8 @@ hardware by a named person on a date. The marks in the tables above are the tier
 And one **rule**, since 2026-11-05: bound code enters this repository only with a named owner
 and a date for its first hardware run, kept in the catalogue row and held by a test. A robot
 nobody here can run enters as a described body, one YAML under `quackd/adapters/bodies/`
-([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)), or is
+([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md), and
+[CONTRIBUTING.md](../../CONTRIBUTING.md#add-a-described-body) is the recipe), or is
 published out of tree as the last section says, where it needs nothing from this repository.
 The nine adapters that were here before the rule are grandfathered, and their rows say so.
 
@@ -538,10 +554,13 @@ publishes, and a package published from anywhere else needs none of it: see the 
 Then, for one quackd publishes:
 
 6. A row in `OFFICIAL` in `quackd/adapters/catalogue.py`: the name, the backends in order
-   (the first is what `--robot <name>` means with no backend after it), the status line
-   `list-adapters` prints, a one-line summary, the extra and the SDK to probe for, and in
-   `_CONNECT` beside it a `Connect` block for each real backend, which a row in
-   `tests/test_adapters_connect.py` holds to the transport's constants. The catalogue is
+   (the first is what `--robot <name>` means with no backend after it), a `Tier` for each
+   backend, from which the line `list-adapters` prints is rendered, a one-line summary, the
+   family and the route, the extra and the SDK to probe for, and in `_CONNECT` beside it a
+   `Connect` block for each real backend, which a row in `tests/test_adapters_connect.py` holds
+   to the transport's constants. A backend that reaches a robot is `bound`, and its tier names
+   who answers for its first hardware run and the date: `tests/test_described.py` refuses a
+   bound row without both. The catalogue is
    strings and imports nothing, which is what lets the table print the whole nine on a machine
    with none of them installed, each marked "not installed". Append, never insert: the tables
    that print these rows are order sensitive and a test pins them.
