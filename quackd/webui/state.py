@@ -18,6 +18,10 @@ from typing import Any
 
 SETUP_FILE = "ui-setup.json"
 
+SAVED_BEFORE = {"_model": "_llm", "_model_text": "_llm_text", "_decision_model": "_decision_llm"}
+"""The pickers' names in a setup saved before 0.32.0. Read as nothing chosen, they would put the
+page's first LLM back on Setup, and the next run would bill that one."""
+
 
 class Setup:
     """The page's choices, behind a lock, versioned so every tab can tell it changed."""
@@ -38,6 +42,9 @@ class Setup:
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(saved, dict):
                 self.values = {str(k): v for k, v in saved.items()}
+                for old, new in SAVED_BEFORE.items():
+                    if old in self.values:
+                        self.values.setdefault(new, self.values.pop(old))
 
     def _save(self) -> None:
         """Saved private, as the registry keeps a token: it holds no key, but an address or an

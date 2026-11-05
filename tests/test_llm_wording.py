@@ -36,7 +36,6 @@ WHOLE_FILES: dict[str, str] = {
     r"tests/test_example_logs\.py": "proves the run logs' guard refuses the word",
     r"tests/test_llm_wording\.py": "this file",
     r"scripts/example_log\.py": "holds the pattern, and reads the key an older run wrote",
-    r"quackd/log\.py": "reads the key a run recorded before 0.32.0 wrote, and says so",
     # the simulator
     r"adapters/lerobot/src/quackd_lerobot/sim/.*": "the MuJoCo model of the arm",
     r"adapters/microduck/src/quackd_microduck/sim3d/.*": "the MuJoCo model of the duck",

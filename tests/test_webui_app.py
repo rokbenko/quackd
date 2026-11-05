@@ -6,6 +6,7 @@ installs the extra and runs this file."""
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -23,6 +24,21 @@ from tests.test_front_run import _gated_duck
 
 APP = str(Path(__file__).resolve().parents[1] / "quackd" / "webui" / "app.py")
 SCREENS = ("setup", "goal", "chat", "history", "robots", "memory", "policies")
+
+
+def test_setup_keeps_the_llm_a_setup_saved_before_the_rename_chose(page: Path) -> None:
+    """Setup is where the page opens. It wrote the vendor's first LLM over a choice saved under
+    the picker's old name, so the next goal or chat would have billed that LLM, with nothing
+    said. The LLM here is the vendor's second, since the first would pass by accident."""
+    from quackd.webui import catalog
+
+    chosen = [llm.id for llm in catalog.llms("anthropic")][1]
+    saved = {"_vendor": "anthropic", "_model": chosen, "llm": f"anthropic:{chosen}"}
+    path = page / state.SETUP_FILE
+    path.write_text(json.dumps(saved), encoding="utf-8")
+    state.setup(path)
+    _screen("setup")
+    assert state.setup().get("llm") == f"anthropic:{chosen}"
 
 
 def test_history_says_turns_of_a_run_that_asked_no_llm() -> None:
