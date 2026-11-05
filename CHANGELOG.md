@@ -21,6 +21,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_toddlerbot_daemon.py` sends such a frame from the real daemon over a real socket. It failed
   before this change. Like everything on this adapter, it has not run on a robot.
 
+### Documentation
+
+- **`uv.lock` takes `openai` 3.42.1 and `laya` 0.4.21, from Dependabot's #66.** A refresh of the lock
+  changes no requirement a user installs against. CI installs neither package, so its checks say the lock
+  resolves and not that either one works.
+
 ## [0.31.3] — 2026-11-05
 
 0.31.3 stops a camera's picture choosing among Pillow's decoders, stops the arm's extras below LeRobot's

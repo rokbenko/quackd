@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
@@ -2053,7 +2053,7 @@ wheels = [
 
 [[package]]
 name = "laya"
-version = "0.4.20"
+version = "0.4.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -2062,9 +2062,9 @@ dependencies = [
     { name = "torch" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/4f/64fff4b00a1b25cd34283a462f668f2b4d695ead9deed06e8c6199be4695/laya-0.4.20.tar.gz", hash = "sha256:9c2138b06c813016167b66b9a94e1b01d03947c194f656b9b84bc03c9d236fee", size = 1396775, upload-time = "2026-11-01T04:46:49.124Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/4e/a3cd1f5c19d28167a5ae657045a51986976682ec3b41ec4607a7a1182a5f/laya-0.4.21.tar.gz", hash = "sha256:9130a0c5f2a2102f317cf0209be7baf68ae9b9969b5edb71da26040da67c5301", size = 1396376, upload-time = "2026-11-01T21:16:52.307Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/7d/248cfce4dd74f2fa361d874947ab6742a14b45c1690a413dccbeb984f2e1/laya-0.4.20-py3-none-any.whl", hash = "sha256:ee1f5c998d52e1a3f4da4499fabae087270ab4cbe97ec66c57dcfe369758ed24", size = 464124, upload-time = "2026-11-01T04:46:47.27Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/a8/293b523ecb4c4d7e7ba14688c1ad6808bf1858b6a0fb160ae2bcb41703fe/laya-0.4.21-py3-none-any.whl", hash = "sha256:38b53a8175581b19458a522603bf76516860528195559b300e7cd122a8dfad1c", size = 463955, upload-time = "2026-11-01T21:16:50.573Z" },
 ]
 
 [[package]]
@@ -3028,7 +3028,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.42.0"
+version = "3.42.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3038,9 +3038,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/ef/c17c9ca921c1991b0a7185e8282da1996d09292b0caaf2e7cffd7e051eb6/openai-3.42.0.tar.gz", hash = "sha256:deffe27f9e20e4f1d9d471978d12f23aa119382494c0a9860795e66943d0fe42", size = 2353482, upload-time = "2026-10-31T00:27:26.502Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/7b/e01d5288d13e3bae3714ed39df402f99f88f422dcd978c5ce94848037200/openai-3.42.1.tar.gz", hash = "sha256:4222d919374648ff572753626e942f26eb1ece8a5e0e9a2708c9be4d560f070f", size = 2356422, upload-time = "2026-11-01T20:57:02.607Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/79/904afac12186d9ab9e3f731eb798e36dc0f5b991a557c4304b0a43e393c1/openai-3.42.0-py3-none-any.whl", hash = "sha256:efb9d089ecf66c668289f647717389df98b40b954cd86d4fe54eddce39aabb3f", size = 2397860, upload-time = "2026-10-31T00:27:24.493Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/11/37b847d8a057000193974eeea1bcc681355ae50d35865f2eb2b323de6153/openai-3.42.1-py3-none-any.whl", hash = "sha256:c1959518a8e26f81a3564357082cb684540be639a21fece35ac5619415a3eadc", size = 2397433, upload-time = "2026-11-01T20:57:00.622Z" },
 ]
 
 [[package]]
