@@ -26,8 +26,13 @@ from quackd.upstream import UpstreamRef
 
 REPO = "https://github.com/apirrone/Open_Duck_Mini_Runtime"
 PIN = "32037347dc43186a017f2116bcfde7c461b81f54"  # branch v2, 2025-06-24
+BRANCH = "v2"
+"""The branch the pin sits on, which is not the repository's default: what the nightly drift
+job (`scripts/upstream_drift.py`) compares the pin against."""
 REPO_HUB = "https://github.com/apirrone/Open_Duck_Mini"
 PIN_HUB = "b23317a485b3cec7d8417f352478778b3475173c"  # branch v2, 2026-01-31
+BRANCHES = {"apirrone/Open_Duck_Mini": "v2"}
+"""The same for the hub repository, keyed as the drift job keys a repository."""
 READ_ON = "2026-09-03"
 
 

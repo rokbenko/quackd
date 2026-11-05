@@ -1,0 +1,56 @@
+name: upstream drift
+
+# Every adapter cites what it reads from upstream as refs pinned to a commit and a line
+# (ADR-0022), and nothing re-read them when upstream moved: LeRobot replaced the arm's motor
+# library on 2026-10-16 and a person noticed three weeks later. This fetches every cited file
+# at its pin and at the branch or tag the pin tracks, and says which refs no longer point at
+# what they were read as. It runs nightly and on demand, and it gates nothing: a red run means
+# an upstream moved under a ref and somebody should go and read it, not that a release stops.
+# It is apart from `ci` because it needs the network, which that suite never does.
+#
+# The first run is expected red for LeRobot, whose Feetech files that pull request touched,
+# and for MOSS, whose main moves most days. That is the point, not a fault.
+#
+# The script also opens one issue per upstream that drifted, labelled `upstream-drift`, edits
+# it in place while the drift lasts and closes it the night it is gone, so the finding outlives
+# the run's logs. That is the one write this workflow makes, and only in this repository.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: every pinned ref against its baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Deliberately NOT continue-on-error: the run is the signal, and a green tick on a night
+    # something moved is the opposite of the point.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync quackd and its nine adapters, no SDKs
+        # The ref modules import `quackd.upstream` and nothing of any robot's SDK, so the dev
+        # extra is enough and nothing heavy is fetched.
+        run: uv sync --python 3.12 --extra dev
+
+      - name: Compare every ref with its baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          uv run --no-sync python scripts/upstream_drift.py \
+            --report "$GITHUB_STEP_SUMMARY" --json drift.json \
+            ${{ github.repository == 'rokbenko/quackd' && '--issues rokbenko/quackd' || '' }}

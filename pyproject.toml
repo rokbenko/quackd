@@ -343,6 +343,7 @@ files = [
     "scripts/llms_docs.py",
     "scripts/connect_docs.py",
     "scripts/example_log.py",
+    "scripts/upstream_drift.py",
 ]
 ignore_missing_imports = true
 warn_unused_ignores = false

@@ -2059,7 +2059,10 @@ def _assumptions_table(report: DoctorReport) -> Any:
     table = ui.table()
     table.add_column("upstream", style=ui.STYLES["key"], no_wrap=True)
     table.add_column("what")
-    table.add_column("note", ratio=2)
+    # `overflow="fold"`: a note that quotes a long URL is broken across lines rather than
+    # cut with an ellipsis, which is a character a cp1252 console cannot carry and a loss
+    # of the one thing the row was there to say.
+    table.add_column("note", ratio=2, overflow="fold")
     last = ""
     for item in report.assumptions:
         if last and item.upstream != last:
