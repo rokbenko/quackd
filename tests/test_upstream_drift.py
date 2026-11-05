@@ -8,6 +8,7 @@ suite's own list, and the workflow that runs it nightly is read back as YAML.
 
 from __future__ import annotations
 
+import http.client
 import importlib
 import importlib.util
 import io
@@ -15,6 +16,7 @@ import json
 import re
 import sys
 import types
+import urllib.error
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
@@ -162,7 +164,7 @@ def test_a_line_that_no_longer_reads_the_same_is_drift() -> None:
     report = _one(script, module, Store(_github(script, {"src/thing.py": (PINNED, CHANGED)})))
     assert report.counts == {"not a file": 0, "changed": 1}
     assert report.rows[0].status == "changed"
-    assert "no line reads 'def read():'" in report.rows[0].now
+    assert "no line reads `def read():`" in report.rows[0].now
     assert HEAD[:7] in report.rows[0].now
     assert report.drift is True and report.broken is False
     assert script.exit_code([report]) == 1
@@ -219,7 +221,7 @@ def test_a_ref_anchored_on_a_blank_line_or_past_the_end_is_a_bad_anchor() -> Non
     )
     report = _one(script, module, Store(_github(script, {"src/thing.py": (PINNED, PINNED)})))
     assert report.counts == {"not a file": 0, "bad anchor": 3}
-    assert report.rows[0].now == "the line reads ''"
+    assert report.rows[0].now == "the line is blank"
     assert report.rows[1].now == "no such line in the file at the pin"
     assert report.rows[2].now == "no such line in the file at the pin"
     assert report.drift is False and report.broken is True
@@ -418,9 +420,8 @@ def test_a_release_tag_with_words_before_its_number_is_followed_among_its_own_ki
     nothing = dict(urls)
     nothing[f"{script.API}/repos/{WIDGET}/tags?per_page=100"] = _tag_page(["app-v9.0.0"])
     report = _one(script, module, Store(nothing))
-    assert report.unchecked == [
-        f"{WIDGET}: the API listed no release tag starting 'daemon-v' (READ)"
-    ]
+    assert report.rows[0].status == "baseline gone"
+    assert report.rows[0].now == f"{WIDGET} lists no release tag starting 'daemon-v'"
 
 
 def test_the_tags_are_read_a_page_at_a_time_until_one_comes_back_short() -> None:
@@ -521,7 +522,7 @@ def test_the_hub_version_and_an_api_document_are_checked_the_same_way() -> None:
     assert report.baselines[WIDGET].kind == "tag"
     assert report.versions == [
         ("PyPI huggingface_hub is 1.30.0; quackd read 1.29.0", True),
-        (f"{api_doc} is version 2.1.0; quackd read 2.0.0", True),
+        (f"{api_doc} is 2.1.0; quackd read 2.0.0", True),
     ]
     assert report.drift is True
 
@@ -559,13 +560,18 @@ def test_a_url_that_failed_is_not_asked_again_and_a_failing_host_is_asked_nothin
     module = _module(refs)
     urls = _github(script, {})
     for n in range(6):
-        urls[f"{script.RAW}/{WIDGET}/{PIN}/src/f{n}.py"] = script.Unreachable("raw: HTTP 503")
+        urls[f"{script.RAW}/{WIDGET}/{PIN}/src/f{n}.py"] = script.Unreachable(
+            "raw: HTTP 503", slow=True
+        )
     store = Store(urls)
     report = _one(script, module, store)
     raw = [url for url in store.calls if url.startswith(script.RAW)]
     assert len(raw) == script.HOST_FAILURES == 3, raw
     assert report.counts["unchecked"] == 7
-    breaker = "raw.githubusercontent.com: failed 3 times running, so nothing more was asked of it"
+    breaker = (
+        "raw.githubusercontent.com: 3 slow failures running, so nothing more was asked of it; "
+        "the last was raw: HTTP 503"
+    )
     # AGAIN cites the first file, whose failure is remembered, so it is held up by that failure
     # and not by the host's being left alone
     assert report.blocked == {
@@ -577,6 +583,14 @@ def test_a_url_that_failed_is_not_asked_again_and_a_failing_host_is_asked_nothin
         f"{breaker} (R3, R4, R5)",
     ]
     assert script.exit_code([report]) == 2
+
+    # a refusal that answers at once costs nothing, so it does not count
+    refusing = Store({f"https://a.test/{n}": script.Unreachable("HTTP 403") for n in range(6)})
+    quick = script.Cache(refusing)
+    for n in range(6):
+        with pytest.raises(script.Unreachable, match="HTTP 403"):
+            quick.get(f"https://a.test/{n}")
+    assert quick.requests == 6
 
     # a success between failures starts the count again
     cache = script.Cache(
@@ -627,10 +641,262 @@ def test_a_pipe_in_a_ref_or_a_line_does_not_split_the_table() -> None:
     row = [line for line in script.section(report).splitlines() if line.startswith("| `limit")]
     assert row == [
         "| `limit: int \\| None` | `src/thing.py:2` | changed | "
-        f"no line reads 'limit: int \\| None = None' at {HEAD[:7]} |"
+        f"no line reads `limit: int \\| None = None` at {HEAD[:7]} |"
     ]
     assert len(re.findall(r"(?<!\\)\|", row[0])) == 5, "four cells"
-    assert script._needing(script.section(report)) == {"limit: int \\| None"}
+    assert script._needing(script.section(report)) == {"limit: int \\| None: changed"}
+
+
+def test_upstreams_words_are_read_as_upstreams_words() -> None:
+    """A line of XML in a table cell is taken for markup and reads as nothing, `@contextmanager`
+    mentions somebody, and a line's own spacing is part of what it says."""
+    script = _script()
+    pinned = b'<position kp="998.22"/>\n@contextmanager\nx  = 1\n'
+    changed = b'<position kp="1.0"/>\n@cached\nx = 1\n'
+    module = _module(
+        [
+            _ref("XML", "scene.xml", 1),
+            _ref("DECORATOR", "scene.xml", 2),
+            _ref("SPACED", "scene.xml", 3),
+        ]
+    )
+    report = _one(script, module, Store(_github(script, {"scene.xml": (pinned, changed)})))
+    now = {row.ref: row.now for row in report.rows}
+    assert now["XML"].startswith('no line reads `<position kp="998.22"/>` at ')
+    assert now["DECORATOR"].startswith("no line reads `@contextmanager` at ")
+    assert now["SPACED"].startswith("no line reads `x  = 1` at ")
+    assert "x  = 1" in script.section(report), "the two spaces are what changed"
+
+    blocked = _module([_ref("READ", "src/thing.py", 2)])
+    urls = _github(script, {})
+    urls[f"{script.RAW}/{WIDGET}/{PIN}/src/thing.py"] = script.Unreachable(
+        "raw: <urlopen error timed out>"
+    )
+    text = script.section(_one(script, blocked, Store(urls)))
+    assert "- could not check: `raw: <urlopen error timed out>` (READ)" in text
+
+
+def test_a_tick_of_a_backtick_in_a_line_does_not_end_its_code_span() -> None:
+    script = _script()
+    assert script._code("a `b` c") == "``a `b` c``"
+    assert script._code("`edge`") == "`` `edge` ``"
+    assert script._code("plain") == "`plain`"
+
+
+def test_line_endings_and_a_byte_order_mark_are_no_change() -> None:
+    script = _script()
+    module = _module([_ref("WHOLE", "src/code.py"), _ref("FIRST", "src/first.py", 1)])
+    files = {
+        "src/code.py": (b"x = 1\ny = 2\n", b"x = 1\r\ny = 2\r\n"),
+        "src/first.py": (b"import os\n", b"\xef\xbb\xbfimport os\n"),
+    }
+    report = _one(script, module, Store(_github(script, files)))
+    assert report.rows == [] and report.counts["same"] == 2, report.rows
+
+
+def test_a_path_with_a_space_is_quoted_once() -> None:
+    script = _script()
+    assert script.raw_url(WIDGET, PIN, "STL/SO101 Assembly.stl").endswith(
+        "/STL/SO101%20Assembly.stl"
+    )
+    assert script.raw_url(WIDGET, PIN, "STL/SO101%20Assembly.stl").endswith(
+        "/STL/SO101%20Assembly.stl"
+    )
+    assert script.contents_url(WIDGET, "a b", PIN).endswith(f"/contents/a%20b?ref={PIN}")
+
+
+class _Answer(io.BytesIO):
+    def __enter__(self) -> _Answer:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def _http_error(code: int, retry_after: str | None = None) -> Any:
+    from email.message import Message
+
+    headers = Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://a.test/x", code, "said so", headers, None)
+
+
+def test_a_retry_after_too_long_for_the_job_is_a_night_it_did_not_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _script()
+    slept: list[float] = []
+    monkeypatch.setattr(script.time, "sleep", slept.append)
+
+    def refuses(request: Any, timeout: float) -> Any:
+        raise _http_error(429, "3600")
+
+    monkeypatch.setattr(script.urllib.request, "urlopen", refuses)
+    with pytest.raises(script.Unreachable, match="HTTP 429") as caught:
+        script.web_fetch("https://a.test/x")
+    assert slept == [] and caught.value.slow is True, "an hour is not waited for"
+
+    answers = [_http_error(503, "2"), _Answer(b"body")]
+
+    def recovers(request: Any, timeout: float) -> Any:
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(script.urllib.request, "urlopen", recovers)
+    assert script.web_fetch("https://a.test/x") == b"body"
+    assert slept == [2.0]
+
+
+def test_a_read_that_breaks_off_is_an_outage_and_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = _script()
+
+    def short(request: Any, timeout: float) -> Any:
+        raise http.client.IncompleteRead(b"par", 40)
+
+    monkeypatch.setattr(script.urllib.request, "urlopen", short)
+    with pytest.raises(script.Unreachable) as caught:
+        script.web_fetch("https://a.test/x")
+    assert caught.value.slow is True
+
+
+# ── a baseline that went, and versions nobody can read ──────────────────────────────────
+
+
+def test_a_baseline_that_went_is_drift_and_not_an_outage() -> None:
+    """A branch deleted, a repository gone and a release tag no longer there each read as an
+    outage, which exits 2 and leaves an issue unopened for ever."""
+    script = _script()
+    refs = [_ref("READ", "src/thing.py", 2), _ref("BUS", "src/thing.py", 5)]
+
+    branch = _github(script, {"src/thing.py": (PINNED, PINNED)}, branch="v2")
+    branch[f"{script.API}/repos/{WIDGET}/commits/v2"] = None
+    report = _one(script, _module(refs, BRANCH="v2"), Store(branch))
+    assert [(r.ref, r.status) for r in report.rows] == [("READ", "baseline gone")]
+    assert report.rows[0].now == f"{WIDGET} has no branch called v2 any more"
+    assert report.counts["baseline gone"] == 2, "every ref it holds up is counted, on one row"
+    assert report.drift is True and report.blocked == {}
+    assert script.exit_code([report]) == 1
+    gh = FakeGh([])
+    script.sync_issues([report], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue create"]
+
+    repo = _github(script, {})
+    repo[f"{script.API}/repos/{WIDGET}"] = None
+    report = _one(script, _module(refs), Store(repo))
+    assert report.rows[0].now == f"{WIDGET} answers 404: the repository is gone or private"
+
+    tags = _github(script, {}, tags=["nightly"])
+    report = _one(script, _module(refs, VERSION="0.6.1"), Store(tags))
+    assert report.rows[0].now == f"{WIDGET} lists no release tag with a plain version"
+
+
+def test_a_directory_gone_at_the_baseline_is_drift_and_a_submodule_is_a_directory() -> None:
+    script = _script()
+    module = _module([_ref("DIR", "src/package")])
+    urls = _github(script, {"src/package": (None, None)})
+    urls.update(_contents(script, "src/package", [{"name": "__init__.py"}]))
+    urls[f"{script.API}/repos/{WIDGET}/contents/src/package?ref={HEAD}"] = None
+    report = _one(script, module, Store(urls))
+    assert [(r.status, r.now) for r in report.rows] == [
+        ("gone", f"no such directory at {HEAD[:7]}")
+    ]
+    assert report.drift is True
+
+    urls.update(_contents(script, "src/package", {"type": "submodule"}))
+    urls[f"{script.API}/repos/{WIDGET}/contents/src/package?ref={HEAD}"] = b'{"type": "submodule"}'
+    report = _one(script, module, Store(urls))
+    assert report.rows == [] and report.counts["a directory"] == 1 and report.blocked == {}
+
+
+def test_a_version_nobody_can_read_holds_the_issue_open() -> None:
+    """A 404 from PyPI, a pyproject.toml or an API document used to write no line and block
+    nothing, so a moved version's issue closed that night as though the version stood."""
+    script = _script()
+    api_doc = "https://api.example.test/openapi.json"
+    module = _module(
+        [_ref("READ", "src/thing.py", 2)],
+        PACKAGE=UpstreamRef("widget", "VERIFIED", f"{GITHUB}/blob/{PIN}/pyproject.toml#L3", ""),
+        PYPI_VERSION_READ="1.0.0",
+        VERSION_AT_PIN=UpstreamRef(
+            "1.0.1", "VERIFIED", f"{GITHUB}/blob/{PIN}/pyproject.toml#L4", ""
+        ),
+        API_DOC=api_doc,
+        API_VERSION="2.0.0",
+    )
+    urls = _github(script, {"src/thing.py": (PINNED, PINNED)})
+    urls[f"{script.PYPI}/widget/json"] = b'{"releases": {}}'
+    urls[f"{script.RAW}/{WIDGET}/{HEAD}/pyproject.toml"] = None
+    urls[api_doc] = None
+    report = _one(script, module, Store(urls))
+    assert report.versions == []
+    assert set(report.blocked) == {
+        f"{script.PYPI}/widget/json names no version",
+        f"{script.RAW}/{WIDGET}/{HEAD}/pyproject.toml names no version",
+        f"{api_doc} names no version",
+    }
+    assert script.exit_code([report]) == 2
+    body = "- **moved:** PyPI widget is 1.1.0; quackd read 1.0.0"
+    gh = FakeGh([{"number": 7, "title": "upstream drift: widget", "body": body}])
+    script.sync_issues([report], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list"], "neither closed nor edited"
+
+
+def test_what_became_of_a_ref_earns_a_word_when_it_changes() -> None:
+    script = _script()
+    module = _module([_ref("READ", "src/thing.py", 2)])
+    went = _one(script, module, Store(_github(script, {"src/thing.py": (PINNED, None)})))
+    changed = script.section(
+        _one(script, module, Store(_github(script, {"src/thing.py": (PINNED, CHANGED)})))
+    )
+    gh = FakeGh([{"number": 7, "title": "upstream drift: widget", "body": changed}])
+    script.sync_issues([went], "rokbenko/quackd", gh)
+    assert gh.verbs()[-1] == "issue comment", "a line that changed and then went"
+
+
+def test_one_upstreams_refusal_is_said_and_stops_no_other() -> None:
+    script = _script()
+    first = _drifted_report(script)
+    first.name = "first"
+    second = _drifted_report(script)
+    second.name = "second"
+
+    class Refuses(FakeGh):
+        def __call__(self, args: Any) -> str:
+            if list(args[:2]) == ["issue", "create"] and "upstream drift: first" in args:
+                raise script.Unreachable("gh issue: HTTP 403")
+            return super().__call__(args)
+
+    gh = Refuses([])
+    done = script.sync_issues([first, second], "rokbenko/quackd", gh)
+    assert done == [
+        "first: issue not synced: gh issue: HTTP 403",
+        "second: issue opened (https://github.com/rokbenko/quackd/issues/99)",
+    ]
+
+
+def test_what_the_issues_did_goes_in_the_report_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job red every night hides a refusal in its log, and the summary is what gets read."""
+    script = _script()
+    monkeypatch.setattr(
+        script, "upstream_rows", lambda: [("widget", _module([_ref("READ", "src/thing.py", 2)]))]
+    )
+    monkeypatch.setattr(
+        script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, CHANGED)}))
+    )
+    monkeypatch.setattr(
+        script, "sync_issues", lambda reports, repo: ["widget: issue not synced: HTTP 403"]
+    )
+    report = tmp_path / "summary.md"
+    assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 1
+    text = report.read_text(encoding="utf-8")
+    assert text.endswith("\n## Issues\n\n- `widget: issue not synced: HTTP 403`\n"), text
 
 
 def test_offline_fixtures_map_each_kind_of_url_to_a_file(tmp_path: Path) -> None:
@@ -671,6 +937,7 @@ def test_a_line_less_ref_to_a_directory_is_counted_and_is_nobodys_fault() -> Non
     module = _module([_ref("DIR", "src/package"), _ref("FILE", "src/thing.py", 2)])
     urls = _github(script, {"src/package": (None, None), "src/thing.py": (PINNED, PINNED)})
     urls.update(_contents(script, "src/package", [{"name": "__init__.py"}]))
+    urls[f"{script.API}/repos/{WIDGET}/contents/src/package?ref={HEAD}"] = b'[{"name": "x.py"}]'
     report = _one(script, module, Store(urls))
     assert report.counts == {"not a file": 0, "a directory": 1, "same": 1}
     assert report.rows == []
@@ -687,16 +954,19 @@ def test_a_line_less_ref_to_a_directory_is_counted_and_is_nobodys_fault() -> Non
 # ── the command ─────────────────────────────────────────────────────────────────────────
 
 
-def test_the_command_with_nothing_to_fetch_from_says_unchecked_and_exits_2(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_the_command_on_a_night_nothing_answers_says_unchecked_and_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The real modules against an empty fixture folder: every repository's metadata is missing,
-    so nothing can be compared, and the night reads as unchecked and never as clean."""
+    """The real modules on a night nothing answers: nothing can be compared, and the night reads
+    as unchecked and never as clean."""
     script = _script()
+
+    def down(url: str) -> None:
+        raise script.Unreachable("nothing answers")
+
+    monkeypatch.setattr(script, "web_fetch", down)
     report, findings = tmp_path / "report.md", tmp_path / "drift.json"
-    code = script.main(
-        ["--offline", str(tmp_path / "empty"), "--report", str(report), "--json", str(findings)]
-    )
+    code = script.main(["--report", str(report), "--json", str(findings)])
     assert code == 2
     text = report.read_text(encoding="utf-8")
     assert "\r" not in text and text == capsys.readouterr().out
@@ -710,6 +980,10 @@ def test_the_command_with_nothing_to_fetch_from_says_unchecked_and_exits_2(
 
     assert script.main(["--only", "nope"]) == 2
     assert "no upstream is called 'nope'" in capsys.readouterr().out
+
+    # fixtures on disk with nothing in them are every repository answering 404, which is drift
+    assert script.main(["--offline", str(tmp_path / "empty"), "--only", "lerobot"]) == 1
+    assert "baseline gone" in capsys.readouterr().out
 
 
 def test_the_report_prints_on_a_console_that_cannot_carry_an_upstreams_line(
@@ -866,7 +1140,7 @@ def test_a_ref_that_cannot_be_followed_opens_an_issue_too() -> None:
     body = gh.calls[2][gh.calls[2].index("--body") + 1]
     assert "| `BLANK` | `src/thing.py:3` | bad anchor |" in body
     assert "anchor it on the line that names what it cites" in body
-    assert script._needing(body) == {"BLANK"}
+    assert script._needing(body) == {"BLANK: bad anchor"}
 
 
 def test_an_open_issue_is_edited_in_place_and_commented_only_when_what_needs_somebody_changes() -> (
@@ -945,7 +1219,6 @@ def test_every_real_ref_is_a_file_or_a_page_the_script_knows_how_to_skip() -> No
         ("quackd_open_duck.upstream_api", "BRANCHES", {"apirrone/Open_Duck_Mini": "v2"}),
         ("quackd_microduck.sim3d.upstream_api", "BRANCH", "develop"),
         ("quackd_microduck.mapd_upstream_api", "BRANCH", "maploc-v2"),
-        ("quackd_rosbridge.upstream_api", "BRANCHES", {"ros/urdfdom": "master"}),
     ],
 )
 def test_a_pin_on_a_branch_that_is_not_the_default_says_which(
@@ -997,7 +1270,7 @@ def test_the_nightly_runs_the_script_with_what_it_needs_and_nothing_more() -> No
     steps = job["steps"]
     assert all("continue-on-error" not in step for step in steps)
     run = next(step["run"] for step in steps if "upstream_drift.py" in step.get("run", ""))
-    assert '--report "$GITHUB_STEP_SUMMARY"' in run and "--json drift.json" in run
+    assert '--report "$GITHUB_STEP_SUMMARY"' in run
     assert "github.repository == 'rokbenko/quackd'" in run, "a fork's schedule must open no issue"
     assert "--issues rokbenko/quackd" in run
     env = next(step.get("env", {}) for step in steps if "upstream_drift.py" in step.get("run", ""))
@@ -1011,5 +1284,4 @@ def test_the_script_is_type_checked_and_its_offline_mode_takes_no_network() -> N
     assert "scripts/upstream_drift.py" in config["tool"]["mypy"]["files"]
     source = SCRIPT.read_text(encoding="utf-8")
     assert "def offline_fetch(" in source
-    imports = [line for line in source.splitlines() if "urllib" in line and "import" in line]
-    assert len(imports) == 2, "urllib is imported at the top and used only by web_fetch"
+    assert source.count("urllib.request.urlopen(") == 1, "only web_fetch reaches the network"

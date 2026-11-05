@@ -25,10 +25,6 @@ REPO_INTERFACES = "https://github.com/ros2/common_interfaces"
 PIN_INTERFACES = "d54aa9b96dfed4922775652414e0e8fa4ee2ae40"
 REPO_URDFDOM = "https://github.com/ros/urdfdom"
 PIN_URDFDOM = "bfcf29f39cc3e0fa13e5572f36b4b8c42d4f5ce1"
-BRANCHES = {"ros/urdfdom": "master"}
-"""The branch each pin tracks where it is not the repository's default, for the nightly that
-compares them (`scripts/upstream_drift.py`). urdfdom's default is `rolling`, and the pin is on
-`master`: compared with `rolling`, every line would read as moved by accident."""
 REPO_RSP = "https://github.com/ros/robot_state_publisher"
 PIN_RSP = "5526c766f79537f233903d3d7cabd33cb97c44e6"
 READ_ON = "2026-09-02"

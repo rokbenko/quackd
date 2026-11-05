@@ -475,12 +475,12 @@ no longer reads as it was read, with one issue per upstream that needs somebody
 (`scripts/upstream_drift.py`, `.github/workflows/upstream-drift.yml`). Three things make a
 module readable by it. Anchor every ref on the line that names what it cites: a blank line or a
 closing bracket is a bad anchor, which it reports as a broken ref, and a line that reads like
-others in its file is a weak one, which it cannot follow once the file changes. Say which
+others in its file is a weak one, which it cannot follow once it leaves its line. Say which
 branch the pin sits on in a `BRANCH` constant when that is not the repository's default
-(`BRANCHES`, keyed `owner/repo`, for a second repository), and the release you read in `TAG`,
-`RELEASE` or `VERSION`, or `PYPI_VERSION_READ` beside a `PACKAGE` ref, when upstream releases,
-so a release-pinned module is compared with the newest release of its kind and a branch-pinned
-one with its branch. And list the module in your adapter's `UPSTREAMS`, which is the walk both
+(`BRANCHES`, keyed `owner/repo`, for a second repository), and the release you pinned in `TAG`,
+`RELEASE` or `VERSION`, so a release-pinned module is compared with the newest release of its
+kind and a branch-pinned one with its branch. A `PYPI_VERSION_READ` beside a `PACKAGE` ref says
+which release you read, and a newer one on PyPI is reported as drift. And list the module in your adapter's `UPSTREAMS`, which is the walk both
 `quackd doctor` and the job make. What the job cannot do is read: a line that is the only one
 of its kind and never said what your ref claims compares as the same every night.
 
