@@ -1,0 +1,50 @@
+name: diag upstream drift
+
+# A one-off on a scratch branch, deleted with it: does the nightly's script run on a runner, and
+# what does the raw host answer there, with no token, on a runner's shared address? Reports only.
+# It opens no issue, since it is not given --issues and has no permission to.
+
+on:
+  push:
+    branches: ["diag/upstream-drift"]
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --python 3.12 --extra dev
+      - name: Run the script as the nightly does, with no issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          start=$(date +%s)
+          uv run --no-sync python scripts/upstream_drift.py --report "$GITHUB_STEP_SUMMARY" --json drift.json > out.txt 2>&1
+          code=$?
+          echo "exit $code after $(( $(date +%s) - start )) s"
+          python - <<'PY'
+          import json
+          d = json.load(open("drift.json", encoding="utf-8"))
+          print("drifted", d["drifted"])
+          print("broken", d["broken"])
+          print("unchecked", d["unchecked"])
+          for u in d["upstreams"]:
+              print(u["name"], {k: v for k, v in u["counts"].items() if v}, u["unchecked"][:2])
+          PY
+          exit 0
+      - name: What each host says to a token and to none
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          raw=https://raw.githubusercontent.com/ros/urdfdom/bfcf29f39cc3e0fa13e5572f36b4b8c42d4f5ce1/README.md
+          echo "raw, no token: $(curl -s -o /dev/null -w '%{http_code}' "$raw")"
+          echo "raw, token: $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GITHUB_TOKEN" "$raw")"
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/rate_limit | python -c "import json,sys; print('api left', json.load(sys.stdin)['rate'])"
