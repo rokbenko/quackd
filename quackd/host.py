@@ -937,10 +937,10 @@ class HostClient:
             self._camera_failed(str(stale), age)
             raise stale
         try:
-            with Image.open(io.BytesIO(raw)) as picture:
+            with Image.open(io.BytesIO(raw), formats=["JPEG"]) as picture:
                 image = picture.convert("RGB")
         except Exception as e:
-            bad = self._fail(f"{self.address} sent a snapshot that is not an image PIL can read")
+            bad = self._fail(f"{self.address} sent a snapshot that is not a JPEG PIL can read")
             self._camera_failed(str(bad), None)
             raise bad from e
         with self._camera_lock:

@@ -183,7 +183,6 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML",
-  "pre-commit>=3.7",
   # every adapter, without the SDKs: the suite drives each one against fakes and a mock
   "quackd-microduck",
   "quackd-lerobot",
@@ -213,6 +212,15 @@ Homepage = "https://github.com/rokbenko/quackd"
 Repository = "https://github.com/rokbenko/quackd"
 Issues = "https://github.com/rokbenko/quackd/issues"
 Changelog = "https://github.com/rokbenko/quackd/blob/main/CHANGELOG.md"
+
+# What a checkout and CI resolve to, and never what a wheel asks for, so `quackd[lerobot]` from
+# PyPI still gets a Pillow under 13 (CHANGELOG.md, Known limitations). LeRobot 0.6.1 caps it
+# there and 13.0.0 is the only release with the fixes. LeRobot's main lifted that cap by moving
+# the pin and nothing else (its #5024), and `uv pip install` reads this too, so CI's policy job
+# runs LeRobot 0.6.1 on Pillow 13. It goes when the ceiling in adapters/lerobot/pyproject.toml
+# does.
+[tool.uv]
+override-dependencies = ["pillow>=13"]
 
 # One repository, several distributions. The adapters are their own packages so that
 # `uv pip install quackd` brings no robot and you choose the one you own.

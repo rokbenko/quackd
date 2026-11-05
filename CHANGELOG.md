@@ -38,8 +38,67 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   that still types the old name stops with `No such command` and has to change it. Like the keys above,
   it had no release of warning, at the project's owner's word.
 
+### Fixed
+
+- **`quackd[lerobot]` and `quackd[lerobot-vla]` stop below LeRobot's new motor library.** The first
+  asked for `lerobot[feetech]>=0.6` with no ceiling and the second stopped only at 0.7, so a fresh install
+  would have taken LeRobot's next release the day it appeared. LeRobot's main branch calls itself 0.6.2 and
+  has replaced `feetech-servo-sdk`, the library that talks to the arm's motors, with `rustypot`
+  ([huggingface/lerobot#4672](https://github.com/huggingface/lerobot/pull/4672)), and nothing in quackd has
+  been read or run against that. Both extras now stop below 0.6.2. What changes for you: nothing, since
+  0.6.1 is what they install today. A wheel already on PyPI keeps the requirement it shipped with.
+  `tests/test_workspace.py` fails if a ceiling goes, or if the version `upstream_api.py` was read at moves
+  and leaves it behind. It failed before this change.
+- **A `--camera-url` that answers with anything but a JPEG or a PNG is refused now.** On Microduck and
+  Open Duck a WEBP, BMP, GIF or TIFF used to work, and refusing it in a patch is RELEASING.md's safety
+  exception: the decoders a camera could choose among run in the process that moves the body, and the
+  entry under Security says what that reached. What changes for you: the camera's error now says
+  `the camera did not answer with a JPEG or a PNG`, so serve one of those two. Huebot's page already
+  asked for them. `tests/test_image_formats.py` reads the refusal back. It failed before this change.
+- **A picture that claims to be enormous no longer ends a run.** AlohaMini, XLeRobot, ToddlerBot, MOSS
+  and rosbridge let Pillow's `DecompressionBombError` out of `get_frame`, whose contract is to answer
+  None, so one JPEG header from the far end could do it. rosbridge did the same for any picture it
+  could not read. Each of them now answers None, as the others always have.
+  `tests/test_image_formats.py` fails if one does not. It failed before this change.
+- **`--image` with EXIF data Pillow cannot read is one line and not a traceback.** A picture that opens
+  can carry an EXIF block that is no TIFF, and Pillow raises `SyntaxError` for that from
+  `exif_transpose`, which nothing caught. The refusal says to save a copy without it.
+  `tests/test_images.py` fails without this.
+- **`quackd[dev]` no longer brings `pre-commit`.** It brings `virtualenv`, and every `virtualenv` with
+  the fixes for its 12 advisories needs a `packaging` LeRobot 0.6.1 caps, so the lock could not take
+  one. No CI job ran it. What changes for a contributor: `uv tool install pre-commit`, and
+  `pre-commit install` again if a hook is already installed, since an older hook stops every commit
+  with `No module named pre_commit`.
+
+### Security
+
+- **A picture read off a wire is decoded only in the formats that wire carries.** Ten places read a frame
+  from the network with a bare `Image.open`, which tries dozens of decoders, one of which starts
+  Ghostscript, on the strength of the first bytes. So a robot that had been taken over, or anything on its
+  network answering in its place, chose the decoder. On Pillow 12.3.0 that reached a heap overflow in its
+  JPEG 2000 library, a crafted IPTC file that crashes the process, TIFF files that read heap memory into
+  the picture, and small files that use up the memory or hold a core for minutes. Six of the ten now take
+  JPEG and nothing else: the Jetson's snapshot, the policy server's frames, AlohaMini, XLeRobot, ToddlerBot
+  and MOSS. Microduck, Huebot, Open Duck and rosbridge take JPEG or PNG, since `mediad` serves a PNG, a
+  `--camera-url` can name a server of your own and a rosbridge message can say either. `--image` asks only
+  the six decoders it already listed, rather than opening the file and then refusing it, so its refusal no
+  longer says what the file was. `tests/test_image_formats.py` registers a decoder nobody names and fails
+  if any of the eleven asks it, and fails if an `Image.open` that ships has no `formats=`. Both failed
+  before this change.
+
 ### Documentation
 
+- **`uv.lock` holds Pillow 13.0.0 and no `pre-commit`, which closes 53 of the 58 Dependabot alerts open on
+  it.** All 58 came from LeRobot 0.6.1's caps. `override-dependencies` in `pyproject.toml` lifts its
+  `Pillow<13` for a checkout and for CI, where 41 of them were, so CI's policy job now runs LeRobot 0.6.1 on
+  Pillow 13, then the tests that decode pictures on the Pillow a PyPI install gets, and the fresh install
+  nightly already ran the whole suite on 13. The other 12 were in `virtualenv`, which leaves with
+  `pre-commit` and six other packages (under Fixed). The last five, in `transformers`, `setuptools` and
+  `torch`, stay until LeRobot's next release, because forcing them is worse than having them: LeRobot's own
+  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer `transformers`
+  loads pi0 and pi05 checkpoints with a random vision tower and only a warning. Nothing in quackd reaches
+  those five. `.github/dependabot.yml` no longer ignores Pillow, and ignores LeRobot from 0.6.2. A wheel asks
+  for none of this, which is the first entry under Known limitations.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
   did not show, the exact command, the quackd version and the full terminal trace, and
@@ -70,6 +129,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
   prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
   the counters was captured again by running its command.
+
+### Known limitations
+
+- **`quackd[lerobot]`, `quackd[lerobot-vla]` and `quackd[robots]` on Python 3.12 or later still install
+  Pillow 12.3.0.** LeRobot 0.6.1 asks for a Pillow under 13, and the override in `pyproject.toml` is a
+  checkout's alone, so these installs keep the advisories that release carries until quackd moves to
+  LeRobot's next release, which takes a run on an arm ([PLAN.md](PLAN.md)). With the format lists above,
+  what can still reach them is a crafted TIFF, GIF, BMP, PNG or WEBP handed to `--image`, and, where
+  Microduck, Huebot, Open Duck or rosbridge is installed beside LeRobot, as `quackd[robots]` does, a crafted
+  animated PNG from that robot's camera. They keep `setuptools` 81 and `torch` 2.11 as well, and
+  `[lerobot-vla]` keeps `transformers` 5.5.4, and nothing in quackd reaches the advisories on those three.
+  A fresh install with no LeRobot in it gets Pillow 13.
 
 ## [0.31.3] — 2026-11-04
 

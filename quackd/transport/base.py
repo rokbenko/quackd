@@ -7,12 +7,13 @@ real time while the real robot keeps its deadman fed.
 
 from __future__ import annotations
 
+import io
 import math
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.space.pose import where_summary
@@ -233,6 +234,23 @@ class DuckTransport(Protocol):
     async def sleep(self, seconds: float) -> None:
         """Let `seconds` of transport time pass (advancing the sim, or actually waiting)."""
         ...
+
+
+CAMERA_URL_FORMATS = ("JPEG", "PNG")
+"""What a `--camera-url` may answer with. It names a server of the person's own, and these are
+what an HTTP camera serves: `mediad`'s `/frame` is a PNG and `camd`'s `/snapshot.jpg` a JPEG."""
+
+
+def camera_url_frame(data: bytes) -> Image.Image:
+    """The picture a `--camera-url` answered with, as RGB.
+
+    Named formats only, because the first bytes would otherwise choose among Pillow's decoders
+    and these come from across a network (tests/test_image_formats.py). A refusal says what to
+    serve, since it ends up in `camera_error` for a person to read."""
+    try:
+        return Image.open(io.BytesIO(data), formats=CAMERA_URL_FORMATS).convert("RGB")
+    except UnidentifiedImageError as e:
+        raise ValueError("the camera did not answer with a JPEG or a PNG") from e
 
 
 async def frames_of(transport: Any) -> list[CameraFrame]:

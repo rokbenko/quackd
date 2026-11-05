@@ -73,14 +73,14 @@ Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:p
 Frames: robotd's socket carries no picture. `--camera-url http://127.0.0.1:8080/frame`, after
 `ssh -L 8080:127.0.0.1:8080 microduck@<duck>`, reads `mediad`'s own snapshot route, the camera
 the docs start with, and `webrtc://host:8443` its video track, which takes
-`quackd[microduck-camera]`. Any other HTTP URL is read as a snapshot server of its own.
+`quackd[microduck-camera]`. Any other HTTP URL is read as a snapshot server of its own, which
+answers with a JPEG or a PNG.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import io
 import json
 import logging
 import math
@@ -108,6 +108,7 @@ from quackd.transport.base import (
     Intent,
     Posture,
     TransportError,
+    camera_url_frame,
 )
 from quackd_microduck import upstream_api as up
 from quackd_microduck.sim3d.gait import CMD_MAX_VX, CMD_MAX_VY
@@ -1290,7 +1291,7 @@ class JsonRpcUnixTransport:
                 raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
 
         data = await asyncio.to_thread(fetch)
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        return camera_url_frame(data)
 
     async def _camera_loop(self) -> None:
         """Keep the newest frame, on a timer, so `get_frame` is a memory read.

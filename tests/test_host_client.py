@@ -609,7 +609,7 @@ def test_a_snapshot_that_is_not_an_image_is_a_host_error(hostd: FakeHostd) -> No
     hostd.replies["/snapshot.jpg"] = CannedReply(200, b"not a jpeg at all", "image/jpeg")
     client = HostClient(hostd.address)
     error = _raises(client.snapshot)
-    assert "not an image" in str(error)
+    assert "not a JPEG" in str(error)
     assert client.camera_error == str(error)
 
 

@@ -516,7 +516,7 @@ def decode_frame(frame: Frame, camera: CameraInfo) -> np.ndarray:
             )
         return np.frombuffer(data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
     try:
-        with Image.open(io.BytesIO(data)) as picture:
+        with Image.open(io.BytesIO(data), formats=["JPEG"]) as picture:
             if picture.format != "JPEG" or picture.size != (frame.width, frame.height):
                 raise ProtocolError(
                     f"the {frame.name} camera's frame is not a {frame.width}x{frame.height} JPEG"

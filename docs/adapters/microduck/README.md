@@ -234,7 +234,8 @@ camera two ways quackd reads, and its own snapshot route, `/frame`, is the one t
 Neither installs anything on the duck, and neither authenticates: `mediad` answers on every
 address, and upstream's own note on its WebRTC side is that a pairing PIN which is `000000` on
 every robot "authenticates nobody". Reach both through the tunnel rather than across a room's
-wifi.
+wifi. Any other HTTP URL is read as a snapshot server of its own, which has to answer with a JPEG
+or a PNG.
 
 **`/frame`** is pulled on a timer and the newest frame is served from memory, so `observe` costs
 no round trip, and a failed fetch is reported rather than raised. quackd asks mediad for 2 frames

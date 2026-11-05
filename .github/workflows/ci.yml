@@ -257,6 +257,8 @@ jobs:
   # torch comes from its CPU wheel index first, because this runner has no GPU and the default
   # wheels carry CUDA's gigabytes, and LeRobot after it, at the version policy/upstream_api.py
   # was read at, with its X-VLA extra for transformers, which keeps the torch already there.
+  # `uv pip` reads pyproject.toml's override-dependencies too, so LeRobot runs on Pillow 13 here,
+  # as it does in a checkout, and not on the 12.3.0 a PyPI install of the extra gets.
   # `--no-sync` from then on, or `uv run`
   # would sync them both away again. Not a matrix: nothing here differs by platform that the
   # default suite does not already run six times.
@@ -287,3 +289,8 @@ jobs:
           uv run --no-sync python -c "import torch, lerobot, transformers; from lerobot.policies.act.modeling_act import ACTPolicy; from lerobot.policies.xvla.modeling_xvla import XVLAPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
       - name: A tiny ACT and a tiny X-VLA through the real server, and the protocol with torch installed
         run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py
+      # --no-config, or uv reads the override and has nothing to do. Every other job has Pillow 13.
+      - name: The pictures quackd decodes, on the Pillow a PyPI install of the arm's extras gets
+        run: |
+          uv pip install --no-config "pillow<13"
+          uv run --no-sync pytest tests/test_image_formats.py tests/test_images.py tests/test_host_client.py tests/test_rosbridge_adapter.py
