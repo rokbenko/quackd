@@ -15,9 +15,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 next release, and fixes how a run ends when the arm stops answering, which is what cutting its supply
 does. What changes for you: nothing to do, unless a `--camera-url` serves something other than a JPEG or
 a PNG. A run that loses the arm ends on one line and no longer in a Python traceback, at the end of a
-by-hand run nobody is told to reach into its jaws, and a chat is told why. `quackd[lerobot]` still
-installs Pillow 12.3.0 until quackd moves to LeRobot's next release, as Known limitations says. None of
-this has met an arm.
+by-hand run nobody is told to reach into its jaws, and a chat is told why. On Python 3.12 or later
+`quackd[lerobot]` still installs Pillow 12.3.0 until quackd moves to LeRobot's next release, as Known
+limitations says. None of this has met an arm.
 
 ### Fixed
 
@@ -37,8 +37,9 @@ this has met an arm.
   says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
 - **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
   answer of its own, so over MCP the tool only said it had failed, on `stop` too. It now answers
-  `the arm did not answer: ` and what LeRobot raised, and the stop still goes out.
-  `tests/test_mcp_server.py` tries it. It failed before this change.
+  `the arm did not answer: ` and what LeRobot raised. The stop is still tried and ends a running policy
+  segment, but on an arm that does not answer a read it writes no goal, so the power switch is what stops
+  that arm. `tests/test_mcp_server.py` tries it. It failed before this change.
 - **`quackd[lerobot]` and `quackd[lerobot-vla]` stop below LeRobot's new motor library.** The first
   asked for `lerobot[feetech]>=0.6` with no ceiling and the second stopped only at 0.7, so a fresh install
   would have taken LeRobot's next release the day it appeared. LeRobot's main branch calls itself 0.6.2 and
@@ -48,12 +49,12 @@ this has met an arm.
   0.6.1 is what they install today. A wheel already on PyPI keeps the requirement it shipped with.
   `tests/test_workspace.py` fails if a ceiling goes, or if the version `upstream_api.py` was read at moves
   and leaves it behind. It failed before this change.
-- **A `--camera-url` that answers with anything but a JPEG or a PNG is refused now.** On Microduck and
-  Open Duck a WEBP, BMP, GIF or TIFF used to work, and refusing it in a patch is RELEASING.md's safety
-  exception: the decoders a camera could choose among run in the process that moves the body, and the
-  entry under Security says what that reached. What changes for you: the camera's error now says
-  `the camera did not answer with a JPEG or a PNG`, so serve one of those two. Huebot's page already
-  asked for them. `tests/test_image_formats.py` reads the refusal back. It failed before this change.
+- **A `--camera-url` that answers with anything but a JPEG or a PNG is refused now.** On Microduck, Open
+  Duck and Huebot a WEBP, BMP, GIF or TIFF used to work, though Huebot's page already asked for a JPEG or a
+  PNG. Refusing it in a patch rests on a broad reading of RELEASING.md's safety exception: these decoders
+  run in the process that moves the body, and the entry under Security says what that reached. What
+  changes for you: the camera's error now says `the camera did not answer with a JPEG or a PNG`, so serve
+  one of those two. `tests/test_image_formats.py` reads the refusal back. It failed before this change.
 - **A picture that claims to be enormous no longer ends a run.** AlohaMini, XLeRobot, ToddlerBot, MOSS
   and rosbridge let Pillow's `DecompressionBombError` out of `get_frame`, whose contract is to answer
   None, so one JPEG header from the far end could do it. rosbridge did the same for any picture it
@@ -93,12 +94,14 @@ this has met an arm.
   Pillow 13, then the tests that decode pictures on the Pillow a PyPI install gets, and the fresh install
   nightly already ran the whole suite on 13. The other 12 were in `virtualenv`, which leaves with
   `pre-commit` and six other packages (under Fixed). The last five, in `transformers`, `setuptools` and
-  `torch`, stay until LeRobot's next release, because forcing them is worse than having them: LeRobot's own
-  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer `transformers`
-  loads pi0 and pi05 checkpoints with a random vision tower and only a warning. Nothing in quackd reaches
-  those five. `.github/dependabot.yml` no longer ignores Pillow, ignores LeRobot from 0.6.2, and ignores
-  `dm-tree` from 0.1.10, whose numpy floor on Python 3.14 LeRobot's cap rules out and which had failed the
-  `uv` job on every run since 30 October. A wheel asks for none of this, as Known limitations says.
+  `torch`, stay in the lock until LeRobot's next release, and their alerts are dismissed on GitHub as not
+  used, since nothing in quackd reaches them. Forcing `transformers` is worse than having it: LeRobot's own
+  [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer one loads pi0
+  and pi05 checkpoints with a random vision tower and only a warning. LeRobot 0.6.1 caps the other two as
+  well, and `torch` 2.11 caps `setuptools`. `.github/dependabot.yml` no longer ignores Pillow, ignores
+  LeRobot from 0.6.2, and ignores `dm-tree` from 0.1.10, whose numpy floor on Python 3.14 LeRobot's cap
+  rules out and which had failed the `uv` job on every run since 30 October. Apart from `quackd[dev]`, a
+  wheel asks for none of this, as Known limitations says.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
   did not show, the exact command, the quackd version and the full terminal trace, and
@@ -115,9 +118,9 @@ this has met an arm.
   and that every `quackd` line in them parses.
 - **The SO-101's run sheet is on the pages.**
   [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
-  experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
+  experiments, 34 of which have no folder, so their lines were written down nowhere a reader could find
   them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
-  on its card, and that every `quackd` line on the page parses.
+  on the sheet, and that every `quackd` line on the page parses.
 
 ### Known limitations
 
@@ -130,6 +133,9 @@ this has met an arm.
   animated PNG from that robot's camera. They keep `setuptools` 81 and `torch` 2.11 as well, and
   `[lerobot-vla]` keeps `transformers` 5.5.4, and nothing in quackd reaches the advisories on those three.
   A fresh install with no LeRobot in it gets Pillow 13.
+- **A `stop` does not reach an arm that has stopped answering.** It ends a running policy segment and writes
+  no goal, because a stop reads the arm before it writes to it, and a chat is told only that the arm did not
+  answer. The power switch is what stops that arm.
 
 ## [0.31.2] — 2026-11-04
 
