@@ -1,5 +1,5 @@
-"""Render the tables in `docs/llms/` from the code that decides what quackd takes, or check
-that the pages still hold what the code says.
+"""Render the tables in `docs/llms/` and `docs/guides/vlas.md` from the code that decides what
+quackd takes, or check that the pages still hold what the code says.
 
 Every table on those pages that names an LLM, a vendor, a flag, a key or a rate sits between two
 markers this script owns, and the rows between them are the catalogues rendered:
@@ -48,7 +48,7 @@ from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
 from quackd.agent.providers.openai import BASE_URL_ENV, DEFAULT_BASE_URL
 
 REPO = Path(__file__).resolve().parents[1]
-PAGES_DIR = REPO / "docs" / "llms"
+DOCS = REPO / "docs"
 
 #: Who makes or runs each thing a page names, as a reader would say it. A name the code adds
 #: and this table does not know is an error rather than a blank cell, so a new vendor cannot
@@ -369,7 +369,7 @@ def roles() -> str:
             "no, and the SO-101 arm alone takes one",
             f"{number_word(len(FAMILIES))} LeRobot policy types, {number_word(vlas)} of them "
             "VLAs, served from the Hub",
-            "[vlas.md](vlas.md)",
+            "[guides/vlas.md](../guides/vlas.md)",
         ],
     ]
     return table(("Role", "Named with", "Required", "What quackd names", "Page"), rows)
@@ -498,13 +498,13 @@ BLOCKS: dict[str, tuple[str, Callable[[], str]]] = {
     "vendor-roles": ("the three catalogues", vendor_roles),
 }
 
-#: Which blocks each page carries, once each, in this order.
+#: Which blocks each page under `docs/` carries, once each, in this order.
 PAGES: dict[str, tuple[str, ...]] = {
-    "README.md": ("roles",),
-    "pilot-llms.md": ("pilot-vendors", "pilot-local", "pilot-ids"),
-    "decision-llms.md": ("decision-rows",),
-    "vlas.md": ("policy-served", "policy-refused"),
-    "vendors.md": ("vendor-roles",),
+    "llms/README.md": ("roles",),
+    "llms/pilot-llms.md": ("pilot-vendors", "pilot-local", "pilot-ids"),
+    "llms/decision-llms.md": ("decision-rows",),
+    "guides/vlas.md": ("policy-served", "policy-refused"),
+    "llms/vendors.md": ("vendor-roles",),
 }
 
 _START = re.compile(r"^<!-- generated: ([a-z0-9-]+)\b[^\n]*-->$", re.M)
@@ -530,16 +530,14 @@ def rewrite(text: str, page: str) -> str:
     wanted = PAGES[page]
     found = _START.findall(text)
     if unknown := sorted(set(found) - set(BLOCKS)):
-        raise ValueError(f"docs/llms/{page} has blocks this script does not render: {unknown}")
+        raise ValueError(f"docs/{page} has blocks this script does not render: {unknown}")
     if tuple(found) != wanted:
-        raise ValueError(
-            f"docs/llms/{page} carries the blocks {found}, and should carry {list(wanted)}"
-        )
+        raise ValueError(f"docs/{page} carries the blocks {found}, and should carry {list(wanted)}")
     for name in wanted:
         start = next(m for m in _START.finditer(text) if m.group(1) == name)
         end = next((m for m in _END.finditer(text, start.end()) if m.group(1) == name), None)
         if end is None:
-            raise ValueError(f"docs/llms/{page}'s block {name} has no end marker")
+            raise ValueError(f"docs/{page}'s block {name} has no end marker")
         body = BLOCKS[name][1]()
         text = (
             text[: start.start()]
@@ -556,7 +554,7 @@ def main(argv: Sequence[str]) -> int:
     check = "--check" in argv
     stale = []
     for page in PAGES:
-        path = PAGES_DIR / page
+        path = DOCS / page
         with open(path, encoding="utf-8", newline="") as f:
             old = f.read()
         new = rewrite(old, page)
@@ -567,11 +565,11 @@ def main(argv: Sequence[str]) -> int:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(new)
     if stale and check:
-        print("stale pages in docs/llms/: " + ", ".join(stale))
+        print("stale pages in docs/: " + ", ".join(stale))
         print("run: uv run --no-sync python scripts/llms_docs.py")
         return 1
     for page in stale:
-        print(f"rewrote docs/llms/{page}")
+        print(f"rewrote docs/{page}")
     return 0
 
 

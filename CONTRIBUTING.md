@@ -280,7 +280,8 @@ factory and against the vendor's own public list in the provider, rather than re
 that is a lab, which is every other one, gets no such mark.
 
 Then the LLMs pages, which render every row: run `uv run --no-sync python
-scripts/llms_docs.py` and commit what it rewrites under `docs/llms/`, or the drift test in
+scripts/llms_docs.py` and commit what it rewrites under `docs/llms/` and in
+`docs/guides/vlas.md`, or the drift test in
 `tests/test_docs.py` fails. A vendor the script has no name for in `MAKERS` and `COMPANIES` is
 refused there rather than printed unnamed.
 

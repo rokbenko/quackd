@@ -39,8 +39,9 @@ How to do one thing with quackd.
 
 ## LLMs and policies
 
-Robots have [adapters/](adapters/), and LLMs and policies have [llms/](llms/README.md): a page for
-each of the three roles one can have in a run and one for the companies behind them.
+Robots have [adapters/](adapters/), and LLMs have [llms/](llms/README.md): a page for the three
+roles one can have in a run, one for each LLM's role and one for the companies behind them. The
+third role is a learned policy, which is no LLM, so its page is with the guides.
 Their tables are rendered from the code by `scripts/llms_docs.py`, so they say what this
 build takes.
 
@@ -49,7 +50,7 @@ build takes.
 | [LLMs and policies](llms/README.md) | the three roles side by side, how one run uses all three, and how to choose |
 | [Pilot LLMs](llms/pilot-llms.md) | every vendor `--llm` takes and every LLM id, with its extra, its key, its address and its rate |
 | [Decision LLMs](llms/decision-llms.md) | every decision LLM `--decision-llm` names, where it runs, its key and its rate |
-| [VLAs and the other learned policies](llms/vlas.md) | the policy types the arm's policy server serves, where they run, and what is not served and why |
+| [VLAs and the other learned policies](guides/vlas.md) | the policy types the arm's policy server serves, where they run, and what is not served and why |
 | [Who makes what](llms/vendors.md) | each company and project, the roles it fills, and the key and the extra it needs |
 
 How to set each one up is a guide: [local LLMs](guides/local-llms.md),
@@ -157,9 +158,10 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
 - `concepts/` for how quackd works, and why.
-- `llms/` for which LLMs and policies quackd names, a page for each role and one for the companies.
-  Their tables are rendered from the code by `scripts/llms_docs.py`, so a row is changed
-  there and never in a table. How to set one up is a guide.
+- `llms/` for which LLMs quackd names, a page for each role and one for the companies. Their
+  tables, and the policy types' in `guides/vlas.md`, are rendered from the code by
+  `scripts/llms_docs.py`, so a row is changed there and never in a table. How to set one up is a
+  guide.
 - `passport/` for anything about Robot Passport, the protocol and quackd's part in it, kept in one
   folder so it can leave quackd whole.
 - `adr/` for a decision, numbered after the last one.

@@ -4475,9 +4475,10 @@ def test_releasing_md_runs_no_line_past_its_wrap() -> None:
     assert not long, f"{name} runs these lines past its wrap: {long}"
 
 
-# ── the models pages, and the code they render ─────────────────────────────────────────────
+# ── the LLM pages, and the code they render ─────────────────────────────────────────────
 
-LLMS_DOCS = REPO / "docs" / "llms"
+DOCS = REPO / "docs"
+LLMS_DOCS = DOCS / "llms"
 
 
 def _llms_docs_script() -> ModuleType:
@@ -4529,9 +4530,9 @@ def test_the_llms_pages_are_what_scripts_llms_docs_writes() -> None:
     every page, and what it would write is compared with what is committed."""
     script = _llms_docs_script()
     for page in script.PAGES:
-        committed = (LLMS_DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
+        committed = (DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
         assert script.rewrite(committed, page) == committed, (
-            f"docs/llms/{page} is not what scripts/llms_docs.py writes from the code: run "
+            f"docs/{page} is not what scripts/llms_docs.py writes from the code: run "
             "uv run --no-sync python scripts/llms_docs.py and commit what it changes"
         )
 
@@ -4542,13 +4543,12 @@ def test_every_block_the_script_renders_is_on_one_page_once() -> None:
     script = _llms_docs_script()
     placed = [name for blocks in script.PAGES.values() for name in blocks]
     assert sorted(placed) == sorted(script.BLOCKS), "a block is rendered onto no page, or two"
-    for path in sorted(LLMS_DOCS.glob("*.md")):
+    for path in sorted([*LLMS_DOCS.glob("*.md"), DOCS / "guides" / "vlas.md"]):
         found = re.findall(
             r"^<!-- generated: ([a-z0-9-]+)\b", path.read_text(encoding="utf-8"), flags=re.M
         )
-        assert tuple(found) == script.PAGES.get(path.name, ()), (
-            f"docs/llms/{path.name} carries the blocks {found}"
-        )
+        page = path.relative_to(DOCS).as_posix()
+        assert tuple(found) == script.PAGES.get(page, ()), f"docs/{page} carries the blocks {found}"
 
 
 def test_the_llms_pages_name_every_row_in_the_code() -> None:

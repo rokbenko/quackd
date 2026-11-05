@@ -1396,7 +1396,7 @@ def _list_policies(as_json: bool) -> None:
         Text(
             f"Each type is served on Python 3.12 with {FAMILIES[0].extra}, in a process of its "
             "own and never the arm's: beside the arm, on a rented GPU or on a Hugging Face "
-            "Endpoint (docs/llms/vlas.md).",
+            "Endpoint (docs/guides/vlas.md).",
             style=ui.STYLES["muted"],
         ),
         soft_wrap=True,

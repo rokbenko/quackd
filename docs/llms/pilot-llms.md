@@ -85,7 +85,7 @@ names a pilot, and what the test suite and the first run in the README use.
 `--controller vla` takes the pilot's seat on the SO-101 arm alone. No LLM is involved: a
 scripted pilot hands the arm's learned policy each instruction the task lists, then asks you
 whether the arm did it. It needs `--policy-url` and a person at the terminal
-([VLAs](vlas.md), and [the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+([VLAs](../guides/vlas.md), and [the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 
 ## Over MCP
 
@@ -109,7 +109,7 @@ Google's embodied-reasoning LLM is a pilot row, `gemini:gemini-robotics-er-2-pre
 preview as Google marks it. It plans and reasons about what a camera sees, as any pilot does, and
 it calls quackd's verbs like any other row. It is not a VLA: it moves no motor itself, and the
 Gemini Robotics model that does is offered to selected partners only
-([VLAs](vlas.md#not-served-and-why)). Nothing on record has flown a robot with it.
+([VLAs](../guides/vlas.md#not-served-and-why)). Nothing on record has flown a robot with it.
 
 ## Every LLM id
 

@@ -2,7 +2,8 @@
 
 A quackd run has up to two LLMs and a policy in it, and only the first is required. The robots are in
 [adapters/](../adapters/status.md), one page per body. This folder is the other half: the LLMs
-that plan, the ones that decide, the policies that move the arm, and how to name each one.
+that plan, the ones that decide, and how to name each one. The policies that move the arm are no
+LLMs, and their page is [guides/vlas.md](../guides/vlas.md).
 
 <!-- generated: roles, by scripts/llms_docs.py from quackd/agent/providers/catalogue.py and quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
 
@@ -10,7 +11,7 @@ that plan, the ones that decide, the policies that move the arm, and how to name
 |---|---|---|---|---|
 | **Pilot LLM** | `--llm VENDOR[:LLM]` | yes, and `fake`, the scripted pilot, flies when nothing names one | 124 ids from twelve cloud vendors, more through OpenRouter's own list, and five local presets | [pilot-llms.md](pilot-llms.md) |
 | **Decision LLM** | `--decision-llm NAME[:LLM]` | no, and off unless a run names one | eight decision LLMs, hosted or your own | [decision-llms.md](decision-llms.md) |
-| **Learned policy** | `--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME` | no, and the SO-101 arm alone takes one | six LeRobot policy types, five of them VLAs, served from the Hub | [vlas.md](vlas.md) |
+| **Learned policy** | `--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME` | no, and the SO-101 arm alone takes one | six LeRobot policy types, five of them VLAs, served from the Hub | [guides/vlas.md](../guides/vlas.md) |
 
 <!-- end generated: roles -->
 
@@ -45,7 +46,7 @@ travel before it is sent.
 - **Fewer, cheaper pilot turns:** a decision LLM in front of the pilot, in shadow first
   ([decision-llms.md](decision-llms.md)).
 - **Contact work on the arm:** a learned policy, served beside the arm, on a rented GPU or on a
-  Hugging Face Endpoint ([vlas.md](vlas.md)).
+  Hugging Face Endpoint ([guides/vlas.md](../guides/vlas.md)).
 
 None of this is a ranking. Which LLM flies a given body best is not something quackd has
 measured, and the pages say what has actually run.

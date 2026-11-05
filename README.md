@@ -611,7 +611,7 @@ quackd policy endpoint up arm --policy OWNER/NAME@REVISION                # or o
 quackd run task.duck --robot arm-01-sim --llm openai --policy-url hf:arm  # the arm's twin first
 ```
 
-The endpoint asks before it bills, waits until the server answers, pauses itself when it fails, and `quackd policy endpoint pause arm` stops the bill. quackd has never created one: it has run against the test suite's stand-ins alone. What each family needs, its licence, where it runs and what is not served and why are in [docs/llms/vlas.md](docs/llms/vlas.md), and setting one up is [docs/guides/policies.md](docs/guides/policies.md).
+The endpoint asks before it bills, waits until the server answers, pauses itself when it fails, and `quackd policy endpoint pause arm` stops the bill. quackd has never created one: it has run against the test suite's stand-ins alone. What each family needs, its licence, where it runs and what is not served and why are in [docs/guides/vlas.md](docs/guides/vlas.md), and setting one up is [docs/guides/policies.md](docs/guides/policies.md).
 
 <br>
 

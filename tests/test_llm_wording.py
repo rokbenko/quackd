@@ -47,7 +47,7 @@ WHOLE_FILES: dict[str, str] = {
     # policies
     r"adapters/lerobot/src/quackd_lerobot/policy/.*": "learned policies",
     r"quackd/adapters/policies\.py": "learned policies",
-    r"docs/llms/vlas\.md|docs/guides/policies\.md": "learned policies",
+    r"docs/guides/policies\.md": "learned policies",
     r"docs/adr/006[01]-.*": "ADRs about learned policies",
     # detectors, the radio and boards
     r"bridge/jetson/.*": "the daemon's detector",
@@ -400,6 +400,11 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         'the newest concrete model", and',
     ),
     "docs/guides/registry.md": ("it downloads a model, which",),
+    "docs/guides/vlas.md": (
+        "robotics model at all,",
+        "refuses in every model it loads",
+        "a port whose model loads with",
+    ),
     "docs/llms/pilot-llms.md": ("Gemini Robotics model that does",),
     "docs/llms/vendors.md": ("the NVIDIA Open Model",),
     "docs/passport/compatibility.md": ("model, a",),

@@ -65,7 +65,7 @@ fetched from the Hub at a revision you name, through LeRobot, Hugging Face's rob
 and SmolVLA is Hugging Face's own. A Hugging Face Inference Endpoint can run quackd's policy
 server on a GPU Hugging Face rents by the hour, through `quackd policy endpoint`, which has met
 only the test suite's stand-ins. A Hub token, from `hf auth login` or `HF_TOKEN`, is what reaches
-a gated repository and what starts and reaches an endpoint ([vlas.md](vlas.md)).
+a gated repository and what starts and reaches an endpoint ([guides/vlas.md](../guides/vlas.md)).
 
 ### NVIDIA
 
@@ -78,7 +78,7 @@ server, camera and detector ([guides/jetson.md](../guides/jetson.md)).
 
 pi0 and pi05 are served as LeRobot's ports of them. pi0-FAST is not, because its policy runs the
 FAST tokenizer's own code from the Hub, and the Pi API, a hosted beta behind a waitlist since
-2026-10-13, has no public protocol to speak ([vlas.md](vlas.md#not-served-and-why)).
+2026-10-13, has no public protocol to speak ([guides/vlas.md](../guides/vlas.md#not-served-and-why)).
 
 ### TypeSafe
 
