@@ -13,8 +13,8 @@ and say how a line is built.
 > [worth reporting](../../adapters/lerobot/first-run.md#14-what-to-report).
 
 It was written for one filmed session, so the cards say how to film things, and "the video" in a card means the
-result worth keeping. A card's number is its folder's, so `e001/` holds the task files of E001, and 34 experiments
-have no folder because their lines run a bundled task or a command.
+result worth keeping. A card's number is its folder's, so `e001/` holds the task files of E001. 34 experiments
+have no file of their own because their lines run a bundled task or a command, so their folders only point back here.
 
 The lines run from the root of a checkout, against an arm registered as `arm-01`. `COM5`, `openai:gpt-6-sol` and
 cameras 1 and 2 are examples, so change them to yours. A line that needs another key says so. Where a shell

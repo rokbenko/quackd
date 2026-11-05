@@ -9,6 +9,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **Every SO-101 experiment has a folder now.** The 34 with no file of their own, E119 among them,
+  had no folder at all, because git keeps no empty one, so their numbers led nowhere. Each now holds
+  a short page pointing at its card on the run sheet, written by `scripts/example_log.py`, and the
+  example's log replaces that page once it has been run. The table links every example.
+
 ## [0.32.0] — 2026-11-05
 
 0.32.0 calls an LLM an LLM, everywhere quackd says anything, and calls a policy a policy. What quackd

@@ -22,6 +22,9 @@ faster than real time that video plays, which is read off the video. What goes w
     log/run.gif        made from the video
     log/frame-N.jpg    what the robot's camera saw at the start, the middle and the end
 
+An example with no file of its own gets a short page here until it has a log, because git keeps no
+empty folder and a number on the run sheet should always have somewhere to open.
+
 `write` and `check` need neither ffmpeg nor the run folders, and read nothing outside this tree.
 What to write in the notes is under How a log is written in `docs/examples/lerobot/README.md`.
 """
@@ -162,6 +165,17 @@ The following command was run with quackd {version}:
 </details>
 """
 
+
+NO_LOG_YET = """\
+# {id}: {title}
+
+This example has no log yet, and no file of its own: its lines run a command, a task that ships
+with quackd or another example's task file.
+They are on [its card on the run sheet](../run-sheet.md#{card}).
+
+Once it has been run, its log replaces this page.
+[All examples](../README.md)
+"""
 
 TRY_ON_THE_MOCK = """\
 This runs the same {what} with no arm attached, on `lerobot:mock`, an arm that lives in memory.
@@ -421,6 +435,20 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
     return text
 
 
+def _holds_nothing_of_its_own(folder: Path) -> bool:
+    """Whether an example's only file is this script's page, or it has no folder yet."""
+    return not folder.exists() or all(path.name == "README.md" for path in folder.iterdir())
+
+
+def render_no_log_yet(experiment: dict[str, str]) -> str:
+    """The page of an example with no file of its own and no log, sending a reader to its card."""
+    heading = f"{experiment['id']}: {experiment['title']}"
+    card = re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")  # GitHub's rule for an anchor
+    text = NO_LOG_YET.format(id=experiment["id"], title=experiment["title"], card=card)
+    _says_llm(f"{experiment['id'].lower()}/README.md", text)
+    return text
+
+
 def render_table(root: Path) -> str:
     """The table in the examples' README: one row per experiment, ticked once it has a log."""
     rows = []
@@ -429,7 +457,7 @@ def render_table(root: Path) -> str:
     for experiment in all_of_them:
         folder = root / experiment["id"].lower()
         name = _cell(f"{experiment['id']}: {experiment['title']}")
-        link = f"[{name}]({folder.name}/)" if folder.exists() else name
+        link = f"[{name}]({folder.name}/)"
         notes = notes_of(folder)
         if notes is None:
             rows.append(f"|  | {link} | {experiment['category']} |  |  |  |")
@@ -474,6 +502,8 @@ def _expected(root: Path) -> dict[Path, str]:
         folder = root / experiment["id"].lower()
         if notes_of(folder) is not None:
             wanted[folder / "README.md"] = render_log(root, experiment)
+        elif _holds_nothing_of_its_own(folder):
+            wanted[folder / "README.md"] = render_no_log_yet(experiment)
     return wanted
 
 
@@ -481,6 +511,7 @@ def write_all(root: Path) -> list[Path]:
     changed = []
     for path, text in _expected(root).items():
         if not path.exists() or _read(path) != text:
+            path.parent.mkdir(exist_ok=True)
             _write(path, text)
             changed.append(path)
     return changed
@@ -497,7 +528,8 @@ def check_all(root: Path) -> list[str]:
     for folder in sorted(p for p in root.glob("e[0-9]*") if p.is_dir()):
         if folder.name not in known:
             problems.append(f"{folder.name} is not in experiments.json")
-        if (folder / "README.md").exists() and notes_of(folder) is None:
+        stray = notes_of(folder) is None and not _holds_nothing_of_its_own(folder)
+        if stray and (folder / "README.md").exists():
             problems.append(f"{folder.name}/README.md has no log/notes.yaml behind it")
         for path in sorted((folder / "log").rglob("*")):
             if path.suffix in {".txt", ".json", ".yaml"} and PRIVATE.search(_read(path)):

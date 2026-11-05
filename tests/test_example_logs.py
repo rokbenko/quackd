@@ -428,7 +428,8 @@ def test_a_trace_with_backticks_cannot_close_its_fence(tmp_path: Path) -> None:
 def test_a_hand_edit_is_found_and_write_puts_it_right(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     folder = _logged(root, "e001", GOOD)
-    assert sorted(p.name for p in script.write_all(root)) == ["README.md", "README.md"]
+    written = {str(p.relative_to(root)).replace("\\", "/") for p in script.write_all(root)}
+    assert written == {"README.md", "e001/README.md", "e002/README.md", "e003/README.md"}
     assert script.check_all(root) == []
     readme = folder / "README.md"
     good = readme.read_text(encoding="utf-8")
@@ -438,13 +439,12 @@ def test_a_hand_edit_is_found_and_write_puts_it_right(tmp_path: Path) -> None:
     assert readme.read_text(encoding="utf-8") == good
 
 
-def test_the_table_ticks_what_has_a_log_and_links_what_has_a_folder(tmp_path: Path) -> None:
+def test_the_table_ticks_what_has_a_log_and_links_every_example(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     _logged(root, "e002", GOOD)
-    (root / "e003").mkdir()
     table = script.render_table(root)
     assert "**1 of 3 examples have a log.**" in table
-    assert "|  | E001: First | Hilarity |  |  |  |" in table
+    assert "|  | [E001: First](e001/) | Hilarity |  |  |  |" in table
     assert (
         '| ✅ | [E002: "Second \\| part"](e002/) | Safety | It asked for a lot. It got a little. '
         "| Yes | 0.31.1 |"
@@ -461,9 +461,67 @@ def test_a_hand_edited_table_is_found(tmp_path: Path) -> None:
     script.write_all(root)
     readme = root / "README.md"
     readme.write_text(
-        readme.read_text(encoding="utf-8").replace("|  | E001", "| ✅ | E001"), encoding="utf-8"
+        readme.read_text(encoding="utf-8").replace("|  | [E001", "| ✅ | [E001"), encoding="utf-8"
     )
     assert script.check_all(root)
+
+
+def test_every_example_has_a_folder_in_the_repository() -> None:
+    """The table links every example, and the arm's steps send a reader to E119 and others that
+    have no file of their own. Git keeps no empty folder, so the page is what keeps them there."""
+    folders = {path.name for path in script.EXAMPLES.iterdir() if path.is_dir()}
+    assert folders == {
+        experiment["id"].lower() for experiment in script.experiments(script.EXAMPLES)
+    }
+    for folder in folders:
+        assert any((script.EXAMPLES / folder).iterdir()), (
+            f"{folder} is empty, and git would drop it"
+        )
+
+
+def test_an_example_with_no_file_gets_a_page_pointing_at_its_card(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    rows = [{"id": "E068", "title": "Couples therapy: the LLM's own, #1", "category": "Hilarity"}]
+    (root / "experiments.json").write_text(json.dumps(rows), encoding="utf-8")
+    script.write_all(root)
+    page = root / "e068" / "README.md"
+    text = page.read_text(encoding="utf-8")
+    assert text.startswith("# E068: Couples therapy: the LLM's own, #1\n")
+    assert "(../run-sheet.md#e068-couples-therapy-the-llms-own-1)" in text
+    assert "[All examples](../README.md)" in text
+    assert script.check_all(root) == []
+
+    page.write_text(text.replace("no log yet", "nothing yet"), encoding="utf-8")
+    assert any("e068" in problem for problem in script.check_all(root)), "a hand edit"
+    page.unlink()
+    (root / "e068").rmdir()
+    assert any("e068" in problem for problem in script.check_all(root)), "a folder gone missing"
+    script.write_all(root)
+    assert page.read_text(encoding="utf-8") == text
+
+
+def test_a_log_replaces_that_page(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    script.write_all(root)
+    page = root / "e001" / "README.md"
+    assert "no log yet" in page.read_text(encoding="utf-8")
+    _logged(root, "e001", GOOD)
+    script.write_all(root)
+    text = page.read_text(encoding="utf-8")
+    assert "no log yet" not in text
+    assert "## Why this matters" in text
+    assert script.check_all(root) == []
+
+
+def test_an_example_with_a_task_file_gets_no_such_page(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    folder = root / "e001"
+    folder.mkdir()
+    (folder / "task.duck").write_text("a task\n", encoding="utf-8")
+    script.write_all(root)
+    assert not (folder / "README.md").exists()
+    (folder / "README.md").write_text("written by hand\n", encoding="utf-8")
+    assert any("no log/notes.yaml" in problem for problem in script.check_all(root))
 
 
 @pytest.mark.parametrize(

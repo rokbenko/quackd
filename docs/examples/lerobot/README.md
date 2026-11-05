@@ -75,7 +75,7 @@
 |  | [E065: Vampire](e065/) | Hilarity |  |  |  |
 |  | [E066: One week old](e066/) | Hilarity |  |  |  |
 |  | [E067: Last words](e067/) | Hilarity |  |  |  |
-|  | E068: Couples therapy: the LLM and the classifier | Hilarity |  |  |  |
+|  | [E068: Couples therapy: the LLM and the classifier](e068/) | Hilarity |  |  |  |
 |  | [E069: Stick the landing](e069/) | Hilarity |  |  |  |
 |  | [E070: Multitasking](e070/) | Hilarity |  |  |  |
 |  | [E071: Attend this meeting for me](e071/) | Hilarity |  |  |  |
@@ -126,7 +126,7 @@
 |  | [E116: Unplug the USB mid-move](e116/) | Safety |  |  |  |
 |  | [E117: Ctrl-C mid-move](e117/) | Safety |  |  |  |
 |  | [E118: The brake test](e118/) | Safety |  |  |  |
-|  | E119: Rest pose and hand-off, first time on hardware | Safety |  |  |  |
+|  | [E119: Rest pose and hand-off, first time on hardware](e119/) | Safety |  |  |  |
 |  | [E120: Out of steps](e120/) | Safety |  |  |  |
 |  | [E121: The human says no](e121/) | Safety |  |  |  |
 |  | [E122: A sign held to the camera](e122/) | Red team |  |  |  |
@@ -174,60 +174,60 @@
 |  | [E164: Two cameras](e164/) | Hardware |  |  |  |
 |  | [E165: Place](e165/) | Hardware |  |  |  |
 |  | [E166: The power switch, first](e166/) | Safety |  |  |  |
-|  | E167: No rest pose, no run | Safety |  |  |  |
-|  | E168: A connect quackd refuses lets go | Safety |  |  |  |
-|  | E169: What it would have done | Safety |  |  |  |
+|  | [E167: No rest pose, no run](e167/) | Safety |  |  |  |
+|  | [E168: A connect quackd refuses lets go](e168/) | Safety |  |  |  |
+|  | [E169: What it would have done](e169/) | Safety |  |  |  |
 |  | [E170: Out of range, three times](e170/) | Safety |  |  |  |
-|  | E171: Let go means put it down first | Safety |  |  |  |
-|  | E172: Something soft in the fold's way | Safety |  |  |  |
-|  | E173: Blocked twice, then into your hand | Safety |  |  |  |
-|  | E174: Nobody answers | Safety |  |  |  |
-|  | E175: Ctrl-C during the release's fold | Safety |  |  |  |
+|  | [E171: Let go means put it down first](e171/) | Safety |  |  |  |
+|  | [E172: Something soft in the fold's way](e172/) | Safety |  |  |  |
+|  | [E173: Blocked twice, then into your hand](e173/) | Safety |  |  |  |
+|  | [E174: Nobody answers](e174/) | Safety |  |  |  |
+|  | [E175: Ctrl-C during the release's fold](e175/) | Safety |  |  |  |
 |  | [E176: A hand holds back the last fold](e176/) | Safety |  |  |  |
-|  | E177: Doctor with no rest pose | Safety |  |  |  |
-|  | E178: Doctor counts your hands away | Safety |  |  |  |
+|  | [E177: Doctor with no rest pose](e177/) | Safety |  |  |  |
+|  | [E178: Doctor counts your hands away](e178/) | Safety |  |  |  |
 |  | [E179: Ctrl-C during the fold of a finished run](e179/) | Safety |  |  |  |
 |  | [E180: A second Ctrl-C during the fold](e180/) | Safety |  |  |  |
-|  | E181: Ctrl-C with the arm in your hands | Safety |  |  |  |
+|  | [E181: Ctrl-C with the arm in your hands](e181/) | Safety |  |  |  |
 |  | [E182: Ctrl-C while it thinks](e182/) | Safety |  |  |  |
 |  | [E183: Push back: is a stall caught?](e183/) | Safety |  |  |  |
 |  | [E184: Lower the speed limit](e184/) | Safety |  |  |  |
-|  | E185: How warm does it get? | Safety |  |  |  |
-|  | E186: The brake, with no LLM in the way | Safety |  |  |  |
+|  | [E185: How warm does it get?](e185/) | Safety |  |  |  |
+|  | [E186: The brake, with no LLM in the way](e186/) | Safety |  |  |  |
 |  | [E187: Out of calls, out of time](e187/) | Safety |  |  |  |
 |  | [E188: Who said yes?](e188/) | Safety |  |  |  |
 |  | [E189: Two pilots, one arm](e189/) | Safety |  |  |  |
-|  | E190: The Stop button on the page | Safety |  |  |  |
+|  | [E190: The Stop button on the page](e190/) | Safety |  |  |  |
 |  | [E191: Pull a camera mid-run](e191/) | Red team |  |  |  |
-|  | E192: Talk past a locked contract | Red team |  |  |  |
+|  | [E192: Talk past a locked contract](e192/) | Red team |  |  |  |
 |  | [E193: The brake outlives the budget](e193/) | Red team |  |  |  |
 |  | [E194: Poison its memory](e194/) | Red team |  |  |  |
 |  | [E195: The sign as a task picture](e195/) | Red team |  |  |  |
 |  | [E196: Stop from the chat, mid-move](e196/) | Red team |  |  |  |
-|  | E197: A policy that holds still | Hardware |  |  |  |
-|  | E198: A policy that sweeps | Hardware |  |  |  |
+|  | [E197: A policy that holds still](e197/) | Hardware |  |  |  |
+|  | [E198: A policy that sweeps](e198/) | Hardware |  |  |  |
 |  | [E199: The arm against its twin](e199/) | Hardware |  |  |  |
 |  | [E200: Smooth or staircase](e200/) | Hardware |  |  |  |
 |  | [E201: The worst frame](e201/) | Hardware |  |  |  |
 |  | [E202: How hard it thinks](e202/) | Speed |  |  |  |
-|  | E203: Six seconds or six milliseconds | Speed |  |  |  |
+|  | [E203: Six seconds or six milliseconds](e203/) | Speed |  |  |  |
 |  | [E204: OpenAI's Decisions API on the watchdog](e204/) | Speed |  |  |  |
-|  | E205: Played or not | Hardware |  |  |  |
-|  | E206: Does the verdict go through? | Hardware |  |  |  |
-|  | E207: What a servo does with an old goal | Safety |  |  |  |
-|  | E208: Ctrl-C all the way to the prompt | Safety |  |  |  |
-|  | E209: A press during the fold it starts with | Safety |  |  |  |
-|  | E210: A press while it connects | Safety |  |  |  |
-|  | E211: A press during a connect that fails | Safety |  |  |  |
-|  | E212: Ctrl-C twice with the arm in your hands | Safety |  |  |  |
-|  | E213: Enter held down at the question | Safety |  |  |  |
-|  | E214: A word typed at the question | Safety |  |  |  |
+|  | [E205: Played or not](e205/) | Hardware |  |  |  |
+|  | [E206: Does the verdict go through?](e206/) | Hardware |  |  |  |
+|  | [E207: What a servo does with an old goal](e207/) | Safety |  |  |  |
+|  | [E208: Ctrl-C all the way to the prompt](e208/) | Safety |  |  |  |
+|  | [E209: A press during the fold it starts with](e209/) | Safety |  |  |  |
+|  | [E210: A press while it connects](e210/) | Safety |  |  |  |
+|  | [E211: A press during a connect that fails](e211/) | Safety |  |  |  |
+|  | [E212: Ctrl-C twice with the arm in your hands](e212/) | Safety |  |  |  |
+|  | [E213: Enter held down at the question](e213/) | Safety |  |  |  |
+|  | [E214: A word typed at the question](e214/) | Safety |  |  |  |
 |  | [E215: A gripper call that says nothing](e215/) | Red team |  |  |  |
 |  | [E216: A stop over MCP, on a clock](e216/) | Red team |  |  |  |
-|  | E217: Ctrl-C again and again in a release | Safety |  |  |  |
-|  | E218: Ctrl-C again and again in doctor | Safety |  |  |  |
-|  | E219: Keys that mean nothing | Safety |  |  |  |
-|  | E220: A kill leaves the terminal usable | Safety |  |  |  |
+|  | [E217: Ctrl-C again and again in a release](e217/) | Safety |  |  |  |
+|  | [E218: Ctrl-C again and again in doctor](e218/) | Safety |  |  |  |
+|  | [E219: Keys that mean nothing](e219/) | Safety |  |  |  |
+|  | [E220: A kill leaves the terminal usable](e220/) | Safety |  |  |  |
 
 <!-- end of the example-log table -->
 
@@ -282,8 +282,9 @@ Three rules hold for all of it:
 
 ## Running them
 
-One folder per experiment on [the run sheet](run-sheet.md) that has a file of its own, `e001` to `e220`. The 34 that
-have none are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
+One folder per experiment on [the run sheet](run-sheet.md), `e001` to `e220`. The 34 with no file of their
+own hold a page pointing at their card until they have a log, because they are commands, or run a
+bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
 `e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for an LLM beside
 their task files, `e216` a script and no task file, and `e201` a script and two pictures to print
