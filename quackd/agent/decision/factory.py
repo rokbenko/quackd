@@ -122,7 +122,7 @@ def find_preset(name: str, *, source: str = "--decision-llm") -> DecisionSpec:
             install=str(getattr(module, "INSTALL", f"installed here as {module_path}")),
             url=getattr(module, "URL", None),
             key_env=getattr(module, "KEY_ENV", None),
-            model=getattr(module, "MODEL", None),
+            llm_id=getattr(module, "LLM_ID", None),
             extra=getattr(module, "EXTRA", None),
             sdk=None,  # it was found through its own metadata, so it is installed
             # Never shown the camera, whatever the module says about itself: a frame goes only
@@ -137,19 +137,19 @@ def find_preset(name: str, *, source: str = "--decision-llm") -> DecisionSpec:
 def parse_decision_llm(
     text: str | None, *, source: str | None = None
 ) -> tuple[DecisionSpec, str | None] | None:
-    """`NAME[:MODEL]` from `--decision-llm`, then `QUACKD_DECISION_LLM`, then nothing.
+    """`NAME[:LLM]` from `--decision-llm`, then `QUACKD_DECISION_LLM`, then nothing.
 
     `None` is the answer rather than a fallback: a key sitting in a `.env` file is somebody's
     other project, and quackd never switches a paid dependency on because it found one.
 
-    Split at the first colon only, so a model id that carries its own survives being named.
+    Split at the first colon only, so an LLM id that carries its own survives being named.
     """
     where = source or ("--decision-llm" if text is not None else ENV_LLM)
     raw = (text if text is not None else os.environ.get(ENV_LLM) or "").strip()
     if not raw or raw.lower() == "off":
         return None
-    name, _, model = raw.partition(":")
-    return find_preset(name, source=where), (model.strip() or None)
+    name, _, llm_id = raw.partition(":")
+    return find_preset(name, source=where), (llm_id.strip() or None)
 
 
 def resolve_decision_mode(flag: str | None, *, named: bool, refused: bool = False) -> DecisionMode:
@@ -301,14 +301,14 @@ def resolve_decision_address(spec: DecisionSpec, url: str | None = None) -> str 
     return address
 
 
-def resolve_decision_model(spec: DecisionSpec, model: str | None = None) -> str | None:
+def resolve_decision_llm(spec: DecisionSpec, llm_id: str | None = None) -> str | None:
     """The id this decision LLM will answer as: the spec's own, then the SDK's variable where
     the row honours one, then the row's default."""
-    if model:
-        return model
-    if spec.model_env and (pinned := os.environ.get(spec.model_env)):
+    if llm_id:
+        return llm_id
+    if spec.llm_env and (pinned := os.environ.get(spec.llm_env)):
         return pinned
-    return spec.model
+    return spec.llm_id
 
 
 def sends_key(spec: DecisionSpec, url: str | None = None) -> bool:
@@ -324,7 +324,7 @@ def sends_key(spec: DecisionSpec, url: str | None = None) -> bool:
     - A keyed System One row sends its key only to the address its SDK owns, which is the row
       reached with no address at all: `systemone.SystemOneLLM` hands one it was given an address
       the word instead, because `--decision-llm jev --decision-url http://127.0.0.1:8009` is
-      Jev's model id at a server you run, and a company's key has no business there.
+      Jev's LLM id at a server you run, and a company's key has no business there.
     - A plugin's key variable is taken at its word, because what a plugin's client sends is its
       own affair, and it is wanted wherever the run is.
 
@@ -348,7 +348,7 @@ def resolve_decision_price(spec: DecisionSpec, url: str | None = None) -> Price:
     then the self-hosted rate.
 
     A server on your own machine bills you in electricity, and `SELF_HOSTED` is the same `$0`
-    the rest of quackd already prices a local model at -- not `None`, which quackd reserves
+    the rest of quackd already prices a local LLM at -- not `None`, which quackd reserves
     for "there is a rate and nobody here knows it". A paid endpoint behind `local` is the
     exception, and `QUACKD_DECISION_PRICE` is how you say so.
 
@@ -371,8 +371,8 @@ def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tup
     """Whether this decision LLM could run here, and in plain words why not.
 
     Asked before the robot is connected, and answered softly: a missing extra or key means the
-    run goes ahead on the model alone, because the stepper is an optimisation and the model is
-    the pilot either way. What is not asked here is whether a server is actually listening --
+    run goes ahead on the pilot LLM alone, because the stepper is an optimisation and the pilot
+    flies either way. What is not asked here is whether a server is actually listening --
     that is a turn's problem, and a turn that cannot reach one escalates.
 
     `url` is the address the run was given, and it matters for the keyed rows: a key is wanted
@@ -400,7 +400,7 @@ def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tup
 def make_decision_llm(
     spec: DecisionSpec,
     *,
-    model: str | None = None,
+    llm_id: str | None = None,
     url: str | None = None,
     frames: bool = False,
 ) -> DecisionLLM:
@@ -420,7 +420,7 @@ def make_decision_llm(
             f"--decision-llm {spec.name} is sent text alone, so it cannot be built to be shown "
             "the camera"
         )
-    model = resolve_decision_model(spec, model)
+    llm_id = resolve_decision_llm(spec, llm_id)
     url = resolve_decision_url(spec, url)
     if spec.backend == SYSTEM_ONE:
         if spec.url is None and spec.key_env is None and not url:
@@ -433,17 +433,17 @@ def make_decision_llm(
             )
         from quackd.agent.decision.systemone import SystemOneLLM
 
-        return SystemOneLLM(spec, model=model, url=url)
+        return SystemOneLLM(spec, llm_id=llm_id, url=url)
     if spec.backend == DECISIONS_API:
         # Before the plugin lookup below, which would otherwise take this row for a plugin and
         # fail with a `KeyError` the CLI does not catch.
         from quackd.agent.decision.decisions_api import DecisionsAPILLM
 
-        return DecisionsAPILLM(spec, model=model, url=url, frames=frames)
+        return DecisionsAPILLM(spec, llm_id=llm_id, url=url, frames=frames)
     if spec.backend == IN_PROCESS:
         from quackd.agent.decision.laya import LayaLLM
 
-        return LayaLLM(spec, model=model)
+        return LayaLLM(spec, llm_id=llm_id)
     module = importlib.import_module(_plugins()[spec.backend.removeprefix("plugin:")])
-    built: Any = module.make(spec, url=url, model=model)
+    built: Any = module.make(spec, url=url, llm_id=llm_id)
     return built  # type: ignore[no-any-return]

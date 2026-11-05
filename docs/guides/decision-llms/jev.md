@@ -1,10 +1,10 @@
 # Jev (TypeSafe)
 
-TypeSafe's Jev, hosted: the System One model the format is named after. It is made by TypeSafe
+TypeSafe's Jev, hosted: the System One LLM the format is named after. It is made by TypeSafe
 ([typesafe.ai](https://typesafe.ai/)), the weights are closed and the only interface is an API, so
-what quackd installs is not the model but its client,
+what quackd installs is not the LLM but its client,
 [`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/): MIT-licensed, read here at **0.7.1**
-(published to PyPI 2026-09-21, read 2026-09-22), against the pinned model id `jev-1.13.0`. A
+(published to PyPI 2026-09-21, read 2026-09-22), against the pinned LLM id `jev-1.13.0`. A
 decision LLM has no `upstream_api.py` the way a robot adapter does: every name quackd spells for
 it lives in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
@@ -22,30 +22,30 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm jev --decision-mod
 |---|---|
 | `name` | `jev` |
 | `backend` | `systemone`, the shared `POST /v1/systemone` client rather than a module of its own |
-| `summary` | `TypeSafe's Jev, hosted: the System One model the format is named after` |
+| `summary` | `TypeSafe's Jev, hosted: the System One LLM the format is named after` |
 | `install` | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` |
 | `url` | `none`, the SDK holds TypeSafe's own address, and `TYPESAFE_BASE_URL` is how you move it |
 | `key_env` | `TYPESAFE_API_KEY` |
-| `model` | `jev-1.13.0` |
-| `model_env` | `TYPESAFE_DEFAULT_MODEL`, honoured here alone because the SDK owns this row's address too |
+| `llm_id` | `jev-1.13.0` |
+| `llm_env` | `TYPESAFE_DEFAULT_MODEL`, honoured here alone because the SDK owns this row's address too |
 | `price` | `Price(input=0.042, output=0.0, source="published")` |
 | `extra` | `decision`, so `quackd[decision]` |
 | `sdk` | `typesafe_sdk` |
 
-That is `PRESETS["jev"]` in `catalogue.py`. A test reads the model id, the key variable, the
+That is `PRESETS["jev"]` in `catalogue.py`. A test reads the LLM id, the key variable, the
 install line and the extra back off this page and compares them with the row, so a cell that
 drifts fails the suite. `--decision-url` overrides the address for one run and `--decision-llm
 jev:jev-1.14.0` the id.
 
 ## What it is
 
-A hosted System One model, and the one every other row is imitating. TypeSafe publish no parameter
+A hosted System One LLM, and the one every other row is imitating. TypeSafe publish no parameter
 count, no architecture and no weights: it is an API and nothing else, so the hardware it needs is
 a network connection and a key, and the only thing running on your machine is an HTTP client. Text
 only, with **32k tokens for the state plus the longest question, under a 64k request cap**, so a
 turn whose state will not fit is a gate on the record rather than a truncation nobody sees. The
 latency figure is theirs: **TypeSafe's own worked example puts one call at 0.114 s and $0.000081**
-against 8.566 s and $0.013880 for a language model, and their front page turns that into a
+against 8.566 s and $0.013880 for an LLM, and their front page turns that into a
 headline of **193.6x faster and 444.6x cheaper**. The two do not agree, because the example
 divides out to 75x and 171x, so the headline is a range over their tasks rather than a constant
 and nothing here repeats either as a quackd measurement. The interpreter floor is the client's:
@@ -75,9 +75,9 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
   clock of twice that second, so the stepper's bound is the one that ends a turn rather than a
   second clock that comes due with it.
 - **The id is pinned to `jev-1.13.0` rather than `jev-latest`**: a run whose decision LLM changed
-  under it describes a model that is no longer the one that answered, and `jev:jev-latest` asks
+  under it describes an LLM that is no longer the one that answered, and `jev:jev-latest` asks
   for a moving one.
-- **This is the model the floors were shaped around, which is not the same as the model they were
+- **This is the LLM the floors were shaped around, which is not the same as the LLM they were
   measured on.** Of the four on [How a turn is
   decided](README.md#how-a-turn-is-decided), two are numbers TypeSafe publish: 0.50,
   which they call genuinely unsure, and 0.90, their "high stakes, proceed with confirmation". The
@@ -106,17 +106,17 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 | Plain dicts are questions | `Noul`, `Choice` and `Score` plus the three TypedDicts; a noul dict needs only `{"type": "noul"}`, while choice and score require criteria | the four questions are built once as dicts and reach every backend unrebuilt |
 | Response | `SystemOneResponse` has exactly `model`, `usage` and `answers`, plus `nouls`, `choices` and `scores` views; missing `model` or `usage` raises `TypeSafeAPIResponseValidationError`, though contents are lenient and `usage: {}` parses. There is no `latency` attribute, contrary to the docs site, which is wrong there. Answers parse `strict=True`: a noul spelled `"0.9"` is rejected, an int `1` widens to `1.0`, and unknown answer types are dropped with a warning rather than failing the response | `stepper._answer` reads it as an object or as a plain mapping and quackd times the call itself into `latency_s`; a partly answered turn costs the turn as `gate: unreadable` rather than moving the body on two questions nobody answered |
 | Error taxonomy | `TypeSafeError`, `TypeSafeAPIError(status, body, headers, endpoint, .request_id)` with per-status subclasses (400, 401, 403, 404, 422, 429, 5xx), plus connection, timeout and response-validation errors | `Stepper.advise` catches everything and records `gate: error`; a decision LLM may never end a run |
-| Price | $0.042 per million input tokens, output not charged ([their models page](https://docs.typesafe.ai/models), read 2026-09-21) | one of the two rows with a published rate, `openai` the other; carried as `Price` and stamped on `run_start` beside the name, model and url |
+| Price | $0.042 per million input tokens, output not charged ([their models page](https://docs.typesafe.ai/models), read 2026-09-21) | one of the two rows with a published rate, `openai` the other; carried as `Price` and stamped on `run_start` beside the name, LLM and url |
 
 ## UNVERIFIED, and what quackd does about each
 
 | Name | The assumption | What quackd does |
 |---|---|---|
-| `WIRE_COMPATIBLE` | that the answer keeps the shape `typesafe-sdk` parses | the SDK requires the `model` and `usage` keys present, contents allowed to be null; quackd's own reader takes an object or a plain mapping, and an answer it cannot read costs the turn as `gate: unreadable` or `gate: error` and hands it to the model rather than raising |
-| `CONFIDENCE_MEANS_THE_SAME` | that its confidence is comparable to the one quackd's floors were set against. Here it is the same model those numbers came from, which is as close as this gets, and TypeSafe still publish no formula behind the probability | nothing automatic; `--decision-mode shadow` records what it would have chosen without letting it act, which is how the floors get re-tuned |
-| `LATENCY_UNDER_ONE_SECOND` | that 0.114 s on TypeSafe's own task holds on a robot's state over your own network. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the model and the record says how long it waited |
+| `WIRE_COMPATIBLE` | that the answer keeps the shape `typesafe-sdk` parses | the SDK requires the `model` and `usage` keys present, contents allowed to be null; quackd's own reader takes an object or a plain mapping, and an answer it cannot read costs the turn as `gate: unreadable` or `gate: error` and hands it to the pilot LLM rather than raising |
+| `CONFIDENCE_MEANS_THE_SAME` | that its confidence is comparable to the one quackd's floors were set against. Here it is the same LLM those numbers came from, which is as close as this gets, and TypeSafe still publish no formula behind the probability | nothing automatic; `--decision-mode shadow` records what it would have chosen without letting it act, which is how the floors get re-tuned |
+| `LATENCY_UNDER_ONE_SECOND` | that 0.114 s on TypeSafe's own task holds on a robot's state over your own network. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the pilot LLM and the record says how long it waited |
 | `USAGE_REPORTED` | whether the token counts come back on a real call. Both are typed optional and documented as absent where the API did not report one | where a count is missing or is not a measurement, quackd estimates the request at four characters to the token and marks the turn `usage_estimated`; at $0.042 per million the money either way is a rounding error, and the flag is there so nobody reads the estimate as an invoice |
-| `PYTHON_FLOOR` | that the SDK's own 3.10 floor is the SDK's problem | nothing; `quackd[decision]` is a small HTTP client that runs on quackd's own Python, and the model runs on TypeSafe's machines |
+| `PYTHON_FLOOR` | that the SDK's own 3.10 floor is the SDK's problem | nothing; `quackd[decision]` is a small HTTP client that runs on quackd's own Python, and the LLM runs on TypeSafe's machines |
 | `PATH_IS_HARDCODED` | that `/v1/systemone` stays where it is | nothing it can do, and nothing a gateway under a prefix of its own needs: a path on the address is kept, with the constant after it. A route that ends any other way, the OpenRouter Decisions API at `/api/alpha/decisions` among them, is out of reach while the constant is all there is, and the SDK's issue #7 asking for the path to be configurable was closed unresolved. OpenRouter's key would need a row of its own as well, because an address typed for this one is sent `local` |
 
 ## Status
@@ -135,7 +135,7 @@ Run it in shadow mode on your own bench and report what came back. The commands 
 read are in [Measuring it yourself](README.md#measuring-it-yourself), and what is worth
 an issue is the agreement rate, the real latency against a robot's state rather than TypeSafe's
 0.114 s on TypeSafe's own task, and the answers that surprised you. Say which base URL you pointed
-the client at and which model id answered, because `TYPESAFE_BASE_URL`, `--decision-url` and
+the client at and which LLM id answered, because `TYPESAFE_BASE_URL`, `--decision-url` and
 `TYPESAFE_DEFAULT_MODEL` all move those and a number without them is not reproducible. A floor
 moves on calibration rather than opinion, confidence bucketed against agreement per verb class, as
 [How a turn is decided](README.md#how-a-turn-is-decided) sets out. Two of the four are

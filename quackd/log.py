@@ -1,18 +1,18 @@
 """The loop narrates itself: one stream of events, and three views of it.
 
-Everything quackd does on the model's behalf used to happen behind a terminal that printed a
+Everything quackd does on the LLM's behalf used to happen behind a terminal that printed a
 header and an outcome, with the transcript on disk as the only record. This module is the
 event stream that record was written from, opened up: the loop, the executor and a wrapper
 around the transport emit `LogEvent`s, and sinks render them. The transcript is the record
 and always gets every event. The CLI's console and the MCP server's tool results are views of
 the same stream, on by default and off with `--no-log` or `QUACKD_LOG=0`. Over MCP the
-model is the client, so its reasoning never reaches quackd; there the log shows what quackd
+LLM is the client, so its reasoning never reaches quackd; there the log shows what quackd
 can see: the verb, the gates that fired, every intent sent, what came back, and how long it
 took.
 
 Lines are ASCII first. A redirected stderr on Windows turns an arrow glyph into a `?`, and this
 is exactly the output people redirect. Colour, not glyphs, carries meaning, and every line is
-printed as plain text: a model that thinks `[/think]` must not crash the renderer.
+printed as plain text: an LLM that thinks `[/think]` must not crash the renderer.
 """
 
 from __future__ import annotations
@@ -33,6 +33,12 @@ from rich.text import Text
 from quackd.agent.providers.pricing import fmt_usd
 from quackd.transport.base import Ack, Intent
 from quackd.verbs.watch import EDGE_AFTER, ERRORS_AFTER, LOST_AFTER, STALE_AFTER
+
+
+def _llm_id(record: Mapping[str, Any]) -> Any:
+    """The LLM a record names. A run recorded before 0.32.0 calls it `model`, and such a run
+    replays as it always did, so that one old key is read here and nowhere else."""
+    return record.get("llm_id") or record.get("model")
 
 
 @dataclass(frozen=True)
@@ -68,7 +74,7 @@ def parse_thinking_limit(raw: str | None) -> int | None:
 
 
 def thinking_limit_default() -> int | None:
-    """How much of the model's thinking the console shows per turn: `QUACKD_LOG_THINKING` in
+    """How much of the LLM's thinking the console shows per turn: `QUACKD_LOG_THINKING` in
     characters, `all` for everything, `0` for none. The transcript always has all of it."""
     return parse_thinking_limit(os.environ.get("QUACKD_LOG_THINKING"))
 
@@ -380,7 +386,7 @@ def fmt_value(value: Any) -> str:
 
 def fmt_params(params: Mapping[str, Any] | None, *, drop_none: bool = False) -> str:
     """`drop_none` is for intent bursts, where a twist's `vy=null` on every one of two
-    hundred lines is noise. Everywhere else a parameter the model left unset is part of what
+    hundred lines is noise. Everywhere else a parameter the LLM left unset is part of what
     it chose, and `--dry-run` promises to show every one of them."""
     if not params:
         return ""
@@ -443,11 +449,11 @@ def _price_line(
     """What the run was costed at, for the head of a replay.
 
     A sentence rather than a missing row when there is no rate, because "quackd has no price
-    for this model" is exactly what a reader of a run with no cost figure needs to be told, and
+    for this LLM" is exactly what a reader of a run with no cost figure needs to be told, and
     an absent line tells them nothing at all. `watch` is whether the run offered `watch`, which
     asks the decision LLM too, so its rate is then the decision LLM's and not the stepper's."""
     if not price:
-        text = "unpriced: quackd has no rate for this model, so no cost was computed"
+        text = "unpriced: quackd has no rate for this LLM, so no cost was computed"
     else:
         source = str(price.get("source") or "")
         when = f", checked {price['checked']}" if price.get("checked") else ""
@@ -570,10 +576,10 @@ def render_events(
     if k == "run_start":
         adapter = d.get("adapter")
         robot = f"{adapter}:{d.get('transport')}" if adapter else str(d.get("transport"))
-        head = f"{d.get('duck')} provider={d.get('provider')} model={d.get('model')} robot={robot}"
+        head = f"{d.get('duck')} provider={d.get('provider')} LLM={_llm_id(d)} robot={robot}"
         # Only a detector other than the colour one, which every run before there was a choice
         # used and every run on a simulator still does: those lines stay exactly as they were,
-        # in every transcript already written and in every MCP result a model reads.
+        # in every transcript already written and in every MCP result an LLM reads.
         detector = d.get("detector")
         if isinstance(detector, str) and detector != DEFAULT_DETECTOR:
             head += f" detector={detector}"
@@ -626,7 +632,7 @@ def render_events(
             seen += f", {task} task picture{'s' if task != 1 else ''}"
         text = (
             f"step {d.get('step')}: {d.get('messages')} messages "
-            f"({seen}) to {d.get('provider')} {d.get('model')}"
+            f"({seen}) to {d.get('provider')} {_llm_id(d)}"
         )
         if d.get("reprompt"):
             text += " (re-prompt: it made no tool call)"
@@ -702,9 +708,9 @@ def render_events(
             tokens += f" cost={fmt_usd(d['cost_usd'])}"
         if d.get("stop_reason"):
             tokens += f" stop={d['stop_reason']}"
-        # A refusal fallback re-ran the turn on another model. It is the one fact on this line
+        # A refusal fallback re-ran the turn on another LLM. It is the one fact on this line
         # that changes what the rest of it means: the cost beside it was priced at the rate of
-        # the model asked for, not of the one that answered.
+        # the LLM asked for, not of the one that answered.
         if d.get("served_by"):
             tokens += f" served_by={d['served_by']}"
         out.append(LogLine("tokens", tokens, "dim"))
@@ -715,7 +721,7 @@ def render_events(
         # wants to understand, and in shadow mode they are all of them.
         took = f"{float(d.get('latency_s') or 0):.2f} s"
         # A stepper question is a few hundred tokens and a fraction of a cent, and the whole
-        # argument for one is the ratio between that and the model call it stands in for. Both
+        # argument for one is the ratio between that and the pilot LLM call it stands in for. Both
         # ride in the same parenthesis as the seconds, and a `~` marks a turn the decision LLM
         # did not count for itself, which quackd then estimated from the text it sent. Absent
         # on the turns that never reached the network at all.
@@ -731,7 +737,7 @@ def render_events(
             took += ", 1 frame"
         if d.get("gate") == "interrupted":
             # The run ended in the middle of this turn's request, by a second Ctrl-C, a flock's
-            # cancel or, in shadow, the end of the model's call beside it, which the record names
+            # cancel or, in shadow, the end of the LLM's call beside it, which the record names
             # where an error would be named. Read before the error line, because nobody takes
             # this turn and nothing failed: it is the request that was out when the run stopped,
             # with what it had cost by then. Yellow with a warning's mark rather than an error's
@@ -748,7 +754,7 @@ def render_events(
             return [
                 LogLine(
                     "decide",
-                    f"ERROR {d['error']} after {took}, so the model takes this turn",
+                    f"ERROR {d['error']} after {took}, so the pilot LLM takes this turn",
                     "red",
                     mark="fail",
                 )
@@ -763,30 +769,30 @@ def render_events(
         elif gate == "below_floor":
             chosen = LogLine(
                 "decide",
-                f"{d.get('choice')} {confidence:.2f} < {floor:.2f}, to the model ({took})",
+                f"{d.get('choice')} {confidence:.2f} < {floor:.2f}, to the pilot LLM ({took})",
                 "yellow",
                 mark="warn",
             )
         elif gate == "refused":
             # A question the decision LLM declined rather than answered, by name. Yellow like a
             # missed floor and not dim like the gates below: nothing failed, but it is the
-            # vendor's policy speaking about this state rather than its model answering, and
+            # vendor's policy speaking about this state rather than its LLM answering, and
             # that is worth a reader's attention. A record without the names, which quackd never
             # writes, still says which gate it was.
             said = _listed(d.get("refused"))
             chosen = LogLine(
                 "decide",
-                f"refused to answer {said}, to the model ({took})"
+                f"refused to answer {said}, to the pilot LLM ({took})"
                 if said
-                else f"refused, to the model ({took})",
+                else f"refused, to the pilot LLM ({took})",
                 "yellow",
                 mark="warn",
             )
         else:
             # `escalate`, `repeat`, `handover`, `shadow_only`, `unreadable`, `done`,
-            # `need_human`, `not_offered`, `state_too_large`: nothing happened and the model
+            # `need_human`, `not_offered`, `state_too_large`: nothing happened and the pilot LLM
             # takes the turn, so this is dim like the request line it comes just before
-            chosen = LogLine("decide", f"{gate}, to the model ({took})", "dim")
+            chosen = LogLine("decide", f"{gate}, to the pilot LLM ({took})", "dim")
         stepper = [chosen]
         # The runners-up, because a 0.93 beside a 0.91 is a different decision from a 0.93
         # beside a 0.02, and the floor on its own cannot say which one you are reading.
@@ -807,7 +813,7 @@ def render_events(
         return [_watch_line(d)]
     if k == "decision_shadow":
         # Shadow mode's whole point in one line: what the stepper would have done beside what
-        # the model did, on the same reading. The run is unchanged, so this is its only record.
+        # the pilot LLM did, on the same reading. The run is unchanged, so this is its only record.
         agrees = bool(d.get("agree"))
         picked = d.get("decision_choice")
         sure = d.get("decision_confidence")
@@ -829,7 +835,8 @@ def render_events(
             LogLine(
                 "decide=",
                 f"{stepper_said} "
-                f"vs model {d.get('model_verb')}: {'agrees' if agrees else 'differs'} "
+                f"vs pilot LLM {d.get('llm_verb') or d.get('model_verb')}: "
+                f"{'agrees' if agrees else 'differs'} "
                 f"({float(d.get('decision_latency_s') or 0):.2f} s against "
                 f"{float(d.get('llm_latency_s') or 0):.1f} s)",
                 "cyan" if agrees else "yellow",
@@ -1281,7 +1288,7 @@ _SEP = " · "
 
 
 def _one_step(budget: str) -> str:
-    """`step 3/40 · step 3/40, llm calls 3/40, 0.1/5 min` said the step twice, because the
+    """`step 3/40 · step 3/40, LLM calls 3/40, 0.1/5 min` said the step twice, because the
     observation header and the budget line it embeds both began with it. The loop says it once
     now (`prompts.build_observation_text`), and this still reads a transcript from before."""
     head, sep, rest = budget.partition(_SEP)
@@ -1296,7 +1303,7 @@ ASCII half spells an arrow `->`; every other glyph in both halves is one cell wi
 class ConsoleLog(LineLog):
     """The CLI's view: the same events, wearing what a terminal can wear.
 
-    The plain renderer is a contract with a model (the MCP tool result carries it verbatim)
+    The plain renderer is a contract with an LLM (the MCP tool result carries it verbatim)
     and its arrows and its padded label column are frozen. A person reading a live run is
     not that reader. Here the arrow becomes a glyph in a gutter, the label column says a
     word instead, each step is ruled off, the system prompt is a block rather than forty
@@ -1306,7 +1313,7 @@ class ConsoleLog(LineLog):
     is actually being written to. That is the part ADR-0029 was protecting when it said
     lines are ASCII first: a redirected stderr on Windows is cp1252, and this is exactly the
     output people redirect. It is still protected; it is just no longer paid for by every
-    terminal that can do better. Nothing is printed as markup, because a model that thinks
+    terminal that can do better. Nothing is printed as markup, because an LLM that thinks
     about `[/think]` must not raise a formatting error.
     """
 
@@ -1364,7 +1371,7 @@ class ConsoleLog(LineLog):
         return self._ui.degrade(text, self._glyphs)
 
     def _write_line(self, text: Any) -> None:
-        # never markup: a model that thinks about `[/think]` must not raise a format error,
+        # never markup: an LLM that thinks about `[/think]` must not raise a format error,
         # and soft_wrap so a long observation is never cropped
         self.console.print(text, markup=False, highlight=False, soft_wrap=True)
 
@@ -1427,7 +1434,7 @@ class ConsoleLog(LineLog):
         adapter = d.get("adapter")
         robot = f"{adapter}:{d.get('transport')}" if adapter else str(d.get("transport"))
         rows: list[tuple[str, Any]] = [
-            ("provider", f"{d.get('provider')} ({d.get('model') or 'the first model it served'})"),
+            ("provider", f"{d.get('provider')} ({_llm_id(d) or 'the first LLM it served'})"),
             ("robot", robot),
         ]
         if d.get("dry_run"):
@@ -1478,7 +1485,7 @@ class ConsoleLog(LineLog):
 
     def __call__(self, event: LogEvent) -> None:
         if event.kind == "observation" and "error" not in event.data:
-            # the loop puts `[step 3/40 · llm calls 3/40, 0.1/5 min]` at the top of every
+            # the loop puts `[step 3/40 · LLM calls 3/40, 0.1/5 min]` at the top of every
             # observation. It is the one line that says where the run is up to, and it was
             # buried in the middle of a paragraph of state.
             first = str(event.data.get("text") or "").split("\n", 1)[0].strip()
@@ -1518,7 +1525,7 @@ _MCP_HEAD = 10
 
 def cap_lines(lines: list[str], limit: int = MCP_LOG_MAX_LINES, head: int = _MCP_HEAD) -> list[str]:
     """The first few and the last many, with one line saying what was cut. A tool result is
-    read by the model on every call; the uncapped log is on the server's stderr."""
+    read by the LLM on every call; the uncapped log is on the server's stderr."""
     if len(lines) <= limit:
         return lines
     tail = limit - head - 1
@@ -1538,7 +1545,7 @@ def call_lines(events: list[LogEvent]) -> list[str]:
     """
     lines: list[str] = []
     # `progress_s=None`: this renders once the call has already ended, so splitting one
-    # `-> move x200` into ten progressive lines would only spend the model's line cap
+    # `-> move x200` into ten progressive lines would only spend the LLM's line cap
     view = LineLog(lambda text, _style: lines.append(text), prompt=False, progress_s=None)
     try:
         for event in events:

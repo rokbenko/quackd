@@ -1367,7 +1367,7 @@ async def test_an_answer_that_lands_after_the_time_is_up_turns_nothing() -> None
 
 
 def test_the_stepper_is_never_offered_watch() -> None:
-    """A free-string target is a value, never a choice, so no decision LLM in front of the model
+    """A free-string target is a value, never a choice, so no decision LLM in front of the pilot LLM
     can call `watch`: only the pilot can."""
     verb = watch_verb(MICRODUCK_HEAD)
     assert discrete_calls(verb.tool_schema()) is None
@@ -1376,7 +1376,7 @@ def test_the_stepper_is_never_offered_watch() -> None:
     registry.register(CORE["stop"])
     stepper = Stepper.build(
         mode="on",
-        llm=SimpleNamespace(name="stub", model="stub", url=None),  # type: ignore[arg-type]
+        llm=SimpleNamespace(name="stub", llm_id="stub", url=None),  # type: ignore[arg-type]
         price=resolve_decision_price(PRESETS["kev"]),
         registry=registry,
         allow=[WATCH, "stop"],
@@ -1572,7 +1572,7 @@ async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
     start = _of(events, "run_start")[0]
     assert start["decision_llm"] == {
         "name": "openai",
-        "model": OPENAI.model,
+        "llm_id": OPENAI.llm_id,
         "url": OPENAI.url,
         "frames": True,
     }
@@ -1790,7 +1790,7 @@ async def test_no_frame_reaches_a_plugin_or_a_server_of_your_own(
     `watch` and nothing is sent to either."""
     fake = BlobEyes()
     fake_api.install(monkeypatch, fake)
-    plugin = SimpleNamespace(name="mine", model="mine", url="https://api.openai.com", frames=True)
+    plugin = SimpleNamespace(name="mine", llm_id="mine", url="https://api.openai.com", frames=True)
     local = make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
     local.frames = True  # by hand, past the refusal the constructor makes
     for llm in (plugin, local):

@@ -53,7 +53,7 @@ export const GAIT_FLOOR = { vx: 0.24, vy: 0.30, wz: 1.2 };
 // number in quackd/sim3d/gait.py; the prompt quotes it rather than rounding it to "half".
 export const ACHIEVED_FRACTION = 0.38;
 // What the world accepts before the gait floor sees it, from quackd/sim3d/world.py. The verb
-// schemas advertise the same numbers; this is the floor under a model that ignores them.
+// schemas advertise the same numbers; this is the floor under an LLM that ignores them.
 export const MAX_VX = 0.3, MAX_VY = 0.2, MAX_WZ = 1.5;
 const CMD_MAX = { vx: 0.40, vy: 0.30, wz: 1.50 };
 const DEAD_FRACTION = 1 / 3;
@@ -266,7 +266,7 @@ export class Microduck {
   /** A body-frame twist. Re-send it at least every 0.3 s or the deadman zeroes it. */
   setTwist(vx, vy, wz) {
     // Clipped to the envelope the world accepts before the gait floor sees it, exactly as
-    // `MujocoWorld.set_velocity` does. Nothing clamped here at all, so a model that ignored
+    // `MujocoWorld.set_velocity` does. Nothing clamped here at all, so an LLM that ignored
     // the schema could ask for any speed it liked.
     const clip = (v, limit) => (Number.isFinite(v) ? Math.max(-limit, Math.min(limit, v)) : 0);
     this.commanded = [clip(vx, MAX_VX), clip(vy, MAX_VY), clip(wz, MAX_WZ)];

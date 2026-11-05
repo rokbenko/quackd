@@ -55,7 +55,7 @@ onto the table if nobody was.
 On 2026-10-23 Rok asked two things of the arm. Whether the kill switch that takes torque off lets
 it drop, because when anything goes wrong Rok wants a command that releases torque without
 pulling the power, and releasing should mean going to the rest pose, not dropping to the table.
-And whether a run that fails, an error or a model refusing the work, puts the arm back at its
+And whether a run that fails, an error or an LLM refusing the work, puts the arm back at its
 rest pose.
 
 The second was already so. Every way a run ends, a refusal, an `infeasible` verdict, a failure,

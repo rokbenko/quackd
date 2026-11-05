@@ -165,7 +165,7 @@ def duck_from_goal(
         abort_when=["Battery below 15%", "Same verb fails 3 times in a row"],
         persona="Practical and honest: say so when you cannot do something.",
     )
-    # the words the model reads live in one module, and this paragraph names verbs, so it is
+    # the words the LLM reads live in one module, and this paragraph names verbs, so it is
     # written from the allowlist granted above rather than from the duck this used to assume
     from quackd.agent.prompts import goal_strategy
 

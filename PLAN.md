@@ -264,7 +264,7 @@ before.
   through its GStreamer pipeline, whether ultralytics on JetPack detects on CUDA, how long a
   snapshot and a detection take over a robot's Wi-Fi inside `go_to`'s steering loop, which
   re-sends its last twist for 0.3 s while it waits and no longer, what the doctor section reads
-  off a real board's files, and the one that matters near a robot, whether a model server and
+  off a real board's files, and the one that matters near a robot, whether an LLM server and
   the detector on a robot's own board leave its fifty hertz control loop alone, which on a
   humanoid is a fall if they do not. A ToddlerBot carries a Jetson, and so does a MOSS rover
   built on its Jetson option, so that is where the last one gets answered. What to send back
@@ -300,11 +300,11 @@ before.
   choice, and the stepper is offered it and never takes it, in `--decision-mode on` as in
   shadow, because under `--yes` nobody is asked at its confirm gate
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md)). Every turn that offered one
-  writes a `decision_shadow` record beside the model's choice. The only ones outside the test
+  writes a `decision_shadow` record beside the pilot LLM's choice. The only ones outside the test
   suite come from runs by hand on the arm's twin, on 2026-09-28 and on the released 0.16.0 on
   2026-09-29, with the trained ACT served, `gpt-6-sol` piloting and a stub decision LLM loaded
   as a plugin. A stub that always picks `manipulate` chose it on every turn that offered it and
-  ended on `gate: shadow_only` each time, with the model taking the turn. No real decision LLM
+  ended on `gate: shadow_only` each time, with the pilot LLM taking the turn. No real decision LLM
   has run beside a policy, so those records hold no agreement rate. Promoting it needs one
   measured from real runs, and a decision of its own, not a floor.
 - ⬜ **`load_policy()` still builds a policy beside the arm's bus.** 0.16.0 moved checkpoints
@@ -326,16 +326,16 @@ before.
   turn is costed at the `usage.cost` it reports instead, which nobody has yet set beside what
   OpenRouter's activity page charged for the same run.
 
-- ⬜ **No OpenRouter model has answered a real quackd request.** `--llm openrouter` was written
+- ⬜ **No OpenRouter LLM has answered a real quackd request.** `--llm openrouter` was written
   from OpenRouter's documentation and run against a stand-in on 127.0.0.1 through the real
-  `openai` SDK; only its model list check has met OpenRouter itself, with no key. What would
+  `openai` SDK; only its LLM list check has met OpenRouter itself, with no key. What would
   close this, on a key with credits: a bare `--llm openrouter`, because the default row's
   function tools through Chat Completions are the assumption that rests on the most; a Claude
   row past eight exchanges with frames; a Gemini row; an id quackd does not carry, `:free`
   and not; a bring-your-own-key turn; and each run's `cost_usd` beside the charge OpenRouter's
   activity page shows ([docs/guides/openrouter.md](docs/guides/openrouter.md)).
 
-- ⬜ **One local model has refused tasks on feasibility grounds, one frontier pilot has refused
+- ⬜ **One local LLM has refused tasks on feasibility grounds, one frontier pilot has refused
   one on a real arm, and nobody has watched an `uncertain` over MCP.** Qwen3-32B-AWQ on vLLM,
   driving `microduck:sim2d`, answered this gate 54 times before the check in #24 and 54 times
   after. Before: 14 `infeasible`, 26 `uncertain`, 14 `feasible`, with a noise floor around 2 per
@@ -343,21 +343,21 @@ before.
   [docs/local-llms.md](docs/guides/local-llms.md#honest-notes)). It refuses a categorical `cannot`
   reliably, it hedged on one, and the figure nobody published was the hole the check now covers:
   on the eight tasks the check never fired on, the verdicts moved by 1 to 2 either way, which is
-  that floor rather than a result. That is one model, one quantisation, one simulated body and
+  that floor rather than a result. That is one LLM, one quantisation, one simulated body and
   three repeats a cell. On the SO-101 on 2026-09-23, with `gpt-6-sol` and `gpt-6-astra`
   piloting, twelve runs stopped at the y/N question an `uncertain` asks, and one pilot a person
   had just said go to assessed the same doubt again as `infeasible` and ended its run. The gate
   and the prompt changed after that afternoon ([CHANGELOG.md](CHANGELOG.md)), and nobody has yet
-  watched a frontier pilot answer the new ones on an arm. Still open: whether a frontier model
+  watched a frontier pilot answer the new ones on an arm. Still open: whether a frontier LLM
   uses `uncertain` when it should or reaches for `infeasible` too readily, which the `live_llm`
   tests measure and which needs a key; a pilot that never names the figure its plan hinges on,
   which the check reads nothing about and cannot catch; and `uncertain` over MCP, where the
-  verdict stays pending and the model is told to ask the person it is chatting with, which no
+  verdict stays pending and the LLM is told to ask the person it is chatting with, which no
   real session has been watched doing.
 - ⬜ **Whether the words of `assess_task` fixed #25.** `--goal "Find the ball and kick it."`
-  stopped at this gate 5 times in 6 on that same model where the shipped `find-and-kick` file
+  stopped at this gate 5 times in 6 on that same LLM where the shipped `find-and-kick` file
   passed 6 of 6, and the allowlist width is the measured cause. The description it read has
-  been corrected rather than the allowlist narrowed, and nobody here runs that model, so the
+  been corrected rather than the allowlist narrowed, and nobody here runs that LLM, so the
   six cells want running again on a build that carries the change (#25).
 - ⏸ **A flock role can ask for a body, and no coordinator flock can have two different ones.**
   `flock.roles.<role>.needs` validates, and the coordinator matches it against the datasheet a
@@ -368,9 +368,9 @@ before.
   before members report their vocabulary, and `needs` inherits that. A **pilot** flock does put
   two different bodies on one task, and it uses no roles: each pilot reads its own datasheet and
   its peers', and they divide the work by talking ([ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
-- ⏸ **No pilot flock has been driven by a real model, or by a real robot.** `flock-hello` runs
+- ⏸ **No pilot flock has been driven by a real LLM, or by a real robot.** `flock-hello` runs
   on `mock` and `sim2d` bodies with the scripted rule, which cannot reason about a datasheet, so
-  what a frontier model does with the `Your flock` section and `tell` is unknown. Needs a key,
+  what a frontier LLM does with the `Your flock` section and `tell` is unknown. Needs a key,
   and then two robots.
 - ⏸ **N simulated pilots are N separate worlds.** Two `microduck:sim2d` members of a pilot flock
   cannot see each other, so nothing checks a claimed success against ground truth the way the
@@ -385,7 +385,7 @@ before.
 - 🔨 **Somebody has to drive `web/` in a browser, and record it.** The page itself is no longer
   unopened: it booted clean twice on the machine that wrote it (`8d72a2a`, `a9fea18`), with the
   fonts and the mark loaded and a held `W` walking the duck. What that leaves is everything past
-  the boot — a full model-driven run, a key barging in out of one, the Record button, the switch
+  the boot — a full LLM-driven run, a key barging in out of one, the Record button, the switch
   thrown mid-run, and any browser or machine but that one. None of it was recorded, so there is
   no asset and nothing anybody else can check. Separately, the four measured claims in
   `web/README.md` come from a scratch harness that is not in the repository, and both files it
@@ -393,7 +393,7 @@ before.
   re-run it. Locally it is `python web/serve.py`, then <http://localhost:8000/simulator/>.
 - ⬜ The coordinator flock does not know `open_duck` yet (`flock/runner.py` knows one adapter).
   A pilot flock knows all nine. A hardware flock of either kind waits on robots shipping.
-- ⏸ **A real model recording**, in either simulator, to replace a scripted-pilot asset and drop
+- ⏸ **A real LLM recording**, in either simulator, to replace a scripted-pilot asset and drop
   the label (see [docs/assets](docs/assets/README.md)). Needs a key.
 - ⬜ **The browser demo is not at parity with the backend.** Seven of the manifest's fifteen
   verbs and none of the three composites, a contract of its own, an arena that is not upstream's
@@ -434,7 +434,7 @@ before.
   the day the fixes landed, and every scheduled run since, seven each from 2026-09-18 to
   2026-09-24, has been green for both.
 
-- ✅ **Exercise `remember` against a cloud model.** `gpt-6-astra` called it in seven of its
+- ✅ **Exercise `remember` against a cloud LLM.** `gpt-6-astra` called it in seven of its
   twelve runs on the arm on 2026-09-15, for five distinct notes, and the last run of that
   afternoon read all five back out of its own prompt. Still open in a simulator, where the scripted pilot has no
   script for it, so `--llm fake` writes episodes and never a note.

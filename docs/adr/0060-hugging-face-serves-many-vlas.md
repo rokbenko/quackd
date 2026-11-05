@@ -5,7 +5,7 @@
 ## Context
 
 On 2026-10-25 Rok asked for one vendor that serves many VLAs, the way `--llm openrouter` reaches
-many language models behind one key. The research that day found none:
+many LLMs behind one key. The research that day found none:
 
 - Hugging Face's serverless Inference Providers serve no robotics model at all. The Hub's
   `models?pipeline_tag=robotics&inference_provider=all` answered `[]`.

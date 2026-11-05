@@ -1,12 +1,12 @@
 """The pilot's word on whether the body can do the task, and the vocabulary it says it in.
 
-Every other gate in quackd refuses one verb. This one refuses *all motion* until the model
+Every other gate in quackd refuses one verb. This one refuses *all motion* until the LLM
 has said, against the datasheet in its prompt, whether the task fits the body it is driving.
-The verdict is the model's own judgement and is recorded as such: what it estimated, what it
+The verdict is the LLM's own judgement and is recorded as such: what it estimated, what it
 read, and what the task would need, so a transcript shows the reasoning rather than only the
 refusal.
 
-`needs` is the one vocabulary three readers share: the tool schema the model fills in, the
+`needs` is the one vocabulary three readers share: the tool schema the LLM fills in, the
 matcher that says which other body could, and a flock role that asks for a body that can
 carry. A number is a minimum (a working height is a point inside a band), a word must match,
 and a figure the maker never published is not met: a robot that cannot say what it carries is
@@ -178,7 +178,7 @@ def check_needs(value: Mapping[str, Any]) -> dict[str, float | str]:
 
 
 def needs_properties() -> dict[str, dict[str, Any]]:
-    """The `needs` object's JSON schema, so the model is shown the vocabulary it must use.
+    """The `needs` object's JSON schema, so the LLM is shown the vocabulary it must use.
 
     Every field says what it means, because the words are only half of it. The enums went out
     bare, so a pilot saw `legged, wheeled, any` and nothing saying that `any` excludes a body
@@ -434,7 +434,7 @@ class Verdict(BaseModel):
     needs: dict[str, float | str] = Field(default_factory=dict)
     human: Human | None = Field(
         default=None,
-        description="What a person answered about an `uncertain` verdict. Never the model's: "
+        description="What a person answered about an `uncertain` verdict. Never the LLM's: "
         "`assess_task` has no such field, and both surfaces refuse one that arrives with it.",
     )
 

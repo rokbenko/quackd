@@ -1,6 +1,6 @@
 # Decision LLMs
 
-A decision LLM is the optional second model of a run. It sits in front of the pilot as a
+A decision LLM is the optional second LLM of a run. It sits in front of the pilot as a
 discrete stepper and answers the turns that are a choice among calls the body already has, a
 read, the brake, the gripper or a gaze, with a typed value and a probability for each option.
 It writes nothing: no joint angle, no sentence and no verdict, all of which stay the pilot's. A
@@ -16,11 +16,11 @@ decided and what it is never allowed to do are in
 
 ## The ones quackd names
 
-<!-- generated: decision-rows, by scripts/models_docs.py from quackd/agent/decision/catalogue.py. Change a row there and run the script, not this table. -->
+<!-- generated: decision-rows, by scripts/llms_docs.py from quackd/agent/decision/catalogue.py. Change a row there and run the script, not this table. -->
 
-| `--decision-llm` | What it is | Wire | Runs | Key | Extra | Address | Default model | Frames | USD per Mtok in / out | Guide |
+| `--decision-llm` | What it is | Wire | Runs | Key | Extra | Address | Default LLM | Frames | USD per Mtok in / out | Guide |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `jev` | TypeSafe's Jev, hosted: the System One model the format is named after | System One, `POST /v1/systemone` | hosted, by its maker | `TYPESAFE_API_KEY` | `quackd[decision]` | the SDK's own | `jev-1.13.0` | no | 0.042 / 0, published | [jev](../guides/decision-llms/jev.md) |
+| `jev` | TypeSafe's Jev, hosted: the System One LLM the format is named after | System One, `POST /v1/systemone` | hosted, by its maker | `TYPESAFE_API_KEY` | `quackd[decision]` | the SDK's own | `jev-1.13.0` | no | 0.042 / 0, published | [jev](../guides/decision-llms/jev.md) |
 | `openai` | OpenAI's Decisions API, hosted: gpt-6-luna over POST /v1/decisions | OpenAI's Decisions API, `POST /v1/decisions` | hosted, by its maker | `OPENAI_API_KEY` | `quackd[openai]` | `https://api.openai.com` | `gpt-6-luna` | with `--decision-frames` | 0.1 / 0, published | [openai](../guides/decision-llms/openai.md) |
 | `kev` | Kev, self-hosted: Qwen3.5 with a decision head, on your own GPU | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8009` | `kev-latest` | no | nothing billed: it is yours | [kev](../guides/decision-llms/kev.md) |
 | `von` | Von, self-hosted: a 395M encoder, about 18 ms on a GPU, runs on CPU too | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8000` | `von-latest` | no | nothing billed: it is yours | [von](../guides/decision-llms/von.md) |
@@ -31,7 +31,7 @@ decided and what it is never allowed to do are in
 
 <!-- end generated: decision-rows -->
 
-`--decision-llm NAME[:MODEL]` names one, `--decision-url` moves its address, `--decision-mode
+`--decision-llm NAME[:LLM]` names one, `--decision-url` moves its address, `--decision-mode
 off|shadow|on` says what its answers may do and `--decision-frames` lets the one row that may see
 be shown the camera, at OpenAI's own hosts and only on a run that asks. Each has a variable of
 its own (`QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL`, `QUACKD_DECISION_MODE`,

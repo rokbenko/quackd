@@ -41,9 +41,9 @@ non-comment line must be `---`.
 | `verbs.allow` | list of verb names, ≥ 1, unique | yes | **executor** | The only verbs the LLM may call. `stop` is always allowed. Unknown names fail `quackd validate`. |
 | `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [concepts/safety.md](../concepts/safety.md#who-the-record-says-was-asked)). |
 | `budgets.max_steps` | int 1–1000 (default 40) | no | **executor** | Maximum verb executions. |
-| `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (sim time on every simulator, `sim2d` and both bodies' `mujoco`, wall-clock on hardware). Checked before each model call and again the moment the model answers, so a provider that replies late cannot spend the overrun. A verb that watches for it ends at its next tick once the minutes are spent, as `move`, `go_to`, `watch` and the arm's `move_joints` do. One that does not runs to its own end, so a run can overshoot by that verb's own timeout. |
-| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the model's API could not answer, and quackd asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). |
-| `success` | list of strings, ≥ 1 | yes | LLM (+ ground truth in sim tests) | Criteria the model judges itself against via `declare_success(reason)`. |
+| `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (sim time on every simulator, `sim2d` and both bodies' `mujoco`, wall-clock on hardware). Checked before each LLM call and again the moment the LLM answers, so a provider that replies late cannot spend the overrun. A verb that watches for it ends at its next tick once the minutes are spent, as `move`, `go_to`, `watch` and the arm's `move_joints` do. One that does not runs to its own end, so a run can overshoot by that verb's own timeout. |
+| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the LLM's API could not answer, and quackd asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). |
+| `success` | list of strings, ≥ 1 | yes | LLM (+ ground truth in sim tests) | Criteria the LLM judges itself against via `declare_success(reason)`. |
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |
 | `play` (v4) | bool | no (default `false`) | — | The task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section, `## Playing a part`, to the system prompt and changes no gate. `quackd run --play` or `--no-play` overrides it for one run ([`play`](#play-v4), [guides/play.md](../guides/play.md)). An auction flock cannot carry it. |
@@ -72,7 +72,7 @@ flock member (`robots: {duck-01: microduck:sim2d, duck-02: microduck:sim2d}`).
 
 `allocation.method` chooses the kind. **`auction`** (the default) is the 0.3 coordinator:
 2 to 4 Microducks in one `sim2d` arena on a lockstep clock, members are state machines, at
-most one model call for the whole run, and every other key in this block is read. An auction
+most one LLM call for the whole run, and every other key in this block is read. An auction
 duck with a non-empty `verbs.confirm` fails `quackd validate`, because an auction member has
 no pilot and no terminal to prompt on. **`pilots`** (`duck: 1`, 0.9) is the other kind: 2 to 8
 bodies on any backend, one LLM pilot each, on wall-clock time, splitting the work by talking.

@@ -1,6 +1,6 @@
 # OpenRouter
 
-OpenRouter is a router rather than a lab. One key and one bill reach models made by many vendors,
+OpenRouter is a router rather than a lab. One key and one bill reach LLMs made by many vendors,
 under ids that name the vendor (`anthropic/claude-opus-5.5`), and OpenRouter decides which
 provider serves each call. quackd reaches it as `--llm openrouter`, at `https://openrouter.ai/api/v1`
 with `OPENROUTER_API_KEY`, over the same OpenAI-compatible client most of the other vendors use:
@@ -8,7 +8,7 @@ with `OPENROUTER_API_KEY`, over the same OpenAI-compatible client most of the ot
 OpenRouter was read off its own documentation on 2026-10-06, and the code is
 [`openrouter.py`](../../quackd/agent/providers/openrouter.py).
 
-**No OpenRouter model has answered a real quackd request.**
+**No OpenRouter LLM has answered a real quackd request.**
 
 **Nothing here has ever answered a real robot.**
 
@@ -21,8 +21,8 @@ quackd run find-and-kick --llm openrouter --robot microduck:sim2d    # not run h
 ## The rows quackd carries
 
 ```
-$ quackd list-models --llm openrouter
-models (--llm VENDOR:MODEL, QUACKD_LLM)
+$ quackd list-llms --llm openrouter
+LLMs (--llm VENDOR:LLM, QUACKD_LLM)
 ┌────────────┬─────────────────────────────┬────────────────────────────────────┬─────────┬─────────┐
 │ provider   │ id                          │ label                              │ status  │ notes   │
 ├────────────┼─────────────────────────────┼────────────────────────────────────┼─────────┼─────────┤
@@ -33,11 +33,11 @@ models (--llm VENDOR:MODEL, QUACKD_LLM)
 │            │ google/gemini-3.8-flash     │ Gemini 3.8 Flash (via OpenRouter)  │ current │         │
 │            │ x-ai/grok-4.7               │ Grok 4.7 (via OpenRouter)          │ current │         │
 └────────────┴─────────────────────────────┴────────────────────────────────────┴─────────┴─────────┘
-openrouter: the rows above are a selection. An id quackd does not carry can be named as --llm openrouter:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public model list when a run starts. That list has to carry the id with tool calling, and one quackd takes is priced from it.
+openrouter: the rows above are a selection. An id quackd does not carry can be named as --llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public LLM list when a run starts. That list has to carry the id with tool calling, and one quackd takes is priced from it.
 ```
 
-A row is a model from a vendor quackd already drives on its own API, served by its own maker,
-whose entry in OpenRouter's model list on 2026-10-06 named `tools` and `tool_choice` among its
+A row is an LLM from a vendor quackd already drives on its own API, served by its own maker,
+whose entry in OpenRouter's LLM list on 2026-10-06 named `tools` and `tool_choice` among its
 supported parameters, took `image` input and carried no `expiration_date`. The first row is the
 default, so `--llm openrouter` runs `openai/gpt-6-sol`. Rates are dollars per million tokens,
 OpenRouter's own per-token figures read off its list that day, the base rates rather than the
@@ -62,19 +62,19 @@ more, then ends the run.
 
 An id quackd does not carry is checked in two steps, and taken only when it passes both.
 
-1. **Its spelling, offline and before a key is read.** An OpenRouter id is `AUTHOR/MODEL`, with
+1. **Its spelling, offline and before a key is read.** An OpenRouter id is `AUTHOR/LLM`, with
    `:free` the only suffix quackd takes, and a few shapes are refused on their spelling whatever
    the list says, several of them ids OpenRouter does list, for the reasons below.
-2. **OpenRouter's public model list, before the first paid call.** quackd reads
+2. **OpenRouter's public LLM list, before the first paid call.** quackd reads
    `GET https://openrouter.ai/api/v1/models` once per process, with no key and with its own
    `User-Agent`, and refuses the run if the list does not carry the id (naming the nearest ids it
    does carry, when any come close), carries it without tool calling, or says it expired on or
    before today. A list that cannot be read within ten seconds, or one that is not in OpenRouter's
-   shape, stops the run too, and says so, rather than reading as "no such model". `--base-url`
+   shape, stops the run too, and says so, rather than reading as "no such LLM". `--base-url`
    moves the list along with the requests.
 
 An id taken that way is asked with `tool_choice: "auto"`, or sent no `tool_choice` at all where
-its entry names none, which is the bargain quackd strikes with local models: nobody here has seen
+its entry names none, which is the bargain quackd strikes with local LLMs: nobody here has seen
 how each provider behind OpenRouter words a refusal of a forced call. It gets the camera frame
 when its entry names `image` among its input modalities, and the detections as text when it does
 not. It is priced at its entry's base rates, recorded with `source: openrouter` and the day of the
@@ -82,8 +82,8 @@ run, for any turn OpenRouter does not bill (below).
 
 ```
 $ quackd run hello-world --llm openrouter:qwen/qwen3.8-flsh --robot microduck:mock
-✗ error: openrouter: 'qwen/qwen3.8-flsh' from --llm is not on OpenRouter's model list. Nearest on
-the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `quackd list-models --llm
+✗ error: openrouter: 'qwen/qwen3.8-flsh' from --llm is not on OpenRouter's LLM list. Nearest on
+the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `quackd list-llms --llm
 openrouter` for the ids quackd carries.
 ```
 
@@ -95,7 +95,7 @@ the vendor is left off:
 $ quackd run hello-world --llm google/gemma-4-31b-it:free --robot microduck:mock
 ✗ error: unknown provider 'google/gemma-4-31b-it' in 'google/gemma-4-31b-it:free' from --llm. It
 reads as an OpenRouter id: --llm openrouter:google/gemma-4-31b-it:free. Pass a vendor, or a vendor
-and a model: --llm anthropic, --llm anthropic:claude-opus-5-5. Vendors: fake, anthropic, openai,
+and an LLM: --llm anthropic, --llm anthropic:claude-opus-5-5. Vendors: fake, anthropic, openai,
 gemini, grok, mistral, deepseek, cohere, qwen, kimi, glm, meta, openrouter, local, ollama, vllm,
 llamacpp, lmstudio.
 ```
@@ -106,26 +106,26 @@ Each of these is refused on its spelling alone, with the reason below:
 
 | Shape | Why |
 |---|---|
-| `~author/...` | a `~` alias always resolves to the newest model of its family, so the model that answers could change under a run that names it |
-| `openrouter/...` | OpenRouter's own routers choose the model per request, so neither the model that answers nor its price is known before the call |
+| `~author/...` | a `~` alias always resolves to the newest LLM of its family, so the LLM that answers could change under a run that names it |
+| `openrouter/...` | OpenRouter's own routers choose the LLM per request, so neither the LLM that answers nor its price is known before the call |
 | `:batch` | the batch-priced entry is served by OpenRouter's Batch API, and a run asks Chat Completions every turn |
 | `:nitro` | a routing variant OpenRouter accepts on any id and does not list, and a request a priority endpoint serves is billed at that endpoint's priority rate; sort providers with --extra-body '{"provider": {"sort": "throughput"}}' instead |
 | `:floor` | a routing variant OpenRouter accepts on any id and does not list, and a request a flex endpoint serves is billed at that endpoint's flex rate; sort providers with --extra-body '{"provider": {"sort": "price"}}' instead |
 | `:exacto` | a routing variant OpenRouter accepts on any id and does not list, so there is no entry to check it against or price it from |
 | `:thinking` | OpenRouter says to use the `reasoning` parameter instead, which --extra-body carries |
-| `:extended` | OpenRouter says no model currently offers it |
+| `:extended` | OpenRouter says no LLM currently offers it |
 | `:online` | OpenRouter says to use its `openrouter:web_search` server tool instead |
 
 ```
 $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot microduck:mock
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
-resolves to the newest model of its family, so the model that answers could change under a run that
+resolves to the newest LLM of its family, so the LLM that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-llms --llm
 openrouter`.
 ```
 
-### Free models
+### Free LLMs
 
 An id ending `:free` is its own entry on OpenRouter's list, with its own providers and its own
 limits, so it is checked like any other id quackd does not carry and has no row of its own.
@@ -134,15 +134,15 @@ OpenRouter's limits page, read 2026-10-06, allows 20 requests a minute on them, 
 OpenRouter with an HTTP 429. quackd waits and asks the same turn again, up to four times, after
 waits that grow from 5 seconds to a minute, so a minute's limit can be waited out inside the task's
 `max_minutes` and a day's still ends the run
-([concepts/safety.md](../concepts/safety.md#when-the-models-api-fails)). An error OpenRouter sends
-inside a `200` is not asked again (below). Which providers serve a free model, and what they do
+([concepts/safety.md](../concepts/safety.md#when-the-llms-api-fails)). An error OpenRouter sends
+inside a `200` is not asked again (below). Which providers serve a free LLM, and what they do
 with a prompt, is up to them and to your OpenRouter privacy settings (below), which can leave a
-free model with no provider you allow.
+free LLM with no provider you allow.
 
 ## Where your prompt goes
 
-To OpenRouter, and on to whichever provider it picks for that model, under both their terms: the
-system prompt, the conversation and the camera frame wherever the model takes one. OpenRouter's
+To OpenRouter, and on to whichever provider it picks for that LLM, under both their terms: the
+system prompt, the conversation and the camera frame wherever the LLM takes one. OpenRouter's
 FAQ, read 2026-10-06: "Prompt and completion are not logged by default. We do zero logging of your
 prompts/completions, even if an error occurs, unless you opt-in to logging them." And: "Providers
 that do log, or where we have been unable to confirm their policy, will not be routed to unless
@@ -150,7 +150,7 @@ the model training toggle is switched on in the privacy settings tab." `--extra-
 providers for one run, with `{"provider": {"data_collection": "deny"}}` or
 `{"provider": {"zdr": true}}` for zero data retention.
 
-Every request, the model list's included, also carries two headers naming quackd:
+Every request, the LLM list's included, also carries two headers naming quackd:
 `HTTP-Referer: https://github.com/rokbenko/quackd` and `X-OpenRouter-Title: quackd`. OpenRouter
 credits an app on its public rankings by them. They say nothing about you, your robot or your
 key, and nothing else is added to what a request would carry without them.
@@ -171,8 +171,8 @@ page: providers "that don't support all the LLM parameters specified in your req
 receive the request, but will ignore unknown parameters. When you set `require_parameters` to
 `true`, the request won't even be routed to that provider." So a `tool_choice` quackd sends is a
 `tool_choice` the serving provider honours. `parallel_tool_calls` is never sent: 13 of the 465
-models on the list when it was first read on 2026-10-06 named it, and with `require_parameters` a request carrying it
-would have reached almost none of them. The loop takes the first call when a model sends several.
+LLMs on the list when it was first read on 2026-10-06 named it, and with `require_parameters` a request carrying it
+would have reached almost none of them. The loop takes the first call when an LLM sends several.
 
 Anything else goes through `--extra-body`, and a `provider` object there is merged beside
 `require_parameters` rather than replacing it, so `--extra-body '{"provider": {"sort": "price"}}'`
@@ -180,8 +180,8 @@ sorts the providers by price and still insists on the parameters.
 `{"provider": {"require_parameters": false}}` turns the insisting off. Reasoning settings go the
 same way (`--extra-body '{"reasoning": {"effort": "low"}}'`): `QUACKD_OPENAI_REASONING_EFFORT` is
 OpenAI's and is not read here, because with `require_parameters` a parameter nobody asked for
-can leave a model with no provider at all. One key is refused: `models`, OpenRouter's fallback
-list, would let it answer with a model `run_start` does not name, priced as that model.
+can leave an LLM with no provider at all. One key is refused: `models`, OpenRouter's fallback
+list, would let it answer with an LLM `run_start` does not name, priced as that LLM.
 
 ## What a turn costs
 
@@ -194,7 +194,7 @@ at which tier and with what cache, so quackd records it as the turn's `cost_usd`
 On a bring-your-own-key call `usage.cost` is only OpenRouter's fee, and the provider bills your
 own key for the rest, which OpenRouter reports as `cost_details.upstream_inference_cost`, so the
 two are added. A BYOK call that reports no upstream figure is not billed at the fee alone, which
-would understate it by the whole of the model's charge: it is costed at the rate instead, as is
+would understate it by the whole of the LLM's charge: it is costed at the rate instead, as is
 any call that comes back with no `cost`. That rate is the row's, or for an id quackd does not
 carry, the one the list gave it. `--price` and `QUACKD_PRICE` beat the bill as they beat the
 catalogue. A call that ends in an error is costed the same way when OpenRouter reports what it
@@ -207,9 +207,9 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
 
 - **Chat Completions only.** OpenRouter has a Responses API too, but everything above is
   chat-shaped. `QUACKD_OPENAI_API` is not read, and if OpenRouter relays OpenAI's refusal of
-  function tools on Chat Completions for a model, the run ends and says to pick another model
+  function tools on Chat Completions for an LLM, the run ends and says to pick another LLM
   rather than moving.
-- **Reasoning goes back as it came.** A model's `reasoning_details`, which carry Claude's signed
+- **Reasoning goes back as it came.** An LLM's `reasoning_details`, which carry Claude's signed
   thinking and Gemini's thought signatures, go back unmodified on the assistant turn that made the
   call, which is what OpenRouter asks for. Its Opus 5.5 guide says requests through it "are not
   subject to" Anthropic's thinking-binding enforcement, so the Claude rows have their old camera
@@ -217,8 +217,8 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
 - **An error is an error.** OpenRouter can answer `200` with an `error` and no choices, and its
   errors page says to "Check the body for an `error` field even on a `200`". quackd ends the turn
   with OpenRouter's code and message, the provider it came from and the start of what that
-  provider said, rather than reading it as a model that declined to call a tool.
-- **The model in the record is the one asked for.** Which provider served each turn is not
+  provider said, rather than reading it as an LLM that declined to call a tool.
+- **The LLM in the record is the one asked for.** Which provider served each turn is not
   recorded.
 
 ## Not the decision LLMs OpenRouter also serves
@@ -228,14 +228,14 @@ rather than pilot anything. Those are the other side of quackd entirely, `--deci
 ([decision-llms/README.md](decision-llms/README.md)), and reaching one of them through OpenRouter
 from there has never been tried here. Why neither of OpenRouter's two decision endpoints is a row
 of its own is in [What is not covered](decision-llms/README.md#what-is-not-covered-and-why).
-`--llm openrouter` is OpenRouter's chat models as the pilot, and nothing on this page touches the
+`--llm openrouter` is OpenRouter's chat LLMs as the pilot, and nothing on this page touches the
 stepper.
 
 ## VERIFIED (read from OpenRouter's documentation on 2026-10-06, and measured the same day)
 
 | Thing | Value | What quackd does with it |
 |---|---|---|
-| Model list | `GET /api/v1/models` answered with no key, when it was first read that day: 465 entries, 397 naming `tools`, 390 `tool_choice` and 13 `parallel_tool_calls`, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with quackd's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
+| LLM list | `GET /api/v1/models` answered with no key, when it was first read that day: 465 entries, 397 naming `tools`, 390 `tool_choice` and 13 `parallel_tool_calls`, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with quackd's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
 | Attribution | "Site URL for rankings on openrouter.ai" and "Site title for rankings", for `HTTP-Referer` and `X-OpenRouter-Title`; `X-Title` "is still supported for backwards compatibility" | both sent on every request, naming quackd |
 | A forced call on Claude | "a forced `tool_choice` on `anthropic/claude-opus-5.5` fails at routing with no compatible endpoint rather than reaching the provider" | the Claude rows are asked with `auto` |
 | `require_parameters` | routes only to providers that support every parameter in the request | sent on every request, under `--extra-body` |
@@ -246,7 +246,7 @@ stepper.
 | Errors | a `200` can carry an `error` and no `choices` | a ProviderError in OpenRouter's words |
 | Variants | catalog variants, `:free` and `:batch` among them, are separate entries on the list; routing variants "are accepted on any model ID at request time" and "are not listed" | only `:free` is taken; the rest are refused on their spelling, listed or not |
 | `~` aliases | "always resolve to the newest concrete model", and the list carries them | refused on their spelling |
-| Free models | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 is asked again up to four times, then ends the run |
+| Free LLMs | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 is asked again up to four times, then ends the run |
 | From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the six rows |
 | No key | a keyless POST answered `401` | none: a run with no key stops before it posts |
 
@@ -254,9 +254,9 @@ stepper.
 
 | Name | The assumption | What quackd does |
 |---|---|---|
-| `DEFAULT_ON_CHAT` | that `openai/gpt-6-sol` takes function tools through OpenRouter's Chat Completions. quackd's catalogue starts the same model on OpenAI's Responses API under `--llm openai`, the mark it gives models that will not take function tools on Chat Completions | nothing it can test; if OpenRouter relays such a refusal, the run ends on the first call and says to pick another model |
-| `TOOLS_HONOURED` | that `require_parameters` leaves a provider that honours `tool_choice` for every row | a model with no such provider is refused by OpenRouter, in its words |
-| `AUTO_CALLS_A_TOOL` | that a model asked with `auto` calls a tool | the loop asks once more, then ends the run |
+| `DEFAULT_ON_CHAT` | that `openai/gpt-6-sol` takes function tools through OpenRouter's Chat Completions. quackd's catalogue starts the same LLM on OpenAI's Responses API under `--llm openai`, the mark it gives LLMs that will not take function tools on Chat Completions | nothing it can test; if OpenRouter relays such a refusal, the run ends on the first call and says to pick another LLM |
+| `TOOLS_HONOURED` | that `require_parameters` leaves a provider that honours `tool_choice` for every row | an LLM with no such provider is refused by OpenRouter, in its words |
+| `AUTO_CALLS_A_TOOL` | that an LLM asked with `auto` calls a tool | the loop asks once more, then ends the run |
 | `REPLAY_ACCEPTED` | that each provider takes its `reasoning_details` back as sent | they are sent verbatim; nothing reads a refusal of them |
 | `TRIMMED_HISTORY_ACCEPTED` | that the Claude rows take a history whose old frames were trimmed every call | rests on OpenRouter's statement; the native provider's binding controls are not available here |
 | `COST_IS_THE_BILL` | that `usage.cost`, with the upstream figure on BYOK, is what your key is charged | recorded as billed; `--price` overrides it |
@@ -268,7 +268,7 @@ stepper.
 ## Status
 
 It has never answered a real robot, and this page says so until somebody reports that it has. The
-model list check ran against OpenRouter itself, keyless. Everything after it ran against a stand-in:
+LLM list check ran against OpenRouter itself, keyless. Everything after it ran against a stand-in:
 `tests/fake_openrouter.py` answers on 127.0.0.1, and `tests/test_openrouter_wire.py` drives a real
 `quackd run` through the real `openai` SDK at it, checking the headers, the body, the replay, the
 cost of every turn and every refusal. The browser demo's client sent its request to the same
@@ -276,7 +276,7 @@ stand-in under Node. None of that proves OpenRouter answers.
 
 ## How to help
 
-Run it on your own key and report what came back: the transcript, the model id, and the charge
+Run it on your own key and report what came back: the transcript, the LLM id, and the charge
 OpenRouter's activity page shows for the run beside the `cost_usd` quackd recorded. A bare
 `--llm openrouter` first, because the default is the row that rests on the most. Then a Claude
 row past eight exchanges with frames, a Gemini row, and an id quackd does not carry, `:free` or

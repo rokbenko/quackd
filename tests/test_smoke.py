@@ -20,7 +20,7 @@ def test_cli_help() -> None:
         "serve-mcp",
         "list-verbs",
         "list-adapters",
-        "list-models",
+        "list-llms",
         "record",
         "log",
         "discover",

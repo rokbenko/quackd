@@ -14,8 +14,8 @@ as the README hero. At build time this machine had no provider API key (no
   --seed 3` — the built-in simulator driven by the **scripted** pilot — and is labelled as
   such in the README caption and in `docs/assets/README.md`.
 - `docs/assets/transcript-example.jsonl` is the matching transcript, so readers can see
-  the observation → tool call → result rhythm even without a model in the loop.
-- Regenerating with a real model is one command and is tracked as an open item in
+  the observation → tool call → result rhythm even without an LLM in the loop.
+- Regenerating with a real LLM is one command and is tracked as an open item in
   `PLAN.md`: `quackd record find-and-kick --provider anthropic --seed 3`, then copy
   `runs/<ts>/run.gif` and `transcript.jsonl` over the assets and drop the "scripted" label.
 

@@ -218,7 +218,9 @@ async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
     monkeypatch.setattr(commands, "offers_for", offers_for)
     monkeypatch.setattr(factory, "parse_decision_llm", lambda name: (object(), None))
     monkeypatch.setattr(factory, "decision_llm_is_available", lambda spec, url=None: (True, ""))
-    monkeypatch.setattr(factory, "make_decision_llm", lambda spec, model=None, url=None: _Decider())
+    monkeypatch.setattr(
+        factory, "make_decision_llm", lambda spec, llm_id=None, url=None: _Decider()
+    )
     duck = tmp_path / "gated.duck"
     duck.write_text(GATED_KICK, encoding="utf-8")
     args = DriveArgs(
@@ -248,7 +250,7 @@ POLICY = ["--policy-url", "http://127.0.0.1:9"]
         (["--controller", "vla", *POLICY, "--effort", "low"], "--effort says how hard"),
         (
             ["--controller", "vla", *POLICY, "--decision-llm", "kev", "--decision-mode", "on"],
-            "runs no model for a decision LLM to step in front of, and --decision-mode",
+            "runs no pilot LLM for a decision LLM to step in front of, and --decision-mode",
         ),
         (["--controller", "nope"], "--controller is llm or vla, not 'nope'"),
         (["--price", "lots"], "--price"),
@@ -493,10 +495,10 @@ async def test_frames_give_every_goal_watch_and_say_where_a_frame_goes(
     assert any("--decision-frames:" in line for line in said), said
 
 
-async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_model(
+async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The robot's registered pilot and `QUACKD_LLM` name a model a VLA session never asks, so
+    """The robot's registered pilot and `QUACKD_LLM` name an LLM a VLA session never asks, so
     neither is resolved, and a key missing for it refuses nothing."""
     from quackd.agent.providers.vla import VlaProvider
 
@@ -513,7 +515,7 @@ async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_m
     assert isinstance(pilot, VlaProvider) and pilot.instructions == ("pick up the red cube",)
     events = Transcript.read(run_dir / "transcript.jsonl")
     start = next(e for e in events if e["kind"] == "run_start")
-    assert (start["provider"], start["model"]) == ("vla", "scripted:goal")
+    assert (start["provider"], start["llm_id"]) == ("vla", "scripted:goal")
 
 
 async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_none(

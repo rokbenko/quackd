@@ -8,9 +8,9 @@ own shutdown path disables torque with no lowering and no ramp. Read
 [adapters/toddlerbot/README.md](README.md) before you start.
 
 quackd runs on your laptop and never on the robot. The Jetson on the robot's back holds
-quackd's ToddlerBot daemon, and it can also hold a model server and quackd's host daemon, which
+quackd's ToddlerBot daemon, and it can also hold an LLM server and quackd's host daemon, which
 `--host` reaches from the laptop ([guides/jetson.md](../../guides/jetson.md)). The host daemon runs
-there with `--camera none`, because the ToddlerBot daemon owns the robot's cameras. A model server
+there with `--camera none`, because the ToddlerBot daemon owns the robot's cameras. An LLM server
 or a detector saturating that board is exactly the load that can starve the fifty hertz loop, so
 bring the robot up with nothing else running on it, and add the others once these steps have
 passed.
@@ -55,7 +55,7 @@ passed.
 
 There is no command that runs one verb. Either drive the daemon from an MCP client
 (`quackd serve-mcp --robot toddlerbot:bridge --address tcp://<host>:9873`, then `robot_run_verb`, which is
-what these steps assume) or give a model a goal narrow enough to reach one verb
+what these steps assume) or give an LLM a goal narrow enough to reach one verb
 (`quackd run --goal "..." --robot toddlerbot:bridge --address tcp://<host>:9873 --llm anthropic
 --max-steps 3`). `--llm fake` will not do: it answers a free-form goal with a fixed
 script that ignores it.

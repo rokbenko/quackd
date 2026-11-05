@@ -39,7 +39,7 @@ def test_add_then_show(tmp_path: Path) -> None:
 
 
 def test_show_raw_prints_the_file_as_is(tmp_path: Path) -> None:
-    """A note is text a model wrote, so it can contain anything, including Rich markup."""
+    """A note is text an LLM wrote, so it can contain anything, including Rich markup."""
     note = "the ball is [bold]behind[/bold] the sofa"
     RobotMemory("microduck:sim2d", tmp_path).remember(note, now=1.0)
     raw = runner.invoke(app, ["memory", "show", "--raw", *_mem(tmp_path)])

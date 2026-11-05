@@ -9,7 +9,7 @@ thinking off (`thinking: {"type": "disabled"}`, sent through the request body th
 non-thinking mode accepts. Turning thinking back on with `--extra-body` brings both refusals
 back, and nothing here replays `reasoning_content`. `parallel_tool_calls` is not in DeepSeek's
 request reference, and an unknown field is a 400 on some gateways, so it is not sent: the loop
-already takes the first call when a model sends more.
+already takes the first call when an LLM sends more.
 """
 
 from __future__ import annotations

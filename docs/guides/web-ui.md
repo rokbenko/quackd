@@ -96,7 +96,7 @@ offers to run it.
 and the robot stays connected from one line to the next. Each line goes to the session the moment
 you send it, as a line typed at drive's own prompt does, and the reply says which lane took it:
 
-- a verb of the body's own, such as `quack`, `sit` or `kick left`, runs at once, with no model
+- a verb of the body's own, such as `quack`, `sit` or `kick left`, runs at once, with no LLM
   asked, and the reply is marked `exact`;
 - a preset walk, such as `forward` or `turn left`, is worked out from the body's own clamps and
   runs at once too;
@@ -121,7 +121,7 @@ Everything a line can be is in [Driving a robot](drive.md).
 
 ## The pilot
 
-**An LLM** is a vendor and a model: for a cloud vendor one of the rows `quackd list-models`
+**An LLM** is a vendor and an LLM: for a cloud vendor one of the rows `quackd list-llms`
 prints, and for a local server the id it serves, typed in. Beside it, the page says whether that
 vendor's key is set and where, masked as `quackd doctor` masks it:
 
@@ -136,11 +136,11 @@ through that run's environment. It is never written to a file, never put on a co
 never shown in the **Same as** lines, and it is gone when the page stops.
 
 The effort, vision, a base URL for a local server, an extra request body and a price are under the
-model.
+LLM.
 
 **A VLA policy** flies the LeRobot arm instead, through a policy server: its address, whether the
 arm keeps moving while the next chunk is on its way, and whether to accept a policy learned on an
-arm calibrated another way. Its pilot asks no model, so while it is chosen the model's settings
+arm calibrated another way. Its pilot asks no LLM, so while it is chosen the pilot LLM's settings
 and the decision LLM leave the command, which `quackd run` would otherwise refuse. The
 [Policies screen](#runs-robots-memory-and-policies) starts a server on this computer and fills the
 address in. [Policies](policies.md) has the rest.

@@ -8,16 +8,16 @@ Chat Completions with function tools, `tool_choice="required"` and
 `parallel_tool_calls=False` for one call per turn. Tool results go back as `tool` messages;
 because a `tool` message cannot carry an image, the frame follows in a `user` message.
 
-Some newer reasoning models will not take function tools on Chat Completions at all, at any
+Some newer reasoning LLMs will not take function tools on Chat Completions at all, at any
 reasoning effort, and say so in a 400 that names `/v1/responses` as the way through. Every
-verb quackd has is a function tool, so for those models Chat Completions is not a degraded
+verb quackd has is a function tool, so for those LLMs Chat Completions is not a degraded
 path, it is no path. `step` reads that 400, switches this provider to the Responses API and
 keeps it there for the rest of the run. The two APIs disagree about nearly every field name,
 so each gets its own renderer and its own parser below, and the provider owns which pair it
 is using. `QUACKD_OPENAI_API=responses` starts there without waiting to be told.
 
-Reading the 400 is the fallback, not the plan. The catalogue marks the models that need Responses
-and they start there, which saves the failed call and is the only way in for a model that is
+Reading the 400 is the fallback, not the plan. The catalogue marks the LLMs that need Responses
+and they start there, which saves the failed call and is the only way in for an LLM that is
 Responses *only*: that one is refused for being itself rather than for asking for tools, so it
 says something else entirely and the reader below does not match it.
 """
@@ -46,7 +46,7 @@ from quackd.agent.providers.base import (
     picture_parts,
     tool_arguments,
 )
-from quackd.agent.providers.catalogue import default_model_for, find_model
+from quackd.agent.providers.catalogue import default_llm_for, find_llm
 from quackd.agent.providers.openai_headers import (
     CUSTOM_HEADERS_ENV,
     ambient_headers,
@@ -181,7 +181,7 @@ def render_messages(
 def _wants_the_responses_api(error: Exception) -> bool:
     """Is this the 400 that refuses function tools on Chat Completions and names Responses?
 
-    Matched on what the API says rather than on a model name, because the list of models that
+    Matched on what the API says rather than on an LLM name, because the list of LLMs that
     behave this way is not ours to keep and gets longer. Observed on `gpt-6-astra`:
 
         Function tools with reasoning_effort are not supported for gpt-6-astra in
@@ -191,7 +191,7 @@ def _wants_the_responses_api(error: Exception) -> bool:
     Both halves are required so an unrelated 400 that happens to name one of the two does not
     move a run onto a different API.
 
-    The second remedy that message offers is a dead end on the model that produced it, which
+    The second remedy that message offers is a dead end on the LLM that produced it, which
     is worth recording: `reasoning_effort="none"` comes back as *"does not support 'none' with
     this model. Supported values are: 'low', 'medium', 'high', and 'xhigh'"*, and the tools are
     refused at every one of those. Measured 2026-09-09. So the fix is the API, not the effort.
@@ -239,7 +239,7 @@ def render_input(history: list[Exchange]) -> list[dict[str, Any]]:
     `instructions`, which is why this takes no `system` where `render_messages` does.
 
     A turn is up to three items rather than a message with a `tool_calls` field: what the
-    model called, what came back, and the frame. `function_call_output` carries text only, as
+    LLM called, what came back, and the frame. `function_call_output` carries text only, as
     a `tool` message does, so the image follows it in a user item for the same reason.
 
     `call_id` is the handle, not the item `id`. Sending the wrong one is a 400 that says the
@@ -291,7 +291,7 @@ def parse_responses(response: Any) -> ProviderTurn:
 
     `output` is a flat list of items rather than one message: reasoning, then any calls, then
     any text. Reasoning arrives as a summary (a list of parts) and is often empty even when
-    the token count is not, because the model is not obliged to show its work.
+    the token count is not, because the LLM is not obliged to show its work.
     """
     tool_calls: list[ToolCall] = []
     texts: list[str] = []
@@ -313,7 +313,7 @@ def parse_responses(response: Any) -> ProviderTurn:
             for part in getattr(item, "content", None) or []:
                 # A refusal is its own part, with its words under `refusal` and no `text`, so
                 # reading `text` alone dropped it and the turn arrived as an empty one with no
-                # call: the record then showed a pilot that said nothing where the model had
+                # call: the record then showed a pilot that said nothing where the LLM had
                 # said no. It reads as Anthropic's and OpenRouter's do, `[refusal] ...`. The
                 # part's type is enough to make the turn a refused one, words or none.
                 if getattr(part, "type", None) == "refusal":
@@ -445,7 +445,7 @@ REFUSED_EXTRA_BODY_KEYS = frozenset(
     {"model", "messages", "input", "instructions", "tools", "stream"}
 )
 """Keys quackd owns, and will not let a passthrough replace. `model` would walk past the
-catalogue and put a model on the wire that `run_start` does not name. `messages`, `input`,
+catalogue and put an LLM on the wire that `run_start` does not name. `messages`, `input`,
 `instructions` and `tools` are the conversation itself, and `instructions` is the one that is
 easy to miss: on Chat Completions the system prompt is the first of `messages`, but on
 Responses it is a field of its own, so leaving it out would have let a passthrough quietly
@@ -522,7 +522,7 @@ class OpenAIProvider:
 
     def __init__(
         self,
-        model: str | None = None,
+        llm_id: str | None = None,
         *,
         client: Any = None,
         api_key: str | None = None,
@@ -533,10 +533,10 @@ class OpenAIProvider:
         api: str | None = None,
         extra_body: dict[str, Any] | None = None,
     ) -> None:
-        # No model means the catalogue's default. The empty string is what the local presets
-        # pass up, and it means the opposite: ask the server (`LocalProvider.ensure_model`).
-        self.model = model or default_model_for(self.name) or ""
-        spec = find_model(self.name, self.model)
+        # No LLM means the catalogue's default. The empty string is what the local presets
+        # pass up, and it means the opposite: ask the server (`LocalProvider.ensure_llm`).
+        self.llm_id = llm_id or default_llm_for(self.name) or ""
+        spec = find_llm(self.name, self.llm_id)
         self.calls = 0
         import os as _os
 
@@ -547,7 +547,7 @@ class OpenAIProvider:
         )
         #: Where `reasoning_effort` came from, for the record (`asked_effort`): whoever built this
         #: provider, which the factory renames `--effort`, or the variable. None where nothing is
-        #: sent, so the model's own default applies, which quackd does not know and does not guess.
+        #: sent, so the LLM's own default applies, which quackd does not know and does not guess.
         self.effort_from: str | None = "the caller" if reasoning_effort else None
         if not reasoning_effort and self.reasoning_effort:
             self.effort_from = "QUACKD_OPENAI_REASONING_EFFORT"
@@ -567,12 +567,12 @@ class OpenAIProvider:
             raise ProviderError(
                 f"{door}: {refused!r} is refused on {self.name}: {self.refused_body_keys[refused]}"
             )
-        #: "chat" or "responses". A model the catalogue marks `responses` starts there, which
+        #: "chat" or "responses". An LLM the catalogue marks `responses` starts there, which
         #: saves the failed call `step` would otherwise pay to learn it, and is the only way in
-        #: for a model that is Responses only: its refusal is worded differently and
+        #: for an LLM that is Responses only: its refusal is worded differently and
         #: `_wants_the_responses_api` does not match it. Otherwise `step` still switches on its
         #: own when the API says so, and stays switched. An explicit `api=` outranks both, and
-        #: both outrank the environment: `QUACKD_OPENAI_API=chat` must not send a model that
+        #: both outrank the environment: `QUACKD_OPENAI_API=chat` must not send an LLM that
         #: has no Chat Completions to one anyway.
         self.api = (
             (api or (spec.api if spec else None) or _os.environ.get("QUACKD_OPENAI_API") or "chat")
@@ -585,8 +585,8 @@ class OpenAIProvider:
         # turn failed (`client_address`).
         if base_url is not None and base_url.strip():
             self.base_url = base_url.strip()
-        # The catalogue knows which models take an image. A model that does not gets the
-        # detections as text instead of a 400, the way a local model already does.
+        # The catalogue knows which LLMs take an image. An LLM that does not gets the
+        # detections as text instead of a 400, the way a local LLM already does.
         if vision is not None:
             self.supports_vision = vision
         elif spec is not None:
@@ -759,8 +759,8 @@ class OpenAIProvider:
 
     @property
     def asked_effort(self) -> dict[str, str] | None:
-        """What every request of this run asks the model to reason at, and where that came from,
-        as `run_start.effort` records it, or None where nothing is sent and the model's own
+        """What every request of this run asks the LLM to reason at, and where that came from,
+        as `run_start.effort` records it, or None where nothing is sent and the LLM's own
         default applies."""
         if not self.reasoning_effort:
             return None
@@ -778,7 +778,7 @@ class OpenAIProvider:
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "model": self.model,
+            "model": self.llm_id,
             "messages": render_messages(system, history, assistant_fields=self._assistant_fields),
             "tools": render_tools(tools),
         }
@@ -796,7 +796,7 @@ class OpenAIProvider:
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "model": self.model,
+            "model": self.llm_id,
             "instructions": system,
             "input": render_input(history),
             "tools": render_tools_responses(tools),
@@ -896,7 +896,7 @@ class OpenAIProvider:
         except ProviderError:
             raise
         except Exception as e:
-            # A model that will not take function tools on Chat Completions. Every verb quackd
+            # An LLM that will not take function tools on Chat Completions. Every verb quackd
             # has is a function tool, so this is not a degraded path, it is no path: take the
             # API at its word, move to Responses, and stay there rather than paying a failed
             # call every turn. Only once, and only from chat, so a genuine Responses failure

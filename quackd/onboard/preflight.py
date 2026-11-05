@@ -267,7 +267,7 @@ def key_variable(llm: str) -> str | None:
 
 
 def key_needed(llm: str) -> bool:
-    """Whether a brain stops without its key. A model server of your own may take none, and its
+    """Whether a brain stops without its key. An LLM server of your own may take none, and its
     provider sends the word `not-needed` when `LOCAL_API_KEY` is unset."""
     from quackd.agent.providers.local import LOCAL_NAMES
 

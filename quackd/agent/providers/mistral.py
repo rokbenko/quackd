@@ -2,7 +2,7 @@
 
 One difference worth the file: Mistral's function-calling guide documents `any` as its word for
 "you must call a tool", so that is what quackd sends, although its API spec lists OpenAI's
-`required` as well. Sending nothing is a model free to answer in prose, which for quackd is a
+`required` as well. Sending nothing is an LLM free to answer in prose, which for quackd is a
 turn thrown away.
 `parallel_tool_calls` it does accept, so that stays.
 """

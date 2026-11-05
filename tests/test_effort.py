@@ -1,7 +1,7 @@
-"""`--effort`: how hard the pilot's model reasons, said on the command line rather than in `.env`.
+"""`--effort`: how hard the pilot's LLM reasons, said on the command line rather than in `.env`.
 
 Both vendors that take it were reachable only by an environment variable, one value a process,
-which a bench session comparing a quick model with a careful one had to restart a shell to
+which a bench session comparing a quick LLM with a careful one had to restart a shell to
 change. The flag reaches the three pilots that take such a field, beats both variables, is
 refused in a sentence where it cannot reach, and the record says what was asked and whose word
 it was.
@@ -67,9 +67,9 @@ def test_the_flag_reaches_claude_beats_the_variable_and_says_whose_word_it_was(
 
 
 def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.MonkeyPatch) -> None:
-    """OpenAI's reasoning effort, sent on either API, and the same field to a model server of
+    """OpenAI's reasoning effort, sent on either API, and the same field to an LLM server of
     your own, which speaks OpenAI's API. Where nothing names a level, nothing is sent and the
-    record says so with a null rather than guessing at the model's own default."""
+    record says so with a null rather than guessing at the LLM's own default."""
     fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI())
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
     monkeypatch.delenv("QUACKD_OPENAI_REASONING_EFFORT", raising=False)
@@ -88,7 +88,7 @@ def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.Mo
 
 
 @pytest.mark.parametrize(
-    ("name", "model", "effort", "needle"),
+    ("name", "llm_id", "effort", "needle"),
     [
         pytest.param(
             "anthropic", None, "max", "one of low, medium, high", id="a-level-only-one-has"
@@ -109,13 +109,13 @@ def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.Mo
     ],
 )
 def test_the_flag_is_refused_where_it_cannot_reach(
-    name: str, model: str | None, effort: str, needle: str
+    name: str, llm_id: str | None, effort: str, needle: str
 ) -> None:
     """Refused before anything is built, so no SDK, key or network is involved: a level sent to
     a field the vendor does not document is ignored at best and a 400 at the first turn at
     worst, with the robot already connected."""
     with pytest.raises(ProviderError) as refused:
-        make_provider(name, model=model, effort=effort)
+        make_provider(name, llm_id=llm_id, effort=effort)
     assert needle in str(refused.value), refused.value
 
 
@@ -126,20 +126,20 @@ def test_every_level_the_flag_takes_is_one_both_vendors_have() -> None:
         assert effort_refusal("openai", "gpt-6-sol", level) is None
 
 
-def test_a_model_that_takes_fewer_levels_takes_the_ones_its_page_lists() -> None:
-    """OpenAI's pro models take medium, high and xhigh, so of the three `--effort` has, the two
+def test_an_llm_that_takes_fewer_levels_takes_the_ones_its_page_lists() -> None:
+    """OpenAI's pro LLMs take medium, high and xhigh, so of the three `--effort` has, the two
     they take go through and only low is refused."""
-    for model in ("gpt-5.5-pro", "gpt-5.4-pro", "gpt-5.2-pro"):
-        assert effort_refusal("openai", model, "medium") is None, model
-        assert effort_refusal("openai", model, "high") is None, model
-        assert effort_refusal("openai", model, "low") is not None, model
+    for llm_id in ("gpt-5.5-pro", "gpt-5.4-pro", "gpt-5.2-pro"):
+        assert effort_refusal("openai", llm_id, "medium") is None, llm_id
+        assert effort_refusal("openai", llm_id, "high") is None, llm_id
+        assert effort_refusal("openai", llm_id, "low") is not None, llm_id
 
 
 class _Asking:
-    """A pilot that says what it asks its model to reason at, the way the real ones do."""
+    """A pilot that says what it asks its LLM to reason at, the way the real ones do."""
 
     name = "asking"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
     asked_effort = {"value": "low", "from": "--effort"}
 
@@ -164,7 +164,7 @@ async def test_the_record_says_what_was_asked_and_whose_word_it_was(
 
 def test_the_header_names_the_level_only_when_the_flag_asked() -> None:
     """A header quoted anywhere from a run without the flag stays what it was."""
-    pilot = types.SimpleNamespace(name="anthropic", model="claude-opus-5-5")
+    pilot = types.SimpleNamespace(name="anthropic", llm_id="claude-opus-5-5")
     plain = cli._header_rows(provider=pilot, robot="duck", seed=None, dry_run=False, memory=None)
     assert "effort" not in dict(plain)
     rows = dict(
@@ -198,7 +198,7 @@ def test_a_run_refuses_the_flag_for_the_scripted_pilot_before_it_connects(tmp_pa
     assert not list(tmp_path.glob("*/transcript.jsonl")), "nothing ran"
 
 
-def test_a_vla_run_refuses_the_flag_since_it_asks_no_model(
+def test_a_vla_run_refuses_the_flag_since_it_asks_no_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--controller vla` hands the arm to a policy server and reads it the task's steps from a
@@ -226,6 +226,6 @@ def test_a_vla_run_refuses_the_flag_since_it_asks_no_model(
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "--controller vla asks no model" in " ".join(result.output.split())
+    assert "--controller vla asks no LLM" in " ".join(result.output.split())
     runs = tmp_path / "runs"
     assert not runs.exists() or not any(runs.iterdir()), "nothing ran"

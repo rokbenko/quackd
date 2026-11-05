@@ -2,20 +2,20 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-07 · Extends [ADR-0003](0003-three-loops.md) (the three loops are what the trace shows) and [ADR-0012](0012-safety-executor.md) (every gate the executor closes now says so) · Amends [ADR-0010](0010-providers.md) (the Anthropic request now carries a `thinking` parameter, so its reasoning has text to show) · Documented in [architecture.md](../concepts/architecture.md#trace)
 
-**Amended 2026-09-21 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** what this ADR calls the trace is now the log, because it holds every intent, every gate, three clocks, a cost per model call and the terminal session. `quackd/trace.py` is `quackd/log.py`, `TraceEvent` is `LogEvent`, the `Tracer` is an `EventLog`, `quackd trace` is `quackd log`, `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are `--log/--no-log` and `--log-prompt/--no-log-prompt`, the three `QUACKD_TRACE*` variables are `QUACKD_LOG`, `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`, `trace_dropped` in the summary is `log_dropped`, and the MCP result's `trace` key is `log`. Every CLI and environment spelling below still works for one release and says what it is called now in a yellow line when it is read; all of them go in 0.12. The MCP key was replaced outright, because a model reads it off the tool description rather than a changelog, and every reader still takes `trace_dropped`, so a run directory recorded before the rename replays unchanged. Nothing else in this ADR changes.
+**Amended 2026-09-21 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** what this ADR calls the trace is now the log, because it holds every intent, every gate, three clocks, a cost per LLM call and the terminal session. `quackd/trace.py` is `quackd/log.py`, `TraceEvent` is `LogEvent`, the `Tracer` is an `EventLog`, `quackd trace` is `quackd log`, `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are `--log/--no-log` and `--log-prompt/--no-log-prompt`, the three `QUACKD_TRACE*` variables are `QUACKD_LOG`, `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`, `trace_dropped` in the summary is `log_dropped`, and the MCP result's `trace` key is `log`. Every CLI and environment spelling below still works for one release and says what it is called now in a yellow line when it is read; all of them go in 0.12. The MCP key was replaced outright, because an LLM reads it off the tool description rather than a changelog, and every reader still takes `trace_dropped`, so a run directory recorded before the rename replays unchanged. Nothing else in this ADR changes.
 
 **Amended 2026-09-12 by [ADR-0033](0033-terminal-theme.md):** the "lines are ASCII first" decision below now applies where it was actually earned. The MCP tool result and every reader of `render_lines` still get exactly those bytes, frozen by `tests/golden/log_lines.json`. The terminal view renders the same events its own way, with glyphs, a rule per step and the system prompt as a block, and asks the stream it is writing to which half of the glyph table it can carry. A redirected stderr on Windows still gets `->` and `+`; a terminal that can draw an arrow gets one. Nothing else in this ADR changes.
 
-**Amended 2026-09-07:** flock mode is traced too. Each member records into its own `ducks/<name>/transcript.jsonl` and gets a view prefixed with its name; the coordinator's decisions and the planner's one model call print under `flock`. The decision below that deferred it is superseded; nothing else in this ADR changes.
+**Amended 2026-09-07:** flock mode is traced too. Each member records into its own `ducks/<name>/transcript.jsonl` and gets a view prefixed with its name; the coordinator's decisions and the planner's one LLM call print under `flock`. The decision below that deferred it is superseded; nothing else in this ADR changes.
 
 ## Context
 
 Ask quackd to walk in a circle and the terminal said three things: a header, an outcome, and
-a run directory. Everything in between — which prompt the model got, what it reasoned, which
+a run directory. Everything in between — which prompt the LLM got, what it reasoned, which
 verb it picked, which rule refused it, what actually went down the wire to the robot, what
 came back — existed only in `runs/<ts>/transcript.jsonl`, and only after the run had ended.
 
-That was the wrong default for this project. quackd's whole claim is that a model's decisions
+That was the wrong default for this project. quackd's whole claim is that an LLM's decisions
 are *mediated*: a contract narrows them, an executor enforces them, a steering loop turns one
 decision into a hundred intents. A person watching a robot move and unable to see any of that
 has to take the claim on faith. Worse, the first real hardware run is the moment the
@@ -23,15 +23,15 @@ information matters most, and it was the moment it was least available.
 
 Four things were missing rather than merely hidden:
 
-- **The model's reasoning was never captured at all.** `ProviderTurn` had no field for it.
+- **The LLM's reasoning was never captured at all.** `ProviderTurn` had no field for it.
   Anthropic returns thinking blocks whose text is empty unless the request asks for a
   display, and quackd asked for nothing. Gemini's thought parts were being appended to the
-  answer text, so they were replayed to the model next turn as things it had said.
-- **The executor's decisions were invisible.** A refusal reached the model as a sentence and
+  answer text, so they were replayed to the LLM next turn as things it had said.
+- **The executor's decisions were invisible.** A refusal reached the LLM as a sentence and
   reached the human as nothing. Which of the seven gates fired, and on what state, was not
   recorded anywhere.
 - **Intents were nowhere.** The transcript recorded verbs. `docs/safety.md` promised
-  `--dry-run` "prints every intent a model would send", which was never true: the dry-run
+  `--dry-run` "prints every intent an LLM would send", which was never true: the dry-run
   branch logged a verb name, and only under `--verbose`.
 - **A run that failed said `loop exited unexpectedly`.** A bad key, a 429 or a dead camera
   is not a `SafetyStop`, so nothing caught it and `run_end` recorded a default string.
@@ -73,12 +73,12 @@ Four things were missing rather than merely hidden:
   Anthropic's thinking blocks (the request now asks for `display: "summarized"`, without
   which the blocks come back empty), from `reasoning_content` or `reasoning` on an
   OpenAI-compatible server, from Gemini's thought parts, and from an inline `<think>` block a
-  local server did not separate. Every one of these degrades: a model that rejects the
+  local server did not separate. Every one of these degrades: an LLM that rejects the
   parameter gets one retry without it and the run continues without the text.
 - **Lines are ASCII first.** `->`, `<-`, `llm>`, `think`, `gate`. A redirected stderr on
   Windows renders an arrow glyph as `?`, and a redirected stderr is exactly what people do
-  with a trace. Colour carries meaning instead. Every line prints as plain text, because a
-  model that thinks about `[/think]` must not raise a markup error.
+  with a trace. Colour carries meaning instead. Every line prints as plain text, because an
+  LLM that thinks about `[/think]` must not raise a markup error.
 
 ## Consequences
 
@@ -90,7 +90,7 @@ Four things were missing rather than merely hidden:
   the same order of magnitude, and `docs/assets/transcript-example.jsonl` predates the new
   kinds.
 - **Anthropic runs now send a `thinking` parameter.** Display affects visibility only, not
-  what is thought or billed, and raw chain of thought is never returned by any model.
+  what is thought or billed, and raw chain of thought is never returned by any LLM.
 - **Tests set `QUACKD_TRACE=0`.** The trace goes to stderr, and `CliRunner` folds stderr into
   `output`, so every CLI assertion would otherwise search a much larger haystack. One test
   each proves the default is on and that both switches turn it off.
@@ -98,7 +98,7 @@ Four things were missing rather than merely hidden:
   `flock.jsonl` and its own `--verbose`. Tracing a many-robot run is future work.
   *Superseded in part by the amendment above: each member now records into its own
   transcript, every terminal line names its robot, and `flock.jsonl` also carries the
-  planner's `llm_request` and `llm`, because that one model call belongs to no member.
+  planner's `llm_request` and `llm`, because that one LLM call belongs to no member.
   `--verbose` stands down under the trace here exactly as it does in a solo run, and
   `--no-trace` is what brings it back.*
 - **The trace shows quackd's layer, not the wire.** An adapter's keepalive, a deadman resend

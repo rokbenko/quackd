@@ -208,7 +208,7 @@ Measured from [the vectors](vectors/README.md).
   ([ADR-0020](../adr/0020-heterogeneous-flocks.md)).
 - **Personal data**, of which nothing is required ([privacy.md](privacy.md)).
 - **Secrets**, ever: a passport is shown to any robot that says hello.
-- **Free-form descriptions**, since text a stranger wrote is text another robot's language model
+- **Free-form descriptions**, since text a stranger wrote is text another robot's LLM
   might read, so every member is short and bounded.
 
 ## From the robot's file

@@ -35,7 +35,7 @@ class _Answers:
     """A decision LLM that answers the one question as told, and keeps what it was asked."""
 
     name = "scripted"
-    model = "test"
+    llm_id = "test"
     url = None
 
     def __init__(self, answer: Any = None, *, raises: Exception | None = None, hangs: bool = False):

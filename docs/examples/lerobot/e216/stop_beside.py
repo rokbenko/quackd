@@ -3,7 +3,7 @@
 Standard library only. It starts `quackd serve-mcp` on the robot it is given and speaks the server's
 own protocol to it, one JSON line at a time: the verdict on the task, `move_joints` for 12 seconds,
 and `stop` while that is still running. A chat waits for one tool before it sends the next, which is
-why E196 can only show this when the model happens to send both at once.
+why E196 can only show this when the LLM happens to send both at once.
 
     python stop_beside.py --robot arm-01 --after 2
 

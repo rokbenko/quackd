@@ -77,7 +77,7 @@ def test_the_tool_and_the_model_describe_the_same_verdict() -> None:
 
 def test_the_two_vocabularies_of_one_tool_agree_on_a_duration() -> None:
     """`needs` speaks `endurance_min` and `estimates` could not say a duration at all, so a
-    pilot could demand endurance and not estimate it. The model measured in #24 tried
+    pilot could demand endurance and not estimate it. The LLM measured in #24 tried
     `quantity: "endurance_min"`, got a validation refusal, and spent an LLM call on it twice
     out of six. The enum is written by hand in two files, which is how they drifted, so this
     holds them to each other."""

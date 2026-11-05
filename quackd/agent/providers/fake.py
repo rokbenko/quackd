@@ -3,7 +3,7 @@
 Two modes: a fixed script of tool calls, or a *strategy* (a function of the structured
 observation) that plays the starter ducks well enough to prove the loop closes. The
 strategies are intentionally dumb rules; the point is that the same verbs, executor and
-transcript run whether the pilot is a rule or a frontier model.
+transcript run whether the pilot is a rule or a frontier LLM.
 """
 
 from __future__ import annotations
@@ -253,7 +253,7 @@ _TODDLER_SWEEP = (30.0, -30.0, 0.0)
 
 #: What the shape walkers ask for. Every body clamps a twist to its own limits, and the
 #: Microduck's gait has a floor besides, so these are requests rather than promises: the
-#: strategies close the loop on the pose the robot reports, which is what a model does too.
+#: strategies close the loop on the pose the robot reports, which is what an LLM does too.
 SHAPE_VX = 0.25
 SHAPE_WZ = 0.9
 SHAPE_SIDE_M = 0.5
@@ -293,7 +293,7 @@ class _Gait:
     roughly forty percent of it, and a shape walker that assumes otherwise spends its whole
     budget creeping up on the first corner. So each move records what it asked for and from
     where, the next turn measures what happened, and the estimate is the ratio — which is
-    the same correction a model makes when it reads the pose and tries again.
+    the same correction an LLM makes when it reads the pose and tries again.
     """
 
     def __init__(self) -> None:
@@ -328,7 +328,7 @@ class _Gait:
 
 
 def square_strategy(side: float = SHAPE_SIDE_M) -> Strategy:
-    """Walk a square by watching the pose, the way a model would.
+    """Walk a square by watching the pose, the way an LLM would.
 
     Four legs and four corners, each ended by what the robot reports rather than by a
     stopwatch, so a body whose gait delivers half of what it was asked still walks a square.
@@ -576,7 +576,7 @@ def meeting_strategy(obs: Observation, step: int, history: list[Exchange]) -> To
     """Robot Passport's meeting task, scripted: wait for a robot to come near, tell it hello by
     the name it is shown under, wait a little for it to say something back, and stop.
 
-    It reads `features["nearby"]`, the very `Robots nearby` lines a model is shown, so it runs
+    It reads `features["nearby"]`, the very `Robots nearby` lines an LLM is shown, so it runs
     the whole path: the hello, the block in the observation, `tell`, and the `say` that reaches
     the other robot. Bounded like `flock-hello`, so a robot that never comes ends the run."""
     told = _told([*history, Exchange(observation=obs)])
@@ -817,11 +817,11 @@ class FakeProvider:
         self,
         strategy: Strategy | None = None,
         script: list[ToolCall] | None = None,
-        model: str = "scripted",
+        llm_id: str = "scripted",
         *,
         vision: bool | None = None,
     ) -> None:
-        self.model = model
+        self.llm_id = llm_id
         self._strategy = strategy
         self._script = script
         self.calls = 0
@@ -852,7 +852,7 @@ class FakeProvider:
             elif "greet" in text:  # "say hello" is hello-world's, which stops at once
                 # the meeting's rule: a robot on its own computer greeting the robot near it
                 strategy, label = meeting_strategy, "goal:greet"
-        return cls(strategy=strategy or generic_strategy, model=f"scripted:{label}", vision=vision)
+        return cls(strategy=strategy or generic_strategy, llm_id=f"scripted:{label}", vision=vision)
 
     async def step(
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]

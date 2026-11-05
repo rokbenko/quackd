@@ -1,4 +1,4 @@
-"""The discrete stepper: which turns are a choice, and which belong to the model.
+"""The discrete stepper: which turns are a choice, and which belong to the pilot LLM.
 
 This is quackd's half of a decision LLM and it does not change with the vendor. Which turns are
 a choice, what an answer has to clear before it moves a servo, what the record says afterwards:
@@ -174,7 +174,7 @@ def test_every_verb_of_every_shipped_body_is_classified_and_this_table_says_how(
     """A new verb, or a new parameter on an old one, has to be classified on purpose.
 
     The stepper decides from the schema, so a parameter added without a thought about it
-    silently changes what a cheap model is allowed to author. That is the failure this test
+    silently changes what a cheap LLM is allowed to author. That is the failure this test
     exists to make loud, and the message names the verb rather than the diff."""
     verbs = _verbs(body)
     frozen = TABLE[body]
@@ -304,15 +304,15 @@ def test_no_meta_tool_is_ever_a_choice() -> None:
 
     Every meta tool needs a sentence, and the stepper writes none, so it can never end a run,
     never record a feasibility verdict, never write to memory and never speak to a flock.
-    Every ending goes through the model or through a budget."""
+    Every ending goes through the pilot LLM or through a budget."""
     for tool in [*META_TOOLS, REMEMBER, TELL]:
-        assert discrete_calls(tool) is None, f"{tool['name']} must stay the model's"
+        assert discrete_calls(tool) is None, f"{tool['name']} must stay the LLM's"
 
 
 def test_the_arm_splits_the_way_the_docs_say_it_does() -> None:
     """The LeRobot claim `docs/guides/decision-llms/README.md` is built on, as an assertion.
 
-    Six concrete calls the stepper may author, and every angle still the model's."""
+    Six concrete calls the stepper may author, and every angle still the pilot LLM's."""
     verbs = _verbs("lerobot")
     offered = sorted(
         call.label
@@ -353,7 +353,7 @@ def test_the_brake_answers_to_the_lowest_floor_and_a_gated_verb_to_the_highest()
 JEV = PRESETS["jev"]
 """The preset every fake here wears.
 
-The record says which decision LLM answered as well as which model id, so a fake that called
+The record says which decision LLM answered as well as which LLM id, so a fake that called
 itself nothing would be testing the gates against a name no run could ever produce. `jev` is
 the row with a published rate, which is also what the billing tests read back."""
 
@@ -365,7 +365,7 @@ def _fake(**scripted: Any) -> fake_systemone.FakeDecisionLLM:
     `make_decision_llm` while the CLI is still parsing, so a stepper asks whatever it was given
     and builds nothing itself. `tests/test_decision_llms.py` is where the client-building seam
     is tested."""
-    return fake_systemone.FakeDecisionLLM(name=JEV.name, model=JEV.model or "", **scripted)
+    return fake_systemone.FakeDecisionLLM(name=JEV.name, llm_id=JEV.llm_id or "", **scripted)
 
 
 async def _arm(
@@ -416,7 +416,7 @@ async def _observation(adapter: Any, last: dict[str, Any] | None = None) -> Any:
     )
 
 
-BUDGET = "step 0/12, llm calls 0/12, 0.0/3 min"
+BUDGET = "step 0/12, LLM calls 0/12, 0.0/3 min"
 
 
 async def _advise(llm: Any, **over: Any) -> Any:
@@ -534,7 +534,7 @@ async def test_a_confident_choice_is_taken_and_becomes_a_real_tool_call() -> Non
     assert stepper.taken == 1 and stepper.asked == 1
 
 
-async def test_a_choice_below_its_floor_goes_to_the_model_and_says_which_floor_it_missed() -> None:
+async def test_a_choice_below_its_floor_goes_to_the_llm_and_says_which_floor_it_missed() -> None:
     """Motion answers to a higher floor than a read, so the same 0.70 is taken for one and
     refused for the other. The record has to say which floor applied, or a calibration pass
     afterwards cannot tell a near miss from a wild guess."""
@@ -590,7 +590,7 @@ async def test_a_stepper_that_wants_a_person_hands_the_turn_back() -> None:
 async def test_a_decision_llm_that_raises_costs_the_turn_and_not_the_run() -> None:
     """An arm is energised while this runs. Whatever `decide` raises -- a hosted vendor's
     outage, a server on the bench that is not listening, a plugin with a bug in it -- escalates
-    the turn and is written down; it never reaches the loop as an exception, and the model
+    the turn and is written down; it never reaches the loop as an exception, and the pilot LLM
     takes the turn as it would have done had the stepper merely declined it."""
     advice, stepper, _f = await _advise(
         _fake(raises=fake_systemone.APITimeoutError("took too long")),
@@ -681,7 +681,7 @@ async def test_the_goal_survives_a_state_that_has_to_be_trimmed() -> None:
 
 async def test_a_state_nobody_could_answer_against_is_not_sent_at_all() -> None:
     """If the fields that can never be dropped are themselves over the hard cap, the turn goes
-    to the model without a request being made."""
+    to the pilot LLM without a request being made."""
     fake = _fake(answers=fake_systemone.turn("report_state", 0.99))
     stepper, adapter, _m = await _arm(llm=fake)
     stepper.goal = "x" * 40_000
@@ -697,7 +697,7 @@ async def test_a_state_nobody_could_answer_against_is_not_sent_at_all() -> None:
 async def test_the_questions_go_out_as_plain_dicts_in_the_system_one_shape() -> None:
     """Plain dicts rather than an SDK's own `Choice` and `Noul` objects.
 
-    The same four questions go to a hosted API, to a server on this machine and to a model in
+    The same four questions go to a hosted API, to a server on this machine and to an LLM in
     this process, and only the first of those has classes to build them with. A mapping is what
     the format publishes and what every backend reads, so it is what goes out."""
     _a, stepper, fake = await _advise(
@@ -731,7 +731,7 @@ class _OffTheWire:
 
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
-        self.model = JEV.model or ""
+        self.llm_id = JEV.llm_id or ""
         self.calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
     async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
@@ -772,7 +772,7 @@ async def test_an_answer_off_the_wire_is_read_exactly_like_an_sdk_object() -> No
 # ── shadow ──────────────────────────────────────────────────────────────────────────────
 
 
-async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_model_did() -> None:
+async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_llm_did() -> None:
     """The record that turns the arithmetic in docs/guides/decision-llms/README.md into a
     measurement."""
     from quackd.agent.providers.base import ToolCall
@@ -789,7 +789,7 @@ async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_m
     assert agreed["llm_latency_s"] == 8.2 and agreed["decision_choice"] == "report_state"
 
     differed = stepper.shadow_event(advice, ToolCall(name="move_joints"), None)
-    assert differed["agree"] is False and differed["model_verb"] == "move_joints"
+    assert differed["agree"] is False and differed["llm_verb"] == "move_joints"
 
 
 async def test_the_summary_block_counts_the_turns_it_answered() -> None:
@@ -804,7 +804,7 @@ async def test_the_summary_block_counts_the_turns_it_answered() -> None:
     # and on another are two different servers, and a record carrying only the id could not
     # tell a reader which of them answered.
     assert block["llm"] == "jev"
-    assert block["model"].startswith("jev-"), "TypeSafe's own model id"
+    assert block["llm_id"].startswith("jev-"), "TypeSafe's own LLM id"
 
 
 # ── end to end, through the loop ────────────────────────────────────────────────────────
@@ -850,7 +850,7 @@ async def test_a_run_with_the_stepper_off_is_the_run_quackd_has_always_made(
     tmp_path: Any,
 ) -> None:
     """The off path is not a mode, it is the absence of one: no stepper is built, no record is
-    written, and the verbs and the model calls are what they were."""
+    written, and the verbs and the pilot LLM calls are what they were."""
     plain = await _lookout_run(tmp_path / "plain")
     off = await _lookout_run(tmp_path / "off", decision="off")
     assert _calls(plain) == _calls(off)
@@ -861,7 +861,7 @@ async def test_a_run_with_the_stepper_off_is_the_run_quackd_has_always_made(
 async def test_shadow_mode_leaves_the_tool_call_stream_byte_identical(
     tmp_path: Any,
 ) -> None:
-    """The point of shadow: it measures and changes nothing. Same verbs, same model calls,
+    """The point of shadow: it measures and changes nothing. Same verbs, same LLM calls,
     plus a record of what the stepper would have done instead."""
     off = await _lookout_run(tmp_path / "off", decision="off")
     shadow = await _lookout_run(
@@ -873,20 +873,20 @@ async def test_shadow_mode_leaves_the_tool_call_stream_byte_identical(
     assert _calls(shadow) == _calls(off)
     assert len(_records(shadow, "llm")) == len(_records(off, "llm"))
     assert _records(shadow, "decision"), "shadow recorded nothing"
-    assert _records(shadow, "decision_shadow"), "nothing was compared against the model"
+    assert _records(shadow, "decision_shadow"), "nothing was compared against the LLM"
     assert all(r["source"] == "agent" for r in _records(shadow, "verb_start"))
 
 
 class _Counting:
     """The scripted pilot, counting the calls it is asked, so a decision LLM can tell whether
-    the model was asked while its own request was out."""
+    the pilot LLM was asked while its own request was out."""
 
     def __init__(self, inner: Any) -> None:
         self.inner = inner
         self.asked = 0
 
     name = property(lambda self: self.inner.name)
-    model = property(lambda self: self.inner.model)
+    llm_id = property(lambda self: self.inner.llm_id)
     supports_vision = property(lambda self: self.inner.supports_vision)
 
     async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
@@ -895,7 +895,7 @@ class _Counting:
 
 
 class _Overlaps(_OffTheWire):
-    """A decision LLM that answers once the model has been asked during its request, or, failing
+    """A decision LLM that answers once the pilot LLM has been asked during its request, or, failing
     that, at a bound well inside the stepper's own second, and says which it was each turn."""
 
     def __init__(self, payload: dict[str, Any], pilot: _Counting) -> None:
@@ -913,12 +913,12 @@ class _Overlaps(_OffTheWire):
         return await super().decide(state, questions)
 
 
-async def test_shadow_asks_the_stepper_beside_the_models_call_not_before_it(
+async def test_shadow_asks_the_stepper_beside_the_llms_call_not_before_it(
     tmp_path: Any,
 ) -> None:
     """Shadow's answer changes nothing about a turn, so a run being measured waited up to the
-    stepper's second every turn for the measuring. The stepper is asked beside the model's own
-    call now: on every turn the model is asked while the stepper's request is out, every answer
+    stepper's second every turn for the measuring. The stepper is asked beside the pilot LLM's own
+    call now: on every turn the pilot LLM is asked while the stepper's request is out, every answer
     still lands on the record, and the comparison is made as before."""
     from quackd.agent.loop import RunConfig, run_duck
     from quackd.agent.providers.fake import FakeProvider
@@ -951,13 +951,13 @@ class _Failing:
     """A pilot whose first call fails outright, with no retry to wait out."""
 
     name = "failing"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
         from quackd.agent.providers.base import ProviderError
 
-        raise ProviderError("the model's API turned the request down")
+        raise ProviderError("the LLM's API turned the request down")
 
 
 class _Hangs(_OffTheWire):
@@ -969,7 +969,7 @@ class _Hangs(_OffTheWire):
 async def test_a_shadow_request_the_turn_ends_without_is_cut_off_and_on_the_record(
     tmp_path: Any,
 ) -> None:
-    """A model call that fails ends the turn while the shadow stepper's request is still out.
+    """An LLM call that fails ends the turn while the shadow stepper's request is still out.
     The request is cancelled rather than left to run out its second, and the record says it was
     cut off, on the gate a cut off request always gets, so the summary and the transcript agree
     about a request that left the machine."""
@@ -1012,13 +1012,13 @@ class _AnswersAsTheStopLands(_Counting):
         return answer
 
 
-async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_model_gave(
+async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_llm_gave(
     tmp_path: Any,
 ) -> None:
-    """The model has answered and the run is stopped while the stepper asked beside it is still
-    out. The model's answer, which its vendor billed, is on the record before the stepper is
+    """The pilot LLM has answered and the run is stopped while the stepper asked beside it is still
+    out. The pilot LLM's answer, which its vendor billed, is on the record before the stepper is
     waited for, so the stop that ends that wait cannot lose it: the `llm` line with the call the
-    model chose, and then the stepper's request, cut off."""
+    LLM chose, and then the stepper's request, cut off."""
     from quackd.agent.loop import AgentLoop, RunConfig
     from quackd.agent.providers.fake import FakeProvider
     from quackd_lerobot import LeRobotAdapter
@@ -1087,7 +1087,7 @@ def _shadow_loop(tmp_path: Any, refused: str) -> Any:
 async def test_a_disk_that_refuses_the_llm_line_still_settles_the_shadow_request(
     tmp_path: Any,
 ) -> None:
-    """The model answered and its `llm` line could not be written. The run ends on the disk's
+    """The pilot LLM answered and its `llm` line could not be written. The run ends on the disk's
     error as it always did, and the stepper's request asked beside the call is settled on the way
     out, cut off and on the record, rather than left running behind the teardown with nothing
     saying it ever left."""
@@ -1102,7 +1102,7 @@ async def test_a_disk_that_refuses_the_llm_line_still_settles_the_shadow_request
     assert [r["gate"] for r in decisions] == ["interrupted"], decisions
 
 
-async def test_a_turn_that_ends_before_the_models_request_leaves_no_stepper_unasked(
+async def test_a_turn_that_ends_before_the_llms_request_leaves_no_stepper_unasked(
     tmp_path: Any,
 ) -> None:
     """The `llm_request` line is written before the first await of the turn, so a disk that
@@ -1128,7 +1128,7 @@ class _Recorder:
         self.seen: list[list[Any]] = []
 
     name = property(lambda self: self.inner.name)
-    model = property(lambda self: self.inner.model)
+    llm_id = property(lambda self: self.inner.llm_id)
     supports_vision = property(lambda self: self.inner.supports_vision)
 
     async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
@@ -1164,14 +1164,14 @@ async def _on_run(tmp_path: Any, llm: Any, **over: Any) -> Any:
     return result, recorder
 
 
-async def test_nothing_the_stepper_chose_is_ever_replayed_to_the_model_as_its_own_words(
+async def test_nothing_the_stepper_chose_is_ever_replayed_to_the_llm_as_its_own_words(
     tmp_path: Any,
 ) -> None:
     """The central guarantee.
 
-    A stepper turn appends nothing to the model's history. Writing a `Decision` for it would
-    hand the model back a tool call it never made, and on Gemini specifically an unsigned
-    `function_call`, which that model refuses the next turn over."""
+    A stepper turn appends nothing to the pilot LLM's history. Writing a `Decision` for it would
+    hand the pilot LLM back a tool call it never made, and on Gemini specifically an unsigned
+    `function_call`, which that LLM refuses the next turn over."""
     result, recorder = await _on_run(
         tmp_path,
         _fake(answers=fake_systemone.turn("report_state", 0.99)),
@@ -1185,11 +1185,11 @@ async def test_nothing_the_stepper_chose_is_ever_replayed_to_the_model_as_its_ow
             if decision is not None:
                 assert decision.tool_call.id.startswith(("fake", "")), decision.tool_call.id
                 assert not decision.tool_call.id.startswith("decision-"), (
-                    "a stepper call was replayed to the model as something it said"
+                    "a stepper call was replayed to the pilot LLM as something it said"
                 )
 
 
-async def test_the_model_is_told_what_the_stepper_did_while_it_was_away(tmp_path: Any) -> None:
+async def test_the_llm_is_told_what_the_stepper_did_while_it_was_away(tmp_path: Any) -> None:
     """It is not in its history, so the observation has to say so, and say who chose them."""
     _result, recorder = await _on_run(
         tmp_path,
@@ -1201,12 +1201,12 @@ async def test_the_model_is_told_what_the_stepper_did_while_it_was_away(tmp_path
         for exchange in history
         if "stepper chose these" in (text := exchange.observation.text)
     ]
-    assert told, "the model was never told what happened while it was not asked"
+    assert told, "the pilot LLM was never told what happened while it was not asked"
     assert "report_state" in told[-1]
 
 
-async def test_a_stepper_turn_charges_no_model_call(tmp_path: Any) -> None:
-    """`max_llm_calls` keeps meaning calls to the model. The verb still charges its step, so
+async def test_a_stepper_turn_charges_no_llm_call(tmp_path: Any) -> None:
+    """`max_llm_calls` keeps meaning calls to the pilot LLM. The verb still charges its step, so
     `max_steps` bounds the run exactly as it always did."""
     result, _rec = await _on_run(
         tmp_path / "on",
@@ -1214,12 +1214,12 @@ async def test_a_stepper_turn_charges_no_model_call(tmp_path: Any) -> None:
     )
     taken = [r for r in _records(result, "decision") if r["gate"] == "taken"]
     assert taken, "no turn was taken, so there is nothing to count"
-    # every turn is either the stepper's or the model's, and there is one model call per
-    # model turn. A `step` is not a turn: a meta tool costs a call and no step, so several
+    # every turn is either the stepper's or the pilot LLM's, and there is one LLM call per
+    # LLM turn. A `step` is not a turn: a meta tool costs a call and no step, so several
     # turns share a number and the counts are what can be compared.
     asked = _records(result, "decision")
     assert len(_records(result, "llm")) == len(asked) - len(taken), (
-        "a turn the stepper answered also cost a model call"
+        "a turn the stepper answered also cost an LLM call"
     )
     assert any(r["source"] == "decision" for r in _records(result, "verb_start")), (
         "the record does not say who chose the verb"
@@ -1230,8 +1230,8 @@ async def test_the_stepper_does_not_answer_twice_running_with_the_same_call(tmp_
     """A reflex that fires twice identically is looping, not deciding.
 
     Without this a `lerobot-lookout` whose stepper answered `report_state` at 0.99 every turn
-    spent all twelve steps on it and ended `budget`, having asked the model nothing and so
-    having recorded no verdict and declared no outcome. Only the model can end a run."""
+    spent all twelve steps on it and ended `budget`, having asked the pilot LLM nothing and so
+    having recorded no verdict and declared no outcome. Only the pilot LLM can end a run."""
     result, _rec = await _on_run(
         tmp_path,
         _fake(answers=fake_systemone.turn("report_state", 0.99)),
@@ -1239,12 +1239,12 @@ async def test_the_stepper_does_not_answer_twice_running_with_the_same_call(tmp_
     gates = [r["gate"] for r in _records(result, "decision")]
     assert "repeat" in gates, "the stepper repeated itself and nothing stopped it"
     assert result.outcome == "success", f"the run ended {result.outcome}, not on its own terms"
-    assert _records(result, "llm"), "the model was never consulted"
+    assert _records(result, "llm"), "the pilot LLM was never consulted"
 
 
 async def test_a_stepper_that_never_repeats_still_has_to_hand_the_run_back() -> None:
     """The backstop behind the repeat rule: alternating two calls for ever is also a loop, and
-    only the model can record a verdict or declare an outcome."""
+    only the pilot LLM can record a verdict or declare an outcome."""
     from quackd.agent.decision.stepper import MAX_IN_A_ROW
 
     fake = _fake(
@@ -1260,7 +1260,7 @@ async def test_a_stepper_that_never_repeats_still_has_to_hand_the_run_back() -> 
         gates.append((await stepper.advise(obs, cleared=True, budget=BUDGET)).gate)
     await adapter.disconnect()
     assert gates[:MAX_IN_A_ROW] == ["taken"] * MAX_IN_A_ROW
-    assert gates[MAX_IN_A_ROW] == "handover", "the stepper never gave the model a turn"
+    assert gates[MAX_IN_A_ROW] == "handover", "the stepper never gave the pilot LLM a turn"
     # and the run of turns starts again from there, so the backstop is a rhythm and not a
     # one-shot fuse that quietly switches the stepper off for the rest of the run
     assert gates[MAX_IN_A_ROW + 1] == "taken"
@@ -1272,7 +1272,7 @@ async def test_a_wave_like_goal_never_gets_a_pose_out_of_the_stepper(tmp_path: A
 
     The stub answers every question at 0.99, so anything the stepper is allowed to author it
     will. `move_joints` is never among the labels, so it can never be chosen, and every pose
-    in the run came from a model call."""
+    in the run came from an LLM call."""
     from quackd.duckfile.parser import duck_from_goal
 
     duck = duck_from_goal(
@@ -1290,7 +1290,7 @@ async def test_a_wave_like_goal_never_gets_a_pose_out_of_the_stepper(tmp_path: A
         assert "move_joints" not in record["labels"], "a pose was on offer"
         assert (record.get("call") or {}).get("name") != "move_joints"
     poses = [r for r in _records(result, "verb_start") if r["name"] == "move_joints"]
-    assert all(r["source"] == "agent" for r in poses), "a pose was not the model's"
+    assert all(r["source"] == "agent" for r in poses), "a pose was not the LLM's"
 
 
 async def test_a_choice_that_was_not_on_offer_this_turn_is_refused() -> None:
@@ -1299,7 +1299,7 @@ async def test_a_choice_that_was_not_on_offer_this_turn_is_refused() -> None:
     This is the whole of the verdict gate as the stepper sees it. Before a verdict `gripper`
     is not on the list, and a stepper that answered it anyway would have the executor refuse
     the call and waste the turn. It was doing exactly that until a real run showed it: two
-    turns of `gripper REFUSED` and `place REFUSED` before the model was ever asked."""
+    turns of `gripper REFUSED` and `place REFUSED` before the pilot LLM was ever asked."""
     advice, stepper, _f = await _advise(
         _fake(answers=fake_systemone.turn("gripper(open=false)", 0.99)),
         cleared=False,
@@ -1337,7 +1337,7 @@ async def test_the_verdict_gate_never_refuses_a_verb_the_stepper_chose(tmp_path:
 def test_a_stepper_that_cannot_run_warns_once_and_the_run_carries_on(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stepper is an optimisation and the model is the pilot either way, so a script that
+    """The stepper is an optimisation and the pilot flies either way, so a script that
     always names a decision LLM still drives the robot on a machine where that one is not
     installed. The run is the run it would have been with no decision LLM at all, and the
     terminal says why once."""
@@ -1416,7 +1416,7 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
     exist.
 
     Refusing the flag would be the wrong shape of gate, because the executor binds a
-    stepper-authored call exactly as it binds the model's, so `on` is not less safe than `off`,
+    stepper-authored call exactly as it binds the pilot LLM's, so `on` is not less safe than `off`,
     only less proven. What it is not is measured, and the person switching it on is the one who
     should be told. `shadow` says nothing, because shadow is how the measurement gets made.
 
@@ -1545,14 +1545,14 @@ async def test_an_answer_the_router_cannot_read_costs_the_turn_and_not_the_run()
             assert advice.record["error"] and stepper.errors == 1
 
 
-async def test_the_model_is_answered_with_its_own_verbs_result(tmp_path: Any) -> None:
+async def test_the_llm_is_answered_with_its_own_verbs_result(tmp_path: Any) -> None:
     """A tool_result answers the tool call it is attached to. That is the protocol, and a
     stepper running in between must not change it.
 
-    The observation built after a model-chosen verb is discarded when the stepper answers the
+    The observation built after an LLM-chosen verb is discarded when the stepper answers the
     next turn, so the id linkage was recomputed from the last surviving decision and the
-    model's own result was silently replaced by a later stepper verb's. On `lerobot-lookout`
-    that meant the model declared success on a reading it was never handed."""
+    LLM's own result was silently replaced by a later stepper verb's. On `lerobot-lookout`
+    that meant the pilot LLM declared success on a reading it was never handed."""
     result, recorder = await _on_run(
         tmp_path,
         _fake(
@@ -1740,9 +1740,9 @@ async def test_the_summary_block_carries_the_bill_and_says_when_it_was_guessed()
 
 async def test_the_shadow_record_puts_the_two_bills_for_one_turn_side_by_side() -> None:
     """The number `--decision-mode shadow` exists to produce, and the one
-    `docs/guides/decision-llms/README.md` could only reach by arithmetic: what the model charged for
+    `docs/guides/decision-llms/README.md` could only reach by arithmetic: what the pilot charged for
     a turn, beside what the stepper charged for the same reading. Either half can be None, and None
-    is not zero: the model's is missing when nobody publishes a rate for it, the stepper's when
+    is not zero: the pilot LLM's is missing when nobody publishes a rate for it, the stepper's when
     the turn never reached the network."""
     from quackd.agent.providers.base import ToolCall
 
@@ -1934,7 +1934,7 @@ async def test_a_shadow_row_names_what_was_declined_only_where_something_was() -
 
 async def test_the_runs_refusals_are_what_its_own_turns_add_up_to(tmp_path: Any) -> None:
     """End to end, on the arm: a decision LLM that declines every turn leaves the whole run to
-    the model, each of its turns is on the record by the name it declined, and the summary
+    the pilot LLM, each of its turns is on the record by the name it declined, and the summary
     counts every one of them."""
     result, _rec = await _on_run(
         tmp_path, _OffTheWire({"answers": _answered(), "refused": ["need_human"]})
@@ -1999,7 +1999,7 @@ class _Fails:
 
     def __init__(self, error: Any) -> None:
         self.error = error
-        self.model = JEV.model or ""
+        self.llm_id = JEV.llm_id or ""
 
     async def decide(self, state: Any, questions: Any) -> Any:
         raise self.error(state)
@@ -2198,7 +2198,7 @@ async def test_each_request_says_how_long_since_the_last_one_ended(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """OpenAI's SDK and TypeSafe's both drop a connection that has been idle five seconds, and in
-    shadow mode the model's own call comes between two of the stepper's, so a turn's `latency_s`
+    shadow mode the pilot LLM's own call comes between two of the stepper's, so a turn's `latency_s`
     may or may not include opening a new one. `idle_s` tells the two apart: from the end of the
     last request, which is when its connection went idle, to the start of this one, and null on
     the first, which has nothing to reuse."""
@@ -2206,7 +2206,7 @@ async def test_each_request_says_how_long_since_the_last_one_ended(
     stepper, adapter, _m = await _arm(llm=_Takes(clock, 0.25, {"answers": _answered()}))
     obs = await _observation(adapter)
     first = await stepper.advise(obs, cleared=True, budget=BUDGET)
-    clock.now += 7.0  # the model's turn, and a verb
+    clock.now += 7.0  # the pilot LLM's turn, and a verb
     second = await stepper.advise(obs, cleared=True, budget=BUDGET)
     await adapter.disconnect()
     assert first.record["idle_s"] is None and first.record["latency_s"] == 0.25
@@ -2290,7 +2290,7 @@ async def test_a_failed_request_leaves_no_warm_connection_and_an_unsent_turn_mov
     assert again.record["idle_s"] == 6.0, "not measured from the request that answered"
 
 
-# ── a turn the model takes, and a turn an interrupt cut off ─────────────────────────────
+# ── a turn the LLM takes, and a turn an interrupt cut off ─────────────────────────────
 
 
 class _Answering(_OffTheWire):
@@ -2311,13 +2311,13 @@ class _Answering(_OffTheWire):
 
 
 @pytest.mark.parametrize("how", ["error", "state_too_large", "not_offered"])
-async def test_a_turn_the_model_took_ends_the_steppers_streak_however_it_came_to_it(
+async def test_a_turn_the_llm_took_ends_the_steppers_streak_however_it_came_to_it(
     how: str,
 ) -> None:
-    """The repeat gate refuses the call the stepper made last turn, and a turn the model takes is
-    a turn the stepper made no call on. A failed call used to be one way back to the model that
+    """The repeat gate refuses the call the stepper made last turn, and a turn the pilot takes is
+    a turn the stepper made no call on. A failed call used to be one way back to the pilot LLM that
     left the stepper's last call standing, so after a `gripper(open=true)` it took and a turn that
-    failed, which the model then took, the same confident answer was refused as a repeat of a
+    failed, which the pilot LLM then took, the same confident answer was refused as a repeat of a
     call two turns old. The two turns that never ask, a state too large to send and a body with
     nothing on offer, left it standing the same way."""
     llm = _Answering("gripper(open=true)")
@@ -2340,12 +2340,14 @@ async def test_a_turn_the_model_took_ends_the_steppers_streak_however_it_came_to
     assert stepper.last_call is None and stepper.in_a_row == 0
     again = await stepper.advise(obs, cleared=True, budget=BUDGET)
     await adapter.disconnect()
-    assert again.gate == "taken", "the call before the model's turn still counted as the last one"
+    assert again.gate == "taken", (
+        "the call before the pilot LLM's turn still counted as the last one"
+    )
 
 
 async def test_a_run_of_stepper_turns_broken_by_a_failed_one_counts_again_from_nothing() -> None:
     """The streak limit hands the run back after so many stepper turns in a row, and a failed
-    turn breaks the row: the model takes it. On a budget of four the limit is two, so two turns
+    turn breaks the row: the pilot LLM takes it. On a budget of four the limit is two, so two turns
     taken, one failed and one more taken is a stepper that has taken one turn running, not
     three, and the fourth is not a handover."""
     llm = _Answering("gripper(open=true)", "gripper(open=false)")
@@ -2464,7 +2466,7 @@ async def test_a_run_interrupted_while_the_stepper_waits_has_that_turn_on_the_re
 async def test_a_press_while_the_decision_llm_is_thinking_ends_the_run_without_waiting(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The first Ctrl-C reaches the stepper's request as it reaches the model's: raced against
+    """The first Ctrl-C reaches the stepper's request as it reaches the pilot LLM's: raced against
     the abort, so a decision LLM that has not answered is not waited for, the turn goes on the
     record as cut off, and the run ends `aborted`. The stepper's own timeout is raised here, so
     nothing but the stop could end the request quickly."""

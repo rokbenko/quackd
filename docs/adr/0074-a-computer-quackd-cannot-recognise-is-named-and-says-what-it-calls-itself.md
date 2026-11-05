@@ -13,7 +13,7 @@ sentence telling them to try a simulation.
 What Robot Passport asks of a computer is small: Linux and Python 3.11 or newer, BlueZ 5.55 or newer
 with an adapter that can scan, advertise and serve GATT, and a clock no more than 300 seconds behind
 a passport's `issued` and not past its `expires`. Compute does not come into it, since a passport is
-signatures and Bluetooth, and only a model run on the same computer cares.
+signatures and Bluetooth, and only an LLM run on the same computer cares.
 
 The computer's identity is the hard part. Linux has the strings. A device tree says `model` and
 `compatible`, and x86 and UEFI computers have `/sys/class/dmi/id`. But a string that says what a

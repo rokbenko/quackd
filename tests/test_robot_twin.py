@@ -150,7 +150,7 @@ def test_a_twin_named_for_itself_says_what_its_source_had_not_got() -> None:
     said = _flat(result.output)
     assert "bench has no rest pose or pilot or camera to copy" in said, said
     # with no pilot to copy, the next command names one
-    assert "--robot rehearsal --llm VENDOR[:MODEL]" in said, said
+    assert "--robot rehearsal --llm VENDOR[:LLM]" in said, said
 
 
 def test_address_names_a_calibration_kept_under_another_id(tmp_path: Path) -> None:

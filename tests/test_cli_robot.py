@@ -755,7 +755,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     """Three places can name a pilot, and one spec now carries both halves of the answer.
 
     That last part is what changed the behaviour here rather than only the spelling. A vendor
-    and a model used to be two independent flags, so `--model gemini-9` against a robot stored
+    and an LLM used to be two independent flags, so `--model gemini-9` against a robot stored
     as OpenAI meant OpenAI serving a Gemini id -- a combination nobody typed on purpose and
     the parser could not see. One spec cannot be half overridden: `--llm gemini` is Gemini's
     default, full stop, and the stored `gpt-4o` goes with the vendor it was stored against.
@@ -765,7 +765,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
     def recorder(name: str, **kw: object) -> object:
-        seen.append((name, kw.get("model")))  # type: ignore[arg-type]
+        seen.append((name, kw.get("llm_id")))  # type: ignore[arg-type]
         return real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
 
     monkeypatch.setattr("quackd.agent.providers.factory.make_provider", recorder)
@@ -794,7 +794,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     assert seen[-1] == ("openai", "gpt-4o"), "the environment does not beat the robot"
 
 
-def test_a_run_by_name_is_refused_when_the_robots_own_model_is_no_longer_listed(
+def test_a_run_by_name_is_refused_when_the_robots_own_llm_is_no_longer_listed(
     tmp_path: Path,
 ) -> None:
     """The other half of "strict at the door, lenient on the shelf".
@@ -802,7 +802,7 @@ def test_a_run_by_name_is_refused_when_the_robots_own_model_is_no_longer_listed(
     `robots.json` still loads with a retired id, because refusing the read would take
     `quackd robot edit` down with it. The run is where it stops, and the refusal has to say
     which robot and which file: nothing on the command line is wrong, so a reader told only
-    "unknown model" would search the line they just typed and find nothing to fix.
+    "unknown LLM" would search the line they just typed and find nothing to fix.
 
     Written straight to the file rather than through `add_robot`, because that is the door and
     the door refuses this. It is how the entry gets there in life too: a catalogue that retired
@@ -834,13 +834,13 @@ def test_a_run_by_name_is_refused_when_the_robots_own_model_is_no_longer_listed(
     )
     assert result.exit_code == 1
     flat = " ".join(result.output.split())
-    assert "unknown model 'gpt-5'" in flat
+    assert "unknown LLM 'gpt-5'" in flat
     assert "robot duck-a (robots.json)" in flat
     assert "Traceback" not in result.output
 
 
 def test_a_pilot_the_catalogue_would_refuse_is_not_registered_at_all(tmp_path: Path) -> None:
-    """The shelf is lenient about model ids and `robot add` is not, because the door is where
+    """The shelf is lenient about LLM ids and `robot add` is not, because the door is where
     the typo is actually made. A robot registered against `openai:grok-4.6` would look fine in
     `quackd robot list` and fail only on the day somebody ran it."""
     result = runner.invoke(

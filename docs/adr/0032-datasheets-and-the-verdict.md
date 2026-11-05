@@ -17,7 +17,7 @@ that a sensing verb runs under `--dry-run`. The set below names the verbs quackd
 test that holds every shipped verb to it also rejects a name no shipped adapter offers, so the
 set is closed to a body quackd never shipped: such a body's own sensing verb was refused as
 "moves the body", and its pilot was denied the one verb that answers the question the gate is
-waiting for. Measured on a humanoid sim offering `locate` and `reach`, a local 14B model judged
+waiting for. Measured on a humanoid sim offering `locate` and `reach`, a local 14B LLM judged
 the task infeasible twice without a single look. A verb that sends no intent cannot move the
 body, so the flag is a sound thing to open the gate on, and it was already trusted with more:
 `--dry-run` runs a read-only verb against real hardware. What still holds: the shipped set is
@@ -106,7 +106,7 @@ decision below says.
 
 A pilot was told one line about the body it was driving, `manifest.blurb`, and a list of
 verbs. Nothing numeric: no payload, no reach, no working height, no endurance, no terrain
-rating, and no way to say "this body cannot do that at all". A model asked to carry a
+rating, and no way to say "this body cannot do that at all". An LLM asked to carry a
 laundry basket on a 25 cm duck had no ground to refuse on, and the only way out was
 `declare_failure`, which means "I tried and could not" and is recorded as a failure of the
 attempt rather than a judgement about the body.
@@ -154,7 +154,7 @@ because it describes one body.
 
 - A new meta tool, `assess_task` (`robot_assess_task` over MCP), records a verdict:
   `feasible`, `infeasible` or `uncertain`, with the reason, the datasheet fields consulted,
-  the model's own estimates about the world (object, quantity, value, basis, confidence) and
+  the LLM's own estimates about the world (object, quantity, value, basis, confidence) and
   `needs`: what the task requires, in the datasheet's own field names.
 - The executor gains a `verdict` gate, after the allowlist and before the params check, so a
   typo still reads "unknown" and a disallowed verb still reads "allowlist". It refuses every
@@ -170,11 +170,11 @@ because it describes one body.
   carries which shipped bodies could do it, read from their static datasheets.
 - **`uncertain` asks a person.** At a terminal that is a y/N prompt, and a no ends the run
   `aborted`, because a person stopping a robot is the kill switch's kind of act. Over MCP
-  there is no terminal, so it stays pending and the model is told to ask the person it is
+  there is no terminal, so it stays pending and the pilot LLM is told to ask the person it is
   chatting with: `--yes` does not clear it, because a reachable human is a better answer than
   a flag. With nobody to ask at all, the pilot is told to decide on its own responsibility
   rather than being cleared by default.
-- **A model cannot clear its own doubt.** `assess_task` has no `human` field, and a verdict
+- **An LLM cannot clear its own doubt.** `assess_task` has no `human` field, and a verdict
   that arrives with one is refused rather than quietly stripped.
 - **A flock member is never asked.** It is a state machine with no pilot, so
   `Executor.require_verdict` is off by default and only the agent loop and an MCP session turn
@@ -210,7 +210,7 @@ is held to the same standard.
 - The numbers were read from the makers' pages, repositories and one paper on 2026-09-13.
   **None of them were measured here.** That is what the confidence labels are for, and a body
   whose maker never published a figure says so rather than having one invented for it.
-- What this does not protect against: the verdict is the model's own judgement against numbers
+- What this does not protect against: the verdict is the LLM's own judgement against numbers
   that themselves carry confidence labels. A wrong `feasible` is still caught by every gate
   below it, the allowlist, the budgets, the confirm gates and the robot's own safety authority.
   A wrong `infeasible` costs a run and nothing else. A body that lies about itself in its own

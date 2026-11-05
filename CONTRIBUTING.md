@@ -68,7 +68,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `quackd/onboard/`, `quackd/boards/`, `quackd/radio/` | Robot Passport on a robot's own computer, the one part of quackd that runs there: `quackd onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `quackd/passport/`, which imports nothing else from quackd |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
-| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
+| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `llms_docs.py`, which renders the tables in `docs/llms/` from the catalogues |
 
 A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass
@@ -170,7 +170,7 @@ barges into a run if and only if it would move the robot, `node --check` on each
 argument validator executed under Node (those last two need node on your machine and skip
 without it; CI's runners all have it — everything else is Python and always runs). It is the
 floor, not the test: the page has been booted in a browser twice and a held `W` walks the duck,
-but no model-driven run, no barge-in out of one and no recording has ever been watched. If you
+but no LLM-driven run, no barge-in out of one and no recording has ever been watched. If you
 open it, say what you saw in the PR. See [web/README.md](web/README.md).
 
 Touching `quackd/lan/` or `quackd/flock/mqtt_bus.py`? Neither imports its library at module
@@ -203,7 +203,7 @@ ends its numbered strategy with a `remember` and carries a short *Memory* sectio
 is worth keeping for next time. A coordinator flock's duck has no `remember` step, because its
 members are state machines with nothing to remember with; a pilot flock's members are whole
 pilots and may.
-Put the call in the strategy rather than only in a Memory section: a 14B local model read a
+Put the call in the strategy rather than only in a Memory section: a 14B local LLM read a
 prompt-level hint and never wrote to memory, and followed the same instruction on its first
 run once it was step 5. `remember` is offered automatically when memory is on and needs
 nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` does
@@ -257,7 +257,7 @@ Renaming a verb is not a rename: add the new name and keep the old one in
 
 A provider is one file under `quackd/agent/providers/` and six entries that have to
 agree: its tuple in `CATALOGUE` in `providers/catalogue.py`, which is where the name, the
-model ids and the default all come from and what puts a cloud vendor in `CLOUD_NAMES`, then
+LLM ids and the default all come from and what puts a cloud vendor in `CLOUD_NAMES`, then
 rows in `KEY_ENV`, `EXTRA_FOR` and `SDK_FOR` in `providers/factory.py`, then either a row in
 `OPENAI_COMPATIBLE` or a branch in `make_provider`, and finally a `quackd[<name>]` extra in
 `pyproject.toml`. `tests/test_catalogue.py` counts them now, under the heading
@@ -267,18 +267,18 @@ that provider imports. Before it existed a missing row was a `KeyError` out of `
 doctor`, which is the command people run when something is already wrong.
 
 A router is the one shape the six entries do not cover on their own. OpenRouter's ids name
-other vendors' models and its list changes by the week, so its tuple is a selection, marked
+other vendors' LLMs and its list changes by the week, so its tuple is a selection, marked
 by `OPEN_ENDED` in `catalogue.py`: an id it does not carry is checked for its shape in the
 factory and against the vendor's own public list in the provider, rather than refused
 ([ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md)). A vendor
 that is a lab, which is every other one, gets no such mark.
 
-Then the models pages, which render every row: run `uv run --no-sync python
-scripts/models_docs.py` and commit what it rewrites under `docs/models/`, or the drift test in
+Then the LLMs pages, which render every row: run `uv run --no-sync python
+scripts/llms_docs.py` and commit what it rewrites under `docs/llms/`, or the drift test in
 `tests/test_docs.py` fails. A vendor the script has no name for in `MAKERS` and `COMPANIES` is
 refused there rather than printed unnamed.
 
-Then the browser, which has its own copy of the model list and its own reason to refuse one.
+Then the browser, which has its own copy of the LLM list and its own reason to refuse one.
 Run `python web/build_catalogue.py` and commit `web/src/catalogue.js`, or the generator-drift
 test in `tests/test_web.py` fails. Then decide whether the page can call the vendor at all: it
 calls from the visitor's browser, so a vendor that refuses a cross-origin preflight goes in
@@ -289,7 +289,7 @@ half can be skipped quietly.
 
 Four things the log depends on, none of them optional:
 
-1. Fill `ProviderTurn.thinking` with the model's own reasoning when the API returns it, and
+1. Fill `ProviderTurn.thinking` with the LLM's own reasoning when the API returns it, and
    `Usage.reasoning_tokens` with what it charged for. The log shows the first and the
    transcript keeps all of it; a provider that drops them makes the run unarguable.
 2. Degrade with exactly one retry. If the API refuses a request because it does not support
@@ -303,28 +303,28 @@ Four things the log depends on, none of them optional:
    for it belongs in `tests/test_providers.py`.
 
 **A stepper is not a provider, and must not be added as one.** `quackd/agent/decision/` holds
-the optional models that answer typed questions about a state and generate no text at all
+the optional LLMs that answer typed questions about a state and generate no text at all
 ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). None of them can pilot
 a robot, so they are deliberately absent from `CATALOGUE`, from `PROVIDER_NAMES` and from `--llm`,
 they have their own section in `quackd doctor` rather than rows in the providers table, and the
 extras that exist only for them, `quackd[decision]` and `quackd[laya]`, are not part of
 `quackd[all]`. Two words are in both lists, `local` and `openai`, and the flag says which is meant:
-`--llm openai` is OpenAI's chat models and `--decision-llm openai` their Decisions API, whose row
+`--llm openai` is OpenAI's chat LLMs and `--decision-llm openai` their Decisions API, whose row
 reuses the pilot's own `quackd[openai]` rather than adding an extra. If you are adding something
 that answers a question rather than writing an answer, none of the six entries above apply to it.
 
 **And a decision LLM is usually a row rather than a module.** Most of them share a wire format,
 `POST /v1/systemone`, rather than a vendor, so one that speaks it is one `DecisionSpec` in
-`quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default model
+`quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default LLM
 id, key variable if it wants one, price if anybody publishes one), one page under
 `docs/guides/decision-llms/`, and one row in the table in
 [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md), and
-`scripts/models_docs.py` run once to render the row onto
-[docs/models/decision-llms.md](docs/models/decision-llms.md). No new file under
+`scripts/llms_docs.py` run once to render the row onto
+[docs/llms/decision-llms.md](docs/llms/decision-llms.md). No new file under
 `quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
 already moves it off the port its row expects. The three shapes that are not just a row: one with
 a Python API of its own rather than a server, which is a plugin announcing itself under the
-`quackd.decision_llms` entry point group and carrying its own `make(spec, *, url, model)`, the way a
+`quackd.decision_llms` entry point group and carrying its own `make(spec, *, url, llm_id)`, the way a
 third party's robot adapter announces itself; a server that speaks another wire format, which is a
 backend of its own beside `systemone.py`, as `decisions_api.py` is for OpenAI's
 `POST /v1/decisions`: a constant in `catalogue.py`, a client that translates both ways, a branch
@@ -346,7 +346,7 @@ Four things a row needs, and a test reads the first three:
    field verbatim, a `## VERIFIED` section naming what you read and on what date, a
    `## UNVERIFIED, and what quackd does about each` table, and the line **Nothing here has
    ever answered a real robot.** until somebody has. `tests/test_docs.py` reads the address,
-   the model id, the key variable, the install line and the extra back off that page and
+   the LLM id, the key variable, the install line and the extra back off that page and
    compares them with the row, because a page nobody checks is a page that describes an older release.
 3. **Its row in the hub's table**, in `PRESET_NAMES` order, with the **Page** column linking
    the page and the install line quoted verbatim.

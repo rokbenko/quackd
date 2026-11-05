@@ -1,6 +1,6 @@
 """The house style: what it draws, what it refuses to parse, and when it stands down.
 
-Three promises are worth a test each. Text a model or a manifest wrote is never read as
+Three promises are worth a test each. Text an LLM or a manifest wrote is never read as
 markup. A stream that cannot carry a glyph gets an ASCII one rather than a `?`. And the
 status line exists only when somebody is watching, because everything this project prints
 also has to survive a pipe, a test runner and a CI log.
@@ -121,7 +121,7 @@ MARKUP = "the ball is [behind] the sofa [/think] and [bold] quackd[anthropic]"
 )
 def test_nothing_here_reads_what_somebody_else_wrote_as_markup(renderable: Any) -> None:
     """Rich drops `[bold]` silently and raises on an unpaired `[/think]`. Every string in
-    this output came from a model, a manifest, or an error naming an extra."""
+    this output came from an LLM, a manifest, or an error naming an extra."""
     console, buf = wide(400)
     console.print(renderable)
     out = buf.getvalue()
@@ -147,7 +147,7 @@ def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:
     console.print(
         ui.run_header("find-and-kick", [("robot", "microduck:sim2d")], hint="Ctrl-C stops it")
     )
-    console.print(ui.verdict("success", "kicked it", counters=["steps 7", "llm calls 8"]))
+    console.print(ui.verdict("success", "kicked it", counters=["steps 7", "LLM calls 8"]))
     out = drawn(console, raw)
     assert "?" not in out, "a glyph that arrives as a question mark is a glyph not worth having"
     assert out.isascii()
@@ -212,7 +212,7 @@ def test_the_status_line_does_nothing_at_all_when_nobody_is_watching() -> None:
     with ui.RunStatus(console) as status:
         assert status.active is False
         status.update("waiting on anthropic")
-        status.sink(LogEvent("llm_request", 0.0, {"provider": "anthropic", "model": "opus"}))
+        status.sink(LogEvent("llm_request", 0.0, {"provider": "anthropic", "llm_id": "opus"}))
         console.print("the answer")
     assert buf.getvalue() == "the answer\n"
 
@@ -231,9 +231,9 @@ def test_the_status_line_draws_and_prints_land_above_it() -> None:
 def test_the_status_line_names_the_step_and_counts_a_long_wait() -> None:
     console, _ = wide()
     status = ui.RunStatus(console, clock=ticks())
-    text = "[step 3/40 · llm calls 3/40, 0.1/5 min]\nstate: posture=standing"
+    text = "[step 3/40 · LLM calls 3/40, 0.1/5 min]\nstate: posture=standing"
     status.sink(LogEvent("observation", 0.0, {"text": text}))
-    status.sink(LogEvent("llm_request", 0.0, {"provider": "anthropic", "model": "claude-opus-5"}))
+    status.sink(LogEvent("llm_request", 0.0, {"provider": "anthropic", "llm_id": "claude-opus-5"}))
     rendered = status.__rich__().plain
     assert "step 3/40" in rendered, "the budget's two halves only appear together here"
     assert "waiting on anthropic claude-opus-5" in rendered
@@ -242,7 +242,7 @@ def test_the_status_line_names_the_step_and_counts_a_long_wait() -> None:
 
 def test_a_turn_asked_again_says_it_is_waiting_rather_than_choosing() -> None:
     """A failure quackd asks the same turn again after is followed by up to a minute in which
-    nothing happens, and a line about the model's answer over that minute says the model has
+    nothing happens, and a line about the LLM's answer over that minute says the LLM has
     answered when it is not even being asked. An answer that came still says what it was."""
     console, _ = wide()
     status = ui.RunStatus(console)
@@ -250,30 +250,30 @@ def test_a_turn_asked_again_says_it_is_waiting_rather_than_choosing() -> None:
     status.sink(LogEvent("llm", 0.0, failed))
     assert "waiting 15 s to ask anthropic again" in status.__rich__().plain
     status.sink(LogEvent("llm", 0.0, {"provider": "anthropic", "tool_calls": []}))
-    assert "the model answered without a call" in status.__rich__().plain
+    assert "the LLM answered without a call" in status.__rich__().plain
 
 
-def test_the_line_names_the_call_the_model_chose_and_how_long_the_last_answer_took() -> None:
+def test_the_line_names_the_call_the_llm_chose_and_how_long_the_last_answer_took() -> None:
     """The line after an answer used to say "choosing a verb", which was over by then: the
-    `llm` record is written once the call is back. It names what the model chose, which is what
+    `llm` record is written once the call is back. It names what the LLM chose, which is what
     the run is about to do, and the next wait says how long the last answer took, because a
     count of seconds alone says how long a wait has been and nothing about how long it will
-    be. A failed call is not the model's answer, and its seconds are not a guide to the next."""
+    be. A failed call is not the LLM's answer, and its seconds are not a guide to the next."""
     console, _ = wide()
     status = ui.RunStatus(console, clock=ticks())
-    request = {"provider": "anthropic", "model": "claude-opus-5-5"}
+    request = {"provider": "anthropic", "llm_id": "claude-opus-5-5"}
     status.sink(LogEvent("llm_request", 0.0, request))
     assert "(last call" not in status.__rich__().plain, "nothing has answered yet"
     chose = {"name": "kick", "arguments": {"leg": "left"}}
     answer = {"provider": "anthropic", "tool_calls": [chose], "latency_s": 6.25}
     status.sink(LogEvent("llm", 0.0, answer))
-    assert "the model chose kick(leg='left')" in status.__rich__().plain
+    assert "the LLM chose kick(leg='left')" in status.__rich__().plain
     status.sink(LogEvent("llm_request", 0.0, request))
     assert "waiting on anthropic claude-opus-5-5 (last call 6.2 s)" in status.__rich__().plain
 
     two = {"provider": "anthropic", "tool_calls": [chose, {"name": "quack"}], "latency_s": 1.0}
     status.sink(LogEvent("llm", 0.0, two))
-    assert "the model chose kick(leg='left'), the first of 2" in status.__rich__().plain
+    assert "the LLM chose kick(leg='left'), the first of 2" in status.__rich__().plain
     failed = {"provider": "anthropic", "error": "ProviderError: 400", "latency_s": 30.0}
     status.sink(LogEvent("llm", 0.0, failed))
     assert "the call to anthropic failed" in status.__rich__().plain
@@ -281,11 +281,11 @@ def test_the_line_names_the_call_the_model_chose_and_how_long_the_last_answer_to
     assert "(last call 1.0 s)" in status.__rich__().plain, "a failure's seconds are not kept"
 
 
-def test_a_provider_that_names_no_model_still_reads_as_a_sentence() -> None:
+def test_a_provider_that_names_no_llm_still_reads_as_a_sentence() -> None:
     console, _ = wide()
     status = ui.RunStatus(console)
-    status.sink(LogEvent("llm_request", 0.0, {"provider": "ollama", "model": None}))
-    assert "waiting on ollama the first model it serves" in status.__rich__().plain
+    status.sink(LogEvent("llm_request", 0.0, {"provider": "ollama", "llm_id": None}))
+    assert "waiting on ollama the first LLM it serves" in status.__rich__().plain
 
 
 def test_the_status_line_follows_a_run_through_its_phases() -> None:
@@ -302,17 +302,17 @@ def test_the_status_line_follows_a_run_through_its_phases() -> None:
 
 
 def test_the_status_line_says_stopping_from_a_press_until_the_run_finishes() -> None:
-    """The kill switch says nothing to the event stream, so the line went on saying `waiting on` a
-    model nobody was waiting for now, and the cancelled call and the verb then wrote over it."""
+    """The kill switch says nothing to the event stream, so the line went on saying `waiting on` an
+    LLM nobody was waiting for now, and the cancelled call and the verb then wrote over it."""
     console, _ = wide()
     status = ui.RunStatus(console)
-    status.sink(LogEvent("llm_request", 0.0, {"provider": "openai", "model": "gpt-6-sol"}))
+    status.sink(LogEvent("llm_request", 0.0, {"provider": "openai", "llm_id": "gpt-6-sol"}))
     assert "waiting on openai" in status.__rich__().plain
     status.stopping()
     for event in (
         LogEvent("llm", 0.0, {"provider": "openai", "error": "cancelled"}),
         LogEvent("verb_end", 0.0, {"name": "go_to", "ok": False}),
-        LogEvent("observation", 0.0, {"text": "[step 3/40 · llm calls 3/40, 0.1/5 min]"}),
+        LogEvent("observation", 0.0, {"text": "[step 3/40 · LLM calls 3/40, 0.1/5 min]"}),
         LogEvent("note", 0.0, {"text": "moving to the rest pose"}),
     ):
         status.sink(event)

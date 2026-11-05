@@ -41,7 +41,7 @@ class FlockTranscript:
 
     def sink(self, event: LogEvent) -> None:
         """`flock.jsonl` as a `EventLog` record: the flock's own line for what belongs to no
-        single member (the planner's model call). Stamped in `sim_t` like every other line in
+        single member (the planner's LLM call). Stamped in `sim_t` like every other line in
         this file, so a replay lines it up with the world; the event's wall-clock `t` is
         dropped exactly as `Transcript.sink` drops it."""
         self.write(event.kind, **event.data)

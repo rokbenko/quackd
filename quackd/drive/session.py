@@ -155,7 +155,7 @@ class GoalSettings:
     play: bool | None = None
     """`--play`: whether a goal may give its pilot a part to play."""
     price: str | None = None
-    """`--price`: what the pilot's model costs, over the catalogue."""
+    """`--price`: what the pilot's LLM costs, over the catalogue."""
     memory: RobotMemory | None = None
     """`--memory`: the robot's memory, which each goal recalls and adds one fact to. None, the
     default in drive, keeps none."""
@@ -876,7 +876,7 @@ class DriveSession:
         return None if budget is None else budget.policy_total_s - budget.policy_s
 
     def _charge(self, goal: Any) -> None:
-        """A goal's steps and model calls are the session's as well, so the session's own
+        """A goal's steps and LLM calls are the session's as well, so the session's own
         budgets bound every goal together rather than each one alone. So are the seconds a
         policy drove the body, which are the body's, as a second task file loaded into a session
         keeps them (`RobotSession.adopt`)."""

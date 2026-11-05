@@ -285,13 +285,13 @@ Three rules hold for all of it:
 One folder per experiment on [the run sheet](run-sheet.md) that has a file of its own, `e001` to `e220`. The 34 that
 have none are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
-`e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for a model beside
+`e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for an LLM beside
 their task files, `e216` a script and no task file, and `e201` a script and two pictures to print
 and no task file either. The others hold the task file for that
-experiment, or one per variant, and any picture it hands the model with `--image`, except four
+experiment, or one per variant, and any picture it hands the LLM with `--image`, except four
 that are yours to supply: the bill and the star count of `e106` and the two video thumbnails of
 `e111`. Save them beside their files as `bill.png`, `stars.png`, `thumb-a.png` and `thumb-b.png`
-before you run those files. `e041` hands the model the picture in `e034`. A few more are here to
+before you run those files. `e041` hands the LLM the picture in `e034`. A few more are here to
 print, and every other prop, the like button of `e077` among them, is yours to bring. A task
 file's `name` is its experiment number and a slug, so every run directory says which experiment
 it was, `runs/20260923-081500-e001-circle/`, and a `--run-name` on the line tells apart several
@@ -365,7 +365,7 @@ point. An entry that hedges, or expects some of a set to fall short without sayi
 idioms of `e079` do, counts as running. Eleven meet a limit of the arm or of how quackd drives it:
 the six drawings of `e001`, `e019` and `e020` and the keys of `e014`, all done without inverse
 kinematics, the point of `e130`, aimed without hand-eye calibration, the claw machine of `e039`,
-the tower of `e100` and the tangled cable of `e109`. Four meet the seconds each model call takes:
+the tower of `e100` and the tangled cable of `e109`. Four meet the seconds each LLM call takes:
 the act of `e037`, asked for at once, the metronome of `e045`, which asks for a tick a second, the
 red light of `e096`, which catches the arm still moving every round, and the fly of `e113`, gone
 before each swing lands. Two ask for two things at the same time, the pat and rub of `e062` and the
@@ -377,7 +377,7 @@ budgets the monkey of `e126` runs into, and the two calls `e215` is refused, whi
 stand-in nothing else to do. Eight are cut short by a person, as the experiment plans:
 the hand of `e081`, gone before the high five lands, a cable pulled in `e116` and Ctrl-C in `e117`,
 both partway through the raise they ask for, a confirm declined in `e121`, the supply cut in
-`e166`, a second press in `e180`, a press in `e182` while the model thinks, and a hand in `e183`
+`e166`, a second press in `e180`, a press in `e182` while the LLM thinks, and a hand in `e183`
 against the raise. Three ask for a
 guess the sheet expects the pilot to refuse, on principle, in `e085`. Two end on an answer the
 sheet expects to be wrong: `e131/my-left`, the harder of two runs it expects at least one wrong
@@ -388,7 +388,7 @@ disown a part.
 
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
-any model. Each file opens with a comment carrying its first command. Check them all against the
+any LLM. Each file opens with a comment carrying its first command. Check them all against the
 arm's manifest before a session, which should say `247 files valid`:
 
 ```bash
@@ -457,13 +457,13 @@ because the switch is the one stop that works in every case. `e207` asks what a 
 old goal when a connect turns its torque back on, which nothing documents. `e167` and `e168` are
 refusals: a real arm with no rest pose, and a connect quackd refuses after LeRobot has switched the
 torque on. `e169`, `e170` and `e182` to `e189` are the gates and stops one at a time: a dry run, a
-range refused three times, Ctrl-C while the model thinks, a hand against a slow raise, a lower speed
-limit, how warm a joint gets, the brake with no model in the way, the two budgets `e120` leaves out,
+range refused three times, Ctrl-C while the LLM thinks, a hand against a slow raise, a lower speed
+limit, how warm a joint gets, the brake with no LLM in the way, the two budgets `e120` leaves out,
 who the record says answered, and a second quackd on the same port. `e190` is Stop on the page.
 
 `e171` to `e181` are putting the arm down, which is 0.24.0's nine bench steps, 0.15.0's one and the
 checklist's Ctrl-C with the arm in your hands, a hazard at a time. Most of them start from an arm
-left raised, and that takes no model and no key:
+left raised, and that takes no LLM and no key:
 `quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake` holds the pose you set and then
 waits two minutes at its last question, and a hard kill during that wait should leave the arm
 holding itself up. They run with `QUACKD_LEROBOT_MAX_STEP_DEG` at 1, which makes a fold 10 degrees a
@@ -478,7 +478,7 @@ saying so ([guides/mcp.md](../../guides/mcp.md)). That is `e196`, and it has run
 and not on the arm. A chat still takes its time to send one, so in a chat the power switch is the
 stop, and in a terminal `quackd drive`'s Enter ends the move (`e186`).
 
-`e126` flies a stand-in for a model, `e126/monkey.py`, which answers every turn with a random call:
+`e126` flies a stand-in for an LLM, `e126/monkey.py`, which answers every turn with a random call:
 verbs the run offered and verbs it did not, joints that do not exist, angles past every travel, NaN
 and strings where numbers go. It runs on the mock or the twin and never on the arm, with no key. On
 quackd 0.30.0, 1000 turns of seed 1 on `lerobot:mock` came to about 860 calls stopped at a gate,
@@ -496,10 +496,10 @@ here: whether playing changed anything, and whether the verdict goes through wit
 
 How they were checked, on 0.30.0 from PyPI. Every line of the run sheet, old and new, ran to the
 refusal it should reach against a registry whose port does not exist, so none is refused for a
-flag, a model or a file. What takes a person's keys ran in a real console, on `lerobot:mock` and on
-the arm's twin, with a scripted stand-in for the model: the by-hand wait, both questions over a
+flag, an LLM or a file. What takes a person's keys ran in a real console, on `lerobot:mock` and on
+the arm's twin, with a scripted stand-in for the LLM: the by-hand wait, both questions over a
 missed fold and each left unanswered, Ctrl-C mid-move, during a fold, in a person's hands and during
-a model call, a second press, the dry run and the policies, and `--lock-duckfile` and the budget's
+an LLM call, a second press, the dry run and the policies, and `--lock-duckfile` and the budget's
 brake over MCP. That says the commands are right and the lines they quote are real. It says nothing
 about the arm.
 
@@ -508,13 +508,13 @@ about the arm.
 `e208` to `e220` came on 3 November 2026, for what 0.30.1, 0.30.2 and 0.30.3 changed between a
 person and a moving arm, and none of them has run on an arm. Eleven of them run the bundled
 `lerobot-lookout` with `--llm fake`, or a command, so they cost no key, and `e219` uses the raise of
-`e180`, whose run a model flies.
+`e180`, whose run an LLM flies.
 
 `e208` to `e212` press Ctrl-C at the moments that used to go past the close: again and again through
 the end of a by-hand run, during the fold it starts with, while the arm connects, during a connect
 that fails, which is the one that leaves a record only since 0.30.3, and twice with the arm in your
 hands. `e213` and `e214` are the question that opens the jaws: Enter held down answers nothing, and
-a word typed at it is a no. `e215` flies a stand-in for a model, `e215/lazy_pilot.py`, that sends
+a word typed at it is a no. `e215` flies a stand-in for an LLM, `e215/lazy_pilot.py`, that sends
 `gripper` with nothing, which is refused at `params` where it used to open the jaws. `e216` sends a
 `stop` beside a move over MCP from a page of Python, on a clock, which `e196` has to ask a chat to do.
 `e217` and `e218` press through `quackd robot release` and `quackd doctor`. `e219` tries the keys that

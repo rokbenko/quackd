@@ -11,7 +11,7 @@ default pose, reached at upstream's own reset rate, with upstream's own waist ru
 
 What is deliberately not here is a raw joint verb. The body is in multi-turn mode with the
 firmware position limits off, `set_motor_target` clamps nothing at all, and nothing reports a
-current limit to Python. Handing thirty unclamped radians to a language model on that machine
+current limit to Python. Handing thirty unclamped radians to an LLM on that machine
 is the exact failure this project exists to prevent, so the daemon owns every trajectory and
 quackd offers named moves instead.
 """
@@ -49,7 +49,7 @@ SHIPPED_MOTIONS: tuple[str, ...] = (
     "walk_zmp",
 )
 
-#: What quackd will actually let a model ask for, and why the rest are not here.
+#: What quackd will actually let an LLM ask for, and why the rest are not here.
 #:
 #: `pull_up_grasp` and `pull_up_pull` need a bar the robot is hanging from, so asking for one
 #: on a robot standing on a table is a fall. `walk_zmp` is a gait reference trajectory rather
@@ -151,7 +151,7 @@ def _link_fresh(state: DuckState) -> str | None:
 
 def _not_fallen(state: DuckState) -> str | None:
     """There is no fall recovery on this robot and no get-up policy in the repository, so the
-    refusal names no verb: a human has to stand it up. Saying otherwise would invite a model
+    refusal names no verb: a human has to stand it up. Saying otherwise would invite an LLM
     to thrash a fallen humanoid against the floor."""
     if not state.fallen:
         return None

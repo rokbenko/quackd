@@ -3,10 +3,10 @@
 
 The quackd that reaches this runs on a laptop, where `--host` names the Jetson, and this is
 what answers there; the one command that runs on a board itself, `quackd onboard`, needs none
-of it. It gives quackd three things a model server cannot: a frame from a camera
+of it. It gives quackd three things an LLM server cannot: a frame from a camera
 on the board, detections computed on the board's GPU, and the board's own facts (its model,
 its L4T release, its memory and swap, its power mode, one `tegrastats` line). The fourth thing
-the board offers, the language model on its GPU, is your own model server (Ollama and the
+the board offers, the LLM on its GPU, is your own LLM server (Ollama and the
 like), which quackd reaches through the same `--host`.
 
 It parses nothing. `/board` ships raw file text and raw command output, and quackd reads them
@@ -154,7 +154,7 @@ BOARD_FILES = (
 entries are the kernel's own bytes and are NUL terminated, which is why every read strips NULs."""
 GPU_NODES = ("/dev/nvgpu/igpu0", "/dev/nvhost-ctrl-gpu", "/dev/nvidia0")
 """JetPack 6's node, JetPack 5's, and the one a discrete driver leaves: the same three names
-`quackd/doctor.py` has always looked for. A model server that cannot see one of these is the
+`quackd/doctor.py` has always looked for. An LLM server that cannot see one of these is the
 commonest reason a Jetson answers off its CPU."""
 COMMANDS: dict[str, tuple[tuple[str, ...], float, bool]] = {
     "nvpmodel -q": (("nvpmodel", "-q"), NVPMODEL_TIMEOUT_S, False),

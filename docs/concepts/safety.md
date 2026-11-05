@@ -7,21 +7,21 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 | Layer | Owner | What it guarantees |
 |---|---|---|
 | Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives a clamp that holds every joint target inside its actuator's travel, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is quackd's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `quackd doctor` prints what the robot itself reported (see "On other bodies"). |
-| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the model has said, against the robot's datasheet, whether the task fits the body at all. It is the model's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). In `quackd drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
+| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the LLM has said, against the robot's datasheet, whether the task fits the body at all. It is the LLM's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). In `quackd drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
 | Conversation | quackd `Executor` | The LLM and MCP clients can only do what the `.duck` allows, as often as the budget allows, with a human in the loop where the contract says so. |
 | Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a flock one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. In `quackd drive` an empty Enter or Ctrl-C is the brake, and ends every verb moving the body. |
 
 > [!NOTE]
 > **The optional discrete stepper changes none of this.** With `--decision-mode on`
 > ([guides/decision-llms/README.md](../guides/decision-llms/README.md)) some turns are answered by a
-> decision LLM instead of the model, whichever one `--decision-llm` named and wherever it runs, and
+> decision LLM instead of the pilot LLM, whichever one `--decision-llm` named and wherever it runs, and
 > every one of those calls goes through the same `Executor.run_verb` as every other, so the
 > allowlist, the budgets, the confirm gates, the preconditions and the body's own safety
-> authority bind it exactly as they bind the model. Two things about it are structural rather
+> authority bind it exactly as they bind the LLM. Two things about it are structural rather
 > than enforced, which is stronger: it can never author a number, because a verb with a free
 > number in its schema is never offered to it at all, and it can never author a sentence, so
 > it cannot record a feasibility verdict, cannot declare an outcome, and cannot end a run.
-> The judgement layer above is untouched: nothing that moves the body runs until the *model*
+> The judgement layer above is untouched: nothing that moves the body runs until the *LLM*
 > has said whether the task fits it.
 
 ## The executor (mirrors upstream's own rules)
@@ -36,8 +36,8 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `abort` | the run has been aborted. `stop` is exempt, so the brake still works. Read again after the body's state, so a verb admitted before a kill switch or a failed heartbeat never starts after it | nothing: the run is over |
 | `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.duck`'s `verbs.allow` |
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
-| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the model calls `assess_task` |
-| `params` | the arguments fit the verb's schema. `stop` as quackd ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the model, not a crash |
+| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the LLM calls `assess_task` |
+| `params` | the arguments fit the verb's schema. `stop` as quackd ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the LLM, not a crash |
 | `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
@@ -155,9 +155,9 @@ transport. Works on Windows (signal handler, not `loop.add_signal_handler`). A L
 reached its rest pose is let go of there by that close, and the kill switch itself never takes
 torque off anything.
 
-The press does not wait on the model. A pilot's call, or a decision LLM's, still out when it
+The press does not wait on an LLM. A pilot's call, or a decision LLM's, still out when it
 lands is given up on the spot and its answer, whenever it comes, is thrown away, so the run
-ends `aborted` and the robot is put down without waiting a minute for a model to finish
+ends `aborted` and the robot is put down without waiting a minute for an LLM to finish
 thinking. A run that ended by itself, a success, a failure or a spent budget, still folds the
 arm at its end, and a first press during that fold stops it where the arm is: the arm is held
 there with torque on, the close keeps it, and the run says so
@@ -257,9 +257,9 @@ are its own.
   has left and its steps charged to it, the session's abort rules, the session's `--dry-run`,
   and an end when the session's heartbeat fails.
 
-## When the model's API fails
+## When the LLM's API fails
 
-A turn the model's API could not answer for now is asked again, with the robot holding still in
+A turn the LLM's API could not answer for now is asked again, with the robot holding still in
 between ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). A rate
 limit (429), an overloaded or failing server (529, or any 5xx), a request the server timed out
 (408), and a call that timed out or lost its connection once the API has answered in this run,
@@ -268,7 +268,7 @@ long as the API asked in a `retry-after` where that is longer. Up to a quarter o
 wait is taken off at random, so the members of a flock on one key do not all ask again at once.
 What decides is the SDK's own exception, its status and its class, and never its message.
 Everything else ends the run as it always did: a key that does not work, a request the API
-refused, a model that does not exist, a request quackd built wrong, and an answer quackd could
+refused, an LLM that does not exist, a request quackd built wrong, and an answer quackd could
 not read as a turn. A connection that failed before the API had answered at all is tried twice
 more, half a second and then a second later, and then ends the run, because that is as often a
 wrong address or a server that is not running as a dropped connection. A server that answers
@@ -283,7 +283,7 @@ hold a run that long before quackd heard of it. The two quick tries above are wh
 connection that never answered, so every try is now one of quackd's, in the record and under
 the stop.
 
-Nothing moves the robot while the loop waits, the same stillness a model taking a minute to
+Nothing moves the robot while the loop waits, the same stillness an LLM taking a minute to
 think leaves it in, and the heartbeat goes on watching it. Ctrl-C or `q`, a heartbeat that
 fails, or a flock that stops its members ends the wait at once: the run ends `aborted`, and the
 robot is put down as at any end. A stop pressed while the call is still out ends it there, as
@@ -298,18 +298,18 @@ quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8
 
 ```
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
-⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.6 s, asking again in 4.6 s
-·  note    the model's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
+⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - the stand-in is busy, by request after 0.1 s, asking again in 4.7 s
+·  note    the LLM's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
    think   turn 1: calling assess_task
 ```
 
 The counters under the verdict say how many times a turn was asked again and how long the waits
-took, apart from the model's own seconds, and the call that failed is in the model's seconds
+took, apart from the LLM's own seconds, and the call that failed is in the LLM's seconds
 and in none of the spread beside them:
 
 ```
-steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.7 s (model 0.7 s, waits 4.6 s) · model calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 5.6 s, after 3 model calls · cost $0.0097
+steps 3 · LLM calls 5 (+1 asked again) · tokens 5015+100 · time 5.1 s (LLM 0.2 s, waits 4.7 s) · LLM calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 5.0 s, after 3 LLM calls · cost $0.0097
 ```
 
 A fifth failure after the fourth wait ends the run `error`, saying in how many tries, with the
@@ -321,14 +321,14 @@ decision LLM is left as it was, since a turn it could not decide already goes to
 of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
 against the real openai SDK talking to the stand-in server above.
 
-A call that never answers is bounded by the same minutes. A model's answer used to be checked
+A call that never answers is bounded by the same minutes. An LLM's answer used to be checked
 against `max_minutes` only once it came, so a call that hung held the robot past the task's
 whole budget for as long as the vendor's own clock allowed, ten minutes on both SDKs. The call
 is raced against the task's minutes now, as it is against the stop: once they are spent it is
 cancelled, its `llm` record says it failed on the budget, it is not asked again, and the run ends
 on its budget, with the robot put down as at any end. A stop pressed in the same moment wins.
-It is the budget's clock again, so on a simulator or a mock, whose clock stands still while a
-model thinks, a call is never cut off this way. No single call has a ceiling of its own, which
+It is the budget's clock again, so on a simulator or a mock, whose clock stands still while an
+LLM thinks, a call is never cut off this way. No single call has a ceiling of its own, which
 would cut long thinking short and bill the retry twice.
 
 ## When the pilot is unsure
@@ -350,7 +350,7 @@ Until a verdict is recorded, when a detector looks at the frame and finds nothin
 observation a `quackd run` pilot is handed ends with a line that says this at the moment it
 decides: nothing detected yet is not by itself a reason for `uncertain`, which is for a limit
 that turns on that unseen thing's mass or size, or on a figure the datasheet does not publish.
-The description says it once, at the top of a run, and on the one model measured that was not
+The description says it once, at the top of a run, and on the one LLM measured that was not
 enough: most of its doubts were still about where the ball was
 ([guides/local-llms.md](../guides/local-llms.md#honest-notes)).
 
@@ -360,7 +360,7 @@ something new it sees. Up to 0.13.0 it heard only that motion now ran, which rea
 as its own `feasible`, and the prompt invites a pilot to assess again when it changes its mind.
 On the 2026-09-23 bench a pilot a person had just cleared assessed the same doubt again, as
 `infeasible`, and the run ended on a question somebody had already answered. Over MCP nobody
-sets that answer: the model asks you in the chat and records its own verdict again.
+sets that answer: the LLM asks you in the chat and records its own verdict again.
 
 **`--yes` answers that question with go**, the same way it answers a confirm gate, and
 `quackd record` always passes it. So a `--yes` in a script no longer only skips
@@ -370,7 +370,7 @@ the doubt, because nobody did: it hears that the run was started to go ahead wit
 anybody, and, as after a person's go, that the verbs that move the body now run and it should
 not assess the same doubt again.
 Over MCP there is no terminal and nothing clears it, so the verdict stays pending and the
-model is told to ask the person it is chatting with ([guides/mcp.md](../guides/mcp.md)).
+LLM is told to ask the person it is chatting with ([guides/mcp.md](../guides/mcp.md)).
 
 ## A pilot that cannot judge: `--controller vla`
 
@@ -437,7 +437,7 @@ every field in as it was told, was refused by its own sheet for needs of exactly
 nearly every run, and each refusal became an `uncertain` and then the y/N question at the
 terminal.
 
-On the one model measured so far it turns a silent `feasible` into an `uncertain`, which is
+On the one LLM measured so far it turns a silent `feasible` into an `uncertain`, which is
 then the question above, so under `--yes` the check costs one LLM call and leaves the
 contradiction in the transcript rather than stopping the run.
 
@@ -454,14 +454,14 @@ behind.
 
 ## Dry run
 
-`--dry-run` sends nothing, and the log names every verb a model *would* have run, with the
+`--dry-run` sends nothing, and the log names every verb an LLM *would* have run, with the
 parameters it chose:
 
 ```
 ⚠  gate    dry_run: skipped would run walk_to, sent nothing (target='ball', stop_distance=0.22, timeout_s=20)
 ```
 
-A parameter the model left unset shows as `null` rather than being dropped, because on a dry
+A parameter the LLM left unset shows as `null` rather than being dropped, because on a dry
 run the omission is the thing you are checking. The verbs whose adapter declared them
 `read_only` still run: `observe` (alias `get_frame`), `report_state`, the rosbridge base's
 `introspect`, and whatever a body quackd never shipped flags for itself. Use it the first
@@ -527,7 +527,7 @@ by torque alone falls the instant torque goes, so the arm refuses to be let go o
 and a run on an arm with no pose recorded is refused before it starts. Only when a person typed
 the flag at a terminal, which is also checked before anything moves. And never by anything else:
 releasing is not a verb, it is in no `allow` list, and it is deliberately not on the
-`RobotAdapter` protocol, so there is nothing for a model or an MCP client to call. When you
+`RobotAdapter` protocol, so there is nothing for an LLM or an MCP client to call. When you
 press Enter, quackd writes the pose you left the arm in as the goal *before* it re-enables
 torque, writes it again, reads it back, and ends the run rather than starting it if a joint
 moved more than five degrees while your hand was still on it.
@@ -637,13 +637,13 @@ write says nothing about what that write did.
   this body torque off is a fall.
 - **quackd owns the control loop here**, which is true of no other body. Upstream's own
   `step()` is a no-op, so nothing times out and nothing re-arms without the daemon.
-- **A model server or a detector on the same board competes with that loop.** This robot
-  carries a Jetson, and quackd stays on your laptop, but the board can hold a model server and
+- **An LLM server or a detector on the same board competes with that loop.** This robot
+  carries a Jetson, and quackd stays on your laptop, but the board can hold an LLM server and
   quackd's host daemon beside quackd's ToddlerBot daemon ([guides/jetson.md](../guides/jetson.md)).
-  A model server or a YOLO detector saturating the CPU and the memory bus is the load that starves a
+  An LLM server or a YOLO detector saturating the CPU and the memory bus is the load that starves a
   fifty hertz loop, and here a starved loop is a fall. Nobody has measured that contention on
-  any board: keep the robot on a stand the first time, watch `tegrastats` while a model answers
-  and the detector runs, and consider pinning the model server off the cores the loop runs on.
+  any board: keep the robot on a stand the first time, watch `tegrastats` while an LLM answers
+  and the detector runs, and consider pinning the LLM server off the cores the loop runs on.
   The host daemon's unit already yields, at `Nice=10`, under `MemoryMax=2G` and first in line
   for the OOM killer.
 - A good first contract is the shipped `toddlerbot-lookout`: it moves no leg, no arm and
@@ -774,7 +774,7 @@ write says nothing about what that write did.
   as two limits, and it clamps every goal to them. A folded arm can still sit past them, because
   a reading is not clamped, and on 2026-09-23 a recorded fold did, about 20 degrees past the
   floor of `shoulder_lift`'s travel. The rest move could not get there, runs aborted before the
-  first model call, every run that got to its end kept torque on, and the `stop` at the end of a
+  first LLM call, every run that got to its end kept torque on, and the `stop` at the end of a
   run hauled the folded shoulder up out of its fold. So the rest move now drives each joint
   clipped into its travel, a joint recorded past it is at rest at the edge or anywhere beyond it
   on the fold's side, torque is released there, and the run says once which joint is free to
@@ -905,10 +905,10 @@ you ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
 
 ## What quackd does not protect against
 
-A model that is *allowed* to `walk` can walk into a wall; the sim has walls, your living
+An LLM that is *allowed* to `walk` can walk into a wall; the sim has walls, your living
 room has stairs. The allowlist is your tool: a `.duck` for a new space should start small.
 
-The feasibility verdict is the model's own guess about the world, weighed against numbers
+The feasibility verdict is the LLM's own guess about the world, weighed against numbers
 that carry confidence labels of their own, and neither is a measurement. A wrong `feasible`
 buys nothing past the gates below it: the allowlist, the budgets, the confirm gates and the
 body's own safety authority all still apply, which is why the verdict is a layer above them
@@ -925,11 +925,11 @@ remembers. `quackd record` has no such flag and always keeps them, in the Microd
 memory unless `QUACKD_MEMORY_DIR` points it elsewhere.
 
 There is one more thing to know about. A robot's memory
-([guides/memory.md](../guides/memory.md)) is text a model wrote, kept on disk, and handed to the
-*next* model as part of its system prompt. The executor never reads it, so a note cannot widen an
+([guides/memory.md](../guides/memory.md)) is text an LLM wrote, kept on disk, and handed to the
+*next* LLM as part of its system prompt. The executor never reads it, so a note cannot widen an
 allowlist, lift a budget or open a confirm gate: none of the guarantees above depend on it
 being true. What a note can do is persuade a later run, including a later run of a different
-task on the same body. A model that concludes something wrong ("the sofa is safe to walk
+task on the same body. An LLM that concludes something wrong ("the sofa is safe to walk
 under") will keep telling itself so until somebody deletes the line. That is the whole point
 of the feature and also its whole risk, which is why the file is plain text you can read,
 `quackd memory show` prints exactly what the pilot was told, `quackd memory clear` forgets
@@ -947,4 +947,4 @@ what somebody with a checkout usually wants. The state says which you got
 (`extras.model_pinned`), so the transcript records it. Nothing in this path reaches a robot: the
 physics backend has no address and drives nothing outside the process.
 
-Report anything that lets a model bypass the executor — see [`SECURITY.md`](../../SECURITY.md).
+Report anything that lets an LLM bypass the executor — see [`SECURITY.md`](../../SECURITY.md).

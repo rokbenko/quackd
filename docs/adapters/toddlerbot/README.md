@@ -46,7 +46,7 @@ adapter is its client.
 
 But there is a second reason, and it is the one that matters. **A verb is episodic and this
 robot is not.** `RealWorld.step()` is a no-op, so nothing times out and nothing re-arms: the
-last commanded pose is held forever. A humanoid frozen mid-stride while a model thinks is a
+last commanded pose is held forever. A humanoid frozen mid-stride while an LLM thinks is a
 humanoid on the floor. So the daemon runs the fifty hertz loop continuously and quackd's
 intents only steer what it is already doing.
 
@@ -136,7 +136,7 @@ the robot can do all of them. `pull_up_grasp` and `pull_up_pull` assume the robo
 from a bar, so asking for one on a robot standing on a table is a fall. `walk_zmp` is a gait
 reference rather than a performance, and locomotion belongs to `move` where the deadman covers
 it. `cartwheel` is excluded twice over. This body has no fall recovery, and a cartwheel is not
-something to discover a language model can trigger, but it also *cannot* be replayed: its file
+something to discover an LLM can trigger, but it also *cannot* be replayed: its file
 carries `action=None` because it is qpos-interpolated and meant to run as its own RL policy.
 `walk_zmp` cannot be replayed either, for a different reason: despite sitting in the same
 directory with the same extension it is not a keyframe file at all, it is a gait lookup table
@@ -168,13 +168,13 @@ velocity envelope it was really trained on, which is what quackd's `limits` narr
 envelope with nothing left on any axis is treated as no locomotion at all.
 
 **The board it runs on can lend quackd its GPU, and quackd stays on the laptop.** This robot
-carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold a model
+carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold an LLM
 server and quackd's host daemon, and `--host` reaches both from the laptop
 ([guides/jetson.md](../../guides/jetson.md)). The host daemon runs with `--camera none`, because
 this daemon owns the robot's cameras. A ToddlerBot is a real body, so when the host daemon can
 detect, the run uses the board's YOLO by itself: the frames this daemon's camera sends reach the
 laptop and go back to the board as JPEGs to be detected, a round trip nobody has timed.
-`--detector color` keeps the colour detector on the laptop instead. Nobody has measured what a model
+`--detector color` keeps the colour detector on the laptop instead. Nobody has measured what an LLM
 server or a detector saturating that board does to the fifty hertz loop beside it either, and on
 this body a starved loop is a fall.
 

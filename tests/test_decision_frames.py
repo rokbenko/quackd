@@ -123,7 +123,7 @@ def _stepper(llm: Any, *, frames_on: bool) -> Stepper:
         goal="a goal",
         llm=llm,
         name=llm.name,
-        model=llm.model,
+        llm_id=llm.llm_id,
         price=resolve_decision_price(OPENAI),
         frames=frames_on,
     )
@@ -241,7 +241,7 @@ class _Plugin:
     see, it was built to, and it is at OpenAI's own address. Its `decide` takes two arguments,
     as every plugin's does, so handing it a frame is a `TypeError`."""
 
-    name, model, url, frames = "stub", "stub-1", "https://api.openai.com", True
+    name, llm_id, url, frames = "stub", "stub-1", "https://api.openai.com", True
 
     def __init__(self) -> None:
         self.calls: list[dict[str, str]] = []
@@ -760,7 +760,7 @@ def test_a_stepper_that_shows_frames_is_built_only_for_a_client_that_may_be_show
     seeing, _fake = _seeing(monkeypatch)
     assert _build(seeing, frames_on=True).frames is True
     blind, _fake = _seeing(monkeypatch, frames_on=False)
-    for llm in (blind, _Plugin(), fake_systemone.FakeDecisionLLM(name="kev", model="kev-latest")):
+    for llm in (blind, _Plugin(), fake_systemone.FakeDecisionLLM(name="kev", llm_id="kev-latest")):
         with pytest.raises(ValueError, match="may not"):
             _build(llm, frames_on=True)
         assert _build(llm, frames_on=False).frames is False
@@ -895,7 +895,7 @@ async def test_a_run_without_the_flag_shows_no_frame_even_to_a_client_that_could
 
 
 async def test_a_run_that_asks_a_blind_decision_llm_for_frames_is_refused(tmp_path: Path) -> None:
-    llm = fake_systemone.FakeDecisionLLM(name="kev", model="kev-latest")
+    llm = fake_systemone.FakeDecisionLLM(name="kev", llm_id="kev-latest")
     with pytest.raises(ValueError, match="may not"):
         await _run(tmp_path, llm, frames_on=True)
     assert llm.calls == [], "the stepper was asked"
@@ -1142,7 +1142,7 @@ def test_a_flock_says_it_sends_no_frame(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert (
-        "--decision-llm openai does not apply to a flock: every member is piloted by its model, "
+        "--decision-llm openai does not apply to a flock: every member is piloted by its LLM, "
         "as before, and no camera frame is sent"
     ) in plain_text(result.output)
 

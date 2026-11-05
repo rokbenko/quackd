@@ -542,7 +542,7 @@ async def test_two_tasks_sleeping_as_one_duck_say_so_instead_of_stranding_each_o
 
 
 async def test_the_state_reports_the_gait_that_ran_not_the_one_that_was_asked_for() -> None:
-    """`policy` is what reaches the model; the body's own honest `extras["policy"]` does not.
+    """`policy` is what reaches the LLM; the body's own honest `extras["policy"]` does not.
     Reporting the commanded twist here said `walk` while a duck below the gait floor stood
     still, which is the failure the floor exists to prevent."""
     t = MujocoTransport(seed=0, body="puppet")

@@ -8,7 +8,7 @@ server, or on the mock, which scripts its own, `pick` and `manipulate`, each one
 that the arm's own learned policy executes ([guides/policies.md](../../guides/policies.md)). The
 thesis holds: the LLM picks the verb, LeRobot moves the arm, quackd enforces the contract. (With the
 optional `--decision-llm`, some of the verbs that are a choice rather than a number can be picked by
-a decision LLM instead; every angle is still the model's, and it is off unless you name one:
+a decision LLM instead; every angle is still the pilot LLM's, and it is off unless you name one:
 [guides/decision-llms/README.md](../../guides/decision-llms/README.md).)
 
 > [!NOTE]
@@ -96,7 +96,7 @@ names an experiment, and its card on [the run sheet](../../examples/lerobot/run-
 is for, what to expect and the lines to run.
 
 This is the short way. [adapters/lerobot/first-run.md](first-run.md) is the same ground at walking
-pace, with which model to bring, what it can see and the refusals you can hit, and
+pace, with which LLM to bring, what it can see and the refusals you can hit, and
 [adapters/lerobot/hardware-checklist.md](hardware-checklist.md) is the same bring-up as eighteen
 steps, each written so that it can only fail in a way you can recover from.
 
@@ -109,7 +109,7 @@ steps, each written so that it can only fail in a way you can recover from.
 
 ### Before the arm
 
-Five steps with the arm unplugged. Step 3 spends a little on a model, and the others cost nothing.
+Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the others cost nothing.
 
 1. **Get the task files, make a venv and activate it.** The checkout is where you work, and runs land
    in its `runs/`. The task files and pictures live in the repository rather than in the package:
@@ -149,7 +149,7 @@ Five steps with the arm unplugged. Step 3 spends a little on a model, and the ot
 
    ```bash
    quackd --version
-   quackd list-models --llm openai
+   quackd list-llms --llm openai
    quackd doctor
    ```
 
@@ -190,9 +190,9 @@ Five steps with the arm unplugged. Step 3 spends a little on a model, and the ot
    [E158](../../examples/lerobot/run-sheet.md#e158-cheap-pilot--jev-vs-flagship-alone) to E161, and a
    vendor's key for its lines in E019, E020, E029, E030, E150 and E151. Each such line names the key it
    needs. `quackd doctor` prints the key it found, masked, which is the quickest way to see that the
-   file was read at all, and `quackd list-models` lists the models quackd carries.
+   file was read at all, and `quackd list-llms` lists the LLMs quackd carries.
 
-   Then rehearse on the mock arm, so your first model call is not on hardware. This spends a few model
+   Then rehearse on the mock arm, so your first LLM call is not on hardware. This spends a few LLM
    calls on your key and moves nothing. The second line is the same rehearsal for Jev, in shadow: with
    no `TYPESAFE_API_KEY` it warns that it is running without Jev and goes on, so read its first line.
 
@@ -284,7 +284,7 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
    through its range. **At that second prompt, take each one all the way into the fold you will rest
    the arm in.** Its travel is written into the servo as a limit, and a fold past that limit is a pose
    the arm cannot be driven back to, which on 2026-09-23 is what stopped the lab's arm before its first
-   model call.
+   LLM call.
 
    ```bash
    lerobot-calibrate --robot.type=so101_follower --robot.port=COM5 --robot.id=arm-01
@@ -336,7 +336,7 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
    quackd robot rest-pose arm-01
    ```
 
-   From now on every run drives the arm there before the model gets it, and folds it back there at the
+   From now on every run drives the arm there before the LLM gets it, and folds it back there at the
    end.
 
 8. **Cameras.** The first line saves a frame per camera under `outputs/captured_images`, so you can see
@@ -444,26 +444,26 @@ quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --cam
 
 | Part | Why |
 |---|---|
-| `quackd run docs/examples/lerobot/e001/circle.duck` | The task file: the prompt, what the arm may do, and the budgets in steps, minutes and model calls. Its name goes into the run folder, `runs/<stamp>-e001-circle`, under the folder you ran it from, so you always know which experiment a folder was. The stamp is UTC |
+| `quackd run docs/examples/lerobot/e001/circle.duck` | The task file: the prompt, what the arm may do, and the budgets in steps, minutes and LLM calls. Its name goes into the run folder, `runs/<stamp>-e001-circle`, under the folder you ran it from, so you always know which experiment a folder was. The stamp is UTC |
 | `--robot arm-01` | The registered name brings the port and the rest pose. A real arm named by its spec has no rest pose, so it is refused before anything connects |
-| `--by-hand` | You place the arm and whatever it holds before the model starts. The run folds, goes limp, waits for your Enter, then holds your pose and prints the angles you set. Keep a hand on a link, fingers off the jaws and the joints, until it prints `you can let go`: torque comes back on under your hand, and if a joint is refused the arm stays limp. At the end it asks about the gripper while the arm holds still. Take hold of what the jaws hold and press Enter once, with nothing typed: they open all the way, it says it is about to fold, and 3 s later it folds, so clear your hands in that time. Press it twice, or within 2 s of the last one, and it answers nothing and says so. A Ctrl-C or `q` in the opening, those seconds or the fold holds the arm where it is. No press quits such a run, and closing the window is what kills it. Left alone, it counts and folds after two minutes with the jaws shut. [Placing it by hand](#placing-it-by-hand) has the rest |
+| `--by-hand` | You place the arm and whatever it holds before the LLM starts. The run folds, goes limp, waits for your Enter, then holds your pose and prints the angles you set. Keep a hand on a link, fingers off the jaws and the joints, until it prints `you can let go`: torque comes back on under your hand, and if a joint is refused the arm stays limp. At the end it asks about the gripper while the arm holds still. Take hold of what the jaws hold and press Enter once, with nothing typed: they open all the way, it says it is about to fold, and 3 s later it folds, so clear your hands in that time. Press it twice, or within 2 s of the last one, and it answers nothing and says so. A Ctrl-C or `q` in the opening, those seconds or the fold holds the arm where it is. No press quits such a run, and closing the window is what kills it. Left alone, it counts and folds after two minutes with the jaws shut. [Placing it by hand](#placing-it-by-hand) has the rest |
 | `--camera-url` once, twice or not at all | One, the front view, on most lines. Both on the drawings, on most by-hand lines and where a run has to find something on the desk. None where no camera is the test or the line has no use for one |
-| `--image docs/examples/lerobot/e034/bad-code.png` | A task picture: sent once, on the first turn, and kept for the whole run. Used where the model must read something exactly, rather than off a 640×480 frame |
-| `--llm openai:gpt-6-sol` | The pilot. Lines that compare models name theirs |
+| `--image docs/examples/lerobot/e034/bad-code.png` | A task picture: sent once, on the first turn, and kept for the whole run. Used where the pilot LLM must read something exactly, rather than off a 640×480 frame |
+| `--llm openai:gpt-6-sol` | The pilot. Lines that compare LLMs name theirs |
 | `--decision-llm jev --decision-mode shadow` | Only on the decision LLM lines: `jev` with `quackd[decision]` and its own key, `TYPESAFE_API_KEY`, or `openai` with yours. The "off" legs say `--decision-mode off`, so a setting in your environment cannot leak into them |
-| `--max-steps 16` | The step budget, the same number as in the task file. A step is one verb, and the verdict and the declarations are free. Raise it on the line if a run needs more room: the file's minutes and model calls are sized with room to spare |
+| `--max-steps 16` | The step budget, the same number as in the task file. A step is one verb, and the verdict and the declarations are free. Raise it on the line if a run needs more room: the file's minutes and LLM calls are sized with room to spare |
 | `--no-memory` | Every run starts fresh: nothing from earlier runs in the prompt, and no extra turn at the end to write a note. `e110`, `e120` and `e194` use memory on purpose |
 | `--no-play` | 118 of the task files give the pilot a part to play, with `play: true` in the file. Add this to any of those lines to see the same task without it ([guides/play.md](../../guides/play.md)) |
-| `--dry-run` | Add it to any line without `--by-hand` to see what the model would do: reads run, nothing that moves is sent, and the arm does not even go to its rest pose |
-| `--effort low` | Only where it is the test. How hard the pilot's model reasons before each answer, for a vendor and model that take it |
+| `--dry-run` | Add it to any line without `--by-hand` to see what the LLM would do: reads run, nothing that moves is sent, and the arm does not even go to its rest pose |
+| `--effort low` | Only where it is the test. How hard the pilot's LLM reasons before each answer, for a vendor and LLM that take it |
 | `--run-name trial-01` | Only where one task file runs more than once, so those folders differ too: `runs/<stamp>-e149-wave-trial-01`. `quackd log e149-wave-trial-01` replays it |
 | A second terminal | Activate the environment there first, or it has no `quackd` |
 | `quackd robot release arm-01` | Puts down an arm left holding itself up: it folds to the rest pose and lets go there. If the fold misses it asks twice before anything drops, and anything but Enter keeps torque on. Support the arm while it connects, and take your hands away when it says so |
-| `quackd drive --robot arm-01` | One command at a time, with the arm held between them. A verb by name runs with no model (`report_state`, `gripper true`), any other line is a goal for the pilot, and an empty Enter brakes at once. A move with your own numbers is written out: `move_joints(positions={"shoulder_pan": 20}, duration_s=2)` |
+| `quackd drive --robot arm-01` | One command at a time, with the arm held between them. A verb by name runs with no LLM (`report_state`, `gripper true`), any other line is a goal for the pilot, and an empty Enter brakes at once. A move with your own numbers is written out: `move_joints(positions={"shoulder_pan": 20}, duration_s=2)` |
 
 > [!NOTE]
 > A rough clock and bill, from the last of twelve real-pilot runs on the lab's arm on 2026-09-15, with
-> GPT-6 Astra and one camera: ten model calls in 79 seconds, 49,096 input and 491 output tokens. That
+> GPT-6 Astra and one camera: ten LLM calls in 79 seconds, 49,096 input and 491 output tokens. That
 > was about 5 cents a call at Astra's $10 and $50 a million. The same tokens at GPT-6 Sol's $2 and $10
 > come to about a cent a call. Two cameras add pictures to every call, so budget more, and treat a step
 > as up to ten seconds.
@@ -480,8 +480,8 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 | [Prove the hardware](../../examples/lerobot/run-sheet.md#prove-the-hardware) | E119's first line moves nothing but the rest move. Then which way the gripper goes, the switch, the old goal, the hand-off and the two cameras. Everything after leans on these. E168 belongs before the rest pose is recorded |
 | [The gates, hand on the power switch](../../examples/lerobot/run-sheet.md#the-gates-hand-on-the-power-switch) | Each is one small run. A dry run and a refusal cost almost nothing, and these say whether what follows is safe to try |
 | [Putting it down](../../examples/lerobot/run-sheet.md#putting-it-down) | An arm left raised, then every way of folding it, stopping the fold or having it miss, all at E171's slow step. Foam, not fingers, wherever foam will do. E177 clears the pose, so it comes last, and you record the pose again after it |
-| [What a press does](../../examples/lerobot/run-sheet.md#what-a-press-does) | Every place a press used to go past the close, or used to quit, one small run each, most with no model and no key. Same slow step as the block above, and the same hand on the switch. E212 is the one with the arm in your hands |
-| [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing models, cost and speed, with a lot of model switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY` |
+| [What a press does](../../examples/lerobot/run-sheet.md#what-a-press-does) | Every place a press used to go past the close, or used to quit, one small run each, most with no LLM and no key. Same slow step as the block above, and the same hand on the switch. E212 is the one with the arm in your hands |
+| [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing LLMs, cost and speed, with a lot of LLM switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY` |
 | [Hazard block, hand on the power switch](../../examples/lerobot/run-sheet.md#hazard-block-hand-on-the-power-switch) | Speed, the cable pull, Ctrl-C and the hard kill, the brake, the network, a camera pulled, a call cut off |
 | [Gates and the red team](../../examples/lerobot/run-sheet.md#gates-and-the-red-team) | E110 straight after E120: the pair and E194 are the only uses of memory today |
 | [Marker and pen, together](../../examples/lerobot/run-sheet.md#marker-and-pen-together) | One marker, one pad, every drawing in a row |
@@ -513,13 +513,13 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 - **Let the servos cool between blocks.** quackd refuses `move_joints` and `pick` at 60 °C, and the
   servos cut out at 70 °C.
 - **Check the front camera frames the arm's full raised position.** On 2026-09-15 it was framed on the
-  gripper, and the model checked its wave against joint angles because it could not see it.
+  gripper, and the LLM checked its wave against joint angles because it could not see it.
 - **Figures dated September came off the lab's arm.** The gripper's 98 and 3 and the rest pose were that
   arm's. Yours may read otherwise, and yours are the numbers to keep.
 - **A by-hand run holds your pose, not a grip.** The jaws stay where your fingers left them, and the arm
-  says it is holding nothing until the model closes the gripper itself.
+  says it is holding nothing until the LLM closes the gripper itself.
 - **Keep every run folder**, failures included. `quackd log e001-circle` replays one.
-- **Disk.** Every model turn saves one frame per camera, so a two-camera session of a few hundred turns
+- **Disk.** Every LLM turn saves one frame per camera, so a two-camera session of a few hundred turns
   is several hundred pictures.
 - **Write down anything that surprised you** the moment it happens, and
   [say what happened](first-run.md#14-what-to-report).
@@ -529,18 +529,18 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 You have LeRobot, and LeRobot already does what this arm is known for: teleoperation from a
 leader, recording episodes, training a policy, evaluating one. quackd does none of that and
 is not trying to. It does the one thing LeRobot leaves to you, which is deciding what the arm
-should do next, and it does it by putting a language model in that seat under a contract the
-model cannot exceed.
+should do next, and it does it by putting an LLM in that seat under a contract the
+LLM cannot exceed.
 
 | What you want | What does it |
 |---|---|
 | drive the follower from a leader arm, record a dataset, train a policy | LeRobot's own tools. quackd never calls them and never writes to your datasets |
-| have a model choose the next verb, inside limits you wrote down, with every refusal recorded | quackd |
-| hand the arm to a policy you trained, one short subtask at a time, under the model and inside those limits | quackd's policy server, `quackd policy serve`, which loads a LeRobot checkpoint in a process of its own ([guides/policies.md](../../guides/policies.md)) |
+| have an LLM choose the next verb, inside limits you wrote down, with every refusal recorded | quackd |
+| hand the arm to a policy you trained, one short subtask at a time, under the LLM and inside those limits | quackd's policy server, `quackd policy serve`, which loads a LeRobot checkpoint in a process of its own ([guides/policies.md](../../guides/policies.md)) |
 | run one verb by hand, right now | quackd over MCP (`robot_run_verb`), or LeRobot's own Python API |
 
-The contract is a `.duck` file: the verbs the model may use, the budget in steps and minutes,
-and what counts as success ([reference/duck-spec.md](../../reference/duck-spec.md)). The model never
+The contract is a `.duck` file: the verbs the LLM may use, the budget in steps and minutes,
+and what counts as success ([reference/duck-spec.md](../../reference/duck-spec.md)). The LLM never
 emits a motor command. It picks a verb, and quackd checks the allowlist, the preconditions, this
 arm's calibrated range and the step cap before anything reaches the bus.
 
@@ -852,7 +852,7 @@ scan position and not an identity: it can move when you replug or reboot.
 | Key | Default | What it is |
 |---|---|---|
 | (the index) | required | `opencv://0`, or a device path, `opencv:///dev/video2` |
-| `name` | `front` | what the frame is called in a policy's observation, in the label the model reads and in `frames/NNNN-<name>.png`. **Required on every url once you give more than one** |
+| `name` | `front` | what the frame is called in a policy's observation, in the label the LLM reads and in `frames/NNNN-<name>.png`. **Required on every url once you give more than one** |
 | `width`, `height`, `fps` | the camera's own | a mode the camera cannot do is a refusal at connect, so these are worth setting only when you know it can. Width and height come together or not at all |
 | `fourcc` | the camera's own | `MJPG` is the one worth asking for the moment there are two cameras: raw YUYV eats USB bandwidth |
 | `rotation` | `0` | 90, 180 or 270, for a camera mounted sideways |
@@ -891,7 +891,7 @@ What that means at the bench:
   than recognition. Distances assume the size of the duck simulators' ball, and without
   `?fov=` the bearing is uncalibrated and says so. Tuning the ranges to your own ball is in
   [the FAQ](../../faq.md). What is honest whatever the detector makes of it is the frame itself,
-  which a cloud model is shown every step unless you pass `--no-vision`.
+  which a cloud LLM is shown every step unless you pass `--no-vision`.
 
 ### Several cameras
 
@@ -926,19 +926,19 @@ The rules, all of them refusals rather than surprises:
 
 | Rule | Why |
 |---|---|
-| with two or more, **every** url carries `?name=` | the name is the only thing telling the views apart, in the label on each picture the model reads, in a `pick` policy's observation dict, where every camera arrives under its own name, and in `frames/NNNN-<name>.png`. With one camera the name is optional, `front` is the default, and the frames are `frames/NNNN.png` |
-| the names are unique | two views called `top` are two pictures a model cannot tell apart |
+| with two or more, **every** url carries `?name=` | the name is the only thing telling the views apart, in the label on each picture the LLM reads, in a `pick` policy's observation dict, where every camera arrives under its own name, and in `frames/NNNN-<name>.png`. With one camera the name is optional, `front` is the default, and the frames are `frames/NNNN.png` |
+| the names are unique | two views called `top` are two pictures an LLM cannot tell apart |
 | an index appears once | two handles on one webcam is not two views, it is a camera that will not open twice |
 | the **first** url is the primary | `--fov-deg` describes it, the `camera:` detections line reports it and nothing else, `observe` returns its frame, and the verbs that steer by sight read it alone. Those run at 10 Hz, and fetching every camera inside that loop would blow the deadman window. This arm has no such verb today, so here the rule is about the detections line and `observe` |
 
-Everything else arrives at the model. Every frame reaches it each step, labelled with the
+Everything else arrives at the LLM. Every frame reaches it each step, labelled with the
 name of the camera that took it, on Claude, both OpenAI APIs, Gemini, and any
 OpenAI-compatible local server with `--vision` on. The pilot is also told, in as many words,
 which one is primary and that the `camera:` line describes that view and no other.
 
 What happens when one of them dies mid-run depends on which one:
 
-| Which camera stopped | What the model still gets |
+| Which camera stopped | What the LLM still gets |
 |---|---|
 | a secondary | every other view, and the `camera:` detections line unchanged. The failure is named in `report_state` and in `doctor`'s `camera <name>` row |
 | the primary | the other views still arrive as pictures, and the detections line reports nothing seen. A bearing read off a different lens would point somewhere else, so quackd reports nothing rather than something from the wrong camera |
@@ -968,7 +968,7 @@ worth it for a wrist view plus an overhead view. It is not worth it for two view
 thing.
 
 > [!NOTE]
-> A local server, or a particular model behind one, may accept only one image per message.
+> A local server, or a particular LLM behind one, may accept only one image per message.
 > If it refuses a request with two, pass a single `--camera-url`.
 
 `robots.json` stores a string for one camera and a list for several, so a registry file
@@ -992,7 +992,7 @@ x error: lerobot-lookout cannot run on lerobot:real: observe is not provided by 
 That is why `lerobot-lookout` asks for `report_state` instead, and on an arm you have not
 driven before that is the better question anyway: whether it answers at all, whether torque is
 on, and how warm it is. It is what ran first on the bench on 2026-09-15, and it is what ran
-again with `--llm fake` to separate the arm from the model.
+again with `--llm fake` to separate the arm from the LLM.
 
 Over MCP it is the other way, and better. `robot_load_duckfile` validates against the manifest
 of the robot **already connected**, so the same task loads cleanly on a session started with
@@ -1001,9 +1001,9 @@ this arm, that is where it works today.
 
 **The pilot sees the camera whether or not `observe` is allowed.** Every step, the run loop
 takes a frame from every camera, runs the detector over the primary's, and the detections go
-into the observation the model reads. On a provider that accepts pictures the frames
+into the observation the LLM reads. On a provider that accepts pictures the frames
 themselves are attached as well, each labelled with its camera's name, which is `--vision`, on
-by default for cloud models and off for local ones. What `observe` adds is the ability to *ask*
+by default for cloud LLMs and off for local ones. What `observe` adds is the ability to *ask*
 for a look as a deliberate act and get the frame back as a verb result, which is what
 `robot_observe` does over MCP.
 
@@ -1037,7 +1037,7 @@ it found. It is the first thing to point at a real arm. Writing your own is a fi
 `requires:` line, and `quackd validate <file> --robot lerobot:real` refuses it before a run
 if this arm does not provide a verb it asks for.
 
-**A one-line goal**, for when you want a single verb and there is no file for it. The model
+**A one-line goal**, for when you want a single verb and there is no file for it. The LLM
 still has to pass `assess_task`, and everything else still applies:
 
 ```bash
@@ -1048,7 +1048,7 @@ quackd run --goal "roll the wrist ten degrees and stop" --robot arm-01 --llm ant
 Keep `--max-steps` small. `--llm fake` will not do here: the scripted pilot answers a
 free-form goal with a fixed script that ignores it.
 
-**From an MCP client**, which is you choosing each verb with the model doing the talking.
+**From an MCP client**, which is you choosing each verb with the LLM doing the talking.
 This is the only way to call `observe` on a real arm today, and the only way to run exactly
 one verb and stop:
 
@@ -1085,9 +1085,9 @@ makes "draw what is in the picture" a sentence this body can be given. This arm 
 task like that runs on: it is the one that holds a pen, and a drawing is a thing you show
 somebody rather than describe. The picture is not a camera frame and is not treated like one:
 it rides on the pilot's **first** turn labelled `task picture <name>:`, it is never trimmed out
-of the history the way old frames are, and it stays in front of the model for the whole run, so
+of the history the way old frames are, and it stays in front of the LLM for the whole run, so
 a task about a sketch is still about that sketch twenty turns later. Where this arm also has a
-camera, both go out together, task pictures first and then the frames, each named, so the model
+camera, both go out together, task pictures first and then the frames, each named, so the LLM
 can tell the drawing it is copying from the desk it is copying onto:
 
 ```bash
@@ -1105,20 +1105,20 @@ you read in the transcript rather than infer from a bad drawing (captured with `
 Six formats are accepted, PNG, JPEG, WebP, GIF, BMP and TIFF, and every one of them is
 re-encoded to PNG on the way in, brought down to a longest edge of 1568 pixels and then, where
 the encoded picture is still over 1.5 MB, shrunk again. The copy kept at
-`runs/<id>/images/00-sketch.png` is therefore byte for byte what the model was sent rather
+`runs/<id>/images/00-sketch.png` is therefore byte for byte what the LLM was sent rather
 than the file it was derived from, and a multi-frame GIF or TIFF goes out as its first frame.
 Two `--image` flags whose files share a basename are both numbered by their place in the
 list, because two directories with a `sketch.png` in each would otherwise arrive under one
 label and a task naming one of them would be ambiguous in exactly the way a label exists to
 prevent. Both refusals are worth knowing before you write a task around the flag. A
 pilot that does not take images is refused rather than handed the words without the picture,
-because a model told to draw what is in a picture it never received will improvise something
+because an LLM told to draw what is in a picture it never received will improvise something
 and the only sign of why would be a line in a transcript nobody reads twice:
 
 ```
 ✗ error: fake scripted:goal does not take images, so it cannot be given 1 picture
-  quackd list-models marks the models that take no frames; --vision overrides it where
-the vendor does take them, and a local model needs --vision
+  quackd list-llms marks the LLMs that take no frames; --vision overrides it where
+the vendor does take them, and a local LLM needs --vision
 ```
 
 And `--image` is refused with `--flock` or `--robots`, because one picture handed to several
@@ -1137,8 +1137,8 @@ something is printed and skipped:
 ```
 
 This is worth doing on a real arm before the first real run. It exercises the port, the
-calibration, the temperature read, the model, the allowlist and the budgets, and proves
-which verbs the model is going to reach for, with the arm standing still. The heartbeat is
+calibration, the temperature read, the LLM, the allowlist and the budgets, and proves
+which verbs the LLM is going to reach for, with the arm standing still. The heartbeat is
 live throughout, so a dry run also tells you whether the arm answers reliably. Two of the
 bench's dry runs on 2026-09-15 ended early, and both endings were the rehearsal doing its job:
 one on a heartbeat round trip that failed once and never again, one on a pilot that answered
@@ -1647,8 +1647,8 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
 
 ### A scripted pilot that a person judges: `--controller vla`
 
-`--controller llm`, the default, is the model `--llm` names deciding each subtask. With
-`--controller vla` there is no model at all. A scripted pilot hands the policy each instruction
+`--controller llm`, the default, is the LLM `--llm` names deciding each subtask. With
+`--controller vla` there is no LLM at all. A scripted pilot hands the policy each instruction
 the task file lists under `policy.instructions` (a `duck: 3` file,
 [reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)), in order, one `manipulate`
 segment each, or the `--goal` text as the only one:
@@ -1673,10 +1673,10 @@ quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.
   instruction ends the run on its budget, and you are still asked about the segments that ran.
 - **It reads nothing but the verb's result and your answer.** The simulator's own truth about
   the table never reaches it: `quackd preflight` judges a rehearsal on its own.
-- **It costs nothing.** No model is asked, so the counter line reads `tokens 0+0` and `cost $0`.
+- **It costs nothing.** No LLM is asked, so the counter line reads `tokens 0+0` and `cost $0`.
 - **It is refused before anything connects** without `--policy-url`, with `--yes`, with no
   terminal to ask on, with `--dry-run`, beside `--decision-llm` or a decision LLM
-  `QUACKD_DECISION_LLM` names, with a flag for a model or a picture it would ignore (`--llm`,
+  `QUACKD_DECISION_LLM` names, with a flag for a pilot LLM or a picture it would ignore (`--llm`,
   `--base-url`, `--api-key`, `--extra-body`, `--vision`, `--image`), with `--play`, for a task
   file whose `policy.instructions` is empty, and for a task file that gives its pilot a part to
   play unless `--no-play` turns it off ([guides/play.md](../../guides/play.md)). A `--goal` has
@@ -1695,7 +1695,7 @@ what it meets on the way, a travel it cannot reach, a bus that drops a packet, a
 reaches for a verb nobody allowed, it meets at home.
 [ADR-0047](../../adr/0047-the-arms-simulator-runs-the-real-backend.md) is the reasoning.
 
-![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
+![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the LLM was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
 
 *The sentence the real arm at the top of the README was given, `Wave to the camera with an
 extended arm`, on a bare `--robot lerobot:mujoco` with the `front` camera, piloted by OpenAI's
@@ -1845,7 +1845,7 @@ clock, and the physics steps while every such wait is parked and stops the momen
 wakes. So a pilot's thinking costs no sim time, and a run's `max_minutes` counts the arm's time,
 not yours. One step of that clock is 0.01 s, five of the model's physics steps. `--seed` lays
 out the table, and under one seed the simulator does the same again on a run through
-`quackd run` or `quackd preflight`, which make one call at a time, though a model may not choose
+`quackd run` or `quackd preflight`, which make one call at a time, though an LLM may not choose
 the same verbs twice. An MCP session runs tool calls at once, so it is not seeded. `--live` holds
 each step until the wall has caught up, for a person watching, and it is the same lockstep clock,
 so nothing timed on it is a rate.
@@ -1878,7 +1878,7 @@ rehearse on
 ```
 
 It also refuses to rehearse with a pilot nobody named, because the scripted one rehearses nothing
-a model would do. The pilot is `--llm`, else the robot's registered one, else `QUACKD_LLM`, and
+an LLM would do. The pilot is `--llm`, else the robot's registered one, else `QUACKD_LLM`, and
 the scripted pilot runs only when typed as `--llm fake`. Each file is checked against the robot
 as `validate` checks it, the simulator is connected and closed `--connect-cycles` times, and the
 task is run `--seeds` times, three of each unless you say, with memory off:
@@ -1894,7 +1894,7 @@ quackd preflight lerobot-lookout
 |    2 | success |     1 | at the rest pose |      - |   $0 | pass   |
 +--------------------------------------------------------------------+
   no lerobot-lookout.sim.yaml beside it, so only the close was judged
-model cost $0 over 3 runs
+LLM cost $0 over 3 runs
 sim dt 0.01 s
 + 1 file passed preflight
 ```
@@ -2026,10 +2026,10 @@ version of this could be talked into offering one.
 string too, unless a `duck: 3` task file lists its instructions, which makes it one choice per
 instruction. The stepper is then shown each of them and never takes one, in either mode: under
 `--yes` nobody is asked at a confirm gate, so a stepper that cleared its floor would start the
-arm's policy with no person and no model involved. Its answer is recorded beside the model's
+arm's policy with no person and no pilot involved. Its answer is recorded beside the pilot LLM's
 (`gate: shadow_only`), which is the agreement rate promoting it would need
 ([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)). The step cap, the range refusal and
-the hot-servo precondition apply to a stepper-authored call exactly as they apply to a model's,
+the hot-servo precondition apply to a stepper-authored call exactly as they apply to the pilot LLM's,
 because both go through the same executor.
 
 [`ducks/arm-grip-check.duck`](../../../ducks/arm-grip-check.duck) is the task built out of the
@@ -2207,7 +2207,7 @@ A LeRobot arm goes limp when a session ends, because `disconnect()` disables tor
 default, and until 0.24 a clean close with no rest pose recorded asked for exactly that. On the
 bench on
 2026-09-15 that meant the arm fell at the end of every single run. Runs also started from wherever the previous one had left the
-arm, so the pose a model was improvising from was different every time.
+arm, so the pose an LLM was improvising from was different every time.
 
 A rest pose fixes both. You fold the arm by hand, tell quackd where that is, and quackd drives
 it there at both ends of every run. A real arm without one is refused a run, a dry run and an
@@ -2231,7 +2231,7 @@ stopped
 > floor of the travel its calibration recorded, because the calibration never saw the shoulder
 > folded all the way back. LeRobot's calibration writes that travel into each servo as its
 > position limits, and the servo clamps every goal to them. So the rest move drove the shoulder
-> to the limit, stalled there and called the arm lost: runs aborted before their first model
+> to the limit, stalled there and called the arm lost: runs aborted before their first LLM
 > call, every run that got to its end kept torque on and finished at the power switch, and the
 > `stop` at the end of a run hauled a folded shoulder up out of its fold. What quackd does with
 > a pose past the travel now is [A pose past the travel](#a-pose-past-the-travel), below, and
@@ -2304,7 +2304,7 @@ its name. There is no `--rest-pose` flag on `quackd run`.
 
 | When | What happens |
 |---|---|
-| the start of every run | the arm is driven to the pose before the pilot gets control, so what the model improvises from is the same arm every time. A run that cannot get there aborts **before the first LLM call** |
+| the start of every run | the arm is driven to the pose before the pilot gets control, so what the LLM improvises from is the same arm every time. A run that cannot get there aborts **before the first LLM call** |
 | the end of every run | between the `stop` and the disconnect, which is the only window in which putting the arm down changes whether it falls. On every exit path there is: success, failure, infeasible, a spent budget, an abort, an error and Ctrl-C. Where that rest move misses, a run at a terminal asks you to clear the arm's way and folds it once more, and only if that fold misses too, releases it into your hands on Enter at a question that says it will drop ([Releasing it](#releasing-it)) |
 | a `--by-hand` run | the rest move still happens first, and then the arm is released **at** that pose for somebody to place, at the edge of the travel for a joint recorded past it. The pose is what makes the release safe rather than something the flag skips, and the run ends back at it unless quackd refuses to take hold of what you left. It refuses while any joint reads past its travel, a fold nobody lifted the arm out of included, so lift every joint inside its travel before you press Enter. After a refused take-hold nothing moves the arm again, and the run ends with it where it is rather than folding it: in your hands, or still at its rest pose if you never lifted it ([Placing it by hand](#placing-it-by-hand)) |
 | a dry run | nothing. `--dry-run` never moves the arm, and that includes the rest move |
@@ -2466,7 +2466,7 @@ The order below is the whole of the feature, and none of it is a step you can sk
 5. **The pilot runs from those angles.** The step cap, the range refusal, the heat gate and the
    budgets are all the ones any other run gets. The minutes clock restarts the moment the arm
    is holding your pose, so the time you spent looking for a pencil is not taken out of the
-   model's: a person's time and a pilot's budget are not the same clock.
+   LLM's: a person's time and a pilot's budget are not the same clock.
 6. **At the end you are asked before the gripper opens.** The run's own `stop` is holding the
    arm where it finished; the question comes next and the opening after it, because an arm
    folding to its rest pose with a pencil still in the jaws drives that pencil into the bench,
@@ -2503,7 +2503,7 @@ stops it before it moves
 
 The second line reads the arm back rather than repeating what it was told to hold, which is how
 you find out that the wrist sagged two degrees as it took the weight. The same run in the
-transcript, where every stage is a `hand` event, with the model's side of each turn, the
+transcript, where every stage is a `hand` event, with the LLM's side of each turn, the
 verdict, the declaration and the `asked` record of each question left out:
 
 ```
@@ -2522,7 +2522,7 @@ verdict, the declaration and the `asked` record of each question left out:
 ```
 
 **The pilot is told where it is starting from**, in a `## Where this run starts` section of the
-system prompt that only a hand-placed run has. A model that assumed the fold would improvise
+system prompt that only a hand-placed run has. An LLM that assumed the fold would improvise
 from a shape the arm is not in, so it is told to read `report_state` and work from the angles
 rather than from any remembered geometry. That section also says what `holding nothing` above
 means, in whichever of the two ways applies: a task whose allowlist has the gripper verb is
@@ -2577,8 +2577,8 @@ left out):
 ┌─ ✗ ABORTED ─────────────────────────────────────────────────────────────────────────┐
 │ nobody placed the arm: it was released at its rest pose for somebody to put it      │
 │ somewhere, and nothing was pressed                                                  │
-│ steps 0 · llm calls 0 · tokens 0+0 · time 0.1 s (model 0.0 s) · cost $0             │
-│ run dir  runs\20260924-163419-lerobot-lookout                                       │
+│ steps 0 · LLM calls 0 · tokens 0+0 · time 0.3 s (LLM 0.0 s) · cost $0               │
+│ run dir  runs\20261104-204230-lerobot-lookout                                       │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2790,7 +2790,7 @@ a dry run never drives it to:
 
 **The exceptions are a person asking for it, out loud.** Everything above is about quackd's own
 initiative, and on its own initiative quackd still de-energises nothing: no verb disables
-torque, no model can reach it, and `stop` is a hold rather than a release. `let_go()` is the
+torque, no LLM can reach it, and `stop` is a hold rather than a release. `let_go()` is the
 single call in the project that takes torque off a robot, and it has two doors, both opened by
 a person at a terminal and neither by anything else.
 
@@ -3095,9 +3095,9 @@ The questions and what came of them are said to you directly whether or not the 
 the record keeps them as `release` events (`refold`, `folded`, `released`, `kept`,
 `interrupted`) and a `prompt` row each ([concepts/architecture.md](../../concepts/architecture.md)).
 
-**Why a command and a prompt, and not a verb.** Every guard on this arm is there because a model
+**Why a command and a prompt, and not a verb.** Every guard on this arm is there because an LLM
 is three seconds away from it and nobody's hands are on it. Releasing torque away from the rest
-pose is the one thing that drops the arm, so it goes through the only door a model cannot reach:
+pose is the one thing that drops the arm, so it goes through the only door an LLM cannot reach:
 a question put to a person at a terminal, after the folds that would have put the arm down first,
 by a command a person types or by a run's own teardown. It is not a verb and is in no `allow`
 list, it is not an MCP tool, and `let_go` is still not on the `RobotAdapter` protocol
@@ -3251,7 +3251,7 @@ touched by anything in the first block: these all happen before or during connec
 | `lerobot real: --camera-url 'opencv://7' did not open: ...` | the index is wrong, or the camera will not open under this backend | try the index `lerobot-find-cameras opencv` printed, add `?backend=msmf` on Windows, or drop a `width`/`height`/`fps` you pinned. The arm was not touched |
 | `lerobot real: --camera-url '...': fps='abc' is not a whole number` | a query key or value quackd does not accept | the message lists every key; this is refused before LeRobot is imported |
 | `lerobot real: --camera-url 'opencv://2': it has no ?name= and 2 cameras were given` | several cameras, and one of them is unnamed | add `?name=` to every url. The message shows the shape, `opencv://1?name=top --camera-url opencv://2?name=side`, and says what the name is for |
-| `lerobot real: --camera-url 'opencv://2?name=top': name='top' is already the name of 'opencv://1?name=top'` | two cameras with one name | rename one. Two views the model cannot tell apart are worse than one view |
+| `lerobot real: --camera-url 'opencv://2?name=top': name='top' is already the name of 'opencv://1?name=top'` | two cameras with one name | rename one. Two views the LLM cannot tell apart are worse than one view |
 | `lerobot real: --camera-url 'opencv://1?name=side': 1 is already 'opencv://1?name=top'` | the same index given twice | drop the duplicate, or find the other camera's index with `lerobot-find-cameras opencv`. Two handles on one webcam is not two views |
 | `microduck:mock takes one --camera-url and 2 were given; only lerobot:real and lerobot:mujoco take several` | a body that reads one camera was handed more | pass one url to that body. Only this arm reads more than one, on the desk or in its simulator, and the message names both rather than opening the first and dropping the rest |
 
@@ -3272,7 +3272,7 @@ And once it is running:
 | `the close was letting go of the arm and its disconnect did not finish, so some motors may have torque and some not: hold it, and cut its power to be sure` | the disconnect that takes torque off at a close raised, or had not come back in 15 s. The exit does not wait for it after that, so what the motors are doing is not known | hold it, and cut the servo supply |
 | `quackd cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |
 | `torque still reads on for <joints>: cut the power` from `quackd robot release` | those motors kept their torque through the release | cut the servo supply while you hold the arm. The motors not named are limp, and the line after it says what the close then did ([Releasing it](#releasing-it)) |
-| a run aborts with `the arm did not reach its rest pose: ...` before any model call | the run could not start from the recorded pose | something is in the way, or the pose no longer matches the arm, which is what a new calibration does to a pose recorded before it. Record it again, or move whatever is blocking the fold. A fold past the calibrated travel no longer ends a run here: the arm parks at the edge |
+| a run aborts with `the arm did not reach its rest pose: ...` before any LLM call | the run could not start from the recorded pose | something is in the way, or the pose no longer matches the arm, which is what a new calibration does to a pose recorded before it. Record it again, or move whatever is blocking the fold. A fold past the calibrated travel no longer ends a run here: the arm parks at the edge |
 | `<joint> is recorded at <angle> in the rest pose and this calibration lets its servo be driven to <limit> and no further, so it parks there and is let go of there ...` | the fold you recorded lies past the travel in your calibration file, so the arm parks at the edge of it and is let go of there. Not a fault: the run carries on | calibrate again with every joint taken all the way into the fold, then record the pose again ([A pose past the travel](#a-pose-past-the-travel)) |
 | `report_state` says `<joint> reads <angle>, past the <limit> its servo can be driven to` | that joint was folded or placed past its travel with torque off, which is where a rest pose past the travel leaves it, or it was parked at its limit and has sagged a few degrees past it under its own weight | nothing. It is said so the pilot does not take the reading for a fault, and goals are still limited to the travel |
 
@@ -3371,7 +3371,7 @@ and why the adapter is shaped the way it is is
 | `SOFollower.bus is a FeetechMotorsBus` | the attribute registers are read through |
 | `no deadman: nothing stops the arm when the client goes quiet` | the class has no thread, timer or timeout; a goal stands until the next write |
 | `RobotKinematics sets a URDF joint to np.deg2rad(degrees)` | LeRobot's own kinematics helper puts a reading on a model of the arm in radians with no offset and no sign, in forward and inverse kinematics alike. The arm simulator follows it for the five arm joints, which is what [`JOINT_ZERO` and `JOINT_SIGN`](#unverified-our-assumptions-about-the-model-and-what-quackd-does-about-each) assume |
-| `MotorsBus.disable_torque()` | never called on quackd's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `quackd run --by-hand`'s, and `quackd robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `quackd robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `quackd doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no model can ask for it. On a Feetech bus it writes `Torque_Enable` 0 then `Lock` 0 per motor, and quackd asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
+| `MotorsBus.disable_torque()` | never called on quackd's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `quackd run --by-hand`'s, and `quackd robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `quackd robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `quackd doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no LLM can ask for it. On a Feetech bus it writes `Torque_Enable` 0 then `Lock` 0 per motor, and quackd asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
 | `MotorsBus.enable_torque()` | called by `take_hold()`, to pick up an arm a person has just placed, with `num_retry=5` as for the release. It writes `Torque_Enable` 1 **and then `Lock` 1** per motor, two writes a motor rather than one |
 | `MotorsBus.disconnect(disable_torque=True)` | the `disable_torque()` call is inside `if disable_torque`, so False closes the port and leaves every motor holding the goal it was last written: what an arm that missed its rest pose gets instead of falling, and how the port is closed between two connect attempts without a write to any motor. The same branch clears the port handler's busy flag (`port_handler.is_using = False`, motors_bus.py lines 557 and 558), which a serial error in the middle of a packet leaves set and which reopening the port does not clear, so quackd clears it after its own close: without that, every packet of the next attempt is answered "port in use" and the connect is refused as every motor missing |
 | `MotorsBus.motors: name -> Motor(id, model, norm_mode)` | the table that gives each servo its bus address; a bus error's id is turned into a joint through it, never through an assumed order |
@@ -3682,7 +3682,7 @@ only one of quackd's nine bodies that has been on hardware at all.
 What ran:
 
 - `lerobot-lookout`, with a real pilot and once with `--llm fake`, which is how you tell
-  an arm that will not answer from a model that will not decide.
+  an arm that will not answer from an LLM that will not decide.
 - Free-form `--goal` runs. It waved by rolling the wrist about 27 degrees either way, waved
   again from an extended pose with `shoulder_lift` at -39 and `elbow_flex` between 24 and 30,
   and opened and closed the gripper: commanded 100, reported 98 open and 3 closed with the jaws
@@ -3704,7 +3704,7 @@ What went wrong, which belongs in the same breath as the above:
   exists and not the explanation of that day.
 - One dry run aborted because the pilot answered `uncertain` at `assess_task` and the human
   said no. That is the gate working, not a fault.
-- The camera framed the gripper and cropped the raised arm, so the model verified its own waves
+- The camera framed the gripper and cropped the raised arm, so the LLM verified its own waves
   from joint readings rather than from the picture. A view that shows the whole arm is the
   first thing the second bench should fix, and it is now two `--camera-url` flags rather than a
   choice between views.

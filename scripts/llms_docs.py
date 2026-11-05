@@ -1,15 +1,15 @@
-"""Render the tables in `docs/models/` from the code that decides what quackd takes, or check
+"""Render the tables in `docs/llms/` from the code that decides what quackd takes, or check
 that the pages still hold what the code says.
 
-Every table on those pages that names a model, a vendor, a flag, a key or a rate sits between two
+Every table on those pages that names an LLM, a vendor, a flag, a key or a rate sits between two
 markers this script owns, and the rows between them are the catalogues rendered:
 `quackd/agent/providers/catalogue.py` and `factory.py` for the pilots, `local.py` for the local
 servers and `quackd/agent/decision/catalogue.py` for the decision LLMs. So a row is changed in
 the code and this script run, never in a table, and a test runs it on every commit and fails
 when a page says something the code no longer does.
 
-    uv run --no-sync python scripts/models_docs.py          # rewrite the pages
-    uv run --no-sync python scripts/models_docs.py --check  # exit 1 if any page would change
+    uv run --no-sync python scripts/llms_docs.py          # rewrite the pages
+    uv run --no-sync python scripts/llms_docs.py --check  # exit 1 if any page would change
 
 It imports the catalogues and nothing that reaches a vendor, and it reads no environment: a
 `QUACKD_LLM` or an `OPENAI_BASE_URL` on the machine that runs it changes nothing it writes.
@@ -39,16 +39,16 @@ from quackd.agent.providers.catalogue import (
     OPEN_ENDED,
     OPENROUTER_PRICES_CHECKED,
     PRICES_CHECKED,
-    ModelSpec,
+    LLMSpec,
     Price,
-    models_for,
+    llms_for,
 )
 from quackd.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENAI_COMPATIBLE
 from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
 from quackd.agent.providers.openai import BASE_URL_ENV, DEFAULT_BASE_URL
 
 REPO = Path(__file__).resolve().parents[1]
-PAGES_DIR = REPO / "docs" / "models"
+PAGES_DIR = REPO / "docs" / "llms"
 
 #: Who makes or runs each thing a page names, as a reader would say it. A name the code adds
 #: and this table does not know is an error rather than a blank cell, so a new vendor cannot
@@ -65,7 +65,7 @@ MAKERS: dict[str, str] = {
     "kimi": "Moonshot AI (Kimi)",
     "glm": "Z.ai (GLM)",
     "meta": "Meta",
-    "openrouter": "OpenRouter, other vendors' models behind one key",
+    "openrouter": "OpenRouter, other vendors' LLMs behind one key",
     "local": "any server that speaks OpenAI's API",
     "ollama": "Ollama",
     "vllm": "vLLM",
@@ -141,7 +141,7 @@ def maker(name: str) -> str:
         return MAKERS[name]
     except KeyError:
         raise SystemExit(
-            f"scripts/models_docs.py has no maker for {name!r}: add it to MAKERS"
+            f"scripts/llms_docs.py has no maker for {name!r}: add it to MAKERS"
         ) from None
 
 
@@ -150,7 +150,7 @@ def company(name: str) -> str:
         return COMPANIES[name]
     except KeyError:
         raise SystemExit(
-            f"scripts/models_docs.py has no company for {name!r}: add it to COMPANIES"
+            f"scripts/llms_docs.py has no company for {name!r}: add it to COMPANIES"
         ) from None
 
 
@@ -201,7 +201,7 @@ def address(name: str) -> str:
 def pilot_vendors() -> str:
     rows = []
     for name in CLOUD_NAMES:
-        ids = models_for(name)
+        ids = llms_for(name)
         count = f"[{len(ids)}](#{name})"
         if name in OPEN_ENDED:
             count = f"[{len(ids)}, and ids it lists](#{name})"
@@ -236,7 +236,7 @@ def pilot_local() -> str:
     return table(("`--llm`", "Server", "Default address", "Extra", "Key"), rows)
 
 
-def _notes(i: int, m: ModelSpec) -> str:
+def _notes(i: int, m: LLMSpec) -> str:
     notes = ["default"] if i == 0 else []
     if m.api == "responses":
         notes.append("Responses API")
@@ -246,22 +246,22 @@ def _notes(i: int, m: ModelSpec) -> str:
 
 
 def pilot_ids() -> str:
-    total = sum(len(models_for(name)) for name in CLOUD_NAMES)
+    total = sum(len(llms_for(name)) for name in CLOUD_NAMES)
     # a rate read on a day of its own is dated so, as its row is: one added after the catalogue's
     # own read would otherwise be dated to a day nobody had read it
     later = "".join(
         f", `{name}:{m.id}`'s on {m.price.checked}"
         for name in CLOUD_NAMES
-        for m in models_for(name)
+        for m in llms_for(name)
         if m.price is not None
         and m.price.checked not in (None, PRICES_CHECKED, OPENROUTER_PRICES_CHECKED)
     )
     out = [
-        f"{total} model ids from {number_word(len(CLOUD_NAMES))} cloud vendors. Rates are USD "
+        f"{total} LLM ids from {number_word(len(CLOUD_NAMES))} cloud vendors. Rates are USD "
         f"per million tokens, input / output / cache read / cache write, as each vendor's own "
         f"page gave them on {PRICES_CHECKED}{later}, and OpenRouter's list on "
         f"{OPENROUTER_PRICES_CHECKED}. None is a rate the vendor does not publish, and unpriced "
-        "a model with no public per-token rate at all, which a run records as an unknown cost "
+        "an LLM with no public per-token rate at all, which a run records as an unknown cost "
         "rather than a free one."
     ]
     for name in CLOUD_NAMES:
@@ -274,7 +274,7 @@ def pilot_ids() -> str:
                 _notes(i, m),
                 rates(m.price),
             ]
-            for i, m in enumerate(models_for(name))
+            for i, m in enumerate(llms_for(name))
         ]
         out.append(f"### `{name}`")
         out.append(table(("`--llm`", "Label", "Status", "Frames", "Notes", "USD per Mtok"), rows))
@@ -321,7 +321,7 @@ def decision_rows() -> str:
             f"`{PRESETS[name].key_env}`" if PRESETS[name].key_env else "none",
             f"`quackd[{PRESETS[name].extra}]`" if PRESETS[name].extra else "none",
             _decision_address(PRESETS[name]),
-            f"`{PRESETS[name].model}`" if PRESETS[name].model else "the server's own",
+            f"`{PRESETS[name].llm_id}`" if PRESETS[name].llm_id else "the server's own",
             "with `--decision-frames`" if PRESETS[name].sees else "no",
             _decision_rate(PRESETS[name]),
             f"[{name}](../guides/decision-llms/{name}.md)",
@@ -336,7 +336,7 @@ def decision_rows() -> str:
         "Key",
         "Extra",
         "Address",
-        "Default model",
+        "Default LLM",
         "Frames",
         "USD per Mtok in / out",
         "Guide",
@@ -345,12 +345,12 @@ def decision_rows() -> str:
 
 
 def roles() -> str:
-    ids = sum(len(models_for(name)) for name in CLOUD_NAMES)
+    ids = sum(len(llms_for(name)) for name in CLOUD_NAMES)
     vlas = sum(1 for family in FAMILIES if family.takes_words)
     rows = [
         [
             "**Pilot LLM**",
-            "`--llm VENDOR[:MODEL]`",
+            "`--llm VENDOR[:LLM]`",
             "yes, and `fake`, the scripted pilot, flies when nothing names one",
             f"{ids} ids from {number_word(len(CLOUD_NAMES))} cloud vendors, more through "
             f"OpenRouter's own list, and {number_word(len(LOCAL_NAMES))} local presets",
@@ -358,7 +358,7 @@ def roles() -> str:
         ],
         [
             "**Decision LLM**",
-            "`--decision-llm NAME[:MODEL]`",
+            "`--decision-llm NAME[:LLM]`",
             "no, and off unless a run names one",
             f"{number_word(len(PRESET_NAMES))} decision LLMs, hosted or your own",
             "[decision-llms.md](decision-llms.md)",
@@ -516,7 +516,7 @@ _END = re.compile(r"^<!-- end generated: ([a-z0-9-]+) -->$", re.M)
 def start_marker(name: str) -> str:
     source = BLOCKS[name][0]
     return (
-        f"<!-- generated: {name}, by scripts/models_docs.py from {source}. Change a row there "
+        f"<!-- generated: {name}, by scripts/llms_docs.py from {source}. Change a row there "
         "and run the script, not this table. -->"
     )
 
@@ -530,16 +530,16 @@ def rewrite(text: str, page: str) -> str:
     wanted = PAGES[page]
     found = _START.findall(text)
     if unknown := sorted(set(found) - set(BLOCKS)):
-        raise ValueError(f"docs/models/{page} has blocks this script does not render: {unknown}")
+        raise ValueError(f"docs/llms/{page} has blocks this script does not render: {unknown}")
     if tuple(found) != wanted:
         raise ValueError(
-            f"docs/models/{page} carries the blocks {found}, and should carry {list(wanted)}"
+            f"docs/llms/{page} carries the blocks {found}, and should carry {list(wanted)}"
         )
     for name in wanted:
         start = next(m for m in _START.finditer(text) if m.group(1) == name)
         end = next((m for m in _END.finditer(text, start.end()) if m.group(1) == name), None)
         if end is None:
-            raise ValueError(f"docs/models/{page}'s block {name} has no end marker")
+            raise ValueError(f"docs/llms/{page}'s block {name} has no end marker")
         body = BLOCKS[name][1]()
         text = (
             text[: start.start()]
@@ -567,11 +567,11 @@ def main(argv: Sequence[str]) -> int:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(new)
     if stale and check:
-        print("stale pages in docs/models/: " + ", ".join(stale))
-        print("run: uv run --no-sync python scripts/models_docs.py")
+        print("stale pages in docs/llms/: " + ", ".join(stale))
+        print("run: uv run --no-sync python scripts/llms_docs.py")
         return 1
     for page in stale:
-        print(f"rewrote docs/models/{page}")
+        print(f"rewrote docs/llms/{page}")
     return 0
 
 

@@ -421,7 +421,7 @@ def test_the_static_manifest_claims_nothing_the_real_host_has_not_shown() -> Non
         ("tcp://10.0.0.4:5555?model=nonsense", "alohamini2"),
     ],
 )
-def test_the_model_hint_comes_off_the_address(address: str | None, expected: str) -> None:
+def test_the_llm_hint_comes_off_the_address(address: str | None, expected: str) -> None:
     assert parse_model(address) == expected
 
 

@@ -18,8 +18,8 @@ machine without the SDK.
 The answers are in the shapes OpenAI's API reference publishes for `POST /v1/decisions`, read
 2026-10-08: a decision is `{answers, model, usage}`, every answer names the question it
 answers, a `predicate` carries a `probability`, a `choice` its `choice`, `confidence` and a list
-of `{value, probability}`, and a `refusal` carries its name and nothing else. Nothing here is a
-model: the answers are whatever the test scripted, which is the point.
+of `{value, probability}`, and a `refusal` carries its name and nothing else. Nothing here is an
+LLM: the answers are whatever the test scripted, which is the point.
 
 What one installed SDK does with the headers it is handed is a property of that SDK rather than
 of quackd, and only a test that drives the real one can show it:
@@ -258,10 +258,10 @@ def decision(
     answers: Iterable[Mapping[str, Any]],
     *,
     usage: Mapping[str, Any] | None = USAGE,
-    model: str = "gpt-6-luna",
+    llm_id: str = "gpt-6-luna",
 ) -> dict[str, Any]:
     """A whole response body, in the order the answers were given."""
-    return {"answers": [dict(a) for a in answers], "model": model, "usage": usage}
+    return {"answers": [dict(a) for a in answers], "model": llm_id, "usage": usage}
 
 
 def turn(

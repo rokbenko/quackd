@@ -32,7 +32,7 @@
    content, not chrome. Everything else is cream.
 
    Section order below: tokens · reset · class registry · base/type · shell · brandline ·
-   console/stage · the model bar · stage chrome · deck · controls · cockpit · key box ·
+   console/stage · the LLM bar · stage chrome · deck · controls · cockpit · key box ·
    terminal · footer · keyframes · responsive.
    ═════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -416,14 +416,14 @@ button:disabled,
   overflow: hidden;              /* the canvas clips to the card's top corners */
 }
 
-/* ── the model bar ───────────────────────────────────────────────────────────────────────
+/* ── the LLM bar ───────────────────────────────────────────────────────────────────────
    The switch and the credential, in one full-width band ABOVE the arena. Stacked here;
    a two-track grid from 62rem up. */
-.model-bar {
+.llm-bar {
   padding: var(--s-3) var(--gutter);
   border-bottom: 1px solid var(--edge-3);
 }
-.model-bar > * + * { margin-top: var(--s-3); }
+.llm-bar > * + * { margin-top: var(--s-3); }
 
 .stage { position: relative; }
 
@@ -762,10 +762,10 @@ input, select {
   padding: 0.55rem 0.7rem;
 }
 #goal { border-radius: var(--r-md); box-shadow: inset 0 1px 2px rgba(62, 41, 78, 0.05); }
-#key, #base-url, #model, #model-text { font-family: var(--mono); }
-/* Both <select>s in the row, so the model list wears the same chevron the provider does and
+#key, #base-url, #llm, #llm-text { font-family: var(--mono); }
+/* Both <select>s in the row, so the LLM list wears the same chevron the provider does and
    the pair reads as one control. `appearance: none` is what lets the background-image show. */
-#provider, #model {
+#provider, #llm {
   appearance: none;
   padding-right: 1.9rem;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%236b5875' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -780,7 +780,7 @@ input, select {
    just Mistral. `.row > *` already says `flex: 1; min-width: 0`, so the row's own share is the
    width; this is the part that keeps the chosen value legible when that share is narrow. The
    open dropdown is drawn by the browser and is not clipped by any of it. */
-#model { text-overflow: ellipsis; }
+#llm { text-overflow: ellipsis; }
 /* IN ADDITION TO the global :focus-visible ring, never instead of it: this gives a mouse
    user a visible active field without weakening the keyboard ring. */
 input:focus, select:focus {
@@ -999,18 +999,18 @@ summary::after {
 details[open] summary::after { transform: rotate(90deg); }
 details[open] summary { margin-bottom: var(--s-2); }
 #key-box > * + * { margin-top: var(--s-2); }
-/* The model list is grouped by status — current, legacy, preview, specialised, open — and the
-   group headings are the only thing separating nineteen OpenAI models from each other. Browsers
+/* The LLM list is grouped by status — current, legacy, preview, specialised, open — and the
+   group headings are the only thing separating nineteen OpenAI LLMs from each other. Browsers
    style an open dropdown themselves and most of this is advisory; what it can ask for is that
-   the heading reads as a label and the model name reads as a name. Kept modest deliberately:
+   the heading reads as a label and the LLM name reads as a name. Kept modest deliberately:
    a dropdown that tries to look designed looks broken on the one browser that obeys it. */
-#model optgroup {
+#llm optgroup {
   font: 500 var(--t-eyebrow) var(--mono);
   color: var(--meta);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-#model option {
+#llm option {
   font: 400 var(--t-input) var(--sans);
   color: var(--ink);
 }
@@ -1249,7 +1249,7 @@ details[open] summary { margin-bottom: var(--s-2); }
       "stage drive"
       "say   drive";
   }
-  .model-bar { grid-area: key; }
+  .llm-bar { grid-area: key; }
   .stage     { grid-area: stage; }
   .deck      { grid-area: say; }
   #manual    { grid-area: drive; }
@@ -1257,7 +1257,7 @@ details[open] summary { margin-bottom: var(--s-2); }
      it at 320px on a wide screen. The left group is 74–79% throughout — "about 80/20" holds. */
 
   /* the band: the switch on the left, the credential on the right */
-  .model-bar {
+  .llm-bar {
     display: grid;
     grid-template-columns: minmax(19rem, 30rem) minmax(0, 1fr);
     column-gap: var(--s-4);
@@ -1266,9 +1266,9 @@ details[open] summary { margin-bottom: var(--s-2); }
                                          :focus-visible ring's 3px offset against
                                          .console { overflow: hidden } */
   }
-  .model-bar > * + * { margin-top: 0; }
+  .llm-bar > * + * { margin-top: 0; }
   /* With the language layer off, #key-box is `hidden` and the right track has nothing in it. */
-  body.no-quackd .model-bar { grid-template-columns: minmax(0, 1fr); }
+  body.no-quackd .llm-bar { grid-template-columns: minmax(0, 1fr); }
   .toggle-row > div > #toggle-note { font-size: var(--t-micro); }
 
   /* <details> interposes a ::details-content box between #key-box and everything after the
@@ -1292,16 +1292,16 @@ details[open] summary { margin-bottom: var(--s-2); }
   #key-box[open] > summary::after { margin-left: var(--s-1); }   /* `auto` would shove the caret
                                                                     across the whole card */
   /* grow 3 against #key's 2, not 2 against 2. The row carries THREE controls and shows two of
-     them: the provider <select>, and then either the model <select> or #model-text. A <select>
+     them: the provider <select>, and then either the LLM <select> or #llm-text. A <select>
      takes its own min-content width off the top — 181px for "Anthropic (Claude)" — so an even
-     split left the model field 162px for a 166px value and "claude-sonnet-5" read as
+     split left the LLM field 162px for a 166px value and "claude-sonnet-5" read as
      "claude-sonnet-". #key still gets 246px for an "sk-ant-…".
 
-     `min-width: 0` is new and is what keeps that true now the model field is a list rather than
+     `min-width: 0` is new and is what keeps that true now the LLM field is a list rather than
      a box. A <select> is intrinsically as wide as its widest <option>, and the widest here is
      "Muse Spark 1.3 (contributor tier, Meta trains on your prompts)"; without this the row's minimum
      is the sum of both selects' min-content and the band grows a line instead of the row
-     shrinking. The chosen value ellipsises (see #model above) and the open dropdown is drawn by
+     shrinking. The chosen value ellipsises (see #llm above) and the open dropdown is drawn by
      the browser at whatever width it likes, so nothing is unreadable. */
   #key-box[open] > .row           { flex: 3 1 18rem; min-width: 0; }
   #key-box[open] > #key           { flex: 2 1 12rem; }
@@ -1432,12 +1432,12 @@ details[open] summary { margin-bottom: var(--s-2); }
 }
 
 /* THE BAND'S OWN WIDTH TIER. Below ~72rem the credential track gets too narrow for the
-   provider/model row and the key field to share a line, so the band takes an extra line
+   provider/LLM row and the key field to share a line, so the band takes an extra line
    (and the privacy note a third) — 65px the height tiers cannot see, because it is a
    function of width. Narrowing the switch's track buys most of it back; the rest is
    declared here so the arena still knows what is left. */
 @media (min-width: 62rem) and (max-width: 72rem) {
-  .model-bar { grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); }
+  .llm-bar { grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); }
   :root { --band-wrap: 0.25rem; }
 }
 /* and narrower still, where the deck's own bays start wrapping too */
@@ -1516,7 +1516,7 @@ details[open] summary { margin-bottom: var(--s-2); }
      paint: Tab still followed the DOM, so focus jumped from the last chip to the visually last
      block and then back up to the transcript's clear button (WCAG 2.4.3).
 
-     #key-box and #manual are no longer lane children — #key-box lives in .model-bar above the
+     #key-box and #manual are no longer lane children — #key-box lives in .llm-bar above the
      arena and #manual is the console's last child — so the rule that used to reset their
      margins names .console > #manual instead. Document order is still the paint order and the
      Tab order: 03 the key, the arena, 01, 04, 02. The key box being FIRST on a phone is the
@@ -1584,8 +1584,8 @@ details[open] summary { margin-bottom: var(--s-2); }
    fold. The eyebrow is one 11px line and it says what this is. */
 @media (max-height: 46rem) { .brandline .lede { display: none; } }
 @media (max-width: 30rem) {
-  /* The provider select and the model name share a row everywhere else. At this width the
-     model track is ~128px and "claude-sonnet-5" needs 166, so the value the visitor most
+  /* The provider select and the LLM name share a row everywhere else. At this width the
+     LLM track is ~128px and "claude-sonnet-5" needs 166, so the value the visitor most
      needs to READ is silently clipped to "claude-sonn". Two rows instead. */
   #key-box .row { flex-wrap: wrap; }
   #key-box .row > * { flex: 1 1 100%; }

@@ -248,9 +248,9 @@ async def run_drive(
         raise DriveError("drive drives one robot at a time: name it with --robot")
     ((name, adapter),) = plan.adapters.items()
     vla = args.controller == "vla"
-    # what `quackd run` hands the pilot's model, given once for every goal: only a board a person
+    # what `quackd run` hands the pilot's LLM, given once for every goal: only a board a person
     # named for this session or this robot, which QUACKD_HOST sits below for a local preset
-    model_kw: dict[str, Any] = {
+    llm_kw: dict[str, Any] = {
         "base_url": args.base_url,
         "api_key": args.api_key,
         "vision": args.vision,
@@ -259,19 +259,19 @@ async def run_drive(
         "host": plan.host.explicit,
     }
     vendor: str
-    model_id: str | None
+    llm_id: str | None
     if vla:
         from quackd.agent.providers.vla import NAME as VLA
 
-        # the scripted pilot asks no model, so the robot's registered pilot and `QUACKD_LLM`
+        # the scripted pilot asks no LLM, so the robot's registered pilot and `QUACKD_LLM`
         # name one this session never asks, as a `quackd run --controller vla` never does
-        vendor, model_id = VLA, "scripted:goal"
+        vendor, llm_id = VLA, "scripted:goal"
     else:
         # a registered robot may name the pilot that flies it, as `quackd run` reads it: the
         # flag first, then the robot's own, then `QUACKD_LLM`
         here = resolve_robot_ref(args.robot, Registry(args.registry_dir))
         entry = here.entry
-        vendor, model_id, llm_source = resolve_llm(
+        vendor, llm_id, llm_source = resolve_llm(
             args.llm,
             entry.llm if entry is not None else None,
             robot=entry.name if entry is not None else None,
@@ -279,7 +279,7 @@ async def run_drive(
         # built now whichever pilot it is, the scripted one included, so a flag it refuses (an
         # `--effort` it takes no setting for, an `--extra-body` that is no JSON object) is
         # refused before anything connects, as `quackd run` refuses it
-        built = make_provider(vendor, model=model_id, source=llm_source, **model_kw)
+        built = make_provider(vendor, llm_id=llm_id, source=llm_source, **llm_kw)
     # The decision LLM: the fast lane's, as it always was, and a goal's stepper's only where the
     # command line asks for one. `QUACKD_DECISION_MODE` and `QUACKD_DECISION_FRAMES` are not
     # read, so a `.env` written for `quackd run` changes no session, and a session started as
@@ -305,7 +305,7 @@ async def run_drive(
     chooser_llm = None
     decision_price = None
     if named is not None:
-        spec, decision_model = named
+        spec, decision_llm_id = named
         available, why = decision_llm_is_available(spec, url=args.decision_url)
         if not available:
             say(f"{'note':<8} --decision-llm {spec.name} asked for, driving without it: {why}")
@@ -317,7 +317,7 @@ async def run_drive(
             # a session always has
             chooser_llm = make_decision_llm(
                 spec,
-                model=decision_model,
+                llm_id=decision_llm_id,
                 url=args.decision_url,
                 **({"frames": True} if frames else {}),
             )
@@ -460,7 +460,7 @@ async def run_drive(
                 # pilot (`DriveSession._vla_refusal`)
                 return VlaProvider([goal], label="goal")
             if vendor == "fake":
-                return make_provider("fake", duck_name="goal", goal=goal, **model_kw)
+                return make_provider("fake", duck_name="goal", goal=goal, **llm_kw)
             return built
 
         chooser = None
@@ -511,7 +511,7 @@ async def run_drive(
             duck="drive",
             # the pilot a goal is flown by, as the header of every run names its own
             provider=vendor,
-            model=model_id or vendor,
+            llm_id=llm_id or vendor,
             robot=name,
             adapter=getattr(adapter, "name", None),
             transport=backend_name(adapter),

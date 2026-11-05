@@ -79,7 +79,7 @@ class RosterEntry(Protocol):
 
     name: str
     provider: str | None
-    model: str | None
+    llm_id: str | None
 
     @property
     def robot_spec(self) -> RobotSpec: ...
@@ -344,7 +344,7 @@ async def run_pilot_flock(
                 view=member_view(name),
                 link=links[name],
                 # every member is priced the same way, because `--price` is one rate for the
-                # run rather than one per robot: a flock of the same model on three bodies
+                # run rather than one per robot: a flock of the same LLM on three bodies
                 # is three bills at one rate
                 price=price,
                 summary_file=False,
@@ -362,7 +362,7 @@ async def run_pilot_flock(
         members=members,
         robots={name: roster[name].robot_spec.key for name in members},
         providers={
-            name: {"provider": providers[name].name, "model": providers[name].model}
+            name: {"provider": providers[name].name, "llm_id": providers[name].llm_id}
             for name in members
         },
         contracts={
@@ -410,8 +410,8 @@ async def run_pilot_flock(
             run_dir=loop.run_dir,
             log_dropped=loop.event_log.dropped,
             # The loop's own teardown built this before it re-raised, so a member that died
-            # still reports the wall clock, the model seconds and the bill it had already
-            # measured. Without it a flock of fully priced models read `cost_usd: null` on
+            # still reports the wall clock, the LLM seconds and the bill it had already
+            # measured. Without it a flock of fully priced LLMs read `cost_usd: null` on
             # the strength of one member being interrupted.
             summary=loop.summary,
         )
@@ -568,7 +568,7 @@ def _finish(
                 if key in results[name].summary
             },
             "provider": providers[name].name,
-            "model": providers[name].model,
+            "llm_id": providers[name].llm_id,
             "robot": roster[name].robot_spec.key,
             "run_dir": f"ducks/{name}",
             "log_dropped": results[name].log_dropped,

@@ -416,7 +416,7 @@ class MujocoWorld:
         `moving` is the commanded twist, and a body is free to decline it: below the gait
         floor `MicroduckBody` sends nothing and stands. Reporting the command here told the
         pilot `policy=walk` while the duck stood still, which is the one thing the gait floor
-        exists to stop, and it reached the model while the body's own honest `extras["policy"]`
+        exists to stop, and it reached the LLM while the body's own honest `extras["policy"]`
         did not.
         """
         if self.posture == "sitting":

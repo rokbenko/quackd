@@ -6,7 +6,7 @@ segment runs, and this is where that becomes the verb itself rather than a sente
 prompt:
 
 - `instruction` becomes a `Literal` of the listed instructions, an inline `enum` in the tool's
-  JSON Schema, so the executor refuses any other words, the model is shown exactly the list,
+  JSON Schema, so the executor refuses any other words, the pilot LLM is shown exactly the list,
   and the stepper can offer each one (`discrete_calls`). An `Enum` class would reach the schema
   as a `$ref`, which the stepper does not follow, so it would never be a choice. A list of one
   is an `enum` of one as well, where pydantic would write a `const` that Gemini's schema
@@ -120,7 +120,7 @@ def narrow_policy_verb(
 
     Called where the verbs a run offers become final: in the agent loop once the allowlist is,
     before the tools are built from it, in an MCP session after its robot connects, and once a
-    task file it loads is validated, before the file is adopted. The model's tools, the
+    task file it loads is validated, before the file is adopted. The pilot LLM's tools, the
     stepper's choices and the executor's check all read the one verb this registers. A
     ValueError, with nothing changed, for a registry whose `manipulate` takes no instruction to
     narrow (`policy_problem`), or a segment the transport's setter refuses. Nothing else it

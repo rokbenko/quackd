@@ -111,7 +111,7 @@ class HostError(RuntimeError):
     tells "nothing is listening" from "something is listening and said no", and `payload` is the
     JSON object that came with a refusal, when there was one. `unresolved` is True when the
     board's name found no address, so nothing else at that name can be reached either: `doctor`
-    then asks no model server there, since each would wait on the same failed lookup."""
+    then asks no LLM server there, since each would wait on the same failed lookup."""
 
     def __init__(
         self,
@@ -139,7 +139,7 @@ def parse_host(text: str) -> tuple[str, int]:
     without brackets, and the port defaults to `DEFAULT_PORT`.
 
     Refused, each with the sentence that says what to type instead: nothing at all; a URL,
-    because `--host` names a machine and a model server's URL is `--base-url`'s job; anything
+    because `--host` names a machine and an LLM server's URL is `--base-url`'s job; anything
     with an `@`, because a token written into a machine's name ends up in shell history, in
     logs and in every message that quotes the name, which is why it has a flag and an
     environment variable of its own; a port that is not a whole number from 1 to 65535; and a
@@ -155,7 +155,7 @@ def parse_host(text: str) -> tuple[str, int]:
         )
     if "://" in value:
         raise ValueError(
-            f"--host takes a machine, not a URL: give {_HOST_EXAMPLE}. A model server's URL "
+            f"--host takes a machine, not a URL: give {_HOST_EXAMPLE}. An LLM server's URL "
             "goes in --base-url"
         )
     if any(c in value for c in "/?#"):
@@ -193,7 +193,7 @@ def parse_host(text: str) -> tuple[str, int]:
 
 def host_of(text: str) -> str:
     """The bare machine in a `--host` value, IPv6 unbracketed: what a preset's `localhost` is
-    replaced with when the model server is on the board too."""
+    replaced with when the LLM server is on the board too."""
     return parse_host(text)[0]
 
 
@@ -268,7 +268,7 @@ class HostChoice:
         address above `QUACKD_BASE_URL`. A host from the environment is left out, because the
         local provider reads it for itself at the bottom of its own ladder, below
         `QUACKD_BASE_URL` and `OPENAI_BASE_URL`: a `.env` line naming the board you usually
-        use must not outrank a `.env` line naming a model server's exact address, while a
+        use must not outrank a `.env` line naming an LLM server's exact address, while a
         board typed for this run, or registered with this robot, is a decision about this run
         and does."""
         return self.host if self.source != HOST_ENV else None
@@ -348,7 +348,7 @@ def reach_host(choice: HostChoice) -> tuple[HostClient, HostHello] | None:
     `run` and `serve-mcp` both call this before anything connects to the body, and both
     refuse when it raises `HostError`: a `--host` whose daemon does not answer is a run that
     was promised a camera or a detector it will not have, and saying so while nothing is
-    powered is the time to say it. Someone who wants only the board's model server has
+    powered is the time to say it. Someone who wants only the board's LLM server has
     `--base-url` for that, which asks nothing of the daemon."""
     if choice.host is None:
         return None

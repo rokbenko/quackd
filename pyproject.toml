@@ -58,9 +58,9 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=1.0,<2"]
 # The floor is 1.66 because that is the release the Responses API arrived in, and
-# `providers/openai.py` opens there for the models the catalogue marks. On 1.65 the
+# `providers/openai.py` opens there for the LLMs the catalogue marks. On 1.65 the
 # client carries no `responses` at all, so the old `>=1.50` allowed an install that
-# could only fail at the first call on those models.
+# could only fail at the first call on those LLMs.
 openai = ["openai>=1.66,<4"]
 gemini = ["google-genai>=1.0,<3"]
 # Nine vendors, one wheel. Each speaks OpenAI's API at its own address, so the extra exists
@@ -75,7 +75,7 @@ kimi = ["openai>=1.66,<4"]
 glm = ["openai>=1.66,<4"]
 meta = ["openai>=1.66,<4"]
 openrouter = ["openai>=1.66,<4"]
-# The System One protocol client: the optional discrete stepper in front of the model
+# The System One protocol client: the optional discrete stepper in front of the pilot LLM
 # (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
 # Every decision LLM quackd knows that is a System One server is reached by repointing its base
 # URL, so this one wheel covers Jev, Kev, Von, OpenJev, OpenDecision and whatever else answers
@@ -332,7 +332,7 @@ files = [
     "adapters",
     "bridge",
     "docs/assets",
-    "scripts/models_docs.py",
+    "scripts/llms_docs.py",
     "scripts/connect_docs.py",
     "scripts/example_log.py",
 ]

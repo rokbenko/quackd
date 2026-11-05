@@ -132,7 +132,7 @@ class DecisionEyes:
             )
         self.llm = llm
         self.name: str = llm.name
-        self.model: str = llm.model
+        self.llm_id: str = llm.llm_id
         self.url: str | None = redacted_url(llm.url) if getattr(llm, "url", None) else None
         self.price = price
         self._emit = emit
@@ -246,7 +246,7 @@ class DecisionEyes:
         """What a look asked for and what it cost: the count the API reported where it reported
         one, and otherwise the text sent at four characters to the token, marked as an estimate,
         as the stepper bills a turn (`Stepper._bill`). The picture is not in the estimate, because
-        what one costs on this model is unpublished, so an estimated look is a low one."""
+        what one costs on this LLM is unpublished, so an estimated look is a low one."""
         from quackd.agent.decision.stepper import _usage
 
         measured, out_tokens = _usage(result) if result is not None else (None, 0)
@@ -285,7 +285,7 @@ class DecisionEyes:
         """Who `watch` looks through and what each frame is, for `run_start.watch`."""
         return {
             "llm": self.name,
-            "model": self.model,
+            "llm_id": self.llm_id,
             "url": self.url,
             "frame": {"max_side_px": MAX_SIDE_PX, "quality": JPEG_QUALITY, "detail": DETAIL},
             "kept_as": f"{SENT_DIR}/watch-NNNN.jpg",

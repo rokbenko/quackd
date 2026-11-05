@@ -418,7 +418,7 @@ def test_doctor_hands_the_board_it_asked_to_the_probe(
     handed on, because its own row has already failed the report."""
     from quackd import doctor
 
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     monkeypatch.setattr(doctor, "_probe_placement", lambda root_url, timeout_s=1.5: ([], "none"))
     report = doctor.collect("lerobot:mock", address="COM9", host=hostd.address)
     assert report.host is not None and report.host.ok

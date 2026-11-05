@@ -373,7 +373,7 @@ def test_a_key_is_only_ever_sent_over_https_or_to_this_machine() -> None:
     )
 
 
-# ── the browser asks on the API the model will actually answer on ───────────────────────
+# ── the browser asks on the API the LLM will actually answer on ───────────────────────
 
 #: The 400 quoted rather than paraphrased, because both OpenAI clients match on its words.
 #: tests/test_providers.py holds the same text for the Python half. It is handed to the
@@ -411,8 +411,8 @@ def _drive_providers(script: str) -> Any:
 
 #: A tool list and a two-turn history, in the shapes web/src/pilot.js really builds:
 #: `history.push({ observation, call })` where `call` is `{ name, arguments }`.
-#: An OpenAI model the catalogue does NOT route to Responses. The two tests below drive the
-#: 400 reader, and a model the catalogue already routes would start on Responses and never
+#: An OpenAI LLM the catalogue does NOT route to Responses. The two tests below drive the
+#: 400 reader, and an LLM the catalogue already routes would start on Responses and never
 #: reach it. `tests/test_providers.py` keeps the same constant for the same reason.
 UNHINTED = "gpt-5.6-sol"
 
@@ -432,7 +432,7 @@ const history = [
 def test_the_browser_moves_to_responses_when_chat_refuses_function_tools() -> None:
     """The half of 0.8's OpenAI fix that the page never got.
 
-    Some reasoning models refuse function tools on `/v1/chat/completions` and name
+    Some reasoning LLMs refuse function tools on `/v1/chat/completions` and name
     `/v1/responses` in the 400. Every verb here is a function tool, so that refusal is not a
     degraded path, it is no path. `quackd/agent/providers/openai.py` learned to read it and
     move the run; the browser has an OpenAI client of its own, kept speaking Chat Completions
@@ -464,7 +464,7 @@ globalThis.fetch = async (url, init) => {
   }), { status: 200 });
 };
 
-const p = makeProvider({ provider: "openai", key: "sk-test", model: UNHINTED });
+const p = makeProvider({ provider: "openai", key: "sk-test", llmId: UNHINTED });
 const first = await p.step({ system: "SYS", history: [], observation: "obs one", tools });
 await p.step({ system: "SYS", history, observation: "obs three", tools });
 
@@ -474,7 +474,7 @@ globalThis.fetch = async (url) => {
   probe.push(url);
   return new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 400 });
 };
-const q = makeProvider({ provider: "openai", key: "sk-test", model: "nope" });
+const q = makeProvider({ provider: "openai", key: "sk-test", llmId: "nope" });
 let unrelated = "it did not throw";
 try {
   await q.step({ system: "SYS", history: [], observation: "obs", tools });
@@ -494,7 +494,7 @@ console.log(JSON.stringify({
     )
 
     assert got["first"] == {"name": "walk", "arguments": {"vx": 0.2}}, (
-        "the page did not get a tool call out of the model the CLI drives fine"
+        "the page did not get a tool call out of the LLM the CLI drives fine"
     )
     assert [url.rsplit("/v1/", 1)[-1] for url in got["urls"]] == [
         "chat/completions",
@@ -543,18 +543,18 @@ console.log(JSON.stringify({
     )
 
 
-#: The 400 a Claude model answers a forced tool call with, quoted because both Anthropic
+#: The 400 a Claude LLM answers a forced tool call with, quoted because both Anthropic
 #: clients match on its words. tests/test_providers.py holds the same text for the Python half.
 REFUSES_FORCED = 'tool_choice: type "tool" and "any" are not supported for this model.'
 
 
-def test_the_browser_asks_claude_for_a_call_the_way_the_model_will_accept() -> None:
+def test_the_browser_asks_claude_for_a_call_the_way_the_llm_will_accept() -> None:
     """Claude Opus 5.5 is the page's Anthropic default, and it answers `tool_choice` `any` with
-    a 400. The page used to force a call on every Claude model, so a visitor who picked
+    a 400. The page used to force a call on every Claude LLM, so a visitor who picked
     Anthropic and pressed Run got that 400 as the whole transcript.
 
     Three things: the catalogue's mark reaches the page and the default is asked with `auto`
-    from its first turn; a model the catalogue does not mark learns it from the 400 once and
+    from its first turn; an LLM the catalogue does not mark learns it from the 400 once and
     stays moved; and a `tool_choice` complaint that `auto` cannot fix still surfaces, after one
     request rather than two.
     """
@@ -582,7 +582,7 @@ globalThis.fetch = async (url, init) => {
   return reply(200, ok);
 };
 const unmarked = makeProvider({
-  provider: "anthropic", key: "sk-test", model: "claude-not-in-this-build",
+  provider: "anthropic", key: "sk-test", llmId: "claude-not-in-this-build",
 });
 await unmarked.step({ system: "SYS", history: [], observation: "obs", tools });
 await unmarked.step({ system: "SYS", history, observation: "obs three", tools });
@@ -592,7 +592,7 @@ globalThis.fetch = async (url, init) => {
   probe.push(JSON.parse(init.body).tool_choice.type);
   return reply(400, { error: { message: "tool_choice.name: Input should be a declared tool" } });
 };
-const q = makeProvider({ provider: "anthropic", key: "sk-test", model: "claude-opus-5" });
+const q = makeProvider({ provider: "anthropic", key: "sk-test", llmId: "claude-opus-5" });
 let unrelated = "it did not throw";
 try {
   await q.step({ system: "SYS", history: [], observation: "obs", tools });
@@ -612,7 +612,7 @@ console.log(JSON.stringify({
     )
     assert got["markedCall"] == {"name": "walk", "arguments": {"vx": 0.2}}
     assert got["learned"] == ["any", "auto", "auto"], (
-        f"an unmarked model was asked {got['learned']}: it must be forced once, move to auto, "
+        f"an unmarked LLM was asked {got['learned']}: it must be forced once, move to auto, "
         f"and stay moved, or every turn pays a failed call against the visitor's own key"
     )
     assert got["probe"] == ["any"] and "Anthropic said 400" in got["unrelated"], (
@@ -637,7 +637,7 @@ globalThis.fetch = async (url, init) => {
     ] } }],
   }), { status: 200 });
 };
-const p = makeProvider({ provider: "deepseek", key: "sk-test", model: "deepseek-flash" });
+const p = makeProvider({ provider: "deepseek", key: "sk-test", llmId: "deepseek-flash" });
 await p.step({ system: "SYS", history, observation: "obs three", tools });
 console.log(JSON.stringify(sent));
 """
@@ -670,14 +670,14 @@ globalThis.fetch = async (url, init) => {
     ] } }],
   }), { status: 200 });
 };
-const p = makeProvider({ provider: "openai", key: "sk-test", model: "gpt-5" });
+const p = makeProvider({ provider: "openai", key: "sk-test", llmId: "gpt-5" });
 const call = await p.step({ system: "SYS", history, observation: "obs three", tools });
 console.log(JSON.stringify({ call, url: sent.url, body: sent.body }));
 """
     )
 
     assert got["url"].endswith("/v1/chat/completions"), (
-        f"a model that never refused anything was sent to {got['url']}"
+        f"an LLM that never refused anything was sent to {got['url']}"
     )
     assert got["call"] == {"name": "walk", "arguments": {"vx": 0.3}}
 
@@ -729,7 +729,7 @@ globalThis.fetch = async (url) => {
   return new Response(JSON.stringify({ error: { message: "responses is unhappy" } }),
                       { status: 400 });
 };
-const p = makeProvider({ provider: "openai", key: "k", model: UNHINTED });
+const p = makeProvider({ provider: "openai", key: "k", llmId: UNHINTED });
 let gaveUp = "it did not throw";
 try {
   await p.step({ system: "SYS", history: [], observation: "obs", tools });
@@ -748,7 +748,7 @@ globalThis.fetch = async (url) => {
     { type: "message", content: [{ type: "output_text", text: "I would rather talk" }] },
   ] }), { status: 200 });
 };
-const q = makeProvider({ provider: "openai", key: "k", model: UNHINTED });
+const q = makeProvider({ provider: "openai", key: "k", llmId: UNHINTED });
 let noCall = "it did not throw";
 try {
   await q.step({ system: "SYS", history: [], observation: "obs", tools });
@@ -776,7 +776,7 @@ console.log(JSON.stringify({ urls, gaveUp, quiet, noCall }));
 def test_the_browser_and_python_agree_on_which_400_means_responses() -> None:
     """Two OpenAI clients, one rule, and no way for either to notice the other drifted.
 
-    Both match on what the API said rather than on a model name, because the list of models
+    Both match on what the API said rather than on an LLM name, because the list of LLMs
     that behave this way is not this project's to keep. Both require both halves, so an
     unrelated 400 that happens to name one of them does not move a run onto a different API.
 
@@ -815,18 +815,18 @@ def test_the_browser_and_python_agree_on_which_400_means_responses() -> None:
         assert in_browser is expected, f"the browser predicate gets {name} wrong"
 
 
-def test_the_browser_and_python_start_the_same_models_on_the_same_api() -> None:
+def test_the_browser_and_python_start_the_same_llms_on_the_same_api() -> None:
     """The other half of the rule above, and the half that costs nothing to get right.
 
-    Reading the 400 is the fallback. Where the catalogue already records that a model will not
+    Reading the 400 is the fallback. Where the catalogue already records that an LLM will not
     take function tools on Chat Completions, both clients open on Responses and neither spends a
     call finding out. Run in the browser rather than read, so a `startingApi` that quietly stopped
     consulting the catalogue would fail here instead of costing every visitor a wasted call.
     """
-    from quackd.agent.providers.catalogue import models_for
+    from quackd.agent.providers.catalogue import llms_for
     from quackd.agent.providers.openai import OpenAIProvider
 
-    ids = [m.id for m in models_for("openai")]
+    ids = [m.id for m in llms_for("openai")]
     browser = _drive_providers(
         """
 const { startingApi } = await import(MODULE);
@@ -839,12 +839,12 @@ console.log(JSON.stringify(ids.map((id) => startingApi("openai", id))));
         def __init__(self) -> None:
             self.chat = self.responses = None
 
-    for model_id, in_browser in zip(ids, browser, strict=True):
-        in_python = OpenAIProvider(model=model_id, client=Stub()).api
+    for llm_id, in_browser in zip(ids, browser, strict=True):
+        in_python = OpenAIProvider(llm_id=llm_id, client=Stub()).api
         assert in_browser == in_python, (
-            f"{model_id} starts on {in_browser} in the page and {in_python} in the CLI"
+            f"{llm_id} starts on {in_browser} in the page and {in_python} in the CLI"
         )
-    assert "responses" in browser, "no model routes to Responses, so this test proves nothing"
+    assert "responses" in browser, "no LLM routes to Responses, so this test proves nothing"
 
 
 def test_the_browser_asks_each_vendor_for_a_tool_call_the_way_python_does() -> None:
@@ -881,7 +881,7 @@ def test_the_browser_asks_each_openrouter_row_what_the_cli_asks() -> None:
     """Every row the dropdown offers, through the page's own client: the `tool_choice` the CLI
     sends for that row, the `provider` object and the two attribution headers the CLI sends,
     and no `parallel_tool_calls`, which `require_parameters` would route almost nowhere."""
-    from quackd.agent.providers.catalogue import model_ids
+    from quackd.agent.providers.catalogue import llm_ids
     from quackd.agent.providers.openrouter import ATTRIBUTION, DEFAULT_BODY, OpenRouterProvider
 
     sent = _drive_providers(
@@ -897,18 +897,18 @@ for (const { id } of CATALOGUE.openrouter.entries) {
       { id: "c1", type: "function", function: { name: "walk", arguments: "{}" } },
     ] } }] }), { status: 200 });
   };
-  await makeProvider({ provider: "openrouter", key: "sk-or-v1-test", model: id })
+  await makeProvider({ provider: "openrouter", key: "sk-or-v1-test", llmId: id })
     .step({ system: "SYS", history, observation: "obs three", tools });
 }
 console.log(JSON.stringify(out));
 """
     )
-    assert sorted(sent) == sorted(model_ids("openrouter"))
-    for model_id, request in sent.items():
-        cli = OpenRouterProvider(model=model_id, client=object())
+    assert sorted(sent) == sorted(llm_ids("openrouter"))
+    for llm_id, request in sent.items():
+        cli = OpenRouterProvider(llm_id=llm_id, client=object())
         body = request["body"]
         assert request["url"] == "https://openrouter.ai/api/v1/chat/completions"
-        assert body["tool_choice"] == cli.tool_choice, model_id
+        assert body["tool_choice"] == cli.tool_choice, llm_id
         assert body["provider"] == DEFAULT_BODY["provider"]
         assert "parallel_tool_calls" not in body
         for name, value in ATTRIBUTION.items():
@@ -933,11 +933,11 @@ globalThis.fetch = async (url, init) => {
     reasoning_details: details,
   } }] }), { status: 200 });
 };
-const p = makeProvider({ provider: "openrouter", key: "k", model: "google/gemini-3.8-flash" });
+const p = makeProvider({ provider: "openrouter", key: "k", llmId: "google/gemini-3.8-flash" });
 const call = await p.step({ system: "SYS", history: [], observation: "obs one", tools });
 const second = [{ observation: "obs one", call }];
 await p.step({ system: "SYS", history: second, observation: "obs two", tools });
-const q = makeProvider({ provider: "openai", key: "k", model: UNHINTED });
+const q = makeProvider({ provider: "openai", key: "k", llmId: UNHINTED });
 const plain = await q.step({ system: "SYS", history: [], observation: "obs one", tools });
 console.log(JSON.stringify({ call, second: bodies[1], plain }));
 """
@@ -965,10 +965,10 @@ const both = {
   ] } }],
 };
 const out = {};
-for (const [name, model] of [["grok", "grok-4.7"], ["openrouter", "openai/gpt-6-sol"]]) {
+for (const [name, llmId] of [["grok", "grok-4.7"], ["openrouter", "openai/gpt-6-sol"]]) {
   for (const status of [200, 400]) {
     globalThis.fetch = async () => new Response(JSON.stringify(both), { status });
-    const p = makeProvider({ provider: name, key: "k", model });
+    const p = makeProvider({ provider: name, key: "k", llmId });
     try {
       const call = await p.step({ system: "SYS", history: [], observation: "obs", tools });
       out[`${name} ${status}`] = { call };
@@ -989,7 +989,7 @@ console.log(JSON.stringify(out));
 def test_the_browser_reaches_a_stand_in_for_openrouter_over_http() -> None:
     """The page's real request, over a real socket, to the same stand-in the CLI's wire test
     uses: `fetch` is pointed at it and nothing else is changed. A 200 that carries only an
-    error is read as the error it is, not as a model that declined to call a tool."""
+    error is read as the error it is, not as an LLM that declined to call a tool."""
     from tests.fake_openrouter import FakeOpenRouter
 
     with FakeOpenRouter() as stand_in:
@@ -1001,7 +1001,7 @@ const real = globalThis.fetch;
 globalThis.fetch = (url, init) => real(url.replace("https://openrouter.ai/api/v1", STAND_IN), init);
 const {{ makeProvider }} = await import(MODULE);
 const p = makeProvider({{
-  provider: "openrouter", key: "sk-or-v1-stub", model: "openai/gpt-6-sol",
+  provider: "openrouter", key: "sk-or-v1-stub", llmId: "openai/gpt-6-sol",
 }});
 const call = await p.step({{ system: "SYS", history: [], observation: "obs one", tools }});
 console.log(JSON.stringify({{ call }}));
@@ -1024,7 +1024,7 @@ const STAND_IN = {json.dumps(stand_in.base_url)};
 const real = globalThis.fetch;
 globalThis.fetch = (url, init) => real(url.replace("https://openrouter.ai/api/v1", STAND_IN), init);
 const {{ makeProvider }} = await import(MODULE);
-const p = makeProvider({{ provider: "openrouter", key: "k", model: "openai/gpt-6-sol" }});
+const p = makeProvider({{ provider: "openrouter", key: "k", llmId: "openai/gpt-6-sol" }});
 let message = null;
 try {{ await p.step({{ system: "SYS", history: [], observation: "obs", tools }}); }}
 catch (e) {{ message = e.message; }}
@@ -1076,7 +1076,7 @@ def test_nobody_is_in_the_browser_arena_either() -> None:
     the observation, and the page's own copy. The 2D cartoon still has a person and is not
     this test's business.
 
-    The copy matters as much as the code. A chip that asks a model to walk to somebody who is
+    The copy matters as much as the code. A chip that asks an LLM to walk to somebody who is
     not there is a demo that fails in front of whoever clicked it.
     """
     js = _js("microduck.js")
@@ -1181,7 +1181,7 @@ def test_the_upstream_licence_is_named_on_the_page_that_downloads_it() -> None:
 def test_the_browser_refuses_the_arguments_python_refuses() -> None:
     """The check that started the habit of running this code rather than reading it.
 
-    The verb schemas were sent to the vendor and never enforced locally, so a model that
+    The verb schemas were sent to the vendor and never enforced locally, so an LLM that
     ignored one got what it asked for: `duration_s: 1e6` became ten million awaited slices and
     hung the tab, and `duration_s: "soon"` produced NaN, ran no loop and reported success.
     Python rejects both with pydantic before the verb runs.
@@ -1221,13 +1221,13 @@ def test_the_browser_refuses_the_arguments_python_refuses() -> None:
     assert got["empty"] is None, "Python's MoveParams requires nothing, so neither may this"
 
 
-# ── the two copies of the model list stay in step ───────────────────────────────────────
+# ── the two copies of the LLM list stay in step ───────────────────────────────────────
 
 
-def test_the_browser_offers_the_same_models_python_does() -> None:
+def test_the_browser_offers_the_same_llms_python_does() -> None:
     """The generated half of the catalogue, checked the way the upstream pins are.
 
-    `quackd/agent/providers/catalogue.py` is the single source of truth for model names and the
+    `quackd/agent/providers/catalogue.py` is the single source of truth for LLM names and the
     browser cannot import it, so `web/build_catalogue.py` writes the copy the page reads. A
     generated file that nothing re-generates is just a stale file with a comment on it, so the
     generator is run here and its output compared against what is committed.
@@ -1244,11 +1244,11 @@ def test_the_browser_offers_the_same_models_python_does() -> None:
     spec.loader.exec_module(module)
 
     # The committed file is read with its newlines normalised: git may check it out with CRLF
-    # on Windows, and `render()` always produces LF. The difference that matters is the models.
+    # on Windows, and `render()` always produces LF. The difference that matters is the LLMs.
     committed = (SRC / "catalogue.js").read_text(encoding="utf-8").replace("\r\n", "\n")
     assert module.render() == committed, (
         "web/src/catalogue.js is not what web/build_catalogue.py produces, so the page offers a "
-        "different model list from the CLI. Regenerate it and commit the result:\n\n"
+        "different LLM list from the CLI. Regenerate it and commit the result:\n\n"
         "    python web/build_catalogue.py\n"
     )
 
@@ -1294,18 +1294,18 @@ console.log(JSON.stringify({ offered: Object.keys(PROVIDERS), excused: NOT_FROM_
         )
 
 
-def test_the_dropdown_can_show_every_model_the_catalogue_holds() -> None:
+def test_the_dropdown_can_show_every_llm_the_catalogue_holds() -> None:
     """`fillModels` builds one `<optgroup>` per status in STATUS_ORDER and fills it by filtering
-    on that status, so a model whose status is not in STATUS_ORDER is in the data, is offered by
+    on that status, so an LLM whose status is not in STATUS_ORDER is in the data, is offered by
     the CLI, and is silently missing from the page. Nothing else would notice."""
     catalogue = _js("catalogue.js")
     order = re.search(r"STATUS_ORDER = \[([^\]]*)\]", catalogue)
     assert order, "web/src/catalogue.js no longer exports STATUS_ORDER"
     known = set(re.findall(r'"(\w+)"', order.group(1)))
     used = set(re.findall(r'"status": "(\w+)"', catalogue))
-    assert used, "no model in web/src/catalogue.js carries a status, so this test is vacuous"
+    assert used, "no LLM in web/src/catalogue.js carries a status, so this test is vacuous"
     assert used <= known, (
-        f"web/src/catalogue.js holds models whose status STATUS_ORDER does not list: "
-        f"{sorted(used - known)}. fillModels() groups by that order, so those models would "
+        f"web/src/catalogue.js holds LLMs whose status STATUS_ORDER does not list: "
+        f"{sorted(used - known)}. fillModels() groups by that order, so those LLMs would "
         f"never appear in the dropdown"
     )

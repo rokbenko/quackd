@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write `web/src/catalogue.js` from `quackd/agent/providers/catalogue.py`.
 
-The browser demo needs the model list, and it cannot import Python. So there are two copies of
+The browser demo needs the LLM list, and it cannot import Python. So there are two copies of
 it, and the only safe number of hand-maintained copies is one: this generates the second from
 the first, and `tests/test_web.py` fails if the committed file is not what `render()` produces.
 That is the same bargain `test_the_browser_pins_the_same_upstream_commits_python_does` already
@@ -33,7 +33,7 @@ from quackd.agent.providers.catalogue import (
     CATALOGUE,
     CLOUD_NAMES,
     STATUSES,
-    default_model_for,
+    default_llm_for,
 )
 
 OUT = Path(__file__).resolve().parent / "src" / "catalogue.js"
@@ -44,8 +44,8 @@ HEADER = """\
 /**
  * GENERATED FILE. Do not edit.
  *
- * The model list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
- * a model is ever added. Regenerate after editing that file:
+ * The LLM list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
+ * an LLM is ever added. Regenerate after editing that file:
  *
  *     python web/build_catalogue.py
  *
@@ -62,7 +62,7 @@ def render() -> str:
     """The exact text of `web/src/catalogue.js`, newline-terminated and LF throughout."""
     catalogue = {
         vendor: {
-            "default": default_model_for(vendor),
+            "default": default_llm_for(vendor),
             "entries": [
                 {
                     "id": spec.id,
@@ -88,8 +88,8 @@ def render() -> str:
 
 def main() -> None:
     OUT.write_text(render(), encoding="utf-8", newline="\n")
-    models = sum(len(CATALOGUE[vendor]) for vendor in CLOUD_NAMES)
-    print(f"wrote {OUT} — {len(CLOUD_NAMES)} vendors, {models} models")
+    llms = sum(len(CATALOGUE[vendor]) for vendor in CLOUD_NAMES)
+    print(f"wrote {OUT} — {len(CLOUD_NAMES)} vendors, {llms} LLMs")
 
 
 if __name__ == "__main__":

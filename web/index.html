@@ -5,7 +5,7 @@
 <!-- No maximum-scale and no user-scalable: pinch-zoom must stay available. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>quackd — a Microduck with an LLM for a brain, in your browser</title>
-<meta name="description" content="Type a sentence, watch a simulated Microduck do it. An LLM picks the robot's own skills and quackd decides what it is allowed to do, the same way it commands a whole flock of robots from one CLI. Bring your own API key, or run a local model.">
+<meta name="description" content="Type a sentence, watch a simulated Microduck do it. An LLM picks the robot's own skills and quackd decides what it is allowed to do, the same way it commands a whole flock of robots from one CLI. Bring your own API key, or run a local LLM.">
 <meta property="og:title" content="quackd — a Microduck with an LLM for a brain">
 <meta property="og:description" content="Type a sentence, watch a simulated Microduck do it. Real MuJoCo physics, upstream's own walking policy, your own API key.">
 <meta name="theme-color" content="#fffdf7">
@@ -69,14 +69,14 @@
     <!--
       The band. It is FIRST in the document, above the arena, because a visitor who never
       sees the key field types a sentence, presses Run and gets an error about a credential
-      nobody asked them for. The switch and 03 are one question — "is a model in this loop"
+      nobody asked them for. The switch and 03 are one question — "is an LLM in this loop"
       and "whose key pays for it" — so they share the band.
 
       #key-box is a SIBLING of .toggle-row and never its parent or its child: applyToggle()
       does `ui.keyBox.hidden = !on`, so a switch nested inside the box it hides would hide
       itself and become unreachable.
     -->
-    <div class="model-bar">
+    <div class="llm-bar">
       <div class="toggle-row">
         <label class="switch">
           <input type="checkbox" id="quackd-on" aria-labelledby="toggle-label" checked>
@@ -84,7 +84,7 @@
         </label>
         <div>
           <strong id="toggle-label">quackd is on</strong>
-          <p id="toggle-note" class="fine">A model reads your sentence and picks from the robot's own verbs. The executor checks every one against the contract before anything moves.</p>
+          <p id="toggle-note" class="fine">An LLM reads your sentence and picks from the robot's own verbs. The executor checks every one against the contract before anything moves.</p>
         </div>
       </div>
 
@@ -93,18 +93,18 @@
           <span class="eyebrow">Your API key</span>
         </summary>
         <p class="fine">
-          The key stays in this tab. It goes straight from your browser to the model you
+          The key stays in this tab. It goes straight from your browser to the LLM you
           pick, is never stored and never passes through any server of ours. Every call is
           billed to you. Prefer nothing to leave the machine at all? Pick <em>Local</em>.
         </p>
         <div class="row">
           <!-- Two controls for one field, and applyProvider() shows exactly one. A cloud
-               vendor's models are a list quackd keeps, so picking one is a <select> built
+               vendor's LLMs are a list quackd keeps, so picking one is a <select> built
                from catalogue.js. A local server serves whatever you pulled and quackd has no
                list for it, so that one stays free text. -->
-          <select id="provider" aria-label="model provider"></select>
-          <select id="model" aria-label="model"></select>
-          <input id="model-text" placeholder="model" aria-label="model" autocomplete="off" hidden>
+          <select id="provider" aria-label="LLM provider"></select>
+          <select id="llm" aria-label="LLM"></select>
+          <input id="llm-text" placeholder="LLM" aria-label="LLM" autocomplete="off" hidden>
         </div>
         <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off">
         <input id="base-url" placeholder="http://localhost:11434/v1" autocomplete="off" hidden>

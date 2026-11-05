@@ -1,6 +1,6 @@
 """Which turns are a choice, and what an answer must clear before it moves a servo.
 
-quackd's loop asks one question a turn and pays a frontier model's full latency for it whether
+quackd's loop asks one question a turn and pays a frontier LLM's full latency for it whether
 the answer is `report_state` or a six-joint pose. On the SO-101 run at the top of `README.md`
 that is 62.1 seconds of a 78.8 second run. Some of those turns are not writing, they are
 choosing, and a decision LLM answers a choice without generating anything.
@@ -13,8 +13,8 @@ joint names the schema never lists, because they live in a `field_validator` rat
 enum, so there is nothing for a classifier to enumerate even in principle.
 
 This is quackd's half and does not change with the vendor. The questions go out as plain dicts
-in the System One shape, so the same four reach a hosted API, a server on this machine and a
-model in this process without being rebuilt here, and a backend whose wire format is another
+in the System One shape, so the same four reach a hosted API, a server on this machine and an
+LLM in this process without being rebuilt here, and a backend whose wire format is another
 shape translates them on its own side; which of those answers them is `factory.py`'s question
 and `catalogue.py`'s table. Nothing here imports a backend at all.
 
@@ -78,12 +78,12 @@ SHADOW_ONLY = frozenset({POLICY_VERB})
 subtask to hand the policy next is exactly the between-segment choice a decision LLM might one
 day make. It answers to the confirm floor, and under `--yes` nobody is asked at that gate, so a
 stepper that cleared the floor would start a segment of a learned policy driving the arm with
-no person and no model involved. So it is offered, its answer is recorded beside the model's
-(`shadow_event`), and the model takes the turn. Promoting it needs a measured agreement rate
+no person and no pilot involved. So it is offered, its answer is recorded beside the pilot LLM's
+(`shadow_event`), and the pilot LLM takes the turn. Promoting it needs a measured agreement rate
 and a decision of its own, not a floor."""
 SHADOW_GATE = "shadow_only"
 """The gate a choice of a `SHADOW_ONLY` verb ends on: it cleared every other gate, and the turn
-went to the model all the same."""
+went to the pilot LLM all the same."""
 
 # The confidence a Choice must clear before the stepper acts on it, by what the verb does.
 # TypeSafe's confidence page publishes exactly two numbers, 0.5 and 0.9, and both are here.
@@ -202,7 +202,7 @@ def _finite(value: Any) -> tuple[float, bool]:
     floor in the table, so a backend that spelled a confidence as a boolean would be believed
     absolutely rather than doubted.
 
-    The caller hands the turn back to the model whenever this says False."""
+    The caller hands the turn back to the pilot whenever this says False."""
     if value is None or isinstance(value, bool):
         return 0.0, False
     try:
@@ -222,16 +222,16 @@ def _probability(value: Any) -> tuple[float, bool]:
     sent as a string cleared its floor and a Noul sent as `"0"` said certainly not. Both wire
     formats quackd speaks type these as numbers: TypeSafe's SDK declares `confidence` and `noul`
     floats "from 0 to 1" (typesafe-sdk 0.7.0 to 0.7.2, `_schemas/models.py`, read 2026-10-10), and
-    OpenAI's reference types them as numbers. An answer that spells one as text, from a plugin, a
-    model in this process or a server read without an SDK in between, is a malformed answer rather
+    OpenAI's reference types them as numbers. An answer that spells one as text, from a plugin, an
+    LLM in this process or a server read without an SDK in between, is a malformed answer rather
     than another spelling of a number.
 
     Nor is a number outside 0 to 1. A probability of -1 is under both Noul thresholds and a
     confidence of 5 is over every floor, so a server that answered on a scale of its own, a
     percentage or a log-odds, moved the body on numbers that were never probabilities. Both ends
-    are in, because a model is allowed to be certain.
+    are in, because an LLM is allowed to be certain.
 
-    The caller hands the turn back to the model whenever this says False."""
+    The caller hands the turn back to the pilot whenever this says False."""
     if isinstance(value, str | bytes | bytearray):
         return 0.0, False
     number, finite = _finite(value)
@@ -264,7 +264,7 @@ def discrete_calls(schema: Mapping[str, Any]) -> list[Call] | None:
     Takes a whole tool schema, as `Verb.tool_schema()` builds it. A tool is a choice when every
     property it has is either a closed set — an enum, a const, or a boolean — or inert. One
     property that is a number, a free string, an object or an array and the answer is a value
-    rather than a choice: that turn belongs to the model, whatever else is true about it.
+    rather than a choice: that turn belongs to the pilot, whatever else is true about it.
     """
     name = str(schema.get("name") or "")
     inner = schema.get("input_schema") or {}
@@ -346,7 +346,7 @@ least likely to decide it."""
 
 NEVER_TRIMMED = ("goal", "success_when", "body", "where", "now", "last", "picture")
 """A turn without these is not a turn worth answering, so if they alone blow the hard cap the
-call is not made at all and the model takes it. `picture` is the one sentence that says an image
+call is not made at all and the pilot takes it. `picture` is the one sentence that says an image
 went beside the state, on a turn that sent one: trimmed, the image would go with nothing to say
 what it is."""
 
@@ -359,14 +359,14 @@ MAX_IN_A_ROW = 8
 """The most turns in a row a stepper may answer, on a run long enough for the number to mean
 anything.
 
-Only the model can record a verdict, declare an outcome or write a note, so a run that never
+Only the pilot can record a verdict, declare an outcome or write a note, so a run that never
 reaches it is a run that can only end on a budget. Eight because the longest wholly discrete
 sequence quackd can presently describe is the arm's six-turn grip loop, and this has to clear
 it with room.
 
 Eight alone is not a backstop, which is the correction this constant needed. A duck's whole
 step budget can be smaller than it: `hello-world` allows five, so a streak of eight can never
-be reached and the model would be consulted once, or not at all, before `max_steps` ended the
+be reached and the pilot LLM would be consulted once, or not at all, before `max_steps` ended the
 run. `Stepper.streak_limit` is the number that actually holds, and it is this or half the
 budget, whichever is less.
 
@@ -378,7 +378,7 @@ real runs look like."""
 class Advice:
     """One turn's answer, and the record of how it was reached.
 
-    `call` is None whenever the model should take this turn, for any reason at all: the
+    `call` is None whenever the pilot LLM should take this turn, for any reason at all: the
     stepper declined, it was not confident enough, it thinks the job is done, it errored, or
     it was never asked. The caller does not need to know which; the record says."""
 
@@ -434,7 +434,7 @@ def _picture(camera: str, cameras: Sequence[str]) -> str:
 DONE_THRESHOLD = 0.5
 HUMAN_THRESHOLD = 0.5
 """A Noul carries no confidence, so this is the raw probability and 0.5 is "more likely than
-not". Escalating when the job is not in fact done costs one model call; not escalating when it
+not". Escalating when the job is not in fact done costs one LLM call; not escalating when it
 is costs a robot that carries on working after the task is finished."""
 
 
@@ -451,13 +451,13 @@ def build_questions(offered: Sequence[Call], what: Mapping[str, str]) -> dict[st
 
     Plain dicts rather than an SDK's own `Choice` and `Noul`: the System One format spells a
     question as a type, an instruction and its criteria, and each backend reads that mapping
-    itself. Built once here, they go to a hosted API, to a server on this machine and to a
-    model in this process, and the backend that speaks OpenAI's format rather than this one
+    itself. Built once here, they go to a hosted API, to a server on this machine and to an
+    LLM in this process, and the backend that speaks OpenAI's format rather than this one
     translates them on its own side (`decisions_api.py`).
 
     All four go every time. The questions are answered in parallel and in isolation against the
     same state, so adding one costs almost nothing, and `feasible` is asked on every turn even
-    though v1 never acts on it: recording it beside the model's own verdict is the cheapest
+    though v1 never acts on it: recording it beside the pilot's own verdict is the cheapest
     possible way to earn the right to act on it later."""
     criteria = {call.label: what[call.label] for call in offered}
     criteria[ESCALATE] = _escalate_criterion()
@@ -587,7 +587,7 @@ def _answer(result: Any, key: str) -> Any:
     """One question's answer, however this backend hands them back.
 
     Tolerant on purpose, and load-bearing rather than defensive. An SDK returns an object with
-    an `answers` attribute; a server's JSON and an in-process model both return a plain
+    an `answers` attribute; a server's JSON and an in-process LLM both return a plain
     mapping with an `"answers"` key; the format is young and its own docs have spelled the
     container two ways. Every one of those must cost a run one escalation rather than ending
     it with a traceback while an arm is energised."""
@@ -728,7 +728,7 @@ class Stepper:
     a shadow record, and the `off` runs that never build one at all."""
     name: str = ""
     """The preset that answered, for the record: `jev`, `kev`, a plugin's own name."""
-    model: str = ""
+    llm_id: str = ""
     url: str | None = None
     """Where it was reached, for the record. Already redacted: `build` is the only thing that
     sets it, and it redacts. A password or a credential-shaped query parameter in a
@@ -749,7 +749,7 @@ class Stepper:
     """Labels whose verb is `SHADOW_ONLY`: offered, compared, never taken."""
     tried: Counter[str] = field(default_factory=Counter)
     last_call: str | None = None
-    """The label it authored on the previous turn, or None when the model took that turn."""
+    """The label it authored on the previous turn, or None when the pilot took that turn."""
     in_a_row: int = 0
     asked: int = 0
     taken: int = 0
@@ -757,7 +757,7 @@ class Stepper:
     refusals: int = 0
     """Turns that ended on the `refused` gate, because the decision LLM declined a question
     rather than answered it. Not among `errors`, since nothing failed: the vendor's own policy
-    answered in place of its model, and whether that happens on a robot's state at all is one of
+    answered in place of its LLM, and whether that happens on a robot's state at all is one of
     the things a shadow run is for."""
     frames_sent: int = 0
     """Camera frames handed over with a request. Counted as each is handed over, before any
@@ -782,7 +782,7 @@ class Stepper:
     by then, though, and `advise` has already counted it, timed it and billed it, so the summary
     would count a turn the transcript had no record of. It cannot return that record, because the
     interrupt has to go on, so it leaves it here, and the loop writes it down on its way out
-    (`loop.py`), as it writes down the model's own call when an interrupt cuts that off. Cleared
+    (`loop.py`), as it writes down the pilot's own call when an interrupt cuts that off. Cleared
     at the start of every turn, so what is here is never an earlier turn's."""
     price: Price = SELF_HOSTED
     """What a question costs: the preset's published rate, `QUACKD_DECISION_PRICE`, or the
@@ -830,7 +830,7 @@ class Stepper:
             body=body,
             llm=llm,
             name=llm.name,
-            model=llm.model,
+            llm_id=llm.llm_id,
             # Redacted here, once, rather than at each of the two places that write it out.
             # A `--decision-url` can carry a password or a credential-shaped query parameter,
             # and it also arrives from `QUACKD_DECISION_URL`, which argv redaction never sees;
@@ -883,13 +883,13 @@ class Stepper:
 
         One step is the exception, and the floor of 1 below is what makes it one: a budget of
         1 gives a limit of 1, the counter starts at 0, and 0 is under the limit, so the single
-        turn of that run can be the stepper's with the model never consulted. A one-turn run
+        turn of that run can be the stepper's with the pilot LLM never consulted. A one-turn run
         is not a run this gate was written for, and `max_steps=1` is reachable from the flag,
         so it is said here rather than left to be discovered.
 
         Not parity either, and it would be easy to read it that way. A streak ends by handing
-        exactly one turn to the model, after which the count starts again, so the shape is a
-        run of stepper turns and then a model turn rather than one each."""
+        exactly one turn to the pilot LLM, after which the count starts again, so the shape is a
+        run of stepper turns and then a pilot turn rather than one each."""
         if self.max_steps <= 0:
             return MAX_IN_A_ROW
         return max(1, min(MAX_IN_A_ROW, self.max_steps // 2))
@@ -905,11 +905,11 @@ class Stepper:
         """The `decision` block of `summary.json`, written only when a stepper actually ran."""
         return {
             "mode": self.mode,
-            # Which decision LLM, not just which model id: `jev-1.13.0` names itself, but
+            # Which decision LLM, not just which LLM id: `jev-1.13.0` names itself, but
             # `kev-latest` on one machine and on another are two different servers, and a
             # transcript that recorded only the id could not tell a reader which answered.
             "llm": self.name,
-            "model": self.model,
+            "llm_id": self.llm_id,
             "url": self.url,
             # Whether it was shown the camera, and how many frames left the machine for it, on
             # every run with a stepper, so a run that sent none says so rather than saying
@@ -926,7 +926,7 @@ class Stepper:
                 f"latency_{figure}_s": seconds
                 for figure, seconds in (latency_spread(self.answered_s) or {}).items()
             },
-            # What the stepper asked for and what that cost, kept apart from the model's own
+            # What the stepper asked for and what that cost, kept apart from the pilot LLM's own
             # `usage` and `cost_usd` at the top of the summary rather than folded into them:
             # they are two different things at rates that can be three orders of magnitude
             # apart, and the whole question `--decision-mode shadow` exists to answer is the
@@ -1003,7 +1003,7 @@ class Stepper:
             # Whole, never shortened. Every other field here is a summary of something the
             # robot can be asked again for, but a goal cut off at a comma is a different
             # goal: "wave, but do not raise the shoulder" truncates into its own opposite.
-            # If that alone will not fit, the turn goes to the model rather than going out
+            # If that alone will not fit, the turn goes to the pilot rather than going out
             # half-said.
             "goal": " ".join(self.goal.split()),
             "success_when": " ".join("; ".join(self.success).split()),
@@ -1062,7 +1062,7 @@ class Stepper:
         record: dict[str, Any] = {
             "mode": self.mode,
             "llm": self.name,
-            "model": self.model,
+            "llm_id": self.llm_id,
             "labels": labels(offered),
         }
         if self.frames:
@@ -1072,8 +1072,8 @@ class Stepper:
         if not offered:
             # Nothing on this body is a choice right now, so there is no question to ask and
             # nothing to pay for. A duck whose whole allowlist is continuous never reaches the
-            # network at all. The model takes the turn, so the stepper's streak ends here, as it
-            # does on every turn the model takes (`_hand_back`).
+            # network at all. The pilot LLM takes the turn, so the stepper's streak ends here, as it
+            # does on every turn the pilot LLM takes (`_hand_back`).
             return self._hand_back({**record, "gate": "not_offered", "latency_s": 0.0})
 
         shown: DecisionFrame | None = None
@@ -1105,8 +1105,8 @@ class Stepper:
         # its client kept from that request has been sitting idle. Both SDKs here pool their
         # connections in httpx2, whose default drops one that has been idle five seconds, and
         # neither changes it (httpx2 2.12.0, openai 3.22.1 and typesafe-sdk 0.7.2, read
-        # 2026-10-10). In shadow mode the stepper is asked once a turn, with the model's own call
-        # and a verb in between, which on a frontier model is usually longer than that, so a
+        # 2026-10-10). In shadow mode the stepper is asked once a turn, with the pilot's own call
+        # and a verb in between, which on a frontier LLM is usually longer than that, so a
         # request there usually starts on a new connection and pays for opening it inside the
         # one second it has. That is the difference between a cold turn and a warm one, and
         # `latency_s` alone cannot show it. None on the first request, which has no earlier one
@@ -1150,9 +1150,9 @@ class Stepper:
                 idle = self._idle(started)
             sent = _question_chars(questions)
             assert self.llm is not None  # `build` always sets it; `advise` is never reached without
-            # Bounded here rather than in each backend, because "quicker than the model" is a
+            # Bounded here rather than in each backend, because "quicker than the pilot" is a
             # promise quackd makes and only quackd can keep: a hosted client has its own
-            # timeout with its own meaning, a model in this process has none, and a plugin has
+            # timeout with its own meaning, an LLM in this process has none, and a plugin has
             # whatever its author thought of. A turn that runs out escalates like any other
             # failure, and the record says which.
             #
@@ -1174,12 +1174,12 @@ class Stepper:
                 else:
                     result = await self.llm.decide(state, questions)
         except Exception as e:
-            # A turn with no answer is a turn the model takes, so it ends the run of stepper turns
+            # A turn with no answer is a turn the pilot takes, so it ends the run of stepper turns
             # the way every other handover does (`_hand_back`). It used to return from here
             # without that, which left the call before it standing as the stepper's last: after a
-            # `stop` the stepper took and a turn that timed out, which the model then took, the
+            # `stop` the stepper took and a turn that timed out, which the pilot LLM then took, the
             # very same confident `stop` was refused as a repeat, and a run of stepper turns
-            # broken by a timeout reached its limit early, counted as if the turn the model took
+            # broken by a timeout reached its limit early, counted as if the turn the pilot LLM took
             # in between had never broken it.
             self.errors += 1
             ran_out = bound is not None and bound.expired()
@@ -1189,13 +1189,13 @@ class Stepper:
         except BaseException as e:
             # A second Ctrl-C, or a flock cancelling its members, arrives here while the request is
             # out, and is not an `Exception`, so the handler above never saw it. So does the cancel
-            # of a shadow request asked beside the model's call when that call ends the run first
+            # of a shadow request asked beside the pilot's call when that call ends the run first
             # (`AgentLoop._settle_beside`). It still ends the run, and nothing here may stop it,
             # but the request it cut off was as real as any other: counted, timed and billed like
             # a turn that failed, on a gate of its own, `interrupted`, since nothing failed and
             # nobody takes the turn. Not among `errors` either, which count what went wrong with
             # the decision LLM, and a person ending a run is not that. The record is left on
-            # `cut_off` for the loop to write down, as the loop does for the model's own call
+            # `cut_off` for the loop to write down, as the loop does for the pilot LLM's own call
             # (`loop.py`). Building it may not replace the interrupt with a traceback of its own,
             # so a failure there costs the record and nothing else, and the interrupt goes on as
             # it came.
@@ -1286,8 +1286,8 @@ class Stepper:
         # something nobody could read; a declined `feasible` would not be noticed at all,
         # because nothing acts on it, and the turn could be taken. So it is read first, and any
         # declined question hands the turn back, `feasible` included: a refusal is the vendor's
-        # policy speaking about this state rather than its model answering a question, and the
-        # model, which is shown the whole turn, is the one to take a turn like that. The record
+        # policy speaking about this state rather than its LLM answering a question, and the
+        # LLM, which is shown the whole turn, is the one to take a turn like that. The record
         # keeps whatever was answered beside the names that were not.
         if declined := _refused(result):
             self.refusals += 1
@@ -1298,8 +1298,8 @@ class Stepper:
         # move the body. A missing Noul is the same failure wearing different clothes: read as
         # zero it says "certainly not done, certainly no person needed", which is exactly the
         # pair of answers that lets a verb through. A backend that answered only `next_verb`
-        # -- a plugin under construction, a server that dropped a field, a model that does not
-        # implement Nouls at all -- must hand the turn to the model rather than move the body
+        # -- a plugin under construction, a server that dropped a field, an LLM that does not
+        # implement Nouls at all -- must hand the turn to the pilot rather than move the body
         # on two questions nobody answered. A number on some other scale, or written as text,
         # is no probability either (`_probability`), and a `next_verb` with no choice in it is
         # no answer to the question it was asked, whatever confidence it carries.
@@ -1348,7 +1348,7 @@ class Stepper:
         )
 
     def _hand_back(self, record: dict[str, Any]) -> Advice:
-        """The model takes this turn, so the run of stepper turns is over and both counters
+        """The pilot LLM takes this turn, so the run of stepper turns is over and both counters
         start again from the next one."""
         self.last_call = None
         self.in_a_row = 0
@@ -1430,7 +1430,7 @@ class Stepper:
         return failed
 
     def compares(self, advice: Advice) -> bool:
-        """Whether the model's answer to this turn is recorded beside the stepper's in
+        """Whether the pilot LLM's answer to this turn is recorded beside the stepper's in
         `--decision-mode on` as it is in shadow: a turn that offered a `SHADOW_ONLY` call,
         which is every between-segment choice, whatever the stepper answered. Only those, so
         the agreement they measure is on the choices it is never let make, and not only on the
@@ -1440,7 +1440,7 @@ class Stepper:
     def shadow_event(
         self, advice: Advice, call: ToolCall, llm: Mapping[str, Any] | None = None
     ) -> dict[str, Any]:
-        """What the stepper would have done, beside what the model did, on the same reading.
+        """What the stepper would have done, beside what the pilot LLM did, on the same reading.
 
         The only record shadow mode leaves, and what turns the arithmetic in
         `docs/guides/decision-llms/README.md` into a measurement."""
@@ -1458,7 +1458,7 @@ class Stepper:
             # other row reads as it did.
             **({"refused": list(declined)} if declined else {}),
             "decision_latency_s": advice.record.get("latency_s"),
-            "model_verb": call.name,
+            "llm_verb": call.name,
             "model_arguments": dict(call.arguments),
             # The whole call, not the verb's name. Every discrete verb worth comparing is one
             # whose arguments are the decision: `gripper(open=true)` and `gripper(open=false)`
@@ -1471,7 +1471,7 @@ class Stepper:
             "llm_usage": (llm or {}).get("usage"),
             # The two bills for the same turn, which is the number this whole mode exists to
             # produce and the one `docs/guides/decision-llms/README.md` could only reach by
-            # arithmetic. Either can be None: the model's when nobody publishes a rate for it, the
+            # arithmetic. Either can be None: the pilot's when nobody publishes a rate for it, the
             # stepper's when the turn never got as far as asking.
             "llm_cost_usd": (llm or {}).get("cost_usd"),
             "decision_cost_usd": advice.record.get("cost_usd"),

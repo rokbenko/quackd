@@ -1,7 +1,7 @@
 """Decision LLMs: the turns that are a choice, answered by something that writes nothing.
 
 quackd's loop asks one question a turn -- which single tool call now -- and pays a frontier
-model's full latency for it whether the answer is `report_state` or a six-joint pose. Some of
+LLM's full latency for it whether the answer is `report_state` or a six-joint pose. Some of
 those turns are not writing, they are choosing, and a *decision LLM* answers a choice without
 generating anything: typed questions against a named state, back as a value and a probability
 distribution.

@@ -2,8 +2,8 @@
 catalogues quackd already keeps, never copied into the page.
 
 Everything here is data a terminal command already prints in its own way (`list-adapters`,
-`list-models`, `robot list`, `doctor`), read through the same functions, so the page and the CLI
-cannot disagree about what a robot or a model is.
+`list-llms`, `robot list`, `doctor`), read through the same functions, so the page and the CLI
+cannot disagree about what a robot or an LLM is.
 
 **`.env` is read, never loaded.** The page shows which keys are set, and a key a project's `.env`
 holds counts. But the page's own environment is what every run it starts inherits, and a value it
@@ -87,22 +87,22 @@ def vendors() -> tuple[str, ...]:
     return tuple(PROVIDER_NAMES)
 
 
-def models(vendor: str) -> list[Any]:
-    """The model rows a vendor offers, its default first. Empty for a local preset, whose server
-    serves whatever model it was started with, and for the scripted pilot."""
-    from quackd.agent.providers.catalogue import models_for
+def llms(vendor: str) -> list[Any]:
+    """The LLM rows a vendor offers, its default first. Empty for a local preset, whose server
+    serves whatever LLM it was started with, and for the scripted pilot."""
+    from quackd.agent.providers.catalogue import llms_for
 
-    return list(models_for(vendor))
+    return list(llms_for(vendor))
 
 
 def default_model(vendor: str) -> str | None:
-    from quackd.agent.providers.catalogue import default_model_for
+    from quackd.agent.providers.catalogue import default_llm_for
 
-    return default_model_for(vendor)
+    return default_llm_for(vendor)
 
 
 def local_presets() -> dict[str, str | None]:
-    """The local model servers quackd knows, and the address each listens on by default."""
+    """The local LLM servers quackd knows, and the address each listens on by default."""
     from quackd.agent.providers.local import PRESETS
 
     return dict(PRESETS)

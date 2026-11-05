@@ -413,7 +413,7 @@ class OpenDuckBridge:
         else:
             posture = "unknown"
         # This robot has no odometry, and the bridge sends no pose. Defaulting the three to
-        # 0.0 put `pose=(0.00, 0.00, 0.00 rad)` in front of the model on every single
+        # 0.0 put `pose=(0.00, 0.00, 0.00 rad)` in front of the LLM on every single
         # observation, unchanged after the duck had walked across a room. None is the honest
         # answer and `summary()` omits it, which is what the Microduck transport already does.
         pose = state.get("pose") or {}

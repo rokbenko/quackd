@@ -4,9 +4,9 @@ quackd counted tokens from its first release and never turned them into money, w
 every reader of a transcript doing the same arithmetic by hand against a rate card they had to
 go and find. This module is that arithmetic, in one place, with three rules it does not bend:
 
-- **A rate quackd does not know is `None`, never zero.** An unpriced model records
+- **A rate quackd does not know is `None`, never zero.** An unpriced LLM records
   `cost_usd: null` and the verdict panel says `cost unpriced`. Printing `$0.00` for a frontier
-  model is the one failure mode here that costs somebody real money.
+  LLM is the one failure mode here that costs somebody real money.
 - **The rate used is written into the run.** `run_start` and `summary.json` carry it, so
   `quackd log` prices a run at what it cost on the day rather than at whatever the catalogue
   says months later, and a rate that turns out to have been wrong is visible rather than
@@ -16,7 +16,7 @@ go and find. This module is that arithmetic, in one place, with three rules it d
 
 The catalogue holds the rates (`catalogue.Price`, read off each vendor's own page on
 `catalogue.PRICES_CHECKED`); `--price` and `QUACKD_PRICE` override them for a negotiated rate,
-a model the catalogue has never heard of, or a paid endpoint behind a local preset.
+an LLM the catalogue has never heard of, or a paid endpoint behind a local preset.
 
 One vendor also says what each call was billed: OpenRouter's `usage.cost`. Where it does, that
 is the turn's cost rather than rate times tokens, because it already knows which endpoint served
@@ -34,10 +34,10 @@ import os
 from collections.abc import Mapping
 from typing import Any, NamedTuple
 
-from quackd.agent.providers.catalogue import LOCAL_NAMES, Price, find_model
+from quackd.agent.providers.catalogue import LOCAL_NAMES, Price, find_llm
 
 PRICE_ENV = "QUACKD_PRICE"
-"""Override the model's rate for one run. `--price` beats it; both beat the catalogue."""
+"""Override the LLM's rate for one run. `--price` beats it; both beat the catalogue."""
 
 OVERRIDES = frozenset({"--price", PRICE_ENV})
 """The sources a person names a rate by, as `parse_price` stamps them. A run priced by one of
@@ -48,12 +48,12 @@ FAKE = Price(0.0, 0.0, 0.0, 0.0, source="fake")
 nothing should say `$0` rather than refuse to answer."""
 
 SCRIPTED = ("fake", "vla")
-"""The pilots that are rules rather than models, priced at `FAKE`: `--llm fake`, and the pilot
+"""The pilots that are rules rather than LLMs, priced at `FAKE`: `--llm fake`, and the pilot
 `--controller vla` flies (`providers.vla.NAME`, spelled here because that module imports pydantic
 and this one may not; a test holds the two together)."""
 
 SELF_HOSTED = Price(0.0, 0.0, 0.0, 0.0, source="self-hosted")
-"""A model on your own machine bills you in electricity, not in tokens. A paid OpenAI-compatible
+"""An LLM on your own machine bills you in electricity, not in tokens. A paid OpenAI-compatible
 endpoint reached through `--llm local --base-url` is the exception, and `--price` or
 `QUACKD_PRICE` is how you say so."""
 
@@ -115,8 +115,8 @@ def parse_price(text: str, *, source: str) -> Price:
     )
 
 
-def price_for(provider: str, model: str) -> Price | None:
-    """The catalogue's rate for one model, or None where quackd has never had one.
+def price_for(provider: str, llm_id: str) -> Price | None:
+    """The catalogue's rate for one LLM, or None where quackd has never had one.
 
     The scripted pilots and the local presets are free by what they are rather than by any
     table, so they answer before the catalogue is consulted and answer for whatever `--model`
@@ -126,13 +126,13 @@ def price_for(provider: str, model: str) -> Price | None:
         return FAKE
     if provider in LOCAL_NAMES:
         return SELF_HOSTED
-    spec = find_model(provider, model)
+    spec = find_llm(provider, llm_id)
     return spec.price if spec is not None else None
 
 
 def resolve_price(
     provider: str,
-    model: str,
+    llm_id: str,
     *,
     override: str | None = None,
     listed: Price | None = None,
@@ -140,7 +140,7 @@ def resolve_price(
     """The rate this run is priced at, in the order a person expects to be obeyed.
 
     `--price`, then `QUACKD_PRICE`, then the provider and the catalogue, then `listed`: the rate
-    the provider read off the vendor's own list for a model the catalogue does not carry
+    the provider read off the vendor's own list for an LLM the catalogue does not carry
     (`--llm openrouter:` an unlisted id). An override beats `fake` as well as the catalogue,
     and that is deliberate rather than an oversight: pricing a scripted run is how the whole
     cost path gets exercised end to end with no key and no bill.
@@ -148,7 +148,7 @@ def resolve_price(
     text = override if override is not None else os.environ.get(PRICE_ENV)
     if text is not None and text.strip():
         return parse_price(text, source="--price" if override is not None else PRICE_ENV)
-    priced = price_for(provider, model)
+    priced = price_for(provider, llm_id)
     return priced if priced is not None else listed
 
 
@@ -212,7 +212,7 @@ def cost_usd(usage: Mapping[str, Any], price: Price) -> float:
 def fmt_usd(amount: float | None) -> str:
     """A dollar figure at the precision that figure deserves.
 
-    A run of a frontier model is `$0.1502` and one decision-LLM question at Jev's published rate
+    A run of a frontier LLM is `$0.1502` and one decision-LLM question at Jev's published rate
     is `$0.000022`, and rounding the second to four places would print `$0.0000`, which reads as
     free. Nothing here is padded to a fixed width: these go in a counter line beside `steps 7`,
     not in a column.

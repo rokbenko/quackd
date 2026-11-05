@@ -16,12 +16,12 @@ in view. OpenAI published no code for it.
 
 quackd could not do that, for four reasons each written down on purpose. The pilot is too slow: a
 turn takes 3 to 8 seconds, and a head that follows a thing has to answer in about one. The stepper
-([ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md)) is quick enough and cannot repeat
+([ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)) is quick enough and cannot repeat
 itself: its `repeat` gate and its streak limit end any run of identical calls, which tracking is.
 The steering loop is fast and blind to words: `go_to` and `search_scan` close on a detector's
 labels, a closed set in which "the apple" is not one. And two ADRs said no on principle:
 [ADR-0003](0003-three-loops.md), "Composite verbs never call the LLM", and
-[ADR-0008](0008-perception-features-not-frames.md), the LLM "needs a sentence, not a pixel grid".
+[ADR-0008](0008-perception-features-not-frames.md), the pilot "needs a sentence, not a pixel grid".
 
 [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md) made one row a decision LLM that can see,
 `openai`, behind `--decision-frames`, with Rok's rule for every frame: only when the run asks, only
@@ -93,7 +93,7 @@ OpenAI's own sub-second typed answers are what the reflex needs.
 - **A detector that answers open words.** It would make a head reflex a core verb that every body
   with a head and a camera gets, breakable heads included, and its freshness rule took frames from
   before the head moved, and its `search_scan` path would have sent frames distorted by glances.
-- **Asking which way to turn.** The model would have to know the lens, the mount, the reach and the
+- **Asking which way to turn.** The LLM would have to know the lens, the mount, the reach and the
   gain, and every mistake about where a thing is would be a motion decision.
 - **More than one request out.** A second answer about a frame taken before the first answer's turn
   landed corrects the same error twice.
@@ -103,7 +103,7 @@ OpenAI's own sub-second typed answers are what the reflex needs.
   looked. It would fight `go_to`'s and `search_scan`'s own claims on the head and escape the
   executor's budgets, gates and kill switch, which hold a verb and nothing else.
 - **Gating on `confidence`.** OpenAI do not define it, and the one comparison anybody has posted,
-  on OpenAI's own forum, found this model less calibrated than Jev.
+  on OpenAI's own forum, found this LLM less calibrated than Jev.
 - **A shadow mode.** A head that does not move cannot close the loop it would be measuring, and the
   frames kept under `sent/` are what a threshold is calibrated on offline.
 - **Over MCP in this decision.** `serve-mcp` writes no record of its own, and Rok's rule needs one.
@@ -125,5 +125,5 @@ OpenAI's own sub-second typed answers are what the reflex needs.
 - **Nothing here has run on a duck or against OpenAI.** In the suite the head closes on the ball on
   both simulators through quackd's own client for OpenAI's Decisions API, on a fake of its SDK that
   finds the ball in each JPEG it is handed. How long a look with a picture takes, what it costs, and
-  how well a model says where a thing is are unmeasured, and the head's own numbers are owed to the
+  how well an LLM says where a thing is are unmeasured, and the head's own numbers are owed to the
   bench.

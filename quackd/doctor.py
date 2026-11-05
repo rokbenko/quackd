@@ -46,7 +46,7 @@ from quackd.adapters.factory import (
 )
 from quackd.agent.providers.base import ProviderError
 from quackd.agent.providers.factory import (
-    DEFAULT_MODELS,
+    DEFAULT_LLMS,
     EXTRA_FOR,
     KEY_ENV,
     KEY_FALLBACKS,
@@ -54,7 +54,7 @@ from quackd.agent.providers.factory import (
     PROVIDER_NAMES,
     SDK_FOR,
     parse_llm,
-    resolve_model,
+    resolve_llm_id,
 )
 from quackd.agent.providers.local import PRESETS, on_host
 from quackd.boards import l4t as _l4t
@@ -72,7 +72,7 @@ from quackd.host import (
 
 # The optional extras table, which is about packages rather than providers: the providers table
 # builds its own rows from SDK_FOR and EXTRA_FOR. One wheel now serves ten vendors, so naming
-# them all here would be a list to keep in step for no gain; `quackd list-models` and the
+# them all here would be a list to keep in step for no gain; `quackd list-llms` and the
 # providers table above already say which vendor wants which install.
 EXTRAS = {
     "anthropic": ("anthropic", "quackd[anthropic]"),
@@ -207,16 +207,16 @@ class ProviderRow:
     key_env: str
     key_optional: bool
     """A local server does not need one; a cloud provider cannot run without it."""
-    model: str
+    llm_id: str
     url: str = ""
     """Where a decision LLM listens, and empty for everything that has no address: every
     provider, whose vendor owns its own, and `jev`, whose SDK does. `openai` has one, because
     its backend always hands the SDK the row's address rather than letting it find one."""
     pinned: bool = False
-    """The environment named this model rather than the row taking its default: QUACKD_LLM for
+    """The environment named this LLM rather than the row taking its default: QUACKD_LLM for
     a provider, the SDK's own variable for a decision LLM that honours one."""
-    refused_model: str = ""
-    """A QUACKD_LLM whose model half this vendor does not list, which is why `model` is the
+    refused_llm: str = ""
+    """A QUACKD_LLM whose LLM half this vendor does not list, which is why `model` is the
     vendor's default and not what the environment asked for."""
     key_from: str = ""
     """The second name the key was found under (`KEY_FALLBACKS`), when `key_env` was empty: the
@@ -231,30 +231,30 @@ class ProviderRow:
             "key_env": self.key_env,
             "key_from": self.key_from or None,
             "key_optional": self.key_optional,
-            "model": self.model,
+            "llm_id": self.llm_id,
             "url": self.url or None,
             "pinned": self.pinned,
-            "refused_model": self.refused_model or None,
+            "refused_llm": self.refused_llm or None,
         }
 
 
 @dataclass
 class PlacementRow:
-    """One model Ollama has loaded, and how much of it sits in GPU memory.
+    """One LLM Ollama has loaded, and how much of it sits in GPU memory.
 
     Ollama's own `/api/ps` reports both sizes, and the gap between them is the question a
-    Jetson owner cannot see from the laptop: a model that answers, slowly, because it is on the
+    Jetson owner cannot see from the laptop: an LLM that answers, slowly, because it is on the
     CPU looks exactly like one that answers quickly until somebody times it."""
 
-    model: str
+    llm_id: str
     size: int
-    """Bytes the loaded model takes, as Ollama counts them."""
+    """Bytes the loaded LLM takes, as Ollama counts them."""
     size_vram: int
     """Bytes of that in GPU memory. Equal to `size` is all on the GPU, zero is all on the CPU."""
 
     @property
     def gpu_pct(self) -> int:
-        """The share on the GPU, rounded down, and never 0 for a model with any of itself there:
+        """The share on the GPU, rounded down, and never 0 for an LLM with any of itself there:
         a partial split must not read as "all on the CPU" nor as "all on the GPU"."""
         if self.size <= 0 or self.size_vram <= 0:
             return 0
@@ -270,7 +270,7 @@ class PlacementRow:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "model": self.model,
+            "llm_id": self.llm_id,
             "size": self.size,
             "size_vram": self.size_vram,
             "gpu_pct": self.gpu_pct,
@@ -339,7 +339,7 @@ class ProbeReport:
 
     The only way to see the difference between quackd's description of a fully built robot and
     the one somebody assembled, before a run finds it. It is one of the parts of doctor that
-    leave this machine, with the model servers it probes and the board `--host` names."""
+    leave this machine, with the LLM servers it probes and the board `--host` names."""
 
     address: str
     ok: bool
@@ -432,12 +432,12 @@ class PinRow:
 
 @dataclass
 class JetsonReport:
-    """What an NVIDIA Jetson says about itself, for whoever is putting a model on it.
+    """What an NVIDIA Jetson says about itself, for whoever is putting an LLM on it.
 
     Read over the network from the laptop `--host` runs on, and the daemon it ships for it
     (`bridge/jetson/quackd_jetson_hostd.py`) sends the board's own files and command output as
     raw text for `_jetson_from_dump` to parse here. Informational, and never part of `ok`: the
-    GPU belongs to the model server and the daemon's detector, and a board with no swap is a
+    GPU belongs to the LLM server and the daemon's detector, and a board with no swap is a
     board this command has advice for, not a machine that cannot run anything.
     """
 
@@ -476,7 +476,7 @@ class JetsonReport:
         """Every swap on the board compresses RAM rather than adding any.
 
         JetPack ships zram on, which is the right default for a desktop and the wrong one for
-        a model that does not fit: compressing memory cannot hold what memory could not."""
+        an LLM that does not fit: compressing memory cannot hold what memory could not."""
         return bool(self.swap_devices) and all(d.startswith("/dev/zram") for d in self.swap_devices)
 
     def to_dict(self) -> dict[str, Any]:
@@ -530,7 +530,7 @@ class HostReport:
     healthz_error: str | None = None
     board_error: str | None = None
     unresolved: bool = False
-    """True when `host` found no address, so no model server there is asked either: each would
+    """True when `host` found no address, so no LLM server there is asked either: each would
     wait on the same failed lookup and then read as a machine whose servers are off. Not in
     --json, where `error` says it in words and every preset row says it was not asked."""
     jetson: JetsonReport | None = None
@@ -538,7 +538,7 @@ class HostReport:
     servers: list[ServerRow] = field(default_factory=list)
     """The four local presets as they were probed on this machine, Ollama's placement rows
     among them. The same rows the report's own `servers` lists, kept here as well so a reader
-    of `--json` finds the board's model server under the board: whether a model sits on the
+    of `--json` finds the board's LLM server under the board: whether an LLM sits on the
     Jetson's GPU is a fact about the board, and the top-level list also holds `local`, which
     is wherever QUACKD_BASE_URL points and may be no part of it."""
 
@@ -646,17 +646,17 @@ class DoctorReport:
 # ── asking ──────────────────────────────────────────────────────────────────────────────
 
 
-def _probe_models(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+def _probe_llms(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
     """Reachability of an OpenAI-compatible server, as (state, detail). Never raises.
 
     Whatever answered is read with no trust in its shape. A reply that is JSON but not an
     object, or an object whose `data` is null or a number, used to raise out of `collect()` from
-    outside the `try`, which took the whole report with it; a model server on another machine
+    outside the `try`, which took the whole report with it; an LLM server on another machine
     makes a stranger answer likelier, and doctor is the command people run when something is
-    already wrong. `"data": null` is read as no models, the way `"data": []` is: a server with
+    already wrong. `"data": null` is read as no LLMs, the way `"data": []` is: a server with
     nothing to list may say either, and neither is a stranger. Any other `data` that is not a
     list gets the row that says so, where text or an object there used to read as a server with
-    no models loaded."""
+    no LLMs loaded."""
     import json
     import urllib.error
     import urllib.request
@@ -667,21 +667,21 @@ def _probe_models(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
     except urllib.error.HTTPError as e:
         return "http", f"HTTP {e.code}"
     except Exception:
-        # A body that is not JSON lands here too, and reads as no model server there, which is
+        # A body that is not JSON lands here too, and reads as no LLM server there, which is
         # what a dev web server's index page on 8000 or 8080 is. That is the row this probe has
         # always given it; only the JSON shapes below have rows of their own.
         return "down", "not running"
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(payload, dict) or not isinstance(data, list | None):
-        return "http", "answered /models with something that is not a list of models"
+        return "http", "answered /models with something that is not a list of LLMs"
     ids = [str(m.get("id", "")) for m in data or [] if isinstance(m, dict)]
     shown = ", ".join(i for i in ids[:3] if i)
     more = f" (+{len(ids) - 3})" if len(ids) > 3 else ""
-    return "up", f"{shown}{more}" if ids else "no models loaded"
+    return "up", f"{shown}{more}" if ids else "no LLMs loaded"
 
 
 def _probe_together(urls: Sequence[str]) -> dict[str, tuple[str, str]]:
-    """`_probe_models` for each of `urls`, all at once.
+    """`_probe_llms` for each of `urls`, all at once.
 
     A closed port on Windows takes its whole timeout to say so, for each address `localhost` has,
     so four presets asked one after the other held the report for twelve seconds to learn that
@@ -692,7 +692,7 @@ def _probe_together(urls: Sequence[str]) -> dict[str, tuple[str, str]]:
 
     def ask(url: str) -> None:
         try:
-            answers[url] = _probe_models(url)
+            answers[url] = _probe_llms(url)
         except BaseException as e:  # never from the real one, which is `Never raises`
             raised.append(e)
 
@@ -720,9 +720,9 @@ def _ollama_root(url: str) -> str:
 def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[PlacementRow], str]:
     """What an Ollama at `root_url` has loaded and where, from its own `GET /api/ps`, as
     (rows, note). The note says why there are no rows. Never raises, and nothing it finds
-    touches `ok`: a model on the CPU is slow, not broken.
+    touches `ok`: an LLM on the CPU is slow, not broken.
 
-    A module attribute for the reason `_probe_models` is one: the tests replace it."""
+    A module attribute for the reason `_probe_llms` is one: the tests replace it."""
     import json
     import urllib.error
     import urllib.request
@@ -739,8 +739,8 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
         payload = json.loads(raw.decode("utf-8", errors="replace"))
     except Exception:
         return [], "GET /api/ps answered with something that is not JSON"
-    models = payload.get("models") if isinstance(payload, dict) else None
-    if not isinstance(payload, dict) or not isinstance(models, list | None):
+    llms = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or not isinstance(llms, list | None):
         return [], "GET /api/ps answered with something that is not Ollama's list"
 
     def size_of(value: Any) -> int | None:
@@ -750,16 +750,16 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
 
     rows: list[PlacementRow] = []
     unplaced: list[str] = []
-    for item in models or []:
+    for item in llms or []:
         if not isinstance(item, dict):
             continue
         name = item.get("name") or item.get("model")
         if not isinstance(name, str) or not name:
             continue
         size, vram = size_of(item.get("size")), size_of(item.get("size_vram"))
-        # a model of no size has no split to report, and would read as "on the CPU"
+        # an LLM of no size has no split to report, and would read as "on the CPU"
         if size and vram is not None:
-            rows.append(PlacementRow(model=name, size=size, size_vram=vram))
+            rows.append(PlacementRow(llm_id=name, size=size, size_vram=vram))
         else:
             unplaced.append(name)
     if rows:
@@ -773,9 +773,9 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
             f"{', '.join(unplaced[:3])}{more} {'is' if one else 'are'} loaded, and /api/ps did "
             f"not say how much of {'it' if one else 'them'} is on the GPU"
         )
-    # Ollama loads a model on its first request and unloads it after five idle minutes, so an
+    # Ollama loads an LLM on its first request and unloads it after five idle minutes, so an
     # empty list on a healthy server is the usual answer and not a fault
-    return [], "nothing loaded yet: Ollama loads a model on its first request"
+    return [], "nothing loaded yet: Ollama loads an LLM on its first request"
 
 
 def probe(
@@ -1182,7 +1182,7 @@ def _upstreams() -> list[tuple[str, Any, str, str]]:
 # ── the board --host names, over the network ────────────────────────────────────────────
 
 _host_client = HostClient
-"""How doctor reaches the board, and a module attribute for the reason `_probe_models` is one:
+"""How doctor reaches the board, and a module attribute for the reason `_probe_llms` is one:
 a test replaces it. It must never become a default argument, which would bind at import and
 ignore the monkeypatch."""
 
@@ -1415,15 +1415,15 @@ def collect(
     report.bundled_ducks = len(list_bundled_ducks())
 
     say("checking the providers")
-    # QUACKD_LLM names one vendor and, after the colon, at most one model of that vendor's, so
+    # QUACKD_LLM names one vendor and, after the colon, at most one LLM of that vendor's, so
     # it pins exactly one row of this table and says nothing about the other sixteen. Read once
-    # here rather than once per row: the variable it replaced was a bare model id with no
+    # here rather than once per row: the variable it replaced was a bare LLM id with no
     # vendor on it, so every row had to guess whether it was the one being talked about.
     env_llm = os.environ.get("QUACKD_LLM", "").strip()
-    env_vendor, env_model = "", None
+    env_vendor, env_llm_id = "", None
     if env_llm:
         try:
-            env_vendor, env_model = parse_llm(env_llm, source="QUACKD_LLM")
+            env_vendor, env_llm_id = parse_llm(env_llm, source="QUACKD_LLM")
         except ProviderError as e:
             # A vendor nobody publishes has no row to be shown on, and the run it is about to
             # refuse is the thing a reader came here to understand, so it is kept and printed
@@ -1443,14 +1443,14 @@ def collect(
             key = os.environ.get(KEY_FALLBACKS[name], "")
             key_from = KEY_FALLBACKS[name] if key else ""
         # What this provider would actually be given, not what the table used to guess. The
-        # vendor QUACKD_LLM names can still be handed a model it does not list, and doctor is
+        # vendor QUACKD_LLM names can still be handed an LLM it does not list, and doctor is
         # where a reader should find that out rather than three commands later.
-        wanted = env_model if name == env_vendor else None
+        wanted = env_llm_id if name == env_vendor else None
         refused = ""
         try:
-            model = resolve_model(name, wanted, source="QUACKD_LLM") or "auto (first served)"
+            llm_id = resolve_llm_id(name, wanted, source="QUACKD_LLM") or "auto (first served)"
         except ProviderError:
-            model = DEFAULT_MODELS.get(name) or "auto (first served)"
+            llm_id = DEFAULT_LLMS.get(name) or "auto (first served)"
             refused = env_llm
         report.providers.append(
             ProviderRow(
@@ -1460,9 +1460,9 @@ def collect(
                 key=_mask(key) if key else "",
                 key_env=KEY_ENV[name],
                 key_optional=name in LOCAL_NAMES,
-                model=model,
+                llm_id=llm_id,
                 pinned=name == env_vendor and not refused,
-                refused_model=refused,
+                refused_llm=refused,
                 key_from=key_from,
             )
         )
@@ -1478,7 +1478,7 @@ def collect(
     from quackd.agent.decision.factory import (
         find_preset,
         preset_names,
-        resolve_decision_model,
+        resolve_decision_llm,
         resolve_decision_url,
     )
 
@@ -1512,9 +1512,9 @@ def collect(
                 # A server you run yourself wants no key and is sent NO_KEY, so an empty cell
                 # there is not a machine with something missing.
                 key_optional=spec.key_env is None,
-                model=resolve_decision_model(spec) or "auto (the server names it)",
+                llm_id=resolve_decision_llm(spec) or "auto (the server names it)",
                 url=where,
-                pinned=bool(spec.model_env and os.environ.get(spec.model_env)),
+                pinned=bool(spec.llm_env and os.environ.get(spec.llm_env)),
             )
         )
 
@@ -1522,7 +1522,7 @@ def collect(
     # With a board, the four presets are asked on it, as a run with --host would reach them;
     # `local` has no preset address and keeps meaning QUACKD_BASE_URL. A host that is no
     # machine was already reported above, and its presets stay where they were. A daemon that
-    # is down or refused still has its board's presets asked, since the model server can be up
+    # is down or refused still has its board's presets asked, since the LLM server can be up
     # without it; a name that found no address has none asked, since there is no machine to ask.
     board = report.host if report.host is not None and report.host.address else None
     # In the order they print: a row with its answer already, or a server still to be asked.
@@ -1557,7 +1557,7 @@ def collect(
         row = ServerRow(preset, shown, state, detail)
         if preset == "ollama" and state == "up":
             root = _ollama_root(url)
-            say(f"asking ollama at {redacted_url(root)} where its models are")
+            say(f"asking ollama at {redacted_url(root)} where its LLMs are")
             row.placement, row.placement_note = _probe_placement(root)
         report.servers.append(row)
         if board is not None and on_board:
@@ -1707,10 +1707,10 @@ _Row = Callable[..., None]
 
 
 def _jetson_rows(jetson: JetsonReport, row: _Row, g: ui.Glyphs) -> None:
-    """The board the daemon runs on, for somebody about to put a model on it.
+    """The board the daemon runs on, for somebody about to put an LLM on it.
 
-    Warnings only where a person would have to do something about it: swap that cannot hold a
-    model. The GPU node is a note rather than a warning, because quackd reading the board
+    Warnings only where a person would have to do something about it: swap that cannot hold an
+    LLM. The GPU node is a note rather than a warning, because quackd reading the board
     without one is not a fault. Every value here came from the board, so every one is flattened
     before it reaches a cell."""
 
@@ -1750,7 +1750,7 @@ def _jetson_rows(jetson: JetsonReport, row: _Row, g: ui.Glyphs) -> None:
         if jetson.swap_total_bytes == 0:
             row(
                 "swap",
-                "none. A model that does not fit in memory cannot load, and a swapfile on the "
+                "none. An LLM that does not fit in memory cannot load, and a swapfile on the "
                 "board's NVMe is what lets a bigger one in",
                 "warn",
                 g.warn,
@@ -1772,7 +1772,7 @@ def _jetson_rows(jetson: JetsonReport, row: _Row, g: ui.Glyphs) -> None:
     else:
         row(
             "GPU device",
-            "none the daemon could see. The model server and the detector want one, and "
+            "none the daemon could see. The LLM server and the detector want one, and "
             "quackd never asks for one",
         )
 
@@ -1888,8 +1888,8 @@ def _host_grid(host: HostReport) -> Any:
 
 
 def _placement_grid(server: ServerRow, *, tegra: bool) -> Any:
-    """Where Ollama put each model it has loaded. A model on a Jetson's CPU is the pitfall the
-    Jetson page names, so that one says what to do about it; on any other machine a model on
+    """Where Ollama put each LLM it has loaded. An LLM on a Jetson's CPU is the pitfall the
+    Jetson page names, so that one says what to do about it; on any other machine an LLM on
     the CPU may be all there is, and it is a note."""
 
     def build(g: ui.Glyphs) -> Any:
@@ -1898,12 +1898,12 @@ def _placement_grid(server: ServerRow, *, tegra: bool) -> Any:
         def row(key: str, value: str, style: str = "muted", mark: str = "") -> None:
             rows.append((f"{mark or g.note} {key}", Text(value, style=ui.STYLES[style])))
 
-        for model in server.placement or []:
-            name = _flat(model.model, 80)
-            if model.where == "gpu":
-                row(name, f"all on the GPU, {_gib(model.size)}", "ok", g.ok)
-            elif model.where == "partial":
-                row(name, f"{model.gpu_pct}% on the GPU, the rest on the CPU", "warn", g.warn)
+        for llm_id in server.placement or []:
+            name = _flat(llm_id.llm_id, 80)
+            if llm_id.where == "gpu":
+                row(name, f"all on the GPU, {_gib(llm_id.size)}", "ok", g.ok)
+            elif llm_id.where == "partial":
+                row(name, f"{llm_id.gpu_pct}% on the GPU, the rest on the CPU", "warn", g.warn)
             elif tegra:
                 row(
                     name,
@@ -1915,7 +1915,7 @@ def _placement_grid(server: ServerRow, *, tegra: bool) -> Any:
             else:
                 row(name, "on the CPU: this Ollama put none of it on a GPU")
         if not rows:
-            # flattened, because the note can name the models another machine's Ollama sent
+            # flattened, because the note can name the LLMs another machine's Ollama sent
             row("loaded", _flat(server.placement_note or "nothing"))
         return ui.kv_grid(rows, key_style="")
 
@@ -1927,12 +1927,12 @@ def _providers_table(report: DoctorReport) -> Any:
     table.add_column("provider", style=ui.STYLES["key"], no_wrap=True)
     table.add_column("extra")
     table.add_column("key")
-    # folded, not elided: a model id with an ellipsis through it cannot be pasted into --llm
-    table.add_column("default model", overflow="fold")
+    # folded, not elided: an LLM id with an ellipsis through it cannot be pasted into --llm
+    table.add_column("default LLM", overflow="fold")
     for row in report.providers:
         if row.name == "fake":
             table.add_row(
-                Text("fake"), Text("built-in", style=ui.STYLES["ok"]), Text("-"), Text(row.model)
+                Text("fake"), Text("built-in", style=ui.STYLES["ok"]), Text("-"), Text(row.llm_id)
             )
             continue
         extra = (
@@ -1951,14 +1951,14 @@ def _providers_table(report: DoctorReport) -> Any:
             key = Text("optional", style=ui.STYLES["muted"])
         else:
             key = Text(f"{row.key_env} unset", style=ui.STYLES["warn"])
-        if row.refused_model:
-            model = Text.assemble(
-                (f"QUACKD_LLM={row.refused_model}", ui.STYLES["warn"]),
+        if row.refused_llm:
+            llm_id = Text.assemble(
+                (f"QUACKD_LLM={row.refused_llm}", ui.STYLES["warn"]),
                 (f", which {row.name} does not list", ui.STYLES["warn"]),
             )
         else:
-            model = Text(row.model, style=ui.STYLES["ok"] if row.pinned else "")
-        table.add_row(Text(row.name), extra, key, model)
+            llm_id = Text(row.llm_id, style=ui.STYLES["ok"] if row.pinned else "")
+        table.add_row(Text(row.name), extra, key, llm_id)
     return table
 
 
@@ -1974,7 +1974,7 @@ def _steppers_table(report: DoctorReport) -> Any:
     table.add_column("decision llm", style=ui.STYLES["key"], no_wrap=True)
     table.add_column("extra")
     table.add_column("key")
-    table.add_column("model", overflow="fold")
+    table.add_column("LLM", overflow="fold")
     # folded, not elided: a url with an ellipsis through it cannot be pasted into --decision-url
     table.add_column("url", overflow="fold")
     for row in report.steppers:
@@ -1994,7 +1994,7 @@ def _steppers_table(report: DoctorReport) -> Any:
             Text(row.name),
             extra,
             key,
-            Text(row.model, style=ui.STYLES["ok"] if row.pinned else ""),
+            Text(row.llm_id, style=ui.STYLES["ok"] if row.pinned else ""),
             # muted wherever the cell is a sentence about an address rather than an address,
             # which is how the servers table prints a preset it was never given one for
             Text(row.url, style="" if row.url.startswith("http") else ui.STYLES["muted"]),
@@ -2012,7 +2012,7 @@ def _servers_table(report: DoctorReport) -> Any:
             table.add_row(Text(row.preset), Text(row.detail, style=ui.STYLES["muted"]), Text(""))
             continue
         if row.state == "up":
-            # the detail is the model ids, which are the answer; the word is the good news
+            # the detail is the LLM ids, which are the answer; the word is the good news
             status = Text("up", style=ui.STYLES["ok"])
             status.append(f" {row.detail}", style=ui.STYLES["muted"])
         else:
@@ -2206,7 +2206,7 @@ def render(console: Console, report: DoctorReport) -> None:
     console.print(_checks(report.core))
     console.print(Text(f"  {report.bundled_ducks} bundled ducks", style=ui.STYLES["muted"]))
 
-    _section(console, "providers (the model ids quackd carries: quackd list-models)")
+    _section(console, "providers (the LLM ids quackd carries: quackd list-llms)")
     console.print(_providers_table(report))
     if report.llm_env_error:
         console.print(Text(report.llm_env_error, style=ui.STYLES["warn"]), soft_wrap=True)
@@ -2219,7 +2219,7 @@ def render(console: Console, report: DoctorReport) -> None:
     console.print(
         ui.plain(
             "One of these answers the turns that are a choice among calls this body can make. "
-            "Every pose, every sentence and every verdict is still the model's "
+            "Every pose, every sentence and every verdict is still the pilot LLM's "
             "(docs/guides/decision-llms/README.md).",
             style=ui.STYLES["muted"],
         )
@@ -2236,7 +2236,7 @@ def render(console: Console, report: DoctorReport) -> None:
         if server.placement is None:
             continue
         console.print(
-            Text(f"  where {server.preset} put its models (GET /api/ps)", style=ui.STYLES["muted"])
+            Text(f"  where {server.preset} put its LLMs (GET /api/ps)", style=ui.STYLES["muted"])
         )
         tegra = at_host and report.host is not None and report.host.is_tegra
         console.print(_placement_grid(server, tegra=tegra and server.preset != "local"))

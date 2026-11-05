@@ -44,11 +44,11 @@ class ToolCall(BaseModel):
 def tool_arguments(raw: Any) -> dict[str, Any]:
     """A tool call's arguments as the object they have to be, from a vendor's text or its parsed
     value. Anything else is kept under `_unparsed`, where no verb has a field, so the params gate
-    refuses the call and tells the pilot what it sent. A model is not trusted to send an object,
+    refuses the call and tells the pilot what it sent. An LLM is not trusted to send an object,
     and a list here used to fail `ToolCall` itself: the run ended on a validation error over one
     odd call, where text that is not JSON at all was already answered and tried again. A blank or
     a `null` goes the same way, and only a vendor's own None is a call with none: a turn cut off
-    before its arguments is no call with its defaults, on nothing the model said."""
+    before its arguments is no call with its defaults, on nothing the LLM said."""
     if raw is None:
         return {}
     value = raw
@@ -114,7 +114,7 @@ class Usage(BaseModel):
 class NamedPng(BaseModel):
     """One camera's picture, and which camera took it.
 
-    The name is only ever spoken to a model when a body has more than one camera: a pilot
+    The name is only ever spoken to an LLM when a body has more than one camera: a pilot
     told its single view is called `front` would start naming it in sentences nobody needs."""
 
     model_config = ConfigDict(extra="forbid")
@@ -125,14 +125,14 @@ class NamedPng(BaseModel):
 
 class Observation(BaseModel):
     """What the LLM sees this turn: text, a picture per camera, optionally structured features
-    (used by the fake provider and by tests, never rendered to a real model)."""
+    (used by the fake provider and by tests, never rendered to a real LLM)."""
 
     model_config = ConfigDict(extra="forbid")
 
     text: str
     images: list[NamedPng] = Field(default_factory=list)
     """One per camera that gave a frame this step, the primary first. Empty when the body has
-    no camera, when the camera gave nothing, or when the model cannot see."""
+    no camera, when the camera gave nothing, or when the LLM cannot see."""
     cameras: list[str] = Field(default_factory=list)
     """Every camera the body has, answering or not, which is not the same list as `images`.
 
@@ -256,25 +256,25 @@ class ProviderTurn(BaseModel):
     stop_reason: str | None = None
     refused: bool = Field(
         default=False,
-        description="The model said no through the API's own refusal channel: a refusal part, "
+        description="The LLM said no through the API's own refusal channel: a refusal part, "
         "with words or without, a refusal field that has words in it, or Anthropic's `refusal` "
         "stop. Its words, where it gave any, are in the turn's text as `[refusal] ...`, an "
-        "Anthropic stop that gave none as `[refusal] the model refused`, and a call written out "
+        "Anthropic stop that gave none as `[refusal] the LLM refused`, and a call written out "
         "in them is never read as one, whatever `stop_reason` says.",
     )
     raw: Any = None
     thinking: str | None = Field(
         default=None,
-        description="What the model reasoned before answering, as the vendor shows it: a "
+        description="What the LLM reasoned before answering, as the vendor shows it: a "
         "summary on Claude, the reasoning field of an OpenAI-compatible server, Gemini's "
         "thought parts. None when the provider returned nothing of the kind.",
     )
     served_by: str | None = Field(
         default=None,
-        description="The model that took the turn, where that is not the one asked for: a "
-        "server-side refusal fallback on Claude re-runs a declined turn on another model and "
-        "says so in the response. What that model returned may itself be a refusal, which "
-        "`stop_reason` says. None when the model asked for took the turn, or when the vendor "
+        description="The LLM that took the turn, where that is not the one asked for: a "
+        "server-side refusal fallback on Claude re-runs a declined turn on another LLM and "
+        "says so in the response. What that LLM returned may itself be a refusal, which "
+        "`stop_reason` says. None when the LLM asked for took the turn, or when the vendor "
         "does not say.",
     )
     billed_usd: float | None = Field(
@@ -288,7 +288,7 @@ class ProviderTurn(BaseModel):
 
 
 class ProviderError(RuntimeError):
-    """A turn the model's API did not give, in this provider's words.
+    """A turn the LLM's API did not give, in this provider's words.
 
     Every provider that talks to an SDK raises this `from` the SDK's own exception, and that
     chain is how the loop tells a failure worth asking again from one that is not
@@ -529,7 +529,7 @@ def _retry_info_s(details: Any) -> float | None:
 @runtime_checkable
 class LLMProvider(Protocol):
     name: str
-    model: str
+    llm_id: str
     supports_vision: bool
 
     async def step(

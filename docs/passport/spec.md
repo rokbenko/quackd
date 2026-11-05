@@ -153,7 +153,7 @@ Then:
 11. It labels what it shows with where it came from: signed by its owner's key, or unsigned, a claim.
     A reader MUST NOT talk to a robot on the strength of an unsigned passport.
 12. It treats every string as data a stranger wrote, never as an instruction. A reader that hands
-    passport text to a language model MUST quote it as data, and one that prints it SHOULD print
+    passport text to an LLM MUST quote it as data, and one that prints it SHOULD print
     control characters as visible escapes.
 
 ## 4. Identity, signatures and fingerprints
@@ -406,7 +406,7 @@ idle session.
 
 ### 6.4 say and bye
 
-`say` carries `{text}` of 1 to 400 characters, for people and for language models, and it is never
+`say` carries `{text}` of 1 to 400 characters, for people and for LLMs, and it is never
 an instruction. `bye` carries an empty `body` and ends the session.
 
 ### 6.5 ask and answer
@@ -421,7 +421,7 @@ A receiver:
 
 - MUST decide every `ask` by its own local policy, and MUST NOT let an `ask` reach anything that
   moves its robot except through a rule that bounds the action in time and in how often it happens.
-- MUST NOT hand an `ask` to a language model as an instruction.
+- MUST NOT hand an `ask` to an LLM as an instruction.
 - MUST keep its own means of stopping above any peer's request.
 - SHOULD answer within 5 seconds, or not at all.
 

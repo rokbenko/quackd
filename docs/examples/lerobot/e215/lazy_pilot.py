@@ -1,4 +1,4 @@
-"""E215: a stand-in for a model that never says which way the gripper goes.
+"""E215: a stand-in for an LLM that never says which way the gripper goes.
 
 Standard library only. It listens on 127.0.0.1 and speaks the one request an OpenAI-compatible
 pilot sends, so `quackd run ... --llm local:lazy --base-url http://127.0.0.1:8800/v1` flies with it.
@@ -10,7 +10,7 @@ Serve it in one terminal and run the task file in another:
 
     python lazy_pilot.py --port 8800
 
-Everything it sends goes through the same gates a real model's does, and neither gripper call should
+Everything it sends goes through the same gates a real LLM's does, and neither gripper call should
 get past `params`. The worst it can do, were that wrong, is open the jaws, so hold what they hold.
 """
 

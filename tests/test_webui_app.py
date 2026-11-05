@@ -219,7 +219,7 @@ def test_the_same_as_line_names_only_what_was_chosen_and_a_vla_only_when_chosen(
     next(s for s in at.segmented_control if s.label == "Who flies it").set_value("vla").run()
     goal = next(c.value for c in at.code if c.value.startswith("quackd run"))
     assert "--controller vla" in goal
-    assert "--llm" not in goal, "run refuses a model's flag beside --controller vla"
+    assert "--llm" not in goal, "run refuses an LLM's flag beside --controller vla"
 
 
 def test_quit_at_once_is_offered_for_a_stopped_run_while_a_chat_goes_on(
@@ -267,7 +267,7 @@ def test_a_chat_under_a_vla_pilot_is_drive_flying_it(
     (chat,) = [job for job in table.all() if job.kind == "chat"]
     argv = chat.argv[chat.argv.index("drive") :]
     assert argv[argv.index("--controller") + 1] == "vla" and "--policy-url" in argv
-    assert "--llm" not in argv, "drive refuses a model's flag beside --controller vla"
+    assert "--llm" not in argv, "drive refuses an LLM's flag beside --controller vla"
     chat.end_input()
     chat.wait(30)
 

@@ -191,7 +191,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    it asks, naming the joint, the angle you folded it to and the edge of its travel, and
    records the pose anyway. A fold outside the travel is what went wrong on 2026-09-23, before
    there was any warning: it lay about 20 degrees past the floor of `shoulder_lift`'s travel,
-   the servo would not be driven there, runs aborted before their first model call, every run
+   the servo would not be driven there, runs aborted before their first LLM call, every run
    that got to its end kept torque on, and a `stop` hauled the folded shoulder up out of its
    fold. quackd now drives each joint clipped into its travel, counts the edge of the travel as
    reaching a joint recorded past it, lets go there, says once per run which joint is free to
@@ -323,7 +323,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    are the simulator's, which [the adapter page](README.md#camera) explains.
 
    Aim it at what you want watched, and check what it crops. On the bench it framed the
-   gripper and cut off the raised arm, so the model ended up verifying its own waves from the
+   gripper and cut off the raised arm, so the LLM ended up verifying its own waves from the
    joint readings rather than from the picture, which is a thing it can do and not a thing you
    should count on.
 
@@ -339,11 +339,11 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    | Rule | Why |
    |---|---|
-   | with several, every url carries `?name=` and the names are unique | the name is what the model, a pick policy's observation and `frames/NNNN-<name>.png` tell the views apart by |
+   | with several, every url carries `?name=` and the names are unique | the name is what the LLM, a pick policy's observation and `frames/NNNN-<name>.png` tell the views apart by |
    | an index may not repeat | two entries for one camera is a typo, not a setup |
    | the **first** url is the primary | it is the camera `--fov-deg` describes, the one the `camera:` detections line reports, and the only one the verbs that steer by sight read: they run at 10 Hz, and fetching every camera there would blow the deadman window |
    | a camera that stalls later costs its own picture and nothing else | `report_state` then says `CAMERA DOWN: <name>`, and `doctor` gives each one a `camera <name>` row |
-   | if the **primary** is the one that died, the others still reach the model and the detections line reports nothing seen | a bearing read off a different lens would point somewhere else |
+   | if the **primary** is the one that died, the others still reach the LLM and the detections line reports nothing seen | a bearing read off a different lens would point somewhere else |
    | a second camera that will not open refuses before the arm is energised | and it lets go of the first, so a wrong index still costs you nothing but the message |
 
    Get the `?name=` wrong and you get the rule back, before anything is touched. The first part
@@ -352,16 +352,16 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    ```
    ✗ error: lerobot:real at COM5: lerobot real: --camera-url 'opencv://1': it has no ?name= and 2
    cameras were given. With several, every url names its own camera, opencv://1?name=top
-   --camera-url opencv://2?name=side, because the name is what the model, a pick policy and
+   --camera-url opencv://2?name=side, because the name is what the LLM, a pick policy and
    frames/NNNN-<name>.png tell them apart by.
    ```
 
-   Every frame reaches the model each step, labelled with its camera name, on Claude, both
+   Every frame reaches the LLM each step, labelled with its camera name, on Claude, both
    OpenAI APIs, Gemini, and any OpenAI-compatible local server with `--vision` on. **It costs
    what it sounds like.** The last two exchanges keep their images, so two cameras is four
    pictures in every request rather than two, on every step, for the length of the run, and up
    to eighteen on Claude Opus 5.5 and Fable 5.1, whose old frames are trimmed every eight
-   exchanges rather than on every one. A local server or a model that takes one image per
+   exchanges rather than on every one. A local server or an LLM that takes one image per
    message will refuse outright, and the answer there is a single `--camera-url`.
 
 9. **Rehearse the whole thing with `--dry-run`, which sends the arm nothing.** This is the
@@ -382,7 +382,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    [dry-run] move_joints not sent
    ```
 
-   Read two things off it. That the model reached for the verb you expected, with arguments
+   Read two things off it. That the LLM reached for the verb you expected, with arguments
    that look sane, rather than for something you had not thought about. And that the arm
    answered every heartbeat for the length of the run, because an arm that drops out here
    would have dropped out mid-move in the next section. This costs an API call or three and
@@ -420,7 +420,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 There is no command that runs one verb. Either drive the daemon from an MCP client
 (`quackd serve-mcp --robot arm-01`, then `robot_run_verb`, which is what these steps assume.
 The camera comes with the name if you stored it in step 8, and a session with no camera has no
-`observe` verb at all) or give a model a goal narrow enough to reach one verb
+`observe` verb at all) or give an LLM a goal narrow enough to reach one verb
 (`quackd run --goal "..." --robot arm-01 --llm anthropic --max-steps 3`).
 `--llm fake` will not do: it answers a free-form goal with a fixed script that ignores it.
 
@@ -618,7 +618,7 @@ stopped
     is the first of the two questions the hand placed start adds at the foot of this page:
     those angles came off `lerobot:mock`, which holds whatever it is told. A joint that moved
     more than five degrees between the two reads is refused by name and the run ends before the
-    model gets a turn, so anything quackd accepted moved less than that, and the angles it
+    LLM gets a turn, so anything quackd accepted moved less than that, and the angles it
     printed are what to read against where you thought you left the arm. A joint you placed
     outside its calibrated travel is refused before torque comes back on at all: the refusal
     names it, where it reads and its travel, the arm stays limp in your hands, and the run ends.
@@ -705,7 +705,7 @@ stopped
     ([section 17 of the first run](first-run.md#17-optional-hand-the-arm-to-a-learned-policy)), then
     run it on the arm. Start with a scripted policy that needs no torch and moves nothing,
     `quackd policy serve --policy scripted:hold`, which holds the arm where it reads, and a pilot
-    that asks no model:
+    that asks no LLM:
 
     ```bash
     quackd run --goal "hold the arm where it is" --robot arm-01 --policy-url http://127.0.0.1:9875 --controller vla
@@ -779,10 +779,10 @@ parameter taken out of `--base-url`, `--address`, `--camera-url`, `--decision-ur
 every step of this checklist: a first run is about proving the arm, and one more moving part
 between you and it is the opposite of what that wants. Afterwards,
 `--decision-llm jev --decision-mode shadow` changes nothing about a run and records what the
-decision LLM would have chosen on each turn beside what the model actually chose.
+decision LLM would have chosen on each turn beside what the pilot LLM actually chose.
 Two numbers come out of it that exist nowhere yet, for [`jev`](../../guides/decision-llms/jev.md)
 and for every other decision LLM quackd names alike: how long one takes to answer a real arm's
-state, and how often it agrees with the model on one. Each one's page asks for exactly those two
+state, and how often it agrees with the pilot LLM on one. Each one's page asks for exactly those two
 under *How to help*. The task
 built for it is `arm-grip-check`, which also happens to be the one that asks the holding-band
 question above ([guides/decision-llms/README.md](../../guides/decision-llms/README.md)).

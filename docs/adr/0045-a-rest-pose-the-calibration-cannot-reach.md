@@ -75,7 +75,7 @@ What followed, all of it in that afternoon's traces:
 
 - The rest move's stall check (`STALL_TICKS`) fired 17 to 20 degrees short of the recorded
   angle, so every run that did not start within `TOL_DEG` of the recorded pose aborted with
-  `the arm did not reach its rest pose` before its first model call. Six runs ended that way:
+  `the arm did not reach its rest pose` before its first LLM call. Six runs ended that way:
   four whose shoulder started above the fold, and two whose shoulder started further into it
   than the recorded angle, where the clamp moved it up past that angle just the same. The other
   sixteen that reached the rest move started at the fold and were `already at the rest pose`.

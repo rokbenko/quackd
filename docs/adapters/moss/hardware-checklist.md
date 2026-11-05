@@ -61,7 +61,7 @@ ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 There is no command that runs one verb. Either drive quackd from an MCP client
 (`quackd serve-mcp --robot moss:cockpit --address http://127.0.0.1:8904`, then
 `robot_run_verb`, with `--yes` for a verb of the `confirm` class), which is what these steps
-assume, or give a model a goal narrow enough to reach one verb.
+assume, or give an LLM a goal narrow enough to reach one verb.
 
 3. **`moss-lookout`, which moves nothing.**
 

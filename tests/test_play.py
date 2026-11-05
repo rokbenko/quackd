@@ -364,7 +364,7 @@ class Script:
     the scripted pilot it answers no verdict of its own, so the gate is met as it stands."""
 
     name = "script"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(self, calls: list[ToolCall] | None = None) -> None:
@@ -840,7 +840,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
             "e109/headphones",
             "e130/where-is-your-hand",
         ),
-        "meet the seconds each model call takes": (
+        "meet the seconds each LLM call takes": (
             "e037/no-thinking",
             "e045/metronome",
             "e096/red-light-green-light",
@@ -904,7 +904,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     assert f"the {WORDS[len(drawn)]} drawings of" in span
 
 
-# ── a real model, opt-in ────────────────────────────────────────────────────────────────
+# ── a real LLM, opt-in ────────────────────────────────────────────────────────────────
 
 
 def _live_or_skip() -> None:
@@ -925,10 +925,10 @@ def _live_or_skip() -> None:
 
 
 @pytest.mark.live_llm
-async def test_a_real_model_plays_a_part_with_the_arm(tmp_path: Path) -> None:
+async def test_a_real_llm_plays_a_part_with_the_arm(tmp_path: Path) -> None:
     """The arm's variant of the section, with the travel sentence and no voice, read by a real
-    model: "You are a T-rex. Show me." played on the arm's mock gets past the verdict and
-    moves. `QUACKD_LIVE_LLM_MODEL` points it at another model. One paid run."""
+    LLM: "You are a T-rex. Show me." played on the arm's mock gets past the verdict and
+    moves. `QUACKD_LIVE_LLM_MODEL` points it at another LLM. One paid run."""
     _live_or_skip()
     from quackd.agent.providers.factory import make_provider
 
@@ -942,7 +942,7 @@ async def test_a_real_model_plays_a_part_with_the_arm(tmp_path: Path) -> None:
         RunConfig(
             duck=duck,
             provider=make_provider(
-                "openai", model=os.environ.get("QUACKD_LIVE_LLM_MODEL"), goal=goal
+                "openai", llm_id=os.environ.get("QUACKD_LIVE_LLM_MODEL"), goal=goal
             ),
             transport=LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))),
             runs_dir=tmp_path,

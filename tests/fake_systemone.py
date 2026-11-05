@@ -10,7 +10,7 @@ own tests want, because what they are testing is the gates rather than the trans
 The shapes are the ones docs.typesafe.ai publishes and every compatible server implements:
 `system_one` takes a state and a mapping of question name to question, and the result has an
 `answers` mapping whose members carry `choice`, `confidence` and `probabilities`, or a bare
-`noul`. Nothing here is a model: the answers are whatever the test scripted, which is the
+`noul`. Nothing here is an LLM: the answers are whatever the test scripted, which is the
 point.
 """
 
@@ -61,7 +61,7 @@ class NoulAnswer:
 class Usage:
     """What the server says the call cost. Both counts are `int | None` in the real SDK, which
     documents None as "when the API did not report it", and that None is the difference between
-    a cost quackd measured and one it estimated. A model running in this process reports
+    a cost quackd measured and one it estimated. An LLM running in this process reports
     neither, so it is the common case rather than the odd one."""
 
     input_tokens: int | None = None
@@ -91,7 +91,7 @@ class FakeDecisionLLM:
         raises: Exception | None = None,
         usage: Usage | None = None,
         name: str = "fake",
-        model: str = "",
+        llm_id: str = "",
         url: str | None = None,
     ) -> None:
         self.answers = answers or {}
@@ -105,7 +105,7 @@ class FakeDecisionLLM:
         # What the protocol asks of a decision LLM. A test that hands this straight to
         # `Stepper.build` never touches the three constructor fields below.
         self.name = name
-        self.model = model
+        self.llm_id = llm_id
         self.url = url
         # What the SDK constructor was called with, for the tests that care that a preset
         # reached the client as its row says: a server that wants no key gets a word rather
@@ -122,7 +122,7 @@ class FakeDecisionLLM:
         *,
         api_key: str | None = None,
         base_url: str | None = None,
-        model: str = "",
+        llm_id: str = "",
         retry: RetryPolicy | None = None,
         timeout: float | None = None,
         **rest: Any,
@@ -130,7 +130,7 @@ class FakeDecisionLLM:
         """The SDK's own constructor shape, so `SystemOneLLM` builds this the same way."""
         self.api_key = api_key
         self.base_url = base_url
-        self.model = model or self.model
+        self.llm_id = llm_id or self.llm_id
         self.retry = retry
         self.timeout = timeout
         return self
@@ -140,7 +140,7 @@ class FakeDecisionLLM:
         if self.raises is not None:
             raise self.raises
         answers = self.script.pop(0) if self.script else self.answers
-        return SystemOneResult(answers=dict(answers), model=self.model, usage=self.usage)
+        return SystemOneResult(answers=dict(answers), model=self.llm_id, usage=self.usage)
 
     async def decide(self, state: Any, questions: dict[str, Any]) -> SystemOneResult:
         """The protocol's own method. Both faces give the same scripted answer, so a test can
@@ -173,7 +173,7 @@ def turn(
 def wire(answers: dict[str, Any], usage: dict[str, Any] | None = None) -> dict[str, Any]:
     """The same turn as a server's own JSON rather than as the SDK's objects.
 
-    A server's response body and an in-process model's return value are both plain mappings,
+    A server's response body and an in-process LLM's return value are both plain mappings,
     and `_answer` has to read one as readily as it reads the other. This is how a test says
     "the same answers, off the wire".
     """

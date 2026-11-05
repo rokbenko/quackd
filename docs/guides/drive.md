@@ -223,7 +223,7 @@ goal of the session:
 
 | Flag | What it does in a session |
 | --- | --- |
-| `--base-url`, `--api-key`, `--vision`, `--extra-body`, `--effort`, `--price` | The pilot's model, as for a run, so `--llm local` can name its server. |
+| `--base-url`, `--api-key`, `--vision`, `--extra-body`, `--effort`, `--price` | The pilot's LLM, as for a run, so `--llm local` can name its server. |
 | `--max-steps` | Each goal's steps, within what the session has left of its own. |
 | `--play` | A goal may give its pilot a part to play. |
 | `--memory`, `--memory-dir` | Each goal recalls what earlier runs of the robot learned, keeps one fact for the next, and keeps the places it marks. Off unless given, where `quackd run` keeps it on. |
@@ -283,13 +283,13 @@ gated verb is answered no, and the doubt is left to the pilot.
 `quackd run --controller vla` flies a run with. The line you typed is its one instruction, so it
 has to be one: one line of plain text of at most 200 characters, and under a `.duck` that lists
 what its policy may be told, one of those, or it is refused before the arm moves. Every goal holds
-`manipulate` to that list, a model's as well, and a `.duck` that does not allow `manipulate` at
+`manipulate` to that list, an LLM's as well, and a `.duck` that does not allow `manipulate` at
 all is refused before the session starts. You are asked before the segment whether the arm should
 try, about the segment itself, and after it whether the arm did it, and only your yes makes the
 goal a success.
 
 It needs somebody to ask and something real for them to judge, so it is refused with `--yes`,
-with `--dry-run`, through a pipe, and beside a model's flag, `--play`, `--effort` or a goal's
+with `--dry-run`, through a pipe, and beside a pilot LLM's flag, `--play`, `--effort` or a goal's
 stepper, as a run refuses it:
 
 ```

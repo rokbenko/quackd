@@ -227,7 +227,7 @@ def problem(body: Any) -> tuple[str | None, str] | None:
 def _spread(options: Sequence[Any], chosen: Any) -> list[tuple[Any, float]]:
     """`TOP` on the pick and the rest shared evenly over the others, in the order offered with
     the pick first. A pick that was not on offer is answered all the same, which is how a test
-    scripts an answer no real model should give."""
+    scripts an answer no real LLM should give."""
     others = [option for option in options if option != chosen]
     if not others:
         return [(chosen, 1.0)]

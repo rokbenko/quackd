@@ -51,7 +51,7 @@ do after 1.0.0, and the patch does the rest.
 worked before it works after it, but for the safety exception below. It holds fixes that bring
 shipped behaviour back to what the docs or quackd's own output said it would do, safety fixes,
 corrections to the docs, the examples and the images, catalogue data that changes no default
-(a price, a model row), and dependency and packaging fixes. It adds no command, flag, verb,
+(a price, an LLM row), and dependency and packaging fixes. It adds no command, flag, verb,
 backend, adapter, extra, MCP tool, configuration key, `.duck` version or protocol version, and
 it changes no default. A record, or an object `--json` prints, may gain a field in a patch only
 as part of a fix, and only if a reader that does not know the field still works. A patch may

@@ -16,7 +16,7 @@ import streamlit as st
 from quackd import dotenv_names
 from quackd.command import command_text
 from quackd.webui import catalog, jobs, launch, widgets
-from quackd.webui.options import DECISION_OPTIONS, MODEL_OPTIONS, SECRET_ENV, argv_for, by_panel
+from quackd.webui.options import DECISION_OPTIONS, LLM_OPTIONS, SECRET_ENV, argv_for, by_panel
 from quackd.webui.state import setup
 
 CURATED = frozenset(
@@ -246,7 +246,7 @@ def _pilot() -> str:
         widgets.forget("controller")
     else:
         widgets.write("controller", "vla")
-        for name in MODEL_OPTIONS:
+        for name in LLM_OPTIONS:
             widgets.forget(name)
         for name in ("policy_url", "async_chunks", "accept_other_frame"):
             option = _option("run", name)
@@ -259,21 +259,21 @@ def _pilot() -> str:
         return str(controller)
     vendors = list(catalog.vendors())
     vendor = widgets.pick("_vendor", "Vendor", vendors, default="fake")
-    models = catalog.models(vendor)
-    if models:
-        ids = [m.id for m in models]
-        labels = {m.id: f"{m.label} ({m.id})" for m in models}
-        model = widgets.pick("_model", "Model", ids, default=ids[0], shown=lambda i: labels[i])
+    llms = catalog.llms(vendor)
+    if llms:
+        ids = [m.id for m in llms]
+        labels = {m.id: f"{m.label} ({m.id})" for m in llms}
+        llm_id = widgets.pick("_llm", "LLM", ids, default=ids[0], shown=lambda i: labels[i])
     elif vendor == "fake":
-        model = ""
+        llm_id = ""
     else:
-        model = widgets.text(
-            "_model_text",
-            "Model",
-            help="The model id the server serves, as it spells it.",
+        llm_id = widgets.text(
+            "_llm_text",
+            "LLM",
+            help="The LLM id the server serves, as it spells it.",
             placeholder="as the server names it",
         )
-    widgets.write("llm", f"{vendor}:{model}" if model else vendor)
+    widgets.write("llm", f"{vendor}:{llm_id}" if llm_id else vendor)
     _key_status(vendor)
     for name in ("effort", "vision", "base_url", "extra_body", "price"):
         option = _option("run", name)
@@ -331,10 +331,10 @@ def _decision(controller: str) -> None:
     if name == NO_DECISION:
         widgets.forget("decision_llm")
         return
-    model = widgets.text(
-        "_decision_model", "Its model, where it serves several", placeholder="its default"
+    llm_id = widgets.text(
+        "_decision_llm", "Its LLM, where it serves several", placeholder="its default"
     )
-    widgets.write("decision_llm", f"{name}:{model}" if model else name)
+    widgets.write("decision_llm", f"{name}:{llm_id}" if llm_id else name)
     preset = next(p for p in presets if p.name == name)
     if preset.key_env:
         widgets.key_field(preset.key_env, f"{preset.key_env} for this session")

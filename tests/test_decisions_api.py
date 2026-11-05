@@ -100,7 +100,7 @@ def _stepper(llm: Any) -> Stepper:
         goal="a goal",
         llm=llm,
         name=llm.name,
-        model=llm.model,
+        llm_id=llm.llm_id,
         price=resolve_decision_price(OPENAI),
     )
     stepper.calls["stop"] = Call(name="stop", arguments={}, label="stop")
@@ -172,7 +172,7 @@ async def test_one_request_goes_to_decisions_with_the_three_fields_the_api_takes
     assert post["path"] == "/decisions"
     assert post["cast_to"] is object
     assert set(post["body"]) == {"model", "input", "questions"}
-    assert post["body"]["model"] == OPENAI.model
+    assert post["body"]["model"] == OPENAI.llm_id
     assert post["options"] == {}, "no per-request timeout unless one is asked for"
 
 
@@ -205,7 +205,7 @@ async def test_the_fake_sdk_refuses_a_request_some_release_of_the_sdk_would_not_
     fake refuses it, before it records or answers anything."""
     fake = fake_api.FakeOpenAI(answers=fake_api.turn("stop"))
     with pytest.raises(TypeError):
-        await fake.post("/decisions", cast_to=object, body={"model": OPENAI.model}, **call)
+        await fake.post("/decisions", cast_to=object, body={"model": OPENAI.llm_id}, **call)
     assert fake.posts == []
 
 
@@ -261,7 +261,7 @@ async def test_the_state_goes_out_as_the_json_the_stepper_measures(
 async def test_the_state_goes_out_with_its_letters_as_letters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """OpenAI's `input` is text its model reads as it is, never decoded. JSON's default escapes
+    """OpenAI's `input` is text its LLM reads as it is, never decoded. JSON's default escapes
     went out as written, `\\u017e` for every ž of a goal in Slovenian, and `state_chars` counted
     each escape as six characters. The letters go out as letters, the count is of them, and it is
     still the size of what was sent."""
@@ -441,7 +441,7 @@ def test_a_refusal_answers_nothing_and_is_named_beside_the_answers() -> None:
     assert set(result["answers"]) == {"next_verb", "need_human", "feasible"}
 
 
-def test_usage_and_model_pass_through_untouched() -> None:
+def test_usage_and_llm_pass_through_untouched() -> None:
     data = fake_api.decision([])
     result = to_result(data, {})
     assert result["usage"] == fake_api.USAGE and result["model"] == data["model"]
@@ -512,7 +512,7 @@ async def test_a_turn_it_answers_is_taken_and_billed_at_what_openai_counted(
 async def test_a_question_openai_declined_never_moves_the_body(
     declined: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refusal is no answer at all, so the turn goes to the model on the gate that says so,
+    """A refusal is no answer at all, so the turn goes to the LLM on the gate that says so,
     naming the question, `feasible` included, though beside a declined `feasible` the other
     three answers would have taken `stop`."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
@@ -575,7 +575,7 @@ NO_DECISION = {
 async def test_an_answer_that_is_no_decision_never_moves_the_body_or_reads_as_one(
     answers: list[dict[str, Any]], gate: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The turn goes to the model on the gate that says what happened: `refused` where any answer
+    """The turn goes to the LLM on the gate that says what happened: `refused` where any answer
     under a name declined it, and `unreadable` for an answer of the wrong type, a choice with no
     choice, two answers to one question, or a number that is no probability, a percentage, a
     negative or one written as text. Never taken, and never a confident `escalate`."""
@@ -653,7 +653,7 @@ def test_the_client_is_built_with_the_address_a_clock_above_the_steppers_and_no_
     assert fake.kwargs["api_key"] == KEY
     # At OpenAI's own API the SDK writes the key's own bearer token, as it does by itself.
     assert "default_headers" not in fake.kwargs
-    assert (llm.name, llm.model, llm.url) == ("openai", OPENAI.model, OPENAI.url)
+    assert (llm.name, llm.llm_id, llm.url) == ("openai", OPENAI.llm_id, OPENAI.url)
 
 
 def test_the_client_follows_no_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -741,7 +741,7 @@ def test_a_look_at_the_platform_that_fails_never_stops_the_build(
 
 def test_the_sdks_own_address_variable_never_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given no address, the SDK follows `OPENAI_BASE_URL`, which quackd's own local presets read
-    as the address of a model server on your own machine (`providers/local.py`), so it may well
+    as the address of an LLM server on your own machine (`providers/local.py`), so it may well
     be set where this row runs. The hosted key would follow it there."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
@@ -1102,15 +1102,15 @@ def test_the_client_refuses_the_same_address_for_whoever_builds_one_directly(
         DecisionsAPILLM(OPENAI, url="http://127.0.0.1:8765/v1")
 
 
-def test_a_row_of_somebody_elses_with_no_model_or_no_address_is_refused_not_guessed(
+def test_a_row_of_somebody_elses_with_no_llm_or_no_address_is_refused_not_guessed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The row has both, and `factory` always resolves the address. A spec built by hand may
-    have neither, and an empty model id or an address nobody gave is a sentence rather than a
+    have neither, and an empty LLM id or an address nobody gave is a sentence rather than a
     request that leaves for somewhere."""
     fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI())
-    with pytest.raises(DecisionError, match="names no model"):
-        DecisionsAPILLM(dataclasses.replace(OPENAI, model=None), url="http://127.0.0.1:8765")
+    with pytest.raises(DecisionError, match="names no LLM"):
+        DecisionsAPILLM(dataclasses.replace(OPENAI, llm_id=None), url="http://127.0.0.1:8765")
     with pytest.raises(DecisionError, match="no address"):
         DecisionsAPILLM(dataclasses.replace(OPENAI, url=None))
     assert not fake.kwargs, "no client was built for either"
@@ -1250,7 +1250,7 @@ def test_a_run_at_a_server_you_run_needs_no_key_and_is_costed_as_one(
     assert start["decision_price"]["source"] == "self-hosted"
     assert start["decision_llm"] == {
         "name": "openai",
-        "model": OPENAI.model,
+        "llm_id": OPENAI.llm_id,
         "url": "http://127.0.0.1:9",
         "frames": False,
     }
@@ -1278,7 +1278,7 @@ def test_the_stand_in_keeps_every_value_of_a_header_sent_twice(
     it. Sent twice here, in both orders, on a plain socket, each value is in the record, under
     `every` one at a time and in `headers` folded together, so an assertion that the header said
     one thing fails whichever line came first."""
-    body = json.dumps({"model": OPENAI.model, "input": "x", "questions": []}).encode()
+    body = json.dumps({"model": OPENAI.llm_id, "input": "x", "questions": []}).encode()
     with FakeOpenAIDecisions() as stand_in:
         port = urllib.parse.urlsplit(stand_in.url).port
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)

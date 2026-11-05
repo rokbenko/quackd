@@ -293,8 +293,8 @@ def test_doctor_says_the_line_when_it_connects(
     """With an address doctor connects, and says it first, whether the address is typed or was
     registered with the robot. On stderr under `--json` too, whose stdout stays one JSON
     document. Without an address nothing connects and nothing is said."""
-    # doctor asks every local model server whether it is up, and none of this is about them
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    # doctor asks every local LLM server whether it is up, and none of this is about them
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     for flags in ([], ["--json"]):
         argv = ["doctor", "--robot", "retiring:old", "--address", "tcp://127.0.0.1:9"]
         result = CliRunner().invoke(app, [*argv, *flags])

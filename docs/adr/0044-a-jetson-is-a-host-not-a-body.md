@@ -1,6 +1,6 @@
 # ADR-0044: A Jetson is a host, not a body
 
-**Status:** superseded by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) · **Date:** 2026-09-22 · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and that address may be loopback on the robot's own board) · Follows from [ADR-0003](0003-three-loops.md) (the loop that calls the model runs two orders of magnitude below the body's, so where it runs is a deployment choice and not an architectural one) · Declines to extend [ADR-0017](0017-robot-adapters-and-manifest.md), which is the whole decision · Implemented in `deploy/jetson/` and the Jetson section of `quackd/doctor.py` ([page](../guides/jetson.md))
+**Status:** superseded by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) · **Date:** 2026-09-22 · Extends [ADR-0014](0014-local-llms.md) (a local LLM is the OpenAI provider at an address, and that address may be loopback on the robot's own board) · Follows from [ADR-0003](0003-three-loops.md) (the loop that calls the LLM runs two orders of magnitude below the body's, so where it runs is a deployment choice and not an architectural one) · Declines to extend [ADR-0017](0017-robot-adapters-and-manifest.md), which is the whole decision · Implemented in `deploy/jetson/` and the Jetson section of `quackd/doctor.py` ([page](../guides/jetson.md))
 
 **Superseded 2026-09-25 by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md):** quackd no
 longer runs on the Jetson. It runs on the laptop and reaches the board with `--host`, through a
@@ -11,8 +11,8 @@ are still at the `v0.13.0` tag. What survives is the half of this decision that 
 board rather than about where quackd runs. A Jetson is still not an adapter or a body. quackd
 still carries no CUDA: its core imports no GPU library, and the daemon uses whatever torch and
 ultralytics a person installed on the board. The GPU still belongs to what runs on the board,
-the model server and now the daemon's detector, and quackd reaches them over the network, where
-it used to reach the model server over loopback. Everything below is left as the record of what
+the LLM server and now the daemon's detector, and quackd reaches them over the network, where
+it used to reach the LLM server over loopback. Everything below is left as the record of what
 0.13.0 shipped.
 
 **Read on 2026-10-29:** [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)
@@ -29,7 +29,7 @@ The question arrives as "add a Jetson adapter", and the shape of that request is
 this ADR exists rather than a page on its own.
 
 An NVIDIA Jetson is a small arm64 computer with a GPU wired to its memory controller. It is
-what people reach for when they want the model on the robot rather than in somebody's data
+what people reach for when they want the LLM on the robot rather than in somebody's data
 centre, and it is already inside quackd's world in one place: a ToddlerBot carries one, and
 `bridge/toddlerbot/` is the daemon quackd ships to run there ([ADR-0028](0028-toddlerbot.md)).
 
@@ -57,13 +57,13 @@ is `yolo`, which is ultralytics, which is torch, and which is AGPL besides.
 entry point, no extra, no adapter, no `--robot jetson:...`, and nothing to install for it. The
 noun for a computer that runs quackd is already "your machine" and a Jetson is one.
 
-**The GPU belongs to the model server, and quackd is the CPU half.** This is the sentence the
+**The GPU belongs to the LLM server, and quackd is the CPU half.** This is the sentence the
 whole deployment falls out of. Ollama, `llama-server` or vLLM holds the GPU in its own process;
 quackd reaches it over loopback through the local presets that have existed since
 [ADR-0014](0014-local-llms.md). So the quackd image is a plain Debian Python image with no CUDA
 in it, buildable on any machine, and `deploy/jetson/compose.yml` gives `runtime: nvidia` to
 Ollama and nothing at all to quackd. The one arrangement this unlocks is the interesting one: a
-ToddlerBot's own Jetson holding its control daemon, a model, and quackd between them, three
+ToddlerBot's own Jetson holding its control daemon, an LLM, and quackd between them, three
 processes on one board talking over `127.0.0.1`.
 
 **The image is pinned by `uv.lock`, not by PyPI.** `deploy/jetson/Dockerfile` installs from the
@@ -131,6 +131,6 @@ a Discussion and a transcript instead, the way [local-llms.md](../guides/local-l
   emulation on the machine that wrote this. CI is set up to repeat that on a native arm64
   runner with no GPU, and it first ran green on 2026-09-23. Between them they prove quackd
   runs on aarch64 Linux and prove nothing about Ollama, about the NVIDIA container runtime,
-  or about whether a model server and a fifty hertz control loop can share one board
+  or about whether an LLM server and a fifty hertz control loop can share one board
   without the loop suffering. That last one is a humanoid
   falling over if it is wrong, and it is the first thing a person with a board should measure.

@@ -2,9 +2,9 @@
 
 A Jetson is small enough to ride on a robot and has a GPU, and on its own it is already a
 robot's computer. quackd meets one in two ways. Every quackd command but one stays on your
-laptop, and `--host` names the board, which gives the quackd there four things: the model on the
+laptop, and `--host` names the board, which gives the quackd there four things: the LLM on the
 board's GPU, the board's health, frames from a camera on the board, and detections computed on
-its GPU. The first is your own model server, installed on the board. The other three come from
+its GPU. The first is your own LLM server, installed on the board. The other three come from
 one small daemon quackd ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
 the way it ships a camera daemon for the Open Duck Mini's Pi. The other way is the one part of
 quackd that runs on the board itself, `quackd onboard`, which a robot that carries a Jetson runs
@@ -30,9 +30,9 @@ yours.
 ## Reached, not run on
 
 The arrangement `--host` makes is two machines. The laptop runs quackd: the loop, the executor,
-the gates and the record. The board runs what needs the board: the model server on its GPU
+the gates and the record. The board runs what needs the board: the LLM server on its GPU
 (Ollama, or `llama-server` or vLLM), quackd's host daemon, and, when the board is a robot's own
-computer, that robot's daemon. quackd reaches the model server through the local presets that
+computer, that robot's daemon. quackd reaches the LLM server through the local presets that
 already exist ([guides/local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port
 9874.
 
@@ -57,7 +57,7 @@ the board up, and is quackd-jetson-hostd running on it?
 
 A host is one camera and one detector, so a flock is refused with `--host`, and with a host
 stored with one of its members. `QUACKD_HOST` does not stop a flock: it is the board you usually
-use rather than a claim about these bodies, and for a flock it moves only a local preset's model
+use rather than a claim about these bodies, and for a flock it moves only a local preset's LLM
 server. A robot keeps a board the way it keeps an address:
 
 ```bash
@@ -74,9 +74,9 @@ quackd robot add duck open_duck:bridge --address tcp://127.0.0.1:9871 --host 127
 Three things about the board are worth knowing before anything else.
 
 **The CPU and the GPU share one pool of memory.** There is no separate VRAM figure to look up.
-On an 8 GB Orin Nano the model weights, the KV cache, the operating system, your desktop if you
+On an 8 GB Orin Nano the LLM weights, the KV cache, the operating system, your desktop if you
 left one running, and the host daemon's detector all spend the same 8 GB. It is the reason the
-model size table below matters more here than on a desktop with a discrete card.
+LLM size table below matters more here than on a desktop with a discrete card.
 
 **`nvidia-smi` is not the tool.** It is the front end for NVML, and NVIDIA's CUDA for Tegra
 application note puts NVML under unsupported features: it is supported on Thor and later
@@ -89,10 +89,10 @@ and `bridge/toddlerbot/` is the daemon that runs there
 ([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)), and one of MOSS's builds puts
 a Jetson Orin Nano Super in the rover, where MOSS's own stack runs and quackd's bridge beside it
 ([adapters/moss/README.md](../adapters/moss/README.md)). That is the case where the host
-daemon, and perhaps a model server, share a board with a robot's control loop, and it has a section
+daemon, and perhaps an LLM server, share a board with a robot's control loop, and it has a section
 of its own below. The Microduck's onboard computer is a Radxa Zero 3W on an alpha and Seeed's
 RK3566 board on a beta, and the Open Duck Mini's is a Raspberry Pi Zero 2 W, and none of them is
-this. For those, a Jetson is a second machine on the bench, lending its model and its detector
+this. For those, a Jetson is a second machine on the bench, lending its LLM and its detector
 to a robot that has neither.
 
 ## Which JetPack
@@ -154,7 +154,7 @@ cat /etc/nv_tegra_release        # R36 (release), REVISION: 4.3 is L4T r36.4.3
 apt-cache show nvidia-jetpack    # the JetPack number itself, which that file never names
 cat /proc/device-tree/model      # the board: NVIDIA Jetson Orin Nano Developer Kit
 free -h                          # one pool, shared with the GPU
-df -h /                          # models are gigabytes each: this wants to be NVMe
+df -h /                          # LLMs are gigabytes each: this wants to be NVMe
 sudo tegrastats                  # live: RAM, GR3D_FREQ (the GPU), temperatures, power rails
 ```
 
@@ -163,10 +163,10 @@ from the laptop in one screen, and that screen is the output to paste into an is
 
 ## Set up the board
 
-Two things go on the board: a model server, which is your own install, and quackd's host
+Two things go on the board: an LLM server, which is your own install, and quackd's host
 daemon. Neither needs the other, so a board can run one without the other.
 
-### The model server
+### The LLM server
 
 Ollama is the shortest path, and its installer knows about Jetsons:
 
@@ -233,7 +233,7 @@ carries to the board's Ollama. The port in `--host` is always the daemon's and a
 its own, so there is no second port to type. The `export` above already put the token where
 `run`, `serve-mcp` and `doctor` look for it.
 
-Where the model server is has an order of its own, because a URL can name it as well as a host,
+Where the LLM server is has an order of its own, because a URL can name it as well as a host,
 and a host only ever moves a preset. The local provider takes the first rung that is set, and
 probes none of them:
 
@@ -246,18 +246,18 @@ probes none of them:
 6. The preset's own address, on localhost.
 
 So `QUACKD_HOST=127.0.0.1` in `.env` saves typing the flag, unless `QUACKD_BASE_URL` or
-`OPENAI_BASE_URL` is set as well. Either of those outranks it for the model server, so the
+`OPENAI_BASE_URL` is set as well. Either of those outranks it for the LLM server, so the
 preset stays at that URL while the host daemon is still reached on the board. `--host`
 outranks both, on purpose: a board typed for this run, or registered with this robot, is a
 decision about this run, and a `.env` line naming the board you usually use must not beat one
-naming a model server's exact address ([guides/local-llms.md](local-llms.md) has the same ladder).
+naming an LLM server's exact address ([guides/local-llms.md](local-llms.md) has the same ladder).
 
 Binding the daemon wide instead (`--bind 0.0.0.0`, with the token kept) lets
 `--host jetson.local` reach it with no tunnel. That is for a network you trust: the daemon is
 plain HTTP, so the token and every frame cross that network in the clear, and anybody who can
 reach `POST /detect` can keep the board's GPU busy ([SECURITY.md](../../SECURITY.md)).
 
-## Which model fits which board
+## Which LLM fits which board
 
 Single user decode on these boards is bound by memory bandwidth, so the practical question is
 what fits beside everything else rather than what is fastest.
@@ -274,7 +274,7 @@ and for the host daemon's detector. **No speed is quoted here on purpose.** Nobo
 quackd's loop on any Jetson, and a tokens-per-second number copied from a benchmark of a
 different prompt on a different quantisation would be a guess wearing a number's clothes.
 
-The model has to support tool calling, because that is how quackd offers the robot's verbs. If
+The LLM has to support tool calling, because that is how quackd offers the robot's verbs. If
 yours does not, quackd falls back to asking for JSON in the text and retries once, which works
 and is worse ([guides/local-llms.md](local-llms.md)). Qwen3 thinks by default, which costs tokens on
 every turn; `--extra-body` turns that off and that page shows how.
@@ -313,8 +313,8 @@ answers describe an Orin Nano with a camera and a CUDA detector, and whose board
 `tegrastats` line are the ones in `tests/jetson_fixtures.py`.
 [What quackd doctor shows](#what-quackd-doctor-shows) goes through it row by row.
 
-Then the cartoon duck, with the model on the board. It needs no robot, and it is the honest
-first test of the arrangement: if the duck kicks the ball, the model on the board is answering
+Then the cartoon duck, with the LLM on the board. It needs no robot, and it is the honest
+first test of the arrangement: if the duck kicks the ball, the LLM on the board is answering
 the quackd on your laptop.
 
 ```bash
@@ -340,14 +340,14 @@ printed it:
 └─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
 ```
 
-No model server was listening there, so that run stopped at its first model call with
+No LLM server was listening there, so that run stopped at its first LLM call with
 `ollama: APIConnectionError: Connection error.` The header still holds. The detector is the
 colour one on the laptop, because the body is a simulator. The board's camera joined as an
 extra view named `host`, and the run directory keeps its frames beside the simulator's, as
 `frames/0000-host.png` and on.
 
 Then a real body. The Open Duck Mini makes a good first one, because it brings a camera and
-the board brings the model and a detector. With the duck's own tunnel up, as its
+the board brings the LLM and a detector. With the duck's own tunnel up, as its
 [hardware checklist](../adapters/open_duck/hardware-checklist.md) describes, and the board's beside
 it:
 
@@ -411,7 +411,7 @@ is not counted: a run adds it to tb (toddlerbot:bridge), with the verbs a camera
 the board has one; quackd doctor --host 127.0.0.1 shows whether it does
 ```
 
-If all you want from the board is its model, none of this is needed:
+If all you want from the board is its LLM, none of this is needed:
 `--base-url http://jetson.local:11434/v1` asks nothing of the daemon.
 
 ## A decision LLM on the board
@@ -424,7 +424,7 @@ budget as the table above.
 
 `--host` does not move a decision LLM. `--decision-url` does, and it already reaches a server
 anywhere. `von` is the one that fits without asking for anything. It is an encoder rather than
-a generator, it wants no GPU and no key, and it is small beside the model doing the piloting.
+a generator, it wants no GPU and no key, and it is small beside the LLM doing the piloting.
 On the board:
 
 ```bash
@@ -445,10 +445,10 @@ an open item of its own.
 
 ## Prepare the board
 
-None of this is required by the host daemon. All of it matters once a model is resident.
+None of this is required by the host daemon. All of it matters once an LLM is resident.
 
-**Put the models on NVMe.** A microSD card has neither the space nor the read speed, and a
-model is loaded from disk every time the server restarts.
+**Put the LLMs on NVMe.** A microSD card has neither the space nor the read speed, and an
+LLM is loaded from disk every time the server restarts.
 
 **Swap, on the NVMe, instead of zram.** JetPack enables zram by default, which compresses RAM
 rather than adding any, so it cannot hold what memory could not. `quackd doctor --host` warns
@@ -485,7 +485,7 @@ NVIDIA's r36.4 developer guide documents `nvpmodel` but says nothing about wheth
 unit, so assume it does not.
 
 **Drop the desktop if the board is headless.** `sudo systemctl set-default multi-user.target`
-gives the model back whatever the graphical session was holding, and
+gives the LLM back whatever the graphical session was holding, and
 `graphical.target` puts it back.
 
 ## Beside a robot's own daemon
@@ -493,14 +493,14 @@ gives the model back whatever the graphical session was holding, and
 This is where the board does the most. A ToddlerBot carries a Jetson, and `bridge/toddlerbot/`
 is quackd's own daemon for it, owning the fifty hertz control loop that upstream has none for
 and listening on port 9873. quackd stays on the laptop here too, and the board holds up to
-three processes: the daemon that moves the robot, a model server if you put one there, and the
+three processes: the daemon that moves the robot, an LLM server if you put one there, and the
 host daemon started with `--camera none`, because the ToddlerBot's daemon owns the robot's
 cameras and two processes cannot own one camera. quackd takes the frames from the robot's
 daemon, sends them back to the board's YOLO to be detected, and reads the board's health from
 the host daemon.
 
 Every boundary stays where it was: the robot's daemon still owns the body, quackd still owns
-the deciding and the gating, and the model still only ever picks one verb. The ToddlerBot's
+the deciding and the gating, and the LLM still only ever picks one verb. The ToddlerBot's
 daemon binds loopback too, so its port joins the tunnel, and doctor shows the board and the
 body in one screen:
 
@@ -518,12 +518,12 @@ two rows, and the body's section an error, since no ToddlerBot was there:
 ```
 
 > [!CAUTION]
-> A model server or a detector saturating the CPU and the memory bus is exactly the load that
+> An LLM server or a detector saturating the CPU and the memory bus is exactly the load that
 > can starve a fifty hertz control loop, and on a humanoid a starved control loop is a fall.
 > The robot daemon's deadman is what protects the robot there, and it is doing that job for
 > real rather than as a formality. Nobody has measured this contention on any board. Put the
-> robot on a stand the first time, watch `tegrastats` while a model answers, and consider
-> pinning the model server off the cores the loop runs on.
+> robot on a stand the first time, watch `tegrastats` while an LLM answers, and consider
+> pinning the LLM server off the cores the loop runs on.
 
 That is why the host daemon's systemd unit runs it at `Nice=10`, under `MemoryMax=2G` and with
 `OOMScoreAdjust=500`: it is the process the board should lose first. Losing it costs quackd a
@@ -603,7 +603,7 @@ from one `tegrastats` line, with the line itself below it.
 
 One warning there, and it is not fatal, which is the point: nothing the board reports can
 change the exit code. The zram warning says the board's only swap is zram, which compresses RAM
-rather than adding any. A board with no swap at all gets a warning of its own, that a model
+rather than adding any. A board with no swap at all gets a warning of its own, that an LLM
 which does not fit in memory cannot load. A detector on `cpu` would be a warning too, saying
 the board's torch sees no CUDA. A missing camera or detector is only a note, because
 `--camera none` and `--no-detect` are choices.
@@ -617,9 +617,9 @@ host at 127.0.0.1:1 ────────────────────
 ```
 
 Below the usual sections, the servers table probes the four presets at the host rather than on
-the laptop, and asks an Ollama that answers where it put each loaded model (`GET /api/ps`).
+the laptop, and asks an Ollama that answers where it put each loaded LLM (`GET /api/ps`).
 This is that part beside the same fake board, with a stub standing in for Ollama on 11434 that
-reported one model and none of it in GPU memory:
+reported one LLM and none of it in GPU memory:
 
 ```
 LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ─────────────────────
@@ -632,12 +632,12 @@ LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ───�
 │ llamacpp │ http://127.0.0.1:8080/v1          │ not running │
 │ lmstudio │ http://127.0.0.1:1234/v1          │ not running │
 └──────────┴───────────────────────────────────┴─────────────┘
-  where ollama put its models (GET /api/ps)
+  where ollama put its LLMs (GET /api/ps)
 ⚠ qwen3:4b  on the CPU: the generic arm64 build of Ollama has no Tegra CUDA, and the
             official installer picks the JetPack build (docs/guides/jetson.md)
 ```
 
-A model all on the GPU reads `all on the GPU` with its size, and a split one says what share
+An LLM all on the GPU reads `all on the GPU` with its size, and a split one says what share
 of it is there.
 
 `--json` carries all of it under a `host` key: the daemon's `hello` and `healthz`, the presets
@@ -647,10 +647,10 @@ because doctor never reads the files of the machine it runs on.
 
 ## Pitfalls
 
-**Ollama answers off the CPU.** `ollama ps` names the processor for a loaded model. The generic
+**Ollama answers off the CPU.** `ollama ps` names the processor for a loaded LLM. The generic
 arm64 build has no Tegra CUDA in it; the JetPack build does, and the official installer picks
 it by reading `/etc/nv_tegra_release`. If you installed from a tarball by hand, that is the
-thing to redo. `quackd doctor --host` asks Ollama the same question and warns when a model sits
+thing to redo. `quackd doctor --host` asks Ollama the same question and warns when an LLM sits
 on a Tegra's CPU.
 
 **`no kernel image is available for execution on the device`** means a CUDA binary built for a
@@ -667,7 +667,7 @@ and add `-L 8080:127.0.0.1:8080` to the tunnel.
 once, and on an 8 GB Orin Nano a source build is more likely to exhaust memory than to finish.
 For one pilot driving one robot, Ollama or llama.cpp is the right default.
 
-**Rootless Docker and the integrated GPU do not get along.** If the model server is in a
+**Rootless Docker and the integrated GPU do not get along.** If the LLM server is in a
 container, run that container under the ordinary root daemon until you have proved otherwise on
 your own board.
 
@@ -688,14 +688,14 @@ your own board.
 - `quackd onboard` has run on the `sim` board alone: the wizard, the service and two simulated
   robots meeting on one laptop, over a simulated air, with the radio's code against fakes, and
   its BlueZ half has never met bluetoothd.
-- The JetPack table and the model download sizes were read from NVIDIA's and Ollama's own
+- The JetPack table and the LLM download sizes were read from NVIDIA's and Ollama's own
   pages on 2026-09-22. Everything version sensitive here goes stale on somebody else's
   release schedule, so check it against the board rather than trusting the date.
 
 What that leaves unproven is everything about the board: the CSI pipeline, a USB camera, CUDA
 detection, how long a frame takes to go from the laptop to the board's YOLO and back inside
 `go_to`'s loop, Ollama on the Orin GPU, `nvpmodel`, what doctor reads off a real board's files
-and a real `tegrastats` line, and whether a model server or a detector can share a robot's
+and a real `tegrastats` line, and whether an LLM server or a detector can share a robot's
 Jetson without its control loop suffering. For `quackd onboard` it leaves all of it: a real
 board recognised, uv's Python on JetPack, BlueZ advertising and accepting a link, the signal
 strength at which two robots meet, address privacy taking effect, and the unit across a reboot.
@@ -708,7 +708,7 @@ If you run it, please open a Discussion or an issue with:
 - what its `/board` says, fetched the same way from `http://127.0.0.1:9874/board`: the
   board's own files, `nvpmodel -q` and a `tegrastats` line as raw text, most of which
   doctor's `--json` carries only as the values it parsed out of them
-- one `tegrastats` line captured on the board while the model was answering
+- one `tegrastats` line captured on the board while the LLM was answering
 - `runs/<timestamp>-<name>/terminal.txt` and `transcript.jsonl` from a real run, whose
   `detect` blocks are the round trip inside `go_to`'s loop, split into the board's share
   and the rest

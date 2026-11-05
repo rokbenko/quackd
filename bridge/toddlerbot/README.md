@@ -13,7 +13,7 @@ Three reasons it is a daemon rather than a thin shim, and the second is the impo
 
 **A verb is episodic and this robot is not.** `RealWorld.step()` is a no-op, so nothing times
 out and nothing re-arms: the last commanded pose is held forever. A humanoid frozen mid-stride
-while a language model thinks is a humanoid on the floor. So the fifty hertz loop lives here,
+while an LLM thinks is a humanoid on the floor. So the fifty hertz loop lives here,
 and quackd's intents only nudge what it is already doing.
 
 **Upstream protects nothing, and its shutdown drops the robot.** `set_motor_target` clamps
@@ -99,9 +99,9 @@ YOLO on its GPU, which `quackd run --host` reaches on port 9874 while this daemo
 ([`bridge/jetson/`](../jetson/README.md)). Start it with `--camera none`, because this daemon
 owns the robot's cameras and two processes cannot own one camera. It runs on the board's system
 `python3`, outside upstream's conda environment, needs Python 3.10 or newer (JetPack 6 ships
-3.10), and imports nothing from quackd. A model server can sit beside both
-([docs/guides/jetson.md](../../docs/guides/jetson.md)). What to watch is contention, because a
-model server or a detector saturating the board is what can starve the loop this file exists to
+3.10), and imports nothing from quackd. An LLM server can sit beside both
+([docs/guides/jetson.md](../../docs/guides/jetson.md)). What to watch is contention, because an
+LLM server or a detector saturating the board is what can starve the loop this file exists to
 protect, and nobody has measured it.
 
 ## Rules this file lives by

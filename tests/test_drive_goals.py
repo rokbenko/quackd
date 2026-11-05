@@ -175,7 +175,7 @@ def _raises(obs: Any, step: int, history: Any) -> Any:
 
 async def test_a_goal_whose_pilot_raises_still_ends_its_record(tmp_path: Path) -> None:
     drive, _body, records = await _drive(tmp_path)
-    drive.pilot = lambda goal: FakeProvider(strategy=_raises, model="scripted:raises")
+    drive.pilot = lambda goal: FakeProvider(strategy=_raises, llm_id="scripted:raises")
     goal = drive.submit("look around and tell me what you see")
     await _settled(goal)
     await drive.robot.close()

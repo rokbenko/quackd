@@ -93,7 +93,7 @@ a shim might stop the legs when its socket closes and have no deadman at all. Fr
 leaves the socket open with nothing more on it, which only a deadman stops, so it goes first.
 
 The walk has to be long enough to interrupt, and `--llm fake` answers a free-form goal with a
-fixed script that ignores it, so this needs a real model:
+fixed script that ignores it, so this needs a real LLM:
 
 ```bash
 quackd run --goal "walk forward slowly for ten seconds, then stop" \

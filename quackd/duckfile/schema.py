@@ -163,7 +163,7 @@ class Budgets(BaseModel):
         ge=1,
         le=2000,
         description=(
-            "Maximum provider calls. A turn the model's API could not answer, and quackd asked "
+            "Maximum provider calls. A turn the LLM's API could not answer, and quackd asked "
             "again, counts once."
         ),
     )

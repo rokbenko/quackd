@@ -1,9 +1,9 @@
-# Decision LLMs: a discrete stepper in front of the model
+# Decision LLMs: a discrete stepper in front of the pilot LLM
 
-quackd asks one question a turn -- *which single tool call now* -- and pays a frontier model's
+quackd asks one question a turn -- *which single tool call now* -- and pays a frontier LLM's
 full latency for it whether the answer is `report_state` or a six-joint pose. On the SO-101 run at
 the top of [README.md](../../../README.md) that is **62.1 seconds of a 78.8 second run** spent
-waiting on the model, against 12.2 seconds of the arm actually moving.
+waiting on the LLM, against 12.2 seconds of the arm actually moving.
 
 Some of those turns are not writing. They are choosing.
 
@@ -19,16 +19,16 @@ the same kind of question in a wire format of its own, `POST /v1/decisions`, and
 of its own to translate it. quackd treats them all as one seam with a row of data in front of
 it, so most of this page is about the half that does not change with the vendor.
 
-**A decision LLM is not another LLM, and it is not a smaller one.** That is the whole point of it,
-so it is worth being precise about the difference before any of the rest makes sense. A language
-model generates tokens: you ask it for a verb and it writes one, and everything quackd does around
+**A decision LLM is not another pilot LLM, and it is not a smaller one.** That is the whole point of it,
+so it is worth being precise about the difference before any of the rest makes sense. A pilot
+LLM generates tokens: you ask it for a verb and it writes one, and everything quackd does around
 that -- the tool schemas, the one-call-per-turn rule, the re-prompt when it answers with prose --
 exists to squeeze a text generator into a shape software can branch on. A decision LLM generates
 nothing. It scores a fixed set of options against a state and hands back which one, with a
 probability for each. In TypeSafe's own words, *"LLMs produce words for people. Jev produces typed
 decisions"*, and it is *"more like code: reliable, fast, self-consistent, and type-safe"*.
 
-| | A language model | A decision LLM |
+| | A pilot LLM | A decision LLM |
 |---|---|---|
 | Output | tokens, which you parse | a typed value, already a value |
 | Can it invent an option? | yes, and does | no. It can only score the ones you gave it |
@@ -37,7 +37,7 @@ decisions"*, and it is *"more like code: reliable, fast, self-consistent, and ty
 | What uncertainty looks like | a hedge in prose, or none | a number, per option, which your code reads |
 | Where it sits in quackd | the pilot | in front of the pilot, for the turns that are a choice |
 
-The practical consequence is the one this page is about. A frontier model takes about six seconds
+The practical consequence is the one this page is about. A frontier LLM takes about six seconds
 to say `report_state` on this arm, because it takes about six seconds to say anything. A
 classifier answers a six-way choice in a fraction of one, and charges for the question rather than
 for the essay.
@@ -48,7 +48,7 @@ decision LLM, needs no key for one, and never switches this on because it found 
 
 > [!IMPORTANT]
 > The stepper cannot author a number and cannot author a sentence. Every joint angle, every
-> velocity, every `reason` and every feasibility verdict is still the model's, on every body. What
+> velocity, every `reason` and every feasibility verdict is still the pilot LLM's, on every body. What
 > it can do is pick one of a handful of calls this robot already has.
 
 > [!WARNING]
@@ -85,33 +85,33 @@ decision LLM, needs no key for one, and never switches this on because it found 
 | | |
 |---|---|
 | **It is** | a classifier that answers typed questions about a state: which of these calls, is this statement true, where on this rubric |
-| **It is not** | a provider. `--llm` does not take it, `quackd list-models` does not list it, and it cannot pilot a robot on its own |
+| **It is not** | a provider. `--llm` does not take it, `quackd list-llms` does not list it, and it cannot pilot a robot on its own |
 | **It decides** | which single verb, out of the ones this body's contract allows *and* whose parameters are a closed set |
-| **The model decides** | every pose, every target, every sentence, every feasibility verdict, every `declare_success`, and every turn the stepper is not confident about |
+| **The pilot LLM decides** | every pose, every target, every sentence, every feasibility verdict, every `declare_success`, and every turn the stepper is not confident about |
 | **The executor still decides** | whether the verb runs at all: the allowlist, the budgets, the confirm gates, the preconditions and the robot's own safety authority are untouched |
 
 The division is the same one TypeSafe's own [smart-home
 demo](https://docs.typesafe.ai/demos/smart-home) draws: the classifier picks the device and the
-action, and the language model does the language. Here the classifier picks the verb and the model
+action, and the LLM does the language. Here the classifier picks the verb and the LLM
 does the angles and the prose.
 
 The two seams are genuinely separate, and it is worth saying so plainly now that the flags look
-alike. `--llm` names the pilot, which is a provider and a model: `--llm openai:gpt-5`.
+alike. `--llm` names the pilot, which is a provider and an LLM: `--llm openai:gpt-5`.
 `--decision-llm` names the thing in front of it: `--decision-llm kev`. Neither list contains the
 other, though two words are in both, and the flag is what says which seam one means: `--llm local`
-is a model server of your own flying the robot and `--decision-llm local` a System One server of
-your own in front of it, and `--llm openai` is OpenAI's chat models where `--decision-llm openai` is
+is an LLM server of your own flying the robot and `--decision-llm local` a System One server of
+your own in front of it, and `--llm openai` is OpenAI's chat LLMs where `--decision-llm openai` is
 their Decisions API. A run that names no decision LLM is quackd exactly as it has always been.
 
 ## The ones quackd names
 
 Every row below is data in
 [`quackd/agent/decision/catalogue.py`](../../../quackd/agent/decision/catalogue.py) and nothing else
--- a name, a summary, an install line, an address, a model id, a key variable and a rate. Adding a
+-- a name, a summary, an install line, an address, an LLM id, a key variable and a rate. Adding a
 wire-compatible server is one row, one page and no code, which is why the escape hatch near the
 bottom of the table exists for the ones quackd has never heard of.
 
-| Name | Who makes it | Where it runs | How you get it running | Key | Default URL | Default model | Page |
+| Name | Who makes it | Where it runs | How you get it running | Key | Default URL | Default LLM | Page |
 |---|---|---|---|---|---|---|---|
 | `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.13.0` | [jev](jev.md) |
 | `openai` | OpenAI ([platform.openai.com](https://platform.openai.com/)) | their machines, hosted | `quackd[openai] and OPENAI_API_KEY (platform.openai.com)` | `OPENAI_API_KEY` | `https://api.openai.com` | `gpt-6-luna` | [openai](openai.md) |
@@ -133,7 +133,7 @@ the sentence around it.
 Two more columns are worth reading twice. **Key** is `none needed` on every row but the two hosted
 ones, and that is structural rather than a convenience: a server you run yourself is sent the
 literal word `local` in the key field, so a `TYPESAFE_API_KEY` or an `OPENAI_API_KEY` sitting in
-the same `.env` is never posted to a port on your own machine. **Default model** is per row rather
+the same `.env` is never posted to a port on your own machine. **Default LLM** is per row rather
 than shared, and [openjev](openjev.md) is what happens to anyone who assumes otherwise: its
 accepted ids are a closed set, and a pinned Jev version is refused with a 400 on every request.
 
@@ -157,7 +157,7 @@ is not:
 ```
 discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name one) --------------
 +-------------------------------------------------------------------------------------------------+
-| decision llm | extra              | key                | model              | url               |
+| decision llm | extra              | key                | LLM                | url               |
 |--------------+--------------------+--------------------+--------------------+-------------------|
 | jev          | missing            | TYPESAFE_API_KEY   | jev-1.13.0         |                   |
 |              | (quackd[decision]) | unset              |                    |                   |
@@ -179,7 +179,7 @@ discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name 
 |              | (quackd[laya])     |                    |                    |                   |
 +-------------------------------------------------------------------------------------------------+
 One of these answers the turns that are a choice among calls this body can make. Every pose, every
-sentence and every verdict is still the model's (docs/guides/decision-llms/README.md).
+sentence and every verdict is still the pilot LLM's (docs/guides/decision-llms/README.md).
 ```
 
 > [!NOTE]
@@ -211,7 +211,7 @@ change for either.
 
 **OpenRouter's two decision endpoints** are not rows either, for two different reasons. Its System
 One endpoint, `POST /api/v1/systemone`, is documented for TypeSafe's own client and for System One
-models such as Jev, and that client appends `/v1/systemone` to whatever address it is handed, so the
+LLMs such as Jev, and that client appends `/v1/systemone` to whatever address it is handed, so the
 path is not what keeps it out. The key is what does: an address given with `--decision-url` is a
 server you run as far as quackd is concerned, so it is sent the word `local` rather than a key, and
 reaching OpenRouter there would take a row of its own that sends OpenRouter's key to OpenRouter and
@@ -220,18 +220,18 @@ answers at `/api/alpha/decisions`, and the System One client's path is a fixed c
 something `--decision-url` can reach into, so a row for it would need a transport of its own, not a
 second address. The Luna it serves there, `openai/gpt-6-luna-decisions`, is OpenAI's own Decisions
 API underneath, which quackd reaches at OpenAI as the [`openai`](openai.md) row. Nor is either of
-them `--llm openrouter`, which reaches OpenRouter's chat models as a pilot
+them `--llm openrouter`, which reaches OpenRouter's chat LLMs as a pilot
 ([../openrouter.md](../openrouter.md)).
 
-**Ollama** runs chat models. None of the architectures above runs in it, and its OpenAI-compatible
-endpoint drops logprobs, so even the closest thing you could build -- a small chat model scored by
+**Ollama** runs chat LLMs. None of the architectures above runs in it, and its OpenAI-compatible
+endpoint drops logprobs, so even the closest thing you could build -- a small chat LLM scored by
 token probability -- has nothing to read the probability off. Ollama is excellent at the other
 seam: `--llm ollama:llama3.2` is a pilot, and that is [guides/local-llms.md](../local-llms.md).
 
 **A plain LLM behind a System One adapter** is the one people ask about most, and the one with the
-sharpest objection. You can absolutely prompt a model for a label and a number between 0 and 1,
+sharpest objection. You can absolutely prompt an LLM for a label and a number between 0 and 1,
 and it will give you both. But that number is a *prompted* number rather than a *calibrated* one:
-it is what a model writes when asked how sure it is, not a statement about how a population of
+it is what an LLM writes when asked how sure it is, not a statement about how a population of
 answers at that value behaves. quackd's floors gate real motion on calibration -- 0.85 to send an
 intent, 0.90 behind a confirm gate -- and a prompted 0.87 and a calibrated 0.87 are not the same
 claim. Someone could ship exactly this as a plugin, and it would be a genuinely useful thing to
@@ -243,7 +243,7 @@ have. They would have to measure it first, which is what `--decision-mode shadow
 uv pip install "quackd[decision]"                  # the System One client, for every System One row
 uv pip install "quackd[openai]"                    # the openai row, on the pilot's own SDK
 uv pip install "quackd[laya]"                      # the one that runs in this process
-uv pip install "quackd[lerobot,decision,openai]"   # the arm, a decision LLM and a model
+uv pip install "quackd[lerobot,decision,openai]"   # the arm, a decision LLM and a pilot LLM
 ```
 
 Neither `quackd[decision]` nor `quackd[laya]` is part of `quackd[all]`, for the same reason the
@@ -255,7 +255,7 @@ Four flags, because there are many decision LLMs now rather than one, and one of
 
 | Flag | What it says | Default |
 |---|---|---|
-| `--decision-llm NAME[:MODEL]` | which one answers, and optionally which model id it answers as | none, and then none of the rest of this happens |
+| `--decision-llm NAME[:LLM]` | which one answers, and optionally which LLM id it answers as | none, and then none of the rest of this happens |
 | `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. On a System One row a path is kept and the client adds `/v1/systemone` after it; `openai`'s client adds `/v1/decisions` to the host alone, and a path there stops the run | whatever the row says |
 | `--decision-mode off\|shadow\|on` | what its answer is allowed to do | `on` once you have named one, `off` when you have not |
 | `--decision-frames` | whether it is shown the robot's primary camera beside the state on each turn it is asked about, which only `openai` may be, at OpenAI's own hosts alone ([openai](openai.md#showing-it-the-camera---decision-frames)). `--no-decision-frames` says no | off |
@@ -266,7 +266,7 @@ flag you also have to remember. The three modes:
 | `--decision-mode` | What happens |
 |---|---|
 | `off` | quackd exactly as it has always been. No stepper is built and no backend is imported. `--decision-llm off` says the same thing |
-| `shadow` | it is asked on every turn and its answer is recorded beside the model's. **The run is unchanged**: the model still decides everything. This is the mode to start in, and the one that measures |
+| `shadow` | it is asked on every turn and its answer is recorded beside the pilot LLM's. **The run is unchanged**: the pilot LLM still decides everything. This is the mode to start in, and the one that measures |
 | `on` | it takes the turns it is confident about, and hands back the rest. Switching it on prints one line saying it has never been measured against a robot, because that is still true |
 
 `QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL`, `QUACKD_DECISION_MODE` and `QUACKD_DECISION_FRAMES`
@@ -275,7 +275,7 @@ that wants no key, so a line left in a `.env` after an afternoon with a server o
 moves `jev` or `openai`.
 
 **Asking for a decision LLM that cannot run does not stop the run.** The stepper is an
-optimisation and the model is the pilot either way, so a script that always names one still drives
+optimisation and the pilot flies either way, so a script that always names one still drives
 the robot on a machine with no key and no extra. It says so once, before anything is connected,
 and carries on without it:
 
@@ -327,16 +327,16 @@ The arm is the only body in this repository that has run on real hardware, so it
 to be explained and where it has to be right.
 
 > **On the SO-101, a decision LLM reads the arm and works the gripper. Every angle is still the
-> model's.**
+> pilot LLM's.**
 
 ### 1. What the arm can and cannot hand over
 
 | | Tools | Concrete calls | Who answers |
 |---|---|---|---|
-| **A choice** | `report_state`, `stop`, `place`, `gripper`, `observe`¹ | **6** -- `report_state`, `stop`, `place`, `gripper(open=true)`, `gripper(open=false)`, `observe` | the stepper, or the model |
-| **A number** | `move_joints`, `pick` | -- | **always the model** |
-| **A sentence** | `assess_task`, `declare_success`, `declare_failure`, `remember` | -- | **always the model** |
-| **A segment** | `manipulate`, when a task file lists its instructions² | one per instruction | **always the model**, with the stepper's answer recorded beside it |
+| **A choice** | `report_state`, `stop`, `place`, `gripper`, `observe`¹ | **6** -- `report_state`, `stop`, `place`, `gripper(open=true)`, `gripper(open=false)`, `observe` | the stepper, or the pilot LLM |
+| **A number** | `move_joints`, `pick` | -- | **always the pilot LLM** |
+| **A sentence** | `assess_task`, `declare_success`, `declare_failure`, `remember` | -- | **always the pilot LLM** |
+| **A segment** | `manipulate`, when a task file lists its instructions² | one per instruction | **always the pilot LLM**, with the stepper's answer recorded beside it |
 
 ¹ `observe` is in the manifest only when a camera is configured, which is why
 [`lerobot-lookout`](../../../ducks/lerobot-lookout.duck) leaves it out.
@@ -347,14 +347,14 @@ make it a closed set, one call per instruction, and which subtask to hand the po
 exactly the choice a decision LLM might one day make between segments. It is offered and never
 taken, under `--decision-mode on` too: it answers to the confirm floor, and under `--yes` nobody is
 asked at the confirm gate, so a stepper that cleared the floor would start a learned policy driving
-the arm with no person and no model involved. An answer that clears every gate a taken one clears is
-recorded with `gate: shadow_only`, the model takes the turn, and the two answers are recorded
+the arm with no person and no pilot involved. An answer that clears every gate a taken one clears is
+recorded with `gate: shadow_only`, the pilot LLM takes the turn, and the two answers are recorded
 side by side (`decision_shadow`), which is the agreement rate a decision to promote it would need.
 
 Nothing here is a special case for the arm, and nothing here is a special case for a vendor. A
 verb is a **choice** when every parameter it has is a closed set -- an enum, a constant, or a
 boolean -- or is *inert*, meaning it is optional, defaults to null, and accepts null, so leaving
-it out chooses nothing. Everything else is a number, and a number is the model's. That rule is
+it out chooses nothing. Everything else is a number, and a number is the pilot LLM's. That rule is
 read off each tool's own JSON Schema, so it gives the same answer whichever decision LLM is behind
 it, and gives an answer at all for a body quackd has never shipped.
 
@@ -370,16 +370,16 @@ The wave at the top of the README, exactly as it happened on 2026-09-15:
 | Call | Tool | Whose turn this would be |
 |---|---|---|
 | 1 | `report_state` | **the stepper's** |
-| 2 | `assess_task` | the model's -- it needs a written reason |
-| 3-8 | `move_joints` x6 | the model's -- every one is an angle |
+| 2 | `assess_task` | the pilot LLM's -- it needs a written reason |
+| 3-8 | `move_joints` x6 | the pilot LLM's -- every one is an angle |
 | 9 | `stop` | **the stepper's** |
-| 10 | `declare_success` | the model's -- it needs a written reason |
+| 10 | `declare_success` | the pilot LLM's -- it needs a written reason |
 
 **Two of the ten.** Six of that run's calls author joint angles and can never be the stepper's,
 and two more are prose. That is the honest arithmetic on the one run this project has on real
 hardware, and it is worth stating plainly rather than choosing a friendlier example.
 
-The stepper is asked on every turn, so this run pays for ten questions to save two model calls.
+The stepper is asked on every turn, so this run pays for ten questions to save two pilot LLM calls.
 That still comes out ahead, and by a good margin, but it is the least favourable task in the
 repository and that is the reason to lead with it. What it works out to is in [How much faster,
 and how much cheaper](#how-much-faster-and-how-much-cheaper).
@@ -408,19 +408,19 @@ that matter. (Replayed from a recorded transcript and relabelled to what today's
 re-run here, because no decision LLM is installed on this machine.)
 
 ```text
-step 0/12, llm calls 0/12, 0.0/3 min ------------------------------------------
+step 0/12, LLM calls 0/12, 0.0/3 min ------------------------------------------
    decide  report_state 0.97 >= 0.60 (0.00 s)
 >  verb    report_state() from decision
 +  result  report_state ok: shoulder_pan 0, shoulder_lift -90, ...; torque on;
            hottest shoulder_pan 30 degC; holding nothing (0.0 s, 0 intents)
-step 1/12, llm calls 0/12, 1 by the stepper, 0.0/3 min ------------------------
+step 1/12, LLM calls 0/12, 1 by the stepper, 0.0/3 min ------------------------
    obs     While you were not asked, the stepper chose these (newest last):
            - report_state(): ok - ... holding nothing
-   decide  escalate, to the model (0.00 s)
+   decide  escalate, to the pilot LLM (0.00 s)
    llm>    step 1: 1 messages (0 with image) to fake scripted:arm-grip-check
    tool    assess_task(verdict='feasible', reason='...')
 +  assess  feasible: ...
-step 1/12, llm calls 1/12, 1 by the stepper, 0.0/3 min ------------------------
+step 1/12, LLM calls 1/12, 1 by the stepper, 0.0/3 min ------------------------
    decide  report_state 0.95 >= 0.60 (0.00 s)
 >  verb    report_state() from decision
 ```
@@ -433,12 +433,12 @@ Five things in that are worth reading twice.
   `run_start` for the whole run.
 - **`0.97 >= 0.60`** is the confidence against the floor for that class of verb. A read answers to
   a lower floor than a move; see [How a turn is decided](#how-a-turn-is-decided).
-- **`escalate, to the model`** on the second turn. The stepper wanted the gripper, but no
+- **`escalate, to the pilot LLM`** on the second turn. The stepper wanted the gripper, but no
   feasibility verdict had been recorded yet, so the gripper was not among the calls it was
-  offered. It handed the turn back and the model recorded the verdict. It was not refused by a
+  offered. It handed the turn back and the pilot LLM recorded the verdict. It was not refused by a
   gate -- it was never offered the option.
-- **`While you were not asked, the stepper chose these`**. The model's history contains nothing
-  the stepper did, because none of it is anything the model said. It is told instead, once, in the
+- **`While you were not asked, the stepper chose these`**. The pilot LLM's history contains nothing
+  the stepper did, because none of it is anything the pilot LLM said. It is told instead, once, in the
   observation it is next shown, and told who chose them.
 - **`0.00 s`** is a fake answering instantly in a test, not a measurement. A run made today puts
   two more figures in that parenthesis, the tokens the question spent and what they cost; see
@@ -484,7 +484,7 @@ million input tokens ([its page](openai.md)).
 |---|---|
 | **0.114 s** per call | [typesafe.ai](https://typesafe.ai/), their worked example ([jev](jev.md)) |
 | **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](jev.md)) |
-| **238x lower input price** than a frontier model | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
+| **238x lower input price** than a frontier LLM | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
 | **$0.10 per million input tokens**, output not charged, on `openai` | [OpenAI's Decisions guide](https://developers.openai.com/api/docs/guides/decisions) ([openai](openai.md)) |
 | **$0** per question on every row you run yourself | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
 
@@ -492,33 +492,33 @@ And what quackd brings to it, all measured:
 
 | Figure | Source |
 |---|---|
-| **6.21 s** mean model call | the wave run: 62.1 s over 10 calls ([README](../../../README.md#what-happened-in-that-run)) |
+| **6.21 s** mean LLM call | the wave run: 62.1 s over 10 calls ([README](../../../README.md#what-happened-in-that-run)) |
 | **49,096** input tokens over those 10 calls | the same run |
 | **527 tokens** per decision request on this arm | measured by hand before the estimator existed: 388 characters of state plus 1,721 of questions, on `lerobot:mock`. The shipped estimator counts the questions at 1,299 characters on that arm before the verdict clears and 1,454 after, because the criteria are one line per verb on offer, so it prints 421 and 460 where this row says 527 |
 
 ### One decision
 
 On the turns it can answer, quackd's own baseline gives **6.21 s against 0.114 s, about 54x**.
-That is lower than TypeSafe's headline because quackd's baseline is a slower model on a bigger
+That is lower than TypeSafe's headline because quackd's baseline is a slower LLM on a bigger
 prompt, and it is the number that matters here.
 
-On price, the whole request is 527 tokens against a model call that averaged 4,910 input tokens on
+On price, the whole request is 527 tokens against a pilot LLM call that averaged 4,910 input tokens on
 that run, at a 238th of the price per token. That works out at **about a two-thousandth of the
 cost of the call it replaces**, which is a wider gap than TypeSafe's own 445x rather than a
-narrower one, and for a reason worth knowing: quackd hands its model a large prompt, nearly five
+narrower one, and for a reason worth knowing: quackd hands its pilot LLM a large prompt, nearly five
 thousand tokens a call once the contract, the datasheet, the memory and the observations are in
 it, while the question it hands the stepper is about a tenth of that. The stepper is cheaper per
 token *and* asked a much smaller question.
 
-That ratio assumes the model's input is priced like Claude Fable 5.1, which is the comparison
+That ratio assumes the pilot LLM's input is priced like Claude Fable 5.1, which is the comparison
 TypeSafe's own 238x is drawn against. `gpt-6-astra` drove the wave run, and the catalogue now
 prices it at $10 per million input tokens, the same input rate as Claude Fable 5.1, so the
-comparison holds for the model that actually did the driving. The token counts on both sides are
+comparison holds for the LLM that actually did the driving. The token counts on both sides are
 measured and both rates are the vendors' own, but a rate read off a page by hand on one day is not
 an invoice: substitute yours where it differs.
 
 At `openai`'s published $0.10 per million input tokens a token costs a hundredth of what the
-model's does rather than a 238th, since `gpt-6-astra`'s input is $10, so the same 527 tokens come
+pilot LLM's does rather than a 238th, since `gpt-6-astra`'s input is $10, so the same 527 tokens come
 to **about a thousandth of the cost of the call they replace**. OpenAI count those tokens with a
 tokeniser of their own, and their count is what an `openai` turn records and is costed on, so a
 real run's request will not come to 527 exactly. The time half cannot be worked out for that row
@@ -526,19 +526,19 @@ at all: OpenAI publish no latency for it, only that it is about ten times faster
 Responses API, and nothing here repeats that ratio as a quackd measurement.
 
 On a server you run yourself the money half of this collapses entirely. There is no rate card,
-quackd costs those turns at the self-hosted $0 it already uses for a model on your own machine,
+quackd costs those turns at the self-hosted $0 it already uses for an LLM on your own machine,
 and the only question left is the time one.
 
 ### One run: it depends entirely on how many turns are a choice
 
 This is the part a headline multiplier cannot tell you, and it is the honest centre of the
 question. The stepper is asked on every turn and only answers some of them, so the saving over a
-whole run is capped by that share. With *f* the fraction of turns it answers, *M* the model's mean
+whole run is capped by that share. With *f* the fraction of turns it answers, *M* the pilot LLM's mean
 call and *L* the stepper's, the think time goes from `N*M` to `N*L + (1-f)*N*M`, so:
 
 **speedup = 1 / (1 - f + L/M)**, and with quackd's numbers *L/M* is 0.018.
 
-| Turns the stepper answers | Think time | Model spend |
+| Turns the stepper answers | Think time | Pilot LLM spend |
 |---|---|---|
 | 20% | **1.2x** faster | about 20% less |
 | 30% | **1.4x** faster | about 30% less |
@@ -551,8 +551,8 @@ scripted pilot and a fake in the decision LLM's place, `arm-grip-check` answered
 turns** with the stepper and `lerobot-lookout` **3 of 6**, which is 67% and 50%. Those are what
 those two runs did rather than a ceiling: a differently answering decision LLM reaches a different
 share, and the runs are not a fixed six turns long either. What does hold on a short task is the
-floor under the model's share: the feasibility verdict and the closing `declare_success` are
-sentences, so they are always the model's, and on a six-turn run that is a third of it before
+floor under the pilot LLM's share: the feasibility verdict and the closing `declare_success` are
+sentences, so they are always the pilot LLM's, and on a six-turn run that is a third of it before
 anything else is counted. The share climbs with the length of the task, which is the opposite of
 the usual intuition about where an optimisation pays.
 
@@ -567,12 +567,12 @@ The least favourable task here, worked through:
 
 | | Measured, no stepper | Estimated, `--decision-mode on` |
 |---|---|---|
-| Model calls | 10 | 8 |
+| Pilot LLM calls | 10 | 8 |
 | Stepper calls | 0 | 10 |
 | Time spent thinking | 62.1 s | **about 49.2 s** |
 | Whole run | 78.8 s | **about 65.9 s**, roughly 16% shorter |
-| Model input tokens | 49,096 | roughly a fifth fewer |
-| Stepper input tokens | 0 | about 5,270, costing about 0.05% of what the model does |
+| Pilot LLM input tokens | 49,096 | roughly a fifth fewer |
+| Stepper input tokens | 0 | about 5,270, costing about 0.05% of what the pilot LLM does |
 
 The two calls that change hands are call 1 (`report_state`, which took 8.2 s) and call 9 (`stop`,
 5.8 s). Ten stepper questions at 0.114 s add 1.14 s, so the net is about 12.9 seconds off a 78.8
@@ -607,7 +607,7 @@ is nearly free:
 
 They go as plain dicts in the System One shape, `{"type": ..., "instructions": ..., "criteria":
 ...}`, built once and handed unchanged to every backend: a hosted API, a server on this machine
-and a model in this process. That is the whole reason a new System One server is a row rather
+and an LLM in this process. That is the whole reason a new System One server is a row rather
 than a rewrite. The one backend whose wire format is another shape, `openai`'s, translates them on
 its own side, a `noul` into a `predicate` and a choice's criteria into a list of options, and
 translates the answers back by name, so the stepper reads them the way it reads everybody's.
@@ -619,34 +619,34 @@ The gates are read in this order. A question the decision LLM declined comes bef
 and the two Nouls before the choice, so a stepper that thinks the job is finished never moves
 anything else:
 
-1. any of the four questions was declined rather than answered -> the model's turn, on the gate
+1. any of the four questions was declined rather than answered -> the pilot LLM's turn, on the gate
    `refused`, with the names declined on the record. Of the rows quackd names, only `openai`
    reports one, and a declined `feasible` counts too: a refusal is the vendor's policy speaking
-   about this state, not its model answering a question
+   about this state, not its LLM answering a question
 2. any of the three probabilities is not a probability, a number from 0 to 1, or the answer names
-   no choice at all -> the model's turn, on `unreadable`. NaN is not a low confidence, it is no
+   no choice at all -> the pilot LLM's turn, on `unreadable`. NaN is not a low confidence, it is no
    confidence, and it loses every comparison it is put through: `nan < 0.85` is False, so an
    unguarded one would clear a floor rather than miss it. A number written as text is no number,
    and one outside 0 to 1, a percentage or a negative, is on a scale of somebody else's: either,
    read as a probability, can clear a gate it was never meant to
-3. `done` >= 0.5 -> the model's turn
-4. `need_human` >= 0.5 -> the model's turn
-5. the answer is `escalate`, or is not one of the calls offered this turn -> the model's turn
-6. the answer repeats the call the stepper made last turn -> the model's turn
-7. the stepper has answered 8 turns running -> the model's turn
-8. confidence is below the floor for that verb's class -> the model's turn
+3. `done` >= 0.5 -> the pilot LLM's turn
+4. `need_human` >= 0.5 -> the pilot LLM's turn
+5. the answer is `escalate`, or is not one of the calls offered this turn -> the pilot LLM's turn
+6. the answer repeats the call the stepper made last turn -> the pilot LLM's turn
+7. the stepper has answered 8 turns running -> the pilot LLM's turn
+8. confidence is below the floor for that verb's class -> the pilot LLM's turn
 9. otherwise, it is taken
 
 An answer the router cannot read at all -- a `probabilities` that is a list, or that holds a
 word -- costs that turn and nothing more. Reading the answer is part of the call, so it fails
-the way the call does: the error is recorded and the model takes over. That tolerance is
+the way the call does: the error is recorded and the pilot LLM takes over. That tolerance is
 deliberate now that the answer can come from eight different implementations rather than one.
 
 A Noul carries no confidence, so 0.5 on the two of them is a raw probability meaning "more likely
-than not". Escalating when the job is not in fact done costs one model call; not escalating when
+than not". Escalating when the job is not in fact done costs one LLM call; not escalating when
 it is costs a robot that carries on working after the task is over.
 
-**Rules 6 and 7 are why a run always reaches the model.** Only the model can record a verdict,
+**Rules 6 and 7 are why a run always reaches the pilot LLM.** Only the pilot LLM can record a verdict,
 declare an outcome or write a note, so a run that never reaches it can only end on a budget --
 which is exactly what happened the first time this was tried: a stepper answering `report_state`
 at 0.99 took all twelve turns of `lerobot-lookout` and the run died with nothing declared. A
@@ -674,15 +674,15 @@ says which is which because a number nobody published is a number nobody has cal
 > shadow` first, on whichever one you picked, and move a floor only once you have a calibration
 > curve of your own.
 
-**Why `assess_task` stays the model's.** `feasible|infeasible|uncertain` is a textbook Choice, and
+**Why `assess_task` stays the pilot LLM's.** `feasible|infeasible|uncertain` is a textbook Choice, and
 the stepper is asked it on every turn -- but its answer is only recorded, never acted on. The
 verdict tool needs a written `reason`, which no decision LLM writes, and it needs `needs`, which
 [`own_sheet_objection`](../../../quackd/verdict.py) reads to refuse a `feasible` verdict that names
 a figure the datasheet does not publish. A verdict with an empty `needs` would pass that guard
 trivially and silently disable it. And when a pilot answers `uncertain`, quackd puts its reason to
 the person in the room; an empty question is not a question. Recording the Choice beside the
-model's real verdict is the cheapest way to find out whether a future version should check the
-model's verdict rather than write it.
+LLM's real verdict is the cheapest way to find out whether a future version should check the
+LLM's verdict rather than write it.
 
 ## What it is never allowed to do
 
@@ -693,7 +693,7 @@ hold whichever decision LLM answered.
   never a label, so there is no value for the stepper to choose.
 - **Author a sentence.** Same reason. Every meta tool takes a required free string.
 - **End a run.** `declare_success`, `declare_failure` and `assess_task` are all sentences, so the
-  stepper cannot call any of them. Every ending goes through the model or through a budget.
+  stepper cannot call any of them. Every ending goes through the pilot LLM or through a budget.
 - **Write to memory, or speak to a flock.** `remember` and `tell` are sentences too.
 - **See anything a run did not ask it to.** quackd sends every row text and nothing else, and Jev
   is documented as text only, with one exception: `openai`, on a run that asks with
@@ -707,17 +707,17 @@ hold whichever decision LLM answered.
   other row and no plugin is ever shown a picture, whatever it says about itself, and on every
   other run a turn that needs eyes escalates rather than guessing.
 - **Start a policy segment.** `manipulate` is offered and compared, and never taken, in either
-  mode, so every segment of a learned policy driving the arm is one the model asked for.
+  mode, so every segment of a learned policy driving the arm is one the pilot LLM asked for.
 - **Get past a gate.** The allowlist, the budgets, the confirm gates, the preconditions and the
   robot's own safety authority are exactly what they were. A `.duck` binds the stepper the way it
-  binds the model, because it binds the executor and both of them go through it.
+  binds the pilot LLM, because it binds the executor and both of them go through it.
 
 And one more that is worth saying out loud: **a decision LLM may never end a run by failing.**
 Every `Exception` `decide` raises is caught, recorded as a turn with `gate: error`, and handed to
-the model. A server that is not listening, a plugin that throws on import, a timeout at one
+the pilot LLM. A server that is not listening, a plugin that throws on import, a timeout at one
 second: all of them cost that turn and none of them costs the run. An interrupt is not a failure,
 and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
-on the record as `interrupted`. In `shadow` the stepper is asked beside the model's own call, and
+on the record as `interrupted`. In `shadow` the stepper is asked beside the pilot LLM's own call, and
 a request still out when that call ends the run, on a stop, on the task's minutes or on a failed
 call, is cut off and recorded the same way.
 
@@ -725,10 +725,10 @@ On Windows a server on your own machine that is not listening costs its turn the
 and its record is a slow server's. Windows takes longer than the second to refuse a connection to
 a port there that nothing listens on, so the stepper's own bound ends the turn first, and the
 record says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is
-there and too slow to answer. In `on` the stepper is asked before the model, so every such turn
-waits out its second before the model is asked. In `shadow` it is asked beside the model's call,
-so the second runs while the model thinks, and the turn waits only for what is left of it once the
-model has answered.
+there and too slow to answer. In `on` the stepper is asked before the pilot LLM, so every such turn
+waits out its second before the pilot LLM is asked. In `shadow` it is asked beside the pilot LLM's call,
+so the second runs while the pilot LLM thinks, and the turn waits only for what is left of it once the
+pilot LLM has answered.
 
 ## In `quackd drive`: which call a person meant
 
@@ -792,10 +792,10 @@ state's text.
 
 `decision_shadow`, in shadow mode, and in `on` for a turn that offered a `manipulate` it may not
 take, only after that step's `llm` record: what the stepper would have chosen beside what the
-model actually chose, whether they agree, whether the stepper
+pilot LLM actually chose, whether they agree, whether the stepper
 cleared its floor, and what each of them cost. Its fields are `decision_choice`,
 `decision_confidence`, `decision_gate`, `decision_latency_s` and `decision_cost_usd` beside
-`model_verb`, `llm_latency_s`, `llm_usage` and `llm_cost_usd`, with `decision_choice` null where the
+`llm_verb`, `llm_latency_s`, `llm_usage` and `llm_cost_usd`, with `decision_choice` null where the
 stepper chose nothing, `decision_gate` saying why, and `refused`, the questions declined, on a row
 whose gate is `refused`. `quackd log` names that gate on the row's `decide=` line where there is no
 choice. Agreement is about the whole call rather than the verb's name, because `gripper(open=true)`
@@ -803,7 +803,7 @@ and `gripper(open=false)` are opposite instructions that share a word, and on `a
 is most of what there is to compare. `same_verb` records the coarser reading beside it.
 
 `run_start` gains two fields when a run has one: `decision_price`, the rate that run was costed
-at, and `decision_llm`, which is `{name, model, url, frames}` -- which preset answered, which id it
+at, and `decision_llm`, which is `{name, llm_id, url, frames}` -- which preset answered, which id it
 answered as, where it was reached, with the URL redacted, and whether the run shows it the camera.
 The url is load-bearing: `jev-1.13.0` names itself, but `kev-latest` on one machine and
 `kev-latest` on another are two different servers, and a transcript that recorded only the id
@@ -813,7 +813,7 @@ could not tell a reader which of them answered.
 mints are prefixed `decision-`.
 
 `summary.json` grows a `decision` block when there was a stepper, and nothing when there was not:
-`mode`, `llm`, `model`, `url`, `frames`, `asked`, `taken`, `errors`, `refusals`, `frames_sent`,
+`mode`, `llm`, `llm_id`, `url`, `frames`, `asked`, `taken`, `errors`, `refusals`, `frames_sent`,
 `latency_s`, `usage`, `cost_usd`, `cost_estimated` and `price`. `frames_sent` counts the frames
 handed over with a request, which a connection refused or timed out first never carried.
 
@@ -831,7 +831,7 @@ none of the stepper's counts ([architecture](../../concepts/architecture.md#tran
 The budget line in every observation grows one clause once the stepper has answered:
 
 ```
-step 2/12, llm calls 1/12, 2 by the stepper, 0.0/3 min
+step 2/12, LLM calls 1/12, 2 by the stepper, 0.0/3 min
 ```
 
 And on the terminal the gutter says `decide` for the stepper's own turn, `decide?` for the
@@ -878,11 +878,11 @@ Then, per run directory:
 | **Agreement** | how often `agree` is true, and separately among rows where `would_have_acted` is true | every `{"kind":"decision_shadow"}` |
 | **Calibration** | `confidence` bucketed against `agree` -- the plot that earns the right to move a floor, and the one thing that has to be redone per decision LLM | join the two kinds on `step` |
 | **What a stepper turn cost** | `usage` and `cost_usd`, with `usage_estimated` for whether that token count came from the server or from quackd's own arithmetic | every `{"kind":"decision"}` |
-| **What the model cost** | `latency_s`, `usage`, `cost_usd` | every `{"kind":"llm"}` |
+| **What the pilot LLM cost** | `latency_s`, `usage`, `cost_usd` | every `{"kind":"llm"}` |
 | **The two bills, on one turn** | `llm_cost_usd` beside `decision_cost_usd`: the ratio the section above could only reach by hand, now on the record for the turn that produced it | every `{"kind":"decision_shadow"}` |
-| **Which one answered** | `decision_llm` as `{name, model, url}`, and `decision_price` beside it | `run_start` |
+| **Which one answered** | `decision_llm` as `{name, llm_id, url}`, and `decision_price` beside it | `run_start` |
 | **The rollup** | `steps`, `llm_calls`, `elapsed_s`, `wall_s`, `usage`, `cost_usd`, `decision`, and `command` and `version` beside them, so a bench directory says which flags and which quackd produced the row rather than leaving it to your notes | `summary.json` |
-| **The stepper's rollup** | `llm`, `model`, `url`, `usage`, `cost_usd`, `cost_estimated`, and `price`, which is the rate that run was actually costed at rather than whatever the rate is when you read it back | the `decision` block of `summary.json` |
+| **The stepper's rollup** | `llm`, `llm_id`, `url`, `usage`, `cost_usd`, `cost_estimated`, and `price`, which is the rate that run was actually costed at rather than whatever the rate is when you read it back | the `decision` block of `summary.json` |
 
 **quackd prices a stepper turn now, and marks the ones it had to guess at.** TypeSafe publish Jev
 at **$0.042 per million input tokens, with output not charged**
@@ -926,12 +926,12 @@ existed and because the criteria are one line per verb on offer, which is two he
 the verdict clears. The record keeps `state_chars` beside the estimate for exactly that reason: an
 estimate you cannot re-derive is a number you have to take on faith.
 
-The model's half of the bill comes from quackd's own price catalogue, or from `--price` where your
-rate is negotiated or your model is not in it. The two halves are kept apart **in the record**,
+The LLM's half of the bill comes from quackd's own price catalogue, or from `--price` where your
+rate is negotiated or your LLM is not in it. The two halves are kept apart **in the record**,
 which is where the ratio this section exists to answer is read from: `cost_usd` on every `llm` row
 against `cost_usd` on every `decision` row, and both of them on one `decision_shadow` row for the
 same turn. The verdict panel is the one place they are added together, because a person watching a
-run wants what it cost rather than a division; the exception is a model quackd has no rate for,
+run wants what it cost rather than a division; the exception is a pilot LLM quackd has no rate for,
 where the panel says `cost unpriced (stepper ~$0.0002)` rather than throw away the half it does
 know.
 
@@ -958,16 +958,16 @@ from typing import Any
 
 SUMMARY = "my own decision LLM, behind our own gateway"
 INSTALL = "pip install mydecider"
-MODEL = "mydecider-1"  # the id used when the spec names none
+LLM_ID = "mydecider-1"  # the id used when the spec names none
 URL = "http://127.0.0.1:9000"  # or None, for something with no address
 KEY_ENV = "MYDECIDER_API_KEY"  # or None, for something that wants no key
 EXTRA = None  # None: quackd found you, so you are installed by definition
 
 
 class MyDecider:
-    def __init__(self, name: str, model: str | None, url: str | None) -> None:
+    def __init__(self, name: str, llm_id: str | None, url: str | None) -> None:
         self.name = name
-        self.model = model or MODEL
+        self.llm_id = llm_id or LLM_ID
         self.url = url
 
     async def decide(
@@ -977,8 +977,8 @@ class MyDecider:
         return {"answers": answers, "usage": {"input_tokens": 512}}
 
 
-def make(spec: Any, *, url: str | None = None, model: str | None = None) -> MyDecider:
-    return MyDecider(spec.name, model, url)
+def make(spec: Any, *, url: str | None = None, llm_id: str | None = None) -> MyDecider:
+    return MyDecider(spec.name, llm_id, url)
 ```
 
 ```toml
@@ -986,7 +986,7 @@ def make(spec: Any, *, url: str | None = None, model: str | None = None) -> MyDe
 mydecider = "mydecider"
 ```
 
-Then `--decision-llm mydecider` reaches it, `--decision-llm mydecider:some-id` names the model,
+Then `--decision-llm mydecider` reaches it, `--decision-llm mydecider:some-id` names the LLM id,
 and `--decision-url` overrides your `URL`. A built-in name always wins over a plugin that took it,
 so a package called `jev` cannot quietly become the thing `--decision-llm jev` reaches.
 
@@ -996,7 +996,7 @@ is three attributes and one method:
 | | |
 |---|---|
 | `name` | the preset that built you. What `--decision-llm` took, and what the record says answered |
-| `model` | the id you answer as, for the record. Empty where you name none |
+| `llm_id` | the id you answer as, for the record. Empty where you name none |
 | `url` | where you were reached, or `None`. quackd redacts it before writing it down |
 | `async decide(state, questions)` | one fan-out. `state` is a flat mapping of short English strings; `questions` is a mapping of name to `{"type": "choice" \| "noul" \| "score", "instructions": ..., "criteria": ...}`. quackd only ever sends the first two |
 
@@ -1005,10 +1005,10 @@ mapping with an `"answers"` key, whose members carry `choice` and `confidence` (
 `probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the label as a string,
 and a `confidence` or a `noul` is a number from 0 to 1, never a word or a flag: anything else, in
 `next_verb`, `done` or `need_human`, is an answer quackd cannot read, and the turn goes to the
-model on `unreadable`. A `usage` with `input_tokens` is used where it is there and estimated where
+pilot LLM on `unreadable`. A `usage` with `input_tokens` is used where it is there and estimated where
 it is not, so a backend that counts nothing costs the run an estimate rather than an error. A list
 of question names under `refused`, beside the answers and read the same way, says which questions
-it declined rather than answered, and any name there hands the turn to the model on the gate
+it declined rather than answered, and any name there hands the turn to the pilot LLM on the gate
 `refused`.
 
 A plugin is never shown a picture. Its row is built with `sees` false whatever its module says
@@ -1017,7 +1017,7 @@ its `decide` is only ever called with the two arguments above. The one decision 
 show the camera is its own client for `openai` ([openai](openai.md)).
 
 Raising is allowed and is not fatal. `Stepper.advise` catches every `Exception`, records the
-turn as `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps
+turn as `gate: error`, and hands it to the pilot LLM. A plugin may never end a run. The record keeps
 the exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
 itself or on its `response`, and never its message, which can quote what the server sent back.
 The one message it keeps is an `UnreadableReply`'s, from `quackd.agent.decision.base`, which a
@@ -1034,13 +1034,13 @@ Four flags and five variables. The flag always beats the variable.
 
 | What | Flag | Variable | Default |
 |---|---|---|---|
-| Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
+| Which decision LLM answers, as `NAME[:LLM]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
 | Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
 | Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `QUACKD_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision`. On a Microduck it also gives the pilot `watch`, which shows that row a frame a look whatever the mode |
 | What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
 
-`QUACKD_DECISION_PRICE` takes the same form `--price` does for the model, and it is quackd's own
+`QUACKD_DECISION_PRICE` takes the same form `--price` does for the pilot LLM, and it is quackd's own
 variable rather than any SDK's, which is why it is not spelled `TYPESAFE_*`: everything with that
 prefix is read by `typesafe_sdk` itself, while this one quackd reads and applies. Either way the
 rate a run was actually costed at is written into `run_start` and into the `decision` block, so
@@ -1052,21 +1052,21 @@ And the rest:
 |---|---|
 | Key | `TYPESAFE_API_KEY` for `jev` and `OPENAI_API_KEY` for `openai`, in the environment or a `.env`, the first sent by TypeSafe's own client only when no `--decision-url` is given and the second to OpenAI's own API and nowhere else. Every other row needs none, and is sent the word `local` instead, as `jev` is at a `--decision-url` and `openai` at any other address, where neither wants its key |
 | Install | `quackd[decision]` for every System One row, `quackd[openai]` for `openai` and `quackd[laya]` for the in-process one. Only `quackd[openai]`, the pilot's own, is in `quackd[all]` |
-| Model | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
+| LLM | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 
 `TYPESAFE_BASE_URL` is not read by quackd at all: it belongs to the SDK, and `--decision-url` is
 how you tell quackd where a server is. On `openai`, `OPENAI_BASE_URL` never moves the address,
 because the client is always handed one, and `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
 `OPENAI_PROJECT_ID` go where they go for the pilot: to OpenAI's own API exactly as the SDK sends
 them, and to any other `--decision-url` not at all ([openai](openai.md)). `TYPESAFE_DEFAULT_MODEL`
-is honoured for the one row that declares it, `jev`, as a fallback when the spec names no model --
+is honoured for the one row that declares it, `jev`, as a fallback when the spec names no LLM --
 but naming it in the spec is the way to say it, because that is the form every other row takes and
 the only one that reaches the record as a choice somebody made.
 
 The four flags are on `quackd run` and nowhere else. They are deliberately not on `quackd
 record`, which makes the README's recordings and has to stay reproducible without a network call,
 and which pins the mode and the frames off whatever the variables say, and not on
-`quackd serve-mcp`, where the model is the client and quackd has no think path to sit in front of.
+`quackd serve-mcp`, where the pilot LLM is the client and quackd has no think path to sit in front of.
 
 ## Limitations
 
@@ -1078,7 +1078,7 @@ and which pins the mode and the frames off whatever the variables say, and not o
   turn that needs to look escalates.
 - **A network call in a decision loop**, for seven of the eight rows. There is a one-second
   timeout, with one retry inside it on a System One row and none on `openai`, and a failure costs
-  that turn and never the run: the error is recorded and the model takes over. A CPU-only server
+  that turn and never the run: the error is recorded and the pilot LLM takes over. A CPU-only server
   on your own machine may well need more than a second, and `--decision-mode shadow` is how you
   find that out before it matters.
 - **The in-process one trades the network for a load.** `laya` needs no port and no key, and pays
@@ -1086,7 +1086,7 @@ and which pins the mode and the frames off whatever the variables say, and not o
 - **English first.** Other languages are supported with lower accuracy, and a `.duck` written in
   one would be worth measuring before trusting.
 - **Not the fast loops.** The steering loop runs at 10 Hz and the robot's own controllers faster
-  than that. This sits in the slow loop, beside the model, and nothing about it changes what stops
+  than that. This sits in the slow loop, beside the pilot LLM, and nothing about it changes what stops
   a body ([concepts/safety.md](../../concepts/safety.md)).
 - **Confidence is calibrated over groups, not promised per answer.** A 0.93 is not a promise about
   that one answer; it is a statement about how a population of 0.93s behaves -- and it is a
@@ -1121,7 +1121,7 @@ The open ones, each with a page here: [kev](kev.md) · [von](von.md) · [openjev
 
 quackd: [architecture](../../concepts/architecture.md) · [safety](../../concepts/safety.md) ·
 [local LLMs](../local-llms.md) · [the LeRobot arm](../../adapters/lerobot/README.md) ·
-[ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-model.md) ·
+[ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) ·
 [ADR-0043](../../adr/0043-decision-llms-are-a-wire-format-and-a-data-row.md) ·
 [ADR-0052](../../adr/0052-openais-decisions-api-is-a-second-wire-format.md) ·
 [ADR-0053](../../adr/0053-a-decision-llm-may-be-shown-the-camera.md)

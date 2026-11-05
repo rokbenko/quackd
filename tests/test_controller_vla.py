@@ -155,7 +155,7 @@ async def test_a_person_who_says_yes_is_the_only_success(tmp_path: Path) -> None
 
 
 async def test_it_costs_nothing_and_says_so(tmp_path: Path) -> None:
-    """No model is asked, so no token is counted, and the run is priced at the scripted
+    """No LLM is asked, so no token is counted, and the run is priced at the scripted
     pilot's rate rather than left unpriced."""
     result = await _run(tmp_path, judge=_person(True))
     assert result.usage == Usage()
@@ -385,7 +385,7 @@ class _Claims:
     """A pilot that says it cannot judge and declares success anyway."""
 
     name = "claims"
-    model = "scripted"
+    llm_id = "scripted"
     supports_vision = False
 
     def judge_question(self, history: Any, *, cut_short: str | None = None) -> str | None:
@@ -490,7 +490,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(
             (*GOAL, *ARM, "--llm", "fake", "--image", "x.png"),
             "so --llm and --image would do nothing",
-            id="a-model",
+            id="an-llm",
         ),
         # no pilot reads a part, so asking for one would do nothing, while --no-play says what
         # is so and is never named with the flags that do nothing
@@ -498,7 +498,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(
             (*GOAL, *ARM, "--llm", "fake", "--no-play"),
             "so --llm would do nothing",
-            id="a-model-and-no-play",
+            id="an-llm-and-no-play",
         ),
         pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
         pytest.param(
@@ -507,7 +507,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
         pytest.param(("--goal", "one\ntwo", *ARM), "one line of plain text", id="two-lines"),
         pytest.param(
             (*GOAL, *ARM, "--decision-llm", "jev"),
-            "no model for a decision LLM to step in front of, and --decision-llm names one",
+            "no pilot LLM for a decision LLM to step in front of, and --decision-llm names one",
             id="decision-llm",
         ),
         # frames build a decision LLM whatever the mode, and this pilot has none to show one
@@ -521,7 +521,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
                 "off",
                 "--decision-frames",
             ),
-            "no model for a decision LLM to step in front of, and --decision-llm names one",
+            "no pilot LLM for a decision LLM to step in front of, and --decision-llm names one",
             id="decision-frames",
         ),
     ],
@@ -744,7 +744,7 @@ def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
     assert rows == [("decide", True), ("confirm", True), ("judge", said)]
     (judged,) = [e for e in events if e["kind"] == "prompt" and e["what"] == "judge"]
     assert "'hold still'" in judged["question"]
-    assert "The task is done when" not in judged["question"], "a goal's success lines are a model's"
+    assert "The task is done when" not in judged["question"], "a goal's success lines are an LLM's"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["provider"] == V.NAME and summary["cost_usd"] == 0.0
     assert summary["policy"]["segments"] == 1

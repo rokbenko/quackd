@@ -121,7 +121,7 @@ async def test_scripted_thinking_never_contains_a_double_quote_or_stands_alone(
     """Three invariants the rest of the suite leans on. The quote matters most:
     `tests/test_cli.py` greps the raw transcript for `"kick"` and `"name": "kick"` to prove
     the duck kicked, and a quoted verb name in the thinking would make that pass vacuously.
-    The prefix keeps the line from ever reading as a model's own words, and the log prints
+    The prefix keeps the line from ever reading as an LLM's own words, and the log prints
     one `think` row per turn, so it stays a single line."""
     turn = await provider.step(SYSTEM, [Exchange(observation=observation)], [])
 
@@ -214,6 +214,6 @@ def test_the_scripted_pilot_takes_vision_without_teaching_it_to_every_other_one(
 def test_the_exploring_starters_have_scripted_pilots_of_their_own() -> None:
     """A goal run allows safe verbs alone, and `explore` and `find` ask first, so exploring is a
     task file's to allow: the two starters that do have a pilot each, and no goal word does."""
-    assert FakeProvider.for_duck("find-the-ball").model == "scripted:find-the-ball"
-    assert FakeProvider.for_duck("favourite-spot").model == "scripted:favourite-spot"
-    assert FakeProvider.for_duck("x", "explore the room").model == "scripted:x"
+    assert FakeProvider.for_duck("find-the-ball").llm_id == "scripted:find-the-ball"
+    assert FakeProvider.for_duck("favourite-spot").llm_id == "scripted:favourite-spot"
+    assert FakeProvider.for_duck("x", "explore the room").llm_id == "scripted:x"

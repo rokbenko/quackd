@@ -39,7 +39,7 @@ MAX_SIDE_PX = 512
 fit, keeping its shape, and a smaller one is sent as it is: never enlarged, since enlarging adds
 bytes and nothing to look at. A starting value rather than a measured one. What a turn asks is
 which call to make, not what is written on a label, and every byte is sent inside the turn's one
-second, while how the API counts a picture for this model is not published (`IMAGE_TOKENS` on
+second, while how the API counts a picture for this LLM is not published (`IMAGE_TOKENS` on
 docs/guides/decision-llms/openai.md). Every turn records the size it sent, so a run at another
 size can be read against this one."""
 
@@ -52,7 +52,7 @@ MEDIA_TYPE = "image/jpeg"
 DETAIL = "low"
 """How closely the API is asked to look. OpenAI's reference takes `low`, `high`, `auto` or
 `original` for an image part, and `auto`, its default, leaves the choice to the API picture by
-picture. `low` asks for the least. What any of them costs on this model is not published, so it
+picture. `low` asks for the least. What any of them costs on this LLM is not published, so it
 is a starting value like `MAX_SIDE_PX`, and every turn records it, so a run at another setting
 can be read apart from this one."""
 

@@ -13,7 +13,7 @@ Two things are different here from every other adapter quackd has, and both come
 same fact: **on this body, silence means hold forever, not stop.**
 
 - The daemon owns the fifty hertz loop and its own deadman, because a verb is episodic and a
-  humanoid frozen mid-stride while a model thinks is a humanoid on the floor. quackd sends
+  humanoid frozen mid-stride while an LLM thinks is a humanoid on the floor. quackd sends
   intents, not motor targets.
 - `stop` cannot mean zero velocity. There is no velocity at the hardware boundary at all: the
   command is an absolute pose. So `stop` means *hold the last verified-good measured pose*,

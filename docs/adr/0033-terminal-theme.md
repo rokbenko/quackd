@@ -34,7 +34,7 @@ Four things were wrong rather than merely inconsistent.
   consoles, the panels and the tables. A new command inherits the house style instead of
   inventing a third one.
 - **Text is data.** Everything printed is built as `rich.text.Text`, never as a string with
-  a tag in it. A model's reasoning, a robot's manifest and an error naming
+  a tag in it. An LLM's reasoning, a robot's manifest and an error naming
   `quackd[anthropic]` all carry square brackets, and none of them is parsed. `escape` is now
   unused in `cli.py`: there is nothing left to escape.
 - **Glyphs have an ASCII half, chosen from the stream.** `ui.glyphs_for(console)` reads the
@@ -43,7 +43,7 @@ Four things were wrong rather than merely inconsistent.
   buffer of its own. The same applies to quackd's own prose: a degree sign it wrote becomes
   ` deg` rather than `?`.
 - **The terminal trace is a different surface from the MCP trace.** `render_lines` and its
-  padded `->` / `<-` columns are a contract with a model and are frozen, byte for byte, by
+  padded `->` / `<-` columns are a contract with an LLM and are frozen, byte for byte, by
   `tests/golden/log_lines.json`. The terminal renders the same `LogLine`s its own way:
   a glyph in a gutter, a word in the label column, a rule per step, the system prompt as a
   block. This is the amendment to ADR-0029: *the reader that cannot do better still gets
@@ -55,7 +55,7 @@ Four things were wrong rather than merely inconsistent.
   `err_console`; tables and verdicts are on `console`. `quackd list-adapters > adapters.txt`
   gets the table and nothing else.
 - **A status line where a command waits.** A run spends nearly all its wall clock inside two
-  calls, a model deciding and a verb steering a robot, and said nothing until each finished.
+  calls, an LLM deciding and a verb steering a robot, and said nothing until each finished.
   A transient line at the bottom names what is being waited on and how long it has been.
   It exists only when stderr is a terminal somebody is watching, and it steps aside for a
   confirmation prompt, because a live region redirects stdout and would swallow the question.

@@ -25,7 +25,7 @@ ended at the rest pose, found none to return to on a robot without one, or had i
 refused where the sidecar says to expect a refusal (`judge_close`), and every check in the
 sidecar holds. A rest move that stalled or ran out of time fails the run whatever the sidecar
 says, and the close is named for which it was. The pilot's own verdict is reported and is not
-one of those: a model that says it succeeded is the thing being rehearsed, not the judge of it.
+one of those: an LLM that says it succeeded is the thing being rehearsed, not the judge of it.
 
 The sidecar is `<task>.sim.yaml` beside the task file, and never the file's frontmatter, because
 `robot_load_duckfile` hands an MCP pilot the whole frontmatter, and a pilot that can read what it
@@ -51,7 +51,7 @@ reads it, and never the state's extras, which reach the pilot and MCP.
 
 Refused before anything is built: a robot that is not a simulator, which `quackd robot twin`
 makes of a registered arm, and a pilot nobody named, because the scripted pilot rehearses
-nothing a model would do and so runs only when `--llm fake` is typed.
+nothing an LLM would do and so runs only when `--llm fake` is typed.
 
 Nothing here imports the simulator. The robot is built through the factory, and what a run is
 judged by is read off the transport it built, by name.
@@ -481,7 +481,7 @@ class FileReport:
 
     @property
     def cost_usd(self) -> float | None:
-        """What the model cost over every run of this file, or None where a run was not
+        """What the LLM cost over every run of this file, or None where a run was not
         priced: a sum with an unknown in it is not a number worth printing."""
         costs = [r.cost_usd for r in self.runs]
         if not costs or any(c is None for c in costs):
@@ -702,7 +702,7 @@ def refuse_default_pilot(source: str) -> None:
     if source == "default":
         raise PreflightError(
             "preflight rehearses a task with the pilot that will fly it, and none was named: "
-            "give --llm VENDOR[:MODEL], register one with the robot or set QUACKD_LLM. The "
-            "scripted pilot rehearses nothing a model would do, so it runs only when typed as "
+            "give --llm VENDOR[:LLM], register one with the robot or set QUACKD_LLM. The "
+            "scripted pilot rehearses nothing an LLM would do, so it runs only when typed as "
             "--llm fake"
         )

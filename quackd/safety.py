@@ -78,7 +78,7 @@ command (`Executor.preempt`), the verb's own timeout, or the caller going away. 
 a record of its own names its ending by it."""
 
 Source = Literal["agent", "mcp", "cli", "person", "decision", "peer"]
-"""Who asked for this verb. `decision` is the discrete stepper answering a turn the model
+"""Who asked for this verb. `decision` is the discrete stepper answering a turn the pilot LLM
 never saw, whichever decision LLM was behind it: which one that was is recorded once for the
 run (`run_start.decision_llm`) rather than on every verb, so swapping Jev for a server you run
 yourself changes nothing here. The log already prints `from <source>` for anything that is not
@@ -218,9 +218,9 @@ class Budget:
         self.llm_calls += 1
 
     def note_stepper_call(self) -> None:
-        """A turn the stepper answered: no LLM call to charge, and the verb charges the step.
+        """A turn the stepper answered: no pilot LLM call to charge, and the verb charges the step.
 
-        The clock is the one budget a turn with no model call can still hit, so it is the one
+        The clock is the one budget a turn with no pilot LLM call can still hit, so it is the one
         that is checked here."""
         self.check_time()
         self.stepper_calls += 1
@@ -243,9 +243,9 @@ class Budget:
     def status(self) -> str:
         return (
             f"step {self.steps}/{self.limits.max_steps}, "
-            f"llm calls {self.llm_calls}/{self.limits.max_llm_calls}, "
+            f"LLM calls {self.llm_calls}/{self.limits.max_llm_calls}, "
             # absent until the stepper has answered once, so every run without one reads
-            # exactly as it always has: this string is in every observation the model is
+            # exactly as it always has: this string is in every observation the pilot LLM is
             # handed, and `quackd log` parses it back out
             + (f"{self.stepper_calls} by the stepper, " if self.stepper_calls else "")
             # the same rule, for the seconds a policy has driven the body
@@ -349,9 +349,9 @@ class Executor:
     the body took an intent of it. Never on a dry run, which hands nothing over, and never a read.
     The loop writes it as `first_motion_s` on the record's own
     clock, which is how long somebody standing by the robot waited for it to do anything at all:
-    on the README's arm run two model calls and the serial port's ten seconds came first."""
+    on the README's arm run two LLM calls and the serial port's ten seconds came first."""
     first_motion_llm_calls: int | None = None
-    """How many model calls the run had made when that verb went, the one that chose it
+    """How many LLM calls the run had made when that verb went, the one that chose it
     included, or None until one has gone."""
     segment: str | None = field(default=None, init=False)
     """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check

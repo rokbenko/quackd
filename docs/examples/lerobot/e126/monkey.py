@@ -1,11 +1,11 @@
-"""E126: a monkey at the controls, a stand-in for a model that answers each turn with a random call.
+"""E126: a monkey at the controls, a stand-in for an LLM that answers each turn with a random call.
 
 Standard library only. It listens on 127.0.0.1 and speaks the one request an OpenAI-compatible
 pilot sends, so `quackd run ... --llm local --base-url http://127.0.0.1:8799/v1` flies with it. It
 has no idea what the task is. It calls a verb the run offered, one it did not, or one that does not
 exist, with arguments that are sometimes sane and usually not: joints that do not exist, angles past
 every travel, NaN and strings where numbers go. Every call goes through the same gates a real
-model's does.
+LLM's does.
 
 Serve it in one terminal, run the task file in another, then count what got through:
 

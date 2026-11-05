@@ -34,7 +34,7 @@ class _Warms:
     """A pilot whose warm-up runs the test's function, and which declares at once."""
 
     name = "warms"
-    model = "test"
+    llm_id = "test"
     supports_vision = False
 
     def __init__(self, warm: Any) -> None:
@@ -189,10 +189,10 @@ def test_each_sdks_own_look_at_its_platform_is_handed_to_the_pilots_client(
     if sdk == "anthropic":
         from quackd.agent.providers.anthropic import AnthropicProvider
 
-        AnthropicProvider(model="claude-opus-5-5", client=client).warm()
+        AnthropicProvider(llm_id="claude-opus-5-5", client=client).warm()
     else:
         from quackd.agent.providers.openai import OpenAIProvider
 
-        OpenAIProvider(model="gpt-6-sol", client=client).warm()
+        OpenAIProvider(llm_id="gpt-6-sol", client=client).warm()
     assert asked == [sdk]
     assert client._platform == "Windows"

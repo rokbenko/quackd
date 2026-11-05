@@ -378,7 +378,7 @@ async def test_a_skill_nothing_ends_takes_its_time_and_reads_the_body_after() ->
 async def test_a_gripper_call_that_does_not_say_which_way_moves_nothing(
     body: Any, verb: str, field: str
 ) -> None:
-    """`{}` opened the arm's gripper by its schema's default, on whatever was in it, from a model
+    """`{}` opened the arm's gripper by its schema's default, on whatever was in it, from an LLM
     that sent no arguments or a vendor's `null`. It goes back to the pilot as a refusal now."""
     adapter = body()
     ex = await _executor(adapter)

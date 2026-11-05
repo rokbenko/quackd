@@ -1,14 +1,14 @@
 /**
- * Bring your own key. The page talks to the model; nothing talks to us.
+ * Bring your own key. The page talks to the LLM; nothing talks to us.
  *
  * quackd hosts no server for this demo. Your key is read from an input, kept in a variable
  * for the life of the tab, and sent straight to the vendor you picked from your own
  * browser. It is never stored, never logged and never proxied, which also means every
  * request is billed to you and visible to you in your vendor's dashboard. If you would
- * rather it never leave the machine at all, run a local model: Ollama and any
+ * rather it never leave the machine at all, run a local LLM: Ollama and any
  * OpenAI-compatible server (llama.cpp, vLLM, LM Studio) are here too, and need no key.
  *
- * Each provider does the same job: hand the model a system prompt, the turns so far and a
+ * Each provider does the same job: hand the LLM a system prompt, the turns so far and a
  * list of tools, and return exactly one tool call. Where a vendor can be told to call a
  * tool it is told to; where it cannot, a missing call ends the run rather than being
  * guessed at. `toolChoice` below is that difference, per vendor, and it is copied from the
@@ -22,14 +22,14 @@
  * and OpenRouter are all OpenAI-shaped, so they are the same client with a different base URL.
  * GLM is the one that is missing: Z.ai answers a CORS preflight with no
  * `Access-Control-Allow-*` headers, so a browser refuses the call before it is made. It stays
- * on the CLI, it stays in `catalogue.js`, and `web/README.md` says so. The model list itself is
+ * on the CLI, it stays in `catalogue.js`, and `web/README.md` says so. The LLM list itself is
  * generated from Python by `web/build_catalogue.py` and is never edited here.
  *
  * OpenAI is the one vendor here with two APIs that can do that job. Chat Completions is
- * asked first, and a model that refuses function tools there is moved to Responses for the
+ * asked first, and an LLM that refuses function tools there is moved to Responses for the
  * rest of the run, on the strength of what the 400 said. `quackd/agent/providers/openai.py`
  * makes the same move for the CLI, and the two have to keep agreeing. Where the catalogue
- * already knows a model is Responses-only, `startingApi` says so up front and the failed
+ * already knows an LLM is Responses-only, `startingApi` says so up front and the failed
  * call is never paid for.
  */
 
@@ -38,8 +38,8 @@ import { CATALOGUE } from "./catalogue.js";
 /**
  * The vendors this page can call, which is not the same list as the CLI's.
  *
- * No `models` and no `defaultModel` on a cloud entry: both live in `catalogue.js`, generated
- * from the Python that is the single source of truth for model names. Local keeps its own,
+ * No `llms` and no `defaultLlm` on a cloud entry: both live in `catalogue.js`, generated
+ * from the Python that is the single source of truth for LLM names. Local keeps its own,
  * because a local server serves whatever you pulled and quackd has no list for it.
  */
 /**
@@ -141,7 +141,7 @@ export const PROVIDERS = {
     needsKey: true,
     note:
       "The Meta Model API, which replaced the hosted Llama API in July 2026. The key is the " +
-      "one Meta's own examples export as MODEL_API_KEY. Two Muse Spark models are " +
+      "one Meta's own examples export as MODEL_API_KEY. Two Muse Spark LLMs are " +
       "contributor tier: cheaper, and Meta trains on what you send them.",
   },
   openrouter: {
@@ -152,7 +152,7 @@ export const PROVIDERS = {
     // `quackd/agent/providers/openrouter.py`, in JavaScript: one call insisted on except on the
     // Claude rows that refuse a forced one, OpenRouter told to route only to an endpoint that
     // honours every parameter sent, quackd named in the two headers OpenRouter credits an app
-    // by, no move to Responses, and a model's `reasoning_details` handed back on the turn that
+    // by, no move to Responses, and an LLM's `reasoning_details` handed back on the turn that
     // made the call. The dropdown holds the six rows the catalogue carries and no others.
     toolChoice: "required",
     extraBody: { provider: { require_parameters: true } },
@@ -162,13 +162,13 @@ export const PROVIDERS = {
     relaysUpstreamErrors: true,
     needsKey: true,
     note:
-      "A router: what you send reaches OpenRouter and the provider it picks for the model. " +
-      "No OpenRouter model has answered a real quackd request, from this page or the CLI.",
+      "A router: what you send reaches OpenRouter and the provider it picks for the LLM. " +
+      "No OpenRouter LLM has answered a real quackd request, from this page or the CLI.",
   },
   local: {
     label: "Local (Ollama or any OpenAI-compatible server)",
     keyPlaceholder: "not needed",
-    defaultModel: "qwen3:8b",
+    defaultLlm: "qwen3:8b",
     baseUrl: "http://localhost:11434/v1",
     toolChoice: "required",
     needsKey: false,
@@ -200,7 +200,7 @@ async function readError(response, relaysUpstreamErrors = false) {
   return detail;
 }
 
-/** Arguments arrive as a JSON string. A model that writes a broken one gets an empty object,
+/** Arguments arrive as a JSON string. An LLM that writes a broken one gets an empty object,
  *  which `checkParams` then refuses by name rather than the tab dying on a SyntaxError. */
 function parseArguments(raw) {
   try {
@@ -213,7 +213,7 @@ function parseArguments(raw) {
 /**
  * Is this the 400 that refuses function tools on Chat Completions and names Responses?
  *
- * Matched on what the API says rather than on a model name, because the list of models that
+ * Matched on what the API says rather than on an LLM name, because the list of LLMs that
  * behave this way is not ours to keep and gets longer. Observed on `gpt-6-astra`:
  *
  *     Function tools with reasoning_effort are not supported for gpt-6-astra in
@@ -222,7 +222,7 @@ function parseArguments(raw) {
  *
  * Both halves are required so an unrelated 400 that happens to name one of the two does not
  * move a run onto a different API. The other remedy that message offers is a dead end on the
- * model that produced it: `reasoning_effort: "none"` comes back as unsupported for that model,
+ * LLM that produced it: `reasoning_effort: "none"` comes back as unsupported for that LLM,
  * and the tools are refused at every effort it does support. So the fix is the API.
  *
  * This is `_wants_the_responses_api` in `quackd/agent/providers/openai.py`, in JavaScript.
@@ -234,7 +234,7 @@ export function wantsTheResponsesApi(status, detail) {
 }
 
 /**
- * Is this the 400 a Claude model answers a forced tool call with?
+ * Is this the 400 a Claude LLM answers a forced tool call with?
  *
  * Claude Opus 5.5 and Claude Fable 5.1 refuse `tool_choice` `any`, in a sentence that opens
  * with the parameter and says the type is not supported. Both halves are matched, because a
@@ -248,17 +248,17 @@ export function refusesForcedTools(status, detail) {
   return /^\s*tool_choice\b/.test(text) && text.includes("not supported");
 }
 
-/** Anthropic: one tool call per turn, forced where the model accepts that and allowed where
+/** Anthropic: one tool call per turn, forced where the LLM accepts that and allowed where
  *  it does not. The page sends no `thinking` parameter, which on Claude Opus 5 and later means
- *  the model's own default, adaptive, rather than none. */
-function anthropic({ key, model }) {
-  // Held across steps like the OpenAI client's `api`. The catalogue marks the models known to
-  // refuse a forced call so they never pay a failed request to say so; a model it does not
+ *  the LLM's own default, adaptive, rather than none. */
+function anthropic({ key, llmId }) {
+  // Held across steps like the OpenAI client's `api`. The catalogue marks the LLMs known to
+  // refuse a forced call so they never pay a failed request to say so; an LLM it does not
   // mark is asked once, and the 400 moves it to `auto` for the rest of the run.
-  let forced = CATALOGUE.anthropic?.entries.find((entry) => entry.id === model)?.forced_tools !== false;
+  let forced = CATALOGUE.anthropic?.entries.find((entry) => entry.id === llmId)?.forced_tools !== false;
   return {
     name: "anthropic",
-    model,
+    llmId,
     async step({ system, history, observation, tools, signal = null }) {
       const messages = [];
       for (const turn of history) {
@@ -274,7 +274,7 @@ function anthropic({ key, model }) {
       }
       messages.push({ role: "user", content: observation });
       // At most two passes: the only `continue` moves a forced call to `auto`, and the guard
-      // that reaches it cannot fire once `forced` is false, so a model that refuses `auto` as
+      // that reaches it cannot fire once `forced` is false, so an LLM that refuses `auto` as
       // well is thrown rather than asked forever.
       for (;;) {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -288,7 +288,7 @@ function anthropic({ key, model }) {
             "anthropic-dangerous-direct-browser-access": "true",
           },
           body: JSON.stringify({
-            model,
+            model: llmId,
             max_tokens: 1024,
             system,
             messages,
@@ -317,18 +317,18 @@ function anthropic({ key, model }) {
 /** OpenAI and every OpenAI-compatible server, including Ollama's.
  *
  * Two APIs behind one interface. Chat Completions is the default, and the only one a local
- * server speaks. A model that refuses function tools there names `/v1/responses` in the 400,
+ * server speaks. An LLM that refuses function tools there names `/v1/responses` in the 400,
  * and every verb here is a function tool, so that refusal is not a degraded path, it is no
  * path: the run moves to Responses and stays. Staying is the point. Retrying chat each turn
  * would pay a failed call per step against the visitor's own key.
  */
 function openaiCompatible({
-  key, model, baseUrl, label, toolChoice = "required", api: startApi, extraBody = null,
+  key, llmId, baseUrl, label, toolChoice = "required", api: startApi, extraBody = null,
   provider = null, headers: ownHeaders = null, responses = true, replaysReasoning = false,
   relaysUpstreamErrors = false,
 }) {
   const root = baseUrl.replace(/\/$/, "");
-  // "chat" or "responses". Held across steps, so a model that has refused chat once is never
+  // "chat" or "responses". Held across steps, so an LLM that has refused chat once is never
   // asked again for the life of this provider, which is the life of the run. It starts at
   // whatever the caller knew — see `startingApi` — and defaults to chat, which is the only
   // API a local server speaks and the one every other vendor here answers on.
@@ -337,13 +337,13 @@ function openaiCompatible({
   // A catalogue row can refuse what its vendor's entry asks: the Claude rows marked
   // `forced_tools: false` are asked with `auto`, through OpenRouter as through Anthropic.
   const refusesForced =
-    CATALOGUE[provider]?.entries.find((entry) => entry.id === model)?.forced_tools === false;
+    CATALOGUE[provider]?.entries.find((entry) => entry.id === llmId)?.forced_tools === false;
   const asked = refusesForced && toolChoice !== null ? "auto" : toolChoice;
 
   // `null` means the vendor documents no `tool_choice` at all, and an unknown field is a 400
   // on some gateways, so the key is left out of the body rather than sent as null.
   // A vendor's own extra fields go underneath what quackd sends, so none of them can replace
-  // the model, the turns or the tools.
+  // the LLM, the turns or the tools.
   const insist = (body) => {
     const merged = extraBody ? { ...extraBody, ...body } : body;
     return asked === null ? merged : { ...merged, tool_choice: asked };
@@ -367,7 +367,7 @@ function openaiCompatible({
           function: { name: turn.call.name, arguments: JSON.stringify(turn.call.arguments ?? {}) },
         }],
       };
-      // Back on the turn that made the call, exactly as it came: OpenRouter asks for a model's
+      // Back on the turn that made the call, exactly as it came: OpenRouter asks for an LLM's
       // reasoning unmodified, and Gemini's thought signatures ride in it.
       if (turn.call.replay) assistant.reasoning_details = turn.call.replay;
       messages.push(assistant);
@@ -375,7 +375,7 @@ function openaiCompatible({
     });
     messages.push({ role: "user", content: observation });
     return insist({
-      model,
+      model: llmId,
       messages,
       tools: tools.map((t) => ({
         type: "function",
@@ -401,7 +401,7 @@ function openaiCompatible({
     });
     input.push({ role: "user", content: [{ type: "input_text", text: observation }] });
     return insist({
-      model,
+      model: llmId,
       instructions: system,
       input,
       tools: tools.map((t) => ({
@@ -414,7 +414,7 @@ function openaiCompatible({
   }
 
   function fromChat(body) {
-    // OpenRouter can answer 200 with an error and no choices at all, which is not a model that
+    // OpenRouter can answer 200 with an error and no choices at all, which is not an LLM that
     // declined to call a tool, and must not read as one. Only where the vendor is known to.
     if (relaysUpstreamErrors && body.error) {
       const detail = body.error.metadata?.raw ? `: ${String(body.error.metadata.raw).slice(0, 300)}` : "";
@@ -438,7 +438,7 @@ function openaiCompatible({
 
   return {
     name: label,
-    model,
+    llmId,
     async step({ system, history, observation, tools, signal = null }) {
       const turn = { system, history, observation, tools };
       const headers = { "content-type": "application/json", ...(ownHeaders ?? {}) };
@@ -471,7 +471,7 @@ function openaiCompatible({
 }
 
 /** Gemini, whose tool schema is JSON Schema without the parts it does not accept. */
-function gemini({ key, model }) {
+function gemini({ key, llmId }) {
   const clean = (schema) => {
     const copy = { ...schema };
     delete copy.additionalProperties;
@@ -487,7 +487,7 @@ function gemini({ key, model }) {
   };
   return {
     name: "gemini",
-    model,
+    llmId,
     async step({ system, history, observation, tools, signal = null }) {
       const contents = [];
       for (const turn of history) {
@@ -496,7 +496,7 @@ function gemini({ key, model }) {
         contents.push({ role: "user", parts: [{ functionResponse: { name: turn.call.name, response: { result: "ok" } } }] });
       }
       contents.push({ role: "user", parts: [{ text: observation }] });
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${llmId}:generateContent`;
       const response = await fetch(url, {
         method: "POST",
         signal,   // an aborted run must not keep a request alive, or keep billing for it
@@ -519,42 +519,42 @@ function gemini({ key, model }) {
 }
 
 /**
- * Which API a run should open on, for a model the catalogue already knows.
+ * Which API a run should open on, for an LLM the catalogue already knows.
  *
- * Some OpenAI models will not take function tools on Chat Completions at all. The 400 they
+ * Some OpenAI LLMs will not take function tools on Chat Completions at all. The 400 they
  * answer with is read below and the run moves, but it pays a call to learn what the catalogue
  * already records, so the page asks this first and skips it. Everything else starts on Chat
  * Completions, including any id the catalogue has never heard of: this is a hint, not a
- * gate, and a model the visitor typed or a vendor shipped this morning must still reach the
+ * gate, and an LLM the visitor typed or a vendor shipped this morning must still reach the
  * vendor and get the vendor's own answer.
  */
-export function startingApi(provider, model) {
-  const known = CATALOGUE[provider]?.entries.find((entry) => entry.id === model);
+export function startingApi(provider, llmId) {
+  const known = CATALOGUE[provider]?.entries.find((entry) => entry.id === llmId);
   return known?.api === "responses" ? "responses" : "chat";
 }
 
-export function makeProvider({ provider, key, model, baseUrl, api }) {
+export function makeProvider({ provider, key, llmId, baseUrl, api }) {
   const spec = PROVIDERS[provider];
   if (!spec) throw new ProviderError(`unknown provider ${provider}`);
   if (spec.needsKey && !key) throw new ProviderError(`${spec.label} needs your API key`);
   // The default comes from the catalogue for a cloud vendor and from the spec for Local. The
-  // id itself is NOT checked against the catalogue: a model quackd has not heard of has to
+  // id itself is NOT checked against the catalogue: an LLM quackd has not heard of has to
   // reach the vendor and come back in the vendor's own words, which is the only answer that
   // can be right about a list this page does not own.
-  const chosen = model || CATALOGUE[provider]?.default || spec.defaultModel;
+  const chosen = llmId || CATALOGUE[provider]?.default || spec.defaultLlm;
   // Where the caller said nothing, the catalogue decides, so a caller who reaches for
   // `makeProvider` directly gets the same answer the page does. `quackd/agent/providers/
   // openai.py` resolves it in the same order for the same reason.
   const startsOn = api || startingApi(provider, chosen);
-  if (provider === "anthropic") return anthropic({ key, model: chosen });
-  if (provider === "gemini") return gemini({ key, model: chosen });
+  if (provider === "anthropic") return anthropic({ key, llmId: chosen });
+  if (provider === "gemini") return gemini({ key, llmId: chosen });
   // Every other cloud vendor is OpenAI-shaped, so it is one client with a different base URL,
   // a different label on its errors and whatever `tool_choice` that vendor accepts. Local is
   // the same client again, with the only base URL on the page a visitor may type.
   if (spec.needsKey) {
     return openaiCompatible({
       key,
-      model: chosen,
+      llmId: chosen,
       baseUrl: spec.baseUrl,
       label: spec.label,
       toolChoice: spec.toolChoice,
@@ -569,7 +569,7 @@ export function makeProvider({ provider, key, model, baseUrl, api }) {
   }
   return openaiCompatible({
     key: key || "",
-    model: chosen,
+    llmId: chosen,
     baseUrl: localBaseUrl(baseUrl || spec.baseUrl),
     label: "your local server",
     toolChoice: spec.toolChoice,

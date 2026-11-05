@@ -21,7 +21,7 @@ can stand on, not a ceiling: two robots that share something richer can move to 
 | Type | Carries | For |
 |---|---|---|
 | `hello` | a passport, a nonce, and what the robot is running now | proving who each side is, in three steps |
-| `say` | up to 400 characters of text | people, and language models, and never an instruction |
+| `say` | up to 400 characters of text | people, and LLMs, and never an instruction |
 | `bye` | nothing | ending a session |
 | `ask` | a skill, its arguments, and why | asking for a courtesy: `pause` or `identify` |
 | `answer` | `ok`, `no` or `later`, and a reason | replying to an `ask`, or to a version a robot cannot read |
@@ -154,7 +154,7 @@ specification puts four duties on every receiver, whoever made it:
 
 - Nothing that moves the robot may happen because of an `ask`, except through a rule that bounds
   the action in time and in how often it may happen.
-- An `ask` is never handed to a language model as an instruction.
+- An `ask` is never handed to an LLM as an instruction.
 - No `ask` can keep the robot from stopping. Its own stop stays above any peer's request.
 - It answers within five seconds, or not at all.
 

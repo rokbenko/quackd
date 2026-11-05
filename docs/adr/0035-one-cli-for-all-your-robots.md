@@ -22,14 +22,14 @@ whole agent loops talking over the bus ([ADR-0034](0034-registered-robots-and-pi
 What quackd is now is the place a person connects the robots they own, the place they command
 all of them, and the thing that lets those robots divide a task between themselves. The old
 sentence describes one robot and one brain, which is a feature of the thing rather than the
-thing. It also puts quackd in the wrong role. quackd is not the brain. The model is the brain,
+thing. It also puts quackd in the wrong role. quackd is not the brain. The LLM is the brain,
 one per robot, and quackd is the command line all of them are reached from.
 
 The tension is worth naming here, because this is the file a sceptic will open first. Not one
 of the seven bodies has ever run on real hardware. No flock of either kind has ever crossed from
 one machine to a second, and there is no `--bus` flag. A pilot flock's members are N separate
 simulated worlds with no shared arena and no ground truth to check a claimed success against,
-and `tell` has been exercised by the scripted pilot and by no real model. A one-liner says what
+and `tell` has been exercised by the scripted pilot and by no real LLM. A one-liner says what
 a CLI is for. It is not a status report, and the status tables under it are. That is why the
 tagline sits directly above a sub-line that keeps saying every body is simulated or mocked, and
 why flock mode stays labelled EXPERIMENTAL.
@@ -81,7 +81,7 @@ reader who is not told that opens a CLI full of ducks for no reason.
   together, and the pilot flock is the part that answers that.
 - What deliberately does not change: the CHANGELOG and the earlier ADRs and design notes, which
   record what was true when they were written and stay as written. The LLM system prompts that
-  open "You are the brain of" are correct and stay, because there the model really is the brain.
+  open "You are the brain of" are correct and stay, because there the LLM really is the brain.
   The hero GIF and its caption are of a Microduck in `sim2d`, which is still the one thing anyone
   can watch, and [ADR-0013](0013-hero-gif.md) still governs them.
 - The positioning now promises more than any one status table does, which is the cost of naming

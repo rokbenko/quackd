@@ -2,7 +2,7 @@
 
 0.30.0 moved the colour detector from OpenCV to numpy, which halved the install and made some frames
 slower. Those frames were made up: a real lens blurs the one-pixel patterns the worst of them were
-built on, and nothing has timed the detector on what a real camera sees. No arm and no model here.
+built on, and nothing has timed the detector on what a real camera sees. No arm and no LLM here.
 
     python frame_times.py --camera 1 --seconds 10
     python frame_times.py --image checkerboard.png

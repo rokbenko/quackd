@@ -48,7 +48,7 @@ class _Llm:
     """A decision LLM that answers the fast lane's one question as told, after `wait`."""
 
     name = "scripted"
-    model = "test"
+    llm_id = "test"
     url = None
 
     def __init__(self, choice: str, confidence: float = 0.99, wait: asyncio.Event | None = None):

@@ -22,7 +22,7 @@ torch on Python 3.12 because the arm's SDK does, and this demo never leaves `ler
 | The clock | wall clock, all at once | one lockstep sim clock |
 | Bodies | any adapter, any backend, mixed | Microducks on `sim2d` |
 | Size | 2 to 8 | 2 to 4 (the arena holds four) |
-| Model calls | one per pilot per turn | at most one, for the whole run |
+| LLM calls | one per pilot per turn | at most one, for the whole run |
 | How the work is divided | the pilots say what they will do | an auction on camera distance |
 | How success is judged | every member declares for itself | the simulator's own telemetry |
 | Reproducible from a seed | no | yes |
@@ -106,7 +106,7 @@ so a task nobody in the flock can do is refused with nothing written to disk.
 ## Talking
 
 `tell` is a tool beside `assess_task`, `declare_success` and `remember`. It moves nothing and
-costs no step, one model call, and reaches the addressee in its next observation:
+costs no step, one LLM call, and reaches the addressee in its next observation:
 
 ```
 duck   #  talk    duck -> all: duck here and ready; say hello back
@@ -157,7 +157,7 @@ Every pilot declares for itself. The flock succeeds only when all of them declar
 ```
 +- + SUCCESS --------------------------------------------------------------------------------------+
 | every member declared success: duck, arm, cart                                                   |
-| members 3/3 succeeded - talk 3 - steps 0 - llm calls 9 - tokens 17936+144 - time 0.1 s - cost $0 |
+| members 3/3 succeeded - talk 3 - steps 0 - LLM calls 9 - tokens 17936+144 - time 0.1 s - cost $0 |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -172,7 +172,7 @@ Otherwise the worst outcome wins, in the order `error`, `aborted`, `infeasible`,
 were stopped **because it did**, so the error is the cause and the aborts are its consequence.
 
 Ctrl-C or `q` stops every body through one kill switch fanned out to every executor. A pilot
-mid-verb is cancelled and sent a stop; a pilot waiting on its model notices at its next turn,
+mid-verb is cancelled and sent a stop; a pilot waiting on its LLM notices at its next turn,
 exactly as a solo run does. The first exception any member raises stops the others with a
 reason that names it.
 
@@ -205,10 +205,10 @@ member's block in `per_member` carries its own `cost_usd` beside its `usage`, al
 `wall_s` and `llm_latency_s` that member spent, and the flock's own `cost_usd` is the sum of
 them. That total is `null` the moment one member could not be priced, rather than a figure
 quietly missing a robot: a flock bill short one duck is worse than no flock bill. The rate is
-each member's own, from the catalogue entry for the model that pilot ran. `--price` is
+each member's own, from the catalogue entry for the LLM that pilot ran. `--price` is
 carried into a flock and applies to every member at that one rate, because it is a rate for
 the run rather than one per robot, and `QUACKD_PRICE` does the same thing per shell. Either is
-how you price a flock whose models quackd has no published rate for.
+how you price a flock whose LLMs quackd has no published rate for.
 
 `quackd log <run>` replays each member's transcript in turn.
 
@@ -227,7 +227,7 @@ record intact: the flag says what you watch, and every member writes its own log
   built to avoid ([ADR-0015](../adr/0015-flock-deterministic-coordinator.md)), and it is why the
   kick demo still runs the coordinator.
 - **No flock has run on hardware.** The mixed-body case is exercised on `mock` backends,
-  and `tell` has been exercised by the scripted pilot and by no real model.
+  and `tell` has been exercised by the scripted pilot and by no real LLM.
 - **A seed does not make it reproducible**, because there is no shared clock to fix.
 - **There is no `--bus` flag**, so nothing has carried a pilot flock between two machines.
 
@@ -389,18 +389,18 @@ runs in `sim2d`; on hardware they are off.
 
 ## What the LLM does, and does not do
 
-At most **one** model call per run: the planner may tune task parameters (target label,
+At most **one** LLM call per run: the planner may tune task parameters (target label,
 approach distance, scan step, timeout) through a single tool call, asked for the way that
 vendor's provider asks for every call: forced where it can force one, and only asked for where
-the vendor or the model refuses a forced call. Numeric
+the vendor or the LLM refuses a forced call. Numeric
 parameters are clamped into the schema's ranges, an invalid field is dropped on its own
 (the valid ones survive), and a missing or broken call falls back to deterministic
 defaults, logged. With `--llm fake` even that call is skipped and the plan is a pure
 function. The auction, the roles and the steering are deterministic code. `summary.json`
 records `planner.llm_calls` (0 or 1) as proof, and `planner.cost_usd` beside it, priced from
-the planner's own model exactly as a solo run's turn is. That is the whole bill for this kind
+the planner's own LLM exactly as a solo run's turn is. That is the whole bill for this kind
 of flock: `per_duck` carries no cost because a coordinator member is a state machine that
-never calls a model. `--run-name` names the run here too, and the name you typed is kept as
+never calls an LLM. `--run-name` names the run here too, and the name you typed is kept as
 `run_name` in the summary.
 
 Per robot LLM pilots do cost N times the tokens and the latency, which is why this is still
@@ -412,7 +412,7 @@ datasheet has something to say to another pilot, which was not true when
 ## Ground truth
 
 The outcome is judged by the coordinator from sim telemetry (`ball_displacement_m`), not
-from any model's claim. A member reporting a kick the world did not record turns the run
+from any LLM's claim. A member reporting a kick the world did not record turns the run
 into a failure. Duck to duck safety separation is watched from world ground truth: while
 a claim is live the coordinator measures every other duck's true distance to the kicker
 and orders an intruder to retreat, with the motion still running through that duck's own
@@ -473,9 +473,9 @@ line appears in a replay. The screen is kept once, at the run root, as `terminal
 columns in the order they actually arrived, which is the one reading a replay cannot give
 back.
 
-With a real provider the planner's one model call is narrated under `flock` and recorded
+With a real provider the planner's one LLM call is narrated under `flock` and recorded
 in `flock.jsonl` as `llm_request` and `llm`. With `--llm fake`
-there is nothing to narrate: the planner short circuits before it reaches a model.
+there is nothing to narrate: the planner short circuits before it reaches an LLM.
 
 `--no-log` or `QUACKD_LOG=0` removes the views and leaves every record intact.
 
@@ -503,7 +503,7 @@ is what the [pilots](#the-pilot-flock) are for, and that kind uses no roles.
 ## Status and future work
 
 **The pilots**: one demo, `flock-hello`, on `mock` and `sim2d` bodies with the scripted pilot.
-Mixed adapters work and are tested; `tell` has been seen by no real model; nothing has run on
+Mixed adapters work and are tested; `tell` has been seen by no real LLM; nothing has run on
 hardware.
 
 **The coordinator**: sim only, one choreography, `flock-kick` (ducks), 10 of 10 seeds with

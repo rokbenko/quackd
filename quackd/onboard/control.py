@@ -214,7 +214,7 @@ def connect(
 ) -> Iterator[Connection]:
     """A hello'd connection to the service whose control.json this is: `timeout` for the
     hello, and `then` for every read after it, None for as long as it takes, which a goal's
-    lines need, since a model's turn can take longer than any hello."""
+    lines need, since an LLM's turn can take longer than any hello."""
     port, token = _where(control_json)
     try:
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)

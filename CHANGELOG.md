@@ -9,6 +9,35 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **quackd says LLM wherever it means one.** What it prints, what it sends to the pilot and what its
+  help says all use the word now. The counters under a run's verdict read `LLM calls 6`,
+  `time 49.5 s (LLM 20.4 s)`, `LLM calls p50 2.6 s, p90 7.7 s, max 7.7 s` and `after 3 LLM calls`, the
+  run line reads `provider=openai LLM=gpt-6-sol`, the budget line `step 3/40, LLM calls 3/40`, and the
+  stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help` has a panel called `LLM`, and so does
+  the page `quackd ui` draws, and `--llm` shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an
+  OpenRouter id `AUTHOR/LLM`. The pilot reads the word as well: the play section's `product or LLM`, and
+  the task files of E016, E156 and E187. A script that matches a printed line has to change its words.
+- **Run records and `--json` say `llm_id` where they said `model`, and a script that reads them has to
+  change.** That is the LLM's id in `summary.json`, in `run_start`, `llm_request` and `llm`, in the
+  `decision` block, `decision_llm` and `watch`, in a flock's records and in `quackd list-llms --json`
+  and `quackd doctor --json`, whose `refused_model` is `refused_llm`. `decision_shadow`'s `model_verb`
+  is `llm_verb`. A run recorded earlier keeps what it wrote, and `quackd log` reads either, so an old
+  run replays as it did. This did not go through a release with both keys, which `RELEASING.md` asks of
+  a rename, because the project's owner chose to take the break at once. What keeps its name is what
+  belongs to somebody else: the `model` a vendor's API takes and returns, `/v1/models`, and the
+  `model` field of a robot's manifest and passport, which is the robot's and no LLM's.
+- **A decision LLM you wrote yourself has to rename three things.** The module's `make(spec, *, url,
+  model)` is `make(spec, *, url, llm_id)`, its `MODEL` is `LLM_ID`, and the object it returns answers to
+  `llm_id`. `tests/stub_decision_llm.py` shows the new shape.
+
+### Removed
+
+- **`quackd list-models` is gone: the command is `quackd list-llms`.** There is no alias, so a script
+  that still types the old name stops with `No such command` and has to change it. Like the keys above,
+  it had no release of warning, at the project's owner's word.
+
 ### Documentation
 
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
@@ -30,6 +59,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   experiments, 34 of which have no task file, so their lines were written down nowhere a reader could find
   them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
   on its card, and that every `quackd` line on the page parses.
+- **The pages say LLM too, and `docs/models/` is `docs/llms/`.** Every page, ADR, design note and
+  comment that meant an LLM now says so, and where the word covered policies as well they say LLMs and
+  policies. `scripts/models_docs.py` is `scripts/llms_docs.py`, and ADR-0031, ADR-0040 and ADR-0062 have
+  new file names. A published PyPI page's link into `docs/models/` no longer resolves, as happened when
+  the pages moved in 0.16.1. What is a simulator's, a policy's, a detector's or a board's keeps its word,
+  and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
+  word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
+  as their runs printed them, and so do the recorded transcripts under `docs/assets/`.
+- **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
+  prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
+  the counters was captured again by running its command.
 
 ## [0.31.3] — 2026-11-04
 
@@ -1419,7 +1459,7 @@ limitations.
   the task's minutes as it is against the stop, and once they are spent it is cancelled, its
   `llm` record says so, and the run ends on its budget. On a simulator or a mock the budget's
   clock is the body's own and stands still while a model thinks, so a run on either is never cut
-  off this way ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
+  off this way ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-llms-api-fails)).
 - **A `stop` over MCP ends the verb beside it.** A `stop` called while a `move`, a `go_to` or a
   `search_scan` ran sent its stop, and the verb's next twist, a tenth of a second later, walked
   the body on. `move`, `go_to`, `search_scan` and `approach_and` read a stop asked for beside them
@@ -1672,7 +1712,7 @@ Face alone. What that leaves owed is under Known limitations.
 
 ### Documentation
 
-- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the three
+- **[docs/models/](docs/llms/README.md), the models beside the robots.** Five pages: the three
   roles a model can have in a run side by side, every pilot vendor and every one of the 123 model
   ids with its extra, its key, its address and its rate, the eight decision LLMs, the policy types
   the arm's server serves and the ones it does not, with why, and the companies behind them, each
@@ -1680,7 +1720,7 @@ Face alone. What that leaves owed is under Known limitations.
   `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not what the script
   writes, so a row is changed in the code and never in a table. The guides stay where they were
   and are linked, so no published link moved, and `docs/README.md` maps the folder
-  ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
+  ([ADR-0062](docs/adr/0062-llm-tables-are-rendered-from-the-catalogues.md)).
 - **The README says which models work, right after which robots work.** One table of the three
   roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
   the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer
@@ -2117,7 +2157,7 @@ bench steps that would settle the arm's part are under Known limitations.
   eighteen ship and twelve are. Two tests in `tests/test_docs.py` hold the guide's file to the
   budget it quotes and every page's starter counts to the starters that ship.
 - **When the model's API fails**, a section of its own in
-  [docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails), with output
+  [docs/concepts/safety.md](docs/concepts/safety.md#when-the-llms-api-fails), with output
   captured against the stand-in server. The OpenRouter guide no longer says a 429 ends the run,
   and the record's fields are in docs/concepts/architecture.md.
 - **A real arm with no rest pose is kept powered, on every page that said a probe let it go.** The
@@ -5515,7 +5555,7 @@ it counts.
   tokens against $5/$25, and GPT-6 Sol at $2/$10 against $4/$20. Naming the old default
   explicitly still works: `claude-opus-5` is a `legacy` row and `gpt-5.6-sol` a `current` one.
   A bare `--llm grok` runs Grok 4.7 for the same reason, at the price Grok 4.6 had
-  ([ADR-0031](docs/adr/0031-model-catalogue.md), amended).
+  ([ADR-0031](docs/adr/0031-llm-catalogue.md), amended).
 - **The catalogue was read again against all eleven vendors' own pages, on 2026-09-23.** Nine
   ids are new: `claude-opus-5-5`, `gpt-6-sol`, `gpt-6-luna`,
   `gemini-3.1-pro-preview-customtools`, `grok-4.7`, `zai-glm-5-3` on Mistral,
@@ -5720,7 +5760,7 @@ changes, and `--decision-mode on` says so, loudly, every time you use it.
 The old spellings are gone rather than deprecated, and that is a deliberate departure from how
 0.11 retired `quackd trace`. Those spellings were three releases old and in people's scripts.
 These are three days old, `quackd record` pinned the stepper off so no recording in this
-repository carries them, and [ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-model.md)
+repository carries them, and [ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)
 already said a transcript kind the renderer does not know is drawn as nothing. So `quackd log`
 on a run directory from 0.10 or 0.11 that used the stepper prints no stepper lines at all, still
 prints `from jev` on the verbs it chose, and shows no stepper seconds or cost in its counters,
@@ -6605,7 +6645,7 @@ reports that it did.
   which turns are a choice and nothing about the model that would answer them.
   **Those are estimates and are labelled as such: none of this has run against a real robot.**
   The workings, the inputs and what would make them wrong are in `docs/jev.md`
-  ([ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-model.md)). Behind
+  ([ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)). Behind
   `quackd[jev]`, which is not part of `quackd[all]`, and `TYPESAFE_API_KEY`, or `QUACKD_JEV` for
   the mode where you would rather not pass the flag. It is not a provider: `--provider` does not
   take it, and `quackd doctor` gives it a section of its own. The flag is marked EXPERIMENTAL in
@@ -7501,7 +7541,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   `llamacpp` and `lmstudio` serve whatever you pulled, so `--model` is still free text there and
   passing none still means "ask the server what it has". `quackd serve-mcp` picks no model at all —
   the client's own model is the pilot and `QUACKD_MODEL` is irrelevant there — which was already
-  true and is now written down ([ADR-0031](docs/adr/0031-model-catalogue.md)).
+  true and is now written down ([ADR-0031](docs/adr/0031-llm-catalogue.md)).
 
 - **`quackd list-models`**, the command that prints what `--model` will accept. Five columns per
   id: the vendor, the id as that vendor spells it, a label a human can read, its status, and a

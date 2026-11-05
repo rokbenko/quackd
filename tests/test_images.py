@@ -73,7 +73,7 @@ def test_every_format_quackd_takes_comes_back_as_png(tmp_path: Path) -> None:
 def test_a_picture_larger_than_the_cap_comes_back_smaller(tmp_path: Path) -> None:
     """The long edge is what costs tokens, so it is the long edge that comes down, and the
     shape has to survive it: a picture four times as wide as it is tall is still that when the
-    model sees it."""
+    LLM sees it."""
     wide = drawing(tmp_path / "wide.png", size=(2400, 600))
 
     png = load_task_images([str(wide)])[0].png
@@ -110,7 +110,7 @@ def test_shrinking_stops_before_the_picture_is_unreadable_and_names_the_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The refusal exists so that one bad file is one line rather than a blank thumbnail the
-    model is asked to describe. No real picture stays over 1.5 MB at 64 pixels, so the cap is
+    LLM is asked to describe. No real picture stays over 1.5 MB at 64 pixels, so the cap is
     moved down to where a picture a test can write does, and the loop has to give up at
     MIN_SIDE_PX with the path in its message."""
     monkeypatch.setattr(images, "MAX_BYTES", 2_000)
@@ -183,7 +183,7 @@ def test_a_format_quackd_does_not_send_is_refused_and_lists_the_ones_it_does(
 def test_two_pictures_with_one_name_are_numbered_and_a_unique_name_is_left_alone(
     tmp_path: Path,
 ) -> None:
-    """The model is told a name and the task refers to the picture by it, so two directories
+    """The LLM is told a name and the task refers to the picture by it, so two directories
     each holding a `sketch.png` must not both arrive as `sketch.png`. The file that clashes
     with nothing keeps the name the person typed, because a number there would be noise."""
     paths = [
@@ -229,7 +229,7 @@ def test_the_pictures_come_back_in_the_order_they_were_given(tmp_path: Path) -> 
 # ── two things a plain convert("RGB") gets wrong, both of them silently ─────────────────
 #
 # Found by writing these tests rather than by reading the code, which is the point of them:
-# neither failure raises, neither warns, and both leave a run that succeeds while the model
+# neither failure raises, neither warns, and both leave a run that succeeds while the LLM
 # answers about something other than the file it was handed.
 
 
@@ -239,7 +239,7 @@ def test_a_drawing_on_a_transparent_background_arrives_as_a_drawing(tmp_path: Pa
     A sketch exported the ordinary way is strokes on a transparent background, and a
     transparent pixel still stores a colour underneath: for a drawing saved out of most tools
     that colour is black. `convert("RGB")` keeps it and throws the alpha away, so the circle
-    and its paper both became black and the model was handed a solid rectangle as the thing it
+    and its paper both became black and the LLM was handed a solid rectangle as the thing it
     had been asked to draw. Nothing raised, and the run succeeded.
 
     The picture has to composite onto white first, because a drawing with no background is a
@@ -280,10 +280,10 @@ def test_a_photograph_that_says_it_is_rotated_arrives_the_way_up_it_looks(
 ) -> None:
     """A phone stores its rotation in an EXIF tag rather than in the pixels, so every viewer
     shows the picture upright and the pixels are on their side. Re-encoding to PNG drops the
-    tag, so the model used to be handed the sideways pixels with nothing left to say so.
+    tag, so the LLM used to be handed the sideways pixels with nothing left to say so.
 
     The rotation has to be moved into the pixels before the tag is lost. Asserted on the shape
-    rather than on the tag, because the shape is what the model sees."""
+    rather than on the tag, because the shape is what the LLM sees."""
     path = tmp_path / "bench.jpg"
     img = Image.new("RGB", (400, 200), (10, 120, 200))
     exif = img.getexif()
@@ -329,7 +329,7 @@ def test_a_sixteen_bit_picture_is_scaled_into_a_byte_rather_than_clipped(
     """A depth map, a scan and a 16-bit photograph all decode to a mode whose samples do not
     fit in a byte, and `convert("RGB")` on one of those clips rather than scales. Only the
     darkest 0.4% of a 16-bit range survived; everything above 255 came out white, so the
-    picture the model was handed was a white rectangle with a dark corner.
+    picture the LLM was handed was a white rectangle with a dark corner.
 
     Asserted on the ordering and the ends rather than on exact values, because the stretch is
     what matters and the rounding is not."""

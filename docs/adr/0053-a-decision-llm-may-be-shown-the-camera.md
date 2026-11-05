@@ -1,14 +1,14 @@
 # ADR-0053: A decision LLM may be shown the camera, on one row, when the run says so
 
-**Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (what the stepper is sent, and what its record and its summary keep) and [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) (`openai` may be shown a picture, where it was sent text alone) · Implemented in `quackd/agent/decision/frames.py`, with changes in `base.py`, the catalogue, the factory, `decisions_api.py`, the stepper, the loop, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md#showing-it-the-camera---decision-frames)
+**Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (what the stepper is sent, and what its record and its summary keep) and [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) (`openai` may be shown a picture, where it was sent text alone) · Implemented in `quackd/agent/decision/frames.py`, with changes in `base.py`, the catalogue, the factory, `decisions_api.py`, the stepper, the loop, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md#showing-it-the-camera---decision-frames)
 
 ## Context
 
-[ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md)'s stepper reads a turn as text: a
+[ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)'s stepper reads a turn as text: a
 named state of short English fields, with the camera in it as one line summarising the
 detections. Its own docstring said "Never a picture", every row's `sees` was false, and
 [SECURITY.md](../../SECURITY.md) called a picture reaching a decision LLM a security issue. A turn
-that needed eyes escalated to the model.
+that needed eyes escalated to the pilot LLM.
 
 [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) added the first decision LLM
 quackd names whose API takes a picture. OpenAI's `POST /v1/decisions` takes inline images beside

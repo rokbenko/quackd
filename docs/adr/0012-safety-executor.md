@@ -5,7 +5,7 @@
 ## Context
 
 Two clients drive the duck: the agent loop and the MCP server (Claude Code / Desktop).
-Both take instructions from a model. Upstream's `robotd` guards the body; something has to
+Both take instructions from an LLM. Upstream's `robotd` guards the body; something has to
 guard the conversation, identically for both clients.
 
 ## Decision

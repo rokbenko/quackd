@@ -150,7 +150,7 @@ class Robot(_Strict):
 
 
 class Brain(_Strict):
-    """The model that talks and pilots for this robot. Its key is in robot.env, never here."""
+    """The LLM that talks and pilots for this robot. Its key is in robot.env, never here."""
 
     llm: str | None = Field(default=None, max_length=200)
     base_url: str | None = Field(default=None, max_length=400)
@@ -381,7 +381,7 @@ def template(
         else "# robot:                    # a body quackd can drive, by its adapter:\n"
         f"#   adapter: {ADAPTER_EXAMPLE}\n"
     )
-    brain_lines = (f"  llm: {_yaml_text(llm)}\n" if llm else "  # llm: local:MODEL\n") + (
+    brain_lines = (f"  llm: {_yaml_text(llm)}\n" if llm else "  # llm: local:LLM\n") + (
         f"  base_url: {_yaml_text(base_url)}\n" if base_url else "  # base_url: URL\n"
     )
     text = f"""# robot.yaml: this robot's passport and its settings (docs/passport/quackd.md).
@@ -409,7 +409,7 @@ passport:
 
 # Everything below changes without a new signature.
 {robot}
-# The model that talks for this robot. Its key goes in robot.env, never in this file.
+# The LLM that talks for this robot. Its key goes in robot.env, never in this file.
 brain:
 {brain_lines}
 meeting:

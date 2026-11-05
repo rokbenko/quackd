@@ -42,13 +42,13 @@ class SystemOneLLM:
     machine.
     """
 
-    def __init__(self, spec: DecisionSpec, *, model: str | None = None, url: str | None = None):
+    def __init__(self, spec: DecisionSpec, *, llm_id: str | None = None, url: str | None = None):
         try:
             sdk = importlib.import_module("typesafe_sdk")
         except ImportError as e:  # pragma: no cover - exercised by tests/test_extras_absent
             raise DecisionNotInstalled(spec.name, spec.extra or "decision") from e
         self.name = spec.name
-        self.model = model or ""
+        self.llm_id = llm_id or ""
         self.url = url
         # A row with its own key env hands the SDK nothing and lets it read that variable, with
         # its own validation; a row without one is a server that wants no key, and gets a word
@@ -56,7 +56,7 @@ class SystemOneLLM:
         #
         # The second half of that condition is the interesting one. A keyed row reached at an
         # address somebody typed is no longer the hosted service: `--decision-llm jev
-        # --decision-url http://localhost:8009` means "Jev's model id, at my address", and
+        # --decision-url http://localhost:8009` means "Jev's LLM id, at my address", and
         # sending a company's API key to whatever is listening on that port is precisely what
         # `SECURITY.md` lists as a thing that must not happen. An explicit address makes it a
         # server you run, and a server you run gets the word.
@@ -68,7 +68,7 @@ class SystemOneLLM:
         self._client: Any = sdk.AsyncTypeSafeClient(
             **({"api_key": api_key} if api_key is not None else {}),
             **({"base_url": url} if url else {}),
-            **({"model": self.model} if self.model else {}),
+            **({"model": self.llm_id} if self.llm_id else {}),
             # Two different numbers, and the difference is the whole reason this is spelled out.
             #
             # `timeout` is a clock: the SDK hands it to httpx2 for each operation of a request,

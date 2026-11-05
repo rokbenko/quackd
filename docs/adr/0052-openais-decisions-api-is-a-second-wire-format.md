@@ -1,6 +1,6 @@
 # ADR-0052: OpenAI's Decisions API is a second wire format, built in
 
-**Status:** accepted, amended · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+**Status:** accepted, amended · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
 
 **Amended 2026-10-19 by [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md):** `sees` is true on `openai`, which may be shown the robot's
 camera on a run that asks with `--decision-frames`, at OpenAI's own hosts alone, and on no other
@@ -11,10 +11,10 @@ without it sends this row the state's text alone, as below.
 ## Context
 
 OpenAI opened its Decisions API to every developer on 2026-10-06, in public beta, with general
-availability expected "in the coming weeks" and `gpt-6-luna` its only model. `POST /v1/decisions`
+availability expected "in the coming weeks" and `gpt-6-luna` its only LLM. `POST /v1/decisions`
 takes text, or text and inline images, with a list of typed questions, and answers each with
 probabilities rather than prose, at $0.10 per million input tokens and nothing for output. That
-is the kind of question [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md)'s stepper
+is the kind of question [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)'s stepper
 asks, four at a time: a choice among the calls on offer with a way out, two yes-or-no questions,
 and a feasibility choice it only records.
 
@@ -48,15 +48,15 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   server of your own that answers `/v1/decisions` is the same backend at another address. The row
   is `openai`, second after `jev`: `https://api.openai.com`, `gpt-6-luna`, `OPENAI_API_KEY`, the
   pilot's own `openai` extra and SDK, `Price(0.10, 0.0)` published and checked on 2026-10-08, no
-  model variable, and `sees` false.
+  LLM variable, and `sees` false.
 - **The SDK's generic request, so no floor moves.** `client.post("/decisions", cast_to=object,
   body=...)` hands back the decoded JSON body unchanged in 1.66.0 and in 3.22.1. A body that is
   not a JSON object is an `UnreadableReply`, a `ValueError` whose sentence is quackd's own and
   names only the type that came back, so the record keeps it, calls the turn an error, and the
-  model takes it.
+  LLM takes it.
 - **The address is handed over on every build, and is the host alone.** The client is given
   `<url>/v1` whatever was typed, because left to itself the SDK follows `OPENAI_BASE_URL`, which
-  quackd's own local presets read as the address of a model server. A `--decision-url` with a
+  quackd's own local presets read as the address of an LLM server. A `--decision-url` with a
   path, a query or a fragment is refused while the CLI reads its flags
   (`factory.resolve_decision_address`), so a copied `https://api.openai.com/v1` stops the run on
   every machine rather than only on one with the SDK and the key.
@@ -109,7 +109,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   asked while it is built and is handed the answer (`warm_platform`), so no turn asks.
 - **Translated both ways, and read by name alone.** The state goes as one JSON string, the very
   one the stepper measures as `state_chars`, with its letters as letters, because `input` is text
-  the API hands its model undecoded and JSON's escapes would reach it as written. Every question
+  the API hands its LLM undecoded and JSON's escapes would reach it as written. Every question
   goes named and in order: a `noul` as a `predicate`, a choice's criteria as `choices` with
   `escalate` last, a score's as `levels`. An answer is kept only under a name quackd asked, and
   position is never used, because the schema makes the name optional and position is the one reading
@@ -149,7 +149,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   writes it down, and the interrupt goes on and ends the run as it always did.
 - **The floors do not move.** OpenAI define no `confidence` and claim no calibration, so this row
   inherits all four floors unmeasured, like every other, and shadow mode comes first.
-- **One word, two seams.** `--llm openai` is OpenAI's chat models flying the robot and
+- **One word, two seams.** `--llm openai` is OpenAI's chat LLMs flying the robot and
   `--decision-llm openai` is this, in front of it. The flag says which, and the pilot's key and
   the pilot's extra serve both. The variables the SDK reads for itself go by one rule for both
   (ADR-0010's amendment of 2026-10-12).
@@ -159,7 +159,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 - **A plugin.** The entry point group is how a decision LLM quackd does not name gets in, and it
   would have worked. But a plugin's row carries no price, so a paid API would be costed at the
   self-hosted $0, and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) already
-  said why that is wrong: a missing rate and a free model are different facts. Nor is a plugin
+  said why that is wrong: a missing rate and a free LLM are different facts. Nor is a plugin
   held to the catalogue's tests or to a page a test reads back.
 - **`client.decisions`, with the floor raised to 3.26.** It is the SDK's own resource and the
   obvious call. It would also raise the floor in all eleven extras and make everybody who pilots
@@ -171,7 +171,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   pattern for.
 - **OpenRouter's `/api/alpha/decisions`.** It serves `openai/gpt-6-luna-decisions` and takes
   System One's questions, but at a path of its own that the System One client cannot reach, and
-  behind a third vendor's key. OpenAI's own endpoint is the shorter way to the same model.
+  behind a third vendor's key. OpenAI's own endpoint is the shorter way to the same LLM.
 - **Translating in `stepper.py`.** The stepper asks everybody the same four questions and reads
   everybody's answers the same way. A backend that speaks another shape translates on its own
   side, so the stepper never learns which one it was talking to.
@@ -190,7 +190,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 
 - Two wire formats, two hosted rows, and two rows with a published rate. The catalogue tests
   loosen to say so: a row's backend is one of three, a key and a price belong to `jev` and
-  `openai`, and the model variable to `jev` alone. A turn of either that fails after its request
+  `openai`, and the LLM variable to `jev` alone. A turn of either that fails after its request
   went out is billed on quackd's estimate at its rate, so a `~` in front of a stepper cost above
   `$0` can be `openai`'s as well as `jev`'s, and ADR-0041 carries a note that says so.
 - A run that names `openai` sends the state's text to OpenAI, whose data controls say it is not

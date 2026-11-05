@@ -1,7 +1,7 @@
 """`quackd onboard`, run bare: put a passport on this robot in one sitting.
 
 It asks what only the owner knows (the robot's name and what it is, who owns it, how a person
-stops it, which model is its brain), writes robot.yaml from a commented template, makes the
+stops it, which LLM is its brain), writes robot.yaml from a commented template, makes the
 robot's key and the owner's, signs, and starts the service. Run again, it reads the file it wrote
 and signs only when the passport section changed or the signature runs out within 30 days. Every
 command it runs with sudo is printed before it runs.
@@ -181,7 +181,7 @@ def ask_for_file(ask: Asker, *, default_name: str, port: int = 8790) -> str:
     owner = ask.text("who owns it, as other robots should read it", "my robots")
     contact = ask.text("how to reach its owner (a URL or an e-mail address, or nothing)", "")
     how_to_stop = ask.text("how a person standing next to it stops it, in one sentence", "")
-    llm = ask.text("its brain, as --llm spells it (e.g. local:MODEL, anthropic)", "")
+    llm = ask.text("its brain, as --llm spells it (e.g. local:LLM, anthropic)", "")
     base_url = ask.text("the brain's address, for an OpenAI-compatible server (or nothing)", "")
     within = _metres(ask.text("how close, in metres, another robot comes before they meet", "2"))
     return config.template(

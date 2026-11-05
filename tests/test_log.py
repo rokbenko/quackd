@@ -247,7 +247,7 @@ def test_a_burst_that_stalls_is_not_split_by_the_count_alone() -> None:
 
 def test_the_mcp_result_keeps_one_line_per_burst() -> None:
     """That view renders when the call has already ended, so progressive lines would only
-    spend the model's line cap saying the same thing ten times."""
+    spend the LLM's line cap saying the same thing ten times."""
     rendered = render_call(_burst(45, every=0.1))
     assert len([line for line in rendered if "move x" in line]) == 1
     assert "move x45" in rendered[0]
@@ -262,8 +262,8 @@ def test_a_refused_intent_is_never_folded_into_a_count() -> None:
     assert len(out) == 2 and "REFUSED: too fast" in out[1]
 
 
-def test_the_dry_run_gate_shows_a_parameter_the_model_left_null() -> None:
-    """`--dry-run` promises every parameter a model would have sent. A parameter it
+def test_the_dry_run_gate_shows_a_parameter_the_llm_left_null() -> None:
+    """`--dry-run` promises every parameter an LLM would have sent. A parameter it
     explicitly left unset used to render identically to one it never named."""
     event = LogEvent(
         "gate",
@@ -302,7 +302,7 @@ def test_a_note_with_several_lines_is_indented_under_its_label() -> None:
 
 
 def test_fmt_value_truncates_long_strings_and_long_reprs() -> None:
-    """One `note` carrying a model's whole answer, or a params dict with a frame in it,
+    """One `note` carrying an LLM's whole answer, or a params dict with a frame in it,
     would otherwise be the log. Both are bounded, and both say where they were cut."""
     assert fmt_value("x" * 500) == repr("x" * 57 + "...")
     assert len(fmt_value("x" * 500)) == 62  # 60 characters, and the quotes repr adds
@@ -338,10 +338,10 @@ def test_a_whole_run_is_timed_in_the_units_a_person_would_say_it_in() -> None:
 def test_the_price_line_says_where_the_rate_came_from_or_that_there_is_no_rate() -> None:
     """The head of a replay has to account for the cost figure the rest of the run shows,
     including when there is not one: a missing row would leave a reader to guess whether the
-    run was free, whether quackd forgot, or whether the model is simply unpriced. The dicts
+    run was free, whether quackd forgot, or whether the LLM is simply unpriced. The dicts
     here are real `Price.record()` output, because that is what `run_start` carries."""
     assert _price_line(None) == (
-        "unpriced: quackd has no rate for this model, so no cost was computed"
+        "unpriced: quackd has no rate for this LLM, so no cost was computed"
     )
     catalogue = Price(input=10.0, output=50.0, cache_read=1.0, cache_write=12.5).record()
     assert _price_line(catalogue) == f"$10/M in, $50/M out (catalogue, checked {PRICES_CHECKED})"
@@ -352,7 +352,7 @@ def test_the_price_line_says_where_the_rate_came_from_or_that_there_is_no_rate()
     stepper = Price(input=0.042, output=0.0, source="published").record()
     assert _price_line(typed, stepper) == "$3/M in, $15/M out (--price), stepper $0.042/M in"
     assert _price_line(None, stepper) == (
-        "unpriced: quackd has no rate for this model, so no cost was computed, stepper $0.042/M in"
+        "unpriced: quackd has no rate for this LLM, so no cost was computed, stepper $0.042/M in"
     )
 
 
@@ -473,9 +473,9 @@ def test_a_tokens_line_from_before_the_money_renders_exactly_as_it_always_did() 
     )
 
 
-def test_a_turn_a_fallback_answered_says_which_model_did_at_the_end_of_its_tokens_line() -> None:
+def test_a_turn_a_fallback_answered_says_which_llm_did_at_the_end_of_its_tokens_line() -> None:
     """The one field that changes what the rest of the line means: the cost on it was priced at
-    the rate of the model asked for, and a different model answered."""
+    the rate of the LLM asked for, and a different LLM answered."""
     event = LogEvent(
         "llm",
         0.0,
@@ -498,7 +498,7 @@ def test_a_turn_a_fallback_answered_says_which_model_did_at_the_end_of_its_token
 
 def test_the_stepper_line_carries_its_tokens_and_its_fraction_of_a_cent() -> None:
     """The whole argument for a stepper is the ratio between what one of its questions costs
-    and what the model call it stands in for costs, so both numbers ride in the parenthesis
+    and what the pilot LLM call it stands in for costs, so both numbers ride in the parenthesis
     that already holds the seconds. A `~` marks a turn the decision LLM did not count for
     itself and quackd had to estimate from the characters it sent, and it goes on both numbers
     because the cost is derived from the count."""
@@ -522,7 +522,7 @@ def test_the_stepper_line_carries_its_tokens_and_its_fraction_of_a_cent() -> Non
     # a question that was asked and came back empty. The gutter is eight columns wide
     # (`_LABEL`), so the six letters of `decide` are followed by exactly two spaces.
     assert line() == "decide  kick 0.93 >= 0.70 (0.11 s)"
-    assert line(gate="not_offered") == "decide  not_offered, to the model (0.11 s)"
+    assert line(gate="not_offered") == "decide  not_offered, to the pilot LLM (0.11 s)"
 
 
 def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() -> None:
@@ -545,24 +545,26 @@ def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() 
     billed = {"usage": {"input_tokens": 42, "output_tokens": 0}, "cost_usd": 0.0000042}
     first, runners_up = lines(refused=["done"], **billed)
     assert first.label == "decide" and first.style == "yellow" and first.mark == "warn"
-    assert first.body == "refused to answer done, to the model (0.40 s, 42 tok $0.000004)"
+    assert first.body == "refused to answer done, to the pilot LLM (0.40 s, 42 tok $0.000004)"
     # what it did answer is still worth reading beside it
     assert runners_up.label == "decide?" and runners_up.body == "escalate 0.02"
     (two, _rest) = lines(refused=["next_verb", "need_human"])
-    assert two.body == "refused to answer next_verb and need_human, to the model (0.40 s)"
+    assert two.body == "refused to answer next_verb and need_human, to the pilot LLM (0.40 s)"
     # and more than two as a sentence lists them, not "a and b and c"
     (three, _rest) = lines(refused=["next_verb", "done", "need_human"])
-    assert three.body == "refused to answer next_verb, done and need_human, to the model (0.40 s)"
+    assert (
+        three.body == "refused to answer next_verb, done and need_human, to the pilot LLM (0.40 s)"
+    )
     # a record without the names, which quackd never writes, still says which gate it was
     (bare, _rest) = lines()
-    assert bare.body == "refused, to the model (0.40 s)" and bare.mark == "warn"
+    assert bare.body == "refused, to the pilot LLM (0.40 s)" and bare.mark == "warn"
 
 
 def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handover() -> None:
     """The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
     cancel, which the record names where an error's type would be. Nothing failed and nobody
     takes the turn, so the line says neither: not the red `ERROR` of a failed call and not its
-    `so the model takes this turn`, but what cut it off, after how long, and the bill of a
+    `so the pilot LLM takes this turn`, but what cut it off, after how long, and the bill of a
     request that had gone out."""
     data = {
         "gate": "interrupted",
@@ -596,7 +598,7 @@ def test_a_stepper_turn_that_sent_a_frame_says_so_whatever_became_of_it() -> Non
     assert taken == "stop 0.93 >= 0.50 (0.62 s, 642 tok $0.000064, 1 frame)"
     failed = body(gate="error", error="RateLimitError: HTTP 429", frame=frame, **billed)
     assert failed == (
-        "ERROR RateLimitError: HTTP 429 after 0.62 s, 642 tok $0.000064, 1 frame, so the model "
+        "ERROR RateLimitError: HTTP 429 after 0.62 s, 642 tok $0.000064, 1 frame, so the pilot LLM "
         "takes this turn"
     )
     cut = body(gate="interrupted", error="CancelledError", frame=frame, **billed)
@@ -613,18 +615,18 @@ def test_a_shadow_row_with_no_choice_names_its_gate_rather_than_none() -> None:
     nobody could read is printed without one, because a missing confidence is not 0.00."""
 
     def body(**row: Any) -> str:
-        data = {"model_verb": "stop", "decision_latency_s": 0.31, "llm_latency_s": 2.1, **row}
+        data = {"llm_verb": "stop", "decision_latency_s": 0.31, "llm_latency_s": 2.1, **row}
         (line,) = render_events(LogEvent("decision_shadow", 0.0, data))
         return str(line.body)
 
-    against = "vs model stop: differs (0.31 s against 2.1 s)"
+    against = "vs pilot LLM stop: differs (0.31 s against 2.1 s)"
     declined = body(decision_gate="refused", refused=["next_verb", "done"])
     assert declined == f"refused to answer next_verb and done {against}"
     assert body(decision_gate="error") == f"error {against}"
     assert body(decision_gate="unreadable", decision_confidence=0.99) == f"unreadable {against}"
-    # a label nobody gave a readable confidence for, which agreed with the model all the same
+    # a label nobody gave a readable confidence for, which agreed with the LLM all the same
     agreed = body(decision_choice="stop", decision_gate="unreadable", agree=True)
-    assert agreed == "stop vs model stop: agrees (0.31 s against 2.1 s)"
+    assert agreed == "stop vs pilot LLM stop: agrees (0.31 s against 2.1 s)"
     # and a row with both reads as it always did
     both = body(decision_choice="stop", decision_confidence=0.71, decision_gate="below_floor")
     assert both == f"stop 0.71 {against}"
@@ -781,9 +783,9 @@ def console_log(**kwargs: Any) -> tuple[ConsoleLog, io.StringIO]:
     return ConsoleLog(console, **kwargs), buffer
 
 
-def test_square_brackets_in_what_the_model_wrote_survive_verbatim() -> None:
+def test_square_brackets_in_what_the_llm_wrote_survive_verbatim() -> None:
     """Rich reads `[dim]` as markup and raises on an unpaired closing tag. Every line here
-    carries text a model or a robot wrote, so none of it may be parsed as markup."""
+    carries text an LLM or a robot wrote, so none of it may be parsed as markup."""
     view, buffer = console_log()
     view(
         LogEvent(
@@ -892,7 +894,7 @@ def shown(raw: io.BytesIO, view: ConsoleLog) -> str:
 
 
 def test_the_terminal_puts_the_arrow_in_the_gutter_and_a_word_in_the_column() -> None:
-    """The plain renderer's `->` is a contract with a model. A person gets the arrow as a
+    """The plain renderer's `->` is a contract with an LLM. A person gets the arrow as a
     glyph and the column says what it stood for."""
     view, buffer = console_log()
     view(LogEvent("verb_start", 0.0, {"name": "go_to", "params": {"target": "ball"}}))
@@ -947,14 +949,14 @@ def test_what_a_robot_wrote_is_respelled_rather_than_lost() -> None:
 
 
 def test_each_step_is_ruled_off_and_the_budget_is_only_said_once() -> None:
-    """The loop writes `[step 3/40 · step 3/40, llm calls ...]` at the top of every
+    """The loop writes `[step 3/40 · step 3/40, LLM calls ...]` at the top of every
     observation: the one line saying where the run is up to, buried in a paragraph, and
     saying the step twice."""
     view, buffer = console_log()
-    text = "[step 3/40 · step 3/40, llm calls 3/40, 0.1/5 min]\nstate: posture=standing"
+    text = "[step 3/40 · step 3/40, LLM calls 3/40, 0.1/5 min]\nstate: posture=standing"
     view(LogEvent("observation", 0.0, {"step": 3, "text": text}))
     out = buffer.getvalue()
-    assert "step 3/40, llm calls 3/40, 0.1/5 min" in out
+    assert "step 3/40, LLM calls 3/40, 0.1/5 min" in out
     assert out.count("step 3/40") == 1, "the step was announced twice"
     assert "state: posture=standing" in out
     assert "[step" not in out, "the header became the rule and must not also be a line"
@@ -970,7 +972,7 @@ def test_a_flock_member_is_never_given_a_rule_of_its_own() -> None:
     """Three members narrate at once; a rule each would be three rules per step and none of
     them would mean the run had moved on."""
     view, buffer = console_log(prefix="duck-1  ")
-    view(LogEvent("observation", 0.0, {"text": "[step 1/9 · llm calls 1/9]\nstate: up"}))
+    view(LogEvent("observation", 0.0, {"text": "[step 1/9 · LLM calls 1/9]\nstate: up"}))
     view(LogEvent("verb_start", 0.1, {"name": "kick", "params": {}}))
     out = buffer.getvalue()
     assert "───" not in out and "[step 1/9" in out, "the budget stays in the member's own line"
@@ -1208,7 +1210,7 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
 
     anonymous = panel(started_at=started, price=None)
     assert "run name" not in anonymous, "an empty row would read as a run called nothing"
-    assert "price     unpriced: quackd has no rate for this model" in anonymous
+    assert "price     unpriced: quackd has no rate for this LLM" in anonymous
 
     before = panel(started_at=started)
     assert "price" not in before, (
@@ -1243,7 +1245,7 @@ def test_a_replay_says_a_run_played_and_nothing_for_one_that_did_not() -> None:
     assert head.endswith(" play connected in 0.25 s"), head
 
 
-def test_the_terminal_view_never_reads_what_a_model_wrote_as_markup() -> None:
+def test_the_terminal_view_never_reads_what_an_llm_wrote_as_markup() -> None:
     """The same promise the plain view makes, made again by the renderer that replaced it."""
     view, buffer = console_log()
     view(
@@ -1455,8 +1457,8 @@ def test_a_human_denial_renders_red() -> None:
     assert style != "red", "a person saying yes is not a refusal"
 
 
-def test_the_reprompt_line_quotes_what_the_model_was_told() -> None:
-    """A model that answered with no tool call gets told so and asked again. Reading the log
+def test_the_reprompt_line_quotes_what_the_llm_was_told() -> None:
+    """An LLM that answered with no tool call gets told so and asked again. Reading the log
     afterwards, what it was told is the whole reason the next turn looks the way it does."""
     event = LogEvent(
         "enforce",

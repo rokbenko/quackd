@@ -675,7 +675,7 @@ class Eyes(Protocol):
     `end` bracket a call."""
 
     name: str
-    model: str
+    llm_id: str
 
     def begin(self) -> int:
         """A call begins, and its number in the run."""

@@ -5,7 +5,7 @@
 ## Context
 
 People who write agent skills already write `SKILL.md`: frontmatter for the machine, prose
-for the model. A duck task has exactly that split — a contract the executor enforces and
+for the LLM. A duck task has exactly that split — a contract the executor enforces and
 instructions the LLM interprets.
 
 ## Decision

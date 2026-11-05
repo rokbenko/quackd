@@ -1,7 +1,7 @@
 """Turns a run into a shareable GIF: world view | one duck's cam, with a caption strip.
 
 The recorder hangs off the shared clock's tick hook so motion between LLM turns is
-visible, not just the snapshots a model saw. For flocks, `set_focus` switches the right
+visible, not just the snapshots an LLM saw. For flocks, `set_focus` switches the right
 pane to the duck that matters (the coordinator focuses the claimant) and `set_caption`
 carries the phase line. The GIF is the demo; the transcript is the proof.
 """

@@ -3,7 +3,7 @@
 Function calling with `mode="ANY"` so a turn always yields a call; images ride as inline
 PNG parts; tool results go back as `function_response` parts. Gemini's schema dialect
 rejects a few JSON-Schema keywords, so `render_tools` strips them. Thought summaries are
-asked for (`thinking_config.include_thoughts`) so the log can show them; a model that
+asked for (`thinking_config.include_thoughts`) so the log can show them; an LLM that
 rejects the field gets one retry without it, and `QUACKD_GEMINI_THOUGHTS=0` never asks.
 
 The key is read from `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, which google-genai itself reads
@@ -27,7 +27,7 @@ from quackd.agent.providers.base import (
     picture_parts,
     tool_arguments,
 )
-from quackd.agent.providers.catalogue import KEY_FALLBACKS, default_model_for
+from quackd.agent.providers.catalogue import KEY_FALLBACKS, default_llm_for
 
 UNSUPPORTED_SCHEMA_KEYS = {
     "additionalProperties",
@@ -97,14 +97,14 @@ def render_contents(history: list[Exchange]) -> list[dict[str, Any]]:
         contents.append({"role": "user", "parts": parts})
         if ex.decision is not None:
             tc = ex.decision.tool_call
-            model_parts: list[dict[str, Any]] = []
+            llm_parts: list[dict[str, Any]] = []
             if ex.decision.text:
-                model_parts.append({"text": ex.decision.text})
+                llm_parts.append({"text": ex.decision.text})
             call: dict[str, Any] = {"function_call": {"name": tc.name, "args": tc.arguments}}
             if tc.signature:
                 call["thought_signature"] = base64.b64decode(tc.signature)
-            model_parts.append(call)
-            contents.append({"role": "model", "parts": model_parts})
+            llm_parts.append(call)
+            contents.append({"role": "model", "parts": llm_parts})
     return contents
 
 
@@ -139,8 +139,8 @@ def parse_response(response: Any) -> ProviderTurn:
                 )
             )
         elif getattr(part, "text", None):
-            # a thought part is the model's reasoning, not its answer: kept out of `text`, or
-            # it would be shown as the reply and replayed to the model as something it said
+            # a thought part is the LLM's reasoning, not its answer: kept out of `text`, or
+            # it would be shown as the reply and replayed to the LLM as something it said
             if getattr(part, "thought", False) is True:
                 thoughts.append(str(part.text).strip())
             else:
@@ -175,7 +175,7 @@ def parse_response(response: Any) -> ProviderTurn:
 
 
 def _rejects_thoughts(e: Exception) -> bool:
-    """The API's INVALID_ARGUMENT for a model without thinking names the config it refused.
+    """The API's INVALID_ARGUMENT for an LLM without thinking names the config it refused.
 
     Both halves are needed. `APIError` carries `.code`/`.status` and stringifies as
     `400 INVALID_ARGUMENT. {details}`; without that check, a 429 or a 503 whose text merely
@@ -197,19 +197,19 @@ class GeminiProvider:
 
     def __init__(
         self,
-        model: str | None = None,
+        llm_id: str | None = None,
         *,
         client: Any = None,
         api_key: str | None = None,
         include_thoughts: bool | None = None,
         vision: bool | None = None,
     ) -> None:
-        # No model means whatever the catalogue lists first for this vendor.
-        self.model = model or default_model_for(self.name) or ""
+        # No LLM means whatever the catalogue lists first for this vendor.
+        self.llm_id = llm_id or default_llm_for(self.name) or ""
         # `--no-vision` has to reach every vendor, not most of them: the catalogue promises
         # the flag overrides it in both directions, and a reader who declined the frames must
-        # not be billed for them anyway. The catalogue's own per-model flag is not consulted
-        # here, because every model this vendor lists takes an image.
+        # not be billed for them anyway. The catalogue's own per-LLM flag is not consulted
+        # here, because every LLM this vendor lists takes an image.
         if vision is not None:
             self.supports_vision = vision
         self.calls = 0
@@ -252,7 +252,7 @@ class GeminiProvider:
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
     ) -> Any:
         return await self.client.aio.models.generate_content(
-            model=self.model,
+            model=self.llm_id,
             contents=render_contents(history),
             config=self._config(system, tools),
         )
@@ -270,7 +270,7 @@ class GeminiProvider:
             except Exception as e:
                 if not (self.include_thoughts and _rejects_thoughts(e)):
                     raise
-                # a model without thinking (gemini-1.5, gemini-2.0-flash): one retry without
+                # an LLM without thinking (gemini-1.5, gemini-2.0-flash): one retry without
                 # the field, and no later turn asks again. The run loses the thoughts, not
                 # itself.
                 self.include_thoughts = False

@@ -218,7 +218,7 @@ def test_find_the_ball_seed_3_is_unchanged(tmp_path: Path) -> None:
 
 
 def test_the_plain_log_lines_are_unchanged() -> None:
-    """The MCP tool result carries these bytes and a model reads them (docs/guides/mcp.md), so the
+    """The MCP tool result carries these bytes and an LLM reads them (docs/guides/mcp.md), so the
     terminal view may be redrawn but the renderer under it may not move."""
     from tests.golden.log_cases import golden
 

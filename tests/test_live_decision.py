@@ -10,7 +10,7 @@ the whole of what it takes to point these at it, and that is the point of runnin
 
 Everything in `tests/test_decision.py` fakes the answer: a stub returns whatever the test
 scripted, which proves the classification, the router and the loop hook and proves nothing at
-all about the model. These tests are the other half, and there is one number they exist to
+all about the LLM. These tests are the other half, and there is one number they exist to
 produce.
 
 `docs/guides/decision-llms/README.md` estimates what a decision LLM saves from TypeSafe's published
@@ -35,9 +35,9 @@ cheap: each one is a single fan-out against the mock arm, not a run, except the 
 measurement, which is `SAMPLES` of them and prints what they cost. `-s` matters, because what
 these are for is the numbers they print.
 
-A test that has nothing to read fails, and says why. A wrong key, a model id the API does not
+A test that has nothing to read fails, and says why. A wrong key, an LLM id the API does not
 know, a request it turns down or a first turn slower than the stepper's second leaves a turn
-with no answer in it, and a question the model declines leaves that question with none. A test
+with no answer in it, and a question the pilot LLM declines leaves that question with none. A test
 that reads a field off such a turn fails naming the error or the questions declined, where it
 used to die on a bare `KeyError` or, for the safety claim, pass on an answer nobody gave. Each
 such outcome is driven against the stand-in in `tests/test_decisions_api_wire.py`, with no key,
@@ -66,7 +66,7 @@ from quackd.verbs.registry import registry_from_manifest
 from tests.fake_openai_decisions import send_once_through_the_sdk
 
 ALLOW = ["report_state", "stop", "gripper", "place", "move_joints"]
-BUDGET = "step 0/12, llm calls 0/12, 0.0/3 min"
+BUDGET = "step 0/12, LLM calls 0/12, 0.0/3 min"
 
 ROWS = tuple(name for name, spec in PRESETS.items() if spec.key_env)
 """Which decision LLMs these run against: every row that sends a key. Read off the catalogue
@@ -129,7 +129,7 @@ async def _arm_stepper(spec: DecisionSpec, goal: str) -> tuple[Stepper, Observat
         stepper = Stepper.build(
             mode="on",
             # Built here the way the CLI builds it, from the row and nothing else: the address,
-            # the key variable, the model id and the rate all come off the row, so pointing
+            # the key variable, the LLM id and the rate all come off the row, so pointing
             # these tests at another decision LLM is one name in `ROWS`.
             llm=make_decision_llm(spec),
             price=resolve_decision_price(spec),
@@ -191,8 +191,8 @@ def _answered(record: Mapping[str, Any]) -> None:
     """Fail, saying why, where a turn has no answer to read.
 
     A turn whose request failed has nothing in it but the failure, so a test that reads a field
-    off it used to die on a bare `KeyError` for the first one, and a wrong key, a model id the
-    API does not know and a slow first turn all read the same. And a question the model declined
+    off it used to die on a bare `KeyError` for the first one, and a wrong key, an LLM id the
+    API does not know and a slow first turn all read the same. And a question the LLM declined
     has no answer either, so the fields the router reads came back empty and the test said a
     field had been renamed. The safety claim fared worse: read off a turn like that, it passed,
     on an answer nobody gave."""
@@ -202,7 +202,7 @@ def _answered(record: Mapping[str, Any]) -> None:
     )
     declined = record.get("refused") or []
     assert not declined, (
-        f"the model declined {', '.join(declined)}, so that question has no answer to check: "
+        f"the LLM declined {', '.join(declined)}, so that question has no answer to check: "
         "ask again, and if it keeps declining, the state it was shown is worth an issue"
     )
 
@@ -216,7 +216,7 @@ async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_too
     The assertions are about the machinery rather than the answer: that the request quackd
     builds is one a real server accepts, that what comes back has the shape the router reads,
     and that it arrived inside the timeout the loop gives it. Which verb it picks on a folded
-    mock arm is the model's business and not a thing to pin, and so is a question it declines.
+    mock arm is the LLM's business and not a thing to pin, and so is a question it declines.
 
     What matters is printed, and printed before anything is asserted, so a turn that fails a
     check still leaves its figures on the terminal: the same kind of number each row's page
@@ -230,7 +230,7 @@ async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_too
 
     latency = record.get("latency_s")
     print(
-        f"\n{stepper.name} {stepper.model}: {_seconds(latency)}, "
+        f"\n{stepper.name} {stepper.llm_id}: {_seconds(latency)}, "
         f"{record.get('state_chars')} chars of state, gate={advice.gate}, "
         f"choice={record.get('choice')!r}, confidence={record.get('confidence')}"
     )
@@ -298,7 +298,7 @@ async def test_a_real_answer_carries_the_fields_the_router_reads(row: DecisionSp
 async def test_a_real_answer_before_a_verdict_cannot_reach_a_moving_verb(
     row: DecisionSpec,
 ) -> None:
-    """The safety claim, against the real model rather than a stub told to behave.
+    """The safety claim, against the real LLM rather than a stub told to behave.
 
     Before a feasibility verdict the stepper is offered the reads and the brake and nothing
     else, so whatever the decision LLM thinks the right action is, the call that comes back
@@ -313,7 +313,7 @@ async def test_a_real_answer_before_a_verdict_cannot_reach_a_moving_verb(
     _answered(record)
     assert record.get("choice") is not None, (
         f"the turn ended on {advice.gate} with no choice that could be read, so the claim was "
-        "not put to the model"
+        "not put to the LLM"
     )
     assert set(record["labels"]) <= {"report_state", "stop", "escalate"}
     if advice.call is not None:
@@ -330,7 +330,7 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     off. The row's page lists what this answers as unverified.
 
     `LATENCY_UNDER_ONE_SECOND`: the median, the 95th percentile and the slowest, how many would have
-    run out of the stepper's `TIMEOUT_S` and gone to the model, and the first request apart from the
+    run out of the stepper's `TIMEOUT_S` and gone to the pilot, and the first request apart from the
     rest, because it opens the connection the others reuse, which is most of the difference between
     a turn in shadow mode and a turn in a streak. What the SDK does once in a process is done
     before the clock starts, by a request to a stand-in on this machine (`_first_use_paid`), and
@@ -384,7 +384,7 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
     over = sum(seconds > TIMEOUT_S for seconds in took)
     print(
-        f"\n{decisions_row.name} {llm.model}: {SAMPLES} requests of {len(state_text(state))} "
+        f"\n{decisions_row.name} {llm.llm_id}: {SAMPLES} requests of {len(state_text(state))} "
         f"chars of state, p50 {statistics.median(took):.3f} s, p95 {p95:.3f} s, "
         f"slowest {ordered[-1]:.3f} s"
     )
@@ -416,7 +416,7 @@ def _a_camera_picture() -> Any:
     """A picture the size of a 720p camera's, with a floor, a wall and an orange ball in it, which
     `frames.encode` shrinks to the size `--decision-frames` sends. Drawn here rather than taken from
     a camera, because what is measured with it is what a frame of that size costs and how long a
-    request with one takes, not what the model makes of the room."""
+    request with one takes, not what the LLM makes of the room."""
     from PIL import Image, ImageDraw
 
     image = Image.new("RGB", (1280, 720), (90, 110, 140))
@@ -498,7 +498,7 @@ async def test_openais_answers_with_a_frame_beside_the_state_and_how_long_they_t
     p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
     over = sum(seconds > TIMEOUT_S for seconds in took)
     print(
-        f"\n{decisions_row.name} {seeing.model}: {SAMPLES} requests with a {shown.width} by "
+        f"\n{decisions_row.name} {seeing.llm_id}: {SAMPLES} requests with a {shown.width} by "
         f"{shown.height} JPEG of {len(shown.data)} bytes at detail {shown.detail}, p50 "
         f"{statistics.median(took):.3f} s, p95 {p95:.3f} s, slowest {ordered[-1]:.3f} s"
     )
@@ -524,7 +524,7 @@ async def test_how_many_options_one_choice_may_carry(decisions_row: DecisionSpec
     prints what came back. Either is an answer or the API turning the request down with a 400,
     which is how it says a request is not one it takes. Anything else fails the test rather than
     passing for a bound: a timeout or a dropped connection, and a 401, a 403, a 404 or a 429,
-    which are the API saying no to the key, the account, the model or the pace, and would have
+    which are the API saying no to the key, the account, the LLM or the pace, and would have
     said it to two options as readily. It used to take any 4xx for a bound, so a wrong key read
     as the API refusing one option and 256 alike."""
     llm: Any = make_decision_llm(decisions_row)

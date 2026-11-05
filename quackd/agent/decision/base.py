@@ -25,13 +25,13 @@ TIMEOUT_S = 1.0
 """How long one turn may wait for an answer, whoever is answering.
 
 A decision LLM that has not answered in a second is not worth waiting for: the point of it is
-that it is quicker than the model, and past this the turn is cheaper spent on the model
+that it is quicker than the pilot LLM, and past this the turn is cheaper spent on the pilot LLM
 directly. The turn escalates and the record says the call timed out.
 
 Enforced at the seam, in `Stepper.advise`, rather than left to each backend. A vendor's client
 has a timeout of its own with its own meaning -- TypeSafe's `RetryPolicy.timeout` is the budget
 for the whole retry sequence and its client's own clock, ten seconds unless told otherwise, is on
-each operation of a request -- a model in this process has none at all, and a plugin has
+each operation of a request -- an LLM in this process has none at all, and a plugin has
 whatever its author thought of. One bound around `decide` is the only way the number quoted in
 the docs is the number that holds.
 
@@ -61,8 +61,8 @@ def state_text(state: Mapping[str, str]) -> str:
     string every measurement of it is taken on.
 
     Its letters as letters (`ensure_ascii=False`). JSON's default writes every character outside
-    ASCII as an escape, `ž` as `\\u017e`, which a JSON reader turns back into the letter and a
-    model shown the text does not. OpenAI's `input` is plain text the API never decodes, so a goal
+    ASCII as an escape, `ž` as `\\u017e`, which a JSON reader turns back into the letter and an
+    LLM shown the text does not. OpenAI's `input` is plain text the API never decodes, so a goal
     in Slovenian reached `gpt-6-luna` as six-character escapes, and so did the dash in every `last`
     field, while the size the stepper recorded counted every escape as six characters too.
     Measured on this string, `state_chars` is the size of what OpenAI is sent, letter for letter,
@@ -125,7 +125,7 @@ class DecisionLLM(Protocol):
     for this turn -- and a mapping of question name to a plain dict in the System One shape:
     `{"type": "choice" | "noul" | "score", "instructions": ..., "criteria": ...}`. Plain dicts
     rather than an SDK's own classes, so the same four questions go to a hosted API, a server
-    on this machine and a model in this process without being rebuilt for each. A backend whose
+    on this machine and an LLM in this process without being rebuilt for each. A backend whose
     wire format is another shape translates them itself, both ways, and hands back answers in
     this one (`decisions_api.py`), so the stepper never learns which it was talking to.
 
@@ -134,17 +134,17 @@ class DecisionLLM(Protocol):
     optionally `probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the
     label as a string, and a `confidence` or a `noul` a number from 0 to 1, never a word or a
     flag: anything else, in `next_verb`, `done` or `need_human`, is an answer the stepper cannot
-    read, and it hands the turn to the model on `unreadable` (`stepper._probability`). A `usage`
+    read, and it hands the turn to the pilot LLM on `unreadable` (`stepper._probability`). A `usage`
     with `input_tokens` is used where it is there and estimated where it is not, so a backend
     that counts nothing costs the run an estimate rather than an error.
 
     It may also carry `refused` beside `answers`, the same way: a list of the names of the
     questions it declined to answer rather than answered, each of which then answers nothing.
-    Any name there hands the turn to the model on the gate `refused`, and is never read as a
+    Any name there hands the turn to the pilot LLM on the gate `refused`, and is never read as a
     low probability or as a question that merely went missing (`stepper._refused`).
 
     Raising is allowed and is not fatal: `Stepper.advise` catches every `Exception`, records the
-    turn as `gate: error` and hands it to the model. A decision LLM may never end a run. The
+    turn as `gate: error` and hands it to the pilot LLM. A decision LLM may never end a run. The
     record keeps the exception's type, and its HTTP status where it carries one, and never its
     message, which can quote what the server sent back, but for an `UnreadableReply`'s, which
     says what shape a reply had in the backend's own words and is kept. An interrupt is not an
@@ -154,7 +154,7 @@ class DecisionLLM(Protocol):
 
     name: str
     """The preset that built it. What `--decision-llm` took and what the record says."""
-    model: str
+    llm_id: str
     """The id it answers as, for the record. Empty where the backend names none."""
     url: str | None
     """Where it was reached, for the record, or `None` where its SDK owns the address (`jev`

@@ -28,7 +28,7 @@ Not to implement the protocol: it is a specification, with schemas and conforman
 **Does my robot need the internet?**
 No. Two robots find each other by Bluetooth and talk over the LAN or a Bluetooth link, and a
 signature is checked against keys in the passport itself, with nothing to look up. The brain is the
-exception: a cloud model needs the internet, and a model server on the robot or the LAN does not.
+exception: a cloud LLM needs the internet, and an LLM server on the robot or the LAN does not.
 
 **Can a stranger drive my robot?**
 No. A peer can ask for two courtesies, a pause of a few seconds or for your robot to identify itself,

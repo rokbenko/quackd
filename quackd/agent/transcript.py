@@ -99,7 +99,7 @@ class SavedFrame(NamedTuple):
     """One camera's picture for a step as it went into `frames/`: the file, and the PNG bytes
     written to it.
 
-    The bytes are kept because they are also what the model is shown of that picture
+    The bytes are kept because they are also what the LLM is shown of that picture
     (`AgentLoop._observe`). A frame used to be encoded twice a turn, once for the file and once
     more for the request, and the second encoding was the same work on the same pixels with
     the same encoder, so it bought nothing but time on a worker thread a body's heartbeat
@@ -239,7 +239,7 @@ class Transcript:
         a record, because the record is written from the loop's thread alone.
 
         Each picture is encoded once, into bytes, and those bytes are both what the file holds
-        and what is handed back, in `frames` order, for the caller to send the model
+        and what is handed back, in `frames` order, for the caller to send the LLM
         (`SavedFrame`). `png_bytes` is `Image.save` with the same format to a buffer rather than
         to a path, so the files are the bytes they always were."""
         one = len(frames) == 1 and not several
@@ -273,7 +273,7 @@ class Transcript:
 
         They go in their own directory rather than among the frames: `frames/` is numbered by
         step and is what the robot saw, and one of these belongs to no step at all. The bytes
-        are the ones the model is sent, so a reader arguing about a run afterwards is looking
+        are the ones the LLM is sent, so a reader arguing about a run afterwards is looking
         at the picture the pilot looked at rather than at the file it was made from."""
         if not images:
             return []

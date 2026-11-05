@@ -72,7 +72,7 @@ possible.
 - **Scoring views by information gain.** A weight nobody measured, where the rule above needs
   none: a view sees enough unseen floor or it is not taken.
 - **A decision LLM's frame at every look.** A look is a keyframe, and nothing about where to go
-  needs a model: a frame at every stop would add a model's round trip to each, for nothing the
+  needs an LLM: a frame at every stop would add an LLM's round trip to each, for nothing the
   map does not already say.
 - **Waiting out a carry.** A duck carried and put down knows nothing until two stops agree, and
   standing still never gives it a second stop.

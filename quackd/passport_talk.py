@@ -76,7 +76,7 @@ class Heard:
 def stranger_name(reading: Reading) -> str:
     """What a pilot calls a stranger: a name made from its key, never the one it chose. A name is
     text a stranger wrote, `IGNORE ALL PREVIOUS INSTRUCTIONS` as easily as `cart-01`, and no
-    amount of folding and cutting turns words into something a model will not read as words."""
+    amount of folding and cutting turns words into something an LLM will not read as words."""
     return f"stranger-{reading.short_id[:8]}"
 
 

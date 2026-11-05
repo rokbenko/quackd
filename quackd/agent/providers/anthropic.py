@@ -1,22 +1,22 @@
 """Claude as the duck's brain, via the official `anthropic` SDK (optional extra).
 
-Written against `anthropic` 1.x: adaptive thinking is the model's default on Claude Opus 5 and
+Written against `anthropic` 1.x: adaptive thinking is the LLM's default on Claude Opus 5 and
 later, and the request asks for `display: "summarized"` because the default display leaves
 every thinking block's text empty, which would make the log's "what it thought" a blank line.
-`display` changes what is shown, never what is thought or billed. A model that rejects the
+`display` changes what is shown, never what is thought or billed. An LLM that rejects the
 `thinking` parameter (one older than Claude 4.6) gets one retry without it, and the run goes
-on without thinking text. `output_config.effort` is sent to every model that takes it, which is
-every row but Haiku 4.5 and Sonnet 4.5 (`ModelSpec.effort`).
+on without thinking text. `output_config.effort` is sent to every LLM that takes it, which is
+every row but Haiku 4.5 and Sonnet 4.5 (`LLMSpec.effort`).
 
 `tool_choice={"type": "any", "disable_parallel_tool_use": True}` guarantees exactly one tool
-call per turn on every model that accepts a forced call. Claude
+call per turn on every LLM that accepts a forced call. Claude
 Opus 5.5 and Claude Fable 5.1 do not, and answer one with a 400, so the catalogue marks them
-(`ModelSpec.forced_tools`) and they are asked with `auto` instead, still one call per turn; a
-model the catalogue does not mark gets one retry with `auto` when it says the same thing, and
+(`LLMSpec.forced_tools`) and they are asked with `auto` instead, still one call per turn; an
+LLM the catalogue does not mark gets one retry with `auto` when it says the same thing, and
 keeps it. Images ride as base64 PNG blocks, and the assistant's raw content blocks (including
 thinking) are replayed verbatim on the next turn. Server-side refusal fallbacks are on by
 default and drop out automatically if the installed SDK predates them; a turn one of them took
-records the model that answered it (`ProviderTurn.served_by`).
+records the LLM that answered it (`ProviderTurn.served_by`).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from quackd.agent.providers.base import (
     picture_parts,
     tool_arguments,
 )
-from quackd.agent.providers.catalogue import default_model_for, find_model
+from quackd.agent.providers.catalogue import default_llm_for, find_llm
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -46,13 +46,13 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 #: rather than refuse the request (`thinking.block_binding.prefix_mismatch_behavior`).
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 
-#: How many exchanges the loop lets pass between two trims of old camera frames, for a model
+#: How many exchanges the loop lets pass between two trims of old camera frames, for an LLM
 #: that binds its thinking blocks. A trim that takes a frame away edits an earlier message and
 #: so invalidates the blocks produced while that frame was still sent. From the trim call on the
 #: loop leaves those out, all but the latest turn's, which may not be left out and which
 #: `drop_block` has the API discard instead, so the blocks produced since the trim stay valid
 #: until the next one. Eight keeps a request to at most nine exchanges' frames with the default
-#: window of two, against two for every other model.
+#: window of two, against two for every other LLM.
 BINDING_TRIM_PERIOD = 8
 
 CACHE_ENV = "QUACKD_ANTHROPIC_CACHE"
@@ -158,14 +158,14 @@ def _tool_choice(*, forced: bool) -> dict[str, Any]:
 
 
 def _served_by(response: Any) -> str | None:
-    """The model that answered, when a server-side fallback re-ran the turn on another one.
+    """The LLM that answered, when a server-side fallback re-ran the turn on another one.
 
-    `usage.iterations` carries one `fallback_message` entry per model a declined turn was
-    handed to, and it is there on a sticky turn too, where the fallback model answered from
+    `usage.iterations` carries one `fallback_message` entry per LLM a declined turn was
+    handed to, and it is there on a sticky turn too, where the fallback LLM answered from
     the start and the content carries no `fallback` block to say so. `response.model` is then
-    the model that served it. A turn with no such entry was answered by the model asked for,
+    the LLM that served it. A turn with no such entry was answered by the LLM asked for,
     and `response.model` is not compared with the request at all, because an alias such as
-    `claude-haiku-4-5` comes back as its dated snapshot and would read as a different model."""
+    `claude-haiku-4-5` comes back as its dated snapshot and would read as a different LLM."""
     usage = getattr(response, "usage", None)
     iterations = getattr(usage, "iterations", None) or []
     kinds = [
@@ -173,8 +173,8 @@ def _served_by(response: Any) -> str | None:
     ]
     if "fallback_message" not in kinds:
         return None
-    model = getattr(response, "model", None)
-    return model if isinstance(model, str) and model else None
+    llm_id = getattr(response, "model", None)
+    return llm_id if isinstance(llm_id, str) and llm_id else None
 
 
 def parse_response(response: Any) -> ProviderTurn:
@@ -202,7 +202,7 @@ def parse_response(response: Any) -> ProviderTurn:
     stop_reason = getattr(response, "stop_reason", None)
     if stop_reason == "refusal":
         details = getattr(response, "stop_details", None)
-        explanation = getattr(details, "explanation", None) or "the model refused"
+        explanation = getattr(details, "explanation", None) or "the LLM refused"
         texts.append(f"[refusal] {explanation}")
         tool_calls = []
     usage = getattr(response, "usage", None)
@@ -260,14 +260,14 @@ ADAPTIVE_REFUSED = "adaptive thinking is not supported on this model"
 
 
 def _rejects_thinking(e: Exception) -> bool:
-    """A 400 refusing the top-level `thinking` parameter: a model too old for adaptive thinking.
+    """A 400 refusing the top-level `thinking` parameter: an LLM too old for adaptive thinking.
 
     Two shapes, both about the parameter itself. One opens with its name (`thinking: Extra
     inputs are not permitted`), and that match is anchored because a 400 about a *replayed*
     thinking block names a path (`messages.3.content.0.thinking.signature: Invalid
-    signature`) rather than the parameter. Treating that as "this model has no thinking" would
+    signature`) rather than the parameter. Treating that as "this LLM has no thinking" would
     retry the identical request — the messages are what it objected to — fail again, and leave
-    thinking off for the whole run. The other is the sentence the 4.5 models actually send,
+    thinking off for the whole run. The other is the sentence the 4.5 LLMs actually send,
     matched as a whole sentence rather than on a word, for the same reason.
     """
     if type(e).__name__ != "BadRequestError":
@@ -277,7 +277,7 @@ def _rejects_thinking(e: Exception) -> bool:
 
 
 def _refuses_forced_tools(e: Exception) -> bool:
-    """A 400 refusing `tool_choice` `any`: a model that will not be made to call a tool.
+    """A 400 refusing `tool_choice` `any`: an LLM that will not be made to call a tool.
 
     Anchored at the parameter the way `_rejects_thinking` is, and it has to say the type is
     not supported as well. A 400 about a tool the request does not declare also opens with
@@ -295,7 +295,7 @@ class AnthropicProvider:
 
     def __init__(
         self,
-        model: str | None = None,
+        llm_id: str | None = None,
         *,
         client: Any = None,
         max_tokens: int | None = None,
@@ -304,25 +304,25 @@ class AnthropicProvider:
         thinking_display: str | None = None,
         vision: bool | None = None,
     ) -> None:
-        # No model means whatever the catalogue lists first for this vendor.
-        self.model = model or default_model_for(self.name) or ""
-        spec = find_model(self.name, self.model)
-        #: Whether this model accepts a forced tool call. The catalogue says so up front for
-        #: the models it knows refuse one, and `step` learns it from the 400 for the rest.
+        # No LLM means whatever the catalogue lists first for this vendor.
+        self.llm_id = llm_id or default_llm_for(self.name) or ""
+        spec = find_llm(self.name, self.llm_id)
+        #: Whether this LLM accepts a forced tool call. The catalogue says so up front for
+        #: the LLMs it knows refuse one, and `step` learns it from the 400 for the rest.
         self.forced_tools = spec.forced_tools if spec is not None else True
-        #: Whether this model takes `output_config.effort` at all. Only the catalogue says so:
-        #: Anthropic's effort page lists the models that take it and prints no error for the rest.
+        #: Whether this LLM takes `output_config.effort` at all. Only the catalogue says so:
+        #: Anthropic's effort page lists the LLMs that take it and prints no error for the rest.
         self.sends_effort = spec.effort if spec is not None else True
-        #: A model that binds each replayed thinking block to everything before it
-        #: (`ModelSpec.binds_thinking`). It is asked to have a block whose history changed
+        #: An LLM that binds each replayed thinking block to everything before it
+        #: (`LLMSpec.binds_thinking`). It is asked to have a block whose history changed
         #: dropped rather than refused, and the loop reads `frame_trim_period` to trim its old
         #: camera frames in steps instead of on every call.
         self.binds_thinking = spec.binds_thinking if spec is not None else False
         self.frame_trim_period = BINDING_TRIM_PERIOD if self.binds_thinking else 1
         # `--no-vision` has to reach every vendor, not most of them: the catalogue promises
         # the flag overrides it in both directions, and a reader who declined the frames must
-        # not be billed for them anyway. The catalogue's own per-model flag is not consulted
-        # here, because every model this vendor lists takes an image.
+        # not be billed for them anyway. The catalogue's own per-LLM flag is not consulted
+        # here, because every LLM this vendor lists takes an image.
         if vision is not None:
             self.supports_vision = vision
         self.max_tokens = max_tokens or int(os.environ.get("QUACKD_MAX_TOKENS", "16000"))
@@ -336,7 +336,7 @@ class AnthropicProvider:
         #: Whether requests mark the prompt, and the points the loop chose in the history, for
         #: Anthropic's cache (`_system`, `render_messages`). On unless `QUACKD_ANTHROPIC_CACHE`
         #: says 0, false or no, beside the fallbacks switch above: a marked prompt is read at the
-        #: model's cache rate from the second call on, a tenth of its input rate on most rows and
+        #: LLM's cache rate from the second call on, a tenth of its input rate on most rows and
         #: a twentieth on Opus 5.5, and prefilled sooner, and the one write it costs is a quarter
         #: more than an unmarked call.
         self.caches = os.environ.get(CACHE_ENV, "1").strip().lower() not in ("0", "false", "no")
@@ -366,7 +366,7 @@ class AnthropicProvider:
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "model": self.model,
+            "model": self.llm_id,
             "max_tokens": self.max_tokens,
             "system": self._system(system),
             "messages": render_messages(history, marks=self.caches),
@@ -395,9 +395,9 @@ class AnthropicProvider:
         system block caches both, which is the bulk of every request quackd makes: the rules,
         the verbs, the datasheet and the task. Five minutes is the cache's own lifetime, longer
         than any pause between two turns of a run, and the write rate in every catalogue row is
-        that lifetime's (`catalogue.py`). A prompt below the model's smallest cacheable size is
+        that lifetime's (`catalogue.py`). A prompt below the LLM's smallest cacheable size is
         sent marked and simply not cached, which Anthropic answers with no error and a write of
-        0. A marker sits outside what a model that binds its thinking binds a block to, and one
+        0. A marker sits outside what an LLM that binds its thinking binds a block to, and one
         text block is the same system prompt as the string it holds, so the trim's arithmetic
         (`loop._history_for_provider`) is untouched. With `QUACKD_ANTHROPIC_CACHE=0` it is the
         string as it always was."""
@@ -407,9 +407,9 @@ class AnthropicProvider:
 
     @property
     def asked_effort(self) -> dict[str, str] | None:
-        """What every request of this run asks the model to reason at, and where that came from,
-        as `run_start.effort` records it, or None for a model that is sent no effort at all
-        (`ModelSpec.effort`, or `QUACKD_EFFORT` set blank)."""
+        """What every request of this run asks the LLM to reason at, and where that came from,
+        as `run_start.effort` records it, or None for an LLM that is sent no effort at all
+        (`LLMSpec.effort`, or `QUACKD_EFFORT` set blank)."""
         if not (self.effort and self.sends_effort):
             return None
         return {"value": self.effort, "from": self.effort_from}
@@ -424,7 +424,7 @@ class AnthropicProvider:
     def without_thinking(self, decision: Decision) -> Decision:
         """The same turn with its thinking and redacted thinking blocks left out.
 
-        The loop calls this for a model that binds its thinking (`frame_trim_period` above 1),
+        The loop calls this for an LLM that binds its thinking (`frame_trim_period` above 1),
         on the turns whose blocks a trim of old frames invalidated. Anthropic allows leaving out
         a leading run of thinking blocks, oldest first, and never the latest assistant
         message's, which the loop does not pass here. The tool call and any text stay."""
@@ -455,16 +455,16 @@ class AnthropicProvider:
                         # `block_binding` without its header is a 400 of its own, and without
                         # it the first trim of an old frame is one: better said now than there
                         raise ProviderError(
-                            f"anthropic: {self.model} binds its thinking to everything before "
+                            f"anthropic: {self.llm_id} binds its thinking to everything before "
                             "it, and this anthropic SDK sends no betas, so quackd cannot ask "
                             "for a block an old frame's trim invalidated to be dropped. "
-                            "Upgrade the anthropic package, or pick a model that does not."
+                            "Upgrade the anthropic package, or pick an LLM that does not."
                         ) from e
                     # the plain endpoint from now on
                     self.fallbacks = False
                 elif "fallbacks" in str(e) and self.fallbacks:
                     # An SDK that predates `fallbacks` alone still sends betas, and a binding
-                    # model keeps its own: the beta endpoint without fallbacks from now on.
+                    # LLM keeps its own: the beta endpoint without fallbacks from now on.
                     self.fallbacks = False
                     return await self._create(params)
                 else:
@@ -472,11 +472,11 @@ class AnthropicProvider:
         return await self.client.messages.create(**params)
 
     async def _create_repairing(self, params: dict[str, Any]) -> Any:
-        """The request, repaired at most once for each of the two things a model refuses.
+        """The request, repaired at most once for each of the two things an LLM refuses.
 
-        A model that predates adaptive thinking refuses the `thinking` parameter: it is asked
+        An LLM that predates adaptive thinking refuses the `thinking` parameter: it is asked
         again without it, and every later turn goes without it too. The run loses the thinking
-        text, not itself. A model that will not be forced to call a tool refuses `tool_choice`
+        text, not itself. An LLM that will not be forced to call a tool refuses `tool_choice`
         `any`: it is asked again with `auto`, and every later turn asks that way too. Each
         repair switches off the flag that guards it, so neither can fire twice and this cannot
         loop: a refusal that was already repaired once, or any other error, is raised as it
@@ -486,7 +486,7 @@ class AnthropicProvider:
                 return await self._create(params)
             except Exception as e:
                 if self.thinking_display and not self.binds_thinking and _rejects_thinking(e):
-                    # Not for a model that binds its thinking: it thinks whether it is asked to
+                    # Not for an LLM that binds its thinking: it thinks whether it is asked to
                     # or not, so going without the field would only take `block_binding` with
                     # it and make the first trim of an old frame a 400. It gets the refusal.
                     self.thinking_display = None
@@ -522,9 +522,9 @@ def _classify(e: Exception) -> ProviderError:
             "anthropic: invalid or missing API key (ANTHROPIC_API_KEY, or `ant auth login`)"
         )
     if name == "PermissionDeniedError":
-        return ProviderError("anthropic: this key lacks permission for the requested model")
+        return ProviderError("anthropic: this key lacks permission for the requested LLM")
     if name == "NotFoundError":
-        return ProviderError("anthropic: model not found — check --llm / QUACKD_LLM")
+        return ProviderError("anthropic: LLM not found — check --llm / QUACKD_LLM")
     if name == "RateLimitError":
         retry = getattr(getattr(e, "response", None), "headers", {}).get("retry-after", "?")
         return ProviderError(f"anthropic: rate limited (retry-after {retry}s)")

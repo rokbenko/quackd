@@ -39,9 +39,9 @@ class LayaLLM:
     one per turn.
     """
 
-    def __init__(self, spec: DecisionSpec, *, model: str | None = None):
+    def __init__(self, spec: DecisionSpec, *, llm_id: str | None = None):
         self.name = spec.name
-        self.model = model or spec.model or "laya"
+        self.llm_id = llm_id or spec.llm_id or "laya"
         self.url: str | None = None
         self._extra = spec.extra or "laya"
         self._router: Any = None
@@ -53,11 +53,11 @@ class LayaLLM:
             laya = importlib.import_module("laya")
         except ImportError as e:
             raise DecisionNotInstalled(self.name, self._extra) from e
-        # `preload=True` because the alternative is rebuilding the model per call, which Laya's
+        # `preload=True` because the alternative is rebuilding the LLM per call, which Laya's
         # own README measures at 7.4 seconds on a CPU against a timeout of one second.
         #
         # `default` so that what is preloaded is the checkpoint this run will actually ask for.
-        # Laya holds one model at a time unless told otherwise, and its default is the plain
+        # Laya holds one LLM at a time unless told otherwise, and its default is the plain
         # English one, so preloading blind and then asking for `typed-decisions` pays the load
         # twice and throws the first one away. Tried and then dropped rather than assumed,
         # because the keyword is younger than the class and quackd would rather load the wrong
@@ -67,7 +67,7 @@ class LayaLLM:
         # one raised by the call not matching it -- and swallowing the first would silently
         # load the wrong checkpoint, which is the outcome this is here to avoid.
         if "default" in inspect.signature(laya.Router).parameters:
-            return laya.Router(preload=True, default=self.model)
+            return laya.Router(preload=True, default=self.llm_id)
         return laya.Router(preload=True, max_loaded=2)
 
     async def warm(self) -> None:
@@ -104,4 +104,4 @@ class LayaLLM:
         one router, each from a thread of its own, and nothing says its weights may be run from
         two threads at once."""
         with self._passes:
-            return self._router.predict(state, questions, model=self.model)
+            return self._router.predict(state, questions, model=self.llm_id)

@@ -95,7 +95,7 @@ async def test_tools_and_basic_calls() -> None:
         assert aliases["move"] == ["walk"] and aliases["go_to"] == ["walk_to"]
         assert verbs["contract"] is None
         # which verbs a pilot may run before it has judged the task, by the same rule the
-        # gate applies: the tool description points a model here rather than reciting a list
+        # gate applies: the tool description points an LLM here rather than reciting a list
         # that a third-party body's own sensing verb could never be in (#26)
         marked = {v["canonical"]: v["before_verdict"] for v in verbs["verbs"]}
         assert marked["observe"] and marked["report_state"] and marked["quack"] and marked["stop"]
@@ -156,7 +156,7 @@ async def test_contract_is_enforced_after_loading_a_duck() -> None:
 
 
 async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
-    # regression: `robot_load_duckfile` is a tool the model holds, and adopting a contract
+    # regression: `robot_load_duckfile` is a tool the LLM holds, and adopting a contract
     # built a fresh Budget, so a pilot out of steps could load a wider duck and carry on
     async with connected() as (client, session, _transport):
         assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
@@ -236,7 +236,7 @@ def _flat(lines: list[str]) -> str:
 
 
 async def test_a_call_comes_back_with_what_happened_behind_it() -> None:
-    """Over MCP the model is the pilot, so its own reasoning is not quackd's to show. What
+    """Over MCP the LLM is the pilot, so its own reasoning is not quackd's to show. What
     quackd can see, it says: the verb, the intents, what came back, and how long it took."""
     async with connected() as (client, _session, _transport):
         await _cleared(client)
@@ -272,7 +272,7 @@ async def test_the_observe_tool_appends_its_log_as_text() -> None:
 
 
 async def test_the_tools_that_never_reach_the_robot_carry_no_log() -> None:
-    """A log on `robot_list` would be two lines of envelope, read by the model, saying
+    """A log on `robot_list` would be two lines of envelope, read by the LLM, saying
     nothing about a robot."""
     async with connected() as (client, _session, _transport):
         for tool, args in (
@@ -377,7 +377,7 @@ async def test_the_heartbeat_narrates_to_stderr_and_lands_in_no_calls_log(caplog
 
 
 async def test_cap_lines_at_the_real_defaults_through_a_long_call(caplog: Any) -> None:
-    """An uncapped log_text would put a megabyte of text into the model's context window on
+    """An uncapped log_text would put a megabyte of text into the LLM's context window on
     one call. stderr keeps every line; the result keeps the first few, the last many, and a
     line saying how many are missing so the reader knows to go and look."""
     from quackd.log import MCP_LOG_MAX_LINES
@@ -408,7 +408,7 @@ async def test_cap_lines_at_the_real_defaults_through_a_long_call(caplog: Any) -
 async def test_the_result_key_is_log_and_the_old_spelling_is_nowhere_beside_it() -> None:
     """This key was `trace` until 0.11, and it is the one that changed outright rather than
     carrying both spellings for a release. The flags and the variables got that release of
-    grace because a person types those and can be told; the wire is read by a model that was
+    grace because a person types those and can be told; the wire is read by an LLM that was
     handed the payload, so a second key would be two names for one list with nothing to say
     which to read. The flags have one spelling again since 0.12."""
     async with connected() as (client, _session, _transport):
@@ -418,7 +418,7 @@ async def test_the_result_key_is_log_and_the_old_spelling_is_nowhere_beside_it()
                 "robot_run_verb", {"verb": "move", "params": {"vx": 0.2, "duration_s": 1.0}}
             )
         )
-        assert result["log"], "the key the model reads"
+        assert result["log"], "the key the LLM reads"
         assert "trace" not in json.dumps(result), f"the old spelling is still on the wire: {result}"
 
 
@@ -432,7 +432,7 @@ async def test_the_observe_block_is_headed_log() -> None:
         assert "trace" not in block, block
 
 
-async def test_no_tool_description_sends_a_model_looking_for_a_trace() -> None:
+async def test_no_tool_description_sends_an_llm_looking_for_a_trace() -> None:
     """There is no system prompt on this surface: these strings are everything a pilot is told
     about the server. Two of them name the field that comes back, and a description still
     saying `trace` would name a key the result no longer has."""
@@ -551,7 +551,7 @@ async def test_a_new_task_file_is_a_new_question_about_the_body() -> None:
 
 async def test_an_uncertain_verdict_waits_for_the_person_in_the_chat() -> None:
     """`--yes` clears a confirm gate because there is no terminal to ask on. Here there is a
-    person, reachable through the model, which is a better answer than a flag."""
+    person, reachable through the LLM, which is a better answer than a flag."""
     async with connected(yes=True) as (client, session, transport):
         answer = _data(
             await client.call_tool(
@@ -629,7 +629,7 @@ async def test_the_mcp_verdict_tool_spells_out_the_words_needs_takes() -> None:
         assert "work_height_m is a height the hands must reach, not a minimum" in said
 
 
-async def test_a_model_cannot_answer_for_the_human() -> None:
+async def test_an_llm_cannot_answer_for_the_human() -> None:
     """The tool has no `human` field to fill in, so the pilot cannot clear its own doubt."""
     async with connected() as (client, session, _transport):
         tool = next(t for t in (await client.list_tools()).tools if t.name == "robot_assess_task")

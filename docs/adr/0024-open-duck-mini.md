@@ -77,7 +77,7 @@ the walk policy is Apache-2.0.
   positions rather than named gestures. Both are UNVERIFIED by construction and say so.
 - **A fall is terminal, and every layer says so.** There is no recovery policy, so the
   precondition's message names no verb and tells a human to stand the duck up, the starter
-  tasks tell the model to stop rather than thrash, and `stand_up` is not declared.
+  tasks tell the LLM to stop rather than thrash, and `stand_up` is not declared.
 - **Nothing upstream is vendored.** Not the runtime, whose licence does not permit it, and
   not the Apache-2.0 walk policy, CAD or sounds, which the repo's standing rule keeps
   upstream anyway. The owner installs the runtime and fetches the policy themselves.

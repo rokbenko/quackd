@@ -25,7 +25,7 @@ from quackd.command import SECRET_FLAGS, URL_FLAGS
 COMMANDS = ("run", "drive")
 """The two commands the page drives: a goal is `run`, a chat is `drive`."""
 
-PANELS = ("Task", "Robot", "Model", "Output", "Host", "Memory")
+PANELS = ("Task", "Robot", "LLM", "Output", "Host", "Memory")
 """The order the page shows the panels in, `--help`'s own. Any other panel follows them."""
 
 LEFT_OUT = frozenset(
@@ -154,19 +154,19 @@ def by_panel(command: str) -> dict[str, list[Option]]:
     return {panel: grouped[panel] for panel in order}
 
 
-MODEL_OPTIONS = ("llm", "base_url", "api_key", "extra_body", "vision", "effort", "price", "image")
-"""What a model takes, which a VLA pilot asks none of."""
+LLM_OPTIONS = ("llm", "base_url", "api_key", "extra_body", "vision", "effort", "price", "image")
+"""What an LLM takes, which a VLA pilot asks none of."""
 
 DECISION_OPTIONS = ("decision_llm", "decision_url", "decision_mode", "decision_frames")
 
 
 def pilot_rule(values: Mapping[str, Any]) -> dict[str, Any]:
     """`values` with what `--controller vla` refuses taken out, whoever set it: a scripted pilot
-    asks no model and no decision LLM, and `quackd run` refuses a model's flag, a picture and
+    asks no LLM of either kind, and `quackd run` refuses a pilot LLM's flag, a picture and
     `--play` beside it rather than drop them without a word."""
     out = dict(values)
     if out.get("controller") == "vla":
-        for name in (*MODEL_OPTIONS, *DECISION_OPTIONS):
+        for name in (*LLM_OPTIONS, *DECISION_OPTIONS):
             out.pop(name, None)
         if out.get("play") is True:
             out.pop("play")

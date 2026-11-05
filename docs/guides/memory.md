@@ -9,7 +9,7 @@ and appends to at the end. Two kinds of entry live in it:
 
 | Kind | Who writes it | Example |
 |---|---|---|
-| **note** | the model, with the `remember` tool (or you, with `quackd memory add`) | `the ball is usually near the left wall` |
+| **note** | the LLM, with the `remember` tool (or you, with `quackd memory add`) | `the ball is usually near the left wall` |
 | **episode** | quackd itself, at the end of every non-dry run | `find-and-kick: success — ball displaced 0.49 m (4 steps) · search_scan: ball found at bearing 18° left; kick: ball moved 0.49 m` |
 
 A run that ended `infeasible`, where the pilot judged the task beyond this body and
@@ -17,7 +17,7 @@ nothing moved, is remembered the same way and with the same reason, hint include
 run on the same robot is told what was already found not to fit it.
 
 At the next run the newest notes (up to 20) and episodes (up to 5) are rendered into the
-system prompt under *What you remember from earlier runs on this robot*, and the model is
+system prompt under *What you remember from earlier runs on this robot*, and the LLM is
 told how to add to them. Nothing else changes: the allowlist, budgets and confirmation
 gates are exactly what they were.
 
@@ -64,7 +64,7 @@ and the oldest **episodes** go first, because notes were chosen on purpose.
 
 ## The `remember` tool
 
-When memory is on, the model gets one more tool beside `assess_task`, `declare_success` and
+When memory is on, the LLM gets one more tool beside `assess_task`, `declare_success` and
 `declare_failure` (and `tell`, in a flock of pilots):
 
 ```jsonc
@@ -82,7 +82,7 @@ shows every fact it saved.
 
 ## The starter ducks ask for it
 
-Telling the model about `remember` in the prompt is not enough for a small local model: in
+Telling the LLM about `remember` in the prompt is not enough for a small local LLM: in
 the runs this feature's contributor did, Qwen 2.5 Coder 14B read the memory block and never
 wrote to it (both cases are in [`assets/transcripts/`](../assets/transcripts/)). What works is
 putting the call **inside the numbered strategy** of the `.duck` body, right before the
@@ -97,7 +97,7 @@ members are whole agent loops with a memory file each, so a note there would wor
 ask for one because it is a radio check. `hello-world` is left alone: it is a smoke test that says "do not do anything
 else". Write your own ducks the same way.
 
-A second model on a second server says the same thing from the other end. Qwen3-32B-AWQ on
+A second LLM on a second server says the same thing from the other end. Qwen3-32B-AWQ on
 vLLM, with `remember` sitting in strategy step 5, called it and saved where the ball was. The
 very next run did not call it, which is also right: that fact was already in its prompt, and
 the *Memory* section tells it to skip one the prompt already remembers. Those two runs are the
@@ -123,7 +123,7 @@ and the file it came from) so you always know what the pilot was told.
 `quackd serve-mcp` gives every `adapter:backend` in the flock its own memory behind two
 tools:
 `robot_recall(robot?)` returns the notes and recent episodes (the server's instructions
-tell the model to call it early), `robot_remember(text, tags?, robot?)` saves one note.
+tell the LLM to call it early), `robot_remember(text, tags?, robot?)` saves one note.
 `--no-memory` and `--memory-dir` apply to the server too. A note saved from Claude Desktop
 is read by the next `quackd run` on the same `adapter:backend`, and the other way round.
 
@@ -146,11 +146,11 @@ is read by the next `quackd run` on the same `adapter:backend`, and the other wa
   registered, and what one needs another to know *during* a run it says with `tell` rather
   than through memory, which the other pilot would not read until its next run anyway.
 - **Not written by the scripted pilot.** `--llm fake` has no `remember` in its script,
-  so it accumulates episodes and never a note. Notes have been exercised by two local models
-  on two machines, and by one cloud model on a real robot: `gpt-6-astra` called
+  so it accumulates episodes and never a note. Notes have been exercised by two local LLMs
+  on two machines, and by one cloud LLM on a real robot: `gpt-6-astra` called
   `remember` in seven of its twelve runs on the SO-101 arm on 2026-09-15, and five
   distinct notes came out of those seven, because the same sentence twice refreshes the
   first rather than saving a second. The last run of that afternoon read all five back out
   of its own prompt.
-- **Not trusted.** A note is text the model wrote; the executor never reads it. Safety
+- **Not trusted.** A note is text the LLM wrote; the executor never reads it. Safety
   lives in the contract, as before ([concepts/safety.md](../concepts/safety.md)).

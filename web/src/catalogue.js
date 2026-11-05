@@ -1,8 +1,8 @@
 /**
  * GENERATED FILE. Do not edit.
  *
- * The model list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
- * a model is ever added. Regenerate after editing that file:
+ * The LLM list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
+ * an LLM is ever added. Regenerate after editing that file:
  *
  *     python web/build_catalogue.py
  *

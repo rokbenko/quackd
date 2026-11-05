@@ -40,7 +40,7 @@ claim with hysteresis.
 - The bus is in-process only, synchronous fan-out, never awaited (a participant blocked on
   a queue would freeze the lockstep clock); the `Bus` protocol is the seam for MQTT later.
 - The **outcome is ground truth** from sim telemetry (total `ball_displacement_m`), never
-  a model claim; a rally of short kicks counts because the contract criterion is total
+  an LLM claim; a rally of short kicks counts because the contract criterion is total
   displacement.
 - Safety separation uses world ground truth (documented); the kicker's approach uses
   perception only. The sighting quack is theatrical, as the report recommends.

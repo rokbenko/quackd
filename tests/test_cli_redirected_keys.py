@@ -147,7 +147,7 @@ def test_a_key_read_from_its_second_name_counts(
 @pytest.mark.parametrize(
     "address", ["OPENAI_BASE_URL", "QUACKD_HOST", "QUACKD_BASE_URL"], ids=str.lower
 )
-def test_a_local_key_counts_wherever_a_local_model_is_reached_from(
+def test_a_local_key_counts_wherever_a_local_llm_is_reached_from(
     address: str, monkeypatch: pytest.MonkeyPatch, said: list[str]
 ) -> None:
     """A local preset builds its client with `LOCAL_API_KEY` for whichever of these names its host,

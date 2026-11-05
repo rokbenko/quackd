@@ -1,7 +1,7 @@
 # The browser demo
 
-A static page that puts a Microduck in front of you with no install: type a sentence, and a
-model you bring the key for turns it into the robot's own skills while quackd decides what
+A static page that puts a Microduck in front of you with no install: type a sentence, and an
+LLM you bring the key for turns it into the robot's own skills while quackd decides what
 it is allowed to do. The keyboard is live the whole time, next to the box you type in, so the
 two ways of driving a robot sit a centimetre apart. It is the same idea as
 `quackd run --goal "..." --robot microduck:mujoco`, with the same physics and the same
@@ -106,7 +106,7 @@ to proxy it through. Every call is billed to you.
   the page sends. That header is exactly what its name says: your key is in a web page.
   Claude Opus 5.5, the default, and Claude Fable 5.1 answer a forced tool call with a 400,
   so the page asks them with `auto`, as the catalogue marks them, and moves any other Claude
-  model there too if it answers the same way. A turn that comes back in prose rather than a
+  LLM there too if it answers the same way. A turn that comes back in prose rather than a
   call then ends the run, as it does for every vendor the page can only ask.
 - **Gemini** and **OpenAI** work with their normal browser CORS.
 - **Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi and Meta** are all OpenAI-shaped, so each is
@@ -120,39 +120,39 @@ to proxy it through. Every call is billed to you.
   `parallel_tool_calls`, which the CLI sends as false to OpenAI, Grok, Mistral and Meta, so a
   turn may come back with several calls, and the page takes the first.
 - **OpenRouter** is OpenAI-shaped too, and a router: what the page sends reaches OpenRouter and
-  the provider it picks for the model. The page asks it the way
+  the provider it picks for the LLM. The page asks it the way
   `quackd/agent/providers/openrouter.py` does. Every row is told to call a tool except the two
   Claude rows, which refuse a forced call and are asked with `auto`. Every request carries
   `provider: {"require_parameters": true}`, so OpenRouter routes only to an endpoint that
   honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name quackd
-  and say nothing about you. It is never moved to the Responses API, and a model's
+  and say nothing about you. It is never moved to the Responses API, and an LLM's
   `reasoning_details` go back on the turn that made the call. The dropdown holds the six rows
   the catalogue carries. The CLI can also name an id they leave out, a `:free` one included,
   checked against OpenRouter's list when a run starts unless quackd refuses its spelling first,
-  and the page cannot. No OpenRouter model has answered a real quackd request, from this page or
+  and the page cannot. No OpenRouter LLM has answered a real quackd request, from this page or
   the CLI.
 - **GLM is not offered here, and is on the CLI.** See below.
-- **Some OpenAI reasoning models** refuse function tools on `/v1/chat/completions` and
+- **Some OpenAI reasoning LLMs** refuse function tools on `/v1/chat/completions` and
   name `/v1/responses` in the 400. Every verb here is a function tool, so the page reads
   that answer, moves the run to the Responses API and stays there for the rest of it.
-  `gpt-6-astra` is one such model and needs nothing set. This is the same switch
+  `gpt-6-astra` is one such LLM and needs nothing set. This is the same switch
   `quackd/agent/providers/openai.py` makes for the CLI, kept in step by
   `test_the_browser_and_python_agree_on_which_400_means_responses`. Where the catalogue
-  already records `api: "responses"` for a model, the page opens the run there and the failed
-  call is never made. The 400 reader stays for every model it does not record, which is any id
+  already records `api: "responses"` for an LLM, the page opens the run there and the failed
+  call is never made. The 400 reader stays for every LLM it does not record, which is any id
   a vendor shipped after this build.
-- **Local models** need no key. Ollama must be told to accept the page:
+- **Local LLMs** need no key. Ollama must be told to accept the page:
   `OLLAMA_ORIGINS=* ollama serve`. Any OpenAI-compatible server (llama.cpp, vLLM, LM Studio)
   works the same way — change the base URL. Browsers treat `http://localhost` as trustworthy,
   so an https page may call it.
 
-## The model list, and where it comes from
+## The LLM list, and where it comes from
 
-The model field is a dropdown, not a text box. It is grouped by the catalogue's own statuses —
+The LLM field is a dropdown, not a text box. It is grouped by the catalogue's own statuses —
 current, legacy, preview, specialised, open — and it opens on the vendor's default, so the
-page offers exactly what `quackd list-models` does and a typo cannot reach a vendor at all.
+page offers exactly what `quackd list-llms` does and a typo cannot reach a vendor at all.
 
-`quackd/agent/providers/catalogue.py` is the only place a model is ever added. `web/src/catalogue.js`
+`quackd/agent/providers/catalogue.py` is the only place an LLM is ever added. `web/src/catalogue.js`
 is generated from it:
 
 ```bash
@@ -199,7 +199,7 @@ reads that as a refusal and never sends the POST. The `POST` itself does carry
 reaches it. Nothing the page can do fixes that from this side. It needs a header from Z.ai.
 
 GLM therefore stays on the CLI, where it works — `quackd run --llm glm` is unaffected —
-and stays in `catalogue.js` so the two model lists remain identical. `tests/test_web.py` fails
+and stays in `catalogue.js` so the two LLM lists remain identical. `tests/test_web.py` fails
 if a vendor drops out of `PROVIDERS` without being named in this file, so this cannot happen
 quietly to the next vendor.
 
@@ -226,7 +226,7 @@ them.
 | `1` `2` | over the shoulder camera or duck cam, also without interrupting |
 | `Esc` | hand the keyboard back to the arena from wherever focus is |
 
-There is deliberately **no key for `say`**. Every other verb the model can pick has a key
+There is deliberately **no key for `say`**. Every other verb the LLM can pick has a key
 beside it, and that one cannot: a key carries a command, and a sentence needs something to
 read it. The absence is the argument the page is making, and it is the reason the keyboard
 sits a centimetre from the box rather than behind a mode.
@@ -239,13 +239,13 @@ as in `sim3d`. None of it reads English.
 
 `quackd is on` runs the loop: a system prompt carrying the contract, one verb per turn, an
 executor that checks the verb against the allowlist before the robot moves, and a budget that
-ends the run whatever the model thinks.
+ends the run whatever the LLM thinks.
 
 `quackd is off` removes that layer, and only that layer. The physics, the robot and its two
 policies are identical; what is gone is anything that reads English, so typing a sentence
 gets the honest answer the page prints — this robot understands a twist, three numbers, and a
 walking policy that turns them into steps, and it has never seen your words. It is not a
-rigged comparison against a worse model: there is no model,
+rigged comparison against a worse LLM: there is no LLM,
 because before quackd there was nowhere to put one.
 
 What the switch no longer decides is whether you may drive. It used to: the cockpit was
@@ -256,7 +256,7 @@ gated on the layer any more.
 ## Barge-in
 
 A key that would move the robot takes it, mid-run, at once. The run is aborted, the request
-to the model is aborted with it — the signal reaches `fetch`, so nothing keeps running against
+to the LLM is aborted with it — the signal reaches `fetch`, so nothing keeps running against
 your key and no answer arrives after you took the duck back — and the transcript records the
 handover with the key that did it. What that abort cannot promise is your bill: these are plain
 non-streaming POSTs, so closing the connection stops the transfer, not necessarily a completion
@@ -287,19 +287,19 @@ neither time recorded. The first (commit `8d72a2a`): it boots with no page error
 request, Nunito Sans applied and the duck mark loaded. So the rendering has run, the mount and
 the restyle were watched rather than reasoned about, and somebody has held `W`.
 
-What those two sessions did not cover is most of it. Nobody has watched a full model-driven
+What those two sessions did not cover is most of it. Nobody has watched a full LLM-driven
 run, a barge-in *out of* a live run, the recording (Record, Save clip, Share), the switch
-thrown mid-run, or the page on any browser, screen or machine but the one. The model dropdown
+thrown mid-run, or the page on any browser, screen or machine but the one. The LLM dropdown
 is newer than both sessions and has never been opened in a browser: that it groups by status,
 fits the band beside the provider select at both layout tiers, and hands its place to the
 free-text box on Local are all read rather than seen. Every vendor the page offers was exercised
-under Node against a stubbed `fetch` — right base URL, right default model, right `tool_choice`
+under Node against a stubbed `fetch` — right base URL, right default LLM, right `tool_choice`
 — which is not the same as a key and a real answer. OpenRouter's entry also sent its request
 under Node over a real socket to a stand-in on 127.0.0.1 (`tests/fake_openrouter.py`), which
 checks what the page sends and proves nothing about OpenRouter, and it has never been opened
 in a browser. Nobody has run this page against any vendor but the three that were here before. Two clean boots are not a browser test, and none of it was
 recorded, so the honest reading is that the page starts and the hand works, and everything
-downstream of a model answering is still only read.
+downstream of an LLM answering is still only read.
 
 `tests/test_web.py` is the floor under that. It runs in the ordinary suite, with no browser:
 every id the JavaScript looks up exists in the page, nothing it hides is pinned visible by a
@@ -317,11 +317,11 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 - **Seven verbs, and a contract of its own.** `pilot.js` implements `move`, `stop`,
   `report_state`, `gaze`, `kick`, `say` and `stand_up`, plus the two declarations — seven of
   the manifest's fifteen and none of the three composites, which is what Python's own prompt
-  tells a model to prefer. `DEFAULT_CONTRACT` allows exactly those seven with 18 steps and 3
+  tells an LLM to prefer. `DEFAULT_CONTRACT` allows exactly those seven with 18 steps and 3
   minutes, so it is the same verb definitions and the same allowlist-and-budget machinery as
   Python, not the same allowlist and not the same budget as any `.duck` in `ducks/`.
 - **No datasheet, and no feasibility gate.** Python hands its pilot the body as numbers and
-  refuses every verb that moves until the model has answered `assess_task` — the release's
+  refuses every verb that moves until the LLM has answered `assess_task` — the release's
   headline guarantee, and the one on that list the page does not have. `pilot.js` is a
   second loop with its own hardcoded Microduck prompt and shares no code with the package,
   so the body section and the gate stopped at the language boundary. A page asked to carry
@@ -342,18 +342,18 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
   stream does not, so seed 3 is a different arena in each.
 - **No `extra_body`.** The CLI can merge a JSON object into every request body, with
   `--extra-body` or `QUACKD_EXTRA_BODY`, for a field a server wants and quackd never sends.
-  This page has no such door, so a model that has to be told something in the body, Qwen3 and
+  This page has no such door, so an LLM that has to be told something in the body, Qwen3 and
   its thinking being the one that came up, cannot be told it here.
 - **No prompt cache and no effort setting.** The CLI marks every Claude request for Anthropic's
   prompt cache, its system prompt and its history up to where the next call will still match
-  it, and `--effort` says how hard a model reasons. The page sends each request unmarked and
-  asks no effort, so a model reasons at its own default and a Claude call pays the full input
+  it, and `--effort` says how hard an LLM reasons. The page sends each request unmarked and
+  asks no effort, so an LLM reasons at its own default and a Claude call pays the full input
   rate for all of its prompt. OpenAI caches a repeated prefix without being asked, here as there.
 - **There is no scripted pilot.** Python's `--llm fake` walks the whole task with no
-  model. Here the pre-filled goal still needs a key, or a local server, before anything
+  LLM. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
 - **OpenRouter's six rows and no others.** The CLI can also name an id the rows leave out,
-  checked against OpenRouter's public model list when a run starts unless quackd refuses its
+  checked against OpenRouter's public LLM list when a run starts unless quackd refuses its
   spelling first. The page offers the rows the catalogue carries in a dropdown, with no free text
   for any cloud vendor.
 
@@ -364,12 +364,12 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 | `index.html` | the page: the fonts, the onnxruntime tag, the copy, the keycap legend |
 | `serve.py` | the mount, locally: stdlib only, serves this directory under `/simulator` the way the deploy does |
 | `make_mark.py` | cuts `assets/duck-mark.png` and `assets/favicon-96.png` out of quackd-web's duck. Run it after that repository's art changes |
-| `build_catalogue.py` | writes `src/catalogue.js` from Python's catalogue. Stdlib only. Run it after adding a model |
+| `build_catalogue.py` | writes `src/catalogue.js` from Python's catalogue. Stdlib only. Run it after adding an LLM |
 | `style.css` | hand-authored, in the quackd-web design language |
 | `assets/` | quackd's own mark: the header logo, the favicon, the touch icon |
 | `src/microduck.js` | the robot: MJCF, the 50 Hz loop, the policy, the gait floor |
 | `src/pilot.js` | quackd itself: the clock, the verbs, the contract, the loop |
-| `src/catalogue.js` | GENERATED. the model list, from `quackd/agent/providers/catalogue.py` |
+| `src/catalogue.js` | GENERATED. the LLM list, from `quackd/agent/providers/catalogue.py` |
 | `src/providers.js` | one tool call from any cloud vendor the page offers or a local server |
 | `src/view.js` | three.js built from the compiled model's own geoms |
 | `src/record.js` | canvas capture, and the post the Share button writes |

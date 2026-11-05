@@ -1,6 +1,6 @@
-"""OpenRouter as the duck's brain: one key, other vendors' models, over OpenAI's API.
+"""OpenRouter as the duck's brain: one key, other vendors' LLMs, over OpenAI's API.
 
-OpenRouter is a router rather than a lab. Its ids name another vendor's model
+OpenRouter is a router rather than a lab. Its ids name another vendor's LLM
 (`anthropic/claude-opus-5.5`), it lists hundreds of them, and it decides per request which
 provider serves the call. So it is the OpenAI provider with a different base URL and key, like
 every OpenAI-shaped vendor here, plus five things none of the others needs (ADR-0050):
@@ -8,22 +8,22 @@ every OpenAI-shaped vendor here, plus five things none of the others needs (ADR-
 - **Ids it lists and quackd does not.** The catalogue carries six (`OPEN_ENDED`). An id it does
   not carry is refused on its spelling alone where quackd will not take it whatever the list
   says (`factory._open_ended_refusal`), and otherwise checked here against OpenRouter's public
-  model list before the first paid call. That list needs no key, and the same entry says whether the
-  model takes an image and what it costs.
+  LLM list before the first paid call. That list needs no key, and the same entry says whether the
+  LLM takes an image and what it costs.
 - **One call per turn, asked for where it can be.** A row quackd carries is told to call a tool
   (`required`), except the Claude rows that refuse a forced call, which are asked (`auto`). An
   id quackd does not carry is asked, or sent no `tool_choice` at all where its entry lists none,
-  the bargain ADR-0014 strikes with local models: nobody here has seen how each upstream behind
+  the bargain ADR-0014 strikes with local LLMs: nobody here has seen how each upstream behind
   OpenRouter words a refusal of a forced call, and a reader written against a guessed sentence
   is how the thinking retry in `anthropic.py` came to miss the real one. `parallel_tool_calls`
-  is never sent: 13 of the 465 models on OpenRouter's list when it was first read on
+  is never sent: 13 of the 465 LLMs on OpenRouter's list when it was first read on
   2026-10-06 named it, and the
   `require_parameters` below would have routed a request carrying it almost nowhere.
 - **An endpoint that honours what was asked.** Every request carries
   `provider: {"require_parameters": true}` underneath the caller's own `--extra-body`, so
   OpenRouter routes only to providers that support `tools` and `tool_choice`, rather than to
   one that "will ignore unknown parameters", in its own words.
-- **Reasoning handed back as it came.** OpenRouter returns a model's reasoning as
+- **Reasoning handed back as it came.** OpenRouter returns an LLM's reasoning as
   `reasoning_details`, which carry Claude's signed thinking and Gemini's thought signatures, and
   wants them back unmodified on the assistant turn that produced them. Its Opus 5.5 guide says
   requests through it "are not subject to" Anthropic's thinking-binding enforcement, which is
@@ -36,7 +36,7 @@ It is only ever asked on Chat Completions. OpenRouter has a Responses API as wel
 the above is chat-shaped, and the 400 that moves an OpenAI run there would reach this provider
 as OpenAI's sentence relayed inside OpenRouter's envelope, which nobody here has seen.
 
-No OpenRouter model has answered a real quackd request. Everything here was written from
+No OpenRouter LLM has answered a real quackd request. Everything here was written from
 OpenRouter's own documentation, read on 2026-10-06, and run against a stand-in.
 """
 
@@ -64,7 +64,7 @@ from quackd.agent.providers.base import (
     ProviderError,
     ProviderTurn,
 )
-from quackd.agent.providers.catalogue import Price, default_model_for, find_model
+from quackd.agent.providers.catalogue import Price, default_llm_for, find_llm
 from quackd.agent.providers.openai import (
     OpenAIProvider,
     _wants_the_responses_api,
@@ -78,7 +78,7 @@ ATTRIBUTION: dict[str, str] = {
     "HTTP-Referer": "https://github.com/rokbenko/quackd",
     "X-OpenRouter-Title": "quackd",
 }
-"""Sent with every request, the model list's included. OpenRouter credits an app on its public
+"""Sent with every request, the LLM list's included. OpenRouter credits an app on its public
 rankings by these two headers: its quickstart calls both optional, and its attribution page says
 `HTTP-Referer` is the one an app page needs. They name quackd and say nothing about whoever is
 running it. `X-OpenRouter-Title` is the current spelling; `X-Title` is "still supported for
@@ -91,24 +91,24 @@ explicit `{"provider": {"require_parameters": false}}` turns it off."""
 
 REFUSED_BODY_KEYS: dict[str, str] = {
     "models": (
-        "a fallback list lets OpenRouter answer with a model `run_start` does not name, "
-        "priced as that model"
+        "a fallback list lets OpenRouter answer with an LLM `run_start` does not name, "
+        "priced as that LLM"
     ),
 }
 """`--extra-body` keys refused on OpenRouter for the reason `model` is refused everywhere."""
 
 RESPONSES_HINT = (
     "OpenRouter passed on OpenAI's refusal of function tools on Chat Completions for this "
-    "model, and quackd does not move an OpenRouter run to the Responses API: pick another "
-    "model, `quackd list-models --llm openrouter`."
+    "LLM, and quackd does not move an OpenRouter run to the Responses API: pick another "
+    "LLM, `quackd list-llms --llm openrouter`."
 )
 
 LIST_TIMEOUT_S = 10.0
-"""How long the model list may take before the run is refused. It is a public GET a few
+"""How long the LLM list may take before the run is refused. It is a public GET a few
 hundred kilobytes long; a host that cannot answer it in ten seconds will not answer a turn."""
 
 _LISTINGS: dict[str, list[dict[str, Any]]] = {}
-"""The model list, read once per process and base URL. A preflight sweep and a pilot flock build
+"""The LLM list, read once per process and base URL. A preflight sweep and a pilot flock build
 a provider per run, and none of them needs the same list fetched again."""
 
 
@@ -152,21 +152,21 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def fetch_models(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[dict[str, Any]]:
-    """`GET {base_url}/models`, OpenRouter's public model list, or a ProviderError saying why not.
+def fetch_llms(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[dict[str, Any]]:
+    """`GET {base_url}/models`, OpenRouter's public LLM list, or a ProviderError saying why not.
 
     The standard library rather than the SDK's own client, so that a machine without the extra
-    still hears that the model was wrong before it hears that the SDK is missing, and so that the
+    still hears that the LLM was wrong before it hears that the SDK is missing, and so that the
     suite can test it with no SDK at all. It sends no key: the list does not need one, and the
     key has not been read yet. It does send quackd's own User-Agent: OpenRouter answers a request
     that looks like Anthropic's client with a list in Anthropic's shape instead.
 
     A list it cannot read is a refusal, never an empty list. An empty list would turn "the host
-    is down" into "your model does not exist", which sends the reader to fix the wrong thing. So
+    is down" into "your LLM does not exist", which sends the reader to fix the wrong thing. So
     is a list in another shape: the one OpenRouter serves an Anthropic client has `data` and
     `id`s too, but no entry in it names `supported_parameters`, which every one of the 465 on
     the real list did when it was first read on 2026-10-06, and read as OpenRouter's it would
-    refuse every model there
+    refuse every LLM there
     for having no tool calling.
 
     `timeout_s` bounds the whole of it, not each read. A socket timeout alone lets a server that
@@ -189,26 +189,25 @@ def fetch_models(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[di
     worker.join(timeout_s)
     if worker.is_alive():
         raise ProviderError(
-            f"openrouter: {host} did not answer the model list within {timeout_s:g} s, so the "
-            "model could not be checked against it"
+            f"openrouter: {host} did not answer the LLM list within {timeout_s:g} s, so the "
+            "LLM could not be checked against it"
         )
     error = got.get("error")
     if isinstance(error, urllib.error.HTTPError):
         raise ProviderError(
-            f"openrouter: {host} answered the model list with HTTP {error.code}, so the model "
+            f"openrouter: {host} answered the LLM list with HTTP {error.code}, so the LLM "
             "could not be checked against it"
         ) from error
     if isinstance(error, urllib.error.URLError | TimeoutError | OSError):
         why = getattr(error, "reason", None) or error
         raise ProviderError(
-            f"openrouter: could not reach {host} to check the model against its list ({why})"
+            f"openrouter: could not reach {host} to check the LLM against its list ({why})"
         ) from error
     if isinstance(error, http.client.HTTPException | ValueError):
         # a reply that is not HTTP at all (a captive portal), one cut short, or an address
         # urllib cannot use, such as a --base-url with no scheme
         raise ProviderError(
-            f"openrouter: could not read the model list from {host} "
-            f"({type(error).__name__}: {error})"
+            f"openrouter: could not read the LLM list from {host} ({type(error).__name__}: {error})"
         ) from error
     if error is not None:
         raise error
@@ -216,17 +215,17 @@ def fetch_models(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[di
     try:
         body = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        raise ProviderError(f"openrouter: {url} did not answer with a model list: not JSON") from e
+        raise ProviderError(f"openrouter: {url} did not answer with an LLM list: not JSON") from e
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, list) or not data:
-        why = "no models in it"
+        why = "no LLMs in it"
     elif not all(isinstance(m, dict) and isinstance(m.get("id"), str) for m in data):
         why = "an entry with no id"
     elif not any("supported_parameters" in m for m in data):
         why = "no entry says which parameters it supports"
     else:
         return data
-    raise ProviderError(f"openrouter: {url} did not answer with OpenRouter's model list: {why}")
+    raise ProviderError(f"openrouter: {url} did not answer with OpenRouter's LLM list: {why}")
 
 
 def _get(url: str, timeout_s: float) -> bytes:
@@ -245,11 +244,11 @@ def _get(url: str, timeout_s: float) -> bytes:
 
 
 def listing(base_url: str) -> list[dict[str, Any]]:
-    """The model list behind `base_url`, fetched at most once per process. A failed fetch is
+    """The LLM list behind `base_url`, fetched at most once per process. A failed fetch is
     not kept, so the next provider built asks again."""
     key = base_url.rstrip("/")
     if key not in _LISTINGS:
-        _LISTINGS[key] = fetch_models(key)
+        _LISTINGS[key] = fetch_llms(key)
     return _LISTINGS[key]
 
 
@@ -290,7 +289,7 @@ def listed_price(pricing: Any, *, checked: str) -> Price | None:
 
 
 def admit(
-    model: str,
+    llm_id: str,
     *,
     base_url: str = BASE_URL,
     source: str = "--llm",
@@ -300,23 +299,23 @@ def admit(
 
     Three refusals, each naming where the id came from: not on the list (with the nearest ids
     that are, when any come close), on it without tool calling, and an `expiration_date` of
-    today or earlier. A future expiry is taken: the model answers today, and the run is
+    today or earlier. A future expiry is taken: the LLM answers today, and the run is
     today."""
-    models = listing(base_url)
-    entry = next((m for m in models if m.get("id") == model), None)
+    llms = listing(base_url)
+    entry = next((m for m in llms if m.get("id") == llm_id), None)
     if entry is None:
-        ids = [str(m["id"]) for m in models]
-        near = difflib.get_close_matches(model.lower(), ids, n=3, cutoff=0.6)
+        ids = [str(m["id"]) for m in llms]
+        near = difflib.get_close_matches(llm_id.lower(), ids, n=3, cutoff=0.6)
         nearest = f" Nearest on the list: {', '.join(near)}." if near else ""
         raise ProviderError(
-            f"openrouter: {model!r} from {source} is not on OpenRouter's model list.{nearest} "
-            "See `quackd list-models --llm openrouter` for the ids quackd carries."
+            f"openrouter: {llm_id!r} from {source} is not on OpenRouter's LLM list.{nearest} "
+            "See `quackd list-llms --llm openrouter` for the ids quackd carries."
         )
     supported = entry.get("supported_parameters")
     supported = supported if isinstance(supported, list) else []
     if "tools" not in supported:
         raise ProviderError(
-            f"openrouter: {model!r} from {source} is on OpenRouter's list without tool calling, "
+            f"openrouter: {llm_id!r} from {source} is on OpenRouter's list without tool calling, "
             "and every verb quackd has is a function tool."
         )
     day = today or _dt.datetime.now(_dt.UTC).date()
@@ -328,12 +327,12 @@ def admit(
             when = None
         if when is not None and when <= day:
             raise ProviderError(
-                f"openrouter: {model!r} from {source} expired on OpenRouter on {when.isoformat()}."
+                f"openrouter: {llm_id!r} from {source} expired on OpenRouter on {when.isoformat()}."
             )
     architecture = entry.get("architecture")
     modalities = architecture.get("input_modalities") if isinstance(architecture, dict) else None
     return Listed(
-        id=model,
+        id=llm_id,
         vision=isinstance(modalities, list) and "image" in modalities,
         tool_choice="tool_choice" in supported,
         price=listed_price(entry.get("pricing"), checked=day.isoformat()),
@@ -355,7 +354,7 @@ def billed_usd(usage: Any) -> float | None:
     fee, and the upstream provider bills the caller's own key for the rest, which OpenRouter
     reports as `cost_details.upstream_inference_cost`, so the two are added. A BYOK call that
     reports no upstream figure is not billed at the fee alone, which would understate it by the
-    whole of the model's charge: it falls back to the rate. An upstream figure on a call that
+    whole of the LLM's charge: it falls back to the rate. An upstream figure on a call that
     is not BYOK is not added either, or the same tokens would be charged twice."""
     cost = _number(_field(usage, "cost"))
     if cost is None:
@@ -464,7 +463,7 @@ class OpenRouterProvider(OpenAIProvider):
 
     def __init__(
         self,
-        model: str | None = None,
+        llm_id: str | None = None,
         *,
         source: str = "--llm",
         listed: Listed | None = None,
@@ -474,9 +473,9 @@ class OpenRouterProvider(OpenAIProvider):
         base_url: str | None = None,
         **kwargs: Any,
     ) -> None:
-        chosen = model or default_model_for(self.name) or ""
-        spec = find_model(self.name, chosen)
-        # Before the key is read: a model OpenRouter does not list is the reader's to fix
+        chosen = llm_id or default_llm_for(self.name) or ""
+        spec = find_llm(self.name, chosen)
+        # Before the key is read: an LLM OpenRouter does not list is the reader's to fix
         # first, and the list needs no key to say so. `listed` is how a test hands one in. A
         # blank `--base-url` is no address, here as where the client is built.
         if spec is None and listed is None:
@@ -497,7 +496,7 @@ class OpenRouterProvider(OpenAIProvider):
         )
         # The base reads `QUACKD_OPENAI_REASONING_EFFORT` for every OpenAI-shaped vendor. Here a
         # stray parameter is worse than ignored: with `require_parameters` it can leave no
-        # endpoint that serves the model. Reasoning settings go through `--extra-body`.
+        # endpoint that serves the LLM. Reasoning settings go through `--extra-body`.
         self.reasoning_effort = reasoning_effort
         if tool_choice is None:
             if spec is not None:

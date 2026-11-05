@@ -3,7 +3,7 @@
 The SDK reads more than its key out of the environment, and it adds what it reads to every request
 whatever address the client was handed. That is harmless while the address is the one those
 variables were written for, and it is not harmless in quackd, where the same SDK reaches every
-other vendor that speaks OpenAI's API and every model server you run: Grok, Mistral, OpenRouter, an
+other vendor that speaks OpenAI's API and every LLM server you run: Grok, Mistral, OpenRouter, an
 Ollama on a Jetson over plain HTTP. Three variables are the trouble:
 
 - `OPENAI_CUSTOM_HEADERS`, whose lines the releases that read it add to every request. It is where
@@ -36,12 +36,12 @@ extras allow (`request_headers` says how).
 
 A local preset that took its address from `OPENAI_BASE_URL` is not the SDK's own address, though
 it is the same variable. The local presets read it as one rung of quackd's own address ladder
-(`providers/local.py`), which the local models guide documents as the address of a model server on
+(`providers/local.py`), which the local LLMs guide documents as the address of an LLM server on
 your own machine, and quackd, not the SDK, chose to read it there: a local preset always hands its
 client an address, so the SDK never goes looking for one. It is a server you run, which is sent
 `LOCAL_API_KEY` or the word `not-needed` and never a hosted key, and a gateway's credential in
 `OPENAI_CUSTOM_HEADERS` has no more business there than `OPENAI_API_KEY` has. It is also where the
-leak this module answers was found: a model server on a board over plain HTTP, which a `.env` that
+leak this module answers was found: an LLM server on a board over plain HTTP, which a `.env` that
 names it in `OPENAI_BASE_URL` would otherwise send the gateway's credential to in the clear. A
 gateway that wants the variable's lines is reached with `--llm openai` and `OPENAI_BASE_URL`.
 

@@ -1,15 +1,15 @@
 # ADR-0065: A person drives one robot, a command at a time
 
-**Status:** accepted · **Date:** 2026-10-26 · Extends [ADR-0003](0003-three-loops.md) (a person's loop above the pilot's, which reaches the body through the same executor) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper's labels and floors answer a person's line as well as a turn) · Implemented in `quackd/drive/` (`session.py`, `lanes.py`, `presets.py`, `attached.py`, `terminal.py`, `run.py`), `quackd/agent/decision/commands.py`, `quackd/agent/loop.py` (`stop_reason`) and `quackd/cli.py` (`quackd drive`) · Documented in [docs/guides/drive.md](../guides/drive.md)
+**Status:** accepted · **Date:** 2026-10-26 · Extends [ADR-0003](0003-three-loops.md) (a person's loop above the pilot's, which reaches the body through the same executor) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's labels and floors answer a person's line as well as a turn) · Implemented in `quackd/drive/` (`session.py`, `lanes.py`, `presets.py`, `attached.py`, `terminal.py`, `run.py`), `quackd/agent/decision/commands.py`, `quackd/agent/loop.py` (`stop_reason`) and `quackd/cli.py` (`quackd drive`) · Documented in [docs/guides/drive.md](../guides/drive.md)
 
 ## Context
 
 Rok asked on 2026-10-25 for a command line that answers as close to real time as it can, after
-research on a demo in which a decision model picked one of a duck's trained moves in a fraction
+research on a demo in which a decision LLM picked one of a duck's trained moves in a fraction
 of a second. quackd had no path from a person's command to a verb. `quackd run` is one serial
-loop, observe, a model call, a verb, observe again, and on the README's arm run the body first
-moved on the third model call, after 23.2 seconds of them. A person who says "forward" has
-already chosen the call, and a model asked to choose it again adds seconds and a bill and
+loop, observe, an LLM call, a verb, observe again, and on the README's arm run the body first
+moved on the third LLM call, after 23.2 seconds of them. A person who says "forward" has
+already chosen the call, and an LLM asked to choose it again adds seconds and a bill and
 nothing else. Most commands a person gives a body name one of its verbs, a value or two, or a
 walk. The rest are goals with several steps in them, which is what the pilot is for.
 
@@ -52,7 +52,7 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
    go of the body between two commands. A goal runs inside the session's contract:
    - it gets the body's safe verbs, as `quackd run --goal` gives one, behind any confirm the
      session's `.duck` asks for them;
-   - its budgets are no more than the session has left, its steps and model calls are charged to
+   - its budgets are no more than the session has left, its steps and LLM calls are charged to
      the session's, and no goal starts once the session's are spent;
    - the session's abort rules are its own, the goal's kept only where the session has none of
      that kind;
@@ -96,9 +96,9 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
 
 ## Why not
 
-- **A prompt in front of `quackd run`'s pilot.** Every command would wait on a model call, and
+- **A prompt in front of `quackd run`'s pilot.** Every command would wait on an LLM call, and
   the point is that a line which names a call needs none.
-- **A model reading every line.** The exact lane answers in microseconds, offline, for nothing,
+- **An LLM reading every line.** The exact lane answers in microseconds, offline, for nothing,
   and the fast lane is there for the lines it cannot read.
 - **`input()` or Typer's prompt.** Neither reads while a verb runs, and typing over a walk is
   the whole of a brake that waits on nothing.

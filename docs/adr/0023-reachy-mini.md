@@ -27,7 +27,7 @@ to decide what quackd's speaker verb means on such a robot.
   recorded emotion move (`?` to `curious1`, greetings to `welcoming1`, joy to
   `cheerful1`, sadness to `sad1`, `!` to `surprised1`, default `attentive1`) and the
   backend plays that move with its sound. The manifest says `extras.speech: "tones"` so
-  the prompt tells the model the robot cannot pronounce text. `play_sound(name)` is also
+  the prompt tells the LLM the robot cannot pronounce text. `play_sound(name)` is also
   exposed as the VERIFIED primitive (bundled asset names only, no path separators). The
   alternatives, no `say` at all or a local TTS extra, were rejected: the first makes a
   duck-and-reachy dialogue impossible, the second adds a heavy dependency and untested

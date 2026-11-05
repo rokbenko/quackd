@@ -985,7 +985,7 @@ async def test_the_budget_gate_fires_before_anything_is_sent(
 async def test_the_dry_run_gate_shows_what_it_would_have_sent(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """The docs have always promised --dry-run shows every intent a model would send. The
+    """The docs have always promised --dry-run shows every intent an LLM would send. The
     intent is never built, so the gate carrying the parsed params is what makes that true."""
     ex, seen = logged(registry, mock_transport)
     ex.dry_run = True
@@ -1383,7 +1383,7 @@ async def test_a_single_camera_observe_says_exactly_what_it_said_before_there_we
     """The one-camera wording is what every pilot, every transcript and every golden line
     has read since 0.1, and a body with one lens is still almost every body. No camera name
     in the summary and no `cameras` key in the payload: the default name exists so the code
-    has one to carry, and is never spoken to a model."""
+    has one to carry, and is never spoken to an LLM."""
     saved: list[list[str]] = []
     ex = Executor(
         registry,

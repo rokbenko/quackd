@@ -255,8 +255,9 @@ def _duck_path(summary: dict[str, Any]) -> str | None:
 
 
 def _pilot(summary: dict[str, Any]) -> str:
-    provider, model = summary.get("provider"), summary.get("model")
-    return f"{provider}:{model}" if model else str(provider)
+    # `model` is what a run recorded before 0.32.0 says, and a log keeps what its run wrote.
+    provider, llm_id = summary.get("provider"), summary.get("llm_id") or summary.get("model")
+    return f"{provider}:{llm_id}" if llm_id else str(provider)
 
 
 def _try_it(summary: dict[str, Any]) -> str:

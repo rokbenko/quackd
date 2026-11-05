@@ -18,7 +18,7 @@ from typer.testing import CliRunner
 
 from quackd import __version__
 from quackd import cli as cli_mod
-from quackd.agent.providers.factory import CLOUD_NAMES, default_model_for, model_ids
+from quackd.agent.providers.factory import CLOUD_NAMES, default_llm_for, llm_ids
 from quackd.cli import EXIT_INFEASIBLE, app
 from quackd.safety import AfterTheClose
 from quackd_lerobot.verbs import JOINTS as JOINT_NAMES
@@ -88,7 +88,7 @@ def _kinds(tmp_path: Path) -> list[str]:
 def test_the_log_is_on_by_default(tmp_path: Path, monkeypatch) -> None:
     """Someone who types `quackd run` and watches a robot move should see why it moved."""
     out = _log_run(tmp_path, monkeypatch)
-    assert "system prompt" in out  # what the model was told
+    assert "system prompt" in out  # what the LLM was told
     assert "quack(text='hello!')" in out  # what it chose
     assert "send sound" in out  # what went to the robot
     assert "result quack ok" in out  # what came back
@@ -211,8 +211,8 @@ def test_serve_mcp_forwards_no_log(monkeypatch) -> None:
     assert captured["log"] is None and log_enabled_default() is True
 
 
-def test_the_outcome_line_prints_the_models_reason_verbatim(tmp_path: Path, monkeypatch) -> None:
-    """The reason is the model's own `declare_failure` text. A local model that leaks
+def test_the_outcome_line_prints_the_llms_reason_verbatim(tmp_path: Path, monkeypatch) -> None:
+    """The reason is the LLM's own `declare_failure` text. A local LLM that leaks
     `[/think]` into it used to crash the CLI with a Rich MarkupError after a completed run,
     replacing the verdict with a traceback."""
     from quackd.agent.providers import factory
@@ -260,7 +260,7 @@ def test_list_verbs_prints_a_description_with_brackets_verbatim(monkeypatch) -> 
 
 
 def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None:
-    """The flock's planner logs a model's raw tool arguments through this line."""
+    """The flock's planner logs an LLM's raw tool arguments through this line."""
     import io
 
     from rich.console import Console
@@ -526,8 +526,8 @@ def test_doctor_json_reports_a_second_camera_url_inside_its_document(
     of prose printed above the document a script is trying to parse."""
     from quackd import doctor
 
-    # doctor probes four local model servers at 1.5 s each and nothing here is about them
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    # doctor probes four local LLM servers at 1.5 s each and nothing here is about them
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     result = runner.invoke(
         app,
         [
@@ -585,10 +585,10 @@ def test_validate_against_a_robot(tmp_path: Path) -> None:
 
 
 def test_run_unknown_provider_is_a_clean_error(tmp_path: Path) -> None:
-    """One flag now carries the vendor and the model, so the refusal has to teach both shapes.
+    """One flag now carries the vendor and the LLM, so the refusal has to teach both shapes.
 
     A reader who typed `--llm hal9000` cannot tell from the flag alone whether the half they
-    got wrong was a vendor name or a model id, because `--llm` takes either. Printing both
+    got wrong was a vendor name or an LLM id, because `--llm` takes either. Printing both
     forms back -- `--llm anthropic` and `--llm anthropic:<id>` -- is what turns "that was
     refused" into "type this instead", and it costs one line of a message already on screen.
     """
@@ -609,15 +609,15 @@ def test_run_unknown_provider_is_a_clean_error(tmp_path: Path) -> None:
     flat = " ".join(result.output.split())
     assert "unknown provider" in flat
     assert "--llm anthropic," in flat, "the bare-vendor form"
-    assert f"--llm anthropic:{default_model_for('anthropic')}" in flat, "the vendor:model form"
+    assert f"--llm anthropic:{default_llm_for('anthropic')}" in flat, "the vendor:LLM form"
 
 
-def test_run_refuses_a_model_outside_the_catalogue(
+def test_run_refuses_an_llm_outside_the_catalogue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The point of the catalogue: the refusal arrives before anything is spent.
 
-    The key is deliberately removed, so if the model were checked after the provider was built
+    The key is deliberately removed, so if the LLM were checked after the provider was built
     this would fail about `OPENAI_API_KEY` instead. Nothing may be written either: a run
     directory for a run that never started is a run that has to be explained later.
     """
@@ -637,15 +637,15 @@ def test_run_refuses_a_model_outside_the_catalogue(
     )
     assert result.exit_code == 1
     flat = " ".join(result.output.split())
-    assert "gpt-nope" in flat and "unknown model" in flat
-    assert default_model_for("openai") in flat, "the refusal must offer what to pass instead"
-    assert "list-models" in flat
+    assert "gpt-nope" in flat and "unknown LLM" in flat
+    assert default_llm_for("openai") in flat, "the refusal must offer what to pass instead"
+    assert "list-llms" in flat
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == [], "a refused run left a directory behind"
 
 
-def test_run_names_the_vendor_when_the_model_belongs_to_another_one(tmp_path: Path) -> None:
-    """The commonest mistake, and the one that looks least like a mistake: a real model id
+def test_run_names_the_vendor_when_the_llm_belongs_to_another_one(tmp_path: Path) -> None:
+    """The commonest mistake, and the one that looks least like a mistake: a real LLM id
     under the wrong vendor. The answer has to be the whole spec the reader should retype, not
     just the vendor's name, because the spec is now one word on the line."""
     result = runner.invoke(
@@ -672,34 +672,34 @@ def _wide(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "220")
 
 
-def test_list_models_prints_every_vendor_and_marks_the_defaults(_wide: None) -> None:
-    result = runner.invoke(app, ["list-models"])
+def test_list_llms_prints_every_vendor_and_marks_the_defaults(_wide: None) -> None:
+    result = runner.invoke(app, ["list-llms"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     for name in CLOUD_NAMES:
         assert name in flat
-        assert default_model_for(name) in flat, name
+        assert default_llm_for(name) in flat, name
     assert "default" in flat
     assert "no catalogue" in flat, "the local presets must say why they are not in the table"
-    assert "ignored" in flat, "fake must say that a model after the colon does nothing"
+    assert "ignored" in flat, "fake must say that an LLM after the colon does nothing"
 
 
-def test_list_models_can_be_asked_about_one_vendor(_wide: None) -> None:
+def test_list_llms_can_be_asked_about_one_vendor(_wide: None) -> None:
     """`-l` is the short flag now: `-p` went with `--provider`, and the pair of them is one
     flag on every other command, so this command spells it the same way."""
-    result = runner.invoke(app, ["list-models", "--llm", "openai"])
+    result = runner.invoke(app, ["list-llms", "--llm", "openai"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     assert "claude-opus-5" not in flat, "asking for one vendor printed another"
     assert "gpt-5.6-sol" in flat
-    assert " ".join(runner.invoke(app, ["list-models", "-l", "openai"]).output.split()) == flat
-    local = runner.invoke(app, ["list-models", "--llm", "ollama"])
+    assert " ".join(runner.invoke(app, ["list-llms", "-l", "openai"]).output.split()) == flat
+    local = runner.invoke(app, ["list-llms", "--llm", "ollama"])
     assert local.exit_code == 0 and "first entry" in " ".join(local.output.split())
-    bad = runner.invoke(app, ["list-models", "--llm", "nope"])
+    bad = runner.invoke(app, ["list-llms", "--llm", "nope"])
     assert bad.exit_code == 1 and "unknown provider" in bad.output
 
 
-def test_list_models_says_what_the_environment_pins(
+def test_list_llms_says_what_the_environment_pins(
     _wide: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """QUACKD_LLM holds a whole spec now, so the note under the table has to read it the way
@@ -708,11 +708,11 @@ def test_list_models_says_what_the_environment_pins(
     A variable in a `.env` nobody has opened in months is exactly the kind of setting whose
     failure has to be printed where the reader is already looking."""
     monkeypatch.setenv("QUACKD_LLM", "grok-4.6")
-    flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
+    flat = " ".join(runner.invoke(app, ["list-llms"]).output.split())
     assert "QUACKD_LLM=grok-4.6 pins grok:grok-4.6" in flat
-    monkeypatch.setenv("QUACKD_LLM", "not-a-model")
-    flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
-    assert "QUACKD_LLM=not-a-model is refused" in flat
+    monkeypatch.setenv("QUACKD_LLM", "not-an-llm")
+    flat = " ".join(runner.invoke(app, ["list-llms"]).output.split())
+    assert "QUACKD_LLM=not-an-llm is refused" in flat
     assert "unknown provider" in flat
 
 
@@ -720,8 +720,8 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
     """One flag means completion has to answer two questions with the same keystroke.
 
     Before the colon the answer is the seventeen vendor names, twice over: bare, so one TAB
-    takes the default model, and with a trailing colon so a second TAB carries on into the
-    list. The hundred-odd model ids must stay out of that first offer, because a bare TAB
+    takes the default LLM, and with a trailing colon so a second TAB carries on into the
+    list. The hundred-odd LLM ids must stay out of that first offer, because a bare TAB
     that prints a hundred lines is a TAB nobody presses twice.
 
     After the colon the offer narrows to that vendor's own ids, which is why `grok:gpt`
@@ -734,19 +734,19 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
     empty = _complete_llm(ctx, "")
     names = [i for i, _ in empty]
     assert set(CLOUD_NAMES) <= set(names) and "fake" in names
-    assert "anthropic:" in names, "a second TAB has to carry on into the model list"
-    assert "fake:" not in names, "the scripted pilot has no model to pick"
-    assert not set(model_ids("openai")) & set(names), "a bare TAB must not print every id"
+    assert "anthropic:" in names, "a second TAB has to carry on into the LLM list"
+    assert "fake:" not in names, "the scripted pilot has no LLM to pick"
+    assert not set(llm_ids("openai")) & set(names), "a bare TAB must not print every id"
     assert all(label for _, label in empty), "completion offers a half-line beside each entry"
 
     openai = _complete_llm(ctx, "openai:gpt")
     assert [i for i, _ in openai] == [
-        f"openai:{m}" for m in model_ids("openai") if m.startswith("gpt")
+        f"openai:{m}" for m in llm_ids("openai") if m.startswith("gpt")
     ]
     assert _complete_llm(ctx, "grok:gpt") == [], "another vendor's prefix offers nothing"
 
     bare = [i for i, _ in _complete_llm(ctx, "claude-op")]
-    assert bare == [m for m in model_ids("anthropic") if m.startswith("claude-op")]
+    assert bare == [m for m in llm_ids("anthropic") if m.startswith("claude-op")]
     assert bare, "a bare id is a legal spec, so it has to complete on its own"
 
 
@@ -757,78 +757,78 @@ def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> Non
 
     ctx = SimpleNamespace(params={})
     offered = [i for i, _ in _complete_llm(ctx, "openrouter:")]
-    assert offered == [f"openrouter:{m}" for m in model_ids("openrouter")]
+    assert offered == [f"openrouter:{m}" for m in llm_ids("openrouter")]
     claude = [i for i, _ in _complete_llm(ctx, "openrouter:anthropic/")]
-    assert claude == [f"openrouter:{m}" for m in model_ids("openrouter") if "anthropic/" in m]
+    assert claude == [f"openrouter:{m}" for m in llm_ids("openrouter") if "anthropic/" in m]
     # A bare id completes too, and its label names the vendor that will be called: typing
     # `openai` offers OpenRouter's `openai/...` rows beside OpenAI's own, and says whose they are.
     labels = dict(_complete_llm(ctx, "openai"))
     assert labels["openai/gpt-6-sol"].startswith("openrouter: ")
 
 
-def test_list_models_says_openrouter_takes_more_than_it_lists(_wide: None) -> None:
+def test_list_llms_says_openrouter_takes_more_than_it_lists(_wide: None) -> None:
     """Its rows are a selection, and the table alone would read as all `--llm openrouter:`
     takes. Nothing is fetched to say so: the conftest guard would fail this test if it were.
     The note says how an id quackd does not carry is handled and promises none: 0.17.0's said any
-    other id with tool calling on the vendor's own model list works too, and OpenRouter's list
+    other id with tool calling on the vendor's own LLM list works too, and OpenRouter's list
     carries `~` aliases, routers and `:batch` ids that quackd refuses on their spelling."""
-    result = runner.invoke(app, ["list-models", "--llm", "openrouter"])
+    result = runner.invoke(app, ["list-llms", "--llm", "openrouter"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    for model_id in model_ids("openrouter"):
-        assert model_id in flat
+    for llm_id in llm_ids("openrouter"):
+        assert llm_id in flat
     assert "openrouter: the rows above are a selection" in flat
     assert (
         "openrouter: the rows above are a selection. An id quackd does not carry can be named as "
-        "--llm openrouter:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of id are refused on "
-        "their spelling alone. Any other is checked against OpenRouter's public model list when a "
+        "--llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on "
+        "their spelling alone. Any other is checked against OpenRouter's public LLM list when a "
         "run starts. That list has to carry the id with tool calling, and one quackd takes is "
         "priced from it."
     ) in flat
     assert "works too" not in flat and "any other id" not in flat.lower()
     assert "a selection" not in " ".join(
-        runner.invoke(app, ["list-models", "--llm", "openai"]).output.split()
+        runner.invoke(app, ["list-llms", "--llm", "openai"]).output.split()
     )
     # one of OpenRouter's own ids names its vendor here, as it does on `--llm`
-    named = runner.invoke(app, ["list-models", "--llm", "anthropic/claude-opus-5.5"])
+    named = runner.invoke(app, ["list-llms", "--llm", "anthropic/claude-opus-5.5"])
     assert "openrouter: the rows above are a selection" in " ".join(named.output.split())
 
 
-def test_list_models_points_a_slashed_id_with_no_vendor_at_openrouter(_wide: None) -> None:
-    bad = runner.invoke(app, ["list-models", "--llm", "google/gemma-4-31b-it:free"])
+def test_list_llms_points_a_slashed_id_with_no_vendor_at_openrouter(_wide: None) -> None:
+    bad = runner.invoke(app, ["list-llms", "--llm", "google/gemma-4-31b-it:free"])
     assert bad.exit_code == 1
     assert "reads as OpenRouter's: --llm openrouter" in " ".join(bad.output.split())
-    nope = runner.invoke(app, ["list-models", "--llm", "nope"])
+    nope = runner.invoke(app, ["list-llms", "--llm", "nope"])
     assert "OpenRouter" not in nope.output, "a typo with no slash says nothing of it"
 
 
-def test_list_models_lists_only_pilots_unless_asked(_wide: None) -> None:
+def test_list_llms_lists_only_pilots_unless_asked(_wide: None) -> None:
     """`--kind` was added beside a command people already script against, so with no `--kind`
     it prints the pilots alone, as it always has, and a decision LLM or a policy type is listed
     only when asked for."""
-    flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
+    flat = " ".join(runner.invoke(app, ["list-llms"]).output.split())
     assert "decision LLMs (" not in flat and "policy types (" not in flat
-    assert flat == " ".join(runner.invoke(app, ["list-models", "--kind", "pilot"]).output.split())
-    every = " ".join(runner.invoke(app, ["list-models", "--kind", "all"]).output.split())
-    assert "models (--llm" in every and "decision LLMs (" in every and "policy types (" in every
+    assert flat == " ".join(runner.invoke(app, ["list-llms", "--kind", "pilot"]).output.split())
+    every = " ".join(runner.invoke(app, ["list-llms", "--kind", "all"]).output.split())
+    assert "LLMs (--llm" in every and "decision LLMs (" in every and "policy types (" in every
 
 
-def test_list_models_kind_decision_prints_every_preset_in_doctors_order(_wide: None) -> None:
+def test_list_llms_kind_decision_prints_every_preset_in_doctors_order(_wide: None) -> None:
     """Until `--kind decision`, `quackd doctor` was the one command that said which decision
     LLMs quackd names, buried under the providers."""
     from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
 
-    result = runner.invoke(app, ["list-models", "--kind", "decision"])
+    result = runner.invoke(app, ["list-llms", "--kind", "decision"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     places = [flat.index(f" {name} ") for name in PRESET_NAMES]
     assert places == sorted(places), "the decision LLMs are not in the order doctor prints them"
     for name in PRESET_NAMES:
         assert PRESETS[name].summary in flat, f"{name}'s row does not say what it is"
-    assert "models (--llm" not in flat, "asking for the decision LLMs printed the pilots too"
+    assert "LLMs (--llm" not in flat, "asking for the decision LLMs printed the pilots too"
 
 
-def test_list_models_kind_policy_needs_no_adapter(
+def test_list_llms_kind_policy_needs_no_adapter(
     _wide: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The policy rows are data in the core, so a machine with no LeRobot and no arm package
@@ -836,7 +836,7 @@ def test_list_models_kind_policy_needs_no_adapter(
     from quackd.adapters.policies import FAMILIES, NOT_SERVED
 
     monkeypatch.setitem(sys.modules, "quackd_lerobot", None)
-    result = runner.invoke(app, ["list-models", "--kind", "policy"])
+    result = runner.invoke(app, ["list-llms", "--kind", "policy"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     for family in FAMILIES:
@@ -846,16 +846,16 @@ def test_list_models_kind_policy_needs_no_adapter(
     assert "never the arm's" in flat, "the note must say where a policy is served, and where not"
 
 
-def test_list_models_json_tags_every_row_with_its_kind(_wide: None) -> None:
+def test_list_llms_json_tags_every_row_with_its_kind(_wide: None) -> None:
     """One stream for a script, whichever kinds it asked for: every row says which it is."""
     from quackd.adapters.policies import FAMILIES, NOT_SERVED
     from quackd.agent.decision.catalogue import PRESET_NAMES
 
-    result = runner.invoke(app, ["list-models", "--kind", "all", "--json"])
+    result = runner.invoke(app, ["list-llms", "--kind", "all", "--json"])
     assert result.exit_code == 0, result.output
     rows = [json.loads(line) for line in result.output.splitlines() if line.strip()]
     kinds = [row["kind"] for row in rows]
-    assert kinds.count("pilot") == sum(len(model_ids(name)) for name in CLOUD_NAMES)
+    assert kinds.count("pilot") == sum(len(llm_ids(name)) for name in CLOUD_NAMES)
     assert kinds.count("decision") == len(PRESET_NAMES)
     assert kinds.count("policy") == len(FAMILIES) + len(NOT_SERVED)
     assert kinds == sorted(kinds, key=("pilot", "decision", "policy").index), "kinds interleave"
@@ -863,12 +863,12 @@ def test_list_models_json_tags_every_row_with_its_kind(_wide: None) -> None:
     assert [row["type"] for row in served] == [family.type for family in FAMILIES]
 
 
-def test_list_models_refuses_a_kind_it_does_not_know_and_llm_beside_another_kind() -> None:
+def test_list_llms_refuses_a_kind_it_does_not_know_and_llm_beside_another_kind() -> None:
     """`--llm` narrows the pilot table to one vendor, and has nothing to narrow in the others,
     so it is refused beside them rather than silently ignored."""
-    bad = runner.invoke(app, ["list-models", "--kind", "vla"])
+    bad = runner.invoke(app, ["list-llms", "--kind", "vla"])
     assert bad.exit_code == 1 and "--kind is pilot, decision, policy or all" in bad.output
-    both = runner.invoke(app, ["list-models", "--kind", "decision", "--llm", "openai"])
+    both = runner.invoke(app, ["list-llms", "--kind", "decision", "--llm", "openai"])
     assert both.exit_code == 1
     assert "--llm narrows the pilot rows only" in " ".join(both.output.split())
 
@@ -894,7 +894,7 @@ def test_run_refuses_an_openrouter_alias_before_any_key_or_robot(
     )
     assert result.exit_code == 1
     flat = " ".join(result.output.split())
-    assert "newest model of its family" in flat and "OPENROUTER_API_KEY" not in flat
+    assert "newest LLM of its family" in flat and "OPENROUTER_API_KEY" not in flat
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == [], "a refused run left a directory behind"
 
@@ -1152,13 +1152,13 @@ def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     reads `quackd[lan]` as markup, which printed an install that does not exist."""
     out = _help(["run", "--help"])
     assert "quackd[live]" in out, "an extra a reader is meant to type must survive"
-    for group in ("Task", "Model", "Robot", "Output", "Memory"):
+    for group in ("Task", "LLM", "Robot", "Output", "Memory"):
         assert group in out, group
     # Two flags became one, and half a rename is worse than either shape on its own: a help
     # page still offering `--provider` sends the reader to a flag the parser will refuse.
     assert "--llm" in out, "the one pilot flag has to be in the help"
     assert "--provider" not in out, "the old vendor flag is gone, help included"
-    assert "--model " not in out, "the old model flag is gone, help included"
+    assert "--model " not in out, "the old LLM flag is gone, help included"
     root = _help(["--help"])
     assert "--no-color" in root
     for group in ("Inspect", "Run a duck", "Serve", "LAN", "Memory"):
@@ -1215,7 +1215,7 @@ def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     place it may appear. Under a runner or a pipe nothing of it reaches the output."""
     out = _log_run(tmp_path, monkeypatch, "--no-log")
     assert "SUCCESS" in out
-    for chatter in ("waiting on", "observing", "the model chose", "finishing"):
+    for chatter in ("waiting on", "observing", "the LLM chose", "finishing"):
         assert chatter not in out, chatter
 
 
@@ -1410,14 +1410,14 @@ def _picture_run(tmp_path: Path, *flags: str, robot: str | None = "microduck:moc
 def test_a_picture_is_refused_by_a_pilot_that_cannot_see(tmp_path: Path, sketch: Path) -> None:
     """Refused rather than quietly dropped. A blind pilot handed "draw what is in the picture"
     with no picture improvises something, and the only record of why would be a line in a
-    transcript nobody reads twice. The refusal names the pilot, because which model is driving
+    transcript nobody reads twice. The refusal names the pilot, because which LLM is driving
     is the thing the reader has to change."""
     result = _picture_run(tmp_path, "--image", str(sketch))
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())  # the console wraps the line at the terminal width
     assert "fake scripted:hello-world does not take images" in flat, flat
     assert "cannot be given 1 picture" in flat
-    assert "quackd list-models" in flat, "the refusal must say where to look for a model"
+    assert "quackd list-llms" in flat, "the refusal must say where to look for an LLM"
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
@@ -1427,7 +1427,7 @@ def test_vision_carries_the_picture_into_the_run_directory_byte_for_byte(
 ) -> None:
     """`--vision` is what a scripted pilot has instead of a vendor that takes images, and it is
     the only way to walk a picture through the whole loop with no key. The copy beside the
-    transcript is the bytes the model was sent, not the file they were made from, so a reader
+    transcript is the bytes the LLM was sent, not the file they were made from, so a reader
     arguing about the run afterwards is looking at what the pilot looked at."""
     from quackd.agent.images import load_task_images
 
@@ -2590,7 +2590,7 @@ def test_doctor_builds_a_registered_arm_under_its_name_and_warns_before_it_conne
     from quackd.adapters.base import RestResult
     from quackd_lerobot.mock import LeRobotMock
 
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = _registered_arm(tmp_path, "bench-2")
     built: list[str | None] = []
     make = quackd_lerobot.make
@@ -2724,7 +2724,7 @@ def _real_arm(
     from quackd_lerobot import LeRobotAdapter
     from quackd_lerobot.real import LeRobotReal
 
-    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = tmp_path / "registry"
     added = runner.invoke(
         app,
@@ -3422,7 +3422,7 @@ def _counters(output: str) -> str:
     lines = [
         line.strip("│| ").strip()
         for line in output.splitlines()
-        if "steps " in line and "llm calls" in line
+        if "steps " in line and "LLM calls" in line
     ]
     assert len(lines) == 1, output
     return lines[0]
@@ -3431,18 +3431,18 @@ def _counters(output: str) -> str:
 def test_a_priced_run_says_how_long_it_took_and_what_it_cost(tmp_path: Path) -> None:
     """The two counters this release adds to the verdict.
 
-    A run of a frontier model costs real money and takes real minutes, and until now neither
+    A run of a frontier LLM costs real money and takes real minutes, and until now neither
     number was anywhere on screen when it ended: you read the token counts and did the
     arithmetic yourself, or you found out at the end of the month.
 
-    `--price` rather than a catalogued model because the only provider a test may run is
+    `--price` rather than a catalogued LLM because the only provider a test may run is
     `fake`, which is free: `$0` would prove the counter prints and nothing about the sum
     behind it."""
     result = _verdict_run(tmp_path, "--price", "in=3,out=15")
     assert result.exit_code == 0, result.output
     counters = _counters(result.output)
     assert "time " in counters, counters
-    assert "(model " in counters, "the split is the useful half: how much of it was waiting"
+    assert "(LLM " in counters, "the split is the useful half: how much of it was waiting"
     assert re.search(r"cost \$\d", counters), counters
 
 
@@ -3450,8 +3450,8 @@ def test_a_fake_run_with_no_price_is_free_rather_than_unpriced(tmp_path: Path) -
     """`fake` sends nothing to anybody, so a run on it costs nothing and says so.
 
     The distinction is the whole reason `Price` and `None` are different things: `unpriced`
-    means quackd has no rate for this model and the number is unknown, `$0` means the number
-    is known and it is nothing. A model with no published rate printing `$0` would be telling
+    means quackd has no rate for this LLM and the number is unknown, `$0` means the number
+    is known and it is nothing. An LLM with no published rate printing `$0` would be telling
     somebody their frontier run was free."""
     result = _verdict_run(tmp_path)
     assert result.exit_code == 0, result.output
@@ -3495,7 +3495,7 @@ def test_a_bad_run_name_or_price_is_refused_before_a_run_directory_exists(tmp_pa
     assert list(tmp_path.iterdir()) == [], "the refusal came after the run directory"
 
 
-def test_the_help_offers_the_name_on_disk_and_the_price_of_the_model() -> None:
+def test_the_help_offers_the_name_on_disk_and_the_price_of_the_llm() -> None:
     """A flag nobody can find is a flag nobody uses, and `--price` is the one that decides
     whether a run can be costed at all.
 
@@ -3512,10 +3512,10 @@ def test_the_help_offers_the_name_on_disk_and_the_price_of_the_model() -> None:
     assert "--price" not in record_help
 
 
-def test_a_run_that_gave_up_asking_the_model_again_prints_what_the_waiting_cost(
+def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ADR-0059. A run whose turn the model's API never answered ends in an error, and the one
+    """ADR-0059. A run whose turn the LLM's API never answered ends in an error, and the one
     line it ended on used to be all it printed, though it had waited and asked again: the
     counters a run prints under its verdict are printed under this one too."""
     import quackd.agent.loop as loop_module
@@ -3554,8 +3554,8 @@ def test_a_run_that_gave_up_asking_the_model_again_prints_what_the_waiting_cost(
     )
     flat = " ".join(result.output.split())
     assert result.exit_code == 1, result.output
-    assert "the model's API could not answer this turn" in flat, flat
-    assert re.search(r"llm calls 1 \(\+[1-9]\d* asked again\)", flat), flat
+    assert "the LLM's API could not answer this turn" in flat, flat
+    assert re.search(r"LLM calls 1 \(\+[1-9]\d* asked again\)", flat), flat
     assert "Traceback" not in result.output
 
 
@@ -3685,7 +3685,7 @@ def test_a_secret_on_the_command_line_is_hidden_everywhere_it_is_written_down(
 def test_the_record_says_what_was_asked_for_and_which_quackd_ran_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Which robot, which model, which budget, whether it was a dry run: the flags are half
+    """Which robot, which LLM, which budget, whether it was a dry run: the flags are half
     the story of a run, and reading a transcript a month later meant guessing at them.
 
     The first word is `quackd` and not the path that was really invoked, which is an

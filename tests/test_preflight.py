@@ -174,7 +174,7 @@ def test_a_pilot_nobody_named_is_refused_and_fake_runs_only_when_typed(
     tmp_path: Path, nothing_is_built: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`resolve_llm` falls back to the scripted pilot when nothing names one, and a rehearsal
-    with it would pass for a rehearsal of the model. The conftest empties QUACKD_LLM."""
+    with it would pass for a rehearsal of the LLM. The conftest empties QUACKD_LLM."""
     Registry().add_robot(RobotEntry(name="arm-sim", spec="lerobot:mujoco"))
     for robot in ("lerobot:mujoco", "arm-sim"):
         result = runner.invoke(app, ["preflight", str(_duck(tmp_path)), "--robot", robot])
@@ -533,7 +533,7 @@ checks:
     assert result.exit_code == 0, said
     assert "1 file passed preflight" in said, said
     assert "at the rest pose" in said and "1 of 1" in said and "pass" in said, said
-    assert "sim dt" in said and "model cost" in said, said
+    assert "sim dt" in said and "LLM cost" in said, said
     # the run's own directory, named for the seed, with its transcript: memory was off
     runs = list(twin["runs"].rglob("transcript.jsonl"))
     assert len(runs) == 1 and runs[0].parent.name.endswith("preflight-seed-0")

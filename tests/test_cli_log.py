@@ -74,12 +74,12 @@ def _counters(output: str) -> str:
 
     Read as a line rather than as a substring of the whole output, so that "no cost counter"
     is a claim about the counters and not about whether the word appears somewhere on
-    screen. Matched on `steps ` and not on `llm calls`, which the rule above every turn of a
-    replay also says, as `step 3/40, llm calls 3/40`."""
+    screen. Matched on `steps ` and not on `LLM calls`, which the rule above every turn of a
+    replay also says, as `step 3/40, LLM calls 3/40`."""
     lines = [
         line.strip("│| ").strip()
         for line in output.splitlines()
-        if "steps " in line and "llm calls" in line
+        if "steps " in line and "LLM calls" in line
     ]
     assert len(lines) == 1, output
     return lines[0]
@@ -92,8 +92,8 @@ def test_log_replays_a_finished_run(tmp_path: Path) -> None:
     assert code == 0, out
     assert "system prompt" in out
     assert "send move" in out and "result walk_to ok" in out
-    assert "[scripted]" in out  # the model's reasoning, as the run showed it
-    assert "SUCCESS" in out and "llm calls" in out
+    assert "[scripted]" in out  # the LLM's reasoning, as the run showed it
+    assert "SUCCESS" in out and "LLM calls" in out
 
 
 def test_a_decision_block_with_no_cost_key_gains_no_cost_counter(
@@ -133,7 +133,7 @@ def test_a_decision_block_with_no_cost_key_gains_no_cost_counter(
 
     code, out = _replay(tmp_path, run_dir.name)
     assert code == 0, out
-    assert "steps 6" in out and "llm calls 4" in out and "tokens 9000+120" in out
+    assert "steps 6" in out and "LLM calls 4" in out and "tokens 9000+120" in out
     assert "cost" not in out, out
     assert "time" not in out, "and no clock either: it recorded none"
 
@@ -294,7 +294,7 @@ def test_log_on_a_flock_run_names_every_member(tmp_path: Path) -> None:
         assert f"{name} ■ end stopped after" in out
     # the outcome comes from summary.json, since no member wrote a run_end
     assert "SUCCESS" in out and "kicker duck-" in out
-    assert "llm calls" not in out, "a flock counts auctions and bids, not steps and tokens"
+    assert "LLM calls" not in out, "a flock counts auctions and bids, not steps and tokens"
 
 
 # ── the clocks, the price, and the name the run was given ───────────────────────────────
@@ -387,7 +387,7 @@ def test_a_summary_written_before_the_clocks_replays_with_the_counters_it_had(
     assert code == 0, out
     counters = _counters(out)
     assert counters.startswith("steps 3"), counters
-    assert "llm calls 5" in counters and "tokens 120+40" in counters, counters
+    assert "LLM calls 5" in counters and "tokens 120+40" in counters, counters
     assert "time" not in counters and "cost" not in counters, counters
     assert "SUCCESS" in out and "quacked and walked one step" in out
 
@@ -482,10 +482,10 @@ def _terminal(tmp_path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_a_run_that_asked_the_model_again_says_so_in_its_counters() -> None:
+def test_a_run_that_asked_the_llm_again_says_so_in_its_counters() -> None:
     """ADR-0059: a turn the API could not answer is asked again and is not a call of its own,
-    so `llm calls` stays the task's count and the tries ride beside it, with the seconds
-    waited in the split, kept out of the model's. A run that never asked again prints exactly
+    so `LLM calls` stays the task's count and the tries ride beside it, with the seconds
+    waited in the split, kept out of the LLM's. A run that never asked again prints exactly
     the counters it always did."""
     from quackd.cli import run_counters
     from quackd.log import fmt_duration
@@ -498,16 +498,16 @@ def test_a_run_that_asked_the_model_again_says_so_in_its_counters() -> None:
         "llm_latency_s": 9.0,
     }
     before = run_counters(end)
-    assert before[1] == "llm calls 6" and "waits" not in before[-1], before
+    assert before[1] == "LLM calls 6" and "waits" not in before[-1], before
     after = run_counters({**end, "llm_retries": 2, "llm_retry_wait_s": 20.0})
-    assert after[1] == "llm calls 6 (+2 asked again)", after
+    assert after[1] == "LLM calls 6 (+2 asked again)", after
     (spent,) = [c for c in after if c.startswith("time")]
-    assert f"model {fmt_duration(9.0)}, waits {fmt_duration(20.0)}" in spent, spent
+    assert f"LLM {fmt_duration(9.0)}, waits {fmt_duration(20.0)}" in spent, spent
 
 
 def test_the_counters_say_how_the_calls_spread_and_when_the_robot_first_moved() -> None:
-    """The median, the ninetieth percentile and the longest call of the model and of the
-    stepper, and how long the robot took to move and after how many model calls, each said only
+    """The median, the ninetieth percentile and the longest call of the pilot LLM and of the
+    stepper, and how long the robot took to move and after how many LLM calls, each said only
     where its keys are. A record written before them replays with the counters it always had,
     and a spread with one figure missing is no spread rather than a counter with a hole in it."""
     from quackd.cli import run_counters
@@ -532,18 +532,18 @@ def test_the_counters_say_how_the_calls_spread_and_when_the_robot_first_moved() 
             "first_motion_llm_calls": 3,
         }
     )
-    model = f"model calls p50 {fmt_duration(6.2)}, p90 {fmt_duration(8.0)}, max {fmt_duration(8.2)}"
-    assert model in new, new
+    llm = f"LLM calls p50 {fmt_duration(6.2)}, p90 {fmt_duration(8.0)}, max {fmt_duration(8.2)}"
+    assert llm in new, new
     assert f"stepper p50 {fmt_duration(0.31)}, p90 {fmt_duration(0.62)}" in " · ".join(new), new
-    assert f"first motion at {fmt_duration(25.5)}, after 3 model calls" in new, new
-    assert not any(c.startswith(("model calls", "stepper p50", "first motion")) for c in old), old
+    assert f"first motion at {fmt_duration(25.5)}, after 3 LLM calls" in new, new
+    assert not any(c.startswith(("LLM calls p50", "stepper p50", "first motion")) for c in old), old
 
     one = run_counters({**end, "first_motion_s": 9.0, "first_motion_llm_calls": 1})
-    assert f"first motion at {fmt_duration(9.0)}, after 1 model call" in one, one
+    assert f"first motion at {fmt_duration(9.0)}, after 1 LLM call" in one, one
     unmoved = run_counters({**end, "first_motion_s": None, "first_motion_llm_calls": None})
     assert not any(c.startswith("first motion") for c in unmoved), unmoved
     half = run_counters({**end, "llm_latency_p50_s": 6.2, "llm_latency_max_s": 8.2})
-    assert not any(c.startswith("model calls") for c in half), half
+    assert not any(c.startswith("LLM calls p50") for c in half), half
 
 
 def test_the_help_offers_log_and_trace_is_no_command() -> None:
