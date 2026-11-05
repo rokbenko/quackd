@@ -13,7 +13,9 @@ robot, and `docs/adapters/status.md` says so.
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib.util
+import io
 import socket
 import sys
 import threading
@@ -22,6 +24,7 @@ from types import ModuleType
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd_toddlerbot import ToddlerBotAdapter
@@ -937,6 +940,82 @@ def test_a_camera_that_stopped_answering_stops_being_a_camera() -> None:
     assert feed.latest() is not None
     feed.taken = time.monotonic() - D.CAMERA_STALE_S - 1.0
     assert feed.latest() is None, "a stale frame is no frame"
+
+
+class _LongFrames:
+    """A camera whose frame is a real JPEG on one line longer than asyncio's default limit.
+    Random pixels, because they compress worst, at the size and quality the daemon uses."""
+
+    def __init__(self) -> None:
+        noise = np.random.default_rng(1).integers(0, 256, (480, 640, 3), dtype=np.uint8)
+        picture = io.BytesIO()
+        Image.fromarray(noise).save(picture, "JPEG", quality=80)
+        self.frame = base64.b64encode(picture.getvalue()).decode("ascii")
+        assert len(self.frame) > 2**16, "this frame would not have reached the old limit"
+
+    def latest(self) -> str:
+        return self.frame
+
+    def close(self) -> None:
+        pass
+
+
+async def test_a_frame_over_asyncios_default_line_reaches_the_client() -> None:
+    """A frame is one line of base64, and over 64 KiB `readline` raised out of the pump. The frame
+    came back None, and every request after it waited out its timeout, the heartbeat's too."""
+    with _Serving(camera=True) as s:
+        s.daemon.camera = _LongFrames()
+        link = ToddlerBotBridge(address=s.address)
+        await link.connect()
+        frame = await link.get_frame()
+        assert frame is not None and frame.size == (640, 480)
+        await link.heartbeat()
+        await link.close()
+
+
+async def test_a_line_over_the_limit_costs_that_frame_and_not_the_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("quackd_toddlerbot.bridge.READER_LIMIT", 2**15)
+    with _Serving(camera=True) as s:
+        s.daemon.camera = _LongFrames()
+        link = ToddlerBotBridge(address=s.address, request_timeout_s=0.5)
+        await link.connect()
+        assert await link.get_frame() is None
+        link.request_timeout_s = 3.0
+        await link.heartbeat()
+        await link.close()
+
+
+async def test_a_line_the_client_cannot_read_does_not_end_the_link() -> None:
+    """Each of these used to raise out of the pump, where only broken JSON was skipped."""
+    link = ToddlerBotBridge(address="tcp://127.0.0.1:1")
+    link._reader = asyncio.StreamReader()
+    answer = asyncio.get_running_loop().create_future()
+    link._pending[7] = answer
+    pump = asyncio.create_task(link._read_loop())
+    for line in (b"5\n", b'{"id": "seven", "result": 1}\n', b"\xff\xfe\n", b"not json\n"):
+        link._reader.feed_data(line)
+    link._reader.feed_data(b'{"id": 7, "result": "still here"}\n')
+    assert await asyncio.wait_for(answer, 2.0) == "still here"
+    link._reader.feed_eof()
+    await asyncio.wait_for(pump, 2.0)
+
+
+async def test_a_link_that_fails_tells_whoever_is_waiting_at_once() -> None:
+    """A reset raised out of the pump too, and left the request to wait out its timeout."""
+
+    class Reset:
+        async def readline(self) -> bytes:
+            raise ConnectionResetError("reset by peer")
+
+    link = ToddlerBotBridge(address="tcp://127.0.0.1:1")
+    link._reader = Reset()  # type: ignore[assignment]
+    answer = asyncio.get_running_loop().create_future()
+    link._pending[7] = answer
+    await asyncio.wait_for(link._read_loop(), 2.0)
+    with pytest.raises(TransportError, match="the link to the bridge failed"):
+        await asyncio.wait_for(answer, 2.0)
 
 
 async def test_closing_the_link_does_not_sit_out_the_request_timeout() -> None:

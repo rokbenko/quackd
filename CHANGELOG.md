@@ -54,6 +54,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **`--kind policy` is gone as well, and `--kind all` is now the pilots and the decision LLMs.** A policy
   is no LLM, so `quackd list-llms --kind policy` is refused and names `quackd policy list`.
 
+### Fixed
+
+- **A ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot.** A frame comes
+  from the daemon as one line of base64, and the client read with asyncio's 64 KiB limit, so a longer line
+  raised out of its read loop, which died without a word. Every request after it waited out its timeout,
+  the heartbeat's among them, while the keepalive went on telling the daemon all was well. The camera's
+  640x480 can pass that at the quality the daemon encodes at. The limit is 4 MiB now, and a line longer
+  still, or one the client cannot read, is skipped and the link goes on. A link that fails tells whatever
+  is waiting at once, rather than leaving it to time out. What changes for you: nothing to do.
+  `tests/test_toddlerbot_daemon.py` sends such a frame from the real daemon over a real socket. It failed
+  before this change. Like everything on this adapter, it has not run on a robot.
+
 ### Documentation
 
 - **The pages say LLM too, and `docs/models/` is `docs/llms/`.** Every page, ADR, design note and
@@ -68,6 +80,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **Two pages quoted output quackd no longer prints.** The README's token count had moved with the
   prompt, and `docs/concepts/safety.md` quoted a 529's error in an older shape. Every page that quotes
   the counters was captured again by running its command.
+- **`uv.lock` takes `openai` 3.42.1 and `laya` 0.4.21, from Dependabot's #66.** A refresh of the lock
+  changes no requirement a user installs against. CI installs neither package, so its checks say the lock
+  resolves and not that either one works.
 
 ## [0.31.3] — 2026-11-05
 

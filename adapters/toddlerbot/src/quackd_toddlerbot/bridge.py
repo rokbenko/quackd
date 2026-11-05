@@ -29,6 +29,7 @@ import base64
 import binascii
 import contextlib
 import json
+import logging
 import os
 import time
 from collections.abc import AsyncIterator
@@ -39,6 +40,8 @@ from PIL import Image, UnidentifiedImageError
 
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
 from quackd_toddlerbot.verbs import look_degrees
+
+log = logging.getLogger(__name__)
 
 STATUS = "EXPERIMENTAL - quackd's own protocol, never run against a robot"
 
@@ -79,6 +82,16 @@ MIN_LOOP_HZ = 40.0
 """The daemon runs at fifty. Much below that and the gait phase drifts, so quackd says so
 rather than letting a slow robot look like a healthy one."""
 STALE_LIMIT_MS = 1000.0
+
+READER_LIMIT = 2**22
+"""The longest line the reader takes from the daemon, 4 MiB, where asyncio's default is 64 KiB.
+
+A frame comes as one line of base64 (`bot.frame`), so the default stopped at a JPEG of about
+48 KB, and the camera's 640x480 can pass that at the quality the daemon encodes at. Over it,
+`readline` raised out of the pump, which died without a word: every request after it waited
+out its timeout on a socket nobody read, while the keepalive went on telling the daemon all was
+well. 4 MiB holds a 1080p frame of pure noise at that quality, and `_read_loop` skips a line
+longer still instead of ending the link on it."""
 
 
 def parse_address(address: str) -> tuple[str, int]:
@@ -151,7 +164,9 @@ class ToddlerBotBridge:
     async def connect(self) -> None:
         host, port = parse_address(self.address)
         try:
-            self._reader, self._writer = await asyncio.open_connection(host, port)
+            self._reader, self._writer = await asyncio.open_connection(
+                host, port, limit=READER_LIMIT
+            )
         except OSError as e:
             raise TransportError(
                 f"cannot connect to the bridge at {self.address}: {e}. Is "
@@ -233,33 +248,54 @@ class ToddlerBotBridge:
         self._reader = None
 
     async def _read_loop(self) -> None:
+        """Every answer comes through here, so nothing one line does may end it. A pump that died
+        left every request after it to wait out its timeout on a socket nobody read, while the
+        keepalive went on feeding the daemon's deadman."""
         assert self._reader is not None
         while True:
-            line = await self._reader.readline()
+            try:
+                line = await self._reader.readline()
+            except ValueError as e:
+                # A line over READER_LIMIT. `readline` has already let go of it, so the next read
+                # starts past it, or at a tail of it that `_take_line` throws away.
+                log.warning("skipped a line from the bridge over %d bytes: %s", READER_LIMIT, e)
+                continue
+            except OSError as e:
+                self._fail_pending(f"the link to the bridge failed: {e}")
+                return
             if not line:
-                for fut in self._pending.values():
-                    if not fut.done():
-                        fut.set_exception(TransportError("the bridge closed the connection"))
+                self._fail_pending("the bridge closed the connection")
                 return
             try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
-                pending = self._pending.pop(int(msg["id"]), None)
-                if pending is not None and not pending.done():
-                    if "error" in msg:
-                        err = msg["error"]
-                        pending.set_exception(
-                            TransportError(f"{err.get('code')}: {err.get('message')}")
-                        )
-                    else:
-                        pending.set_result(msg.get("result"))
-            elif "method" in msg:
-                if msg["method"] == STATE:
-                    self._last_state = msg.get("params") or {}
-                with contextlib.suppress(asyncio.QueueFull):
-                    self._notifications.put_nowait(msg)
+                self._take_line(line)
+            except Exception as e:  # one line quackd mishandles must not cut the robot off
+                log.warning("skipped a line from the bridge that quackd could not read: %r", e)
+
+    def _fail_pending(self, why: str) -> None:
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(TransportError(why))
+
+    def _take_line(self, line: bytes) -> None:
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
+            pending = self._pending.pop(int(msg["id"]), None)
+            if pending is not None and not pending.done():
+                if "error" in msg:
+                    err = msg["error"]
+                    pending.set_exception(
+                        TransportError(f"{err.get('code')}: {err.get('message')}")
+                    )
+                else:
+                    pending.set_result(msg.get("result"))
+        elif "method" in msg:
+            if msg["method"] == STATE:
+                self._last_state = msg.get("params") or {}
+            with contextlib.suppress(asyncio.QueueFull):
+                self._notifications.put_nowait(msg)
 
     def _write(self, obj: dict[str, Any]) -> None:
         if self._writer is None:
