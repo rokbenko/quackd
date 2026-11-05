@@ -22,10 +22,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   help says all use the word now. The counters under a run's verdict read `LLM calls 6`,
   `time 49.5 s (LLM 20.4 s)`, `LLM calls p50 2.6 s, p90 7.7 s, max 7.7 s` and `after 3 LLM calls`, the
   run line reads `provider=openai LLM=gpt-6-sol`, the budget line `step 3/40, LLM calls 3/40`, and the
-  stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help`'s panel `Model` is `Pilot`, on the
-  page `quackd ui` draws as well, since those flags decide who flies the run, and `--llm` shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an
-  OpenRouter id `AUTHOR/LLM`. The pilot reads the word as well: the play section's `product or LLM`, and
-  the task files of E016, E156 and E187. A script that matches a printed line has to change its words.
+  stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help`'s panel `Model` is `Pilot`, because
+  those flags decide who flies the run, and the page `quackd ui` draws already called them that. `--llm`
+  shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an OpenRouter id `AUTHOR/LLM`. The pilot reads
+  the word as well: the play section's `product or LLM`, and the task files of E016, E156 and E187. A
+  script that matches a printed line has to change its words.
 - **Run records and `--json` say `llm_id` where they said `model`, and a script that reads them has to
   change.** That is the LLM's id in `summary.json`, in `run_start`, `llm_request` and `llm`, in the
   `decision` block, `decision_llm` and `watch`, in a flock's records and in `quackd list-llms --json`
@@ -36,11 +37,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   belongs to somebody else: the `model` a vendor's API takes and returns, `/v1/models`, and the
   `model` field of a robot's manifest and passport, which is the robot's and no LLM's.
 - **A VLA run counts turns, because no LLM is asked in it.** With `--controller vla` the line under the
-  verdict said `llm calls 5`, `(model 0.0 s)`, a spread of those seconds and `after 2 model calls`. It
-  now says `turns 5` and `after 2 turns`, without the split or the spread, and the line at the top of
-  each step says `turns 2/40`. On a VLA run recorded earlier, `quackd log` says turns under the verdict
-  and leaves its steps as they were recorded. `--llm fake` keeps `LLM calls`, because it is chosen
-  through `--llm` and stands in for an LLM.
+  verdict said `llm calls 5`, `model 0.0 s` in the split of its time, a spread of those seconds and
+  `after 2 model calls`. It now says `turns 5` and `after 2 turns`, with no LLM in the split and no
+  spread, and the line at the top of each step says `turns 2/40`. On a VLA run recorded earlier, `quackd
+  log` says turns under the verdict and leaves its steps as they were recorded. `--llm fake` keeps `LLM
+  calls`, because it is chosen through `--llm` and stands in for an LLM.
 - **A decision LLM you wrote yourself has to rename three things.** The module's `make(spec, *, url,
   model)` is `make(spec, *, url, llm_id)`, its `MODEL` is `LLM_ID`, and the object it returns answers to
   `llm_id`. `tests/stub_decision_llm.py` shows the new shape.
@@ -60,7 +61,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   policies. `docs/models/vlas.md` is `docs/guides/vlas.md`, because a policy is no LLM.
   `scripts/models_docs.py` is `scripts/llms_docs.py`, and ADR-0031, ADR-0040 and ADR-0062 have
   new file names. A published PyPI page's link into `docs/models/` no longer resolves, as happened when
-  the pages moved in 0.16.1. What is a simulator's, a policy's, a detector's or a board's keeps its word,
+  the pages moved in 0.17.0. What is a simulator's, a policy's, a detector's or a board's keeps its word,
   and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
   word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
   as their runs printed them, and so do the recorded transcripts under `docs/assets/`.

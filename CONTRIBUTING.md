@@ -74,7 +74,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `quackd/onboard/`, `quackd/boards/`, `quackd/radio/` | Robot Passport on a robot's own computer, the one part of quackd that runs there: `quackd onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `quackd/passport/`, which imports nothing else from quackd |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
-| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `llms_docs.py`, which renders the tables in `docs/llms/` from the catalogues |
+| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `llms_docs.py`, which renders the tables in `docs/llms/` and `docs/guides/vlas.md` from the catalogues |
 
 A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass

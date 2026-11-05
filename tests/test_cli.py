@@ -853,9 +853,28 @@ def test_policy_list_json_says_which_it_serves(_wide: None) -> None:
     result = runner.invoke(app, ["policy", "list", "--json"])
     assert result.exit_code == 0, result.output
     rows = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    served = [row for row in rows if row["served"]]
+    refused = [row for row in rows if not row["served"]]
+    assert [row["type"] for row in served] == [family.type for family in FAMILIES]
+    assert [row["name"] for row in refused] == [r.name for r in NOT_SERVED]
     assert {row["kind"] for row in rows} == {"policy"}
-    assert [row["type"] for row in rows if row["served"]] == [family.type for family in FAMILIES]
-    assert [row["name"] for row in rows if not row["served"]] == [r.name for r in NOT_SERVED]
+    for row in served:
+        assert set(row) == {
+            "kind",
+            "served",
+            "type",
+            "label",
+            "maker",
+            "takes_words",
+            "extra",
+            "needs",
+            "gpu",
+            "licence",
+            "licence_url",
+            "ran",
+        }
+    for row in refused:
+        assert set(row) == {"kind", "served", "name", "maker", "type", "why", "would_change"}
 
 
 def test_list_llms_json_tags_every_row_with_its_kind(_wide: None) -> None:

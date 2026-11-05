@@ -483,7 +483,8 @@ its logs.
   `factory.py`. The browser demo's copy of the LLM list is generated rather than written:
   `python web/build_catalogue.py` rewrites `web/src/catalogue.js` from the same catalogue, and
   `tests/test_web.py` fails if the committed file is not what the generator produces. The
-  tables in [docs/llms/](../llms/README.md) are generated the same way, by
+  tables in [docs/llms/](../llms/README.md) and [guides/vlas.md](../guides/vlas.md) are generated
+  the same way, by
   `scripts/llms_docs.py` from the pilots', the decision LLMs' and the policies' catalogues,
   and `tests/test_docs.py` fails if a page is not what the script writes. What the entries are
   and what counts them: [CONTRIBUTING.md](../../CONTRIBUTING.md).

@@ -187,7 +187,7 @@ async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
 
 def test_one_turn_is_one_turn_and_a_pilot_llm_still_says_what_it_did() -> None:
     """Only the VLA pilot is told apart, and `--llm fake` stands in for an LLM so it keeps the
-    LLM's counters, which the pages quote."""
+    LLM's counters, which the pages quote. The policy's seconds stay in the split for both."""
     end = {
         "steps": 1,
         "llm_calls": 1,
@@ -198,14 +198,15 @@ def test_one_turn_is_one_turn_and_a_pilot_llm_still_says_what_it_did() -> None:
         "llm_latency_max_s": 2.0,
         "first_motion_s": 3.0,
         "first_motion_llm_calls": 1,
+        "policy": {"segments": 1, "wall_s": 1.0},
     }
     for provider in ("fake", "anthropic"):
         said = cli.run_counters({**end, "provider": provider})
-        assert said[1] == "LLM calls 1" and "time 3.0 s (LLM 2.0 s)" in said
+        assert said[1] == "LLM calls 1" and "time 3.0 s (LLM 2.0 s, policy 1.0 s)" in said
         assert "LLM calls p50 2.0 s, p90 2.0 s, max 2.0 s" in said
         assert "first motion at 3.0 s, after 1 LLM call" in said
     said = cli.run_counters({**end, "provider": V.NAME})
-    assert said[1] == "turns 1" and "time 3.0 s" in said
+    assert said[1] == "turns 1" and "time 3.0 s (policy 1.0 s)" in said
     assert "first motion at 3.0 s, after 1 turn" in said
     assert not [counter for counter in said if "LLM" in counter], said
 

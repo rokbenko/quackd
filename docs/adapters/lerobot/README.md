@@ -1682,9 +1682,8 @@ quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.
   instruction ends the run on its budget, and you are still asked about the segments that ran.
 - **It reads nothing but the verb's result and your answer.** The simulator's own truth about
   the table never reaches it: `quackd preflight` judges a rehearsal on its own.
-- **It costs nothing.** No LLM is asked, so it counts the pilot's turns where a run with an LLM
-  counts its calls, and on the mock arm the counter line reads
-  `steps 3 · turns 5 · tokens 0+0 · time 0.3 s · first motion at 0.2 s, after 2 turns · cost $0`.
+- **It costs nothing.** No LLM is asked, so the counter line counts `turns` where a run with an
+  LLM counts `LLM calls`, and reads `tokens 0+0` and `cost $0`.
 - **It is refused before anything connects** without `--policy-url`, with `--yes`, with no
   terminal to ask on, with `--dry-run`, beside `--decision-llm` or a decision LLM
   `QUACKD_DECISION_LLM` names, with a flag for a pilot LLM or a picture it would ignore (`--llm`,

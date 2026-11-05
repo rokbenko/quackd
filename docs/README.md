@@ -158,7 +158,7 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
 - `concepts/` for how quackd works, and why.
-- `llms/` for which LLMs quackd names, a page for each role and one for the companies. Their
+- `llms/` for which LLMs quackd names, a page for each of their roles and one for the companies. Their
   tables, and the policy types' in `guides/vlas.md`, are rendered from the code by
   `scripts/llms_docs.py`, so a row is changed there and never in a table. How to set one up is a
   guide.

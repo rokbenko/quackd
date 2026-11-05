@@ -645,7 +645,9 @@ class AgentLoop:
             self.fm.budgets,
             now=cfg.transport.now,
             policy_total_s=self.fm.effective_policy.total_s,
-            calls_word="turns" if cfg.provider.name == VLA_PILOT else Budget.calls_word,
+            calls_word="turns"
+            if getattr(cfg.provider, "name", "") == VLA_PILOT
+            else Budget.calls_word,
         )
         self.registry = cfg.registry or default_registry()
         self.executor = Executor(

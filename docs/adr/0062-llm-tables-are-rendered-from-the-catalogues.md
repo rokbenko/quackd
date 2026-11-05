@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-10-25 · Extends [ADR-0031](0031-llm-catalogue.md) (the catalogue is the one source of LLM names), [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (a decision LLM is a data row) and [ADR-0060](0060-hugging-face-serves-many-vlas.md) (what the policy server serves is data in the core) · Implemented in `scripts/llms_docs.py`, `docs/llms/`, `quackd/agent/providers/catalogue.py` (`KEY_FALLBACKS`) and `quackd list-llms --kind` in `quackd/cli.py` ([docs/llms/](../llms/README.md))
 
+**Amended 2026-11-05:** a policy is no LLM, so it left the LLMs' folder and their command. The page
+decision 1 put in `docs/llms/` is `docs/guides/vlas.md`, and the policy types decision 5 gave
+`quackd list-llms --kind` are `quackd policy list`. Their tables are still rendered as decision 2
+says.
+
 ## Context
 
 On 2026-10-25 Rok asked for one clear place that says which pilot LLMs, which decision LLMs and
