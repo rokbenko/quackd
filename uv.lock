@@ -2053,7 +2053,7 @@ wheels = [
 
 [[package]]
 name = "laya"
-version = "0.4.21"
+version = "0.4.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -2062,9 +2062,9 @@ dependencies = [
     { name = "torch" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/21/4e/a3cd1f5c19d28167a5ae657045a51986976682ec3b41ec4607a7a1182a5f/laya-0.4.21.tar.gz", hash = "sha256:9130a0c5f2a2102f317cf0209be7baf68ae9b9969b5edb71da26040da67c5301", size = 1396376, upload-time = "2026-11-01T21:16:52.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/56/3f3c9efa4cb6c8087926548e97cde7c408a1ae49fe2f3bfa962741778672/laya-0.4.22.tar.gz", hash = "sha256:eaed70b09d6555357ef49493d23a80678218159ced7b8d1808b6061b3d2ba529", size = 1397433, upload-time = "2026-11-03T15:35:27.366Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/a8/293b523ecb4c4d7e7ba14688c1ad6808bf1858b6a0fb160ae2bcb41703fe/laya-0.4.21-py3-none-any.whl", hash = "sha256:38b53a8175581b19458a522603bf76516860528195559b300e7cd122a8dfad1c", size = 463955, upload-time = "2026-11-01T21:16:50.573Z" },
+    { url = "https://files.pythonhosted.org/packages/65/74/ed14b1033ac5303ccc29ecbf3ba6ff24d2d19e58bab0259b3d4e0b4fcb33/laya-0.4.22-py3-none-any.whl", hash = "sha256:7e8cad8ca4cb76588ef608e70ad6753bae612885e015aeeeae7b43268ec5fd5a", size = 464232, upload-time = "2026-11-03T15:35:25.458Z" },
 ]
 
 [[package]]
@@ -3028,7 +3028,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.42.1"
+version = "3.43.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3038,9 +3038,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/7b/e01d5288d13e3bae3714ed39df402f99f88f422dcd978c5ce94848037200/openai-3.42.1.tar.gz", hash = "sha256:4222d919374648ff572753626e942f26eb1ece8a5e0e9a2708c9be4d560f070f", size = 2356422, upload-time = "2026-11-01T20:57:02.607Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/f7/2e8ca7ab9554656e831de49aed53aa8067e96015432b3078cff01966c3ae/openai-3.43.0.tar.gz", hash = "sha256:b5e6880586709df7ba002d0a2d4b97b960fc8fa6696a8abe29fbcf24ed2edd67", size = 2375647, upload-time = "2026-11-03T18:07:00.927Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/11/37b847d8a057000193974eeea1bcc681355ae50d35865f2eb2b323de6153/openai-3.42.1-py3-none-any.whl", hash = "sha256:c1959518a8e26f81a3564357082cb684540be639a21fece35ac5619415a3eadc", size = 2397433, upload-time = "2026-11-01T20:57:00.622Z" },
+    { url = "https://files.pythonhosted.org/packages/26/f4/d00b8d6205916e7c89711d86cf70c2d930fc069c596cb2bb47884bc67392/openai-3.43.0-py3-none-any.whl", hash = "sha256:d8dfc6a187b587769f56fc00c7b8d2cb7715e65583d587eee0f0a99c6cf49d12", size = 2408178, upload-time = "2026-11-03T18:06:58.828Z" },
 ]
 
 [[package]]
@@ -5207,11 +5207,11 @@ wheels = [
 
 [[package]]
 name = "types-pyyaml"
-version = "6.0.12.20261030"
+version = "6.0.12.20261103"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c7/0c/72b85bc2e3a3cf23419a7f8861c1855893f02080e202b631e33cc0d1a94a/types_pyyaml-6.0.12.20261030.tar.gz", hash = "sha256:9123d707aa31a3883eeb2cb290537c75246dfcb1c00abed7a70f5419d3bd31ae", size = 18878, upload-time = "2026-10-30T07:50:19.43Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/82/2ed4d215a2840b467a9a864f03b0d21904250e28f5e1f006ad36fba0311a/types_pyyaml-6.0.12.20261103.tar.gz", hash = "sha256:7a1b5f837881dd35d5448b5f18275164f89f206185e31e8eae6e0b42607bc001", size = 18911, upload-time = "2026-11-03T08:45:23.714Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/99/7e2c7c7202108220fb664ce4c5ac313a564ab5babb153516a3ac0ad8a681/types_pyyaml-6.0.12.20261030-py3-none-any.whl", hash = "sha256:508cc80546918201026a955356222111224e1f4f7deab0b91f2a95933f764e67", size = 21283, upload-time = "2026-10-30T07:50:18.389Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/10/4353eb86278f6a59aeb9fe2be4d979c20b110b4009fa455a3ea6467cf5cb/types_pyyaml-6.0.12.20261103-py3-none-any.whl", hash = "sha256:444654c61f635dab82c092a511aa96a0ce31164810784b9a37314e3e56532ac8", size = 21299, upload-time = "2026-11-03T08:45:22.749Z" },
 ]
 
 [[package]]
