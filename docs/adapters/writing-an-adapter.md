@@ -82,7 +82,7 @@ quackd = { workspace = true }
 | the environment marker | LeRobot needs Python 3.12 and pulls torch. The marker is what keeps the lock solvable on 3.11, where this package still installs and the mock still runs |
 | `[project.entry-points."quackd.adapters"]` | `lerobot = "quackd_lerobot"` is the robot's name mapped to the module carrying `describe`, `make`, `implementations` and `conditions`. This is how quackd finds it, and the only way it finds a third party's |
 | `[tool.hatch.version] path` | the version lives in `src/quackd_lerobot/__init__.py` as `__version__`, because an adapter's sdist holds only its own source and cannot read the core's. `scripts/set_version.py X.Y.Z` writes all nine at once |
-| `[tool.uv.sources] quackd = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync --extra dev` install the core and all eight editable. An adapter published from somewhere else deletes this block and depends on the released core |
+| `[tool.uv.sources] quackd = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync --extra dev` install the core and all nine editable. An adapter published from somewhere else deletes this block and depends on the released core |
 
 The `README.md` is the package's PyPI page. Keep it to what the body is, the one command
 that installs it, what has actually been run against hardware, and a link to the full page

@@ -1604,7 +1604,7 @@ def test_the_cell_count_reads_a_row_as_github_does() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md"]
+    "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md", "CONTRIBUTING.md"]
 )
 def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
     """Half of the 0.5 documentation audit was stale counts that no test could see.
@@ -1617,7 +1617,15 @@ def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
     prose = _prose((REPO / name).read_text(encoding="utf-8")).lower()
     # only claim shapes that are unambiguously about how many adapters exist. "two robots
     # under one contract" is a heterogeneous flock, not a count of adapters.
-    shapes = ("{w} adapters", "{w} robots supported", "{w} robots today")
+    # "all eight editable" sat on the guide for the whole of nine adapters, in a shape this
+    # did not read
+    shapes = (
+        "{w} adapters",
+        "{w} robots supported",
+        "{w} robots today",
+        "all {w} editable",
+        "all {w} of them",
+    )
     for count, word in _NUMBER_WORDS.items():
         if count == len(ADAPTER_NAMES):
             continue

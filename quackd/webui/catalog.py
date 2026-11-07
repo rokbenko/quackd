@@ -219,6 +219,13 @@ def vendor_key(vendor: str) -> tuple[str, str | None] | None:
     return None if env is None else (env, KEY_FALLBACKS.get(vendor))
 
 
+def install_line(row: Mapping[str, Any]) -> str:
+    """The command that installs an adapter this machine lacks, from its catalogue row, whose
+    `extra` names the package already: `uv pip install "quackd[lerobot]"`. The setup page put a
+    second `quackd[...]` round it, and printed `quackd[quackd[lerobot]]`."""
+    return f'uv pip install "{row.get("extra")}"'
+
+
 def vendor_extra(vendor: str) -> tuple[str, bool] | None:
     """The `quackd[...]` extra a vendor's SDK comes with, and whether that SDK is installed."""
     from quackd.agent.providers.factory import EXTRA_FOR, SDK_FOR

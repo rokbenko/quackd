@@ -54,6 +54,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2 runs to the
   end in it.
 
+### Fixed
+
+- **The setup page names the extra to install as it is.** For an adapter not installed here it said
+  `uv pip install "quackd[quackd[lerobot]]"`, putting a second `quackd[...]` round the catalogue's
+  extra, which names the package already. It says `uv pip install "quackd[lerobot]"` now.
+
 ### Documentation
 
 - **Five SO-101 examples reach forward instead of raising the shoulder into the desk.** E116, E117,
@@ -85,6 +91,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and `ROUTE` a module may declare and what a catalogue row now carries, and
   [docs/concepts/safety.md](docs/concepts/safety.md) says what stops a described body: nothing of
   quackd's, since nothing of quackd's moves it.
+- **The adapter guide counts nine adapters where `uv sync --extra dev` installs them.** It said
+  all eight, a count from before Huebot, in a shape the count guard did not read. The guard reads
+  `all N editable` and `all N of them` now, on CONTRIBUTING.md as well as the guide.
 
 ### Known limitations
 
