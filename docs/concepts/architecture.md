@@ -132,15 +132,16 @@ down through them on its way to the robot, and state and frames come back up.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="../assets/architecture-dark.svg">
-    <img src="../assets/architecture-light.svg" alt="Four stacked layers. Body: data, one per robot, the only layer the LLM reads. Behaviour family: servo arm, biped on a runtime, wheeled base, humanoid with its own loop. Binding: import the SDK, speak its wire, or a bridge quackd ships. Transport: bytes only. An intent goes down through them, and state and frames come back up." width="880">
+    <img src="../assets/architecture-light.svg" alt="Four stacked layers. Body: data, one per robot, the only layer the LLM reads. Behaviour family: servo arm, biped on a runtime, wheeled base, humanoid, own loop. Binding: import the SDK, speak its wire, or a bridge quackd ships. Transport: bytes only. An intent goes down through them, and state and frames come back up." width="880">
   </picture>
 </p>
 
 **The body** is data, one per robot: the manifest ([ADR-0017](../adr/0017-robot-adapters-and-manifest.md)),
 the datasheet with a source for every figure and what the body `cannot` do
 ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)), the verbs it offers and the ones it
-withholds, its limits, its `safety_authority` and its rest pose. The prompt is built from this
-layer alone, so it is everything the LLM knows about the robot. A
+withholds, its limits, its `safety_authority` and its rest pose. Of the four layers it is the
+only one the prompt is built from, beside the task file, what the robot remembers and the flock,
+so it is everything the LLM knows about the robot. A
 [described body](../adapters/status.md#described-bodies) is this layer and nothing under it: one
 YAML of its maker's figures, which no code drives
 ([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)).
@@ -166,7 +167,9 @@ named in its package's `upstream_api.py`, pinned to a commit
 ([ADR-0022](../adr/0022-per-adapter-upstream-refs.md)).
 
 **The transport** moves bytes and knows nothing about the body: USB serial, a Unix socket, TCP,
-HTTP or a WebSocket. What each real backend's address looks like is its `Connect` block in the
+HTTP or a WebSocket. That is the word as these four layers use it. The modules under
+`quackd/transport/` are older than them and hold a binding and its transport together, which is
+why the sequence above has the transport send a twist. What each real backend's address looks like is its `Connect` block in the
 catalogue, which [guides/web-ui.md](../guides/web-ui.md) renders.
 
 The picture is drawn from the catalogue by `docs/assets/architecture.py`, which puts each robot in

@@ -562,7 +562,9 @@ Then, for one quackd publishes:
    who answers for its first hardware run and the date: `tests/test_described.py` refuses a
    bound row without both. Then `python docs/assets/architecture.py` redraws the picture on the
    README and on [concepts/architecture.md](../concepts/architecture.md#four-layers) with your
-   robot in the boxes its family and route name. The catalogue is
+   robot in the boxes its family and route name, and a robot that speaks a wire no adapter has
+   spoken needs that wire's label in the script's `WIRES` first, which the script says. The
+   catalogue is
    strings and imports nothing, which is what lets the table print the whole nine on a machine
    with none of them installed, each marked "not installed". Append, never insert: the tables
    that print these rows are order sensitive and a test pins them.

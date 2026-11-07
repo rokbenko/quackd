@@ -47,14 +47,14 @@ ARROW_GAP = 34
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 MONO = "ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace"
 
-TITLE = "Only the body layer is one per robot: behaviour is shared by family, bindings by route"
+TITLE = "Only the body layer is one per robot: below it, each robot sits by its kind and its route"
 
 FAMILIES: dict[str, tuple[str, str]] = {
     "arm": ("Servo arm", "rest pose, fold first, hand-off, travel clip, paced joint moves"),
     "biped": ("Biped on a runtime", "a twist re-sent while it walks, skills, a posture, a deadman"),
     "wheeled": ("Wheeled base", "a twist, a stop that zeroes it, places where odometry allows"),
     "humanoid": (
-        "Humanoid, its own loop",
+        "Humanoid, own loop",
         "a loop quackd ships, safe-pose slew, keyframes, clamps",
     ),
 }
@@ -82,11 +82,15 @@ TRANSPORT = (
 BODY_TITLE = "Body: data, one per robot"
 BODY_NAME = "Manifest, datasheet, verbs offered, limits, safety authority, rest pose, cannot"
 BODY_TEXT = (
-    "What the LLM reads, and nothing below it: what this body is, what it can do and what it "
+    "Of the four, the one layer the LLM reads: what this body is, what it can do and what it "
     "cannot. Described bodies stop here, as one YAML of their maker's figures that nothing drives."
 )
 FAMILY_TITLE = "Behaviour family: what bodies of a kind do alike"
-ROUTE_TITLE = "Binding: how an intent reaches the robot, by one of three routes"
+_COUNTS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+ROUTE_TITLE = (
+    "Binding: how an intent reaches the robot, by one of "
+    f"{_COUNTS.get(len(ROUTES), str(len(ROUTES)))} routes"
+)
 
 
 @dataclass(frozen=True)
@@ -143,14 +147,6 @@ def adapters() -> tuple[AdapterInfo, ...]:
     return tuple(info for info in OFFICIAL if info.kind == "adapter")
 
 
-def bridges_of_nobody() -> list[str]:
-    """Every folder under `bridge/` that is no adapter's: what quackd ships for a board and not
-    for a robot, which is a bridge all the same."""
-    names = {info.name for info in OFFICIAL}
-    found = sorted(p.name for p in (REPO / "bridge").iterdir() if p.is_dir())
-    return [name for name in found if name not in names]
-
-
 @dataclass(frozen=True)
 class Member:
     """A name in a box. `adapter` is what a test reads back: None for a word that is only prose."""
@@ -169,17 +165,10 @@ def _named(names: Sequence[str]) -> list[Member]:
 
 
 def family_members(family: str) -> list[Member]:
-    """Who sits in a family's box: the adapters of that kind, then the adapters whose second
-    family it is, said as what they are, the arms of a cart."""
-    own = [i.name for i in adapters() if families_of(i)[:1] == (family,)]
-    second = [i.name for i in adapters() if family in families_of(i)[1:]]
-    members = _named(own)
-    if second:
-        if members:
-            members.append(Member("; "))
-        members.append(Member(f"the {family}s of "))
-        members.extend(_named(second))
-    return members
+    """Who sits in a family's box: the adapters whose own kind it is. A second family a row names,
+    the arms a cart carries, is not drawn, since the box says what that family's bodies do and a
+    cart's arms do none of it: their hosts drive them."""
+    return _named([i.name for i in adapters() if families_of(i)[:1] == (family,)])
 
 
 def _spoken(info: AdapterInfo) -> str:
@@ -192,7 +181,8 @@ def _spoken(info: AdapterInfo) -> str:
 
 def route_members(route: str) -> list[Member]:
     """Who takes a route, in the catalogue's order, with what each speaks or imports where that
-    says something its name does not, then any bridge quackd ships that is no adapter's."""
+    says something its name does not. A daemon under `bridge/` that is no adapter's moves no
+    robot, the Jetson's among them, so it is not a binding and is not drawn."""
     members: list[Member] = []
     for info in adapters():
         if route not in routes_of(info):
@@ -203,12 +193,6 @@ def route_members(route: str) -> list[Member]:
         said = _spoken(info) if route == "wire" else info.sdk if route == "sdk" else None
         if said and said != info.name:
             members.append(Member(f" ({said})"))
-    if route == "bridge":
-        for name in bridges_of_nobody():
-            if members:
-                members.append(Member(", "))
-            members.append(Member(name, name))
-            members.append(Member(" (a board)"))
     return members
 
 
@@ -233,7 +217,12 @@ def check_labels() -> None:
 # ── how wide a line is, and where it breaks ─────────────────────────────────────────────
 
 
-def advance(text: str, px: float, mono: bool = False) -> float:
+BOLD = 1.12
+"""How much wider a title in weight 600 draws than the same text in 400, with room to spare: Arial
+Bold measures about 8 percent wider, and a box's title is the one line drawn bold."""
+
+
+def advance(text: str, px: float, mono: bool = False, *, bold: bool = False) -> float:
     """How wide `text` draws, as an estimate on the safe side. Nothing measures a font here, so
     this is the width a wide sans would take: capitals wider than the rest, and every character
     of a monospace the same."""
@@ -242,7 +231,7 @@ def advance(text: str, px: float, mono: bool = False) -> float:
     wide = sum(1 for c in text if c.isupper() or c in "mw@")
     narrow = sum(1 for c in text if c in " ,.:;'iljtf()")
     rest = len(text) - wide - narrow
-    return (wide * 0.74 + narrow * 0.34 + rest * 0.56) * px
+    return (wide * 0.74 + narrow * 0.34 + rest * 0.56) * px * (BOLD if bold else 1.0)
 
 
 def wrap(text: str, px: float, width: float) -> list[str]:
@@ -326,7 +315,7 @@ def _boxes(
                 width=width,
             )
         )
-        if advance(name, NAME_PX) > text_width:
+        if advance(name, NAME_PX, bold=True) > text_width:
             raise SystemExit(f"{prefix}-{key}: the title {name!r} does not fit its box")
     return boxes
 
@@ -358,7 +347,7 @@ def layout() -> Layout:
     """Where everything goes, derived from what goes in it, so a longer list of robots makes its
     band taller rather than running out of its box."""
     check_labels()
-    if advance(TITLE, TITLE_PX) > CANVAS - 2 * MARGIN:
+    if advance(TITLE, TITLE_PX, bold=True) > CANVAS - 2 * MARGIN:
         raise SystemExit("the title no longer fits on one line")
     families = _boxes("family", FAMILIES, {key: family_members(key) for key in FAMILIES})
     routes = _boxes("route", ROUTES, {key: route_members(key) for key in ROUTES})
@@ -386,7 +375,10 @@ def layout() -> Layout:
     for box in (*families, *routes):
         for line in box.members:
             used = sum(advance(m.text, TEXT_PX, mono=m.adapter is not None) for m in line)
-            assert used <= box.width - 2 * PAD + 1, f"{box.id}: {line} does not fit"
+            if used > box.width - 2 * PAD + 1:
+                # a name longer than the box, which wrapping cannot break: an exit and not an
+                # assert, so `python -O` stops on it too
+                raise SystemExit(f"{box.id}: {''.join(m.text for m in line)} does not fit its box")
     return Layout(
         height=height,
         body_y=body_y,

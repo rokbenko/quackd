@@ -76,8 +76,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the three records describe lands in 0.33.0 behind them.
 - **The README shows how an intent reaches a robot, in one picture.** Its *Architecture* section and
   [docs/concepts/architecture.md](docs/concepts/architecture.md) gain the four layers an intent passes
-  through: the body, data and one per robot, which is all the LLM reads; a behaviour family, what bodies
-  of a kind do alike; a binding by one of three routes; and a transport that moves bytes. Two SVGs, for a
+  through: the body, data and one per robot, the one layer of the four the LLM reads; a behaviour
+  family, what bodies of a kind do alike; a binding by one of three routes; and a transport that moves
+  bytes. Two SVGs, for a
   light page and a dark one, are drawn by [docs/assets/architecture.py](docs/assets/architecture.py) from
   the catalogue, so each robot sits where its row's `family` and `route` put it, and a test fails if a
   committed file is not what the script draws or a robot is missing from a box.

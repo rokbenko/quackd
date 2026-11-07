@@ -4662,9 +4662,10 @@ def _drawn(path: Path) -> dict[str, set[str]]:
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_every_robot_is_drawn_where_its_catalogue_row_says(theme: str) -> None:
-    """Read off the file, since a renderer that dropped a name would agree with itself. The row
-    that drives nothing is in no box, and every folder under `bridge/` is in the bridge's: what
-    quackd ships for a robot's computer is a bridge whether or not an adapter is named after it."""
+    """Read off the file, since a renderer that dropped a name would agree with itself. Each robot
+    is in the box of its own kind, the first family its row names, and in the box of every route it
+    takes. The row that drives nothing is in no box, and neither is a daemon under `bridge/` that
+    no row names, the Jetson's: it moves no robot, so it is no binding."""
     from quackd.adapters.catalogue import ADAPTERS, FAMILIES, ROUTES
 
     script = _architecture_script()
@@ -4672,19 +4673,17 @@ def test_every_robot_is_drawn_where_its_catalogue_row_says(theme: str) -> None:
     want: dict[str, set[str]] = {f"family-{f}": set() for f in FAMILIES if f != "described"}
     want.update({f"route-{r}": set() for r in ROUTES})
     for info in ADAPTERS:
-        for family in info.family:
-            want[f"family-{family}"].add(info.name)
+        want[f"family-{info.family[0]}"].add(info.name)
         for route in info.route:
             want[f"route-{route}"].add(info.name)
-    bridges = {path.name for path in (REPO / "bridge").iterdir() if path.is_dir()}
-    assert bridges <= want["route-bridge"] | {"jetson"}, "a bridge folder no row claims"
-    want["route-bridge"] |= bridges
     assert boxes == want
+    assert "jetson" not in set().union(*boxes.values())
 
 
 def test_a_new_robot_joins_the_picture_and_its_band_grows() -> None:
-    """What the script is for: a tenth robot needs its row and nothing here. A name the script has
-    no box for stops it with what to add, rather than leaving a robot out of the picture."""
+    """What the script is for: a tenth robot needs its row, and a line in the script's `WIRES` only
+    when it speaks a wire no adapter has. A name the script has no box for stops it with what to
+    add, rather than leaving a robot out of the picture."""
     import dataclasses
 
     from quackd.adapters.catalogue import OFFICIAL, Tier

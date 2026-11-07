@@ -321,8 +321,9 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
             ),
         },
         family=("wheeled", "arm"),
-        # upstream's own host for the base and the lift, and quackd's for the arms, which
-        # upstream's leaves limp (`bridge/alohamini/`)
+        # quackd's host runs on the robot in place of upstream's and wraps it, so the base and
+        # the lift answer upstream's wire as they always did, and the arms, which upstream's own
+        # host leaves limp, answer too (`bridge/alohamini/`)
         route=("wire", "bridge"),
     ),
     # No network API of any kind upstream: no socket, no daemon, no IPC. So quackd ships the
