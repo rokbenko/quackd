@@ -39,6 +39,9 @@ _ROBOT = "src/lerobot/robots/robot.py"
 _UTILS = "src/lerobot/robots/utils.py"
 _SO = "src/lerobot/robots/so_follower/so_follower.py"
 _SO_CFG = "src/lerobot/robots/so_follower/config_so_follower.py"
+_KOCH = "src/lerobot/robots/koch_follower/koch_follower.py"
+_KOCH_CFG = "src/lerobot/robots/koch_follower/config_koch_follower.py"
+_DYNAMIXEL_TABLES = "src/lerobot/motors/dynamixel/tables.py"
 _TYPES = "src/lerobot/lerobot_types.py"
 _BUS = "src/lerobot/motors/motors_bus.py"
 _FEETECH = "src/lerobot/motors/feetech/feetech.py"
@@ -220,6 +223,52 @@ ROBOT_TYPE_SO101 = UpstreamRef(
     "VERIFIED",
     src(_SO_CFG, 56),
     "the registered config type; make_robot_from_config dispatches on it (utils.py line 41)",
+)
+ROBOT_TYPE_SO100 = UpstreamRef(
+    "so100_follower",
+    "VERIFIED",
+    src(_SO_CFG, 57),
+    "registered on the one config class so101_follower is, so at this commit the two are one class "
+    "under two names (SO_NAME): an SO-100 runs the code that drove the SO-101",
+)
+SO101_CONFIG = UpstreamRef(
+    "lerobot.robots.so_follower.SO101FollowerConfig",
+    "VERIFIED",
+    src(_SO_CFG, 64),
+    "an alias of SOFollowerRobotConfig (SO_CONFIG has its fields)",
+)
+SO100_CONFIG = UpstreamRef(
+    "lerobot.robots.so_follower.SO100FollowerConfig",
+    "VERIFIED",
+    src(_SO_CFG, 63),
+    "the same alias as SO101_CONFIG",
+)
+ROBOT_TYPE_KOCH = UpstreamRef(
+    "koch_follower",
+    "VERIFIED",
+    src(_KOCH_CFG, 22),
+    "another class, on another bus. quackd lists it and describes it, and builds none",
+)
+KOCH_CONFIG = UpstreamRef(
+    "lerobot.robots.koch_follower.KochFollowerConfig",
+    "VERIFIED",
+    src(_KOCH_CFG, 24),
+    "use_degrees defaults to False on it, where the SO's defaults to True (line 39), so wiring one "
+    "would have to pass True as quackd does for an SO arm",
+)
+KOCH_MOTORS = UpstreamRef(
+    "shoulder_pan to gripper on a DynamixelMotorsBus: xl430-w250 on the first two, xl330-m288 on "
+    "the other four",
+    "VERIFIED",
+    src(_KOCH, 51),
+    "the SO-101's six joint names, on servos of another maker",
+)
+KOCH_REGISTERS = UpstreamRef(
+    "Torque_Enable (64, 1) and Present_Temperature (146, 1)",
+    "VERIFIED",
+    src(_DYNAMIXEL_TABLES, 61),
+    "the two names quackd reads off a bus, and Present_Temperature is at line 90. The messages a "
+    "Dynamixel bus fails with have not been read, which wiring one would have to do first",
 )
 SO_FOLLOWER = UpstreamRef(
     "lerobot.robots.so_follower.SO101Follower",

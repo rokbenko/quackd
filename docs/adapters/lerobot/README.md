@@ -34,6 +34,7 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [Things people forget](#things-people-forget)
 - [If you already own one](#if-you-already-own-one)
 - [Backends](#backends)
+- [Which arms](#which-arms)
 - [Installing it](#installing-it)
 - [The name you give the arm is its calibration id](#the-name-you-give-the-arm-is-its-calibration-id)
 - [The manifest](#the-manifest)
@@ -593,6 +594,35 @@ lerobot real: the arm is not calibrated; run LeRobot's calibration first
 Calibration is upstream's own interactive step, under the id quackd will use, and it writes
 the file every joint's range is read from: step 5 of
 [adapters/lerobot/hardware-checklist.md](hardware-checklist.md).
+
+## Which arms
+
+`--robot-type` on `quackd robot add` and `quackd robot edit` says which of LeRobot's robot
+types a registered arm is. It settles what the manifest calls the arm and whose figures a pilot
+judges a task against. The verbs and the code that drive the arm are the same on each
+([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). An arm
+registered without one is an SO-101, which is every arm registered before there was a choice.
+
+| `--robot-type` | Arm | Tier | What that means |
+|---|---|---|---|
+| `so101_follower` | SO-101 | 🤖 verified · rok · 2026-09-15 | the arm quackd has driven, on 2026-09-15 and again on 2026-09-23 |
+| `so100_follower` | SO-100, the SO-101's predecessor | 🧪 bound · rok · 2026-09-15 | the same LeRobot class as the SO-101 at the commit quackd read, so it runs the code that drove the SO-101. No SO-100 has run it |
+| none: a Koch v1.1 | Koch v1.1 | 📄 described | its maker's figures are in `quackd_lerobot/arms.py`, and nothing is registered as one. LeRobot drives it over a Dynamixel bus, how that bus fails is not read here, and nobody has named a date to run one ([ADR-0076](../../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) |
+
+```bash
+uv run quackd robot add desk-arm lerobot:real --address COM5 --robot-type so100_follower
+```
+
+`quackd robot show desk-arm` then names the body `lerobot-so100` and the robot type
+`so100_follower`. Calibrate it as LeRobot calibrates an SO-100, under the name you gave it: an
+SO-100 and an SO-101 keep their calibration in the same place,
+`HF_LEROBOT_CALIBRATION/robots/so_follower/`, since at that commit they are one class.
+
+Two refusals, both at `robot add`. A type the adapter does not build is refused with the ones it
+does, a Koch's among them, rather than registered and then refused at the first run in words about
+something else. And `lerobot:mujoco` takes no type but the SO-101's, since the simulator is a
+physics model of an SO-101 and a rehearsal on it would say nothing about another arm's reach. The mock
+takes either, with that arm's figures.
 
 ## Installing it
 
@@ -3357,6 +3387,13 @@ and why the adapter is shaped the way it is is
 | `draccus>=0.11.6,<0.12.0` | how LeRobot decodes each field of a calibration file: a float is refused and anything else goes through `int()`, so `true` reads as 1 and `"3"` as 3, and a null passes through. The arm simulator decodes the fields the same way, so a twin loads the file its arm loads, and refuses a null, because it builds the travel from every field |
 | `lerobot.robots.make_robot_from_config(config)` | |
 | `so101_follower` | the registered config type |
+| `so100_follower` | registered on the same class as `so101_follower`, so an SO-100 runs the SO-101's code |
+| `lerobot.robots.so_follower.SO101FollowerConfig` | what an SO-101 is built from |
+| `lerobot.robots.so_follower.SO100FollowerConfig` | the same class, under the SO-100's name |
+| `koch_follower` | another class, on another bus: described here, and built by nothing |
+| `lerobot.robots.koch_follower.KochFollowerConfig` | its `use_degrees` defaults to False, where the SO's defaults to True |
+| `shoulder_pan to gripper on a DynamixelMotorsBus: xl430-w250 on the first two, xl330-m288 on the other four` | the Koch's bus: the SO-101's six joint names, on servos of another maker |
+| `Torque_Enable (64, 1) and Present_Temperature (146, 1)` | the two registers quackd reads off a bus, in the Dynamixel table. How that bus fails has not been read |
 | `lerobot.robots.so_follower.SO101Follower` | an alias of SOFollower |
 | `SOFollower.name is so_follower` | the calibration subdirectory, shared by SO-100 and SO-101 |
 | `SO101FollowerConfig(port, disable_torque_on_disconnect=True, max_relative_target=None, cameras={}, use_degrees=True, position_p_coefficient=16, position_i_coefficient=0, position_d_coefficient=32, num_read_retries=2)` | every safety-shaped field is passed explicitly rather than inherited, and `disable_torque_on_disconnect` is passed as False, the opposite of upstream's default, so a disconnect quackd did not ask for keeps torque |

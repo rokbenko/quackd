@@ -787,6 +787,7 @@ def probe(
     rest_pose: dict[str, float] | None = None,
     *,
     name: str | None = None,
+    robot_type: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
     host: HostClient | None = None,
     map_address: str | None = None,
@@ -844,7 +845,7 @@ def probe(
     ]:
         parsed = parse_robot_spec(spec)
         adapter = make_adapter(
-            RobotSpec(parsed.adapter, parsed.backend, name) if name else parsed,
+            RobotSpec(parsed.adapter, parsed.backend, name or None, robot_type=robot_type),
             address=address or None,
             camera_url=camera_url,
             token=token,
@@ -1370,6 +1371,7 @@ def collect(
     map_address: str | None = None,
     progress: Progress = None,
     robot_name: str | None = None,
+    robot_type: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
     host_token_fix: str | None = None,
     park: Callable[[Any], Awaitable[RestResult]] | None = None,
@@ -1570,7 +1572,7 @@ def collect(
         try:
             parsed = parse_robot_spec(robot)
             manifest = describe(
-                RobotSpec(parsed.adapter, parsed.backend, robot_name) if robot_name else parsed
+                RobotSpec(parsed.adapter, parsed.backend, robot_name or None, robot_type=robot_type)
             )
         except AdapterError as e:
             report.robot = RobotReport(spec=robot, error=_undescribed(robot, robot_name, e))
@@ -1613,6 +1615,7 @@ def collect(
                     token,
                     rest_pose,
                     name=robot_name,
+                    robot_type=robot_type,
                     before_connect=before_connect,
                     host=host_camera_from,
                     map_address=map_address,

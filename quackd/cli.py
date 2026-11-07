@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 from rich.text import Text
 
 from quackd import __version__, dotenv_names, ui
+from quackd.adapters.catalogue import BY_NAME
 from quackd.agent.decision.frames import MAX_SIDE_PX as DECISION_FRAME_PX
 from quackd.agent.decision.notices import MODE_ON_UNMEASURED as _DECISION_MODE_ON_UNMEASURED
 from quackd.agent.decision.notices import frames_notice as _frames_notice
@@ -3929,6 +3930,13 @@ _ADDR = typer.Option(
     "(unix:///run/robotd.sock, tcp://host:port).",
     rich_help_panel="Robot",
 )
+_ROBOT_TYPE = typer.Option(
+    None,
+    "--robot-type",
+    help="Which kind of robot this is, for an adapter that drives more than one: on lerobot, "
+    f"{' or '.join(BY_NAME['lerobot'].robot_types)}. The first when absent.",
+    rich_help_panel="Robot",
+)
 _MAP_ADDR = typer.Option(
     None,
     "--map-address",
@@ -5267,6 +5275,7 @@ def doctor(
     rest_pose: dict[str, float] | None = None
     entry: RobotEntry | None = None
     name: str | None = None
+    robot_type: str | None = None
     if robot:
         # a registered name is a robot too, and it brings the address you registered it with.
         # Only a name that resolves is substituted: anything else stays exactly as typed, so
@@ -5281,7 +5290,7 @@ def doctor(
                 # as a run builds it (`entry.robot_spec`): an arm looks its calibration up by
                 # that id, and every line it writes names it. The name used to be dropped here,
                 # so a probe of `arm-02` read the default id's calibration.
-                robot, name = entry.key, entry.name
+                robot, name, robot_type = entry.key, entry.name, entry.robot_type
                 where = entry.adapter_kwargs(
                     address=address, camera_url=camera_url, token=token, map_address=map_address
                 )
@@ -5369,6 +5378,7 @@ def doctor(
                 token=token,
                 rest_pose=rest_pose,
                 robot_name=name,
+                robot_type=robot_type,
                 before_connect=warn,
                 host=board.host,
                 host_token=board.token,
@@ -5398,6 +5408,7 @@ def doctor(
                 host_token_fix=board.token_fix,
                 progress=say,
                 robot_name=name,
+                robot_type=robot_type,
                 before_connect=warn,
                 park=hands.park,
                 before_close=hands.before_close,
@@ -6718,6 +6729,7 @@ def _entry_rows(entry: Any, *, flocks: list[str]) -> list[tuple[str, Any]]:
         ("body", body),
         ("address", Text(entry.address) if entry.address else dash),
         ("map address", Text(entry.map_address) if entry.map_address else dash),
+        ("robot type", Text(entry.robot_type) if entry.robot_type else dash),
         # one per line, because two urls on one line is where a reader stops being able to
         # tell which camera is the primary
         ("camera", Text("\n".join(entry.camera_urls)) if entry.camera_urls else dash),
@@ -6795,6 +6807,7 @@ def robot_add(
     ),
     address: str | None = _ADDR,
     map_address: str | None = _MAP_ADDR,
+    robot_type: str | None = _ROBOT_TYPE,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     token_env: str | None = _TOKEN_ENV,
@@ -6841,6 +6854,7 @@ def robot_add(
             spec=spec,
             address=address,
             map_address=map_address,
+            robot_type=robot_type,
             camera_url=list(camera_url) or None,
             token=token,
             host=host,
@@ -7248,6 +7262,7 @@ def robot_show(
 _CLEARABLE = (
     "address",
     "map-address",
+    "robot-type",
     "token",
     "camera-url",
     "rest-pose",
@@ -7264,6 +7279,7 @@ def robot_edit(
     spec: str | None = typer.Option(None, "--spec", help="Move it to another <adapter>:<backend>."),
     address: str | None = _ADDR,
     map_address: str | None = _MAP_ADDR,
+    robot_type: str | None = _ROBOT_TYPE,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     token_env: str | None = _TOKEN_ENV,
@@ -7303,6 +7319,7 @@ def robot_edit(
         "spec": spec,
         "address": address,
         "map_address": map_address,
+        "robot_type": robot_type,
         # every url given replaces the whole stored set: naming a camera today says where the
         # cameras are today, which is the rule --address and --token already follow
         "camera_url": list(camera_url) or None,

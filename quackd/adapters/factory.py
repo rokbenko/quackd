@@ -109,6 +109,7 @@ def info(name: str) -> AdapterInfo:
         tiers=_tiers_of(module, backends),
         family=_words_of(module, "FAMILY"),
         route=_words_of(module, "ROUTE"),
+        robot_types=_words_of(module, "ROBOT_TYPES"),
     )
 
 
@@ -195,6 +196,10 @@ class RobotSpec:
     backend: str
     name: str | None = None
     """The member or fleet name (`duck=microduck:sim2d`), which becomes the manifest id."""
+    robot_type: str | None = None
+    """Which of its adapter's robot types this is (`AdapterInfo.robot_types`), when a registered
+    robot said (`--robot-type`), and None for the adapter's default. Not part of `key`: an
+    SO-100 and an SO-101 are both `lerobot:real`."""
 
     @property
     def key(self) -> str:
@@ -366,6 +371,9 @@ def describe(
     if room is not None:
         _takes_room(spec, module.describe)
         extra["room"] = room
+    if spec.robot_type is not None:
+        _takes_robot_type(spec, module.describe)
+        extra["robot_type"] = spec.robot_type
     return module.describe(spec.backend, spec.robot_id, **extra)
 
 
@@ -386,6 +394,17 @@ def _takes_policy(spec: RobotSpec, fn: Any) -> None:
         raise AdapterError(
             f"{spec.key} runs no policy, so --policy-url has nothing to hand it: only the "
             f"LeRobot arm does ({' and '.join(POLICY_SPECS)})"
+        )
+
+
+def _takes_robot_type(spec: RobotSpec, fn: Any) -> None:
+    """Refuse a robot type for a body whose adapter drives one kind, rather than drop it: a robot
+    registered as another arm would otherwise be described and built as the default one."""
+    if not _takes(fn, "robot_type"):
+        takers = [row.name for row in ADAPTERS if row.robot_types]
+        raise AdapterError(
+            f"{spec.key} drives one kind of robot, so --robot-type has nothing to choose: "
+            f"{' and '.join(takers)} take one"
         )
 
 
@@ -561,6 +580,9 @@ def make_adapter(
     if map_address is not None:
         _takes_map_address(spec, module.make)
         extra["map_address"] = map_address
+    if spec.robot_type is not None:
+        _takes_robot_type(spec, module.make)
+        extra["robot_type"] = spec.robot_type
     adapter: RobotAdapter = module.make(
         spec.backend,
         robot_id=spec.robot_id,
@@ -611,6 +633,7 @@ def list_adapters() -> list[dict[str, Any]]:
                 "tiers": {backend: tier.to_dict() for backend, tier in row.tiers.items()},
                 "family": list(row.family),
                 "route": list(row.route),
+                "robot_types": list(row.robot_types),
             }
         )
     return rows

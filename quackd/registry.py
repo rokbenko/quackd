@@ -281,6 +281,10 @@ class RobotEntry(BaseModel):
     """Where the robot's own map answers, beside the body's `address` (`--map-address`): the
     Microduck's mapd, as `tcp://127.0.0.1:9871` through a tunnel. `--map-address` on the line
     beats this."""
+    robot_type: str | None = None
+    """Which kind of robot this is, for an adapter that drives more than one (`--robot-type`):
+    `so100_follower` for an SO-100 on `lerobot`. None is the adapter's default, which is what
+    every robot registered before there was a choice is."""
     note: str | None = None
     added: str = Field(default_factory=_now)
     updated: str = Field(default_factory=_now)
@@ -482,7 +486,7 @@ class RobotEntry(BaseModel):
         a run, a flock, `doctor`, `serve-mcp`, `rest-pose` and `release`."""
         if (why := self.spec_problem) is not None:
             raise AdapterError(unusable_spec(self.name, self.spec, why))
-        return RobotSpec(self.adapter, self.backend, self.name)
+        return RobotSpec(self.adapter, self.backend, self.name, robot_type=self.robot_type)
 
     @property
     def memory_key(self) -> str:
@@ -527,6 +531,7 @@ class RobotEntry(BaseModel):
             "backend": self.backend,
             "address": self.address,
             "map_address": self.map_address,
+            "robot_type": self.robot_type,
             "camera_url": self.camera_url,
             "rest_pose": dict(self.rest_pose) if self.rest_pose else None,
             "token_set": self.token is not None,
@@ -712,6 +717,35 @@ def _check_reaches_nothing(entry: RobotEntry, *, fields: Collection[str] | None 
             )
 
 
+def _check_robot_type(spec: str, robot_type: str | None) -> None:
+    """Refuse a robot type at the door that a run would be refused on later, in words about the
+    type rather than about whatever that run checked first.
+
+    The adapter's list is the catalogue's, the types it builds, so a robot can be registered on
+    a machine that cannot build it. Where the adapter is installed, it is asked as well, which
+    catches what only it knows: that its simulator is the physics model of one arm and rehearses
+    no other."""
+    if robot_type is None:
+        return
+    from quackd.adapters.factory import describe, info
+
+    parsed = parse_robot_spec(spec)
+    kinds = info(parsed.adapter).robot_types
+    if not kinds:
+        raise RegistryError(f"{spec} drives one kind of robot, so it takes no --robot-type")
+    if robot_type not in kinds:
+        raise RegistryError(
+            f"{parsed.adapter} drives no robot type {robot_type!r}: choose one of "
+            f"{', '.join(kinds)}"
+        )
+    try:
+        describe(RobotSpec(parsed.adapter, parsed.backend, robot_type=robot_type))
+    except ImportError:
+        return  # not installed here (`AdapterNotInstalled` is an ImportError), which is no answer
+    except AdapterError as e:
+        raise RegistryError(str(e)) from None
+
+
 def _check_map_address(spec: str, map_address: str | None) -> None:
     """Refuse a map address for a body that reads no map of the robot's own, rather than store
     one that every build of the robot would then refuse."""
@@ -731,7 +765,7 @@ def _check_map_address(spec: str, map_address: str | None) -> None:
 #: empty ones out keeps a registry that never named one readable by them, which matters because
 #: two installs on one machine share one ~/.quackd. A robot that does name one is a file they
 #: cannot read, and nothing short of dropping it could change that.
-_OMITTED_WHEN_EMPTY = ("host", "host_token", "map_address")
+_OMITTED_WHEN_EMPTY = ("host", "host_token", "map_address", "robot_type")
 
 
 def _stored(entry: RobotEntry) -> dict[str, Any]:
@@ -823,6 +857,7 @@ class Registry:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
         _check_map_address(entry.spec, entry.map_address)
+        _check_robot_type(entry.spec, entry.robot_type)
         _check_reaches_nothing(entry)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
@@ -873,6 +908,8 @@ class Registry:
             # the address with the body it would be handed to, asked only of an edit that touches
             # either, as the board's pair is
             _check_map_address(entry.spec, entry.map_address)
+        if "robot_type" in changes or "spec" in changes:
+            _check_robot_type(entry.spec, entry.robot_type)
         _check_reaches_nothing(entry, fields=None if "spec" in changes else set(changes))
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:

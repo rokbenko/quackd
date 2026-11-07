@@ -28,8 +28,6 @@ from quackd.adapters.base import (
     take_hold_if_any,
 )
 from quackd.adapters.manifest import (
-    Datasheet,
-    Figure,
     Frame,
     Health,
     RobotManifest,
@@ -47,6 +45,15 @@ from quackd.transport.base import (
 )
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
+from quackd_lerobot.arms import (
+    ARMS,
+    BLURB,
+    DATASHEET,
+    REACH,
+    ROBOT_TYPE,
+    ArmType,
+    arm_type,
+)
 from quackd_lerobot.verbs import (
     JOINTS,
     lerobot_conditions,
@@ -74,79 +81,6 @@ it fall where it stands (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`), so such a s
 with it holding itself up wherever it stopped (ADR-0058). The mock and the simulator have no arm
 to drop."""
 DEFAULT_ID = "arm-01"
-ROBOT_TYPE = "so101_follower"
-BLURB = (
-    "a six-joint desktop robot arm with a parallel gripper (an SO-101 class arm driven "
-    "by LeRobot), bolted to a table"
-)
-
-REACH = Figure(
-    value=0.4,
-    confidence="estimate",
-    source="the maker's URDF, TheRobotStudio/SO-ARM100 Simulation/SO101/so101_new_calib.urdf",
-    note="link lengths from the shoulder to the gripper frame, summed with the arm straight and "
-    "rounded down",
-)
-"""How far the gripper gets from the shoulder, read off the maker's own robot description.
-
-Nobody publishes a reach for the SO-101, and the sheet used to say so, which on an arm told
-the pilot to decline anything that turned on reaching: every task an arm has. The URDF gives
-each joint's origin in its parent link's frame, so the distance from one joint to the next is
-the length of that origin vector. From `shoulder_lift` outwards, read on 2026-09-23:
-
-    elbow_flex          (-0.11257, -0.028,     0)          0.116 m
-    wrist_flex          (-0.1349,   0.0052,    0)          0.135 m
-    wrist_roll          ( 0,       -0.0611,    0.0181)     0.064 m
-    gripper_frame_joint (-0.0079,  -0.000218, -0.0981274)  0.098 m
-
-They sum to 0.413 m. That is an upper bound, since the links only add up in full when they
-are collinear, and a grid sweep of `elbow_flex`, `wrist_flex` and `wrist_roll` through their
-URDF limits put the farthest the gripper frame gets from the `shoulder_lift` axis at about
-0.41 m. So 0.4, rounded down, and an estimate rather than official: it is quackd's arithmetic
-on the maker's file, not a figure the maker states. It is measured from the shoulder joint
-rather than the base, and to the gripper frame rather than the fingertips."""
-
-DATASHEET = Datasheet(
-    height_m=Figure(
-        value=0.53,
-        confidence="estimate",
-        source="one vendor's listing",
-        note="reaching straight up",
-    ),
-    dof=Figure(
-        value=6,
-        confidence="official",
-        source="the LeRobot SO-101 docs",
-        note="five joints and a gripper",
-    ),
-    payload_kg=Figure(value=0.5, confidence="estimate", source="one vendor's listing"),
-    reach_m=REACH,
-    manipulator="gripper",
-    arms=1,
-    tethered=True,
-    cannot=[
-        "go anywhere: it is bolted to a table and has no base",
-        # This used to end "and nothing whose weight is not known", which is nearly every
-        # object a task names: nobody tells the pilot what a pen weighs. It needs a scale to
-        # judge an object by, not a ban on everything unweighed
-        "lift or hold more than about half a kilogram: a pen, an empty cup or a wooden block "
-        "weighs far less than that, and a full bottle or a tool may weigh more",
-        f"reach anything more than about {REACH.value:g} m from its shoulder: that is the arm "
-        "held straight out, and any bent pose reaches less",
-        "feel what it holds: nothing reports grip force, so holding is inferred from the "
-        "gripper stopping short of shut, which an empty hand that binds also does",
-        "know its own mass: vendor listings disagree by a factor of three",
-    ],
-    notes=[
-        "How wide the gripper opens and how hard it grips are not published",
-        "No sensors beyond the servo positions unless a camera is configured, and the servo "
-        "temperature, which quackd reads off the bus because LeRobot does not",
-        "Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official "
-        "publishes one, so it is listed as not published rather than picked from a hat",
-        "There are 7.4 V and 12 V builds of the same arm, with different stall torque and "
-        "different supplies. Which one is on the desk is not something quackd can ask",
-    ],
-)
 
 
 def lerobot_manifest(
@@ -172,7 +106,11 @@ def lerobot_manifest(
     So is `rest_pose_clipped`: each joint the recorded rest pose puts past that travel, as
     `(joint, recorded, reachable)`. It goes in the manifest rather than the state because the
     manifest is what a run's record opens with, and the reader of a transcript whose arm
-    parked short of its recorded fold deserves to find out why on the first line."""
+    parked short of its recorded fold deserves to find out why on the first line.
+
+    `robot_type` says which arm this is (`arms.ARMS`), which settles what it is called and whose
+    sheet a pilot judges a task against. The verbs are the same on every one."""
+    arm = arm_type(robot_type)
     own = lerobot_verbs(policy=policy)
     verbs = [
         verb_spec(own["report_state"], core=True),
@@ -232,7 +170,7 @@ def lerobot_manifest(
     return RobotManifest(
         id=robot_id or DEFAULT_ID,
         vendor="huggingface",
-        model="lerobot-so101",
+        model=arm.model,
         embodiment="arm",
         mobility="none",
         intents=intents,
@@ -248,8 +186,8 @@ def lerobot_manifest(
         ),
         limits=limits,
         backend=backend,
-        blurb=BLURB,
-        datasheet=DATASHEET,
+        blurb=arm.blurb,
+        datasheet=arm.datasheet,
         extras=extras,
     )
 
@@ -289,6 +227,7 @@ class LeRobotAdapter:
             self.robot_id,
             camera=bool(getattr(self.transport, "camera_available", False)),
             policy=self._policy,
+            robot_type=getattr(self.transport, "robot_type", ROBOT_TYPE),
             lerobot_version=getattr(self.transport, "lerobot_version", None),
             joint_range_deg=getattr(self.transport, "joint_range_deg", None) or None,
             step_deg=getattr(self.transport, "max_step_deg", None),
@@ -585,8 +524,24 @@ class LeRobotAdapter:
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
 
+def _arm_on(backend: str, robot_type: str | None) -> ArmType:
+    """The arm a robot is on this backend. The simulator is a physics model of an SO-101, so it
+    is told of no other: a rehearsal on it would say nothing about another arm's reach."""
+    arm = arm_type(robot_type or ROBOT_TYPE)
+    if backend in SIMULATOR_BACKENDS and arm.robot_type != ROBOT_TYPE:
+        raise AdapterError(
+            f"lerobot:{backend} is a physics model of an {ROBOT_TYPE}, so it cannot rehearse an "
+            f"{arm.robot_type}: register that arm on lerobot:real or lerobot:mock"
+        )
+    return arm
+
+
 def describe(
-    backend: str, robot_id: str | None = None, *, policy: PolicyChoice | None = None
+    backend: str,
+    robot_id: str | None = None,
+    *,
+    policy: PolicyChoice | None = None,
+    robot_type: str | None = None,
 ) -> RobotManifest:
     """Static: the mock always has its camera and its scripted policy; the real backend
     claims neither until connect() finds them, and claims no joint ranges either, because
@@ -597,11 +552,19 @@ def describe(
     simulator claim `pick` and `manipulate` before they connect, since the connect that would
     find the policy is the one given it here: a task that allows them validates before anything
     connects, as it would once connected. The mock runs its own scripted policy and refuses one
-    (`_refuse_policy`)."""
+    (`_refuse_policy`).
+
+    `robot_type` is which arm a registered robot is (`--robot-type`): its name and its sheet."""
     offline = backend == "mock"
     if policy is not None:
         _refuse_policy(backend)
-    return lerobot_manifest(backend, robot_id, camera=offline, policy=offline or policy is not None)
+    return lerobot_manifest(
+        backend,
+        robot_id,
+        camera=offline,
+        policy=offline or policy is not None,
+        robot_type=_arm_on(backend, robot_type).robot_type,
+    )
 
 
 def implementations() -> dict[str, Verb]:
@@ -695,6 +658,7 @@ def make(
     faults: str | None = None,
     scene: Sequence[Mapping[str, Any]] | None = None,
     policy: PolicyChoice | None = None,
+    robot_type: str | None = None,
 ) -> LeRobotAdapter:
     """`faults` is a spec of bus faults for the simulator to meet (`sim.faults.FaultPlan`),
     seeded by `seed`, and refused on any other backend: an arm on a desk has the faults it
@@ -706,7 +670,14 @@ def make(
     (`--policy-url`), reached through a `RemoteRunner` (`_policy_runner`), which the real
     backend and the simulator both take as their policy and check against the arm at connect,
     before torque (`LeRobotReal._fit_policy`), and play the chunks of as `--async-chunks` says
-    (`PolicyLoop.async_chunks`). The mock refuses one (`_refuse_policy`)."""
+    (`PolicyLoop.async_chunks`). The mock refuses one (`_refuse_policy`).
+
+    `robot_type` is which arm this is (`arms.ARMS`, `--robot-type`), an SO-101 when nobody says. A
+    type nobody answers for is refused here, as it is built, on every backend: the owner rule's
+    (`ArmType.refusal`)."""
+    arm = _arm_on(backend, robot_type)
+    if not arm.drivable:
+        raise AdapterError(arm.refusal)
     _check_rest_pose(rest_pose)
     if policy is not None:
         _refuse_policy(backend)
@@ -733,7 +704,10 @@ def make(
         # against the mock should fail here rather than at the bench
         one_camera_url(camera_url, spec="lerobot:mock")
         return LeRobotAdapter(
-            LeRobotMock(rest_pose=rest_pose, registered_name=registered_name), robot_id=robot_id
+            LeRobotMock(
+                rest_pose=rest_pose, registered_name=registered_name, robot_type=arm.robot_type
+            ),
+            robot_id=robot_id,
         )
     if backend == "mujoco":
         from quackd_lerobot.real import parse_camera_urls, step_from_env
@@ -765,6 +739,7 @@ def make(
         return LeRobotAdapter(
             LeRobotReal(
                 address=address,
+                robot_type=arm.robot_type,
                 robot_id=robot_id or DEFAULT_ID,
                 max_step_deg=step_from_env(),
                 cameras=parse_camera_urls(camera_urls(camera_url)),
@@ -779,9 +754,14 @@ def make(
 
 
 __all__ = [
+    "ARMS",
     "BACKENDS",
+    "BLURB",
+    "DATASHEET",
     "DEFAULT_ID",
     "JOINTS",
+    "REACH",
+    "ROBOT_TYPE",
     "SIMULATOR_BACKENDS",
     "LeRobotAdapter",
     "conditions",

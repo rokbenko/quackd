@@ -24,6 +24,7 @@ from quackd.adapters.base import HandResult, RestResult
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
 from quackd.transport.base import Ack, DuckState, Intent
 from quackd.transport.mock import MockTransport
+from quackd_lerobot.arms import ROBOT_TYPE
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
@@ -113,6 +114,7 @@ class LeRobotMock(MockTransport):
         fail_heartbeat_after: int | None = None,
         refuse_kinds: set[str] | None = None,
         hot_joints: tuple[str, ...] = (),
+        robot_type: str = ROBOT_TYPE,
         rest_pose: dict[str, float] | None = None,
         rest_fails: str | None = None,
         registered_name: str | None = None,
@@ -141,6 +143,8 @@ class LeRobotMock(MockTransport):
         an offline arm cannot do to itself and every caller of the rest move has to handle."""
         self.registered_name = registered_name
         """The name the close note gives the commands it names, as on the real backend."""
+        self.robot_type = robot_type
+        """Which arm this stands in for (`arms.ARMS`), which the manifest takes its sheet from."""
         self.close_note: str | None = None
         self.in_hand = False
         """The arm is limp because `let_go()` put it there, as on the real backend."""
