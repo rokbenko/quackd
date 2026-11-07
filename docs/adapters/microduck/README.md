@@ -237,6 +237,11 @@ camera two ways quackd reads, and its own snapshot route, `/frame`, is the one t
 | Costs | a PNG of the whole picture, encoded on the duck for every frame | one media session, so it competes with the browser console |
 | Since | `daemon-v0.13.0` | every release quackd serves |
 
+One fetch of an HTTP camera is bounded: 3 s from the request to the last byte of the picture, and
+8 MB. An answer that is a stream, `multipart/*`, or a redirect is refused by name at the first
+fetch, so a camera that is neither one still nor fast enough is no camera for the run, and says
+why, rather than one that hands out nothing.
+
 Neither installs anything on the duck, and neither authenticates: `mediad` answers on every
 address, and upstream's own note on its WebRTC side is that a pairing PIN which is `000000` on
 every robot "authenticates nobody". Reach both through the tunnel rather than across a room's

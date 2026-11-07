@@ -168,6 +168,10 @@ def _not_fallen(body: Body, state: DuckState) -> str | None:
         return f"nothing is reporting falls, so quackd cannot tell whether {noun} is upright"
     if (held := _held(body, state)) is not None:
         return held
+    if (unread := _unread(state)) is not None:
+        # The flag nobody can read may be the one saying somebody holds it, which `_held` reads
+        # only from a boolean. `gaze` and `watch` stand on this, and turned the head on one.
+        return f"{unread}, so quackd cannot tell whether somebody is holding {noun}"
     return f"{noun} has fallen; run stand_up first" if state.fallen else None
 
 

@@ -1533,10 +1533,35 @@ async def test_a_safety_flag_that_is_no_boolean_moves_nothing(
         walk = _Verb(t)
         assert not (await walk.send(Intent.move(0.1, 0.0, 0.0))).accepted
         await walk.end()
-        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        ex = Executor(registry, t, contract=MOVERS.frontmatter)
+        result = await ex.run_verb("stand_up", {})
+        assert not result.ok, result.summary
+        # the head too: a flag nobody can read may be the one that says somebody holds the duck
+        result = await ex.run_verb("gaze", {"direction": "left"})
         assert not result.ok, result.summary
         spoken = {r["method"] for r in fake.requests} | {n["method"] for n in fake.notifications}
-        assert not spoken & {"robot.move", "robot.enable"}, spoken
+        assert not spoken & {"robot.move", "robot.enable", "robot.look", "robot.head"}, spoken
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_microduck_sends_the_skills_robotd_keeps_back_from_its_list() -> None:
+    """robotd answers `robot.subscribe` with the skills a policy set gives it, and keeps
+    `ground_pick` and `sit_toggle` back from that list, so a Microduck sends them unlisted and
+    offers `grab`, `sit` and `stand` whatever the list says. Only a body that gates its skills on
+    the list (`Body.skill_verbs`), Huebot, refuses a skill it was not told of."""
+    fake = FakeRobotd()
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        manifest = await MicroduckAdapter(t).connect()
+        assert {"sit", "stand", "kick", "grab"} <= set(manifest.verb_names())
+        for skill in ("ground_pick", "sit_toggle"):
+            assert skill not in STOCK_SKILLS
+            assert (await t.send_intent(Intent.do(skill))).accepted, skill
+        sent = [r["params"]["skill"] for r in fake.requests if r["method"] == "robot.do"]
+        assert sent == ["ground_pick", "sit_toggle"]
         await t.close()
     finally:
         await fake.stop()

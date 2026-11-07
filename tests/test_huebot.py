@@ -1652,6 +1652,33 @@ async def test_stand_up_says_the_robot_may_need_a_hand_only_once_ten_seconds_are
     assert [i.kind for i in robot.intents] == ["enable"], "nothing but the request went out"
 
 
+class _SlowLink(_AfterEnable):
+    """Each reading takes a second of the robot's own time, as over a link that holds lines up."""
+
+    async def get_state(self) -> DuckState:
+        self._t += 1.0
+        return await super().get_state()
+
+
+async def test_stand_up_waits_by_the_clock_and_not_by_its_polls() -> None:
+    """A wait counted in polls ran four times as long as it said over this link: forty polls of a
+    quarter second each, every one a second slower. Timed by the transport's clock it is ten
+    seconds, as it says, after eight."""
+    robot = _SlowLink(DOWN)
+    result = await _stand_up_on(robot)
+    assert not result.ok and "10 s later" in result.summary, result.summary
+    assert robot.sleeps == [STAND_UP_POLL_S] * 8
+
+
+async def test_a_connected_huebot_waits_for_no_glance_to_fade(shim: FakeShim) -> None:
+    """robotd glances on its own from API 41 and a Microduck's verbs wait a glance out once they
+    centre its head. A Huebot is sent no look, so its shim speaking 41 makes no wait."""
+    adapter = await _connected(shim)
+    assert _transport(adapter).answered is not None
+    assert _transport(adapter).head_fade_s == 0.0 and adapter.head_fade_s == 0.0
+    await adapter.disconnect()
+
+
 async def test_stand_up_calls_the_robot_upright_on_the_poll_it_stands() -> None:
     robot = _AfterEnable(DOWN, then=_mock_state("standing"), then_at=0.75)
     result = await _stand_up_on(robot)

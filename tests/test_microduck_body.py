@@ -44,6 +44,22 @@ def test_a_body_is_offered_only_the_verbs_it_declares_in_the_familys_order() -> 
     assert not {"grab", "gaze", "watch", "explore", "find"} & HUEBOT.verbs
 
 
+def test_a_microduck_is_described_alike_whatever_its_robot_lists_as_skills() -> None:
+    """Its verbs are not gated on the list (`Body.skill_verbs` is None), so a connection that
+    answers with no skills at all describes the same duck as a description with none asked."""
+    for backend in MICRODUCK.backends:
+        listed = quackd_microduck.manifest_for(MICRODUCK, backend, skills=())
+        assert listed.digest() == quackd_microduck.manifest_for(MICRODUCK, backend).digest()
+
+
+def test_an_adapter_refuses_a_transport_built_for_another_body() -> None:
+    """A Huebot over a transport built for a Microduck would send looks its shim does not
+    answer, and nothing would say so."""
+    with pytest.raises(ValueError, match="huebot adapter over a transport built for microduck"):
+        quackd_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1"))
+    quackd_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", body=HUEBOT))
+
+
 def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
     """One function behind each, so a line a pilot acts on can only be right by being told whose
     it is. Huebot's own description of its kick says what nobody has measured."""

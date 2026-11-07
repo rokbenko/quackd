@@ -292,6 +292,13 @@ class MicroduckAdapter:
     body = MICRODUCK
 
     def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
+        # A transport built for one body says what it may send in that body's terms, so a Huebot
+        # over a Microduck's would send looks its shim does not answer. The simulators and the
+        # mock carry no body, and are any body's.
+        theirs = getattr(transport, "body", self.body)
+        if theirs is not self.body:
+            built_for = getattr(theirs, "name", theirs)
+            raise ValueError(f"a {self.name} adapter over a transport built for {built_for}")
         self.transport = transport
         self.backend = transport.name
         self.robot_id = robot_id or self.body.name

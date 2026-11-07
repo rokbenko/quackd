@@ -448,8 +448,9 @@ MEDIAD_FRAME_FPS = 2.0
 #: its own capture after as long, and answers 503 then (`up.MEDIAD_FRAME_HTTP`).
 SNAPSHOT_TIMEOUT_S = 3.0
 
-#: The most one snapshot may be, in bytes. A still from a camera on a robot this size is tens
-#: of kilobytes, so an answer past this is not one picture, and reading on would fill memory.
+#: The most one snapshot may be, in bytes. A JPEG from a camera on a robot this size is tens of
+#: kilobytes, and mediad's PNG of its whole 720 by 1280 picture at most the 2.8 MB the picture is
+#: unpacked, so an answer past this is not one picture, and reading on would fill memory.
 SNAPSHOT_MAX_BYTES = 8_000_000
 
 #: The most one read of a snapshot's body asks for.
@@ -556,7 +557,9 @@ def fetch_still(
       headers, the body, a chunked body's trailer, an error page. A transport that closes sets
       `stop`, so no fetch reads on behind it, and none keeps `asyncio.run` waiting on its thread
       at exit. The guard reaches a socket once it is connected, so a connect waits `deadline_s`
-      at most, as each read does.
+      at most, as each read does. On Windows a shutdown does not wake a read already waiting in
+      the socket, which sees it at its own timeout, `deadline_s`: there a stop ends a fetch at
+      the latest at its deadline.
 
     An HTTP error status raises `SnapshotRefused` with the first line of what the camera said."""
     started = time.monotonic()
@@ -866,7 +869,9 @@ def _not_still(read: StateRead, skills: Sequence[str]) -> bool:
     if not read.fresh:
         return False
     safety = read.state.get("safety")
-    if isinstance(safety, dict) and (safety.get("picked_up") or safety.get("limp")):
+    if isinstance(safety, dict) and (
+        _flag(safety, "picked_up") is True or _flag(safety, "limp") is True
+    ):
         return True
     label = read.policy
     if label in up.NOT_STILL_LABELS or label.endswith(up.UNWIND_SUFFIX):

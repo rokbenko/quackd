@@ -18,7 +18,7 @@ from collections.abc import Collection, Sequence
 from quackd.adapters.base import one_camera_url, refuse_rest_pose
 from quackd.adapters.manifest import RobotManifest
 from quackd.verbs.registry import Precondition, Verb
-from quackd_huebot.body import BLURB, DATASHEET, HUEBOT
+from quackd_huebot.body import BLURB, DATASHEET, HUEBOT, SKILLS_OF
 from quackd_microduck import MicroduckAdapter
 from quackd_microduck import manifest_for as _manifest_for
 from quackd_microduck import offered_skill_verbs as _offered_skill_verbs
@@ -123,6 +123,7 @@ __all__ = [
     "DATASHEET",
     "HUEBOT",
     "HUEBOT_VERBS",
+    "SKILLS_OF",
     "HuebotAdapter",
     "conditions",
     "describe",

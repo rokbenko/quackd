@@ -69,9 +69,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says. `quackd[huebot]`,
   `--robot huebot:jsonrpc`, a registered Huebot and everything a pilot is told read as they did, and
   the move left every description either robot can give hashing as it did, which
-  `tests/golden/manifest_digests.json` holds from here on. What changes for you: nothing to do, one more package
-  in the install, and `quackd_huebot.transports` is gone, so code importing that module imports
-  `quackd_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`.
+  `tests/golden/manifest_digests.json` holds from here on. A Huebot's state gains the three lens keys a
+  Microduck's camera record has, and `--fov-deg` reaches its transport as it does a Microduck's. What
+  changes for you: nothing to do, one more package in the install, and `quackd_huebot.transports` is
+  gone, so code importing that module imports `quackd_microduck.transports.jsonrpc_unix` and passes
+  `body=HUEBOT`. A logging setup that named `quackd.transport.huebot` names `quackd.transport.jsonrpc`,
+  whose lines are the same.
 - **A Huebot says which of the family's verbs it has not got, and why.** `gaze`, `watch`, `grab`,
   `explore` and `find` were left out with the reasons in the code's comments, so a pilot on a Huebot,
   and a task file asking for one, heard only that the verb was not there. They are in
@@ -85,14 +88,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   never ends, and the transport read it whole, in a thread nothing could stop, so a connect waited out
   its time, said only that no frame came, and left the thread reading past the run's end. A fetch is
   bounded now, as Huebot's copy had learned: 3 s from the request to the last byte, 8 MB, a
-  `multipart/*` or a redirect named and refused, and a close that ends a fetch under way. What changes
-  for you: a camera that sent one picture larger than 8 MB, which no robot's camera here does, is
-  refused, and a `--camera-url` that redirects has to name where it redirects to.
+  `multipart/*` or a redirect named and refused, and a close that ends a fetch under way, at its next
+  read or at the latest at its deadline. What changes for you: a camera that sent one picture larger
+  than 8 MB, which no robot's camera here does, is refused, and a `--camera-url` that redirects has to
+  name where it redirects to. A camera whose picture takes longer than 3 s to come is no camera at
+  connect, where it was offered to the pilot and then handed out no frame, since a frame that old is
+  never handed out.
 - **A safety flag that is not a JSON boolean no longer reads as true or false on a Microduck.** A
   `fallen` of `"false"` read as a duck on the floor and a `picked_up` of `"false"` as a duck in
   somebody's hands, and a null `fallen` as a detector saying all clear. Null now reads as the key being
-  absent, and anything else as `unknown`, with `extras.safety_unread` quoting the value and every walk
-  and `stand_up` refused.
+  absent, and anything else as `unknown`, with `extras.safety_unread` quoting the value and every walk,
+  `stand_up`, `gaze` and `watch` refused. A `safety` that is not an object no longer raises out of
+  every state read, and one with no `fallen` says so where it said there was no safety block.
 - **A `battery` that is not an object no longer stops every verb on a Microduck.** A `robot.health`
   answering `battery: 80` raised out of every state read, and the executor reads the robot before each
   verb. It reads as no battery now.
@@ -100,10 +107,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   megabyte went whole into every refusal that quotes `posture_reason` and into the log. 60 characters
   are quoted.
 - **`stand_up` times its wait by the transport's clock on a Microduck, and says how long it waited.** It
-  counted its polls, so a slow link ran past what it said it waited, and it called a duck upright on
-  posture alone. A duck is called upright now only where something reports falls and nobody holds it,
-  the summary reads `upright after 3.2 s` where it read `upright`, the result carries `waited_s`, and an
-  unreadable safety flag ends the wait.
+  counted its polls, so over a slow link it waited longer than the 10 s it said. The summary reads
+  `upright after 3.2 s` where it read `upright`, the result carries `waited_s`, a duck that reads
+  standing is called upright only where nothing says it has fallen, and an unreadable safety flag ends
+  the wait.
 
 ### Documentation
 
