@@ -42,9 +42,9 @@ and `ROUTE` on its module and is listed as it is when it does not.
 run.** A test holds it: every official backend has a tier, a bound or verified one carries an
 owner and an ISO date, and a verified date is not in the future. A robot nobody here can run
 enters as a described body, or is published out of tree as ADR-0037 allows, where it needs
-nothing from this repository. The nine adapters of 0.32.0 are grandfathered: their bound
-backends carry the owner "grandfathered 0.33.0" and the date this record was accepted, which
-is a statement that nobody has named a date, not a date.
+nothing from this repository. The eight bound backends of 0.32.0's nine adapters are
+grandfathered: they carry the owner "grandfathered 0.33.0" and the date this record was
+accepted, which is a statement that nobody has named a date, not a date.
 
 **Why not a fifth tier, "planned".** A plan is not a state of the code. A body on order is a
 described body until the day its backend is written, and its backend is bound from that day

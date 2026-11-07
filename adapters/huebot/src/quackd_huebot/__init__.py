@@ -24,7 +24,7 @@ from quackd_microduck import manifest_for as _manifest_for
 from quackd_microduck import offered_skill_verbs as _offered_skill_verbs
 from quackd_microduck.verbs import conditions_for, verbs_for
 
-__version__ = "0.32.0"
+__version__ = "0.33.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""

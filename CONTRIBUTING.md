@@ -45,7 +45,7 @@ extra once reached a release. Change a dependency anywhere, run `uv lock`, and c
 
 Versions move together. The core and each adapter carry their own `__version__`, because an
 adapter's sdist holds only its own source and cannot read the core's, and each one pins a window
-on the core (`quackd>=0.32.0,<0.33`). `uv run python scripts/set_version.py X.Y.Z` rewrites all
+on the core (`quackd>=0.33.0,<0.34`). `uv run python scripts/set_version.py X.Y.Z` rewrites all
 ten and the windows that tie them together in `pyproject.toml`, each starting at the release
 itself: a patch raises every floor to itself, so an adapter from a patch never installs beside a
 core from before it, and a minor moves the whole window. It cannot reach prose, so at every
@@ -104,21 +104,22 @@ no job a pull request waits on does. So a contact setting changed in `sim/model.
 grasp sweep only that night: run `uv run pytest tests/test_lerobot_sim_model.py` yourself first.
 
 Touching an adapter's `upstream_api.py`? Every ref there is a permalink to a commit and a line,
-and the nightly `upstream-drift` job (`scripts/upstream_drift.py`) fetches each cited file at
-its pin and at the branch or tag the pin tracks, then says which cited lines no longer read as
-they were read, in the run's summary and in one issue per upstream labelled `upstream-drift`.
-So anchor a ref on the line that names the thing. A blank line or a closing bracket is a bad
-anchor, which fails the job as a broken ref, and a line that reads like others in its file is a
-weak one, which the job lists because it cannot follow it once it leaves its line. A module whose
-pin sits on a branch that is not the default says so in a `BRANCH` constant, as the Open Duck's
-and `microduck_rl`'s do, or in `BRANCHES`, by `owner/repo`, for a second repository; one pinned
-at a release names it in `TAG`, `RELEASE` or `VERSION`; and a module `quackd doctor` does not
-list in its adapter's `UPSTREAMS` is one the job never reads, which
-`tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream by
-hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network:
-exit 1 is drift or a broken ref, and exit 2 is that something did not answer as it should. The tests run
-the script on fixtures and reach nothing. The job compares a line with itself over time, so it
-cannot tell that a line never said what its ref claims: read the line you cite, at the pin.
+and the nightly `upstream-drift` job (`scripts/upstream_drift.py`) fetches each file a ref cites
+on GitHub at its pin and at the branch or tag the pin tracks, then says which cited lines no
+longer read as they were read, in the run's summary and in one issue per upstream labelled
+`upstream-drift`. So anchor a ref on the line that names the thing. A blank line or a closing
+bracket is a bad anchor, which fails the job as a broken ref, and a line that reads like others
+in its file is a weak one, which the job lists because it cannot follow it once it leaves its
+line. A module names the branch its pin sits on in a `BRANCH` constant, as the Open Duck's and
+`microduck_rl`'s do, and must when that is not the default, or in `BRANCHES`, by `owner/repo`,
+for a second repository; one pinned at a release names it in `TAG`, `RELEASE` or `VERSION`; and
+a module `quackd doctor` does not list in its adapter's `UPSTREAMS` is one the job never reads,
+which `tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream
+by hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network:
+exit 1 is drift or a broken ref, and exit 2 is that something did not answer as it should. The
+tests run the script on fixtures and reach nothing. The job compares a line with itself over
+time, so it cannot tell that a line never said what its ref claims: read the line you cite, at
+the pin.
 
 Touching anything under `bridge/`? That is the code that runs on a robot, or on the board
 `--host` names, and there are four lots of it now (`open_duck/`, `alohamini/`,

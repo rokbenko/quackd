@@ -9,6 +9,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-11-07
+
+0.33.0 says what an adapter is made of. An adapter carried three things in one package: the body,
+which is data and differs from one robot to the next; what every body of its kind does alike; and the
+binding quackd reaches it by, an SDK it imports, a wire it speaks or a bridge it ships. Only the body
+is one per robot, so a robot that speaks a protocol a package already speaks is a record in that
+package now, and not a copy of it
+([ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). Huebot is the first.
+Its package was the Microduck's copied and renamed, and it is one record over the Microduck's verbs
+and transport, with its name, its extra and everything a user types as they were. What the copy had
+learned came across with the move, so a Microduck's camera fetch ends, a safety flag that is not a
+JSON boolean is no longer read as true or false, and `stand_up` times its wait by the clock.
+
+Every backend says how far it has got, in one of four words: described, rehearsed, bound or verified.
+Code that reaches a real robot names who answers for its first run on one, and when
+([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)), and the eight
+bound backends that were here before the rule say they are grandfathered. Eleven robots join as
+described bodies, one YAML each of what their makers publish with a source beside every figure
+([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)): each registers,
+is judged against a task and joins a flock like any other body, and quackd drives no part of it. An
+arm's LeRobot robot type is data, so an SO-100 registers as one and runs on the code that drove the
+SO-101. The README draws these layers from the catalogue, and a test fails until an adapter added
+there is in the picture.
+
+What changes for you: `quackd[huebot]` installs `quackd-microduck` beside `quackd-huebot`, and code
+that imported `quackd_huebot.transports` imports the Microduck's transport and hands it the Huebot's
+record. `list-adapters --json` has a tenth row, of kind `described`, whose `extra` is `built-in` and
+names nothing to install, and a script that matched the words of a row's `status` reads `tiers`
+instead. Once a robot is registered with a robot type, quackd 0.32.0 refuses the whole of
+`robots.json`. A Microduck camera URL that redirects, or whose picture is over 8 MB, is no camera now,
+and the connect says why.
+
+A nightly now reads every file the adapters cite on GitHub, at its pin and where the pin tracks, and
+keeps an issue open for each upstream that has moved or carries a ref quackd cannot follow. Run by
+hand on 2026-11-05 it found six upstreams moved, and on 2026-11-07 seven, LeRobot having published
+0.7.0 in between. None of what this release changes in the code has run on a robot. The SO-101's real
+backend builds its follower from the registered type now and checks the bus's joints before anything
+is energised, which only a fake arm has seen. No SO-100 has run quackd, and no described body has been
+compared with its robot.
+
 ### Added
 
 - **A robot that answers `robotd`'s calls is one record over the Microduck's package.**
@@ -30,96 +70,114 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   read `tiers` instead. An adapter published from somewhere else may declare `TIERS`, `FAMILY` and
   `ROUTE` and is printed the same way. What changes for you: a script that counts the rows of `--json`
   finds ten, the tenth of `kind` `described`, and one that asks whether a machine has a robot gets the
-  answer it always got, since `installed` and `adapter_installed` are false on that row.
-- **A backend that reaches a robot names who answers for its first hardware run.** A bound or a verified
-  tier carries an owner and a date, and `tests/test_described.py` refuses a catalogue row without both
-  ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)). The eight
-  bound backends that were here before the rule say `grandfathered 0.33.0` and the day it was adopted,
-  2026-11-05, which says that nobody has named a date for any of them. `lerobot:real` is the one verified
-  backend, first run on 2026-09-15.
-- **Eleven robots quackd describes and drives no part of.** `--robot described:<name>` reaches a Unitree
-  B2, Go2 EDU and G1 EDU, a Franka Research 3, a Universal Robots UR5e, a KUKA LBR iisy 3 R760 and LBR
-  iiwa 7 R800, a Yaskawa MotoMini, a Menlo Asimov-1, a Noetix Bumi and a Rhoban Microban
-  ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). Each is one YAML in
-  the core, `quackd/adapters/bodies/<name>.yaml`, holding what its maker publishes, with a source and
-  the day it was read beside every figure, so `uv pip install quackd` alone has them. A described body
-  registers (`quackd robot add b2 described:unitree-b2`), lists its verbs, shows a pilot its datasheet,
-  takes a feasibility verdict and joins a pilot flock like any other body. It has two verbs,
-  `report_state` and `stop`, and its pilot is told before any figure that the body moves only if someone
-  else moves it. It lists no sensors, since quackd reads none of the robot's: what the robot carries is a
-  note in its datasheet, and a board with a camera beside it (`--host`) gives it `observe`, as it gives
-  any body. Its posture reads `unknown` and nothing reports its falls, and its `stop` says there is
-  nothing to stop. An address, a camera, a token and a rest pose are refused, at `quackd robot add` as
-  at a run, since there is no robot to reach, `quackd robot list --probe` says `described: nothing to
-  reach` with neither a tick nor a cross, and `quackd announce` refuses one. `--robot described` with no
-  body after it is refused with the list. A described body is never the robot a command with no `--robot`
-  falls back to, never counted as an adapter (`quackd doctor` says `11 described bodies` beside its count
-  of adapters installed), never offered a connect block in `quackd ui`, and `described` cannot be a
-  robot's registered name. Nothing that names a body to hand a task to names one: not the `could` list an
-  MCP client is given, and not a hint, which ends with a sentence of its own, `By their makers' figures
-  alone, described:franka-research-3 could too, and quackd drives no part of it`.
-  `tests/test_described.py` holds each of these, and a pilot flock of a duck and a described B2 runs to the
-  end in it.
+  answer it always got, since `installed` and `adapter_installed` are false on that row. Its
+  `extra` is `built-in`, which names nothing to install, so a script that installs the extra
+  of each row not installed has to pass over that one.
+- **A backend that reaches a robot names who answers for its first hardware run.** A bound or a
+  verified tier carries an owner and a date, and `tests/test_described.py` refuses a catalogue row
+  without both ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)).
+  The eight bound backends that were here before the rule say `grandfathered 0.33.0`, and their date
+  in `--json` is the day it was adopted, 2026-11-05, which says that nobody has named a date for any
+  of them. `lerobot:real` is the one verified backend, first run on 2026-09-15.
+- **Eleven robots quackd describes and drives no part of.** `--robot described:<name>` reaches a
+  Unitree B2, Go2 EDU and G1 EDU, a Franka Research 3, a Universal Robots UR5e, a KUKA LBR iisy 3 R760
+  and LBR iiwa 7 R800, a Yaskawa MotoMini, a Menlo Asimov-1, a Noetix Bumi and a Rhoban Microban
+  ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). Each is one
+  YAML in the core, `quackd/adapters/bodies/<name>.yaml`, holding what its maker publishes, with a
+  source and the day it was read beside every figure, so `uv pip install quackd` alone has them. A
+  described body registers (`quackd robot add b2 described:unitree-b2`), lists its verbs, shows a
+  pilot its datasheet, takes a feasibility verdict and joins a pilot flock like any other body. It has
+  two verbs, `report_state` and `stop`, and its pilot is told before any figure that the body moves
+  only if someone else moves it. It lists no sensors, since quackd reads none of the robot's: what the
+  robot carries is a note in its datasheet, and a board with a camera beside it (`--host`) gives it
+  `observe`, as it gives any body. Its posture reads `unknown` and nothing reports its falls, and its
+  `stop` says there is nothing to stop. An address, a camera and a token are refused at `quackd robot
+  add` and `robot edit` as at a run, and a rest pose by `quackd robot rest-pose` and at a run, since
+  there is no robot to reach. `quackd robot list --probe` says `described: nothing to reach` with
+  neither a tick nor a cross, and `quackd announce` refuses one. `--robot described` with no body
+  after it is refused with the list. A described body is never the robot a command with no `--robot`
+  falls back to, never counted as an adapter (`quackd doctor` says `11 described bodies` beside its
+  count of adapters installed), and never offered a connect block in `quackd ui`. Nothing that names a
+  body to hand a task to names one: not the `could` list an MCP client is given, and not a hint, which
+  ends with a sentence of its own, `By their makers' figures alone, described:franka-research-3 could
+  too, and quackd drives no part of it: each is a described body.` `tests/test_described.py` holds
+  these, and a pilot flock of a duck and a described B2 runs to the end in it, but for two:
+  `tests/test_mcp_fleet.py` holds the `could` list, and no test gives a described body a board's
+  camera.
 - **An SO-100 is registered as one, and runs on the code that drove the SO-101.** `quackd robot add
   desk-arm lerobot:real --address COM5 --robot-type so100_follower` registers an arm under LeRobot's
   `so100_follower`, which at the commit quackd read is the same class as `so101_follower`, so it
   drives on the same code, and its manifest calls it `lerobot-so100` and carries its own figures.
   `--robot-type` is on `robot add` and `robot edit`, `--clear robot-type` forgets it, `robot show`
-  prints it, `robots.json` gains a `robot_type` key that is left out when there is none, so an older
-  quackd still reads the file, and `list-adapters --json` rows gain `robot_types`. A registered
-  robot's type reaches everything that describes or builds it, `doctor` included. A type the adapter
-  does not build is refused at `robot add`, and so is any type but the SO-101 on `lerobot:mujoco`,
-  which is a model of an SO-101, and `robot twin` refuses an arm of another type for the same reason.
-  The SO-101, the default, is stored as no type at all. A Koch v1.1 is described in
-  `quackd_lerobot/arms.py` and registered
-  by nothing until somebody names a date to run one
-  ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#which-arms)).
+  prints it, and `list-adapters --json` rows gain `robot_types`. `robots.json` gains a `robot_type`
+  key that is left out when there is none, so a file that names no type is one an older quackd still
+  reads. One that names a type is not: quackd 0.32.0 refuses the whole file, every robot in it, with
+  `robots.json: desk-arm: robot_type: Extra inputs are not permitted`. A registered robot's type
+  reaches everything that describes or builds it, `doctor` included. A type the adapter does not build
+  is refused at `robot add`, and so is any type but the SO-101 on `lerobot:mujoco`, which is a model
+  of an SO-101, and `robot twin` refuses an arm of another type for the same reason. The SO-101, the
+  default, is stored as no type at all. `lerobot:real` builds its follower from the type, and before
+  anything is energised it refuses an arm whose bus names other joints than the six every verb moves.
+  A Koch v1.1 is described in `quackd_lerobot/arms.py` and registered by nothing until somebody names
+  a date to run one ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#which-arms)).
 
 ### Changed
 
 - **`quackd-huebot` is a body over `quackd-microduck`, and installs it.** The Huebot package was the
-  Microduck's copied and renamed on 2026-10-20, and two fixes since had to land in both by hand. It is
-  one record now, `quackd_huebot/body.py`, over one set of verbs and one transport, as
-  [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says. `quackd[huebot]`,
-  `--robot huebot:jsonrpc`, a registered Huebot and everything a pilot is told read as they did, and
-  the move left every description either robot can give hashing as it did, which
-  `tests/golden/manifest_digests.json` holds from here on. A Huebot's state gains the three lens keys a
-  Microduck's camera record has, and `--fov-deg` reaches its transport as it does a Microduck's. What
-  changes for you: nothing to do, one more package in the install, and `quackd_huebot.transports` is
-  gone, so code importing that module imports `quackd_microduck.transports.jsonrpc_unix` and passes
-  `body=HUEBOT`. A logging setup that named `quackd.transport.huebot` names `quackd.transport.jsonrpc`,
-  whose lines are the same.
-- **A Huebot says which of the family's verbs it has not got, and why.** `gaze`, `watch`, `grab`,
-  `explore` and `find` were left out with the reasons in the code's comments, so a pilot on a Huebot,
-  and a task file asking for one, heard only that the verb was not there. They are in
-  `extras.not_offered` now, as a Microduck's missing verbs have been, so the pilot reads them beside
-  the body and `quackd validate` quotes them. That changes a Huebot's digest, the fingerprint a LAN
-  announce carries, as any new line on a body's description does.
+  Microduck's copied and renamed on 2026-10-20, and three fixes since had to land in both by hand:
+  `stand_up` hearing a stop in 0.30.2, `kick`, `sit` and `stand` hearing one in 0.30.3, and a camera's
+  picture read only as a JPEG or a PNG in 0.31.3. It is one record now, `quackd_huebot/body.py`, over
+  one set of verbs and one transport, as
+  [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says.
+  `quackd[huebot]`, `--robot huebot:jsonrpc` and a registered Huebot read as they did, and the move
+  itself left every description either robot can give hashing as it did.
+  `tests/golden/manifest_digests.json` holds those digests from here on, the Microduck's as 0.32.0
+  gave them and the Huebot's as the next entry changes them. A Huebot's state gains the three lens
+  keys a Microduck's camera record has, and `--fov-deg` reaches its transport as it does a
+  Microduck's. What changes for you: nothing to do, one more package in the install, and
+  `quackd_huebot.transports` is gone, so code importing that module imports
+  `quackd_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`. A logging setup that named
+  `quackd.transport.huebot` names `quackd.transport.jsonrpc`, whose lines are the same.
+- **A Huebot says which of the family's verbs it has not got, and why.** `gaze`, `watch` and `grab`
+  were left out with the reasons in the code's comments, and `explore` and `find`, which the Microduck
+  gained after the copy was made, with no word at all, so a pilot on a Huebot, and a task file asking
+  for one, heard only that the verb was not there. They are in `extras.not_offered` now, as a
+  Microduck's missing verbs have been, so the pilot reads them beside the body and `quackd validate`
+  quotes them. That changes a Huebot's digest, the fingerprint a LAN announce carries, as any new line
+  on a body's description does.
+- **A Microduck's camera that redirects, or sends a picture over 8 MB, is no camera.** In 0.32.0 a
+  snapshot URL that redirected was followed, and a picture was read whole whatever its size. A
+  redirect is named and refused now, so a `--camera-url` that redirects has to name where it redirects
+  to, and a picture over 8 MB is refused, which no robot's camera here sends. Either leaves the run
+  with no camera, and the connect says why.
+- **`described` is no robot's name.** `quackd robot add described ...` is refused, since `--robot
+  described:<body>` reaches the bodies quackd only describes. A robot registered under that name
+  before still loads and runs.
 
 ### Fixed
 
-- **A Microduck on a camera that streams is told so at connect.** An MJPEG URL answers with a body that
-  never ends, and the transport read it whole, in a thread nothing could stop, so a connect waited out
-  its time, said only that no frame came, and left the thread reading past the run's end. A fetch is
-  bounded now, as Huebot's copy had learned: 3 s from the request to the last byte, 8 MB, a
-  `multipart/*` or a redirect named and refused, and a close that ends a fetch under way, at its next
-  read or at the latest at its deadline. What changes for you: a camera that sent one picture larger
-  than 8 MB, which no robot's camera here does, is refused, and a `--camera-url` that redirects has to
-  name where it redirects to. A camera whose picture takes longer than 3 s to come is no camera at
-  connect, where it was offered to the pilot and then handed out no frame, since a frame that old is
-  never handed out.
+- **A Microduck on a camera that streams is told so at connect.** An MJPEG URL answers with a body
+  that never ends, and the transport read it whole, in a thread nothing could stop, so a connect
+  waited out its time, said only that no frame came, and left the thread reading past the run's end. A
+  fetch is bounded now, as Huebot's copy had learned: 3 s from the request to the last byte, a
+  `multipart/*` named and refused, and a close that ends a fetch under way, at its next read or at the
+  latest at its deadline. A camera whose picture takes longer than 3 s to come is no camera at
+  connect. In 0.32.0 one that kept sending, and had its picture whole inside the 5 s a connect waits,
+  was offered to the pilot and then handed out no frame, since a frame that old is never handed out.
 - **A safety flag that is not a JSON boolean no longer reads as true or false on a Microduck.** A
   `fallen` of `"false"` read as a duck on the floor and a `picked_up` of `"false"` as a duck in
-  somebody's hands, and a null `fallen` as a detector saying all clear. Null now reads as the key being
-  absent, and anything else as `unknown`, with `extras.safety_unread` quoting the value and every walk,
-  `stand_up`, `gaze` and `watch` refused. A `safety` that is not an object no longer raises out of
-  every state read, and one with no `fallen` says so where it said there was no safety block.
+  somebody's hands, and a null `fallen` as a detector saying all clear. Null now reads as the key
+  being absent, and anything else as `unknown`, with `extras.safety_unread` quoting the value and
+  every verb that moves the duck refused: every walk, `kick`, `grab`, `sit`, `stand`, `stand_up`,
+  `gaze` and `watch`. A `safety` that is not an object no longer raises out of every state read, and
+  one with no `fallen` says so where it said there was no safety block.
 - **A `battery` that is not an object no longer stops every verb on a Microduck.** A `robot.health`
   answering `battery: 80` raised out of every state read, and the executor reads the robot before each
   verb. It reads as no battery now.
-- **A long policy label is quoted only so far.** A peer decides how long a label is, and one of a
-  megabyte went whole into every refusal that quotes `posture_reason` and into the log. 60 characters
-  are quoted.
+- **A long policy label is quoted only so far on a Microduck.** A peer decides how long a label is,
+  and one of a megabyte went whole into every refusal that quotes `posture_reason` and into the log.
+  60 characters are quoted, as Huebot's copy did. The label itself is still whole in the state's
+  `policy`, which `report_state` returns.
 - **`stand_up` times its wait by the transport's clock on a Microduck, and says how long it waited.** It
   counted its polls, so over a slow link it waited longer than the 10 s it said. The summary reads
   `upright after 3.2 s` where it read `upright`, the result carries `waited_s`, a duck that reads
@@ -139,20 +197,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pin, and each reads as moved on `rolling`, urdfdom's default branch, which the nightly compares
   it with. What quackd reads from a URDF did not change: the attribute names were right and
   their line numbers were not. Found by reading the file at its pin while the drift job was
-  under review. The job itself cannot find this: it compares a line with itself over time, so a
-  line that is the only one of its kind and never said what its ref claims reads as `same`.
+  under review. The job cannot tell a wrong line from a right one, since it compares a line with
+  itself over time: a line that is the only one of its kind reads as `same` or `moved` whatever
+  its ref claims.
 - **The ref for `microduck_rl`'s model licence cites its line.** `MESH_LICENSE` cited the README
   as a whole, so a change to the sentence it quotes read as a page that changed, which is not
   drift. It cites line 261 at the same pin now, and the nightly reports that sentence as changed.
 - **Three rosbridge refs pointed past the end of their file or at a closing bracket.**
-  `MSG_COMPRESSED_IMAGE` cited line 44 of a 41-line message definition, `OP_CALL_SERVICE`
-  cited line 780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift
-  job's first run found them; each now cites the line that names the thing, at the same pin.
-- **`quackd doctor` no longer cuts a long note with an ellipsis.** The upstream assumptions
-  table truncated a note that quotes a long URL, which the endpoint module's notes do, with a
-  character a cp1252 console cannot carry, so the command that is pasted into issues lost the
-  one thing the row was there to say. The column folds long words now.
-  `tests/test_doctor.py`'s codepage tests fail without this once the endpoint row is walked.
+  `MSG_COMPRESSED_IMAGE` cited line 44 of a 41-line message definition, `OP_CALL_SERVICE` cited line
+  780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift script's first run, by
+  hand before the nightly existed, found them; each now cites the line that names the thing, at the
+  same pin.
+- **`quackd doctor` no longer cuts a long note with an ellipsis.** On a console 80 columns wide the
+  upstream assumptions table cut the source paths and line ranges its notes quote, so the command that
+  is pasted into issues lost the one thing the row was there to say, and the endpoint module's notes,
+  walked from this release, quote URLs too long for the column even at 200. The column folds long
+  words now. `tests/test_doctor.py`'s codepage tests fail without this once the endpoint row is
+  walked, since they hold the table to ASCII and an ellipsis is not.
+- **`quackd doctor`'s pins table shows the endpoint module.** The arm's `UPSTREAMS` left out
+  `policy/endpoint_upstream_api.py`, the module its Hugging Face Endpoints are read from, so the table
+  showed 13 rows for 14 modules. It shows 14.
 
 ### Documentation
 
@@ -161,26 +225,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   with the elbow and wrist still folded, that drives the jaws into the table: on a real arm the joint
   stopped at -75 while the elbow and wrist, which nothing moved, were pushed open. They now say
   `Fully extend the arm and reach forward.`, E183 with its report after it, and their cards say to
-  clear about 40 cm in front of the base. The cards of E200 and E219, which run two of these files,
-  say so too.
+  clear about 40 cm in front of the base. The card of E219, which runs E180's file, says so too,
+  and E200's, which runs E116's, calls its second line E116's reach.
 - **Three records on what an adapter is, and the rule for the next robot.** ADR-0075 names the three
   layers an adapter carries, the body as data, the family every body of a kind shares and the binding
   by one of three routes, and says a robot that speaks a protocol a package already speaks is a body
-  record in that package plus a thin distribution of its own. ADR-0076 gives every backend one of
-  four tiers, described, rehearsed, bound and verified, and the rule that bound code enters this
-  repository only with a named owner and a date for its first hardware run, the nine of 0.32.0
+  record in that package plus a thin distribution of its own. ADR-0076 gives every backend one of four
+  tiers, described, rehearsed, bound and verified, and the rule that bound code enters this repository
+  only with a named owner and a date for its first hardware run, the eight bound backends of 0.32.0
   grandfathered. ADR-0077 makes a body quackd only describes one YAML in the core, read from its
   maker's figures with a source each. The amendment notes on ADR-0017, ADR-0022 and ADR-0037, a
   section on [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) and a
-  paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code
-  the three records describe lands in 0.33.0 behind them.
+  paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code the
+  three records describe lands in 0.33.0 behind them.
 - **The README shows how an intent reaches a robot, in one picture.** Its *Architecture* section and
   [docs/concepts/architecture.md](docs/concepts/architecture.md) gain the four layers an intent passes
-  through: the body, data and one per robot, which is all the LLM reads; a behaviour family, what bodies
-  of a kind do alike; a binding by one of three routes; and a transport that moves bytes. Two SVGs, for a
-  light page and a dark one, are drawn by [docs/assets/architecture.py](docs/assets/architecture.py) from
-  the catalogue, so each robot sits where its row's `family` and `route` put it, and a test fails if a
-  committed file is not what the script draws or a robot is missing from a box.
+  through: the body, data and one per robot, the only one of the four the LLM reads; a behaviour
+  family, what bodies of a kind do alike; a binding by one of three routes; and a transport that moves
+  bytes. Two SVGs, for a light page and a dark one, are drawn by
+  [docs/assets/architecture.py](docs/assets/architecture.py) from the catalogue, so each adapter sits
+  where its row's `family` and `route` put it, and a test fails if a committed file is not what the
+  script draws or an adapter is missing from a box.
 - **The status page says each backend's tier, and lists the described bodies with their numbers.**
   [docs/adapters/status.md](docs/adapters/status.md) gains a tier column held to the catalogue by a test,
   a legend of the four tiers, and a table of the described bodies that `scripts/bodies_docs.py` renders
@@ -193,59 +258,60 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [docs/concepts/safety.md](docs/concepts/safety.md) says what stops a described body: nothing of
   quackd's, since nothing of quackd's moves it.
 - **The adapter guide counts nine adapters where `uv sync --extra dev` installs them.** It said
-  all eight, a count from before Huebot, in a shape the count guard did not read. The guard reads
+  all eight, a count from before MOSS, in a shape the count guard did not read. The guard reads
   `all N editable` and `all N of them` now, on CONTRIBUTING.md as well as the guide.
-- **A nightly says when an upstream moved under a ref.** Every adapter cites what it reads
-  from upstream as refs pinned to a commit and a line, and nothing re-read them when upstream
-  moved: LeRobot replaced the arm's motor library on 2026-10-16 and a person noticed three weeks
-  later. `scripts/upstream_drift.py` fetches every cited file at its pin and at the branch or tag
-  the pin tracks, and tells three things apart. Drift is upstream having moved: a cited line that
-  no longer reads as it was read, a file, a directory, a branch or a repository that is gone, a
-  newer release on PyPI than the one a module read. A line that moved within its file is reported
-  and is not drift, and neither is a page that changed. A broken ref is one of quackd's own that
-  cannot be followed: a blank or bracket-only line, or a path with nothing at the pin, asked of the
-  API as well as the raw host. And a night something did not answer as it should is unchecked. It
-  exits 0, 1 for drift or a broken ref, which is work for somebody here, or 2 when nothing drifted
-  and something could not be checked, so an outage never reads as drift and never closes an issue.
-  `.github/workflows/upstream-drift.yml` runs it every night
-  and on demand, writes the report to the run's summary, and keeps one issue open per upstream
-  that needs somebody, labelled `upstream-drift`, edited in place while that lasts and closed
-  the night every ref reads as it was read. A night that could not check an upstream closes
-  nothing and rewrites nothing for it. A cited line that reads like others in its own file is
-  listed as a weak anchor, because it cannot be followed once it leaves its line: 35 cited lines
-  are that today. Modules say what their pin tracks where that is not the default branch, in
-  `BRANCH` on the Open Duck's and `microduck_rl`'s, and the Microduck's `RELEASE`,
-  `daemon-v0.16.1`, is compared with the newest `daemon-v` tag and not with a `main` it never
-  tracked. The arm's `UPSTREAMS` lists the
-  endpoint module it had left out, so `quackd doctor`'s pins table shows 14 rows for 14 modules
-  where it showed 13. `tests/test_upstream_drift.py` runs the script on fixtures, reaching
-  nothing, holds its walk to the suite's list of modules, and reads the workflow back. Run by
-  hand on 2026-11-05 it took a little over two minutes and found six upstreams moved, none broken and
-  none unchecked. LeRobot's `feetech/tables.py` is gone from its main branch, as the motor-library
-  change says, with 16 more cited lines changed. robotd is at `daemon-v0.18.5`, and its API
-  version line no longer reads 41. huggingface_hub is at 2.4.0 on PyPI where quackd read 1.29.0.
-  `microduck_rl` has changed the two files eleven of its refs cite whole, and its README now names
-  a licence version and a `LICENSE-MODELS.md` for its models where it had one sentence. And
-  AlohaMini's and MOSS's main branches each changed cited lines. None of these is re-read here:
-  each is an issue the first scheduled run opens.
+- **A nightly says when an upstream moved under a ref.** Every adapter cites what it reads from
+  upstream as refs pinned to a commit and, nearly always, a line, and nothing re-read them when
+  upstream moved: LeRobot replaced the arm's motor library on 2026-10-16 and a person noticed three
+  weeks later. `scripts/upstream_drift.py` fetches every file the refs cite on GitHub at its pin and
+  at the branch or tag the pin tracks, and tells three things apart. Drift is upstream having moved: a
+  cited line that no longer reads as it was read, a file cited whole that changed and is not a page, a
+  file, a directory, a branch, a release tag or a repository that is gone, and a newer version than
+  the one a module read, on PyPI, in upstream's `pyproject.toml` or in an API's own document. A line
+  that moved within its file is reported and is not drift, and neither is a page that changed. A
+  broken ref is one of quackd's own that cannot be followed: a blank or bracket-only line, a line past
+  the end of its file, or a path with nothing at the pin, asked of the API as well as the raw host.
+  And a night something did not answer as it should is unchecked. It exits 0, 1 for drift or a broken
+  ref, which is work for somebody here, or 2 when nothing drifted and something could not be checked,
+  so an outage never reads as drift and never closes an issue. `.github/workflows/upstream-drift.yml`
+  runs it every night and on demand, writes the report to the run's summary, and keeps one issue open
+  per upstream that needs somebody, labelled `upstream-drift`, edited in place while that lasts and
+  closed the night every ref reads as it was read. A night that could not check an upstream closes
+  nothing and rewrites nothing for it. A cited line that reads like others in its own file is listed
+  as a weak anchor, because it cannot be followed once it leaves its line: 35 refs are that today. A
+  module may name the branch its pin sits on in `BRANCH`, as the Open Duck's and `microduck_rl`'s name
+  their repositories' defaults, `v2` and `develop`, and the Microduck's `RELEASE`, `daemon-v0.16.1`,
+  is compared with the newest `daemon-v` tag and not with a `main` it never tracked.
+  `tests/test_upstream_drift.py` runs the script on fixtures, reaching nothing, holds its walk to the
+  suite's list of modules, and reads the workflow back. Run by hand on 2026-11-05 it took about three
+  minutes and found six upstreams moved, none broken and none unchecked. LeRobot's `feetech/tables.py`
+  was gone from its main branch, as the motor-library change says, with 16 more cited lines changed.
+  robotd was at `daemon-v0.18.5`, and its API version line no longer read 41. huggingface_hub was at
+  2.4.0 on PyPI where quackd read 1.29.0. `microduck_rl` had changed the two files eleven of its refs
+  cite whole, and its README named a licence version and a `LICENSE-MODELS.md` for its models where it
+  had had one sentence. And AlohaMini's and MOSS's main branches had each changed cited lines. None of
+  these is re-read here: each is an issue the first scheduled run opens. Run again on 2026-11-07 it
+  finds a seventh, LeRobot's policies, read at 0.6.1, since LeRobot published 0.7.0 after the first
+  run.
 
 ### Known limitations
 
-- **No SO-100 has run quackd.** It is bound with the SO-101's owner and dates, at the project's
-  owner's word, because it runs the same LeRobot class. Its figures were read from its maker's robot
-  description by one reader: a reach to the jaw's pivot, and no payload, since nobody publishes one.
-  `quackd ui` neither sets nor shows a robot type, and a passport made on the robot carries the
-  SO-101's figures whichever arm it is.
-- **No described body's figures have been checked by a second reader, and none against a robot.** Each was
-  read from the page its source names on the day it says, 2026-11-05, and the Unitree G1's on 2026-10-28,
-  by one reader. Five choices are worth knowing. A quadruped's back load is a note and not a figure,
-  because the datasheet refuses a payload on a body with no manipulator. An industrial arm that ships with
-  no gripper is declared as one bare arm so that its payload and reach can be stated, and the pilot is
-  told it holds nothing until somebody fits a tool. The Noetix Bumi lists no manipulator at all, because Noetix publishes nothing on what
-  its arms can hold. Where a maker gives a range, the lower end is the figure. And two figures are marked
-  `estimate` because the maker's own page does not give them: the Unitree B2's joint count, from a
-  dealer's listing, and the KUKA LBR iiwa's weight, from a 2016 KUKA presentation. quackd drives none of
-  these bodies, so nothing here has been compared with one.
+- **No SO-100 has run quackd.** It is bound with the SO-101's owner and first-run date, rok and
+  2026-09-15, at the project's owner's word, because it runs the same LeRobot class. Its figures were
+  read from its maker's robot description by one reader: a reach to the jaw's pivot, and no payload,
+  since nobody publishes one. `quackd ui` neither sets nor shows a robot type, and a passport made on
+  the robot carries the SO-101's figures whichever arm it is.
+- **No described body's figures have been checked by a second reader, and none against a robot.** Each
+  was read from the source it names on the day it says, 2026-11-05, and the Unitree G1's on
+  2026-10-28, by one reader. Five choices are worth knowing. A quadruped's back load is a note and not
+  a figure, because the datasheet refuses a payload on a body with no manipulator. An industrial arm
+  that ships with no gripper is declared as one bare arm so that its payload and reach can be stated,
+  and the pilot is told it holds nothing until somebody fits a tool. The Noetix Bumi lists no
+  manipulator at all, because Noetix publishes nothing on what its arms can hold. Where a maker gives
+  a range, the lower end is the figure. And two figures are marked `estimate` because the maker's own
+  page does not give them: the Unitree B2's joint count, from a dealer's listing, and the KUKA LBR
+  iiwa's weight, from a 2016 KUKA presentation. quackd drives none of these bodies, so nothing here
+  has been compared with one.
 
 ## [0.32.0] — 2026-11-07
 
@@ -10156,7 +10222,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/rokbenko/quackd/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/rokbenko/quackd/compare/v0.31.3...v0.32.0
 [0.31.3]: https://github.com/rokbenko/quackd/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/rokbenko/quackd/compare/v0.31.1...v0.31.2

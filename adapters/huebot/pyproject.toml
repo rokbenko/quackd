@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
 # A body of the Microduck's family (ADR-0075): its verbs and its transport are that package's, so
 # both move with this one, and scripts/set_version.py moves both windows.
-dependencies = ["quackd>=0.32.0,<0.33", "quackd-microduck>=0.32.0,<0.33"]
+dependencies = ["quackd>=0.33.0,<0.34", "quackd-microduck>=0.33.0,<0.34"]
 
 [project.entry-points."quackd.adapters"]
 huebot = "quackd_huebot"
