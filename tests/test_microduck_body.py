@@ -60,6 +60,17 @@ def test_an_adapter_refuses_a_transport_built_for_another_body() -> None:
     quackd_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", body=HUEBOT))
 
 
+def test_a_transport_whose_body_is_no_body_record_is_any_bodys() -> None:
+    """The physics transport's `body` names the physics model it loads, `puppet` or the duck's,
+    which says nothing of which robot of the family it carries."""
+
+    class Physics:
+        name = "mujoco"
+        body = "puppet"
+
+    assert quackd_microduck.MicroduckAdapter(Physics()).body is MICRODUCK  # type: ignore[arg-type]
+
+
 def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
     """One function behind each, so a line a pilot acts on can only be right by being told whose
     it is. Huebot's own description of its kick says what nobody has measured."""

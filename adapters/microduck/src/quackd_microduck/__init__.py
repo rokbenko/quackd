@@ -295,10 +295,12 @@ class MicroduckAdapter:
         # A transport built for one body says what it may send in that body's terms, so a Huebot
         # over a Microduck's would send looks its shim does not answer. The simulators and the
         # mock carry no body, and are any body's.
-        theirs = getattr(transport, "body", self.body)
-        if theirs is not self.body:
-            built_for = getattr(theirs, "name", theirs)
-            raise ValueError(f"a {self.name} adapter over a transport built for {built_for}")
+        # Only a `Body` is a body here: the physics transport's `body` names the physics model
+        # it loads. By name and not by identity, since a test that imports the package afresh
+        # holds a second `MICRODUCK`, which is the same body.
+        theirs = getattr(transport, "body", None)
+        if isinstance(theirs, Body) and theirs.name != self.body.name:
+            raise ValueError(f"a {self.name} adapter over a transport built for {theirs.name}")
         self.transport = transport
         self.backend = transport.name
         self.robot_id = robot_id or self.body.name
