@@ -4,7 +4,7 @@
 ---
 duck: 1
 name: e183-push-back
-description: "A long, slow raise, against a hand."
+description: "Fully extend the arm and reach forward, against a hand."
 author: rok
 requires: [move_joints]
 verbs:
@@ -23,7 +23,7 @@ persona: "Practical and honest: say so when you cannot do something."
 
 # Task
 
-Slowly raise your shoulder lift to negative 39 degrees over ten seconds, then report where every joint ended up.
+Fully extend the arm and reach forward, then report where every joint ended up.
 
 ## Strategy
 

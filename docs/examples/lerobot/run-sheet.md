@@ -2493,7 +2493,7 @@ Free space. Its files are in [e116/](e116/).
 
 **Expect.** The run ends within about a second of the pull, saying the arm did not answer. The arm holds its last commanded goal under torque, and it must not sag or carry on. The close cannot read it, so it ends on `quackd cannot tell whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut its power`, and nothing is asked. Report that line and the run's last line word for word. Then support it, plug back in, and `quackd robot release` folds it and lets go at the rest pose: connecting takes torque off every motor for a moment, so keep your hand under it until it prints where the arm is.
 
-- Start a long slow move, pull the cable. The 2 Hz heartbeat probe ends the run; the SDK's own `is_connected` would have stayed True.
+- Clear about 40 cm in front of the base, because the arm reaches out over it. Start the reach, pull the cable. The 2 Hz heartbeat probe ends the run; the SDK's own `is_connected` would have stayed True.
 - Pull the arm's USB cable while the move is under way.
 
 ```bash
@@ -2514,6 +2514,7 @@ Free space. Its files are in [e117/](e117/).
 
 **Expect.** Ctrl-C: `aborted mid-verb; the verb was cancelled and a stop was sent`, the arm freezes, then folds to the rest pose and goes limp there. If that fold misses, it asks before anything drops (E176). Hard kill: the arm freezes under full torque and stays there, with nothing running to release it, and the run folder has no `summary.json`. Show it, don't dramatize it.
 
+- Clear about 40 cm in front of the base, because the arm reaches out over it.
 - Two takes. Ctrl-C is an ordinary exit: quackd sends `stop`, the arm freezes, then it folds to its rest pose and lets go there. A hard kill is the real hazard: nothing runs, and the arm holds its last goal under torque until you cut power or `quackd robot release` puts it down.
 - Press Ctrl-C once, or `q`. A second press quits at once and can leave the arm holding wherever it stopped (E180).
 
@@ -4274,10 +4275,11 @@ Free space. Its files are in [e180/](e180/).
 
 **Goal.** Show the one exit that skips quackd's close: a second press during the rest move. Before 0.15.0 that exit could take torque off and drop the arm. The bench step 0.15.0 owes the arm.
 
-**Expect.** The first press stops the raise and the arm starts for its rest pose. The second quits at once with no summary box. The arm should still hold where it stood once quackd has exited, and not fall as the process lets go of it. Rehearsed on the arm's twin, never on the arm.
+**Expect.** The first press stops the reach and the arm starts for its rest pose. The second quits at once with no summary box. The arm should still hold where it stood once quackd has exited, and not fall as the process lets go of it. Rehearsed on the arm's twin with the old raise, never on the arm.
 
+- Clear about 40 cm in front of the base, because the arm reaches out over it.
 - Keep E171's slow step on in this window, `$env:QUACKD_LEROBOT_MAX_STEP_DEG = "1"`: a fold at 10 degrees a second, with its goal 1 degree ahead, gives you time and pushes less.
-- One Ctrl-C mid-raise. Wait for `moving to the rest pose`, then a second Ctrl-C. One palm under the forearm, in the air and never between two links. The other hand does the keys and then goes to the switch.
+- One Ctrl-C mid-reach. Wait for `moving to the rest pose`, then a second Ctrl-C. One palm under the forearm, in the air and never between two links. The other hand does the keys and then goes to the switch.
 - Then support it while the release connects.
 
 ```bash
@@ -4326,8 +4328,9 @@ Contact or precision. Its files are in [e183/](e183/).
 
 **Goal.** Answer a question the hardware checklist has left open since the first afternoon. Hold a joint gently against its goal and see whether the verb fails, saying where it stopped.
 
-**Expect.** A joint that meets something partway is called stalled only when the move's time is up, pushing against a goal one step ahead of it until then, so the push lasts up to ten seconds. Then `move_joints: shoulder_lift is at ... with a goal of -39, and it has stopped moving`, and the pilot is told. If it says nothing and the time simply runs out, or the joint climbs over your hand, that is the answer.
+**Expect.** A joint that meets something partway is called stalled only when the move's time is up, pushing against a goal one step ahead of it until then, so the push lasts as long as the time the LLM gives the move, at most 12 seconds, and about half a second more. Then `move_joints: ... is at ... with a goal of ..., and it has stopped moving`, naming the joint furthest from its goal, and the pilot is told. If it says nothing and the time simply runs out, or the joint climbs over your hand, that is the answer.
 
+- Clear about 40 cm in front of the base, because the arm reaches out over it.
 - A flat hand on top of the forearm as it rises, and hold it still with little force. **The five body joints have no torque cap, so this is a hand against a servo:** if it pushes harder than a gentle press, let it go. The other hand on the switch.
 - The slow step keeps its goal 1 degree ahead of where your hand holds it, not 5.
 
@@ -4528,7 +4531,8 @@ Free space. Its files are in [e189/](e189/).
 
 **Expect.** The second run names the port and stops: `connect failed 3 times: Could not connect on port 'COM5'. Make sure you are using the correct port ... and that nothing else has COM5 open (a teleoperation, a recording or a serial monitor)`, with `The port never opened, so nothing reached a motor`. The first run carries on as if nothing happened. On Linux nothing refuses: the serial library does not lock a port unless asked, so two writers could share the bus. Say whether the first run so much as twitched.
 
-- Start the slow raise, then run the second line from another terminal while it moves. The second pilot is the scripted one, so it costs nothing. Hand on the switch.
+- Clear about 40 cm in front of the base, because the arm reaches out over it.
+- Start the reach, then run the second line from another terminal while it moves. The second pilot is the scripted one, so it costs nothing. Hand on the switch.
 
 **The first pilot**
 
@@ -4814,9 +4818,9 @@ quackd run docs/examples/lerobot/e199/positive-nudge.duck --robot arm-01 --llm o
 
 Free space. Its files are in [e200/](e200/).
 
-**Goal.** `move_joints` walks its goal out a tenth of a second at a time across the time it is given, and nothing has ever watched a servo follow a goal that creeps. One slow move, a close-up and a question. The second line is the shoulder under load, with the time left to the LLM.
+**Goal.** `move_joints` walks its goal out a tenth of a second at a time across the time it is given, and nothing has ever watched a servo follow a goal that creeps. One slow move, a close-up and a question. The second line is E116's reach, the shoulder under load, with the time left to the LLM.
 
-**Expect.** Either one motion or a staircase. Say which, and whether it arrived when the time was up. On the second line, whether the LLM passes a `duration_s` near ten seconds and the shoulder takes about that long, with no refusal over the arm's state. Slow motion on a marker taped to the gripper shows it best, and so would a long exposure with an LED, as in E137.
+**Expect.** Either one motion or a staircase. Say which, and whether it arrived when the time was up. On the second line, what `duration_s` the LLM passes and whether the arm takes about that long, with no refusal over the arm's state. Slow motion on a marker taped to the gripper shows it best, and so would a long exposure with an LED, as in E137.
 
 - Close-up of the wrist. The longest time a move may ask for is 12 seconds.
 
@@ -4826,7 +4830,7 @@ Free space. Its files are in [e200/](e200/).
 quackd run docs/examples/lerobot/e200/slow-sweep.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
 ```
 
-**The shoulder, as E116 asks for it, with nobody pulling a cable**
+**E116's reach, with nobody pulling a cable**
 
 ```bash
 quackd run docs/examples/lerobot/e116/slow-raise.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name e200-paced
@@ -5413,7 +5417,8 @@ Free space.
 
 **Expect.** Nothing happens to the run, and nothing lands on the screen but the `x`, typed where the status line is. Then `q` alone: `kill switch` and the arm folds, with no Enter. Rehearsed on the mock in a real Windows console with arrows, F2, Ctrl-Z, Ctrl-D, Ctrl-S, Esc, `x` and Tab: still running after all of them, and `q` stopped it. Report any key that did anything.
 
-- Let it start the raise, which is slow on purpose. Then, one at a time: the arrow keys, F2, Ctrl-Z, Ctrl-D, Ctrl-S, Esc, `x`, Tab. Then `q`. Hand on the switch.
+- Clear about 40 cm in front of the base, because the arm reaches out over it.
+- Let it start the reach. Then, one at a time: the arrow keys, F2, Ctrl-Z, Ctrl-D, Ctrl-S, Esc, `x`, Tab. Then `q`. Hand on the switch.
 
 ```bash
 quackd run docs/examples/lerobot/e180/slow-raise.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name e219-keys
