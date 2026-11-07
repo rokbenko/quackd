@@ -1,0 +1,35 @@
+# Menlo Asimov-1: an open-source 1.2 m biped. quackd describes it from menlo.ai and its SDK
+# documentation and drives no part of it (ADR-0077). A later binding would speak menlo-sdk.
+vendor: menlo
+model: asimov-1
+embodiment: humanoid
+mobility: legged
+blurb: >-
+  a Menlo Asimov-1, an open-source humanoid of 1.2 m with two arms, which walks on two legs
+  and is sold as a kit
+datasheet:
+  manipulator: arms
+  arms: 2
+  tethered: false
+  mass_kg:
+    value: 35
+    confidence: official
+    source: "menlo.ai, Asimov-1 specifications: 35 kg, read 2026-11-05"
+  height_m:
+    value: 1.2
+    confidence: official
+    source: "menlo.ai, Asimov-1 specifications: 1.2 m, read 2026-11-05"
+  dof:
+    value: 25
+    confidence: official
+    source: "menlo.ai, Asimov-1 specifications: 25 powered joints, read 2026-11-05"
+  payload_kg:
+    value: 15
+    confidence: official
+    source: "menlo.ai, Asimov-1 specifications: 15 kg per arm, read 2026-11-05"
+    note: per arm
+  notes:
+    - "its SDK's documented E-Stop damps every actuator, and the documentation says a free-standing robot falls (docs.menlo.ai/sdk)"
+    - "the firmware zeroes velocity 2 s after the last packet and the SDK raises LinkLostError after 2 s without state (docs.menlo.ai/sdk): a deadman, which no binding here uses yet"
+    - "its SDK caps walking at 0.4 m/s and 0.8 rad/s; quackd clamps nothing here because it drives nothing"
+    - "endurance, speed and terrain are not on the pages read; the battery is 491 Wh"

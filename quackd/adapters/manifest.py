@@ -102,7 +102,9 @@ reading off a photo. measured: somebody weighed, measured or timed it and said h
 
 Manipulator = Literal["none", "beak", "gripper", "arms"]
 """What quackd can command that touches an object: nothing, the Microduck's scripted scoop,
-one or more grippers, or bare arms that hold by closing on a thing."""
+one or more grippers, or bare arms that hold by closing on a thing. One bare arm closes on
+nothing: it is a wrist with no tool on it, as an industrial arm is sold, which holds nothing until
+somebody fits one, and its payload and reach are what it would carry then."""
 
 Terrain = Literal["indoor_flat", "indoor", "outdoor"]
 

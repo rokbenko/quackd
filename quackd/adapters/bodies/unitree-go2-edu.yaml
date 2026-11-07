@@ -1,0 +1,40 @@
+# Unitree Go2 EDU: the Go2 edition that exposes unitree_sdk2. quackd describes it from
+# Unitree's page and drives no part of it (ADR-0077). Air and Pro are app driven and not here.
+vendor: unitree
+model: go2-edu
+embodiment: quadruped
+mobility: legged
+blurb: >-
+  a Unitree Go2 EDU, a small quadruped the size of a medium dog, with a wide-angle camera and a
+  LiDAR and nothing to grip with
+datasheet:
+  manipulator: none
+  tethered: false
+  terrain: outdoor
+  mass_kg:
+    value: 15
+    confidence: official
+    source: "unitree.com/go2: about 15 kg with the battery, read 2026-11-05"
+  height_m:
+    value: 0.40
+    confidence: official
+    source: "unitree.com/go2: 70 x 31 x 40 cm standing, read 2026-11-05"
+  dof:
+    value: 12
+    confidence: official
+    source: "unitree.com/go2: 12 joint motors, read 2026-11-05"
+  endurance_min:
+    value: 120
+    confidence: official
+    source: "unitree.com/go2: 2 to 4 h a charge, the lower figure, read 2026-11-05"
+  not_rated:
+    - "stairs with steps above 16 cm, by unitree.com/go2's step figure"
+    - "slopes above 40 degrees, by unitree.com/go2's slope figure"
+    - "wet ground, gravel and soft ground: Unitree publishes no rating for them"
+  cannot:
+    - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"
+  notes:
+    - "Unitree rates the back for about 8 kg, 12 kg at most, on the EDU (unitree.com/go2); a back load is not a payload a hand holds, so it is a note here"
+    - "speed 0 to 3.7 m/s on unitree.com/go2; quackd clamps nothing here because it drives nothing"
+    - "what sport mode does when commands stop is not published; the SDK is the EDU's alone"
+    - "it carries a 4D LiDAR and a wide-angle camera (unitree.com/go2); quackd reads neither"

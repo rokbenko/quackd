@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 import quackd
-from quackd.adapters.catalogue import BY_NAME, ENTRY_POINT_GROUP, OFFICIAL
+from quackd.adapters.catalogue import ADAPTERS, BY_NAME, ENTRY_POINT_GROUP
 from quackd.adapters.factory import adapter_names, info, is_installed
 from quackd_lerobot import upstream_api
 
@@ -116,14 +116,14 @@ def test_the_core_publishes_an_extra_for_every_robot_it_names() -> None:
     """The catalogue is what `list-adapters` prints on a machine with nothing installed, so
     the extra it names has to be one that exists and that pulls in that adapter's package."""
     extras = _toml(REPO / "pyproject.toml")["project"]["optional-dependencies"]
-    for row in OFFICIAL:
+    for row in ADAPTERS:
         assert row.extra, f"{row.name} names no extra to install it with"
         key = row.extra.removeprefix("quackd[").removesuffix("]")
         assert key in extras, f"{row.extra} is not an extra this package has"
         dist = f"quackd-{row.name.replace('_', '-')}"
         assert any(d.startswith(dist) for d in extras[key]), (key, extras[key])
     assert {_dist(d) for d in extras["robots"]} == {
-        f"quackd-{r.name.replace('_', '-')}" for r in OFFICIAL
+        f"quackd-{r.name.replace('_', '-')}" for r in ADAPTERS
     }
 
 
@@ -198,7 +198,9 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
     for name in adapter_names():
         if not is_installed(name):
             continue
-        module = importlib.import_module(f"quackd_{name}")
+        # the described row lives in the core and lists bodies, not a package (ADR-0077)
+        where = f"quackd_{name}" if info(name).kind == "adapter" else f"quackd.adapters.{name}"
+        module = importlib.import_module(where)
         assert tuple(module.BACKENDS) == info(name).backends, name
         assert name in BY_NAME, f"{name} is installed but quackd does not publish it"
 
@@ -220,4 +222,5 @@ def test_every_published_adapter_is_installed_for_the_suite() -> None:
     """The dev extra carries all nine without their SDKs, so the suite drives every body
     against a mock. One missing would not fail loudly; its tests would quietly skip."""
     installed = {ep.name for ep in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)}
-    assert set(BY_NAME) <= installed, set(BY_NAME) - installed
+    published = {row.name for row in ADAPTERS}  # the described row is in the core, no package
+    assert published <= installed, published - installed

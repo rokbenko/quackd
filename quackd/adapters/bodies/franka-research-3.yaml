@@ -1,0 +1,39 @@
+# Franka Research 3: a seven-axis torque-sensing research arm. quackd describes it from
+# Franka's datasheet and drives no part of it (ADR-0077). Its control interface runs at 1 kHz
+# on a real-time PC, so a later binding would be a bridge there over pylibfranka.
+vendor: franka
+model: research-3
+embodiment: arm
+mobility: none
+blurb: >-
+  a Franka Research 3, a seven-axis torque-sensing research arm bolted upright to a table, with
+  a two-finger Franka Hand
+datasheet:
+  manipulator: gripper
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 18.3
+    confidence: official
+    source: "Franka Research 3 datasheet v2.6, July 2026: about 18.3 kg, the arm alone, read 2026-11-05"
+  dof:
+    value: 7
+    confidence: official
+    source: "Franka Research 3 datasheet v2.6, July 2026: 7 axes, read 2026-11-05"
+  payload_kg:
+    value: 3
+    confidence: official
+    source: "Franka Research 3 datasheet v2.6, July 2026: 3 kg, read 2026-11-05"
+  reach_m:
+    value: 0.855
+    confidence: official
+    source: "Franka Research 3 datasheet v2.6, July 2026: 855 mm, read 2026-11-05"
+  cannot:
+    - "move its base: it is bolted to a table and mains powered"
+    - "work mounted any way but upright: the datasheet rates upright mounting only"
+  notes:
+    - "rated for 5 to 45 degrees C, 100 to 240 VAC, by the datasheet"
+    - "joints move at 150 to 301 degrees per second and the tool at up to 2 m/s by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "the control interface stops the arm after 20 dropped packets at 1 kHz (Franka's documentation); whether brakes or power drops at that stop is not on the pages read"
+    - "the gripper counted here is the Franka Hand, a two-finger gripper; its grasp force was not read"

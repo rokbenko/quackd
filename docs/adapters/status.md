@@ -16,6 +16,23 @@ asks when its rest move missed, the paced `move_joints` and the connect retries 
 only against a fake arm, `lerobot:mock` and the test suite ([CHANGELOG.md](../../CHANGELOG.md),
 Known limitations). What the first afternoon did and did not settle is under the table.
 
+Every backend carries a tier, in the catalogue and in the second table below, and
+`quackd list-adapters` prints the same words:
+
+| Tier | What it means |
+|---|---|
+| 🤖 **verified** | The real robot has moved under quackd, and the row names who ran it and the first day it did |
+| 🧪 **bound** | Code that reaches a real robot and has never met one. The row names who answers for its first hardware run and a date |
+| ✅ **rehearsed** | Runs whole tasks with no robot: in a simulator, or against a scripted mock, in CI |
+| 📄 **described** | A body quackd lists and reasons about and drives no part of: one file of its maker's figures. [Described bodies](#described-bodies) lists them |
+
+The rule since 2026-11-05
+([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) is that a
+bound backend enters this repository only with a named owner and a date for its first hardware
+run, and a test holds every row to it. The eight bound
+backends that were here before the rule say `grandfathered 0.33.0` where an owner would be, with
+the day the rule was adopted: nobody has promised a run for any of them.
+
 > [!IMPORTANT]
 > `uv pip install quackd` installs the core and no robot at all. Every body below is its own
 > distribution, and the extra that names it is what installs it.
@@ -44,32 +61,64 @@ An adapter that is not installed keeps its row in `quackd list-adapters` and in
 `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`. With nothing installed
 at all, every command that needs a body refuses and names all nine.
 
-| Adapter | `--robot` | Status | Upstream file | Page |
-|---|---|---|---|---|
-| Microduck | `microduck:sim2d` | ✅ default | | [adapters/microduck/README.md](microduck/README.md) |
-| | `microduck:mujoco` | ✅ physics simulator (MuJoCo, `quackd[mujoco]`): `find-and-kick` 10 of 10 seeds on the stand-in, and 9 or 10 of 10 on the trained gait depending on the machine and the run, seed 4 being the marginal one | [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py) | |
-| | `microduck:mock` | ✅ | | |
-| | `microduck:jsonrpc` | 🧪 experimental: every method VERIFIED, never run on a duck | [`adapters/microduck/src/quackd_microduck/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/upstream_api.py) | |
-| LeRobot | `lerobot:mock` | ✅ | | [adapters/lerobot/README.md](lerobot/README.md) |
-| | `lerobot:real` | ✅ **run on a real arm on 2026-09-15 and again on 2026-09-23**, the only row here that has been. On 2026-09-15 it was an SO-101 follower calibrated as `arm-01` and reached as `--robot lerobot:real --address COM3` with no registered name, on Windows 11, Python 3.12.12, lerobot 0.6.1, quackd 0.9.0, piloted by OpenAI `gpt-6-astra`. `lerobot-lookout` ran, once with `--llm fake` as well. Free-form `--goal` runs waved the wrist roll about plus or minus 27 degrees, reached wider with `shoulder_lift` -39 and `elbow_flex` 24 to 30, opened and closed the gripper (commanded 100, reported 98 open and 3 closed with the jaws nearly touching), and one of them mimed a duck quacking with the gripper. A USB webcam answered at `opencv://1`, and at `opencv://2` after a replug, 640x480, with no `?backend=` key needed. **The arm fell at the end of every run that day**, which is the fault the rest pose was written to fix. The rest pose first met that arm on 2026-09-23 and could not reach a fold that lay past the travel its calibration recorded, which is [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md). That second afternoon was 26 runs on quackd 0.12.0 with the arm registered as `arm-01`: 19 never moved the arm at a pilot's request, three failed at connect, each on one bad status packet, one lost and two garbled, and all 21 that reached their close kept torque on and ended at the power switch, which `quackd robot release` now answers. None of what changed after it has run on the arm. Every LeRobot name is still VERIFIED at a pinned commit, and still exercised with a fake arm (Python 3.12+, [checklist](lerobot/hardware-checklist.md)) | [`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/upstream_api.py) | |
-| | `lerobot:mujoco` | ✅ the arm's simulator (MuJoCo, `quackd[lerobot-sim]`): `lerobot:real`'s own code over a physics model of the SO-101, the maker's model fetched at a pinned commit. On that model a grasp driven through the real backend's own verbs lifts a cube clear of the table between both finger pads on 10 of 10 seeds, judged by the world's truth and not by quackd, and the bundled `lerobot-lookout` and a grasp task with a sidecar each pass the rehearsal `quackd preflight` runs, on 10 seeds of 10: the lookout on the generic arm, which has no rest pose to return to, and the grasp task from a rest pose its close has to reach, though the grasp task's seeds move only a pen on the table, never the block it lifts (`tests/test_lerobot_sim_model.py`, by hand on 2026-09-27). The nightly `lerobot-sim-assets` job fetches the model and runs those sweeps, asking ten of ten, and its first run, dispatched on `main` on 2026-09-29 at the commit tagged `v0.16.0`, passed all three ten of ten ([run 36523568197](https://github.com/rokbenko/quackd/actions/runs/36523568197)). CI's gating job runs the simulator's other tests on a primitives-only stand-in, because it fetches nothing. Done means the simulator does what it says, not that it moves like an arm: nothing has compared it against one, and it never raises `lerobot:real`'s status | [`adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py) | |
-| rosbridge | `rosbridge:mock` | ✅ | | [adapters/rosbridge/README.md](rosbridge/README.md) |
-| | `rosbridge:ws` | 🧪 every roslibpy, rosbridge and message name VERIFIED at pinned commits, exercised with fake topics and fake services, including reading the robot's own description off the bridge, never run against a bridge | [`adapters/rosbridge/src/quackd_rosbridge/upstream_api.py`](../../adapters/rosbridge/src/quackd_rosbridge/upstream_api.py) | |
-| Open Duck Mini v2 | `open_duck:sim2d` | ✅ `open-duck-scout` 10 of 10 seeds | | [adapters/open_duck/README.md](open_duck/README.md) |
-| | `open_duck:mock` | ✅ | | |
-| | `open_duck:bridge` | 🧪 every runtime name VERIFIED at a pinned commit, the protocol exercised against the real daemon over loopback, never run on a duck | [`adapters/open_duck/src/quackd_open_duck/upstream_api.py`](../../adapters/open_duck/src/quackd_open_duck/upstream_api.py) | |
-| XLeRobot | `xlerobot:mock` | ✅ | | [adapters/xlerobot/README.md](xlerobot/README.md) |
-| | `xlerobot:zmq` | 🧪 the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host quackd wrote from that source over loopback, never run on a cart | [`adapters/xlerobot/src/quackd_xlerobot/upstream_api.py`](../../adapters/xlerobot/src/quackd_xlerobot/upstream_api.py) | |
-| AlohaMini | `alohamini:mock` | ✅ | | [adapters/alohamini/README.md](alohamini/README.md) |
-| | `alohamini:sim2d` | ✅ `alohamini-lookout` 10 of 10 seeds | | |
-| | `alohamini:zmq` | 🧪 the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host quackd wrote from that source over loopback, never run on a robot. The arm verbs additionally need quackd's own host wrapper, which nobody has run either | [`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../adapters/alohamini/src/quackd_alohamini/upstream_api.py) | |
-| ToddlerBot | `toddlerbot:mock` | ✅ | | [adapters/toddlerbot/README.md](toddlerbot/README.md) |
-| | `toddlerbot:sim2d` | ✅ `toddlerbot-lookout` 10 of 10 seeds | | |
-| | `toddlerbot:bridge` | 🧪 every upstream name VERIFIED at the commit the v2.0.0 tag points at, the protocol and the daemon's own safety machinery exercised against a fake body over loopback, never run on a robot | [`adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py`](../../adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py) | |
-| Huebot | `huebot:mock` | ✅ | | [adapters/huebot/README.md](huebot/README.md) |
-| | `huebot:jsonrpc` | 🧪 experimental: robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker is writing for the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
-| MOSS | `moss:mock` | ✅ | | [adapters/moss/README.md](moss/README.md) |
-| | `moss:cockpit` | 🧪 experimental: MOSS's own cockpit for the state, a goal, the explorer and the soft stop, and quackd's own bridge on the rover for the twist, the timed frames, the arm cycle and the litter mission's stop. Every upstream name VERIFIED at the commit read, or UNVERIFIED with what quackd does about it. The client is exercised against a fake of the cockpit and against the bridge in its fake mode over loopback, and twice against MOSS's own cockpit in its demo mode, on Windows and in a Linux container, never run against a rover | [`adapters/moss/src/quackd_moss/upstream_api.py`](../../adapters/moss/src/quackd_moss/upstream_api.py) | |
+| Adapter | `--robot` | Tier | Notes | Upstream file | Page |
+|---|---|---|---|---|---|
+| Microduck | `microduck:sim2d` | ✅ rehearsed | default | | [adapters/microduck/README.md](microduck/README.md) |
+| | `microduck:mujoco` | ✅ rehearsed | physics simulator (MuJoCo, `quackd[mujoco]`): `find-and-kick` 10 of 10 seeds on the stand-in, and 9 or 10 of 10 on the trained gait depending on the machine and the run, seed 4 being the marginal one | [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py) | |
+| | `microduck:mock` | ✅ rehearsed | | | |
+| | `microduck:jsonrpc` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every method VERIFIED, never run on a duck | [`adapters/microduck/src/quackd_microduck/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/upstream_api.py) | |
+| LeRobot | `lerobot:mock` | ✅ rehearsed | | | [adapters/lerobot/README.md](lerobot/README.md) |
+| | `lerobot:real` | 🤖 verified · rok · 2026-09-15 | **run on a real arm on 2026-09-15 and again on 2026-09-23**, the only row here that has been. On 2026-09-15 it was an SO-101 follower calibrated as `arm-01` and reached as `--robot lerobot:real --address COM3` with no registered name, on Windows 11, Python 3.12.12, lerobot 0.6.1, quackd 0.9.0, piloted by OpenAI `gpt-6-astra`. `lerobot-lookout` ran, once with `--llm fake` as well. Free-form `--goal` runs waved the wrist roll about plus or minus 27 degrees, reached wider with `shoulder_lift` -39 and `elbow_flex` 24 to 30, opened and closed the gripper (commanded 100, reported 98 open and 3 closed with the jaws nearly touching), and one of them mimed a duck quacking with the gripper. A USB webcam answered at `opencv://1`, and at `opencv://2` after a replug, 640x480, with no `?backend=` key needed. **The arm fell at the end of every run that day**, which is the fault the rest pose was written to fix. The rest pose first met that arm on 2026-09-23 and could not reach a fold that lay past the travel its calibration recorded, which is [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md). That second afternoon was 26 runs on quackd 0.12.0 with the arm registered as `arm-01`: 19 never moved the arm at a pilot's request, three failed at connect, each on one bad status packet, one lost and two garbled, and all 21 that reached their close kept torque on and ended at the power switch, which `quackd robot release` now answers. None of what changed after it has run on the arm. Every LeRobot name is still VERIFIED at a pinned commit, and still exercised with a fake arm (Python 3.12+, [checklist](lerobot/hardware-checklist.md)) | [`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/upstream_api.py) | |
+| | `lerobot:mujoco` | ✅ rehearsed | the arm's simulator (MuJoCo, `quackd[lerobot-sim]`): `lerobot:real`'s own code over a physics model of the SO-101, the maker's model fetched at a pinned commit. On that model a grasp driven through the real backend's own verbs lifts a cube clear of the table between both finger pads on 10 of 10 seeds, judged by the world's truth and not by quackd, and the bundled `lerobot-lookout` and a grasp task with a sidecar each pass the rehearsal `quackd preflight` runs, on 10 seeds of 10: the lookout on the generic arm, which has no rest pose to return to, and the grasp task from a rest pose its close has to reach, though the grasp task's seeds move only a pen on the table, never the block it lifts (`tests/test_lerobot_sim_model.py`, by hand on 2026-09-27). The nightly `lerobot-sim-assets` job fetches the model and runs those sweeps, asking ten of ten, and its first run, dispatched on `main` on 2026-09-29 at the commit tagged `v0.16.0`, passed all three ten of ten ([run 36523568197](https://github.com/rokbenko/quackd/actions/runs/36523568197)). CI's gating job runs the simulator's other tests on a primitives-only stand-in, because it fetches nothing. Done means the simulator does what it says, not that it moves like an arm: nothing has compared it against one, and it never raises `lerobot:real`'s status | [`adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py) | |
+| rosbridge | `rosbridge:mock` | ✅ rehearsed | | | [adapters/rosbridge/README.md](rosbridge/README.md) |
+| | `rosbridge:ws` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every roslibpy, rosbridge and message name VERIFIED at pinned commits, exercised with fake topics and fake services, including reading the robot's own description off the bridge, never run against a bridge | [`adapters/rosbridge/src/quackd_rosbridge/upstream_api.py`](../../adapters/rosbridge/src/quackd_rosbridge/upstream_api.py) | |
+| Open Duck Mini v2 | `open_duck:sim2d` | ✅ rehearsed | `open-duck-scout` 10 of 10 seeds | | [adapters/open_duck/README.md](open_duck/README.md) |
+| | `open_duck:mock` | ✅ rehearsed | | | |
+| | `open_duck:bridge` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every runtime name VERIFIED at a pinned commit, the protocol exercised against the real daemon over loopback, never run on a duck | [`adapters/open_duck/src/quackd_open_duck/upstream_api.py`](../../adapters/open_duck/src/quackd_open_duck/upstream_api.py) | |
+| XLeRobot | `xlerobot:mock` | ✅ rehearsed | | | [adapters/xlerobot/README.md](xlerobot/README.md) |
+| | `xlerobot:zmq` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host quackd wrote from that source over loopback, never run on a cart | [`adapters/xlerobot/src/quackd_xlerobot/upstream_api.py`](../../adapters/xlerobot/src/quackd_xlerobot/upstream_api.py) | |
+| AlohaMini | `alohamini:mock` | ✅ rehearsed | | | [adapters/alohamini/README.md](alohamini/README.md) |
+| | `alohamini:sim2d` | ✅ rehearsed | `alohamini-lookout` 10 of 10 seeds | | |
+| | `alohamini:zmq` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host quackd wrote from that source over loopback, never run on a robot. The arm verbs additionally need quackd's own host wrapper, which nobody has run either | [`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../adapters/alohamini/src/quackd_alohamini/upstream_api.py) | |
+| ToddlerBot | `toddlerbot:mock` | ✅ rehearsed | | | [adapters/toddlerbot/README.md](toddlerbot/README.md) |
+| | `toddlerbot:sim2d` | ✅ rehearsed | `toddlerbot-lookout` 10 of 10 seeds | | |
+| | `toddlerbot:bridge` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every upstream name VERIFIED at the commit the v2.0.0 tag points at, the protocol and the daemon's own safety machinery exercised against a fake body over loopback, never run on a robot | [`adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py`](../../adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py) | |
+| Huebot | `huebot:mock` | ✅ rehearsed | | | [adapters/huebot/README.md](huebot/README.md) |
+| | `huebot:jsonrpc` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker is writing for the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
+| MOSS | `moss:mock` | ✅ rehearsed | | | [adapters/moss/README.md](moss/README.md) |
+| | `moss:cockpit` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | MOSS's own cockpit for the state, a goal, the explorer and the soft stop, and quackd's own bridge on the rover for the twist, the timed frames, the arm cycle and the litter mission's stop. Every upstream name VERIFIED at the commit read, or UNVERIFIED with what quackd does about it. The client is exercised against a fake of the cockpit and against the bridge in its fake mode over loopback, and twice against MOSS's own cockpit in its demo mode, on Windows and in a Linux container, never run against a rover | [`adapters/moss/src/quackd_moss/upstream_api.py`](../../adapters/moss/src/quackd_moss/upstream_api.py) | |
+
+## Described bodies
+
+A described body is a robot quackd can list, register, describe to a pilot and plan with in a
+flock, and drives no part of ([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)).
+Each is one file under `quackd/adapters/bodies/`, holding what its maker publishes and a source
+for every figure, and nothing a body nobody drives could honestly claim: no verbs that move, no
+limits, no sensors, no safety authority. Its only verbs are `report_state` and `stop`, and a
+pilot handed one is told before it reads a single figure that nothing here moves it. `quackd robot add b2 described:unitree-b2` registers
+one like any other robot; `quackd list-verbs --robot described:unitree-b2` shows the two verbs.
+An address, a camera, a token and a rest pose are refused, since there is no robot to reach, and
+`quackd robot list --probe` says `described: nothing to reach`.
+Every figure below was read from the page its source names, on the day it says, by one reader,
+and checked by nobody else: nothing here has met quackd on hardware, and nothing here moves.
+
+<!-- generated: described-bodies, by scripts/bodies_docs.py from quackd/adapters/bodies/*.yaml. Change a body file and run the script, not this table. -->
+
+| `--robot` | What it is | Mass | Height | Joints | Payload | Reach | Endurance | Figures from |
+|---|---|---|---|---|---|---|---|---|
+| `described:franka-research-3` | a Franka Research 3, a seven-axis torque-sensing research arm bolted upright to a table, with a two-finger Franka Hand | 18.3 kg (official) | not published | 7 (official) | 3 kg (official) | 0.855 m (official) | mains powered | Franka Research 3 datasheet v2.6, July 2026 (read 2026-11-05) |
+| `described:kuka-lbr-iisy-3-r760` | a KUKA LBR iisy 3 R760, a six-axis collaborative arm bolted to a bench and run from its own controller, with torque sensors in every axis | 22.8 kg (official) | not published | 6 (official) | 3 kg (official) | 0.76 m (official) | mains powered | KUKA LBR iisy 3 R760 datasheet 0000-320-854 (read 2026-11-05) |
+| `described:kuka-lbr-iiwa-7-r800` | a KUKA LBR iiwa 7 R800, a seven-axis collaborative arm bolted to a bench and run from its own cabinet, with torque sensors in every axis | 23.9 kg (estimate) | not published | 7 (official) | 7 kg (official) | 0.8 m (official) | mains powered | KUKA's 2016 KMR iiwa presentation; kuka.com, LBR iiwa; kuka.com, LBR iiwa 7 R800 (read 2026-11-05) |
+| `described:menlo-asimov-1` | a Menlo Asimov-1, an open-source humanoid of 1.2 m with two arms, which walks on two legs and is sold as a kit | 35 kg (official) | 1.2 m (official) | 25 (official) | 15 kg (official, per arm) | not published | not published | menlo.ai, Asimov-1 specifications (read 2026-11-05) |
+| `described:noetix-bumi` | a Noetix Bumi, a small humanoid just under 1 m tall, which walks on two legs | 17 kg (official) | 0.98 m (official) | 21 (official) | none to hold with | none to hold with | 120 min (official) | web.noetixrobotics.com/docs, Bumi specifications (read 2026-11-05) |
+| `described:rhoban-microban` | a Rhoban Microban, a 30 cm open-hardware humanoid you print and build, with nineteen small servos around a Raspberry Pi Zero 2 W and no hands | not published | 0.3 m (official) | 19 (official) | none to hold with | none to hold with | not published | github.com/Rhoban/microban README (read 2026-11-05) |
+| `described:unitree-b2` | a Unitree B2, an industrial quadruped the size of a large dog, with cameras and a LiDAR and nothing to grip with | 60 kg (official) | 0.645 m (official) | 12 (estimate) | none to hold with | none to hold with | 300 min (official, unloaded; under load Unitree publishes no figure) | unitree.com/b2; a dealer's listing of the B2 (read 2026-11-05) |
+| `described:unitree-g1-edu` | a Unitree G1 EDU, a humanoid of 1.3 m with two arms, which walks on two legs | 35 kg (official) | 1.32 m (official) | not published | 3 kg (official, per arm) | not published | 120 min (official) | unitree.com/g1, G1 EDU column; unitree.com/g1 (read 2026-10-28) |
+| `described:unitree-go2-edu` | a Unitree Go2 EDU, a small quadruped the size of a medium dog, with a wide-angle camera and a LiDAR and nothing to grip with | 15 kg (official) | 0.4 m (official) | 12 (official) | none to hold with | none to hold with | 120 min (official) | unitree.com/go2 (read 2026-11-05) |
+| `described:ur5e` | a Universal Robots UR5e, a six-joint collaborative arm, bolted down any way up and run from its own control box | 20.6 kg (official) | not published | 6 (official) | 5 kg (official) | 0.85 m (official) | mains powered | UR5e datasheet, December 2024 (read 2026-11-05) |
+| `described:yaskawa-motomini` | a Yaskawa MotoMini, a six-axis miniature industrial arm of 7 kg, bolted to a bench and run from its own controller, with no gripper of its own | 7 kg (official) | not published | 6 (official) | 0.5 kg (official) | 0.35 m (official) | mains powered | Yaskawa MotoMini flyer, July 2023 (read 2026-11-05) |
+
+<!-- end generated: described-bodies -->
 
 **The first real run, and what it does not prove.** One SO-101, one bench, one afternoon.
 The arm fell at the end of every run, because LeRobot's `disconnect()` disables torque by its
@@ -85,7 +134,7 @@ an action felt right in the room. They are in the list at the foot of
 [adapters/lerobot/hardware-checklist.md](lerobot/hardware-checklist.md), which has since grown to
 ask whether a slow `move_joints` looks like one motion and arrives when its time is up, whether a
 joint let go at the edge of its travel settles onto its fold, and what the hand placed start
-and a decision LLM leave open. Those four are why that ✅ is a robot quackd has worked on
+and a decision LLM leave open. Those four are why that 🤖 is a robot quackd has worked on
 rather than a robot quackd is tested on.
 
 **Pilot flocks** (`flock.allocation.method: pilots`, `--flock NAME`) run one LLM pilot per body
@@ -126,7 +175,7 @@ Open an issue with `quackd doctor` output and the first lines of `transcript.jso
 rests on anyone remembering either. A run directory holds `terminal.txt` beside it, and that is
 not the evidence: it is the screen, a rendering of the same events that `--no-log` shortens. The
 transcript is every intent quackd sent and every answer the robot gave back, which is what
-somebody else can check. Every row above that flips from 🧪 to ✅ is one line in an
+somebody else can check. Every row above that flips from 🧪 to 🤖 is one line in an
 `upstream_api.py` and one row here. `lerobot:real` is the one that has already flipped, on one
 arm on one bench, so a second run against an SO-101 is still worth an issue: it either widens
 that row or contradicts it, and the one that contradicts it is worth more.

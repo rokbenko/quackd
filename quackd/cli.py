@@ -7436,6 +7436,13 @@ def robot_rest_pose(
     except AdapterError as e:
         _registry_fail(e)
         return
+    if static.extras.get("described"):
+        _fail(
+            f"{name} ({entry.key}) is a described body, so there is no rest pose to record: "
+            "quackd drives no part of it",
+            hint="a rest pose is for an arm quackd drives: quackd list-adapters",
+        )
+        return
     if "joint" not in static.intents:
         _fail(
             f"{name} ({entry.key}) has no joints, so there is no rest pose to record",
@@ -10184,6 +10191,11 @@ def announce(
         parsed = parse_robot_spec(robot)
         spec = RobotSpec(parsed.adapter, parsed.backend, name)
         manifest = describe(spec)
+        if manifest.extras.get("described"):
+            _fail(
+                f"{parsed.key} is a described body, so there is no robot here to announce: "
+                "quackd drives no part of it"
+            )
         ann = lan_announce.announce(manifest, adapter=spec.adapter, port=port)
     except (AdapterError, LanNotInstalled, ValueError) as e:
         _fail(str(e))

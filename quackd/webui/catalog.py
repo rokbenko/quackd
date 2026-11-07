@@ -40,6 +40,15 @@ def is_simulated(backend: str | None) -> bool:
     return simulated(backend)
 
 
+def drives(adapter: str) -> bool:
+    """Whether `adapter` drives a robot at all. False only for the described row (ADR-0077),
+    whose backends are bodies quackd lists and reasons about and moves no part of: nothing to
+    connect, so the page shows no connect block for one."""
+    from quackd.adapters.factory import drives as drives_a_robot
+
+    return drives_a_robot(adapter)
+
+
 def connect(adapter: str, backend: str) -> Any | None:
     """What connecting `adapter`'s real `backend` needs, as its catalogue row or its own module
     says (`AdapterInfo.connect`), or None where it says nothing."""

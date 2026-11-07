@@ -646,6 +646,8 @@ def _hands(ds: Datasheet) -> str:
     if ds.manipulator == "gripper":
         arms = "one arm with a gripper" if ds.arms == 1 else f"{ds.arms} arms with a gripper each"
         return arms
+    if ds.manipulator == "arms" and ds.arms == 1:
+        return "one arm with a bare wrist: it holds nothing until somebody fits a tool"
     if ds.manipulator == "arms":
         return f"{ds.arms} arms and no gripper: it holds by closing both on a thing"
     return "none: nothing quackd can command touches an object"
@@ -678,6 +680,22 @@ def _power_and_ground(ds: Datasheet, *, mobile: bool, embodiment: Embodiment) ->
     return f"{power}. {ground}{rated}"
 
 
+DESCRIBED_LINE = (
+    "quackd drives no part of this body: it is described from its maker's figures, no verb "
+    "here moves it, and it moves only if someone else moves it."
+)
+"""What a pilot handed a described body (ADR-0077) is told before any figure, in the prompt
+and in the summary an MCP client reads (`body_summary`) alike, so a goal that needs the body to
+move is judged against that rather than against the figures alone. It names no verbs: a board
+with a camera beside the body (`--host`) gives it `observe`, as it gives any body, and the line
+stays true. Only the catalogue's bodies say it (`extras.described` is `maker`): a robot.yaml's
+figures are its owner's, and its own lines say so."""
+
+
+def _from_a_maker(manifest: RobotManifest) -> bool:
+    return manifest.extras.get("described") == "maker"
+
+
 def body_lines(manifest: RobotManifest) -> list[str]:
     """The body's own facts, as prompt lines.
 
@@ -693,6 +711,8 @@ def body_lines(manifest: RobotManifest) -> list[str]:
         ]
     mobile = manifest.mobility != "none"
     lines = [f"Each number says how sure quackd is of it and who says so ({_CONFIDENCE_KEY})."]
+    if _from_a_maker(manifest):
+        lines.append(DESCRIBED_LINE)
     lines += [f"- {label}: {fig.text(unit)}" for label, fig, unit in ds.known()]
     lines.append(f"- Manipulator: {_hands(ds)}.")
     if unknown := ds.unknown():
@@ -773,7 +793,8 @@ def body_summary(manifest: RobotManifest) -> str:
             ds, mobile=manifest.mobility != "none", embodiment=manifest.embodiment
         ).lower()
     )
-    text = f"{manifest.model}: " + ", ".join(facts) + "."
+    said = f"{DESCRIBED_LINE} Its figures: " if _from_a_maker(manifest) else ""
+    text = f"{manifest.model}: {said}" + ", ".join(facts) + "."
     if unknown := ds.unknown():
         text += f" Not published: {', '.join(unknown)}."
     if ds.cannot:

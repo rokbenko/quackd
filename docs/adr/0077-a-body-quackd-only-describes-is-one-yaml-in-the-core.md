@@ -35,25 +35,46 @@ its two verbs, a flock roster may name it, and `quackd list-adapters` prints the
 tier described on every backend.
 
 **The file is the manifest's own fields, minus what a described body cannot have.** `vendor`,
-`model`, `embodiment`, `mobility`, `blurb`, optional `sensors`, and the `datasheet` with a
-source and a confidence per figure, as the manifest's `Datasheet` has always demanded. It may
-not carry `id`, `verbs`, `backend`, `intents`, `limits`, `preconditions`, `extras`,
-`safety_authority`, `frame` or `manifest`: the loader builds the `RobotManifest` with
-`report_state` and `stop` as its only verbs, no intents, `extras.described` true, and
-pydantic's `extra="forbid"` refuses a key by its path. A figure the maker did not publish is
-left out, never estimated, and the prompt says "not published" as it does for every body.
+`model`, `embodiment`, `mobility`, `blurb` and the `datasheet` with a source and a confidence
+per figure, as the manifest's `Datasheet` has always demanded. It may not carry `id`, `verbs`,
+`backend`, `intents`, `sensors`, `limits`, `preconditions`, `extras`, `safety_authority`,
+`frame` or `manifest`: the loader refuses any key but those six by name,
+as a claim a body nobody drives cannot make, and builds the `RobotManifest` with `report_state`
+and `stop` as its only verbs, no intents and `extras.described` saying `maker`, where a
+robot.yaml's says true. Inside the datasheet,
+pydantic's `extra="forbid"` refuses a typo by its path, under the file's name. A figure the
+maker did not publish is left out, never estimated, and the prompt says "not published" as it
+does for every body. `sensors` is refused with the rest because a manifest's sensors are what
+quackd reads, and a verb's requirements are judged against them: a described body that listed
+the camera its robot carries would be offered to a flock as a body that can look. What the
+robot carries is a note in its datasheet, and a board with a camera beside the body (`--host`)
+gives it `observe`, as it gives any body.
 
-**It is honest about what it is.** Its blurb and its prompt say that quackd drives no part of
-it, that it is described from its maker's figures, and that it moves only if someone else moves
-it. `make()` refuses an address, a camera, a token and a rest pose, since there is nothing to
-reach. `DescribedAdapter` moves from `quackd/onboard/body.py` to `quackd/adapters/described.py`
+**It is honest about what it is.** Its blurb ends by saying quackd drives no part of it, and
+its prompt says so before any figure: that it is described from its maker's figures, that no
+verb here moves it, and that it moves only if someone else moves it.
+`make()` refuses an address, a camera, a token and a rest pose, since there is nothing to
+reach, and the registry refuses them at `quackd robot add` and `robot edit`, before a run
+could, while a hand-edited line that says one takes no other robot in the file down with it. A
+bare `--robot described` names no body and is refused with the list, where a bare adapter's
+name means its first backend. `quackd robot list --probe` says there is nothing to reach, with
+neither a tick nor a cross, since a tick would read as a robot that answered, and `quackd
+announce` refuses one, since there is no robot on the network to announce. Its posture reads
+`unknown`, nothing reports its falls, its health says quackd reads nothing from it, and its `stop`
+says there is nothing to stop. `DescribedAdapter` moves from `quackd/onboard/body.py` to `quackd/adapters/described.py`
 and `quackd onboard` builds the same thing from a `robot.yaml` as it did.
 
-**The counts stay true.** `kind` on the catalogue row keeps the nine adapters nine:
-`ADAPTER_NAMES` is the rows of kind adapter, and the described bodies are counted apart, on the
-badge and in doctor's "adapters installed" line. `installed_manifests()` yields one manifest
-per described body, since each backend of that row is a different body, which is the one place
-the row differs from the nine.
+**The counts stay true, and a described body is never offered as one to drive.** `kind` on the
+catalogue row keeps the nine adapters nine: `ADAPTER_NAMES` is the rows of kind adapter, and
+the described bodies are counted apart, on the badge and in doctor's "adapters installed"
+line. A command given no `--robot` never falls back to one, so a core with no adapter installed
+still says no robot adapter is installed. `installed_manifests()` and `bodies_that_could()`
+stay the bodies a task can be handed to, and so does the `could` list an MCP client is given.
+The described ones are `described_manifests()`, each named by the spec that reaches it, and a
+hint that one of them meets a task's needs is a sentence of its own, last, that says quackd
+drives no part of it. A `--json` row of `list-adapters` has `kind` `described`, and `installed`
+and `adapter_installed` false, so a script asking whether this machine has a robot gets the
+answer it always got.
 
 **A table of them is generated**, into [docs/adapters/status.md](../adapters/status.md), from
 the files, by a script with a `--check` the suite runs, the way the LLM tables are rendered
@@ -62,7 +83,7 @@ from their catalogues (ADR-0062).
 ## Consequences
 
 - 0.33.0 ships eleven described bodies, chosen for having a public control path: the Unitree
-  B2, Go2 Edu and G1 EDU, the Rhoban Microban, the Menlo Asimov-1, the Noetix Bumi, the Franka
+  B2, Go2 EDU and G1 EDU, the Rhoban Microban, the Menlo Asimov-1, the Noetix Bumi, the Franka
   Research 3, the Yaskawa MotoMini, the KUKA LBR iisy 3 R760 and LBR iiwa 7 R800, and the
   Universal Robots UR5e. The Agile ONE SN (no public API, available 2027) and the industrial
   UBTech Walker S2 (certified operators only) stay out; a Walker that joins later is the S2.
@@ -70,6 +91,10 @@ from their catalogues (ADR-0062).
 - A quadruped's load on its back is a note, not a figure: the datasheet refuses `payload_kg`
   with no manipulator, and a `carries_kg` figure is a change to the manifest every peer reads,
   so it waits for a record of its own.
+- An industrial arm that ships with no gripper is declared `manipulator: arms` with one arm, so
+  that its payload and its reach can be stated. One bare arm closes on nothing, so the prompt
+  calls it a bare wrist that holds nothing until somebody fits a tool, and a task that needs
+  hands is not met by it. Where a maker gives a range, the lower end is the figure.
 - A described body cannot do anything: a goal given to it ends at `report_state`, `stop` and
   the verdict its datasheet earns it. That is the point, and what a flock gets from it is a
   member whose figures it can plan around.

@@ -119,6 +119,8 @@ def test_a_newer_file_is_refused_rather_than_half_read(tmp_path: Path) -> None:
         ("3", "simulated ducks"),
         ("microduck", "is an adapter"),
         ("microduck-sim2d", "memory file name"),
+        ("described", "the row of bodies quackd only describes"),
+        ("described-unitree-b2", "memory file name"),
     ],
 )
 def test_a_name_may_not_be_something_else_it_could_be_mistaken_for(name: str, why: str) -> None:

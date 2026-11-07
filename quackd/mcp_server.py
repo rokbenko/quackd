@@ -1152,7 +1152,10 @@ def build_fleet_server(
         if needs:
             for name in fleet.sessions:
                 other = fleet.described(name)
-                if name != session.name and other is not None:
+                # this list names bodies to hand a task to, and quackd drives no part of a
+                # described one (ADR-0077)
+                drivable = other is not None and not other.extras.get("described")
+                if name != session.name and other is not None and drivable:
                     try:
                         if not missing_needs(needs, other):
                             could[name] = body_summary(other)

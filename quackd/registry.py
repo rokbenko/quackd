@@ -27,7 +27,7 @@ import contextlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,12 +43,12 @@ from pydantic import (
 )
 
 from quackd.adapters.base import MULTI_CAMERA_SPECS, AdapterError, camera_urls, who_takes_several
+from quackd.adapters.catalogue import BY_NAME
 from quackd.adapters.factory import (
-    ADAPTER_NAMES,
-    BACKENDS,
     RobotSpec,
     adapter_names,
     default_spec,
+    drives,
     needs_rest_pose,
     parse_robot_spec,
 )
@@ -123,7 +123,20 @@ def _reserved_slugs() -> set[str]:
     A robot registered as `microduck-sim2d` would key its memory to the same file a bare
     `--robot microduck:sim2d` run does, which is exactly the confusion registering it was
     meant to end. So the name is refused (ADR-0034 amends ADR-0025)."""
-    return {robot_slug(f"{a}:{b}") for a, backends in BACKENDS.items() for b in backends}
+    # every catalogue row, the described one too: `described-unitree-b2` would open the file
+    # a bare `--robot described:unitree-b2` run does
+    return {robot_slug(f"{row.name}:{b}") for row in BY_NAME.values() for b in row.backends}
+
+
+_REACHES_A_ROBOT = (
+    ("address", "--address"),
+    ("camera_url", "--camera-url"),
+    ("token", "--token"),
+    ("rest_pose", "rest pose"),
+    ("map_address", "--map-address"),
+)
+"""What a registered robot may carry that only means something where there is a robot to
+reach, as (field, what a person typed): none of it on a described body."""
 
 
 class RegistryError(Exception):
@@ -213,10 +226,15 @@ def check_name(name: str, *, kind: str = "robot") -> str:
             "simulated ducks"
         )
     if kind == "robot":
-        if name in ADAPTER_NAMES:
+        if (row := BY_NAME.get(name)) is not None and row.kind != "adapter":
+            raise RegistryError(
+                f"{name!r} is the row of bodies quackd only describes, reached as "
+                f"--robot {name}:<body>: pick another name"
+            )
+        if row is not None:
             raise RegistryError(
                 f"{name!r} is an adapter, and --robot {name} already means "
-                f"{name}:{BACKENDS[name][0]}: pick another name"
+                f"{name}:{row.backends[0]}: pick another name"
             )
         if name in _reserved_slugs():
             raise RegistryError(
@@ -676,6 +694,24 @@ class Resolved:
         return {"host": host, "host_token": host_token}
 
 
+def _check_reaches_nothing(entry: RobotEntry, *, fields: Collection[str] | None = None) -> None:
+    """Refuse an address, a camera, a token, a rest pose or a map for a body quackd drives no
+    part of (ADR-0077), on the way into the file, in the words the body's own `make()` uses,
+    rather than at the first run after it.
+
+    At the door and not in `RobotEntry`, as `_check_map_address` is: a hand-edited line that says
+    one is refused where it is used, by `make()`, and takes no other robot in the file down with
+    it, and `--clear address` can still mend it. `fields` is what an edit touches, since only a
+    choice made now is checked now."""
+    if entry.spec_problem is not None or drives(entry.adapter):
+        return
+    for attribute, flag in _REACHES_A_ROBOT:
+        if (fields is None or attribute in fields) and getattr(entry, attribute):
+            raise RegistryError(
+                f"{entry.spec} is a described body and takes no {flag}: quackd drives no part of it"
+            )
+
+
 def _check_map_address(spec: str, map_address: str | None) -> None:
     """Refuse a map address for a body that reads no map of the robot's own, rather than store
     one that every build of the robot would then refuse."""
@@ -787,6 +823,7 @@ class Registry:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
         _check_map_address(entry.spec, entry.map_address)
+        _check_reaches_nothing(entry)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
             # token stored with none would never be sent anywhere, and saying so now beats a 401
@@ -836,6 +873,7 @@ class Registry:
             # the address with the body it would be handed to, asked only of an edit that touches
             # either, as the board's pair is
             _check_map_address(entry.spec, entry.map_address)
+        _check_reaches_nothing(entry, fields=None if "spec" in changes else set(changes))
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:
             # `add_robot`'s pairing rule, asked only of an edit that touches the pair, so a
@@ -1072,6 +1110,10 @@ async def probe_entry(
         return ProbeResult(False, problem, 0.0)
     if (why := _UNPROBEABLE.get(entry.backend)) is not None:
         return ProbeResult(None, f"skipped: {why}", 0.0)
+    if not drives(entry.adapter):
+        # neither reachable nor down: quackd drives no part of a described body (ADR-0077),
+        # and a tick beside it would read as a robot that answered
+        return ProbeResult(None, "described: nothing to reach", 0.0)
     started = time.perf_counter()
 
     def elapsed() -> float:

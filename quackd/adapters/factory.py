@@ -27,7 +27,15 @@ from quackd.adapters.base import (
     RobotAdapter,
     camera_urls,
 )
-from quackd.adapters.catalogue import BY_NAME, ENTRY_POINT_GROUP, OFFICIAL, AdapterInfo, Connect
+from quackd.adapters.catalogue import (
+    ADAPTERS,
+    BY_NAME,
+    ENTRY_POINT_GROUP,
+    TIERS,
+    AdapterInfo,
+    Connect,
+    Tier,
+)
 from quackd.adapters.manifest import RobotManifest
 from quackd.verbs.registry import VerbRegistry, core_registry, registry_from_manifest
 
@@ -89,15 +97,52 @@ def info(name: str) -> AdapterInfo:
     if (known := BY_NAME.get(name)) is not None:
         return known
     module = _module(name)
+    backends = tuple(getattr(module, "BACKENDS", ()))
     return AdapterInfo(
         name=name,
-        backends=tuple(getattr(module, "BACKENDS", ())),
+        backends=backends,
         status=str(getattr(module, "STATUS", "installed here, not published by quackd")),
         summary=str(getattr(module, "SUMMARY", "a robot quackd does not publish")),
         extra=getattr(module, "EXTRA", None),
         sdk=getattr(module, "SDK", None),
         connect=_connect_of(module),
+        tiers=_tiers_of(module, backends),
+        family=_words_of(module, "FAMILY"),
+        route=_words_of(module, "ROUTE"),
     )
+
+
+def _tiers_of(module: Any, backends: tuple[str, ...]) -> dict[str, Tier]:
+    """A third party's `TIERS`, by backend: `Tier` records, or dicts of their fields. Read
+    tolerantly, as `CONNECT` is, since a module quackd does not publish must not stop a command
+    that only lists it: a tier of another name, or a field that is not text, is no tier. Left
+    out whole unless every backend has one, since a row with tiers prints from them alone."""
+    declared = getattr(module, "TIERS", None)
+    if not isinstance(declared, Mapping):
+        return {}
+    found: dict[str, Tier] = {}
+    for backend, tier in declared.items():
+        if isinstance(tier, Mapping):
+            try:
+                tier = Tier(**tier)
+            except TypeError:
+                continue
+        if not isinstance(tier, Tier) or tier.name not in TIERS:
+            continue
+        said = (tier.owner, tier.date, tier.note)
+        if all(field is None or isinstance(field, str) for field in said):
+            found[str(backend)] = tier
+    return found if set(found) == set(backends) else {}
+
+
+def _words_of(module: Any, attribute: str) -> tuple[str, ...]:
+    """A third party's `FAMILY` or `ROUTE`: a string or a sequence of them, or nothing."""
+    declared = getattr(module, attribute, None)
+    if isinstance(declared, str):
+        return (declared,)
+    if isinstance(declared, Sequence):
+        return tuple(str(word) for word in declared)
+    return ()
 
 
 def _connect_of(module: Any) -> dict[str, Connect]:
@@ -124,10 +169,22 @@ def is_official(name: str) -> bool:
     return name in BY_NAME
 
 
-ADAPTER_NAMES = tuple(BY_NAME)
-BACKENDS = {i.name: i.backends for i in OFFICIAL}
-ADAPTER_STATUS = {i.name: i.status for i in OFFICIAL}
-ADAPTER_EXTRAS = {i.name: i.extra for i in OFFICIAL if i.extra}
+ADAPTER_NAMES = tuple(i.name for i in ADAPTERS)
+"""The nine adapters quackd publishes, which every count of adapters follows. The described
+row is not among them: it drives nothing (`DESCRIBED_BODIES` is its list)."""
+BACKENDS = {i.name: i.backends for i in ADAPTERS}
+ADAPTER_STATUS = {i.name: i.status for i in ADAPTERS}
+ADAPTER_EXTRAS = {i.name: i.extra for i in ADAPTERS if i.extra}
+
+
+def drives(name: str) -> bool:
+    """Whether this adapter drives a robot at all: False for the described row alone, whose
+    backends are bodies quackd lists and reasons about and moves no part of. Read off the
+    catalogue, so asking imports nothing: a name quackd does not publish is an adapter, whatever
+    its module does when it is imported."""
+    row = BY_NAME.get(name)
+    return row is None or row.kind == "adapter"
+
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
@@ -160,7 +217,15 @@ def parse_robot_spec(text: str) -> RobotSpec:
     known = adapter_names()
     if adapter not in known:
         raise AdapterError(f"unknown adapter {adapter!r}; choose one of {', '.join(known)}")
-    backends = info(adapter).backends
+    row = info(adapter)
+    backends = row.backends
+    if not backend and row.kind == "described":
+        # the nine have a first backend that a bare name means; this row's backends are each a
+        # different robot, and picking the first alphabetically would be picking for you
+        raise AdapterError(
+            f"{adapter} names no body by itself: --robot {adapter}:<body>, one of "
+            f"{', '.join(backends)}"
+        )
     backend = backend or backends[0]
     if backend not in backends:
         raise AdapterError(
@@ -201,9 +266,12 @@ def default_spec() -> RobotSpec:
     installed the duck on purpose is not surprised by it. With several and no Microduck among
     them, quackd refuses to guess and lists what is here, rather than reaching for whichever
     body happens to sort first."""
-    usable = [name for name in adapter_names() if is_installed(name)]
+    # a described body is never a default: a bare core has the described row and nothing
+    # that drives, and a command with no robot named would otherwise get a body that moves
+    # nothing and reads as a run
+    usable = [name for name in adapter_names() if is_installed(name) and drives(name)]
     if not usable:
-        publishes = ", ".join(n for n in BY_NAME if n != "microduck")
+        publishes = ", ".join(n for n in ADAPTER_NAMES if n != "microduck")
         raise NoRobotNamed(
             'no robot adapter is installed: uv pip install "quackd[microduck]" '
             f"(or {publishes}; quackd[robots] installs all nine), "
@@ -531,10 +599,18 @@ def list_adapters() -> list[dict[str, Any]]:
                 "status": row.status,
                 "extra": row.extra or "built-in",
                 "official": is_official(name),
-                # an adapter with no SDK to probe is usable as soon as it is here at all
-                "installed": is_installed(name) and sdk is not False,
-                "adapter_installed": is_installed(name),
+                # an adapter with no SDK to probe is usable as soon as it is here at all, and
+                # the described row, in every core, is no adapter to have: a script asking
+                # whether this machine has any robot gets the answer it always got
+                "installed": row.kind == "adapter" and is_installed(name) and sdk is not False,
+                "adapter_installed": row.kind == "adapter" and is_installed(name),
                 "sdk": sdk,
+                # ADR-0076: the tier of every backend, and ADR-0075's family and route, so a
+                # dashboard reads how far a backend got from a word rather than from a mark
+                "kind": row.kind,
+                "tiers": {backend: tier.to_dict() for backend, tier in row.tiers.items()},
+                "family": list(row.family),
+                "route": list(row.route),
             }
         )
     return rows
@@ -592,7 +668,8 @@ def _union(registry: VerbRegistry, body: VerbRegistry) -> None:
 
 
 def installed_manifests() -> list[tuple[str, RobotManifest]]:
-    """(adapter name, its static manifest) for every body installed here, in table order.
+    """(adapter name, its static manifest) for every body quackd drives that is installed here,
+    in table order. The bodies it only describes are `described_manifests`, apart.
 
     The first backend of each, because a body is the same body on all of them. Static, so
     this costs no SDK import and no connection.
@@ -604,10 +681,26 @@ def installed_manifests() -> list[tuple[str, RobotManifest]]:
     A machine that has one robot can only speak for that one."""
     rows = []
     for name in adapter_names():
-        if not is_installed(name):
+        if not is_installed(name) or not drives(name):
             continue
         with contextlib.suppress(AdapterError, ImportError):
             rows.append((name, describe(RobotSpec(name, info(name).backends[0]))))
+    return rows
+
+
+def described_manifests() -> list[tuple[str, RobotManifest]]:
+    """(spec, its manifest) for every body quackd only describes (ADR-0077), in catalogue order.
+
+    Apart from `installed_manifests`, because that list names bodies a task can be handed to
+    and a described body is one quackd drives no part of. Each is named by the spec that
+    reaches it, `described:unitree-b2`, so a line that names one can be typed back."""
+    rows = []
+    for name in adapter_names():
+        if not is_installed(name) or drives(name):
+            continue
+        for body in info(name).backends:
+            with contextlib.suppress(AdapterError, ImportError):
+                rows.append((f"{name}:{body}", describe(RobotSpec(name, body))))
     return rows
 
 
@@ -621,3 +714,13 @@ def bodies_that_could(needs: Mapping[str, Any]) -> list[tuple[str, RobotManifest
 
     rows = [(name, m, missing_needs(needs, m)) for name, m in installed_manifests()]
     return [row for row in rows if not row[2]]
+
+
+def described_that_could(needs: Mapping[str, Any]) -> list[tuple[str, RobotManifest]]:
+    """The described bodies whose makers' figures meet these needs (ADR-0077).
+
+    Never a body to hand a task to, which is why `bodies_that_could` does not return them: a
+    caller that names one says in the same breath that quackd drives no part of it."""
+    from quackd.verdict import missing_needs
+
+    return [(name, m) for name, m in described_manifests() if not missing_needs(needs, m)]

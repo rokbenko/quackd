@@ -77,6 +77,8 @@ to try a real one in.
 | MOSS, a tracked rover that picks up litter | [adapters/moss/README.md](adapters/moss/README.md) | [hardware checklist](adapters/moss/hardware-checklist.md) |
 
 - [Adapter status](adapters/status.md): what has run against its real target, and what has not.
+- [Described bodies](adapters/status.md#described-bodies): robots quackd describes from one file
+  each, with their makers' figures, and drives no part of.
 - [Writing an adapter](adapters/writing-an-adapter.md): the recipe for a robot quackd does not
   know yet.
 - [Reading someone else's robot](adapters/reading-robots.md): the traps that recur when you read

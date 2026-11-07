@@ -31,10 +31,12 @@ more robots wanted, the same path would add fifteen more.
 `Tier(name, owner, date, note)`: the owner and the date are who answers for a bound backend's
 first hardware run and when, or who ran a verified one and when; the note is what the status
 string used to say of that backend alone. The marks stay and are derived from the tier, 📄 ✅
-🧪 🤖, so a ✅ can never sit on a bound backend, and every table that prints a status, the
-README's, [docs/adapters/status.md](../adapters/status.md), `quackd list-adapters`, `quackd
-doctor` and their `--json`, prints the tier. A third party's adapter may declare `TIERS` on its
-module and is listed as it is when it does not.
+🧪 🤖, so a ✅ can never sit on a bound backend, and every table that prints a status prints
+the tier: [docs/adapters/status.md](../adapters/status.md), `quackd list-adapters`, `quackd
+doctor` and their `--json`. The README's table keeps its finer words, simulator, physics and
+mock under rehearsed, daemon and names under bound, each behind its tier's mark, and its
+legend says which tier each belongs to. A third party's adapter may declare `TIERS`, `FAMILY`
+and `ROUTE` on its module and is listed as it is when it does not.
 
 **Bound code enters this repository only with a named owner and a date for its first hardware
 run.** A test holds it: every official backend has a tier, a bound or verified one carries an

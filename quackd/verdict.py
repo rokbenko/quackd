@@ -286,7 +286,12 @@ def missing_needs_in(
             if want == "none":
                 continue  # nothing held: met by a body with hands, too
             has = str(facts.get("manipulator") or "unknown")
-            if not (want == "any" and has not in ("none", "unknown")) and has != want:
+            if has == "arms" and facts.get("arms") == 1:
+                # one arm with nothing on its wrist, as an industrial arm is sold: there is no
+                # second arm to close it on, and it holds nothing until somebody fits a tool
+                has = "a bare wrist"
+            holds = has not in ("none", "unknown", "a bare wrist")
+            if not (want == "any" and holds) and has != want:
                 out.append(f"manipulator = {want} (has {has})")
             continue
         if key == "terrain":
@@ -514,7 +519,37 @@ def solo_hint(needs: Mapping[str, Any], here: RobotManifest | None) -> str:
                 " This body publishes no working height band, so whether it reaches that "
                 "height is the pilot's judgement."
             )
-    return sentence
+    return sentence + _described_hint(needs, also=bool(able))
+
+
+DESCRIBED_NAMED = 3
+"""How many described bodies a hint names before it counts the rest: the list grows by a file,
+and a hint that names twenty bodies nobody can hand a task to has stopped being a hint."""
+
+
+def _described_hint(needs: Mapping[str, Any], *, also: bool) -> str:
+    """The sentence a hint ends with when a body quackd only describes meets the needs.
+
+    Said apart and last, never in the list above it: that list names bodies a task can be
+    handed to, and a described body (ADR-0077) is one quackd drives no part of. Its figures are
+    its maker's, read from a page, so the sentence says whose they are and that nothing here
+    moves it. Empty where none meets them."""
+    from quackd.adapters.factory import described_that_could
+
+    names = [name for name, _manifest in described_that_could(needs)]
+    if not names:
+        return ""
+    shown, rest = names[:DESCRIBED_NAMED], len(names) - DESCRIBED_NAMED
+    if rest > 0:
+        joined = ", ".join(shown) + f" and {rest} more"
+    else:
+        joined = shown[0] if len(shown) == 1 else ", ".join(shown[:-1]) + f" and {shown[-1]}"
+    it = "it" if len(names) == 1 else "them"
+    too = " too" if also else ""
+    return (
+        f" By their makers' figures alone, {joined} could{too}, and quackd drives no part of "
+        f"{it}: each is a described body."
+    )
 
 
 def _best_numeric(needs: Mapping[str, Any]) -> str:

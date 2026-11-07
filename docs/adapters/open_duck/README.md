@@ -229,7 +229,7 @@ less than its name suggests, and they are worth knowing before you write a task.
 
 ## How to help
 
-Built one? `open_duck:bridge` is the row most likely to flip to ✅ this year, and it needs a
+Built one? `open_duck:bridge` is the row most likely to flip to 🤖 this year, and it needs a
 person with a duck. [`docs/adapters/open_duck/hardware-checklist.md`](hardware-checklist.md)
 says what to run and in what order, and what to attach to an issue. Start with
 `open-duck-lookout`, whose allowlist moves no legs at all.

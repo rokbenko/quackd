@@ -414,7 +414,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "## Invariants the model enforces",
     ),
     "pyproject.toml": ("3.12 floor. The model is",),
-    "quackd/adapters/catalogue.py": ('"model, never',),
     "quackd/adapters/export.py": ("regenerates  from the model.",),
     "quackd/adapters/passport.py": ("than to its model, comes",),
     "quackd/agent/decision/catalogue.py": (
@@ -505,6 +504,7 @@ SENTENCES: dict[str, tuple[str, ...]] = {
     "tests/jetson_fixtures.py": ('"proc/device-tree/model"',),
     "tests/test_cli_places.py": ("and the verb's model is what",),
     "tests/test_controller_vla.py": ("simulator's stand-in model, against",),
+    "tests/test_described.py": ("model: walker",),
     "tests/test_deprecated_backends.py": ("than load a model, is",),
     "tests/test_executor.py": ("# honest model of the",),
     "tests/test_find.py": ("here without the model",),

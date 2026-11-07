@@ -99,22 +99,23 @@ def _robot() -> None:
     else:
         rows = catalog.adapters()
         names = [row["name"] for row in rows]
-        installed = {row["name"]: row.get("installed") for row in rows}
+        # the described row is in every core, and no adapter to have or to be missing
+        here = {r["name"] for r in rows if r.get("installed") or not catalog.drives(r["name"])}
         adapter = widgets.pick(
             "_adapter",
             "Adapter",
             names,
             default="microduck",
-            shown=lambda n: n if installed.get(n) else f"{n} (not installed)",
+            shown=lambda n: n if n in here else f"{n} (not installed)",
         )
         row = next(r for r in rows if r["name"] == adapter)
         backend = widgets.pick("_backend", "Backend", list(row.get("backends") or ["mock"]))
         widgets.write("robot", f"{adapter}:{backend}")
-        if not row.get("installed"):
+        if adapter not in here:
             st.warning(
                 f'This adapter is not installed: uv pip install "quackd[{row.get("extra")}]"'
             )
-    if not catalog.is_simulated(backend):
+    if catalog.drives(adapter) and not catalog.is_simulated(backend):
         _connect(adapter, backend, source == "registered")
 
 

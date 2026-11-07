@@ -87,6 +87,7 @@ assert [r["name"] for r in rows] == [
     "toddlerbot",
     "huebot",
     "moss",
+    "described",
 ], rows
 # every adapter that needs a library reports itself unusable when that library is gone. Asked
 # through `sdk` rather than through `extra`, because an extra now also buys the adapter package
@@ -273,7 +274,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         rows = factory.list_adapters()
         assert [r["name"] for r in rows] == list(ADAPTERS), rows
         assert not any(r["adapter_installed"] for r in rows), rows
-        assert all(r["extra"].startswith("quackd[") for r in rows), rows
+        assert all(r["extra"].startswith("quackd[") for r in rows if r["kind"] == "adapter"), rows
 
         # a spec still parses, so a robot can be registered, printed and reasoned about on a
         # machine that cannot build it. Asking for the body itself is what refuses.

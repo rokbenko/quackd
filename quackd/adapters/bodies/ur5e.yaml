@@ -1,0 +1,39 @@
+# Universal Robots UR5e: a six-joint cobot. quackd describes it from UR's datasheet and drives
+# no part of it (ADR-0077). A later binding would reach it through UR's own ROS 2 driver or
+# ur_rtde. UR now lists the UR7e as its upgraded version; this body documents the installed base.
+vendor: universal-robots
+model: ur5e
+embodiment: arm
+mobility: none
+blurb: >-
+  a Universal Robots UR5e, a six-joint collaborative arm, bolted down any way up and run from
+  its own control box
+datasheet:
+  manipulator: arms
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 20.6
+    confidence: official
+    source: "UR5e datasheet, December 2024: 20.6 kg with the cable, read 2026-11-05"
+  dof:
+    value: 6
+    confidence: official
+    source: "UR5e datasheet, December 2024: 6 rotating joints, read 2026-11-05"
+  payload_kg:
+    value: 5
+    confidence: official
+    source: "UR5e datasheet, December 2024: 5 kg, read 2026-11-05"
+  reach_m:
+    value: 0.850
+    confidence: official
+    source: "UR5e datasheet, December 2024: 850 mm, read 2026-11-05"
+  cannot:
+    - "move its base: it is bolted down and mains powered"
+  notes:
+    - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
+    - "safety rated PL d, category 3, with 17 configurable safety functions, by the datasheet"
+    - "its emergency stop is category 1 and removes drive power at standstill; a protective stop keeps drive power (UR's manual)"
+    - "joints turn 360 degrees each way at up to 180 degrees per second and the tool moves at up to 4 m/s by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "100 to 240 VAC, IP54, any mounting, by the datasheet; UR lists the UR7e as its upgraded version"

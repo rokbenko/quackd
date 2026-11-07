@@ -279,6 +279,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "toddlerbot",
         "huebot",
         "moss",
+        "described",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
     assert rows[1]["extra"] == "quackd[lerobot]" and "real" in rows[1]["backends"]

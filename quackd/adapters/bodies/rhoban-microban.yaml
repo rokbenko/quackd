@@ -1,0 +1,28 @@
+# Rhoban Microban: an open-hardware humanoid you print and build. quackd describes it from
+# its repository and drives no part of it (ADR-0077). Its run loop takes a velocity from a
+# keyboard or a pad and offers no API, so a later binding would be a bridge on its Pi.
+vendor: rhoban
+model: microban
+embodiment: humanoid
+mobility: legged
+blurb: >-
+  a Rhoban Microban, a 30 cm open-hardware humanoid you print and build, with nineteen small
+  servos around a Raspberry Pi Zero 2 W and no hands
+datasheet:
+  manipulator: none
+  tethered: false
+  terrain: indoor_flat
+  height_m:
+    value: 0.30
+    confidence: official
+    source: "github.com/Rhoban/microban README: a 30 cm humanoid, read 2026-11-05"
+  dof:
+    value: 19
+    confidence: official
+    source: "github.com/Rhoban/microban README: 19 Dynamixel XL330 servos, read 2026-11-05"
+  cannot:
+    - "hold, carry or push anything: the arms end in no hand"
+  notes:
+    - "mass, payload and endurance are not published in the repository read"
+    - "its own software caps a walk at 0.7 m/s ahead, 0.5 m/s back, 0.3 m/s to the side and 3 rad/s in a turn (src/constants.py); quackd clamps nothing here because it drives nothing"
+    - "the only stop its software has is torque off, which drops the body where it stands"

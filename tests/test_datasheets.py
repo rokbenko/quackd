@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
 from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
 from quackd.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
@@ -18,6 +19,8 @@ from quackd_microduck import upstream_api as up
 from quackd_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
+# the described bodies (ADR-0077) are held to the same honesty as the nine: a source per figure
+SPECS += [RobotSpec(DESCRIBED, body) for body in DESCRIBED_BODIES]
 
 
 def _bare(**over: object) -> RobotManifest:

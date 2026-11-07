@@ -9,23 +9,35 @@ from types import SimpleNamespace
 
 import pytest
 
-from quackd.adapters.catalogue import OFFICIAL, Connect
+from quackd.adapters.catalogue import ADAPTERS, BY_NAME, Connect
 from quackd.adapters.factory import _connect_of
 from quackd.perception import is_simulated
 
-BLOCKS = {info.name: info.connect for info in OFFICIAL}
+BLOCKS = {info.name: info.connect for info in ADAPTERS}
 
 
 def test_every_real_backend_of_the_nine_says_how_to_connect_it_and_no_simulator_does() -> None:
-    for info in OFFICIAL:
+    for info in ADAPTERS:
         real = sorted(b for b in info.backends if not is_simulated(b))
         assert sorted(info.connect) == real, info.name
+        # ADR-0076: a backend with a connect block is one that reaches a robot, which is what
+        # the bound and verified tiers mean, so the two lists are one list
+        reaching = sorted(b for b, tier in info.tiers.items() if tier.name in ("bound", "verified"))
+        assert sorted(info.connect) == reaching, info.name
         for block in info.connect.values():
             assert block.address and block.example and block.on_robot, info.name
 
 
+def test_the_described_row_connects_nothing() -> None:
+    """Its backends are bodies quackd drives no part of (ADR-0077): nothing to connect, and a
+    page offering an address field for one would be a claim the body cannot keep."""
+    described = BY_NAME["described"]
+    assert described.kind == "described" and not described.connect
+    assert not any(is_simulated(b) for b in described.backends)
+
+
 def test_each_block_names_its_own_adapters_page() -> None:
-    for info in OFFICIAL:
+    for info in ADAPTERS:
         docs = importlib.import_module(f"quackd_{info.name}").UPSTREAMS[0][2]
         assert {block.docs for block in info.connect.values()} == {docs}, info.name
 

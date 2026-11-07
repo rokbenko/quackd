@@ -1,0 +1,37 @@
+# KUKA LBR iiwa 7 R800: a seven-axis research cobot on Sunrise.OS. quackd describes it from
+# kuka.com and drives no part of it (ADR-0077). A later binding would reach it through the
+# community LBR-Stack over FRI, from a Java application on its cabinet.
+vendor: kuka
+model: lbr-iiwa-7-r800
+embodiment: arm
+mobility: none
+blurb: >-
+  a KUKA LBR iiwa 7 R800, a seven-axis collaborative arm bolted to a bench and run from its own
+  cabinet, with torque sensors in every axis
+datasheet:
+  manipulator: arms
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 23.9
+    confidence: estimate
+    source: "KUKA's 2016 KMR iiwa presentation: 23.9 kg; kuka.com's page carries no weight, read 2026-11-05"
+  dof:
+    value: 7
+    confidence: official
+    source: "kuka.com, LBR iiwa: 7 axes, read 2026-11-05"
+  payload_kg:
+    value: 7
+    confidence: official
+    source: "kuka.com, LBR iiwa 7 R800: 7 kg, read 2026-11-05"
+  reach_m:
+    value: 0.800
+    confidence: official
+    source: "kuka.com, LBR iiwa 7 R800: 800 mm, read 2026-11-05"
+  cannot:
+    - "move its base: it is bolted to a bench and mains powered"
+  notes:
+    - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
+    - "IP54 and torque sensors in all seven axes by kuka.com; repeatability 0.1 mm by the 2016 presentation"
+    - "joint speeds, mains voltage and what the arm does when its FRI connection drops are not on the pages read"

@@ -1,0 +1,39 @@
+# Yaskawa MotoMini: a six-axis miniature industrial arm on the YRC1000micro. quackd describes
+# it from Yaskawa's flyer and drives no part of it (ADR-0077). A later binding would reach it
+# through MotoROS2 on its controller.
+vendor: yaskawa
+model: motomini
+embodiment: arm
+mobility: none
+blurb: >-
+  a Yaskawa MotoMini, a six-axis miniature industrial arm of 7 kg, bolted to a bench and run
+  from its own controller, with no gripper of its own
+datasheet:
+  manipulator: arms
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 7
+    confidence: official
+    source: "Yaskawa MotoMini flyer, July 2023: 7 kg, read 2026-11-05"
+  dof:
+    value: 6
+    confidence: official
+    source: "Yaskawa MotoMini flyer, July 2023: 6 axes, read 2026-11-05"
+  payload_kg:
+    value: 0.5
+    confidence: official
+    source: "Yaskawa MotoMini flyer, July 2023: 0.5 kg, read 2026-11-05"
+  reach_m:
+    value: 0.350
+    confidence: official
+    source: "Yaskawa MotoMini flyer, July 2023: 350 mm horizontal reach, 495 mm vertical, read 2026-11-05"
+  cannot:
+    - "move its base: it is bolted to a bench and mains powered"
+    - "work beside a person without a guard: Yaskawa makes no collaborative claim for it"
+  notes:
+    - "it ships with no gripper; a tool is the integrator's, so arms stands for the bare wrist here"
+    - "joints move at 315 to 600 degrees per second by the flyer; quackd clamps nothing here because it drives nothing"
+    - "repeatability 0.02 mm, 200 or 230 VAC, IP30, by the flyer"
+    - "what the arm does on a stop or when its agent falls silent is not documented on the pages read"

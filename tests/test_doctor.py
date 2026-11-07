@@ -25,7 +25,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from quackd import doctor
-from quackd.adapters.factory import ADAPTER_NAMES
+from quackd.adapters.catalogue import OFFICIAL
 from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, KEY_FALLBACKS, PROVIDER_NAMES
 from quackd.cli import app
 from quackd.doctor import PlacementRow
@@ -180,7 +180,7 @@ def test_collect_answers_in_data_with_no_styling_in_it() -> None:
         assert tag not in blob, tag
     assert report.ok is True
     assert [c.name for c in report.core] == ["pydantic", "mcp", "numpy", "Pillow"]
-    assert len(report.adapters) == len(ADAPTER_NAMES), "one row for every adapter quackd ships"
+    assert len(report.adapters) == len(OFFICIAL), "one row for every catalogue row, described too"
     assert report.bundled_ducks > 0
     assert {p.upstream for p in report.pins} >= {"microduck", "lerobot", "microduck_rl"}
     assert report.assumptions, "there are unverified assumptions and doctor says so"
@@ -286,7 +286,8 @@ def test_render_loses_nothing_on_a_codepage_that_cannot_carry_it(
     console.file.flush()
     out = raw.getvalue().decode("cp1252")
     assert out.isascii()
-    assert "[ok] in the package" in out, "the registry's tick becomes something readable"
+    assert "[ok] rehearsed" in out, "the registry's tick becomes something readable"
+    assert "[exp] bound" in out and "[hw] verified" in out and "[desc] described" in out, out
     assert "duck-ipc-proto API" in out
 
 
