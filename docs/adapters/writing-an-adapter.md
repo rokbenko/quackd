@@ -57,7 +57,7 @@ description = "The LeRobot SO-101 arm adapter for quackd. Install it as quackd[l
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["quackd>=0.32.0,<0.33"]
+dependencies = ["quackd>=0.33.0,<0.34"]
 
 [project.optional-dependencies]
 sdk = ["lerobot[feetech]>=0.6,<0.6.2; python_version >= '3.12'"]
@@ -77,7 +77,7 @@ quackd = { workspace = true }
 
 | Line | Why it is that way |
 |---|---|
-| `dependencies = ["quackd>=0.32.0,<0.33"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own nine start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../../RELEASING.md)) |
+| `dependencies = ["quackd>=0.33.0,<0.34"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own nine start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../../RELEASING.md)) |
 | `[project.optional-dependencies] sdk` | the library the real backend imports, and only that backend. A machine without it still gets `lerobot:mock`, still validates a `.duck` against the arm and still prints it in `list-adapters`. `quackd[lerobot]` in the core pins `quackd-lerobot[sdk]`, so the extra a reader types buys both halves. An adapter whose robot side you ship yourself declares no `sdk` at all: `quackd-open-duck` and `quackd-toddlerbot` have none |
 | the environment marker | LeRobot needs Python 3.12 and pulls torch. The marker is what keeps the lock solvable on 3.11, where this package still installs and the mock still runs |
 | `[project.entry-points."quackd.adapters"]` | `lerobot = "quackd_lerobot"` is the robot's name mapped to the module carrying `describe`, `make`, `implementations` and `conditions`. This is how quackd finds it, and the only way it finds a third party's |
@@ -554,7 +554,7 @@ nobody here can run enters as a described body, one YAML under `quackd/adapters/
 ([ADR-0077](../adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md), and
 [CONTRIBUTING.md](../../CONTRIBUTING.md#add-a-described-body) is the recipe), or is
 published out of tree as the last section says, where it needs nothing from this repository.
-The nine adapters that were here before the rule are grandfathered, and their rows say so.
+The eight bound backends that were here before the rule are grandfathered, and their rows say so.
 
 ## The checklist
 

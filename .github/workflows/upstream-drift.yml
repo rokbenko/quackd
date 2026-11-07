@@ -12,7 +12,7 @@ name: upstream drift
 # of quackd's own cannot be followed, and somebody should go and read it. Exit 2: something did
 # not answer as it should and nothing else was found, so the night says nothing either way.
 #
-# The first run is expected red for six upstreams, LeRobot among them, whose Feetech tables that
+# The first run is expected red for seven upstreams, LeRobot among them, whose Feetech tables that
 # pull request removed, and MOSS, whose main moves most days. That is the point, not a fault.
 #
 # The script also keeps one issue open per upstream that needs somebody, labelled

@@ -38,31 +38,32 @@ tier described on every backend.
 `model`, `embodiment`, `mobility`, `blurb` and the `datasheet` with a source and a confidence
 per figure, as the manifest's `Datasheet` has always demanded. It may not carry `id`, `verbs`,
 `backend`, `intents`, `sensors`, `limits`, `preconditions`, `extras`, `safety_authority`,
-`frame` or `manifest`: the loader refuses any key but those six by name,
-as a claim a body nobody drives cannot make, and builds the `RobotManifest` with `report_state`
-and `stop` as its only verbs, no intents and `extras.described` saying `maker`, where a
-robot.yaml's says true. Inside the datasheet,
-pydantic's `extra="forbid"` refuses a typo by its path, under the file's name. A figure the
-maker did not publish is left out, never estimated, and the prompt says "not published" as it
-does for every body. `sensors` is refused with the rest because a manifest's sensors are what
-quackd reads, and a verb's requirements are judged against them: a described body that listed
-the camera its robot carries would be offered to a flock as a body that can look. What the
-robot carries is a note in its datasheet, and a board with a camera beside the body (`--host`)
-gives it `observe`, as it gives any body.
+`frame` or `manifest`: the loader refuses any key but those six by name, as a claim a body
+nobody drives cannot make, and builds the `RobotManifest` with `report_state` and `stop` as its
+only verbs, no intents and `extras.described` saying `maker`, where a robot.yaml's says true.
+Inside the datasheet, pydantic's `extra="forbid"` refuses a typo by its path, under the file's
+name. A figure nobody published is left out, and the prompt says "not published" as it does for
+every body; one the maker's own page leaves out and another source gives is marked `estimate`
+and names it. `sensors` is refused with the rest because a manifest's sensors are what quackd
+reads, and a verb's requirements are judged against them: a described body that listed the
+camera its robot carries would be offered to a flock as a body that can look. What the robot
+carries is a note in its datasheet, and a board with a camera beside the body (`--host`) gives
+it `observe`, as it gives any body.
 
 **It is honest about what it is.** Its blurb ends by saying quackd drives no part of it, and
 its prompt says so before any figure: that it is described from its maker's figures, that no
-verb here moves it, and that it moves only if someone else moves it.
-`make()` refuses an address, a camera, a token and a rest pose, since there is nothing to
-reach, and the registry refuses them at `quackd robot add` and `robot edit`, before a run
-could, while a hand-edited line that says one takes no other robot in the file down with it. A
-bare `--robot described` names no body and is refused with the list, where a bare adapter's
-name means its first backend. `quackd robot list --probe` says there is nothing to reach, with
-neither a tick nor a cross, since a tick would read as a robot that answered, and `quackd
-announce` refuses one, since there is no robot on the network to announce. Its posture reads
-`unknown`, nothing reports its falls, its health says quackd reads nothing from it, and its `stop`
-says there is nothing to stop. `DescribedAdapter` moves from `quackd/onboard/body.py` to `quackd/adapters/described.py`
-and `quackd onboard` builds the same thing from a `robot.yaml` as it did.
+verb here moves it, and that it moves only if someone else moves it. `make()` refuses an
+address, a camera, a token and a rest pose, since there is nothing to reach. The registry
+refuses the first three at `quackd robot add` and `robot edit`, and `quackd robot rest-pose`
+records no rest pose, before a run could, while a hand-edited line that says one takes no other
+robot in the file down with it. A bare `--robot described` names no body and is refused with
+the list, where a bare adapter's name means its first backend. `quackd robot list --probe` says
+there is nothing to reach, with neither a tick nor a cross, since a tick would read as a robot
+that answered, and `quackd announce` refuses one, since there is no robot on the network to
+announce. Its posture reads `unknown`, nothing reports its falls, its health says quackd reads
+nothing from it, and its `stop` says there is nothing to stop. `DescribedAdapter` moves from
+`quackd/onboard/body.py` to `quackd/adapters/described.py` and `quackd onboard` builds the same
+thing from a `robot.yaml` as it did.
 
 **The counts stay true, and a described body is never offered as one to drive.** `kind` on the
 catalogue row keeps the nine adapters nine: `ADAPTER_NAMES` is the rows of kind adapter, and
@@ -87,7 +88,9 @@ from their catalogues (ADR-0062).
   Research 3, the Yaskawa MotoMini, the KUKA LBR iisy 3 R760 and LBR iiwa 7 R800, and the
   Universal Robots UR5e. The Agile ONE SN (no public API, available 2027) and the industrial
   UBTech Walker S2 (certified operators only) stay out; a Walker that joins later is the S2.
-  Every figure cites the maker's page it was read on and the date.
+  Every figure cites the page it was read on and the date: the maker's own, but for two marked
+  `estimate`, the B2's joint count from a dealer's listing and the LBR iiwa's weight from a 2016
+  KUKA presentation.
 - A quadruped's load on its back is a note, not a figure: the datasheet refuses `payload_kg`
   with no manipulator, and a `carries_kg` figure is a change to the manifest every peer reads,
   so it waits for a record of its own.

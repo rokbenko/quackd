@@ -46,8 +46,8 @@ from quackd.upstream import UpstreamRef
 REPO = "https://github.com/pollen-robotics/microduck_rl"
 PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"  # develop, 2026-09-06
 BRANCH = "develop"
-"""The branch the pin sits on, which is not the repository's default: what the nightly drift
-job (`scripts/upstream_drift.py`) compares the pin against."""
+"""The branch the pin sits on, which is also the repository's default: what the nightly drift
+job (`scripts/upstream_drift.py`) compares the pin against, whatever the default becomes."""
 READ_ON = "2026-10-09"
 
 POLICIES_REPO = "https://huggingface.co/pollen-robotics/microduck-policies"
