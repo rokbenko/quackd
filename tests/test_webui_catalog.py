@@ -78,6 +78,18 @@ def test_dotenv_is_read_and_never_loaded_into_the_page(
     assert "QUACKD_UI_TEST_VALUE" not in os.environ
 
 
+def test_the_line_that_installs_an_adapter_names_its_extra_once() -> None:
+    """The row's `extra` is the whole of what goes in the quotes, `quackd[lerobot]`, and the setup
+    page wrapped it in a second `quackd[...]`."""
+    rows = [row for row in catalog.adapters() if row.get("extra")]
+    assert rows
+    for row in rows:
+        assert catalog.install_line(row) == f'uv pip install "{row["extra"]}"'
+        assert "quackd[quackd[" not in catalog.install_line(row)
+    (arm,) = [row for row in rows if row["name"] == "lerobot"]
+    assert catalog.install_line(arm) == 'uv pip install "quackd[lerobot]"'
+
+
 def test_an_extra_is_found_without_importing_it() -> None:
     rows = catalog.extras()
     assert [label for label, _install, _here in rows] == list(EXTRAS)

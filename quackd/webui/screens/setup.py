@@ -112,9 +112,7 @@ def _robot() -> None:
         backend = widgets.pick("_backend", "Backend", list(row.get("backends") or ["mock"]))
         widgets.write("robot", f"{adapter}:{backend}")
         if adapter not in here:
-            st.warning(
-                f'This adapter is not installed: uv pip install "quackd[{row.get("extra")}]"'
-            )
+            st.warning(f"This adapter is not installed: {catalog.install_line(row)}")
     if catalog.drives(adapter) and not catalog.is_simulated(backend):
         _connect(adapter, backend, source == "registered")
 
