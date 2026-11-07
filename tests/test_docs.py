@@ -745,8 +745,11 @@ def test_readme_ends_with_license_section() -> None:
 
 
 def test_readme_images_are_absolute_and_exist() -> None:
-    srcs = re.findall(r'<img[^>]+src="([^"]+)"', README) + re.findall(
-        r"!\[[^\]]*\]\(([^)\s]+)", README
+    srcs = (
+        re.findall(r'<img[^>]+src="([^"]+)"', README)
+        + re.findall(r"!\[[^\]]*\]\(([^)\s]+)", README)
+        # the file a <picture> shows a dark page is an image the README names as well
+        + re.findall(r'<source[^>]+srcset="([^"]+)"', README)
     )
     assert srcs, "README has no images"
     raw = "https://raw.githubusercontent.com/rokbenko/quackd/main/"
@@ -4608,6 +4611,138 @@ def test_the_readme_sends_a_reader_to_the_described_bodies() -> None:
         ("📄", "described"),
     ):
         assert f"| {mark} **{name}** |" in section, f"the README's legend lacks the {name} tier"
+
+
+def _architecture_script() -> ModuleType:
+    """`docs/assets/architecture.py`, loaded by path as `scripts/llms_docs.py` is, and registered
+    under its name first: its dataclasses carry string annotations, which the standard library
+    resolves through `sys.modules`."""
+    import importlib.util
+    import sys
+
+    script = REPO / "docs" / "assets" / "architecture.py"
+    spec = importlib.util.spec_from_file_location("quackd_docs_architecture", script)
+    assert spec and spec.loader, f"{script} could not be loaded as a module"
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["quackd_docs_architecture"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_architecture_pictures_are_what_the_script_draws() -> None:
+    """A picture of the adapters somebody has to redraw stops being true the day the tenth lands,
+    so both files are the catalogue drawn, byte for byte."""
+    script = _architecture_script()
+    for theme, path in script.FILES.items():
+        committed = path.read_bytes().decode("utf-8").replace("\r\n", "\n")
+        assert committed == script.render(theme), (
+            f"docs/assets/{path.name} is not what the catalogue draws: run "
+            "python docs/assets/architecture.py and commit what it changes"
+        )
+    assert script.main(["--check"]) == 0
+
+
+def _drawn(path: Path) -> dict[str, set[str]]:
+    """Which names each box of a drawn file holds, by the box's id, read back as XML: each name
+    is an element of its own, so `lerobot` is never found inside `xlerobot`."""
+    from xml.etree import ElementTree
+
+    svg = "{http://www.w3.org/2000/svg}"
+    root = ElementTree.parse(path).getroot()
+    return {
+        group.attrib["id"]: {
+            span.attrib["data-adapter"]
+            for span in group.iter(f"{svg}tspan")
+            if "data-adapter" in span.attrib
+        }
+        for group in root.iter(f"{svg}g")
+        if group.attrib["id"].startswith(("family-", "route-"))
+    }
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_every_robot_is_drawn_where_its_catalogue_row_says(theme: str) -> None:
+    """Read off the file, since a renderer that dropped a name would agree with itself. Each robot
+    is in the box of its own kind, the first family its row names, and in the box of every route it
+    takes. The row that drives nothing is in no box, and neither is a daemon under `bridge/` that
+    no row names, the Jetson's: it moves no robot, so it is no binding."""
+    from quackd.adapters.catalogue import ADAPTERS, FAMILIES, ROUTES
+
+    script = _architecture_script()
+    boxes = _drawn(script.FILES[theme])
+    want: dict[str, set[str]] = {f"family-{f}": set() for f in FAMILIES if f != "described"}
+    want.update({f"route-{r}": set() for r in ROUTES})
+    for info in ADAPTERS:
+        want[f"family-{info.family[0]}"].add(info.name)
+        for route in info.route:
+            want[f"route-{route}"].add(info.name)
+    assert boxes == want
+    assert "jetson" not in set().union(*boxes.values())
+
+
+def test_a_new_robot_joins_the_picture_and_its_band_grows() -> None:
+    """What the script is for: a tenth robot needs its row, and a line in the script's `WIRES` only
+    when it speaks a wire no adapter has. A name the script has no box for stops it with what to
+    add, rather than leaving a robot out of the picture."""
+    import dataclasses
+
+    from quackd.adapters.catalogue import OFFICIAL, Tier
+
+    script = _architecture_script()
+    before = script.layout().height
+    crowd = tuple(
+        dataclasses.replace(
+            OFFICIAL[0],
+            name=f"robot{index:02}",
+            backends=("jsonrpc",),
+            tiers={"jsonrpc": Tier("rehearsed")},
+            connect={},
+        )
+        for index in range(30)
+    )
+    original = script.OFFICIAL
+    try:
+        script.OFFICIAL = (*original, *crowd)
+        assert script.layout().height > before, "a longer list makes its band taller"
+        assert 'data-adapter="robot29"' in script.render("light")
+        script.OFFICIAL = (dataclasses.replace(original[0], family=("tracked",)),)
+        with pytest.raises(SystemExit, match="no box for family 'tracked'"):
+            script.layout()
+        script.OFFICIAL = (dataclasses.replace(original[0], route=("radio",)),)
+        with pytest.raises(SystemExit, match="no box for route 'radio'"):
+            script.layout()
+        script.OFFICIAL = (dataclasses.replace(original[0], route=()),)
+        with pytest.raises(SystemExit, match="no family or no route"):
+            script.layout()
+        script.OFFICIAL = (dataclasses.replace(crowd[0], backends=("mock",), tiers={}),)
+        with pytest.raises(SystemExit, match="WIRES names none of its backends"):
+            script.layout()
+    finally:
+        script.OFFICIAL = original
+
+
+@pytest.mark.parametrize(
+    ("page", "section"),
+    [("README.md", "## Architecture"), ("docs/concepts/architecture.md", "## Four layers")],
+)
+def test_the_architecture_section_shows_the_picture_for_both_themes(
+    page: str, section: str
+) -> None:
+    """A `<picture>` so a dark page gets the dark file, and an `<img>` inside it for the light one,
+    which is also what PyPI keeps of it. Both files are there, wherever the page reads them from."""
+    path = REPO / page
+    text = path.read_text(encoding="utf-8")
+    body = text.split(f"\n{section}\n", 1)[1].split("\n## ", 1)[0]
+    picture = re.search(r"<picture>(.*?)</picture>", body, re.S)
+    assert picture is not None, f"{page}: no <picture> under {section}"
+    dark = re.search(r'media="\(prefers-color-scheme: dark\)" srcset="([^"]+)"', picture.group(1))
+    light = re.search(r'<img src="([^"]+)" alt="([^"]+)"', picture.group(1))
+    assert dark is not None and dark.group(1).endswith("architecture-dark.svg")
+    assert light is not None and light.group(1).endswith("architecture-light.svg")
+    assert "Four stacked layers" in light.group(2), "the picture's words are in its alt text too"
+    for target in (dark.group(1), light.group(1)):
+        if not target.startswith("https://"):
+            assert (path.parent / target).resolve().is_file(), target
 
 
 def test_the_llms_pages_are_what_scripts_llms_docs_writes() -> None:

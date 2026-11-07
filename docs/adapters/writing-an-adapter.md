@@ -335,7 +335,7 @@ Two of the nine adapters import an SDK. The others could not.
 | **Speak its wire** | upstream ships a host process but is not installable, or installing it would drag in torch and a Python floor | `xlerobot:zmq`, `alohamini:zmq` | reading the wire from source rather than the docs, and owning the framing yourself |
 | **Ship the robot side** | upstream has no network API of any kind | `open_duck:bridge`, `toddlerbot:bridge` | a daemon in `bridge/`, a protocol you define at both ends, and everything below |
 
-`moss:cockpit` takes two at once. MOSS's own cockpit is a wire quackd speaks for everything it does, and what it has no command for, a twist with a deadman, a timed frame, the arm cycle and the litter mission's stop, goes through a bridge quackd ships for the rover in `bridge/moss/`.
+`moss:cockpit` takes two at once. MOSS's own cockpit is a wire quackd speaks for everything it does, and what it has no command for, a twist with a deadman, a timed frame, the arm cycle and the litter mission's stop, goes through a bridge quackd ships for the rover in `bridge/moss/`. `alohamini:zmq` does too, for its arms: upstream's own host leaves them limp, so the arm verbs need quackd's host from `bridge/alohamini/`.
 
 Whichever route: import upstream **inside `connect()`** and raise
 `AdapterNotInstalled(name, "quackd[extra]")` on `ImportError`, so a machine without the extra
@@ -560,7 +560,11 @@ Then, for one quackd publishes:
    `Connect` block for each real backend, which a row in `tests/test_adapters_connect.py` holds
    to the transport's constants. A backend that reaches a robot is `bound`, and its tier names
    who answers for its first hardware run and the date: `tests/test_described.py` refuses a
-   bound row without both. The catalogue is
+   bound row without both. Then `python docs/assets/architecture.py` redraws the picture on the
+   README and on [concepts/architecture.md](../concepts/architecture.md#four-layers) with your
+   robot in the boxes its family and route name, and a robot that speaks a wire no adapter has
+   spoken needs that wire's label in the script's `WIRES` first, which the script says. The
+   catalogue is
    strings and imports nothing, which is what lets the table print the whole nine on a machine
    with none of them installed, each marked "not installed". Append, never insert: the tables
    that print these rows are order sensitive and a test pins them.

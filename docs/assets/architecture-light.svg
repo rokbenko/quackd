@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 738" width="880" height="738" role="img" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" aria-label="Only the body layer is one per robot: below it, each robot sits by its kind and its route: an intent goes down through the body, a behaviour family, a binding and a transport, and state and frames come back up">
+<title>Only the body layer is one per robot: below it, each robot sits by its kind and its route</title>
+<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#59636e"/></marker></defs>
+<rect width="880" height="738" fill="#ffffff"/>
+<text x="20" y="30" font-size="17" fill="#1f2328" font-weight="600">Only the body layer is one per robot: below it, each robot sits by its kind and its route</text>
+<g id="layer-body">
+<rect x="20" y="46" width="840" height="104" rx="8" fill="#fff8c5" stroke="#9a6700" stroke-width="2"/>
+<text x="36" y="70" font-size="15" fill="#1f2328" font-weight="600">Body: data, one per robot</text>
+<text x="36" y="92" font-size="14" fill="#1f2328">Manifest, datasheet, verbs offered, limits, safety authority, rest pose, cannot</text>
+<text x="36" y="110" font-size="13" fill="#59636e">Of the four, the one layer the LLM reads: what this body is, what it can do and what it cannot. Described bodies stop here, as</text>
+<text x="36" y="128" font-size="13" fill="#59636e">one YAML of their maker&#x27;s figures that nothing drives.</text>
+</g>
+<g id="layer-family">
+<rect x="20" y="184" width="840" height="194" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="36" y="208" font-size="15" fill="#1f2328" font-weight="600">Behaviour family: what bodies of a kind do alike</text>
+<g id="family-arm">
+<rect x="36" y="218" width="193" height="144" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="52" y="240" font-size="14" fill="#1f2328" font-weight="600">Servo arm</text>
+<text x="52" y="258" font-size="13" fill="#59636e">rest pose, fold first,</text>
+<text x="52" y="276" font-size="13" fill="#59636e">hand-off, travel clip,</text>
+<text x="52" y="294" font-size="13" fill="#59636e">paced joint moves</text>
+<text x="52" y="318" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan></text>
+</g>
+<g id="family-biped">
+<rect x="241" y="218" width="193" height="144" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="257" y="240" font-size="14" fill="#1f2328" font-weight="600">Biped on a runtime</text>
+<text x="257" y="258" font-size="13" fill="#59636e">a twist re-sent while it</text>
+<text x="257" y="276" font-size="13" fill="#59636e">walks, skills, a posture,</text>
+<text x="257" y="294" font-size="13" fill="#59636e">a deadman</text>
+<text x="257" y="318" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="microduck" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">microduck</tspan><tspan>,</tspan></text>
+<text x="257" y="336" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="open_duck" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">open_duck</tspan><tspan>, </tspan><tspan data-adapter="huebot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">huebot</tspan></text>
+</g>
+<g id="family-wheeled">
+<rect x="446" y="218" width="193" height="144" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="462" y="240" font-size="14" fill="#1f2328" font-weight="600">Wheeled base</text>
+<text x="462" y="258" font-size="13" fill="#59636e">a twist, a stop that</text>
+<text x="462" y="276" font-size="13" fill="#59636e">zeroes it, places where</text>
+<text x="462" y="294" font-size="13" fill="#59636e">odometry allows</text>
+<text x="462" y="318" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="rosbridge" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosbridge</tspan><tspan>, </tspan><tspan data-adapter="xlerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">xlerobot</tspan><tspan>,</tspan></text>
+<text x="462" y="336" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="alohamini" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">alohamini</tspan><tspan>, </tspan><tspan data-adapter="moss" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">moss</tspan></text>
+</g>
+<g id="family-humanoid">
+<rect x="651" y="218" width="193" height="144" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="667" y="240" font-size="14" fill="#1f2328" font-weight="600">Humanoid, own loop</text>
+<text x="667" y="258" font-size="13" fill="#59636e">a loop quackd ships,</text>
+<text x="667" y="276" font-size="13" fill="#59636e">safe-pose slew,</text>
+<text x="667" y="294" font-size="13" fill="#59636e">keyframes, clamps</text>
+<text x="667" y="318" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="toddlerbot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">toddlerbot</tspan></text>
+</g>
+</g>
+<g id="layer-binding">
+<rect x="20" y="412" width="840" height="230" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="36" y="436" font-size="15" fill="#1f2328" font-weight="600">Binding: how an intent reaches the robot, by one of three routes</text>
+<g id="route-sdk">
+<rect x="36" y="446" width="261.333" height="180" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="52" y="468" font-size="14" fill="#1f2328" font-weight="600">Import the SDK</text>
+<text x="52" y="486" font-size="13" fill="#59636e">upstream ships a package with a</text>
+<text x="52" y="504" font-size="13" fill="#59636e">client</text>
+<text x="52" y="528" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan><tspan>, </tspan><tspan data-adapter="rosbridge" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosbridge</tspan><tspan> (roslibpy)</tspan></text>
+</g>
+<g id="route-wire">
+<rect x="309.333" y="446" width="261.333" height="180" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="325.333" y="468" font-size="14" fill="#1f2328" font-weight="600">Speak its wire</text>
+<text x="325.333" y="486" font-size="13" fill="#59636e">upstream ships a host process; the</text>
+<text x="325.333" y="504" font-size="13" fill="#59636e">framing is ours</text>
+<text x="325.333" y="528" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="microduck" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">microduck</tspan><tspan> (robotd JSON-RPC)</tspan><tspan>,</tspan></text>
+<text x="325.333" y="546" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="xlerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">xlerobot</tspan><tspan> (ZeroMQ hosts)</tspan><tspan>,</tspan></text>
+<text x="325.333" y="564" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="alohamini" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">alohamini</tspan><tspan> (ZeroMQ hosts)</tspan><tspan>,</tspan></text>
+<text x="325.333" y="582" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="huebot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">huebot</tspan><tspan> (robotd JSON-RPC)</tspan><tspan>,</tspan></text>
+<text x="325.333" y="600" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="moss" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">moss</tspan><tspan> (MOSS cockpit)</tspan></text>
+</g>
+<g id="route-bridge">
+<rect x="582.667" y="446" width="261.333" height="180" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="598.667" y="468" font-size="14" fill="#1f2328" font-weight="600">A bridge quackd ships</text>
+<text x="598.667" y="486" font-size="13" fill="#59636e">quackd runs a daemon of its own on</text>
+<text x="598.667" y="504" font-size="13" fill="#59636e">the robot</text>
+<text x="598.667" y="528" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="open_duck" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">open_duck</tspan><tspan>, </tspan><tspan data-adapter="alohamini" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">alohamini</tspan><tspan>,</tspan></text>
+<text x="598.667" y="546" font-size="13" fill="#1f2328" xml:space="preserve"><tspan data-adapter="toddlerbot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">toddlerbot</tspan><tspan>, </tspan><tspan data-adapter="moss" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">moss</tspan></text>
+</g>
+</g>
+<g id="layer-transport">
+<rect x="20" y="676" width="840" height="42" rx="8" fill="#f6f8fa" stroke="#d0d7de" stroke-dasharray="4 3"/>
+<text x="36" y="701" font-size="13" fill="#1f2328">Transport: USB serial, Unix socket, TCP, HTTP, WebSocket. Bytes only: it knows nothing about the body.</text>
+</g>
+<g id="arrows">
+<path d="M264 152V182" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+<path d="M616 182V152" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+<text x="274" y="171" font-size="13" fill="#59636e">an intent goes down</text>
+<text x="626" y="171" font-size="13" fill="#59636e">state and frames come up</text>
+<path d="M264 380V410" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+<path d="M616 410V380" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+<path d="M264 644V674" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+<path d="M616 674V644" fill="none" stroke="#59636e" stroke-width="1.25" marker-end="url(#head)"/>
+</g>
+</svg>
