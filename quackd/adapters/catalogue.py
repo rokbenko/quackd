@@ -114,6 +114,11 @@ class AdapterInfo:
     kind another family drives: `("wheeled", "arm")` for a cart with two arms."""
     route: tuple[str, ...] = ()
     """How its real backends reach the robot, among `ROUTES`; two where a body takes two."""
+    robot_types: tuple[str, ...] = ()
+    """The kinds of robot one adapter drives through one SDK, which `quackd robot add
+    --robot-type` chooses among, the default first: LeRobot's robot types, on the arm. Only the
+    ones it builds, so a type it describes and does not drive is never registered. Empty on every
+    adapter whose body is one kind (ADR-0075)."""
 
     def __post_init__(self) -> None:
         if not self.tiers:
@@ -236,13 +241,16 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         summary="an SO-101 class desktop arm driven by LeRobot",
         extra="quackd[lerobot]",
         sdk="lerobot",
+        # the Koch is described in the adapter and not here: nothing is registered as one
+        robot_types=("so101_follower", "so100_follower"),
         tiers={
             "mock": _rehearsed(),
             "real": Tier(
                 "verified",
                 owner="rok",
                 date="2026-09-15",
-                note="one SO-101, driven on 2026-09-15 and again on 2026-09-23; Python 3.12+",
+                note="one SO-101, driven on 2026-09-15 and again on 2026-09-23; an SO-100 runs "
+                "the same code and none has; Python 3.12+",
             ),
             "mujoco": _rehearsed(
                 "the real backend over a physics model of the SO-101, needs "

@@ -43,8 +43,10 @@ quackd robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehear
 
 `add` takes `--address`, `--map-address`, `--camera-url`, `--token`, `--host` and `--host-token`
 (the same six flags `run` takes), plus `--llm VENDOR[:LLM]` for the pilot that drives this
-robot, and `--note` for a line only people read. `--camera-url` repeats, for the one body that
-reads more than one camera. `edit` takes the same flags, and `--clear` empties a field.
+robot, `--robot-type` for which of LeRobot's arms it is (`so100_follower` for an SO-100, the SO-101
+being the default, [which arms](../adapters/lerobot/README.md#which-arms)), and `--note` for a line
+only people read. `--camera-url` repeats, for the one body that reads more than one camera. `edit`
+takes the same flags, and `--clear` empties a field.
 
 ```
 $ quackd robot add duck-a microduck:mock --note "the cream one"
@@ -75,6 +77,7 @@ body         lerobot-so101 (arm, mobility none) 8 verbs: observe, report_state, 
              move_joints, gripper, place, pick, manipulate
 address      -
 map address  -
+robot type   -
 camera       -
 rest pose    shoulder_pan 0.0
              shoulder_lift -90.0
@@ -102,10 +105,10 @@ record for a script, with each token reduced to whether there is one:
 ```
 $ quackd robot show arm --json
 {"name": "arm", "spec": "lerobot:mock", "adapter": "lerobot", "backend": "mock", "address": null,
-"map_address": null, "camera_url": null, "rest_pose": {"shoulder_pan": 0.0, "shoulder_lift": -90.0,
-"elbow_flex": 90.0, "wrist_flex": 0.0, "wrist_roll": 0.0, "gripper": 100.0}, "token_set": false,
-"host": null, "host_token_set": false, "llm": "fake", "note": null, "spec_problem": null,
-"added": "2026-09-25T10:13:26Z", "updated": "2026-09-25T10:13:29Z", "flocks": []}
+"map_address": null, "robot_type": null, "camera_url": null, "rest_pose": {"shoulder_pan": 0.0,
+"shoulder_lift": -90.0, "elbow_flex": 90.0, "wrist_flex": 0.0, "wrist_roll": 0.0, "gripper": 100.0},
+"token_set": false, "host": null, "host_token_set": false, "llm": "fake", "note": null,
+"spec_problem": null, "added": "2026-09-25T10:13:26Z", "updated": "2026-09-25T10:13:29Z", "flocks": []}
 ```
 
 That is one line of output, wrapped here to fit the page.

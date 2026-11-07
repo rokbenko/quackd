@@ -239,6 +239,7 @@ them. A module that declares none keeps its `STATUS` line.
 |---|---|
 | `TIERS` | one entry per backend, each a `quackd.adapters.catalogue.Tier` or a dict of its fields. `name` is `rehearsed` for a simulator or a mock, `bound` for code that reaches a robot it has never met, `verified` once it has. `owner` and `date` are who answers for a bound backend's first hardware run and the day named for it, or who ran a verified one and the first day it ran. `note` is what the tier rests on. Tiers for some backends and not others are read as none |
 | `FAMILY` | `arm`, `biped`, `wheeled` or `humanoid`: the kind of body, which is its manifest's `embodiment`. A base that carries arms adds `arm` as a second entry |
+| `ROBOT_TYPES` | the kinds of robot your one adapter builds through one SDK, the default first, which `quackd robot add --robot-type` chooses among, as LeRobot's robot types are on the arm. Your `describe` and `make` then take a `robot_type` keyword, passed only when a registered robot names one, and a robot that names one for an adapter without it is refused |
 | `ROUTE` | `sdk`, `wire` or `bridge`: how an intent reaches the robot, the three routes under [Backends](#backends-mock-first-then-whichever-route-the-robot-leaves-you) |
 
 ## The manifest decides what exists

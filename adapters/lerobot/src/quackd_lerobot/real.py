@@ -52,6 +52,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import importlib
 import logging
 import math
 import os
@@ -77,6 +78,7 @@ from quackd.transport.base import (
     TransportError,
 )
 from quackd_lerobot import upstream_api as up
+from quackd_lerobot.arms import ARMS
 from quackd_lerobot.policy.loop import CLIP_SUSTAIN_S as CLIP_SUSTAIN_S
 from quackd_lerobot.policy.loop import FAILED_SENDS as FAILED_SENDS
 from quackd_lerobot.policy.loop import REGISTER_PERIOD_S as REGISTER_PERIOD_S
@@ -1431,18 +1433,25 @@ class LeRobotReal:
         }
 
     def _build_robot(self) -> Any:
+        arm = ARMS.get(self.robot_type)
         try:
             import lerobot
             from lerobot.robots import make_robot_from_config
-            from lerobot.robots.so_follower import SO101FollowerConfig
+
+            # the type's config class, imported with the rest, so a LeRobot that lacks it is a
+            # LeRobot that is not installed, as it always was
+            built: Any = None
+            if arm is not None and arm.drivable:
+                module, _, name = arm.config.rpartition(".")
+                built = getattr(importlib.import_module(module), name)
         except ImportError as e:
             raise AdapterNotInstalled("lerobot", "quackd[lerobot]") from e
         self.lerobot_version = getattr(lerobot, "__version__", None)
         check_port(self.port, label=self.label)
-        if self.robot_type != up.ROBOT_TYPE_SO101.name:
-            raise TransportError(f"lerobot {self.label}: only {up.ROBOT_TYPE_SO101.name} is wired")
-        config = SO101FollowerConfig(**self._config_kwargs())
-        return make_robot_from_config(config)
+        if built is None:
+            wired = " and ".join(name for name, one in ARMS.items() if one.drivable)
+            raise TransportError(f"lerobot {self.label}: only {wired} are wired")
+        return make_robot_from_config(built(**self._config_kwargs()))
 
     def _build_camera(self, spec: CameraSpec) -> Any:
         """One webcam, built by quackd and not by the follower (`up.OPENCV_CAMERA`)."""
@@ -1471,6 +1480,10 @@ class LeRobotReal:
         self.connect_notes = []
         if self._robot is None:
             self._robot = await asyncio.to_thread(self._build_robot)
+        # before anything is opened: the bus object exists from the build, and an arm that is not
+        # the six joints every verb names is refused with nothing energised and nothing to undo
+        if (wrong := self._joints_not_ours()) is not None:
+            raise TransportError(wrong)
         with contextlib.suppress(Exception):
             # Asked for again on every connect, and not only at the build: a close at rest and
             # a refused connect both leave the flag asking for the release, and a transport
@@ -1502,6 +1515,24 @@ class LeRobotReal:
         if refusal is not None:
             await self._give_up(refusal)
 
+    def _joints_not_ours(self) -> str | None:
+        """Why the follower's bus is not the arm the verbs and the manifest name, or None.
+
+        Every verb moves `JOINTS` by name and the manifest publishes them, so a type whose bus
+        names others would be told to move joints it does not have, each write failing on its own
+        in a verb already under way. A follower with no bus is `_refusal`'s to say."""
+        motors = getattr(getattr(self._robot, "bus", None), "motors", None)
+        if motors is None:
+            return None
+        names = tuple(str(motor) for motor in motors)
+        if set(names) == set(JOINTS):
+            return None
+        return (
+            f"lerobot {self.label}: this {self.robot_type} has motors {', '.join(names)}, and "
+            f"quackd's verbs name {', '.join(JOINTS)}, so it will not drive it. Nothing was "
+            "energised"
+        )
+
     def _refusal(self) -> str | None:
         """Why quackd will not drive the arm LeRobot has just connected, or None. A refusal
         here is quackd's own decision about an arm that answered, and lets go of it
@@ -1520,7 +1551,7 @@ class LeRobotReal:
         if getattr(self._robot, "bus", None) is None:
             return (
                 f"lerobot {self.label}: this robot has no motors bus, so torque and "
-                "temperature cannot be read; quackd drives an SO-101 follower and nothing else"
+                f"temperature cannot be read; quackd drives a follower with one and nothing else"
             )
         return None
 
