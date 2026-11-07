@@ -9,6 +9,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **Five SO-101 examples reach forward instead of raising the shoulder into the desk.** E116, E117,
+  E180, E183 and E189 said to raise the shoulder lift alone to -39 degrees. From the arm's rest pose,
+  with the elbow and wrist still folded, that drives the jaws into the table: on a real arm the joint
+  stopped at -75 while the elbow and wrist, which nothing moved, were pushed open. They now say
+  `Fully extend the arm and reach forward.`, E183 with its report after it, and their cards say to
+  clear about 40 cm in front of the base. The cards of E200 and E219, which run two of these files,
+  say so too.
+
 ## [0.32.0] — 2026-11-07
 
 0.32.0 calls an LLM an LLM, everywhere quackd says anything, and calls a policy a policy. What quackd

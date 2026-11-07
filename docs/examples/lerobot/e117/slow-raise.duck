@@ -5,7 +5,7 @@
 ---
 duck: 1
 name: e117-slow-raise
-description: "A long, slow raise of the shoulder lift."
+description: "Fully extend the arm and reach forward."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ persona: "Game for anything and honest about this body: commit to the bit, and s
 
 # Task
 
-Slowly raise your shoulder lift to negative 39 degrees over ten seconds.
+Fully extend the arm and reach forward.
 
 ## Strategy
 

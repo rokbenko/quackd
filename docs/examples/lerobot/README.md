@@ -377,9 +377,9 @@ two steps `e193` spends on purpose, the range `e194` is refused whatever its not
 budgets the monkey of `e126` runs into, and the two calls `e215` is refused, which leave its
 stand-in nothing else to do. Eight are cut short by a person, as the experiment plans:
 the hand of `e081`, gone before the high five lands, a cable pulled in `e116` and Ctrl-C in `e117`,
-both partway through the raise they ask for, a confirm declined in `e121`, the supply cut in
+both partway through the reach they ask for, a confirm declined in `e121`, the supply cut in
 `e166`, a second press in `e180`, a press in `e182` while the LLM thinks, and a hand in `e183`
-against the raise. Three ask for a
+against the reach. Three ask for a
 guess the sheet expects the pilot to refuse, on principle, in `e085`. Two end on an answer the
 sheet expects to be wrong: `e131/my-left`, the harder of two runs it expects at least one wrong
 answer from, and `e073`, whose header leaves the pilot only the colour detector, which reads orange
@@ -458,7 +458,7 @@ because the switch is the one stop that works in every case. `e207` asks what a 
 old goal when a connect turns its torque back on, which nothing documents. `e167` and `e168` are
 refusals: a real arm with no rest pose, and a connect quackd refuses after LeRobot has switched the
 torque on. `e169`, `e170` and `e182` to `e189` are the gates and stops one at a time: a dry run, a
-range refused three times, Ctrl-C while the LLM thinks, a hand against a slow raise, a lower speed
+range refused three times, Ctrl-C while the LLM thinks, a hand against a reach, a lower speed
 limit, how warm a joint gets, the brake with no LLM in the way, the two budgets `e120` leaves out,
 who the record says answered, and a second quackd on the same port. `e190` is Stop on the page.
 
@@ -508,7 +508,7 @@ about the arm.
 
 `e208` to `e220` came on 3 November 2026, for what 0.30.1, 0.30.2 and 0.30.3 changed between a
 person and a moving arm, and none of them has run on an arm. Eleven of them run the bundled
-`lerobot-lookout` with `--llm fake`, or a command, so they cost no key, and `e219` uses the raise of
+`lerobot-lookout` with `--llm fake`, or a command, so they cost no key, and `e219` uses the reach of
 `e180`, whose run an LLM flies.
 
 `e208` to `e212` press Ctrl-C at the moments that used to go past the close: again and again through
