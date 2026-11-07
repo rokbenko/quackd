@@ -9,14 +9,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
-### Documentation
-
-- **Every SO-101 experiment has a folder now.** The 34 with no file of their own, E119 among them,
-  had no folder at all, because git keeps no empty one, so their numbers led nowhere. Each now holds
-  a short page pointing at its card on the run sheet, written by `scripts/example_log.py`, and the
-  example's log replaces that page once it has been run. The table links every example.
-
-## [0.32.0] — 2026-11-05
+## [0.32.0] — 2026-11-07
 
 0.32.0 calls an LLM an LLM, everywhere quackd says anything, and calls a policy a policy. What quackd
 prints, what it sends the pilot, its help, its names, its records and its pages said `model` where
@@ -132,6 +125,10 @@ log` on a chat session says what its goals' pilot spent. None of this has met an
   VLA run's log says `Pilot` and `Turns`, and is tried on `lerobot:mujoco` against a policy server. It
   stops with a sentence, not a `KeyError`, on a chat session's record, since it writes the log of a run,
   so E145, E185, E186 and E203 wait until it can write one of those. No log already written changes.
+- **Every SO-101 experiment has a folder now.** The 34 with no file of their own, E119 among them,
+  had no folder at all, because git keeps no empty one, so their numbers led nowhere. Each now holds
+  a short page pointing at its card on the run sheet, written by `scripts/example_log.py`, and the
+  example's log replaces that page once it has been run. The table links every example.
 - **`uv.lock` takes `openai` 3.42.1 and `laya` 0.4.21, from Dependabot's #66.** A refresh of the lock
   changes no requirement a user installs against. CI installs neither package, so its checks say the lock
   resolves and not that either one works.
