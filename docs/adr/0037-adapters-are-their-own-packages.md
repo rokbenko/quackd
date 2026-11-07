@@ -2,6 +2,15 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-16 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is an adapter that declares a manifest) and [ADR-0022](0022-per-adapter-upstream-refs.md) (each adapter owns its upstream refs) · Amends [ADR-0034](0034-registered-robots-and-pilot-flocks.md), which assumed there was always a body to fall back to · Documented in the README's install section and [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
+**Amended 2026-11-05 by [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)
+and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md):** an adapter may
+depend on a sibling adapter, in the same version window, when it is a body over that sibling's
+family: `quackd-huebot` is a thin distribution over `quackd-microduck` from 0.33.0, keeping its
+name, its extra and its entry point. And the entry point is no longer the whole of what a
+backend that reaches a real robot needs to enter this repository: it also names an owner and a
+date for its first hardware run, or enters as a described body. The counts below, seven bodies
+and eight distributions, were true on the day; there are nine and ten.
+
 **Amended 2026-09-29 by [ADR-0049](0049-a-version-says-what-changed.md):** the eight still carry
 one version and are still released together, and a release is now a patch, a minor or a major by
 what it changes. `scripts/set_version.py` starts each window this ADR describes at the release
