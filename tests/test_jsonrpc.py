@@ -216,6 +216,8 @@ class FakeRobotd:
         self.extra_state: dict[str, Any] = {}
         """Members added to every state frame, to make one as long as a test needs."""
         self.frames_sent = 0
+        self.battery: Any = {"volts": 7.4, "percent": 66.0}
+        """What `robot.health` answers in `battery`."""
         self.twist = [0.0, 0.0, 0.0]
         """The twist robotd was last asked for, `[vx, vy, vyaw]`, which every state frame reports
         as `move.requested` (`up.MOVE_ECHO`). A stop zeroes it; the deadman does not."""
@@ -437,7 +439,7 @@ class FakeRobotd:
                 if self.api_version is not NO_VERSION:
                     result["api_version"] = self.api_version
             elif method == "robot.health":
-                result = {"healthy": self.healthy, "battery": {"volts": 7.4, "percent": 66.0}}
+                result = {"healthy": self.healthy, "battery": self.battery}
                 if not self.healthy:
                     result["reason"] = "control loop at 43.9 Hz"
             elif method in ("robot.stop", "robot.enable"):
@@ -1254,10 +1256,18 @@ async def _quick(seconds: float) -> None:
     await asyncio.sleep(min(seconds, 0.3))
 
 
-async def _polled(seconds: float) -> None:
-    """`stand_up`'s reads, every quarter second for up to ten, cut short. The fake pushes a frame
-    every tenth of a second, so a new state reaches it within a few reads."""
-    await asyncio.sleep(min(seconds, 0.03))
+def _polled(t: JsonRpcUnixTransport) -> None:
+    """`stand_up`'s reads, every quarter second for up to ten, cut short, on a clock that keeps
+    the time they say they waited, which the verb reads. The fake pushes a frame every tenth of a
+    second, so a new state reaches it within a few reads."""
+    waited = [0.0]
+
+    async def sleep(seconds: float) -> None:
+        waited[0] += seconds
+        await asyncio.sleep(min(seconds, 0.03))
+
+    t.sleep = sleep  # type: ignore[method-assign]
+    t.now = lambda: waited[0]  # type: ignore[method-assign]
 
 
 class _Clock:
@@ -1311,7 +1321,7 @@ async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _polled  # type: ignore[method-assign]
+        _polled(t)
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         assert result.ok is ok and summary in result.summary, result.summary
         assert ("robot.enable" in [r["method"] for r in fake.requests]) is enabled
@@ -1351,7 +1361,7 @@ async def test_stand_up_says_robotd_still_has_the_duck_after_a_fall(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _polled  # type: ignore[method-assign]
+        _polled(t)
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         said = result.summary
         assert not result.ok and "may need a hand" not in said, said
@@ -1393,7 +1403,7 @@ async def test_stand_up_judges_a_duck_robotd_hands_back_before_it_reads_again(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _polled  # type: ignore[method-assign]
+        _polled(t)
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         said = result.summary
         assert result.ok is ok and summary in said and "still answering" not in said, said
@@ -1419,8 +1429,10 @@ async def test_stand_up_waits_for_a_duck_the_policy_gets_up_late(
         await t.connect()
         clock = _Clock(fake, 6.0, fallen=False, policy="stand")
         t.sleep = clock.sleep  # type: ignore[method-assign]
+        t.now = lambda: clock.now  # type: ignore[method-assign]
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
-        assert result.ok and result.summary == "upright", result.summary
+        assert result.ok and result.summary == f"upright after {clock.now:.1f} s", result.summary
+        assert result.data["waited_s"] == round(clock.now, 2), result.data
         assert 6.0 <= clock.now < STAND_UP_WAIT_S, clock.now
         methods = [r["method"] for r in fake.requests]
         assert methods.count("robot.enable") == 1
@@ -1444,6 +1456,7 @@ async def test_stand_up_stops_waiting_for_a_duck_somebody_picks_up(
         await t.connect()
         clock = _Clock(fake, 1.0, picked_up=True)
         t.sleep = clock.sleep  # type: ignore[method-assign]
+        t.now = lambda: clock.now  # type: ignore[method-assign]
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         assert not result.ok and result.summary.startswith("asked the policy to run, but"), (
             result.summary
@@ -1495,6 +1508,138 @@ async def test_stand_up_asks_nothing_of_a_duck_whose_robot_cannot_say_it_is_held
         await t.close()
     finally:
         await fake.stop()
+
+
+@pytest.mark.parametrize(
+    "value", [1, "true", {"held": True}, [True]], ids=["1", "string", "object", "list"]
+)
+@pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
+async def test_a_safety_flag_that_is_no_boolean_moves_nothing(
+    registry: VerbRegistry, key: str, value: object
+) -> None:
+    """`picked_up: 1` beside `policy: walk` read as held, and `picked_up: "false"` read as held too,
+    being a word that is not empty. `fallen: "false"` read as a duck on the floor. A flag in a
+    shape quackd cannot read is a robot it cannot vouch for: posture reads `unknown`, the reason
+    quotes the value, and neither a walk nor `stand_up` goes out."""
+    fake = FakeRobotd()
+    setattr(fake, key, value)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown", state
+        assert f"safety.{key} is {json.dumps(value)}" in state.extras["posture_reason"]
+        walk = _Verb(t)
+        assert not (await walk.send(Intent.move(0.1, 0.0, 0.0))).accepted
+        await walk.end()
+        ex = Executor(registry, t, contract=MOVERS.frontmatter)
+        result = await ex.run_verb("stand_up", {})
+        assert not result.ok, result.summary
+        # the head too: a flag nobody can read may be the one that says somebody holds the duck
+        result = await ex.run_verb("gaze", {"direction": "left"})
+        assert not result.ok, result.summary
+        spoken = {r["method"] for r in fake.requests} | {n["method"] for n in fake.notifications}
+        assert not spoken & {"robot.move", "robot.enable", "robot.look", "robot.head"}, spoken
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_microduck_sends_the_skills_robotd_keeps_back_from_its_list() -> None:
+    """robotd answers `robot.subscribe` with the skills a policy set gives it, and keeps
+    `ground_pick` and `sit_toggle` back from that list, so a Microduck sends them unlisted and
+    offers `grab`, `sit` and `stand` whatever the list says. Only a body that gates its skills on
+    the list (`Body.skill_verbs`), Huebot, refuses a skill it was not told of."""
+    fake = FakeRobotd()
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        manifest = await MicroduckAdapter(t).connect()
+        assert {"sit", "stand", "kick", "grab"} <= set(manifest.verb_names())
+        for skill in ("ground_pick", "sit_toggle"):
+            assert skill not in STOCK_SKILLS
+            assert (await t.send_intent(Intent.do(skill))).accepted, skill
+        sent = [r["params"]["skill"] for r in fake.requests if r["method"] == "robot.do"]
+        assert sent == ["ground_pick", "sit_toggle"]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_null_fall_flag_is_nothing_reporting_falls(registry: VerbRegistry) -> None:
+    """A null `fallen` used to read as the fall detector saying all clear, since a frame with the
+    key in it counted as a frame that said. It reads as the key being absent now."""
+    fake = FakeRobotd(fallen=None)  # type: ignore[arg-type]
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown" and state.extras["fall_detection"] is False
+        assert "safety.fallen is null" in state.extras["posture_reason"]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        assert not result.ok and "nothing is reporting" in result.summary
+        assert "robot.enable" not in [r["method"] for r in fake.requests]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_reason_quotes_no_more_than_a_short_piece_of_a_label() -> None:
+    """`posture_reason` goes into every refusal that quotes it and into the log, and a peer decides
+    how long a label is: a `policy` of a megabyte was quoted whole."""
+    fake = FakeRobotd(policy="p" * 5000)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        reason = (await t.get_state()).extras["posture_reason"]
+        assert len(reason) < 200 and reason.count("p") < 100, reason
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    ("battery", "percent"),
+    [(80, None), ("80%", None), ({"percent": "80%"}, None), ({"percent": 55}, 55.0)],
+    ids=["number", "string", "string-percent", "object"],
+)
+async def test_a_battery_that_is_not_an_object_reads_as_no_battery(
+    battery: object, percent: float | None
+) -> None:
+    """A `battery` of `80` raised out of every state read, and the executor reads the robot before
+    every verb, so no verb could run on a robotd that answered so."""
+    fake = FakeRobotd()
+    fake.battery = battery
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        assert (await t.get_state()).battery_percent == percent
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_camera_that_streams_is_named_at_connect_and_offers_no_verb_that_needs_a_picture(
+    robotd: FakeRobotd,
+) -> None:
+    """An MJPEG camera answers each request with a body that never ends, and a whole-body read
+    read it for as long as it ran, in a thread nothing could stop: the connect waited out its time
+    and said only that no frame came. It says what the camera is now, and the close lets go."""
+    from tests.test_huebot import _camera
+
+    with _camera("mjpeg") as (url, dropped):
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url=url)
+        adapter = MicroduckAdapter(t)
+        manifest = await adapter.connect()
+        assert t.camera_working is False
+        assert "multipart/x-mixed-replace stream" in (adapter.camera_error or "")
+        assert not {"observe", "go_to", "search_scan", "approach_and"} & set(manifest.verb_names())
+        await adapter.disconnect()
+        assert await asyncio.to_thread(dropped.wait, 5.0), "the stream is still being read"
 
 
 class _Verb:

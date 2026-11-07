@@ -149,7 +149,9 @@ YAML of its maker's figures, which no code drives
 **A behaviour family** is what bodies of a kind do alike. The catalogue's `family` field names
 one for every row, its own kind first and then a second where a body carries something another
 family drives, as a cart carries arms. Code moves into a family once two bodies need it, and not
-before, so a family with one body keeps its code in that body's package.
+before, so a family with one body keeps its code in that body's package. The first to move is the
+biped on `robotd`'s protocol: the Microduck and Huebot share one set of verbs and one transport in
+`quackd_microduck`, and each is a `Body` record of what is different.
 
 | Family | What its bodies do alike | Bodies |
 |---|---|---|

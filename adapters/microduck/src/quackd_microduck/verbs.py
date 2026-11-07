@@ -1,15 +1,20 @@
-"""The Microduck's own verbs: one per behaviour the robot actually ships.
+"""The family's verbs: one per behaviour a robot of it ships, and a body takes the ones it has.
 
 Each maps to an intent the transport understands (and, on hardware, to a VERIFIED upstream
 method; see `quackd_microduck/upstream_api.py`). These are the 0.3 built-ins that are not core
 verbs, moved here unchanged, plus the Microduck's `say`: upstream has seven duck sounds and
 no TTS, so text is mapped to the tone that fits the mood.
+
+Each function takes the `Body` it speaks for first, and `verbs_for` and `conditions_for` bind it,
+so a line a pilot acts on names the robot it is about, and two robots of the family cannot drift
+apart in what a verb does. The names below the functions are the Microduck's.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Literal
+from functools import cache, partial
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +24,7 @@ from quackd.verbs.explore import ExploreSpec, explore_verb, find_verb
 from quackd.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd.verbs.watch import HeadSpec, watch_verb
 from quackd_microduck import upstream_api as up
+from quackd_microduck.body import KICK_SKILLS, MICRODUCK, SIT_TOGGLE, Body
 
 MICRODUCK_HEAD = HeadSpec(
     # `gaze`'s own `left` and `right`, half the 90 its `bearing_deg` may ask for, and inside both
@@ -107,7 +113,7 @@ def _why_unknown(state: DuckState) -> str:
     return f" ({why})" if why else ""
 
 
-def _held(state: DuckState) -> str | None:
+def _held(body: Body, state: DuckState) -> str | None:
     """Why nothing may move a duck that is in somebody's hands, or None when it is not.
 
     Read before `fallen` everywhere. A duck held at an angle reads as fallen, and "fallen"
@@ -116,8 +122,17 @@ def _held(state: DuckState) -> str | None:
     backend leaves it out, which reads as nobody holding the duck, as it always has.
     """
     if state.extras.get("picked_up") is True:
-        return "somebody is holding the duck, and nothing that moves it is sent until it is down"
+        noun = body.words.noun
+        return f"somebody is holding {noun}, and nothing that moves it is sent until it is down"
     return None
+
+
+def _unread(state: DuckState) -> str | None:
+    """Why the robot's own safety flags cannot be read just now, or None when they can. Only
+    `jsonrpc` says, in `safety_unread`: a flag its peer sent that is neither a JSON boolean nor
+    null, which also makes posture `unknown`, so every verb that walks refuses on it."""
+    unread = state.extras.get("safety_unread")
+    return str(unread) if unread else None
 
 
 def _walk_held(state: DuckState) -> str | None:
@@ -133,8 +148,8 @@ def _walk_held(state: DuckState) -> str | None:
     return f"a verb that was walking is still running, and quackd holds its walk back ({hold})"
 
 
-def _robotds_fall(state: DuckState) -> str | None:
-    """What robotd's own answer to a fall is doing with the duck, or None when it has none.
+def _answering_a_fall(body: Body, state: DuckState) -> str | None:
+    """What the robot's own answer to a fall is doing with it, or None when it has none.
 
     A robotd whose `limp_fall` is on, as it is by default again from daemon-v0.16.2, takes a
     falling duck off its policy, lets it land limp, ramps it to its standing pose and only then
@@ -144,18 +159,23 @@ def _robotds_fall(state: DuckState) -> str | None:
     the label covers it too. The simulators and the mock never report either label."""
     if state.policy not in up.LIMP_FALL_LABELS:
         return None
-    return f"policy {state.policy!r}: {up.NOT_STANDING_LABELS[state.policy]}"
+    return f"policy {state.policy!r}: {body.not_standing[state.policy]}"
 
 
-def _not_fallen(state: DuckState) -> str | None:
+def _not_fallen(body: Body, state: DuckState) -> str | None:
+    noun = body.words.noun
     if _blind(state):
-        return "nothing is reporting falls, so quackd cannot tell whether the duck is upright"
-    if (held := _held(state)) is not None:
+        return f"nothing is reporting falls, so quackd cannot tell whether {noun} is upright"
+    if (held := _held(body, state)) is not None:
         return held
-    return "the duck has fallen; run stand_up first" if state.fallen else None
+    if (unread := _unread(state)) is not None:
+        # The flag nobody can read may be the one saying somebody holds it, which `_held` reads
+        # only from a boolean. `gaze` and `watch` stand on this, and turned the head on one.
+        return f"{unread}, so quackd cannot tell whether somebody is holding {noun}"
+    return f"{noun} has fallen; run stand_up first" if state.fallen else None
 
 
-def _standing(state: DuckState) -> str | None:
+def _standing(body: Body, state: DuckState) -> str | None:
     """Standing, and known to be: `unknown` refuses, where it used to pass.
 
     The simulators and the mock always know their posture. On a real robot `unknown` is
@@ -163,14 +183,15 @@ def _standing(state: DuckState) -> str | None:
     reporting a policy label quackd has never read, and the transport says which in
     `posture_reason`, so the refusal can too.
     """
+    noun = body.words.noun
     if _blind(state):
-        return "nothing is reporting posture, so quackd cannot tell whether the duck is standing"
-    if (held := _held(state)) is not None:
+        return f"nothing is reporting posture, so quackd cannot tell whether {noun} is standing"
+    if (held := _held(body, state)) is not None:
         return held
     if state.fallen or state.posture == "fallen":
-        return "the duck has fallen; run stand_up first"
+        return f"{noun} has fallen; run stand_up first"
     if state.posture == "sitting":
-        return "the duck is sitting; run stand first"
+        return f"{noun} is sitting; run stand first"
     if state.posture == "unknown" and (walk := _walk_held(state)) is not None:
         return f"{walk}; wait for it to end"
     if state.posture == "unknown":
@@ -178,14 +199,21 @@ def _standing(state: DuckState) -> str | None:
     return None
 
 
+def conditions_for(body: Body) -> dict[str, Precondition]:
+    """The two preconditions a manifest of this family names, in that body's words."""
+    return {"not_fallen": partial(_not_fallen, body), "standing": partial(_standing, body)}
+
+
 def microduck_conditions() -> dict[str, Precondition]:
-    return {"not_fallen": _not_fallen, "standing": _standing}
+    return conditions_for(MICRODUCK)
 
 
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
 
 
-async def _sit_toggle(ctx: VerbContext, want: Literal["sitting", "standing"]) -> VerbResult:
+async def _sit_toggle(
+    body: Body, ctx: VerbContext, want: Literal["sitting", "standing"]
+) -> VerbResult:
     """One upstream toggle, so posture is the only thing telling `sit` and `stand` apart.
 
     Upstream has `sit_toggle` and nothing that means "sit" or "stand" on its own: which way the
@@ -199,11 +227,9 @@ async def _sit_toggle(ctx: VerbContext, want: Literal["sitting", "standing"]) ->
     if state.posture == "unknown":
         return VerbResult.fail(
             f"cannot {('sit', 'stand')[want == 'standing']}: posture is unknown"
-            f"{_why_unknown(state)}, and upstream has one sit_toggle rather than a sit and a "
-            "stand, so quackd would be guessing which way it goes. Use the gamepad, or a "
-            "backend that reports posture."
+            f"{_why_unknown(state)}, and {body.words.sit_unknown}"
         )
-    if (fail := await send_or_fail(ctx, Intent.do("sit_toggle"))) is not None:
+    if (fail := await send_or_fail(ctx, Intent.do(SIT_TOGGLE))) is not None:
         return fail
     if (why := await _waited_out(ctx, 2.0)) is not None:
         stopped = f"the robot plays out the toggle it was sent, on its way to {want}"
@@ -216,22 +242,24 @@ async def _sit_toggle(ctx: VerbContext, want: Literal["sitting", "standing"]) ->
     )
 
 
-async def sit(ctx: VerbContext, _: NoParams) -> VerbResult:
-    return await _sit_toggle(ctx, "sitting")
+async def _sit(body: Body, ctx: VerbContext, _: NoParams) -> VerbResult:
+    return await _sit_toggle(body, ctx, "sitting")
 
 
-async def stand(ctx: VerbContext, _: NoParams) -> VerbResult:
-    return await _sit_toggle(ctx, "standing")
+async def _stand(body: Body, ctx: VerbContext, _: NoParams) -> VerbResult:
+    return await _sit_toggle(body, ctx, "standing")
 
 
-async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
-    skill: Literal["kick_left", "kick_right"] = "kick_left" if p.leg == "left" else "kick_right"
-    ack = await ctx.transport.send_intent(Intent.do(skill))
+async def _kick(body: Body, ctx: VerbContext, p: KickParams) -> VerbResult:
+    ack = await ctx.transport.send_intent(Intent.do(KICK_SKILLS[p.leg]))
     if not ack.accepted:
         return VerbResult.fail(f"kick missed or refused: {ack.reason or 'no reason given'}")
     if (why := await _waited_out(ctx, 1.5)) is not None:
         stopped = f"the robot plays out the kick it was sent with its {p.leg} leg"
-        return await _ended_by(ctx, "kick", why, stopped, ball_moved_m=None)
+        unread: dict[str, Any] = {"ball_moved_m": None} if body.reads_the_ball else {}
+        return await _ended_by(ctx, "kick", why, stopped, **unread)
+    if not body.reads_the_ball:
+        return VerbResult.success(f"kicked with {p.leg} leg")
     state = await ctx.transport.get_state()
     moved = state.extras.get("last_kick_ball_moved_m")
     if moved is not None:
@@ -265,7 +293,19 @@ own 15 s timeout, and well past the about 2.1 s robotd's own answer to a fall ta
 quackd, which is why the verb reads the duck as it goes rather than once at a guessed moment."""
 
 
-async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
+def _upright(body: Body, state: DuckState) -> bool:
+    """Whether a reading says the robot stands, and can be believed: something reports falls,
+    nobody holds it, it has not fallen, and posture reads `standing`, which on `jsonrpc` is a
+    fresh frame whose label is `walk` or `stand` and whose walk nothing holds back."""
+    return (
+        not _blind(state)
+        and _held(body, state) is None
+        and not state.fallen
+        and state.posture == "standing"
+    )
+
+
+async def _stand_up(body: Body, ctx: VerbContext, _: NoParams) -> VerbResult:
     """Ask the robot's policy to drive again, for a duck that is down and that nobody holds.
 
     `robot.enable` is policy execution rather than a flag, and upstream says it can bring a
@@ -284,78 +324,68 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     reason, gets the request, and afterwards only a duck that reads standing is called upright.
 
     After the request the duck is read every `STAND_UP_POLL_S`, and nothing more is sent. It is
-    called upright the moment it reads standing, and the wait ends at once on a duck somebody
-    picks up or nothing reports on. It used to be read once, three seconds after the request,
-    and a duck still down then was told it may need a hand even while the policy was getting it
-    up. Only once `STAND_UP_WAIT_S` has passed is a duck that never stood judged: one that
-    robotd's own answer to a fall still has (`_robotds_fall`) is told so, and to run the verb
-    again in a moment, since robotd hands the duck back to its policy once it has posed it, and
-    one still down is told it may need a hand.
+    called upright the moment a reading says it stands (`_upright`), and the wait ends at once on
+    a duck somebody picks up or nothing reports on. It used to be read once, three seconds after
+    the request, and a duck still down then was told it may need a hand even while the policy was
+    getting it up. The wait is timed by the transport's clock, since a slow link stretches a read
+    and a count of polls would then run past what the verb said it waited. Only once
+    `STAND_UP_WAIT_S` has passed is a duck that never stood judged: one that the robot's own answer
+    to a fall still has (`_answering_a_fall`) is told so, and to run the verb again in a moment,
+    since robotd hands the duck back to its policy once it has posed it, and one still down is told
+    it may need a hand. A safety flag that cannot be read ends it as well, before the request and
+    after, since nothing then says whether legs that may be in somebody's hands are being driven.
     """
+    words = body.words
     state = await ctx.transport.get_state()
-    if (held := _held(state)) is not None:
+    if (held := _held(body, state)) is not None:
         return VerbResult.fail(f"cannot stand_up: {held}")
     if _blind(state):
         return VerbResult.fail(
-            "cannot stand_up: nothing is reporting whether the duck is down or in somebody's "
-            "hands, so quackd will not ask the policy to drive it"
+            f"cannot stand_up: nothing is reporting whether {words.noun} is down or in somebody's "
+            f"hands, so quackd will not {words.ask}"
         )
+    if (unread := _unread(state)) is not None:
+        return VerbResult.fail(f"cannot stand_up: {unread}, so quackd will not {words.ask}")
     if state.posture == "standing":
         return VerbResult.success("already upright")
     if state.posture == "sitting":
-        return VerbResult.fail("the duck is upright and seated: run stand")
+        return VerbResult.fail(f"{words.noun} is upright and seated: run stand")
     if (walk := _walk_held(state)) is not None:
         return VerbResult.fail(f"cannot stand_up: {walk}; wait for it to end")
     if state.extras.get("pickup_detection") is False:
         # `jsonrpc` alone says this, from a fresh frame that has no `safety.picked_up`
-        return VerbResult.fail(
-            "cannot stand_up: this robot does not report whether somebody is holding the duck "
-            "(no safety.picked_up), so quackd will not ask the policy to drive legs that may be "
-            "in somebody's hands. Stand it up by hand"
-        )
+        return VerbResult.fail(words.no_pickup)
     if (fail := await send_or_fail(ctx, Intent.enable(True))) is not None:
         return fail
-    waited = 0.0
+    asked = ctx.transport.now()
     while True:
         await ctx.transport.sleep(STAND_UP_POLL_S)
-        waited += STAND_UP_POLL_S
         if ctx.interrupted() == STOPPED:
             what = "this stopped waiting for it to get up"
             return await _ended_by(ctx, "stand_up", STOPPED, what)
         state = await ctx.transport.get_state()
+        waited = ctx.transport.now() - asked
         if _blind(state):
             # Reporting "upright" here is how a face-down duck used to pass: nothing was
             # reporting falls, so `fallen` was False, so this said it worked.
-            return VerbResult.fail(
-                "asked the policy to run, but nothing reports whether it is upright"
-            )
-        if (held := _held(state)) is not None:
-            return VerbResult.fail(f"asked the policy to run, but {held}")
-        if state.posture == "standing":
-            return VerbResult.success("upright")
+            return VerbResult.fail(f"{words.asked}, but nothing reports whether it is upright")
+        if (held := _held(body, state)) is not None:
+            return VerbResult.fail(f"{words.asked}, but {held}")
+        if (unread := _unread(state)) is not None:
+            return VerbResult.fail(f"{words.asked}, but {unread}")
+        if _upright(body, state):
+            return VerbResult.success(f"upright after {waited:.1f} s", waited_s=round(waited, 2))
         if waited >= STAND_UP_WAIT_S:
             break
-    if (fall := _robotds_fall(state)) is not None:
+    if (fall := _answering_a_fall(body, state)) is not None:
         # Read before `fallen`, which a duck robotd is posing on the floor reads too. robotd has
         # not handed it back to the policy yet, so it is too soon to say whether it gets up.
-        return VerbResult.fail(
-            f"asked the policy to run, but robotd is still answering the fall itself ({fall}). "
-            "It hands the duck back to the policy once it has posed it, so run stand_up again in "
-            "a moment to see whether the duck is up"
-        )
+        return VerbResult.fail(words.fall.format(fall=fall, waited=f"{waited:.0f}"))
     if state.fallen:
-        # It used to say an onboard recovery had not finished, which sent the pilot to wait for
-        # one. robotd runs none on daemon-v0.16.1 by default, and from daemon-v0.16.2 a duck it
-        # caught falling is back with the policy once it has posed it (`_robotds_fall`), which
-        # upstream says gets it up and nobody has seen do so under quackd, so one still down may
-        # need a hand.
-        return VerbResult.fail(
-            f"asked the policy to run, and the duck is still down {STAND_UP_WAIT_S:g} s later: "
-            "robotd does not promise to get a fallen duck up, so it may need a hand"
-        )
+        return VerbResult.fail(words.down.format(waited=f"{waited:.0f}"))
     # Never standing by now, or the wait above would have said so.
     return VerbResult.fail(
-        f"asked the policy to run, and posture is {state.posture}{_why_unknown(state)}"
+        f"{words.asked}, and {waited:.0f} s later posture is {state.posture}{_why_unknown(state)}"
     )
 
 
@@ -410,19 +440,26 @@ async def gaze(ctx: VerbContext, p: GazeParams) -> VerbResult:
     )
 
 
-MICRODUCK_VERBS: dict[str, Verb] = {
-    v.name: v
-    for v in (
-        Verb("sit", "Sit down.", sit, NoParams, timeout_s=10),
-        Verb("stand", "Stand up from sitting.", stand, NoParams, timeout_s=10),
+_WATCH = watch_verb(MICRODUCK_HEAD)
+_EXPLORE = explore_verb(MICRODUCK_EXPLORE)
+_FIND = find_verb(MICRODUCK_EXPLORE)
+
+
+@cache
+def verbs_for(body: Body) -> dict[str, Verb]:
+    """The family's verbs this body has, in the family's order, which is the order its manifest
+    declares them in, each speaking for it. One dict per body, shared: copy it to change it."""
+    words = body.words
+    family = (
+        Verb("sit", "Sit down.", partial(_sit, body), NoParams, timeout_s=10),
+        Verb("stand", "Stand up from sitting.", partial(_stand, body), NoParams, timeout_s=10),
         Verb(
             "kick",
-            "Kick forward with one leg. Only connects if the ball is < 0.3 m away and "
-            "roughly ahead.",
-            kick,
+            words.kick_text,
+            partial(_kick, body),
             KickParams,
             timeout_s=10,
-            done_condition="the kick animation finished; the result says whether the ball moved.",
+            done_condition=words.kick_done,
         ),
         Verb(
             "grab",
@@ -435,10 +472,8 @@ MICRODUCK_VERBS: dict[str, Verb] = {
         ),
         Verb(
             "stand_up",
-            "Ask the robot's policy to get a fallen duck up. It may not manage, and the result "
-            "says whether the duck is upright, or that the robot is still answering the fall "
-            "itself.",
-            stand_up,
+            words.stand_up_text,
+            partial(_stand_up, body),
             NoParams,
             timeout_s=15,
         ),
@@ -462,10 +497,18 @@ MICRODUCK_VERBS: dict[str, Verb] = {
         ),
         # Declared only on a duck with a camera (`microduck_manifest`), and offered only on a run
         # that can look through a decision LLM (`quackd.verbs.watch.withdraw_watch`).
-        watch_verb(MICRODUCK_HEAD),
+        _WATCH,
         # Declared only where the duck's reading keeps a map and knows the body's size, and find
         # only on a duck with a camera besides (`microduck_manifest`).
-        explore_verb(MICRODUCK_EXPLORE),
-        find_verb(MICRODUCK_EXPLORE),
+        _EXPLORE,
+        _FIND,
     )
-}
+    return {verb.name: verb for verb in family if verb.name in body.verbs}
+
+
+MICRODUCK_VERBS: dict[str, Verb] = verbs_for(MICRODUCK)
+
+sit = partial(_sit, MICRODUCK)
+stand = partial(_stand, MICRODUCK)
+kick = partial(_kick, MICRODUCK)
+stand_up = partial(_stand_up, MICRODUCK)

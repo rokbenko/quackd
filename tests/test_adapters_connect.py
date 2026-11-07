@@ -61,7 +61,7 @@ def test_a_default_address_is_the_one_its_transport_uses() -> None:
 
 
 def test_a_backend_with_no_default_is_one_its_transport_refuses_without_an_address() -> None:
-    from quackd_huebot.transports.jsonrpc_unix import NO_ADDRESS
+    from quackd_huebot.body import NO_ADDRESS
     from quackd_lerobot.real import check_port
 
     assert BLOCKS["huebot"]["jsonrpc"].default is None

@@ -123,6 +123,16 @@ jobs:
           set -euo pipefail
           uv pip install --python bare dist/quackd_lerobot-*.whl
           ./bare/bin/quackd list-verbs --robot lerobot:mock | grep -q move_joints
+      - name: A body over another package's family brings that package with it
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 thin
+          uv pip install --python thin dist/quackd-*.whl dist/quackd_microduck-*.whl dist/quackd_huebot-*.whl
+          ./thin/bin/quackd list-verbs --robot huebot:mock > verbs.txt
+          grep -q stand_up verbs.txt
+          ! grep -q gaze verbs.txt
+          ./thin/bin/quackd doctor --robot huebot:mock --json > report.json
 
   physics:
     name: physics · mujoco + osmesa

@@ -4269,10 +4269,14 @@ name = "quackd-huebot"
 source = { editable = "adapters/huebot" }
 dependencies = [
     { name = "quackd" },
+    { name = "quackd-microduck" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "quackd", editable = "." }]
+requires-dist = [
+    { name = "quackd", editable = "." },
+    { name = "quackd-microduck", editable = "adapters/microduck" },
+]
 
 [[package]]
 name = "quackd-lerobot"

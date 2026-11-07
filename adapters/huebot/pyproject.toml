@@ -10,7 +10,9 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.32.0,<0.33"]
+# A body of the Microduck's family (ADR-0075): its verbs and its transport are that package's, so
+# both move with this one, and scripts/set_version.py moves both windows.
+dependencies = ["quackd>=0.32.0,<0.33", "quackd-microduck>=0.32.0,<0.33"]
 
 [project.entry-points."quackd.adapters"]
 huebot = "quackd_huebot"
@@ -30,3 +32,4 @@ include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
 quackd = { workspace = true }
+quackd-microduck = { workspace = true }

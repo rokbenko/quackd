@@ -9,5 +9,7 @@ uv pip install "quackd[huebot]"
 
 No Huebot has run quackd. Huebot's own API is closed, so `huebot:jsonrpc` speaks the JSON-RPC of the
 Microduck's `robotd` to a shim its maker is writing for the robot, and every name it relies on is
-listed in `upstream_api.py`. What the shim has to answer, and what quackd refuses:
+listed in `upstream_api.py`. This package is one record of what is different about Huebot, over the
+verbs and the transport in `quackd-microduck`, which it installs. What the shim has to answer, and
+what quackd refuses:
 [docs/adapters/huebot/README.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/huebot/README.md).

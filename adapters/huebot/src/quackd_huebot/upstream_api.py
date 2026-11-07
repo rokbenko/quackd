@@ -17,10 +17,9 @@ floor. `docs/adapters/huebot/README.md` is the human readable version of this fi
 on what the shim must answer is what the maker is asked to build. `tests/test_upstream_api.py`
 proves that the UNVERIFIED names are reachable from the `jsonrpc` backend alone.
 
-The protocol refs are copied from `quackd_microduck.upstream_api` rather than imported from it,
-because the two robots may diverge: a Microduck re-read moves that file, and this one moves when
-Huebot's maker says the shim does. While both read the same pin, the facts they share agree, and
-a test holds them to it.
+The protocol refs are `quackd_microduck.upstream_api`'s own, imported by name, so a re-pin of the
+Microduck moves both by construction (ADR-0075). This module keeps what is Huebot's: the refs below
+sourced to its maker, and the words its lines use for what each of robotd's labels means.
 
 The maker's own code, github.com/Leif-Rydenfalk/walking-robot-kit, is the servo bus alone: a
 daemon serving an HTTP control page on port 8938, with no JSON-RPC, which quackd does not speak.
@@ -31,13 +30,52 @@ Nothing here has been run against a Huebot.
 from __future__ import annotations
 
 from quackd.upstream import Status, UpstreamRef
-
-REPO = "https://github.com/pollen-robotics/microduck"
-PIN = "d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1"  # daemon-v0.16.1, 2026-10-07
-RELEASE = "daemon-v0.16.1"
-"""The robotd release the protocol was read at, which a shim's `hello` may name as its build."""
-READ_ON = "2026-10-08"
-"""When the protocol was read, in the Microduck's own source."""
+from quackd_microduck.upstream_api import (
+    API_FLOOR,
+    API_VERSION,
+    DEADMAN,
+    DEADMAN_S,
+    ERR_INVALID_PARAMS,
+    ERR_METHOD_NOT_FOUND,
+    FRAMING,
+    HEAD_PARAMS,
+    HELLO,
+    IPC_PROTO,
+    JOINT_NAMES,
+    JSONRPC_VERSION,
+    LIMP_FALL_LABELS,
+    LINES_IN_ORDER,
+    MOVE_ECHO,
+    PIN,
+    POLICY_LABELS_DRIVEN,
+    POLICY_LABELS_NOT_DRIVEN,
+    READ_ON,
+    RELEASE,
+    REPO,
+    ROBOT_DO,
+    ROBOT_ENABLE,
+    ROBOT_HEAD,
+    ROBOT_HEALTH,
+    ROBOT_INIT,
+    ROBOT_LOOK,
+    ROBOT_MOVE,
+    ROBOT_RELAX,
+    ROBOT_SOUND,
+    ROBOT_STATE,
+    ROBOT_STOP,
+    ROBOT_SUBSCRIBE,
+    SAFETY_PICKED_UP,
+    SITTING_LABELS,
+    SKILL_SOURCE,
+    SKILLS,
+    SOUND_TAG_LIST,
+    SOUND_TAGS,
+    STANDING_LABELS,
+    STATE_NEEDS_SUBSCRIBE,
+    UNWIND_SUFFIX,
+    VERSION_SKEW,
+    src,
+)
 
 MAKER = "https://ce-net.com/huebot"
 """The maker's page, where every UNVERIFIED ref here is sourced."""
@@ -47,306 +85,55 @@ MAKER_EMAIL_ON = "2026-10-15"
 is on what the shim answers."""
 
 
-def src(path: str, line: int | None = None) -> str:
-    return f"{REPO}/blob/{PIN}/{path}" + (f"#L{line}" if line else "")
+__all__ = [
+    "API_FLOOR",
+    "API_VERSION",
+    "DEADMAN",
+    "DEADMAN_S",
+    "ERR_INVALID_PARAMS",
+    "ERR_METHOD_NOT_FOUND",
+    "FRAMING",
+    "HEAD_PARAMS",
+    "HELLO",
+    "IPC_PROTO",
+    "JOINT_NAMES",
+    "JSONRPC_VERSION",
+    "LIMP_FALL_LABELS",
+    "LINES_IN_ORDER",
+    "MOVE_ECHO",
+    "PIN",
+    "POLICY_LABELS_DRIVEN",
+    "POLICY_LABELS_NOT_DRIVEN",
+    "READ_ON",
+    "RELEASE",
+    "REPO",
+    "ROBOT_DO",
+    "ROBOT_ENABLE",
+    "ROBOT_HEAD",
+    "ROBOT_HEALTH",
+    "ROBOT_INIT",
+    "ROBOT_LOOK",
+    "ROBOT_MOVE",
+    "ROBOT_RELAX",
+    "ROBOT_SOUND",
+    "ROBOT_STATE",
+    "ROBOT_STOP",
+    "ROBOT_SUBSCRIBE",
+    "SAFETY_PICKED_UP",
+    "SITTING_LABELS",
+    "SKILLS",
+    "SKILL_SOURCE",
+    "SOUND_TAGS",
+    "SOUND_TAG_LIST",
+    "STANDING_LABELS",
+    "STATE_NEEDS_SUBSCRIBE",
+    "UNWIND_SUFFIX",
+    "VERSION_SKEW",
+    "Status",
+    "UpstreamRef",
+    "src",
+]  # re-exported: this file's own refs are Huebot's, and the protocol's are read through it
 
-
-_PROTO = "duck-ipc-proto/src/lib.rs"
-_ROBOTD_DOC = "docs/design/robotd-design.md"
-_ARCH_DOC = "docs/design/architecture.md"
-
-IPC_PROTO = src(_PROTO)
-
-
-__all__ = ["Status", "UpstreamRef"]  # re-exported: this file's own refs are Huebot's
-
-# ── the protocol, as robotd speaks it at the pin ────────────────────────────────────────
-
-JSONRPC_VERSION = "2.0"
-API_VERSION = UpstreamRef(
-    "41",
-    "VERIFIED",
-    src(_PROTO, 454),
-    "duck-ipc-proto API_VERSION at the pin: the version quackd read, and the one it sends in "
-    "hello. A shim that answers with any version from API_FLOOR up is served, as upstream's own "
-    "clients serve one (VERSION_SKEW), and one that answers with any other than this is warned "
-    "about: in the log, in doctor and in every state's extras.shim.",
-)
-API_FLOOR = UpstreamRef(
-    "23",
-    "VERIFIED",
-    src(_PROTO, 165),
-    "The oldest duck-ipc-proto quackd has read end to end, the Microduck adapter's previous read, "
-    "at bc41fb5 on 2026-09-04, which is the version note this cites. A hello answered with a "
-    "version below it is refused at connect, and so is one that names no version, which is not "
-    "a peer quackd can check against anything.",
-)
-VERSION_SKEW = UpstreamRef(
-    "No daemon refuses a call because this number differs",
-    "VERIFIED",
-    src(_PROTO, 57),
-    "Upstream's rule for two peers on different versions (lib.rs:51-82). 'A bump promises "
-    "nothing in either direction', and no daemon refuses a peer over the number: robotd answers "
-    "hello without comparing (robotd/src/main.rs:5397), because 'a call that cannot be served "
-    "will name itself' (robotctl/src/main.rs:1571-1572). 'What refuses instead' is the call: a "
-    "method a release does not have is METHOD_NOT_FOUND naming it, and a params member it does "
-    "not know is INVALID_PARAMS naming the member, since every params type denies unknown "
-    "fields. A notification gets neither, because nothing answers one, which is what MOVE_ECHO "
-    "is for.",
-)
-FRAMING = UpstreamRef(
-    "NDJSON: one JSON-RPC 2.0 object per line",
-    "VERIFIED",
-    src(_ARCH_DOC, 190),
-    "'Wire format: JSON-RPC 2.0, one object per line (NDJSON).'",
-)
-LINES_IN_ORDER = UpstreamRef(
-    "robotd reads a connection's lines in order",
-    "VERIFIED",
-    src("robotd/src/main.rs", 4188),
-    "One task per connection reads its lines one at a time (robotd/src/main.rs:4182-4349). A "
-    "notification such as robot.move is applied as it is read, before the next line is "
-    "(main.rs:4309-4316), and a request is answered before the line after it is read "
-    "(main.rs:4343-4347). So an answer to any call quackd wrote after a robot.move says robotd "
-    "has read and stored that twist, which is when MOVE_ECHO can first show it. State frames "
-    "reach the connection from a broadcast the control loop publishes into, decimated to the "
-    "rate asked for (main.rs:4254-4266), so one built just before the twist was stored can still "
-    "go out after that answer. The same task writes the frames and the answers, a line at a "
-    "time, and writes a request's answer straight after it handles the request, so every frame "
-    "written before the answer to a robot.stop was built before the stop zeroed the twist. "
-    "quackd's check that a twist was taken counts on all of this, so a shim has to read and "
-    "answer a connection's lines the same way.",
-)
-
-# ── methods quackd sends ────────────────────────────────────────────────────────────────
-
-HELLO = UpstreamRef(
-    "hello",
-    "VERIFIED",
-    src(_PROTO, 593),
-    "params {api_version}; result {api_version, daemon_version, revision}. The last two are "
-    "always on the wire and may be null: revision is null 'for a build that did not come from "
-    "CI'.",
-)
-ROBOT_MOVE = UpstreamRef(
-    "robot.move",
-    "VERIFIED",
-    src(_PROTO, 647),
-    "NOTIFICATION (no id). params {vx, vy, vyaw} in m/s and rad/s, trunk frame: x forward, y "
-    "left, +vyaw left. Continuous: robotd's deadman zeroes velocity when these stop arriving.",
-)
-ROBOT_STOP = UpstreamRef(
-    "robot.stop", "VERIFIED", src(_PROTO, 654), "request; zero velocity, NOT limp"
-)
-ROBOT_DO = UpstreamRef(
-    "robot.do",
-    "VERIFIED",
-    src(_PROTO, 703),
-    "request {skill} -> IntentResult {accepted, reason?}. Answered on accept/refuse, not on "
-    "completion: 'a refusal names the scripted move already holding the robot'.",
-)
-ROBOT_ENABLE = UpstreamRef(
-    "robot.enable",
-    "VERIFIED",
-    src(_PROTO, 656),
-    "request {on, toggle?} -> {accepted, reason?}; `toggle` is #[serde(default)], so sending "
-    "{on} alone is valid. This is POLICY execution, not a flag: upstream says it 'can bring a "
-    "limp robot up as a side effect of being asked to drive', so treat it as motion.",
-)
-ROBOT_INIT = UpstreamRef(
-    "robot.init",
-    "VERIFIED",
-    src(_PROTO, 674),
-    "power the joints and ramp to the home pose; MOVES EVERY JOINT. quackd never sends this.",
-)
-ROBOT_RELAX = UpstreamRef(
-    "robot.relax",
-    "VERIFIED",
-    src(_PROTO, 680),
-    "torque off: the robot collapses. quackd never sends this.",
-)
-ROBOT_SOUND = UpstreamRef(
-    "robot.sound", "VERIFIED", src(_PROTO, 722), "request {tag, hold?}; tags only, no TTS"
-)
-ROBOT_SUBSCRIBE = UpstreamRef(
-    "robot.subscribe",
-    "VERIFIED",
-    src(_PROTO, 841),
-    "request {hz?} -> SubscribeResult, then robot.state notifications. State is NOT pushed "
-    "until this is sent. The answer also carries what is constant for the process: "
-    "{accepted, walk?, stand?, unavailable?, sitstand?, ground_pick?, skills[]}.",
-)
-ROBOT_STATE = UpstreamRef(
-    "robot.state",
-    "VERIFIED",
-    src(_PROTO, 3860),
-    "notification {t, move{requested,applied,limited_by}, head[4], policy, "
-    "safety{fallen,limp,gravity,gain?,picked_up}, loop{hz,missed}, joints, targets, "
-    "velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}. "
-    "head is the head robotd commands this tick, in HEAD_PARAMS order, and joints are the "
-    "measured joints in JOINT_NAMES order.",
-)
-ROBOT_HEALTH = UpstreamRef(
-    "robot.health",
-    "VERIFIED",
-    src(_PROTO, 3552),
-    "request -> {healthy, degraded?, reason?, battery{volts,percent}?, motors?, cpu_temp_c?, "
-    "cpu_throttle?, control_loop?, bus, imu?}. quackd reads healthy, reason and battery.",
-)
-STATE_NEEDS_SUBSCRIBE = UpstreamRef(
-    "robot.state is not pushed until robot.subscribe",
-    "VERIFIED",
-    src(_ROBOTD_DOC, 752),
-    "'robot.subscribe turns a connection into a stream; the loop publishes into a bounded "
-    "broadcast and never waits on a subscriber, so a slow client gets a gap rather than "
-    "applying backpressure.' A connection that never subscribes learns nothing about the "
-    "robot, which is why the transport subscribes during connect().",
-)
-
-# ── methods quackd does not send to Huebot yet ──────────────────────────────────────────
-
-ROBOT_LOOK = UpstreamRef(
-    "robot.look",
-    "VERIFIED",
-    src(_PROTO, 652),
-    "request {x, y, z, neck_pitch} trunk-frame point -> {head, clamped}. What a gaze sends. "
-    "Huebot's shim does not answer it yet (SHIM_LOOK), so quackd sends Huebot none.",
-)
-ROBOT_HEAD = UpstreamRef(
-    "robot.head",
-    "VERIFIED",
-    src(_PROTO, 649),
-    "NOTIFICATION {neck_pitch, head_pitch, head_yaw, head_roll} rad, HEAD_PARAMS, in joint "
-    "space, which robotd stores in the one head slot robot.look writes too. What a held gaze "
-    "sends again. quackd sends Huebot none, since it sends no robot.look.",
-)
-#: HeadParams: the four head joints robot.head takes and LookResult.head answers with, in the
-#: order robot.state.head carries them (lib.rs:2206-2211).
-HEAD_PARAMS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
-#: The order robot.state.joints is indexed in, robotd's JOINT_NAMES (lib.rs:552-568): the left
-#: leg, the neck, head and mouth, then the right leg. A Microduck's, which Huebot's shim is asked
-#: to keep (JOINT_ORDER).
-JOINT_NAMES = (
-    "left_hip_yaw",
-    "left_hip_roll",
-    "left_hip_pitch",
-    "left_knee",
-    "left_ankle",
-    "neck_pitch",
-    "head_pitch",
-    "head_yaw",
-    "head_roll",
-    "mouth",
-    "right_hip_yaw",
-    "right_hip_roll",
-    "right_hip_pitch",
-    "right_knee",
-    "right_ankle",
-)
-
-# ── what quackd reads back ──────────────────────────────────────────────────────────────
-
-MOVE_ECHO = UpstreamRef(
-    "robot.state.move.requested",
-    "VERIFIED",
-    src("robotd/src/main.rs", 3746),
-    "The twist robotd was last asked for, as it was asked. robot.move stores [vx, vy, vyaw] "
-    "untouched (robotd/src/main.rs:4361) and every state frame reports it as requested, beside "
-    "applied, the twist the control loop hands its controller. robotd's own test holds "
-    "requested to what was asked: 'what the client asked for must survive to the stream' "
-    "(main.rs:7419), so the deadman does not zero it. robot.stop does, and is answered at once "
-    "(main.rs:5311-5314, robotd/src/intents.rs:320-323). robot.move is a notification, so "
-    "nothing answers one that could not be parsed, and this is the only place quackd can see "
-    "whether a twist was taken. Once the state has gone a few frames without showing one it "
-    "sent, counted over the walks of a verb up to each stop, quackd sends no robot.move until "
-    "the verb that sent it ends.",
-)
-SAFETY_PICKED_UP = UpstreamRef(
-    "safety.picked_up",
-    "VERIFIED",
-    src(_PROTO, 4104),
-    "'Somebody is holding the robot: the pick-up detector ([pickup]) has paused the policy and "
-    "the legs hold the pause pose until it is put back down', and while it is true the policy "
-    "label reads held. 'Absent from a robotd that predates the detector, which reads as never "
-    "picked up.' quackd reads it before safety.fallen, because a robot held at an angle also "
-    "reads as fallen, and nothing that moves the robot is sent while it is true. A frame "
-    "without the key is not read as nobody holding it: quackd publishes whether frames carry "
-    "the key as extras.pickup_detection.",
-)
-SKILLS = UpstreamRef(
-    "ground_pick | kick_left | kick_right | sit_toggle | roulade",
-    "VERIFIED",
-    src(_PROTO, 2412),
-    "`pub type Skill = String`: 'A name, not an enumeration.' These five are the names a stock "
-    "Microduck answers to, but a robot's skills are config, so an unknown one is refused with "
-    "the list it does know. SKILL_SOURCE is where a client learns the real list.",
-)
-SKILL_SOURCE = UpstreamRef(
-    "robot.subscribe -> SubscribeResult.skills",
-    "VERIFIED",
-    src(_PROTO, 2905),
-    "'The configurable one-shot skills this robot has, in priority order, and the names "
-    "robot.do answers to. A list rather than a field per skill, because which skills a robot "
-    "has is now config: a client learns them here instead of assuming five.'",
-)
-SOUND_TAGS = UpstreamRef(
-    "alarm | greet | inquire | peck | chirp | coo | wheee",
-    "VERIFIED",
-    src(_PROTO, 2244),
-    "SoundTag enum, snake_case on the wire",
-)
-SOUND_TAG_LIST = ("alarm", "greet", "inquire", "peck", "chirp", "coo", "wheee")
-
-ERR_METHOD_NOT_FOUND = -32601
-ERR_INVALID_PARAMS = -32602
-
-DEADMAN = UpstreamRef(
-    "robotd intent deadman",
-    "VERIFIED",
-    src(_ROBOTD_DOC, 561),
-    "'if intents stop arriving, the velocity goes to zero. Stop is not limp'. robotd zeroes a "
-    "twist older than [safety] deadman_ms, 'Intent age past which the velocity is zeroed', 500 ms "
-    "by default (robotd-params/src/lib.rs:1961-1962 and :2045). quackd's walk re-sends "
-    "robot.move every 100 ms, so the twist never grows that old while a verb walks, and the "
-    "deadman stops the legs only once quackd's twists stop arriving: a link that drops, a "
-    "process that dies. Whether Huebot stops so is SHIM_DEADMAN.",
-)
-#: The age past which robotd's deadman zeroes a twist by default, in seconds (DEADMAN), which
-#: Huebot's shim is asked to keep (SHIM_DEADMAN) and the pages that say what stops a walk state.
-DEADMAN_S = 0.5
-
-# ── what robot.state.policy can say ─────────────────────────────────────────────────────
-#
-# The wire label of whatever drove the tick. The tuples below sort them by what quackd may do
-# with the robot, and an allowlist is what makes that safe: two labels stand the robot up, one
-# seats it, and every other label, a skill's name, or one a shim makes up, reads as unknown.
-
-POLICY_LABELS_DRIVEN = UpstreamRef(
-    "walk, stand, ground_pick, sit, rise, <skill>, <skill>:unwind, skill",
-    "VERIFIED",
-    src("robotd/src/control.rs", 125),
-    "The labels of a tick a network drove. 'Which network drove, as the wire label: walk, "
-    "stand, ground_pick, sit, rise, or a configured skill's own name' (control.rs:125-126); a "
-    "skill reports its name with ':unwind' while it unwinds, and 'skill' when its definition "
-    "cannot be found (control.rs:605-609). Whether the robot is seated is the controller's seat "
-    "latch: 'sit' while it holds the seat, 'rise' on the way up, and walk or stand once it is "
-    "up (control.rs:627-648).",
-)
-POLICY_LABELS_NOT_DRIVEN = UpstreamRef(
-    "held, homing, rest, limp_fall, limp_pose",
-    "VERIFIED",
-    src("robotd/src/main.rs", 3461),
-    "The labels of a tick no network drove, from the match that picks policy_label every tick: "
-    "limp_fall and limp_pose for the two halves of robotd's limp-fall sequence, rest for the end "
-    "of a shutdown, held while the pick-up detector pauses the policy (SAFETY_PICKED_UP), when "
-    "inference fails, or when nothing is driving, and homing while the joints ramp to the home "
-    "pose.",
-)
-
-#: The labels of the two networks that drive a robot on its feet: what quackd reads as standing.
-STANDING_LABELS = ("walk", "stand")
-#: The sit-stand network holding the seat: what quackd reads as sitting. Matched exactly.
-SITTING_LABELS = ("sit",)
 #: Every other label robotd itself names, and what the robot is doing while it says it. A
 #: configured skill reports its own name instead (the robot's list is SKILL_SOURCE), then that
 #: name with UNWIND_SUFFIX while it unwinds.
@@ -360,10 +147,6 @@ NOT_STANDING_LABELS = {
     "limp_fall": "the robot is riding a fall down at limp gain",
     "limp_pose": "the robot is ramping to its pose after a fall",
 }
-UNWIND_SUFFIX = ":unwind"
-#: The labels of the two halves of robotd's own answer to a fall, the limp and the pose
-#: (POLICY_LABELS_NOT_DRIVEN). A shim that reports either is answering a fall itself.
-LIMP_FALL_LABELS = ("limp_fall", "limp_pose")
 
 # ── Huebot's side: what its maker says, and what nobody has seen ────────────────────────
 

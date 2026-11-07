@@ -12,6 +12,12 @@ The rest of this page is the robot's upstreams, read at pinned commits: `robotd`
 quackd never sends it, what the robot is as numbers, how to get a picture off one, and the model
 and policies the physics simulator runs.
 
+Its verbs and its transport also drive [Huebot](../huebot/README.md), whose shim is to answer the
+same calls. What differs is one record each, `quackd_microduck/body.py` and `quackd_huebot/body.py`
+([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)), so a fix to either
+is a fix to both, and a Microduck-only thing in them, mediad's camera, odometry, the map, the head,
+stays behind that record.
+
 ## Upstream API
 
 Read: 2026-10-08, pinned at [`d818af5`](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1)
@@ -230,6 +236,11 @@ camera two ways quackd reads, and its own snapshot route, `/frame`, is the one t
 | The lens | assumed from the first frame's shape | the focal length of `mediad`'s own calibration |
 | Costs | a PNG of the whole picture, encoded on the duck for every frame | one media session, so it competes with the browser console |
 | Since | `daemon-v0.13.0` | every release quackd serves |
+
+One fetch of an HTTP camera is bounded: 3 s from the request to the last byte of the picture, and
+8 MB. An answer that is a stream, `multipart/*`, or a redirect is refused by name at the first
+fetch, so a camera that is neither one still nor fast enough is no camera for the run, and says
+why, rather than one that hands out nothing.
 
 Neither installs anything on the duck, and neither authenticates: `mediad` answers on every
 address, and upstream's own note on its WebRTC side is that a pairing PIN which is `000000` on

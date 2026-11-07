@@ -509,9 +509,22 @@ once two bodies share it. The **binding** is one of the three routes above and n
 So before writing a package, ask which of the three the robot really adds. A robot of a kind a
 package already drives, or one that speaks a protocol a package already speaks, is a body
 record in that package plus a thin distribution of its own, which keeps its name, its extra and
-its entry point and depends on the family's package in the same version window: Huebot over the
-Microduck's package is the first, in 0.33.0, and its page says what that looks like once it is
-there.
+its entry point and depends on the family's package in the same version window.
+
+Huebot over the Microduck's package is the first, and is the one to copy. It takes four files:
+
+| File | What it holds |
+|---|---|
+| `body.py` | a `quackd_microduck.body.Body`: the maker's figures, the verbs it has, the limits, what it is called in quackd's sentences, what it has no default for, each behind a source |
+| `__init__.py` | `__version__`, `BACKENDS`, the adapter as a subclass naming its `body`, and the same four functions as any package, each a line or two over `manifest_for`, `verbs_for`, `conditions_for` and `make_transport` |
+| `verbs.py` | the family's verbs under this body's name, for whoever imports them |
+| `upstream_api.py` | its own UNVERIFIED refs, sourced to whoever said them, and the protocol's refs imported by name, never `*`, so a re-pin of the family moves both |
+
+Its `pyproject.toml` depends on `quackd` and on the family's package in the same window, with a
+workspace source for each, and keeps its own entry point, which is why nothing a user types
+changes. The row for your refs in `tests/test_upstream_api.py` names your `body.py` as allowed to
+spell them, and the family's package may not: `tests/test_microduck_body.py` holds that, and the
+digest of every description either body can give.
 
 Every backend carries a **tier**
 ([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)): described,

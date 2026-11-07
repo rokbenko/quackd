@@ -172,7 +172,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "quackd derives the model from the",
     ),
     "adapters/alohamini/src/quackd_alohamini/verbs.py": ("the two 6dof models have",),
-    "adapters/huebot/src/quackd_huebot/__init__.py": ("whose model and gait",),
     "adapters/lerobot/README.md": (
         "model from TheRobotStudio's",
         "reads from the model is in",

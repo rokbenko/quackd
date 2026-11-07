@@ -37,6 +37,7 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         {
             "adapters/microduck/upstream_api.py",
             "adapters/microduck/transports/jsonrpc_unix.py",
+            "adapters/microduck/body.py",
         },
         ("https://github.com/pollen-robotics/microduck",),
     ),
@@ -143,7 +144,7 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         huebot_api,
         {
             "adapters/huebot/upstream_api.py",
-            "adapters/huebot/transports/jsonrpc_unix.py",
+            "adapters/huebot/body.py",
         },
         # robotd's protocol, read in the Microduck's source, and the maker's page for every claim
         # about Huebot's side
@@ -819,13 +820,11 @@ def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at
     assert "needs, an LED face, coming to your hand" in api.SHIM_BEHAVIOURS.note
 
 
-def test_while_huebot_and_the_microduck_read_one_pin_they_agree_on_the_protocol() -> None:
-    """The protocol refs are copied rather than imported, so that the two robots can diverge. A
-    copy that went wrong is caught here: while both cite the same pin, every name, vocabulary and
-    number they share reads the same. A re-pin of either is a decision this test makes somebody
-    take on purpose."""
-    if huebot_api.PIN != upstream_api.PIN:
-        pytest.skip("the two adapters read robotd at different pins now")
+def test_huebot_and_the_microduck_read_one_protocol() -> None:
+    """Huebot's module imports the protocol's refs from the Microduck's by name (ADR-0075), so a
+    re-pin moves both. Every ref of that name is the same object, and every vocabulary and number
+    the same value, so the module cannot have grown a copy of its own."""
+    assert huebot_api.PIN == upstream_api.PIN
     shared = [
         name
         for name, value in vars(huebot_api).items()
@@ -835,8 +834,7 @@ def test_while_huebot_and_the_microduck_read_one_pin_they_agree_on_the_protocol(
     ]
     assert len(shared) >= 20, shared
     for name in shared:
-        mine, theirs = getattr(huebot_api, name), getattr(upstream_api, name)
-        assert (mine.name, mine.source) == (theirs.name, theirs.source), name
+        assert getattr(huebot_api, name) is getattr(upstream_api, name), name
     for name in (
         "JSONRPC_VERSION",
         "RELEASE",

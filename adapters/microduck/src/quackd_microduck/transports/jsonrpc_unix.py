@@ -75,16 +75,26 @@ Frames: robotd's socket carries no picture. `--camera-url http://127.0.0.1:8080/
 the docs start with, and `webrtc://host:8443` its video track, which takes
 `quackd[microduck-camera]`. Any other HTTP URL is read as a snapshot server of its own, which
 answers with a JPEG or a PNG.
+
+A robot of this family other than the Microduck answers these same calls for robotd, as Huebot's
+shim is to. A `Body` (`quackd_microduck.body`) says what it is called in these lines, where to find
+it, and which of the above it has: a body with no `gaze` is sent no look and holds no head, one with
+no `mediad` reads a `/frame` URL as any other snapshot server, and one with no odometry has no place
+to say it is. The sentences above say robotd, because that is what they were read from.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.client
 import json
 import logging
 import math
+import socket
+import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -111,6 +121,7 @@ from quackd.transport.base import (
     camera_url_frame,
 )
 from quackd_microduck import upstream_api as up
+from quackd_microduck.body import DEFAULT_ADDRESS, MICRODUCK, Body
 from quackd_microduck.sim3d.gait import CMD_MAX_VX, CMD_MAX_VY
 from quackd_microduck.webrtc import WebRtcCamera, is_webrtc_url
 
@@ -371,15 +382,20 @@ def _optical_axis(frames: Any) -> tuple[float, float, float] | None:
     return (2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y))
 
 
-def _head_pose(state: dict[str, Any]) -> tuple[float | None, float | None, str | None]:
+def _head_pose(
+    state: dict[str, Any], *, frames: bool = True
+) -> tuple[float | None, float | None, str | None]:
     """Where the camera points from the trunk, in degrees of yaw, positive left, and of pitch,
     positive up, and what said so: `frames.camera`, or on a robotd that reports no frames, the
     measured head_yaw joint, which gives a yaw and no pitch (`up.HEAD_YAW_SIGN`).
 
     The simulators have always published `head_yaw_deg` this way, and the real duck never did.
     A flock member adds it to a camera bearing to get one from the body, so on a real Microduck
-    it took the camera for looking straight ahead wherever the head had turned."""
-    axis = _optical_axis(state.get("frames"))
+    it took the camera for looking straight ahead wherever the head had turned.
+
+    `frames` False reads the joint alone, on a body nobody has said reports `frames` as robotd
+    does."""
+    axis = _optical_axis(state.get("frames")) if frames else None
     if axis is not None:
         vx, vy, vz = axis
         yaw = math.degrees(math.atan2(vy, vx))
@@ -431,6 +447,14 @@ MEDIAD_FRAME_FPS = 2.0
 #: How long one snapshot may take before it counts as failed. mediad gives up on a frame from
 #: its own capture after as long, and answers 503 then (`up.MEDIAD_FRAME_HTTP`).
 SNAPSHOT_TIMEOUT_S = 3.0
+
+#: The most one snapshot may be, in bytes. A JPEG from a camera on a robot this size is tens of
+#: kilobytes, and mediad's PNG of its whole 720 by 1280 picture at most the 2.8 MB the picture is
+#: unpacked, so an answer past this is not one picture, and reading on would fill memory.
+SNAPSHOT_MAX_BYTES = 8_000_000
+
+#: The most one read of a snapshot's body asks for.
+SNAPSHOT_CHUNK_BYTES = 64 * 1024
 
 #: How long `connect()` waits for an HTTP camera's first frame, through the failures a camera
 #: that is coming up answers with (`_snapshot_failure`), before it reports no camera for the run.
@@ -496,6 +520,148 @@ def _first_line(answer: Any) -> str:
     return ""
 
 
+class NotAStill(ValueError):
+    """An HTTP camera whose answer is not one still image: a `multipart/*` stream, which never
+    ends, more bytes than one picture has, or a redirect, which `fetch_still` does not follow."""
+
+
+class StillTooSlow(TimeoutError):
+    """An HTTP camera whose one picture did not arrive whole within the deadline, however fast
+    its bytes were still coming."""
+
+
+#: How often the guard on a fetch looks at its deadline and at whether it was told to stop.
+STILL_GUARD_TICK_S = 0.05
+
+
+def fetch_still(
+    url: str,
+    *,
+    deadline_s: float,
+    max_bytes: int,
+    stop: threading.Event | None = None,
+) -> bytes:
+    """The bytes of one still image from an HTTP camera, fetched in the calling thread.
+
+    The standard library and nothing else, with `NotAStill`, `StillTooSlow`, `SnapshotRefused`
+    and `_first_line` beside it, so another transport can take it whole. What ends a fetch that
+    would otherwise read for as long as the camera sends:
+
+    - An answer whose type is `multipart/*`, an MJPEG stream among them, is refused before a
+      byte of its body is read, and so is a redirect, whose body urllib would read whole before
+      following it (`NotAStill`, naming the type or where the redirect points).
+    - A body longer than `max_bytes` is refused (`NotAStill`), and one that ends short of the
+      length its headers gave is an `IncompleteRead`, never a picture.
+    - A guard thread shuts the socket down `deadline_s` after the request (`StillTooSlow`), or
+      once `stop` is set (`ConnectionAbortedError`), whatever the fetch is reading then: the
+      headers, the body, a chunked body's trailer, an error page. A transport that closes sets
+      `stop`, so no fetch reads on behind it, and none keeps `asyncio.run` waiting on its thread
+      at exit. The guard reaches a socket once it is connected, so a connect waits `deadline_s`
+      at most, as each read does. On Windows a shutdown does not wake a read already waiting in
+      the socket, which sees it at its own timeout, `deadline_s`: there a stop ends a fetch at
+      the latest at its deadline.
+
+    An HTTP error status raises `SnapshotRefused` with the first line of what the camera said."""
+    started = time.monotonic()
+    sockets: list[socket.socket] = []
+    ended = threading.Event()
+    cut: list[BaseException] = []
+
+    def guard() -> None:
+        while not ended.wait(STILL_GUARD_TICK_S):
+            if stop is not None and stop.is_set():
+                cut.append(ConnectionAbortedError("the fetch was stopped: the transport closed"))
+            elif time.monotonic() - started > deadline_s:
+                cut.append(StillTooSlow(f"no whole picture within {deadline_s:g} s"))
+            else:
+                continue
+            for sock in sockets:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+            return
+
+    def watched(sock: socket.socket | None) -> None:
+        # A socket the guard missed, because it fired while the connect was still going on, is
+        # shut down as it is handed over instead.
+        if sock is not None:
+            sockets.append(sock)
+            if cut:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+
+    class Plain(http.client.HTTPConnection):
+        def connect(self) -> None:
+            super().connect()
+            watched(self.sock)
+
+    class Tls(http.client.HTTPSConnection):
+        def connect(self) -> None:
+            super().connect()
+            watched(self.sock)
+
+    class OpenPlain(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(Plain, req)
+
+    class OpenTls(urllib.request.HTTPSHandler):
+        def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(Tls, req, context=ssl.create_default_context())
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
+        ) -> urllib.request.Request | None:
+            fp.close()
+            raise NotAStill(
+                f"the camera answered HTTP {code} {msg}, a redirect to {newurl}, which quackd does "
+                "not follow: give --camera-url that URL"
+            )
+
+    opener = urllib.request.build_opener(OpenPlain, OpenTls, NoRedirect)
+    threading.Thread(target=guard, name="quackd-still-guard", daemon=True).start()
+    try:
+        try:
+            with opener.open(url, timeout=deadline_s) as answer:
+                kind = answer.headers.get_content_type()
+                if kind.startswith("multipart/"):
+                    raise NotAStill(
+                        f"the camera answers with a {kind} stream, not one still image: give "
+                        "--camera-url a URL that returns one still image, a JPEG or a PNG, on "
+                        "each request"
+                    )
+                body = bytearray()
+                while chunk := answer.read1(SNAPSHOT_CHUNK_BYTES):
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise NotAStill(
+                            f"the camera sent more than {max_bytes / 1e6:g} MB for one picture, "
+                            "which no still image is: give --camera-url a URL that returns one "
+                            "still image, a JPEG or a PNG, on each request"
+                        )
+                if cut:
+                    raise cut[0]
+                if left := getattr(answer, "length", None):
+                    raise http.client.IncompleteRead(bytes(body), left)
+                return bytes(body)
+        except urllib.error.HTTPError as e:
+            # read here, in the thread, while the answer is open and the guard still watches
+            raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
+    except (SnapshotRefused, NotAStill):
+        raise
+    except Exception as e:
+        if cut and e is not cut[0]:
+            raise cut[0] from e
+        raise
+    finally:
+        ended.set()
+
+
 def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
     """What to say about a snapshot that did not come, and whether `connect()` should wait for
     another.
@@ -509,13 +675,53 @@ def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
     if isinstance(error, SnapshotRefused | urllib.error.HTTPError):
         return str(error), error.code == HTTPStatus.SERVICE_UNAVAILABLE
     reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, StillTooSlow):
+        return str(reason), True
     if isinstance(reason, TimeoutError):
         return f"no answer within {SNAPSHOT_TIMEOUT_S:g} s", True
     return str(reason) or type(reason).__name__, False
 
 
+QUOTED_CHARS = 60
+
+
+def _quoted(said: str) -> str:
+    """A value the shim sent, as a sentence quotes it, cut to `QUOTED_CHARS`: a frame can carry
+    a value of any size, and the sentence goes into `posture_reason`, every refusal that quotes
+    it and the log."""
+    return said if len(said) <= QUOTED_CHARS else said[: QUOTED_CHARS - 3] + "..."
+
+
+def _flag(safety: dict[str, Any], key: str) -> bool | None:
+    """One flag of a state frame's `safety` block as the shim reported it: True or False when it
+    is a JSON boolean, and None for anything else, null, a number or a string included, which
+    reads exactly as the key being absent. A null `fallen` read as falsy was a fall detector
+    saying all clear, and a null `picked_up` was a pick-up detector saying nobody holds the
+    robot, when neither had said anything."""
+    value = safety.get(key)
+    return value if isinstance(value, bool) else None
+
+
+def _unreadable(safety: dict[str, Any], *, body: Body = MICRODUCK) -> str | None:
+    """Why a state frame's safety flags cannot be read, or None while they can: one of them is
+    neither a JSON boolean nor null. A flag like that could mean anything, so posture is
+    `unknown`, every verb that walks refuses, and `stand_up` says why."""
+    for key in ("picked_up", "fallen", "limp"):
+        value = safety.get(key)
+        if value is not None and not isinstance(value, bool):
+            return (
+                f"{body.words.peer_s} state frame says safety.{key} is "
+                f"{_quoted(json.dumps(value))}, which is not true, false or null"
+            )
+    return None
+
+
 def posture_of(
-    policy: str | None, safety: dict[str, Any], *, skills: Sequence[str] = ()
+    policy: str | None,
+    safety: dict[str, Any],
+    *,
+    skills: Sequence[str] = (),
+    body: Body = MICRODUCK,
 ) -> tuple[Posture, str | None]:
     """Where the duck is, from one fresh state frame, and why it is `unknown` when it is.
 
@@ -532,39 +738,49 @@ def posture_of(
     because a duck on the floor is down whatever network is driving it, and on a robot whose
     `limp_fall` is off the walk network is still what drives one lying there. `safety.limp`,
     the gains dropped so the duck yields, is next, and then the label.
+
+    A flag that is neither a JSON boolean nor null is no reading of the duck: a true one comes first
+    all the same, since `picked_up: true` is the one word that may never be missed, and any other
+    reads as `unknown` with the value quoted, where the string "false" was truthy and read as true.
+    Null reads as absent (`_flag`).
     """
-    if safety.get("picked_up"):
-        return "unknown", "somebody is holding the duck (safety.picked_up)"
-    if safety.get("fallen"):
+    if _flag(safety, "picked_up") is True:
+        return "unknown", f"somebody is holding {body.words.noun} (safety.picked_up)"
+    if (unread := _unreadable(safety, body=body)) is not None:
+        return "unknown", unread
+    if _flag(safety, "fallen") is True:
         return "fallen", None
-    if safety.get("limp"):
-        return "unknown", "robotd has dropped the gains so the duck yields (safety.limp)"
+    if _flag(safety, "limp") is True:
+        return "unknown", body.words.limp
     # A skill reports its own name, and robotd keeps only `ground_pick` and `sit_toggle` back
     # from the names a policy set may give one, so a set can call a skill `walk`. The robot's
     # own list is read before the allowlist, or a duck halfway through that skill would stand.
     if policy and policy in skills:
-        return "unknown", _not_standing_because(policy, skills)
+        return "unknown", _not_standing_because(policy, skills, body)
     if policy in up.SITTING_LABELS:
         return "sitting", None
     if policy in up.STANDING_LABELS:
         return "standing", None
-    return "unknown", _not_standing_because(policy, skills)
+    return "unknown", _not_standing_because(policy, skills, body)
 
 
-def _not_standing_because(policy: str | None, skills: Sequence[str]) -> str:
-    """Why a label that neither stands nor seats the duck leaves its posture unknown."""
+def _not_standing_because(policy: str | None, skills: Sequence[str], body: Body) -> str:
+    """Why a label that neither stands nor seats the duck leaves its posture unknown. The label is
+    quoted only so far, since a line this ends up in goes to the pilot and the log, and a peer
+    decides how long a label is (`_quoted`)."""
+    words = body.words
     if not policy:
-        return "robotd's state frame names no policy"
-    said = f"robotd reports policy {policy!r}"
+        return f"{words.peer_s} state frame names no policy"
+    said = f"{words.peer} reports policy {_quoted(repr(policy))}"
     if policy in skills:
         if policy in up.STANDING_LABELS or policy in up.SITTING_LABELS:
             return f"{said}, which is also one of its skills, so quackd cannot tell which it is"
         return f"{said} (one of its skills, which holds the legs until it ends)"
-    if policy in up.NOT_STANDING_LABELS:
-        return f"{said} ({up.NOT_STANDING_LABELS[policy]})"
+    if policy in body.not_standing:
+        return f"{said} ({body.not_standing[policy]})"
     if policy.endswith(up.UNWIND_SUFFIX):
         return f"{said} (a skill unwinding back to the gait)"
-    return f"{said}, which quackd has not read, so it cannot tell where the duck is"
+    return f"{said}, which quackd has not read, so it cannot tell where {words.noun} is"
 
 
 class StateRead(NamedTuple):
@@ -587,14 +803,25 @@ class StateRead(NamedTuple):
 
 
 def _pickup_detection(read: StateRead) -> bool | None:
-    """Whether a fresh frame's `safety` block carries `picked_up`, or None with no fresh frame.
+    """Whether a fresh frame's `safety` block reports `picked_up`, or None with no fresh frame.
 
-    Its presence and not its value: robotd writes the key whenever it has the detector, and one
+    A boolean there and not its value: robotd writes the key whenever it has the detector, and one
     from before it leaves the key out, which a reader takes for never picked up
     (`up.SAFETY_PICKED_UP`). That reading is exactly what quackd must not take on trust, since
-    a duck in somebody's hands is then sent walks like any other."""
+    a duck in somebody's hands is then sent walks like any other. A null reports nothing either
+    (`_flag`), where the key's presence alone used to read as a robot that would have said."""
     safety = read.state.get("safety") if read.fresh else None
-    return ("picked_up" in safety) if isinstance(safety, dict) else None
+    return (_flag(safety, "picked_up") is not None) if isinstance(safety, dict) else None
+
+
+def _battery_percent(health: Any) -> float | None:
+    """`robot.health`'s `battery.percent`, when it is a finite number, and None for anything
+    else: an answer that is not an object, a `battery` that is not one, or a `percent` that is
+    not a number. A `battery` of `80` used to raise out of every state read, and so out of every
+    verb, since the executor reads the state before each one."""
+    battery = health.get("battery") if isinstance(health, dict) else None
+    percent: Any = battery.get("percent") if isinstance(battery, dict) else None
+    return float(percent) if _finite(percent) else None
 
 
 def _robot_clock(state: dict[str, Any]) -> float | None:
@@ -642,7 +869,9 @@ def _not_still(read: StateRead, skills: Sequence[str]) -> bool:
     if not read.fresh:
         return False
     safety = read.state.get("safety")
-    if isinstance(safety, dict) and (safety.get("picked_up") or safety.get("limp")):
+    if isinstance(safety, dict) and (
+        _flag(safety, "picked_up") is True or _flag(safety, "limp") is True
+    ):
         return True
     label = read.policy
     if label in up.NOT_STILL_LABELS or label.endswith(up.UNWIND_SUFFIX):
@@ -662,7 +891,7 @@ def default_address() -> str:
     creates. A robotd somewhere else, as each duck in upstream's `scripts/duck-sim` is, under a
     name of its own, is reached with `--address`, like any other.
     """
-    return f"unix://{up.SOCKET_ROBOTD.name}"
+    return DEFAULT_ADDRESS
 
 
 def parse_address(address: str) -> tuple[str, str, int | None]:
@@ -685,6 +914,7 @@ class JsonRpcUnixTransport:
         self,
         address: str | None = None,
         *,
+        body: Body = MICRODUCK,
         camera_url: str | None = None,
         api_version: int = int(up.API_VERSION.name),
         request_timeout_s: float = 2.0,
@@ -694,7 +924,11 @@ class JsonRpcUnixTransport:
         gaze_hold_s: float = GAZE_HOLD_S,
         map_address: str | None = None,
     ) -> None:
-        self.address = address or default_address()
+        self.body = body
+        """Which robot of the family this is, which says what it has and what it is called."""
+        self.address: str = address or body.default_address or ""
+        """Where it answers. Empty only on a body with no default that was not told, which
+        `connect` refuses."""
         self.map_address = map_address
         """Where mapd answers, as `--map-address` gave it, or None for its own socket beside a
         robotd on one (`_start_map`)."""
@@ -702,7 +936,9 @@ class JsonRpcUnixTransport:
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s
         self.state_hz = state_hz
-        self.camera_fps = default_camera_fps(camera_url) if camera_fps is None else camera_fps
+        if camera_fps is None:
+            camera_fps = default_camera_fps(camera_url) if body.mediad else CAMERA_FPS
+        self.camera_fps = camera_fps
         """How often an HTTP camera is asked for a frame, and what sets how old one may be:
         `MEDIAD_FRAME_FPS` from `mediad`'s `/frame` and `CAMERA_FPS` from any other camera,
         unless the caller chose."""
@@ -769,6 +1005,9 @@ class JsonRpcUnixTransport:
         before it asks again (`frame_period_s`)."""
         self._fetch_started: float | None = None
         """When the newest HTTP fetch was asked for, answered yet or not (`frame_asked_at`)."""
+        self._camera_stop = threading.Event()
+        """Set by `close()`, so a fetch still running in its thread ends then, rather than holding
+        an open camera until its deadline (`fetch_still`). Each fetch reads the event it finds."""
         self.look_head: dict[str, float] | None = None
         """The four head joints robotd answered the newest `robot.look` with (`LookResult.head`),
         or None before any, or when it answered with something else."""
@@ -841,8 +1080,9 @@ class JsonRpcUnixTransport:
         `taken` True with the twist it showed and how long after it went out the frame that
         showed it arrived, or False with what it showed instead when `robot.move` was held
         back for it. None until a frame has said either."""
-        self.robotd: dict[str, Any] | None = None
-        """Which robotd answered `hello`, beside what quackd read, as `extras.robotd`."""
+        self.answered: dict[str, Any] | None = None
+        """Which peer answered `hello`, beside what quackd read, in `extras` under the body's
+        `health_key`, which on the Microduck is `extras.robotd`."""
         self.runtime_warning: str | None = None
         """Why this robotd's API version is worth a word, or None when it is the one quackd
         read. Logged at connect, carried in `extras.robotd`, and printed by `doctor`, which
@@ -855,13 +1095,14 @@ class JsonRpcUnixTransport:
     # ── wire ────────────────────────────────────────────────────────────────────────
 
     async def connect(self) -> None:
+        if not self.address:
+            raise TransportError(self.body.no_address)
         kind, host, port = parse_address(self.address)
         try:
             if kind == "unix":
                 if sys.platform == "win32":
                     raise TransportError(
-                        "unix sockets are not available on Windows; forward the robot's socket "
-                        "with `ssh -L 9870:/run/robotd.sock <robot>` and use --address tcp://127.0.0.1:9870"
+                        f"unix sockets are not available on Windows; {self.body.words.forward}"
                     )
                 self._reader, self._writer = await asyncio.open_unix_connection(
                     host, limit=READER_LIMIT
@@ -883,6 +1124,7 @@ class JsonRpcUnixTransport:
             raise
 
     async def _handshake(self) -> None:
+        words = self.body.words
         result = await self.request(up.HELLO.name, {"api_version": self.api_version})
         self.hello = result if isinstance(result, dict) else {"result": result}
         remote = self.hello.get("api_version")
@@ -893,23 +1135,26 @@ class JsonRpcUnixTransport:
         # replaced refused every robotd release from daemon-v0.12.0 on, six days after the read.
         if not isinstance(remote, int) or isinstance(remote, bool):
             raise TransportError(
-                f"robotd's hello carried api_version {remote!r}, which is not a version number, "
-                f"so whatever answered at {self.address} is not a robotd quackd can check against "
-                f"the API v{self.api_version} it read; refusing"
+                f"{words.peer_s} hello carried api_version {remote!r}, which is not a version "
+                f"number, so whatever answered at {self.address} is not {words.a_peer} quackd can "
+                f"check against the API v{self.api_version} it read; refusing"
             )
         if remote < floor:
             raise TransportError(
-                f"robotd speaks API v{remote}, older than API v{floor}, the oldest quackd has read "
-                f"({up.IPC_PROTO}); refusing. Update the robot to a release on API v{floor} or "
-                f"later: quackd read {up.RELEASE}, on API v{self.api_version}"
+                f"{words.peer} speaks API v{remote}, older than API v{floor}, the oldest quackd "
+                f"has read ({up.IPC_PROTO}); refusing. "
+                + words.floor_advice.format(
+                    floor=floor, release=up.RELEASE, version=self.api_version
+                )
             )
         if remote != self.api_version:
             self.runtime_warning = self._skew_warning(remote)
             log.warning("%s", self.runtime_warning)
         # A robotd that glances around on its own takes a moment to let go of a glance once a
         # look arrives, and the verbs that steer on the camera wait that out (`up.IDLE_HEAD`).
-        self.head_fade_s = up.IDLE_FADE_S if remote >= up.IDLE_HEAD_SINCE_API else 0.0
-        self.robotd = {
+        glances = self.body.looks and remote >= up.IDLE_HEAD_SINCE_API
+        self.head_fade_s = up.IDLE_FADE_S if glances else 0.0
+        self.answered = {
             "api_version": remote,
             "read": self.api_version,
             "floor": floor,
@@ -925,13 +1170,15 @@ class JsonRpcUnixTransport:
         result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
-        self._start_odometry()
-        await self._start_map()
+        if self.body.odometry:
+            self._start_odometry()
+        if self.body.mapd:
+            await self._start_map()
         # `camera_working` is what the manifest narrows on, and it has to mean "a frame
         # arrived", not "a URL was typed": a typo'd host, a missing extra or a mediad that
         # never reached PLAYING would otherwise still advertise observe, go_to, search_scan
         # and approach_and, every one of which can then only answer "no camera".
-        if is_webrtc_url(self.camera_url):
+        if self.body.mediad and is_webrtc_url(self.camera_url):
             # mediad's video track, turned upright by what mediad says its mount is. Nothing is
             # installed on the robot.
             self._webrtc = WebRtcCamera(str(self.camera_url))
@@ -952,24 +1199,26 @@ class JsonRpcUnixTransport:
         not every version between it and the pin, and the number is a poor guide to what a
         robot has: daemon-v0.15.0 to daemon-v0.15.2 all say API 37 and only the last reports
         `safety.picked_up` (`up.SAFETY_PICKED_UP`)."""
+        words = self.body.words
         build = (self.hello or {}).get("daemon_version")
-        which = f"API v{remote}" + (f" (daemon {build})" if build else "")
+        which = f"API v{remote}" + (f" ({words.build} {build})" if build else "")
         read = f"the API v{self.api_version} quackd read at {up.RELEASE} on {up.READ_ON}"
         if remote > self.api_version:
             return (
-                f"this robotd speaks {which}, newer than {read}. It is served, as upstream's own "
-                "clients serve one, because a call whose shape moved refuses itself by name: a "
-                "verb that fails naming METHOD_NOT_FOUND or INVALID_PARAMS is that, and a "
-                "robot.move the robot's state does not show is held back (extras.move_echo). "
-                "Before it walks, read the robot's own duck-ipc-proto version notes, above "
-                "API_VERSION in its lib.rs, for anything touching the calls quackd makes."
+                f"{words.skew_subject} speaks {which}, newer than {read}. It is served, as "
+                "upstream's own clients serve one, because a call whose shape moved refuses itself "
+                "by name: a verb that fails naming METHOD_NOT_FOUND or INVALID_PARAMS is that, and "
+                "a robot.move the robot's state does not show is held back (extras.move_echo). "
+                + words.newer_advice.format(version=self.api_version)
             )
-        return (
-            f"this robotd speaks {which}, older than {read}. quackd serves every version from "
-            f"API v{int(up.API_FLOOR.name)}, the oldest it has read end to end, but has not read "
-            "this one: a call it lacks fails the verb naming the call, and what it does not "
+        older = (
+            f"{words.skew_subject} speaks {which}, older than {read}. quackd serves every version "
+            f"from API v{int(up.API_FLOOR.name)}, the oldest it has read end to end, but has not "
+            "read this one: a call it lacks fails the verb naming the call, and what it does not "
             "report reads as absent, safety.picked_up among them (extras.pickup_detection)."
         )
+        advice = words.older_advice.format(version=self.api_version)
+        return f"{older} {advice}" if advice else older
 
     async def _await_first_frame(self) -> bool:
         """Wait for the snapshot loop's first frame, so `connect()` knows if there is a camera.
@@ -1009,6 +1258,10 @@ class JsonRpcUnixTransport:
         if (gaze := self._end_gaze("the connection was closed")) is not None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await gaze
+        # Before the task below is cancelled: cancelling it leaves the fetch running in its thread,
+        # which only this ends. A new event for a connect after this, since this one stays set.
+        self._camera_stop.set()
+        self._camera_stop = threading.Event()
         if self._webrtc is not None:
             await self._webrtc.close()
             self._webrtc = None
@@ -1062,18 +1315,25 @@ class JsonRpcUnixTransport:
                 # A line over READER_LIMIT. `readline` has already let go of it, so the next read
                 # starts past it, or at a tail of it that the parse below throws away. Raising
                 # here is what used to end the pump, and with it every answer still to come.
-                log.warning("skipped a line from robotd over %d bytes: %s", READER_LIMIT, e)
+                log.warning(
+                    "skipped a line from %s over %d bytes: %s",
+                    self.body.words.peer,
+                    READER_LIMIT,
+                    e,
+                )
                 continue
             except OSError as e:
-                self._lose(f"the link to robotd failed: {e}")
+                self._lose(f"the link to {self.body.words.peer} failed: {e}")
                 return
             if not line:
-                self._lose("robotd closed the connection")
+                self._lose(f"{self.body.words.peer} closed the connection")
                 return
             try:
                 self._take_line(line)
             except Exception as e:  # one line quackd mishandles must not cut the robot off
-                log.warning("skipped a line from robotd that quackd could not read: %r", e)
+                log.warning(
+                    "skipped a line from %s that quackd could not read: %r", self.body.words.peer, e
+                )
 
     def _take_line(self, line: bytes) -> None:
         """One line from robotd: an answer to a request, or a notification."""
@@ -1125,7 +1385,10 @@ class JsonRpcUnixTransport:
             pending.set_exception(TransportError(f"{code}: {error.get('message')}", code=number))
         else:
             pending.set_exception(
-                TransportError(f"robotd answered with an error quackd cannot read: {error!r:.200}")
+                TransportError(
+                    f"{self.body.words.peer} answered with an error quackd cannot read: "
+                    f"{error!r:.200}"
+                )
             )
 
     def _lose(self, why: str) -> None:
@@ -1169,7 +1432,9 @@ class JsonRpcUnixTransport:
         try:
             self._writer.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
         except (OSError, RuntimeError) as e:
-            raise TransportError(f"{obj.get('method')}: the link to robotd is gone: {e}") from e
+            raise TransportError(
+                f"{obj.get('method')}: the link to {self.body.words.peer} is gone: {e}"
+            ) from e
         self._lines += 1
         return self._lines
 
@@ -1183,7 +1448,9 @@ class JsonRpcUnixTransport:
         try:
             await writer.drain()
         except (OSError, RuntimeError) as e:
-            raise TransportError(f"{method}: the link to robotd is gone: {e}") from e
+            raise TransportError(
+                f"{method}: the link to {self.body.words.peer} is gone: {e}"
+            ) from e
 
     async def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         """Send one call and wait for robotd's answer to it.
@@ -1234,38 +1501,35 @@ class JsonRpcUnixTransport:
         (`up.OTHER_DAEMONS_ANSWER_HELLO`). That refusal used to be put down to a robotd built
         from a protocol quackd had not read, which sent the reader to upstream's version notes
         when the fix was the socket an ssh forward points at."""
+        words = self.body.words
         said = f"{method}: {error}"
         if method == up.HELLO.name and error.code == up.ERR_METHOD_NOT_FOUND:
             return (
                 f"{said}. Whatever answered at {self.address} has no {method}, so it is not "
-                f"robotd: point --address at robotd's socket, {up.SOCKET_ROBOTD.name}"
+                f"{words.no_hello}"
             )
         if method == up.ROBOT_SUBSCRIBE.name and error.code == up.ERR_METHOD_NOT_FOUND:
             return (
                 f"{said}. Whatever answered at {self.address} answered {up.HELLO.name} but has "
                 f"no {method}, which every robotd from API v{int(up.API_FLOOR.name)} up has, so "
-                f"it is not robotd: other daemons on the robot answer {up.HELLO.name} too, "
-                f"updaterd at {up.SOCKET_UPDATERD.name} among them. Point --address at robotd's "
-                f"socket, {up.SOCKET_ROBOTD.name}"
+                f"it is not robotd{words.no_subscribe}"
             )
-        remote = (self.robotd or {}).get("api_version")
+        remote = (self.answered or {}).get("api_version")
         read = f"API v{self.api_version} at {up.RELEASE}"
         kind = (
-            "a call this robotd does not have"
+            f"a call {words.this_peer} does not have"
             if error.code == up.ERR_METHOD_NOT_FOUND
-            else "params this robotd does not take"
+            else f"params {words.this_peer} does not take"
         )
         if remote is None:
             return f"{said}. That is {kind}, before it said its version; quackd read {read}"
         if remote != self.api_version:
             return (
-                f"{said}. That is {kind}: robotd speaks API v{remote} and quackd read {read}, "
-                "and the call differs between the two"
+                f"{said}. That is {kind}: {words.peer} speaks API v{remote} and quackd read "
+                f"{read}, and the call differs between the two"
             )
         return (
-            f"{said}. That is {kind}, though it speaks the {read} quackd read, so this robot was "
-            "built from a duck-ipc-proto quackd has not read: upstream does not promise one "
-            "version number the same calls"
+            f"{said}. That is {kind}, though it speaks the {read} quackd read, {words.same_version}"
         )
 
     async def notify(self, method: str, params: dict[str, Any]) -> int:
@@ -1281,14 +1545,12 @@ class JsonRpcUnixTransport:
 
     async def _fetch_frame(self) -> Image.Image:
         url = self.camera_url or ""
+        stop = self._camera_stop
 
         def fetch() -> bytes:
-            try:
-                with urllib.request.urlopen(url, timeout=SNAPSHOT_TIMEOUT_S) as resp:
-                    return resp.read()
-            except urllib.error.HTTPError as e:
-                # read here, in the thread and while the answer is open: mediad's 503 says why
-                raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
+            return fetch_still(
+                url, deadline_s=SNAPSHOT_TIMEOUT_S, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop
+            )
 
         data = await asyncio.to_thread(fetch)
         return camera_url_frame(data)
@@ -1337,9 +1599,16 @@ class JsonRpcUnixTransport:
         take one state frame. Only mediad's `/frame` takes its picture after it is asked for, so
         only its frames carry one. A coordinator flock runs on the simulator alone today, whose
         frames are drawn as they are asked for, so this keeps a member right on any other body."""
-        if not is_mediad_frame(self.camera_url):
+        if not self._on_mediad:
             return None
         return _head_pose(self._read().state)[0]
+
+    @property
+    def _on_mediad(self) -> bool:
+        """Whether `--camera-url` is `mediad`'s own `/frame`: a URL of that shape, on a body that
+        runs a mediad. On any other a `/frame` is somebody's snapshot server, whose frames say
+        nothing of when they were taken or which way up they are."""
+        return self.body.mediad and is_mediad_frame(self.camera_url)
 
     async def get_frame(self) -> Image.Image | None:
         """The newest frame, or None when there is no camera to read.
@@ -1394,7 +1663,7 @@ class JsonRpcUnixTransport:
         as quackd's own camera daemons do, so its frames have no such time. Nor does a WebRTC
         frame, which arrives some unknown while after the camera took it. On those the verbs act
         on the newest frame, as they did."""
-        if self._webrtc is not None or not is_mediad_frame(self.camera_url):
+        if self._webrtc is not None or not self._on_mediad:
             return None
         if self.frame_age_s() is None or self._frame_at is None:
             return None
@@ -1412,7 +1681,7 @@ class JsonRpcUnixTransport:
         once the turn had settled (`quackd.verbs.core._measures_first`). A frame that says nothing
         of when it was taken could not be waited for, so such a camera says no period either, and
         `go_to` steers on it by the law as it did."""
-        if self._webrtc is not None or not is_mediad_frame(self.camera_url):
+        if self._webrtc is not None or not self._on_mediad:
             return None
         return max(1.0 / max(0.1, self.camera_fps), self._fetch_s)
 
@@ -1444,7 +1713,7 @@ class JsonRpcUnixTransport:
         one from before the head settled would pass for one after it and `watch` would steer a
         look behind. Any other camera is one quackd knows nothing about, and on an alpha a picture
         can be a quarter turn off, which would read left and right as up and down."""
-        return is_mediad_frame(self.camera_url)
+        return self._on_mediad
 
     def lens_given(self, fov_deg: float) -> None:
         """Learn the field of view `--fov-deg` gave, which the detector measures through from now.
@@ -1497,7 +1766,7 @@ class JsonRpcUnixTransport:
         wider frame, which is a beta's, and every camera but `mediad`'s get none, and the
         detector falls back on its own, as it always has without `--fov-deg`."""
         size = self._first_frame_size
-        if size is None or not self.camera_working or not is_mediad_frame(self.camera_url):
+        if size is None or not self.camera_working or not self._on_mediad:
             return None
         width, height = size
         if not 0 < width < height:
@@ -1572,6 +1841,12 @@ class JsonRpcUnixTransport:
         skills = answer.get("skills")
         return tuple(str(s) for s in skills) if isinstance(skills, list) else ()
 
+    @property
+    def skills(self) -> tuple[str, ...] | None:
+        """The skills this robot listed, or None before anything has answered, which
+        `MicroduckAdapter.connect` offers a gated body's verbs by (`Body.skill_verbs`)."""
+        return None if self.subscribed is None else self._skills()
+
     def _read(self) -> StateRead:
         """The newest state frame and what it says about the duck, without asking robotd
         anything: `robot.move` is held back on this, every tenth of a second, mid-verb."""
@@ -1588,26 +1863,41 @@ class JsonRpcUnixTransport:
         )
         state = (self._last_state or {}) if arriving else {}
         safety = state.get("safety")
+        told = safety if isinstance(safety, dict) else {}
         named = state.get("policy")
         policy = str(named or "unknown")
-        fallen = bool((safety or {}).get("fallen"))
+        fallen = _flag(told, "fallen") is True
+        words = self.body.words
         # Frames arriving is not the same as frames that say anything about falling. Upstream
         # declares `safety` on every state frame, but a frame without one would otherwise read
-        # as "not fallen" on the strength of a key that was never there.
-        if not (arriving and isinstance(safety, dict) and "fallen" in safety):
+        # as "not fallen" on the strength of a key that was never there. A null or a word there
+        # says no more than a missing key: it used to read as a fresh frame, with a string
+        # "false" as a duck on the floor and a null as a duck on its feet.
+        if not (arriving and _flag(told, "fallen") is not None):
             if self._lost is not None:
-                silent = f"the link to robotd is gone ({self._lost})"
+                silent = f"the link to {words.peer} is gone ({self._lost})"
             elif age is None:
                 silent = "no robot.state frame has arrived"
             elif not arriving:
                 silent = f"the newest robot.state frame is {age:.1f} s old"
+            elif not isinstance(safety, dict):
+                silent = f"{words.peer_s} state frame carries no safety block"
+            elif "fallen" not in safety:
+                silent = f"{words.peer_s} state frame carries no safety.fallen"
+            elif safety["fallen"] is None:
+                silent = (
+                    f"{words.peer_s} state frame says safety.fallen is null, which quackd reads "
+                    "as not reported"
+                )
             else:
-                silent = "robotd's state frame carries no safety block"
+                silent = _unreadable({"fallen": safety["fallen"]}, body=self.body) or ""
             return StateRead(state, age, False, policy, fallen, None, "unknown", silent)
-        posture, why = posture_of(str(named) if named else None, safety, skills=self._skills())
+        posture, why = posture_of(
+            str(named) if named else None, told, skills=self._skills(), body=self.body
+        )
         # Absent is not False. A robotd from before its pick-up detector leaves the key out, and
         # reading that as "nobody holds the duck" is the reading `stand_up` refuses to act on.
-        picked_up = bool(safety["picked_up"]) if "picked_up" in safety else None
+        picked_up = _flag(told, "picked_up")
         return StateRead(state, age, True, policy, fallen, picked_up, posture, why)
 
     async def get_state(self) -> DuckState:
@@ -1618,8 +1908,10 @@ class JsonRpcUnixTransport:
                 self._last_health = health if isinstance(health, dict) else None
 
         read = self._read()
-        battery = ((health or {}).get("battery") or {}).get("percent")
-        yaw, pitch, pose_from = _head_pose(read.state)
+        battery = _battery_percent(health)
+        safety = read.state.get("safety")
+        unread = _unreadable(safety, body=self.body) if isinstance(safety, dict) else None
+        yaw, pitch, pose_from = _head_pose(read.state, frames=self.body.looks)
         hold = self._hold_record()
         posture, reason = read.posture, read.reason
         if hold is not None and posture == "standing":
@@ -1632,7 +1924,7 @@ class JsonRpcUnixTransport:
             policy=read.policy,
             posture=posture,
             fallen=read.fallen,
-            battery_percent=float(battery) if battery is not None else None,
+            battery_percent=battery,
             extras={
                 "health": health,
                 "move": read.state.get("move"),
@@ -1655,20 +1947,18 @@ class JsonRpcUnixTransport:
                 # pick-up detector does not, and then nothing tells quackd somebody holds the
                 # duck. None while no fresh frame says either way.
                 "pickup_detection": _pickup_detection(read),
+                # Why a safety flag in the newest frame cannot be read, one that is neither a
+                # JSON boolean nor null, or None. `stand_up` refuses while it is set.
+                "safety_unread": unread,
                 # Which robotd this is beside what quackd read, the warning when the two
                 # differ, and what it reports that the floor does not promise.
-                "robotd": self._robotd_record(read),
+                self.body.health_key: self._hello_record(read),
                 # What robotd's own state last said about the twists quackd sent.
                 "move_echo": self.move_echo,
                 # Where the camera points from the trunk, in degrees, positive left and up, the
                 # simulators' convention, and what said so; None from a frame that does not say.
                 "head_yaw_deg": yaw,
-                "head_pitch_deg": pitch,
-                "head_pose_from": pose_from,
-                # The gaze quackd keeps on the head against robotd's idle look-around, and why
-                # the last one ended, which is how somebody else taking the head shows.
-                "gaze_hold": self._gaze_record(),
-                "gaze_released": self.gaze_released,
+                **self._head_extras(pitch, pose_from),
                 "state_age_s": round(read.age, 3) if read.age is not None else None,
                 "subscribed": self.subscribed,
                 "camera": self.camera_health(),
@@ -1685,6 +1975,19 @@ class JsonRpcUnixTransport:
                 **self._where_extras(),
             },
         )
+
+    def _head_extras(self, pitch: float | None, pose_from: str | None) -> dict[str, Any]:
+        """What else the state says of the head, on a body quackd points: its pitch and what said
+        so, the gaze quackd keeps on it against robotd's idle look-around, and why the last one
+        ended, which is how somebody else taking the head shows. Nothing on a body sent no look."""
+        if not self.body.looks:
+            return {}
+        return {
+            "head_pitch_deg": pitch,
+            "head_pose_from": pose_from,
+            "gaze_hold": self._gaze_record(),
+            "gaze_released": self.gaze_released,
+        }
 
     # ── odometry ────────────────────────────────────────────────────────────────────
 
@@ -1789,7 +2092,7 @@ class JsonRpcUnixTransport:
                 if isinstance(e, TransportError)
                 else f"{address} answered as mapd does not: {e!r}"
             )
-            remote = (self.robotd or {}).get("api_version")
+            remote = (self.answered or {}).get("api_version")
             api = f", and robotd here speaks API v{remote}" if isinstance(remote, int) else ""
             self.mapd = {"state": state, "address": address, "given": named, "why": why}
             self.map_warning = f"{why}{api}; places are by odometry"
@@ -1801,8 +2104,11 @@ class JsonRpcUnixTransport:
         self._map = self.spatial = source
         self.mapd = {"state": "answered", "address": address, "given": named}
 
-    def mapd_report(self) -> dict[str, Any]:
-        """What became of mapd at connect, and how it stands now when it answered."""
+    def mapd_report(self) -> dict[str, Any] | None:
+        """What became of mapd at connect, and how it stands now when it answered. None on a body
+        with no mapd, which `doctor` shows no row for."""
+        if not self.body.mapd:
+            return None
         if self._map is None:
             return dict(self.mapd)
         return {**self.mapd, **self._map.summary()}
@@ -1825,25 +2131,27 @@ class JsonRpcUnixTransport:
         return {"where": where_record(self.spatial.fix())} if self.spatial is not None else {}
 
     def _assumptions(self) -> list[str]:
-        """`extras.assumptions`: `stand_up`'s `robot.enable` always, and the lens of `mediad`'s
-        `/frame` while the detector measures through the one assumed from the first frame, which
-        it stops doing once `--fov-deg` gives another (`lens_given`)."""
-        listed = [up.STAND_UP_RPC.name]
+        """`extras.assumptions`: what the body says quackd always stands in for, `stand_up`'s
+        `robot.enable`, and the lens of `mediad`'s `/frame` while the detector measures through the
+        one assumed from the first frame, which it stops doing once `--fov-deg` gives another
+        (`lens_given`)."""
+        listed = list(self.body.assumptions)
         if self._lens_assumed():
             listed.append(up.ALPHA_UPRIGHT_FOV.name)
         return listed
 
-    def _robotd_record(self, read: StateRead) -> dict[str, Any] | None:
+    def _hello_record(self, read: StateRead) -> dict[str, Any] | None:
         """`extras.robotd`: the hello, what quackd read, the floor, the warning, and two things
         the floor serves robots without, read off the robot rather than off its version.
 
         `state_frames` is whether the newest state carries `frames` (`up.STATE_FRAMES`),
         `mediad_frame` whether mediad's `GET /frame` has answered (`up.MEDIAD_FRAME_HTTP`), which
-        quackd knows only when `--camera-url` points at it. Each is None when nothing has said."""
-        if self.robotd is None:
-            return None
+        quackd knows only when `--camera-url` points at it. Each is None when nothing has said.
+        A body with no mediad says the hello and what quackd read, and neither of the two."""
+        if self.answered is None or not self.body.mediad:
+            return self.answered
         return {
-            **self.robotd,
+            **self.answered,
             "state_frames": (read.state.get("frames") is not None) if read.state else None,
             "mediad_frame": self._mediad_frame_answered(),
         }
@@ -1851,7 +2159,7 @@ class JsonRpcUnixTransport:
     def _mediad_frame_answered(self) -> bool | None:
         """Whether mediad's `GET /frame` has answered at least once, or None when `--camera-url`
         is not that route. A robotd from before daemon-v0.13.0 has no such route to answer."""
-        if not is_mediad_frame(self.camera_url):
+        if not self._on_mediad:
             return None
         return self._frame_at is not None
 
@@ -1908,15 +2216,18 @@ class JsonRpcUnixTransport:
         the kind: the duck is not standing, or robotd has not taken the twists it was sent."""
         read = self._read()
         if read.posture != "standing":
+            words = self.body.words
             why = read.reason or (
-                "the duck has fallen" if read.posture == "fallen" else f"the duck is {read.posture}"
+                f"{words.it} has fallen"
+                if read.posture == "fallen"
+                else f"{words.it} is {read.posture}"
             )
-            return f"the duck stopped standing ({why})"
+            return f"{words.noun} stopped standing ({why})"
         if (unseen := self._not_taken()) is not None:
             # written off: what robotd showed instead is in `move_echo`, which a frame showing
             # one of them later must not overwrite while the hold its verdict set stands
             self._unshown.clear()
-            return f"robotd has not taken robot.move: {unseen}"
+            return f"{self.body.words.named_peer} has not taken robot.move: {unseen}"
         return None
 
     def _hold_back(self, hold: str, *also: asyncio.Task[Any] | None) -> None:
@@ -2140,6 +2451,7 @@ class JsonRpcUnixTransport:
         while its sticks are still (`up.PAD_DRIVES`), so a pad in somebody's hand fights every
         walk quackd sends. Holding the walk back is right either way: the duck is not doing what
         quackd asked."""
+        words = self.body.words
         moving = [sent for sent in self._unshown if any(sent.twist)]
         if not moving or self._last_state_at is None:
             return None
@@ -2149,7 +2461,7 @@ class JsonRpcUnixTransport:
             waited = self._last_state_at - unanswered.at
             self._echo_not_taken(unanswered, asked, waited)
             return (
-                f"quackd sent {_shown(unanswered.twist)}, robotd did not answer the "
+                f"quackd sent {_shown(unanswered.twist)}, {words.peer} did not answer the "
                 f"{up.ROBOT_HEALTH.name} quackd sent after it to find out whether it had read it "
                 f"({unanswered.unheard}), and the robot.state that arrived {waited:.1f} s after "
                 f"the twist {_shows(asked)}"
@@ -2177,32 +2489,33 @@ class JsonRpcUnixTransport:
             asked, at = last.closed.asked, last.closed.at
         waited = at - waiting.at
         self._echo_not_taken(waiting, asked, waited)
-        remote = (self.robotd or {}).get("api_version")
+        remote = (self.answered or {}).get("api_version")
         unread = (
-            f", and this robotd speaks API v{remote}, which quackd has not read"
+            f", and {words.this_peer} speaks API v{remote}, which quackd has not read"
             if remote is not None and remote != self.api_version
             else ""
         )
 
         def either(these: str, after: str) -> str:
             return (
-                f"robotd answers a robot.move with nothing, so either it could not parse {these}"
-                f"{unread}, or another client sent one after {after}, as padd does at least ten "
-                "times a second while a gamepad is connected, a stop while its sticks are still"
+                f"{words.peer} answers a robot.move with nothing, so either it could not parse "
+                f"{these}{unread}, or another client sent one after {after}{words.other_client}"
             )
 
         if len(counted) == 1:
             ended = last.closed is not None
             before = ", the last before a stop ended the walk," if ended else ""
             return (
-                f"quackd sent {_shown(waiting.twist)}, robotd has since answered a call quackd "
-                f"made after it, so it had read it, and the robot.state that arrived {waited:.1f} "
-                f"s after the twist{before} {_shows(asked, past=ended)}. {either('this one', 'it')}"
+                f"quackd sent {_shown(waiting.twist)}, {words.peer} has since answered a call "
+                f"quackd made after it, so it had read it, and the robot.state that arrived "
+                f"{waited:.1f} s after the twist{before} {_shows(asked, past=ended)}. "
+                f"{either('this one', 'it')}"
             )
         return (
             f"quackd sent {_shown(waiting.twist)} and more after it, in {len(counted)} walks "
-            "with a stop between each, robotd answered a call quackd made after each walk began, "
-            "so it had read them, and the robot.state frames it sent while each walk went on, the "
+            f"with a stop between each, {words.peer} answered a call quackd made after each walk "
+            "began, so it had read them, and the robot.state frames it sent while each walk went "
+            "on, the "
             f"last arriving {waited:.1f} s after the first twist, {_shows(asked, past=True)}. "
             f"{either('them', 'each')}"
         )
@@ -2251,9 +2564,25 @@ class JsonRpcUnixTransport:
                         self._stopped(task, before)
                     return Ack()
                 case "do":
-                    res = await self.request(up.ROBOT_DO.name, {"skill": p.get("skill")})
-                    return _ack(res)
+                    skill = p.get("skill")
+                    if self.body.skill_verbs is not None and skill not in (
+                        listed := self._skills()
+                    ):
+                        # refused here rather than sent: nobody has said what such a peer does
+                        # with a skill it did not list
+                        return Ack(
+                            accepted=False,
+                            reason=(
+                                f"{self.body.words.named_peer} did not list {skill!r} among its "
+                                f"skills ({', '.join(listed) or 'none'}), so quackd sends no "
+                                "robot.do for it"
+                            ),
+                        )
+                    res = await self.request(up.ROBOT_DO.name, {"skill": skill})
+                    return self._ack(res)
                 case "look":
+                    if not self.body.looks:
+                        return Ack(accepted=False, reason=self.body.look_refused)
                     # Numbered and written with nothing awaited in between, so the look that is
                     # the newest here is the one robotd takes last, and the head its answer
                     # carries is the one robotd's head slot is left holding.
@@ -2287,7 +2616,7 @@ class JsonRpcUnixTransport:
                     asked = p.get("tag", "chirp")
                     tag = asked if asked in up.SOUND_TAG_LIST else "chirp"
                     res = await self.request(up.ROBOT_SOUND.name, {"tag": tag})
-                    ack = _ack(res)
+                    ack = self._ack(res)
                     if tag != asked and ack.accepted:
                         # Upstream has seven tags and no TTS. Substituting is right; doing it
                         # without saying so meant a verb reporting a sound nobody asked for.
@@ -2295,8 +2624,8 @@ class JsonRpcUnixTransport:
                     return ack
                 case "enable":
                     res = await self.request(up.ROBOT_ENABLE.name, {"on": bool(p.get("on", True))})
-                    return _ack(res)
-                case "pose":
+                    return self._ack(res)
+                case "pose" if self.body.poses:
                     await self.notify(
                         up.ROBOT_POSE.name, {k: p[k] for k in ("z", "roll", "pitch") if k in p}
                     )
@@ -2322,7 +2651,8 @@ class JsonRpcUnixTransport:
         if isinstance(health, dict):
             self._last_health = health
             if health.get("healthy") is False:
-                raise HeartbeatError(f"robotd unhealthy: {health.get('reason') or 'no reason'}")
+                reason = health.get("reason") or "no reason"
+                raise HeartbeatError(f"{self.body.words.unhealthy}: {reason}")
 
     async def stop(self) -> None:
         """Zero the velocity. Never raises — but never pretends it landed, either.
@@ -2361,10 +2691,10 @@ class JsonRpcUnixTransport:
         except Exception as e:  # nothing the socket does gets out of here
             self.stop_error = str(e) or type(e).__name__
             log.warning(
-                "stop could not be delivered to %s (%s). The robot's own deadman zeroes "
-                "velocity when robot.move stops arriving, which is what stops it now.",
+                "stop could not be delivered to %s (%s). %s",
                 self.address,
                 self.stop_error,
+                self.body.words.no_stop,
             )
         finally:
             self._stopped(task, before)
@@ -2592,22 +2922,21 @@ class JsonRpcUnixTransport:
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
 
+    def _ack(self, result: Any) -> Ack:
+        """robotd's `IntentResult` as an `Ack`, and a refusal for an answer that is not one.
 
-def _ack(result: Any) -> Ack:
-    """robotd's `IntentResult` as an `Ack`, and a refusal for an answer that is not one.
-
-    `accepted` is a bool robotd writes on every `IntentResult`, at the floor and at the pin, so
-    an answer without it is not an answer quackd has read: a robotd newer than the read whose
-    result moved, which `up.VERSION_SKEW` serves and which no call refuses by name, or something
-    else on the socket. It used to read as accepted, so a `robot.do` robotd refused could be
-    reported as a kick. Unread is not consent, and the refusal names what came back."""
-    if isinstance(result, dict) and isinstance(result.get("accepted"), bool):
-        reason = result.get("reason")
-        return Ack(accepted=result["accepted"], reason=None if reason is None else str(reason))
-    return Ack(
-        accepted=False,
-        reason=(
-            f"robotd answered {result!r:.200}, which carries no accepted that quackd can read, "
-            "so it is not taken for a yes"
-        ),
-    )
+        `accepted` is a bool robotd writes on every `IntentResult`, at the floor and at the pin, so
+        an answer without it is not an answer quackd has read: a robotd newer than the read whose
+        result moved, which `up.VERSION_SKEW` serves and which no call refuses by name, or something
+        else on the socket. It used to read as accepted, so a `robot.do` robotd refused could be
+        reported as a kick. Unread is not consent, and the refusal names what came back."""
+        if isinstance(result, dict) and isinstance(result.get("accepted"), bool):
+            reason = result.get("reason")
+            return Ack(accepted=result["accepted"], reason=None if reason is None else str(reason))
+        return Ack(
+            accepted=False,
+            reason=(
+                f"{self.body.words.peer} answered {result!r:.200}, which carries no accepted that "
+                "quackd can read, so it is not taken for a yes"
+            ),
+        )

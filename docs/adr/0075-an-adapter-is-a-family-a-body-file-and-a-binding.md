@@ -76,9 +76,12 @@ name is used only inside its own package.
   `not_offered` list. A robot with a network API of its own costs a wire binding in the nearest
   family. A robot with no API costs a bridge on the robot. None of them costs a package of
   2,000 to 9,000 lines again.
-- The Huebot fold deletes about 2,500 copied lines, and the Microduck's transport adopts the
-  hardening Huebot's copy had grown: a camera fetch bounded in size and time, a battery that is
-  not an object read as no battery, a safety flag that is not a boolean read as unreadable.
+- The Huebot fold took its package from 3,093 lines to about 650, and the Microduck's transport adopted
+  the hardening Huebot's copy had grown: a camera fetch bounded in size and time, a battery that
+  is not an object read as no battery, a safety flag that is not a boolean read as unreadable.
+  Every description either body could give hashed the same across the move, 456 of them, and
+  `tests/golden/manifest_digests.json` holds them. A Huebot's 24 changed after it, on purpose,
+  when it began to say which of the family's verbs it has not got.
 - No hardware run comes with this record. The SO-100 runs the SO-101's code through the same
   LeRobot class and has never run; the Koch is data until somebody names a date
   ([ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)); the eight bound
