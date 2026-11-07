@@ -105,9 +105,9 @@ def test_a_type_is_its_own_sheet_and_the_same_verbs() -> None:
     assert (so100.model, so101.model) == ("lerobot-so100", "lerobot-so101")
     assert so100.verb_names() == so101.verb_names()
     assert so100.datasheet.payload_kg is None, "nobody publishes what an SO-100 lifts"
-    assert so100.datasheet.reach_m is not None and so100.datasheet.reach_m.value == 0.34
+    assert so100.datasheet.reach_m is not None and so100.datasheet.reach_m.value == 0.33
     assert "No SO-100 has run quackd" in " ".join(so100.datasheet.notes)
-    with pytest.raises(AdapterError, match="choose one of so101_follower, so100_follower"):
+    with pytest.raises(AdapterError, match=r"choose one of so101_follower, so100_follower$"):
         describe_arm("real", robot_type="so102_follower")
 
 
@@ -140,6 +140,39 @@ def test_a_robot_type_is_stored_read_back_and_left_out_when_there_is_none(tmp_pa
     assert old is not None and describe(old.robot_spec).model == "lerobot-so101"
 
 
+def test_the_default_type_is_stored_as_none(tmp_path: Path) -> None:
+    """Saying the SO-101 changes nothing, and stored it would make the file one 0.32 and older
+    refuse whole, since they read it with no key they have not heard of."""
+    registry = Registry(tmp_path)
+    registry.add_robot(RobotEntry(name="a", spec="lerobot:real", robot_type="so101_follower"))
+    stored = json.loads((tmp_path / "robots.json").read_text(encoding="utf-8"))["robots"]
+    assert "robot_type" not in stored["a"]
+    registry.update_robot("a", {"robot_type": "so100_follower"})
+    registry.update_robot("a", {"robot_type": "so101_follower"})
+    entry = registry.get_robot("a")
+    assert entry is not None and entry.robot_type is None
+
+
+def test_a_type_is_taken_at_the_door_where_the_adapter_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The catalogue's list is the word there: a robot is registered on a machine that cannot
+    build it, as it is with no type."""
+    from quackd.adapters import factory
+    from quackd.adapters.base import AdapterNotInstalled
+
+    def not_here(adapter: str) -> Any:
+        raise AdapterNotInstalled(adapter, f"quackd[{adapter}]")
+
+    monkeypatch.setattr(factory, "_module", not_here)
+    registry = Registry(tmp_path)
+    registry.add_robot(RobotEntry(name="a", spec="lerobot:real", robot_type="so100_follower"))
+    entry = registry.get_robot("a")
+    assert entry is not None and entry.robot_type == "so100_follower"
+    with pytest.raises(RegistryError, match="choose one of so101_follower"):
+        registry.add_robot(RobotEntry(name="b", spec="lerobot:real", robot_type="koch_follower"))
+
+
 def test_a_type_the_adapter_does_not_list_is_refused_at_the_door(tmp_path: Path) -> None:
     registry = Registry(tmp_path)
     for kind in ("so102_follower", "koch_follower"):
@@ -161,9 +194,9 @@ def test_a_type_the_adapter_does_not_list_is_refused_at_the_door(tmp_path: Path)
 
 def test_a_spec_with_a_type_its_adapter_does_not_take_is_refused_rather_than_dropped() -> None:
     """A robot registered as another arm would otherwise be built as the default one."""
-    with pytest.raises(AdapterError, match="drives one kind of robot"):
+    with pytest.raises(AdapterError, match="takes no robot type, which only lerobot has"):
         describe(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
-    with pytest.raises(AdapterError, match="drives one kind of robot"):
+    with pytest.raises(AdapterError, match="takes no robot type, which only lerobot has"):
         make_adapter(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
 
 
@@ -193,7 +226,12 @@ def _fake_lerobot(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     lerobot = types.ModuleType("lerobot")
     lerobot.__version__ = "0.6.1"  # type: ignore[attr-defined]
     robots = types.ModuleType("lerobot.robots")
-    robots.make_robot_from_config = lambda config: built.append(config) or config  # type: ignore[attr-defined]
+
+    def make_robot_from_config(config: Any) -> Any:
+        built.append(config)
+        return config
+
+    robots.make_robot_from_config = make_robot_from_config  # type: ignore[attr-defined]
     so = types.ModuleType("lerobot.robots.so_follower")
     so.SO100FollowerConfig = SO100  # type: ignore[attr-defined]
     so.SO101FollowerConfig = SO101  # type: ignore[attr-defined]
@@ -223,7 +261,7 @@ def test_the_real_backend_will_not_build_a_type_nobody_answers_for(
     """`make()` refuses it first. This is the backend's own word, for one built some other way."""
     _fake_lerobot(monkeypatch)
     arm = LeRobotReal(address="COM5", robot_type="koch_follower")
-    with pytest.raises(TransportError, match="only so101_follower, so100_follower is wired"):
+    with pytest.raises(TransportError, match="only so101_follower and so100_follower are wired"):
         arm._build_robot()
 
 

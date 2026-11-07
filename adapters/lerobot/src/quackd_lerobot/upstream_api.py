@@ -253,8 +253,9 @@ KOCH_CONFIG = UpstreamRef(
     "lerobot.robots.koch_follower.KochFollowerConfig",
     "VERIFIED",
     src(_KOCH_CFG, 24),
-    "use_degrees defaults to False on it, where the SO's defaults to True (line 39), so wiring one "
-    "would have to pass True as quackd does for an SO arm",
+    "use_degrees defaults to False on it (line 39), where the SO's defaults to True "
+    "(config_so_follower.py, line 42), so wiring one would have to pass True as quackd does for an "
+    "SO arm",
 )
 KOCH_MOTORS = UpstreamRef(
     "shoulder_pan to gripper on a DynamixelMotorsBus: xl430-w250 on the first two, xl330-m288 on "

@@ -614,15 +614,19 @@ uv run quackd robot add desk-arm lerobot:real --address COM5 --robot-type so100_
 ```
 
 `quackd robot show desk-arm` then names the body `lerobot-so100` and the robot type
-`so100_follower`. Calibrate it as LeRobot calibrates an SO-100, under the name you gave it: an
+`so100_follower`, and the SO-101, the default, is stored as no type at all, so a registry that
+names none stays one an older quackd reads. Calibrate it as LeRobot calibrates an SO-100, under
+the name you gave it: an
 SO-100 and an SO-101 keep their calibration in the same place,
 `HF_LEROBOT_CALIBRATION/robots/so_follower/`, since at that commit they are one class.
 
 Two refusals, both at `robot add`. A type the adapter does not build is refused with the ones it
 does, a Koch's among them, rather than registered and then refused at the first run in words about
 something else. And `lerobot:mujoco` takes no type but the SO-101's, since the simulator is a
-physics model of an SO-101 and a rehearsal on it would say nothing about another arm's reach. The mock
-takes either, with that arm's figures.
+physics model of an SO-101 and a rehearsal on it would say nothing about another arm's reach, and
+`quackd robot twin` refuses an SO-100 for the same reason. The mock takes either, with that arm's
+figures. `quackd ui` neither sets nor shows a type yet, and a passport made on the robot carries
+the SO-101's figures whichever arm it is.
 
 ## Installing it
 

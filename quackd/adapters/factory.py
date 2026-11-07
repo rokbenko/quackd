@@ -401,11 +401,8 @@ def _takes_robot_type(spec: RobotSpec, fn: Any) -> None:
     """Refuse a robot type for a body whose adapter drives one kind, rather than drop it: a robot
     registered as another arm would otherwise be described and built as the default one."""
     if not _takes(fn, "robot_type"):
-        takers = [row.name for row in ADAPTERS if row.robot_types]
-        raise AdapterError(
-            f"{spec.key} drives one kind of robot, so --robot-type has nothing to choose: "
-            f"{' and '.join(takers)} take one"
-        )
+        takers = " and ".join(row.name for row in ADAPTERS if row.robot_types)
+        raise AdapterError(f"{spec.key} takes no robot type, which only {takers} has")
 
 
 def _takes_map_address(spec: RobotSpec, fn: Any) -> None:

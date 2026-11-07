@@ -1433,20 +1433,25 @@ class LeRobotReal:
         }
 
     def _build_robot(self) -> Any:
+        arm = ARMS.get(self.robot_type)
         try:
             import lerobot
             from lerobot.robots import make_robot_from_config
+
+            # the type's config class, imported with the rest, so a LeRobot that lacks it is a
+            # LeRobot that is not installed, as it always was
+            built: Any = None
+            if arm is not None and arm.drivable:
+                module, _, name = arm.config.rpartition(".")
+                built = getattr(importlib.import_module(module), name)
         except ImportError as e:
             raise AdapterNotInstalled("lerobot", "quackd[lerobot]") from e
         self.lerobot_version = getattr(lerobot, "__version__", None)
         check_port(self.port, label=self.label)
-        arm = ARMS.get(self.robot_type)
-        if arm is None or not arm.drivable:
-            wired = ", ".join(name for name, one in ARMS.items() if one.drivable)
-            raise TransportError(f"lerobot {self.label}: only {wired} is wired")
-        module, _, name = arm.config.rpartition(".")
-        config = getattr(importlib.import_module(module), name)(**self._config_kwargs())
-        return make_robot_from_config(config)
+        if built is None:
+            wired = " and ".join(name for name, one in ARMS.items() if one.drivable)
+            raise TransportError(f"lerobot {self.label}: only {wired} are wired")
+        return make_robot_from_config(built(**self._config_kwargs()))
 
     def _build_camera(self, spec: CameraSpec) -> Any:
         """One webcam, built by quackd and not by the follower (`up.OPENCV_CAMERA`)."""

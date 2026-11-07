@@ -1,10 +1,12 @@
 """The arm types this adapter knows, as data (ADR-0075).
 
-What drives an arm here reads LeRobot's `Robot` and `MotorsBus` and nothing of any one arm, so a
-second arm comes through LeRobot's own robot types, as a record in this file. A record is what
-differs: what the manifest calls it, its sheet, and how far it has got. The owner rule holds here as
-it does for a backend (ADR-0076): a type with no owner and no first-run date is described and not
-driven, and `make()` refuses it.
+What drives an arm here reads LeRobot's `Robot` and `MotorsBus`, and the SO follower's own
+behaviour and its Feetech registers where it has to (`up.SO_CONNECT_REFUSES_WHILE_OPEN`,
+`up.STS3215_REGISTERS` and their like). So an arm of that class comes as a record in this file, and
+an arm of another class needs those read again first. A record is what differs: what the manifest
+calls it, its sheet, and how far it has got. The owner rule holds here as it does for a backend
+(ADR-0076): a type with no owner and no first-run date is described and not driven, and `make()`
+refuses it.
 
 The SO-101's sheet is the one the arm has always had. The SO-100 runs the same class at LeRobot's
 pin (`up.ROBOT_TYPE_SO100`), so it is drivable on that code, and nobody has run one.
@@ -100,11 +102,11 @@ _SO100_URDF = (
 )
 
 _SO100_REACH = Figure(
-    value=0.34,
+    value=0.33,
     confidence="estimate",
     source=_SO100_URDF,
-    note="link lengths from the shoulder to the moving jaw's pivot, summed with the arm straight "
-    "and rounded down; the fingers go further, and the file does not say how far",
+    note="the farthest the moving jaw's pivot gets from the shoulder over the joints' limits, "
+    "rounded down; the fingers go further, and the file does not say how far",
 )
 """As `REACH` is for the SO-101, from `shoulder_lift` outwards, read at the simulator's pin:
 
@@ -113,8 +115,11 @@ _SO100_REACH = Figure(
     wrist_roll    (0,       -0.0601,  0)       0.060 m
     gripper       (-0.0202, -0.0244,  0)       0.032 m
 
-They sum to 0.343 m, to the pivot of the moving jaw, since this file has no gripper frame. An
-estimate, and a short one: it says what the file shows and leaves the fingers out."""
+They sum to 0.343 m, to the pivot of the moving jaw, since this file has no gripper frame. That is
+an upper bound the joints' limits never reach: a grid sweep of `elbow_flex`, `wrist_flex` and
+`wrist_roll` through them puts the pivot at most 0.338 m from the `shoulder_lift` axis, which the
+same sweep says is 0.411 m for the SO-101's gripper frame, as `REACH` records. So 0.33, rounded
+down, and a short estimate: it says what the file shows and leaves the fingers out."""
 
 _SO100_SHEET = Datasheet(
     dof=Figure(
@@ -130,7 +135,7 @@ _SO100_SHEET = Datasheet(
     cannot=[
         "go anywhere: it is bolted to a table and has no base",
         f"reach anything more than about {_SO100_REACH.value:g} m from its shoulder to its "
-        "gripper's pivot: that is the arm held straight out, and any bent pose reaches less",
+        "gripper's pivot: that is as far as its joints let it, and most poses reach less",
         "feel what it holds: nothing reports grip force, so holding is inferred from the "
         "gripper stopping short of shut, which an empty hand that binds also does",
     ],
@@ -191,7 +196,7 @@ class ArmType:
         return (
             f"lerobot: {self.robot_type} is described and not driven: bound code needs a named "
             "owner and a date for its first hardware run (docs/adr/0076), and nobody has named "
-            "either for this arm. Its figures are on docs/adapters/lerobot/README.md"
+            "either for this arm (docs/adapters/lerobot/README.md#which-arms)"
         )
 
 
@@ -246,10 +251,10 @@ names as strings, for a machine with no adapter installed, and a test holds the 
 
 
 def arm_type(robot_type: str) -> ArmType:
-    """The record for a type, or a refusal listing the ones there are."""
+    """The record for a type, or a refusal listing the ones that can be chosen, which are the ones
+    that are built: a type that is only described is no choice anybody can make."""
     arm = ARMS.get(robot_type)
     if arm is None:
-        raise AdapterError(
-            f"lerobot has no arm type {robot_type!r}: choose one of {', '.join(ARMS)}"
-        )
+        built = ", ".join(name for name, one in ARMS.items() if one.drivable)
+        raise AdapterError(f"lerobot has no arm type {robot_type!r}: choose one of {built}")
     return arm

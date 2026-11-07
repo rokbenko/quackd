@@ -42,7 +42,13 @@ from pydantic import (
     model_validator,
 )
 
-from quackd.adapters.base import MULTI_CAMERA_SPECS, AdapterError, camera_urls, who_takes_several
+from quackd.adapters.base import (
+    MULTI_CAMERA_SPECS,
+    AdapterError,
+    AdapterNotInstalled,
+    camera_urls,
+    who_takes_several,
+)
 from quackd.adapters.catalogue import BY_NAME
 from quackd.adapters.factory import (
     RobotSpec,
@@ -717,22 +723,28 @@ def _check_reaches_nothing(entry: RobotEntry, *, fields: Collection[str] | None 
             )
 
 
-def _check_robot_type(spec: str, robot_type: str | None) -> None:
-    """Refuse a robot type at the door that a run would be refused on later, in words about the
-    type rather than about whatever that run checked first.
+def _check_robot_type(spec: str, robot_type: str | None) -> str | None:
+    """A robot type as it is stored: None for the adapter's default, which changes nothing and
+    would only make the file one an older quackd refuses, and a refusal at the door for a type a
+    run would be refused on later, in words about the type rather than whatever that run checked
+    first.
 
     The adapter's list is the catalogue's, the types it builds, so a robot can be registered on
     a machine that cannot build it. Where the adapter is installed, it is asked as well, which
     catches what only it knows: that its simulator is the physics model of one arm and rehearses
     no other."""
     if robot_type is None:
-        return
-    from quackd.adapters.factory import describe, info
+        return None
+    from quackd.adapters.factory import ADAPTERS, describe, info
 
     parsed = parse_robot_spec(spec)
     kinds = info(parsed.adapter).robot_types
     if not kinds:
-        raise RegistryError(f"{spec} drives one kind of robot, so it takes no --robot-type")
+        takers = " and ".join(row.name for row in ADAPTERS if row.robot_types)
+        raise RegistryError(
+            f"{spec} takes no --robot-type, which only {takers} has: leave it out, or forget a "
+            "stored one with --clear robot-type"
+        )
     if robot_type not in kinds:
         raise RegistryError(
             f"{parsed.adapter} drives no robot type {robot_type!r}: choose one of "
@@ -740,10 +752,11 @@ def _check_robot_type(spec: str, robot_type: str | None) -> None:
         )
     try:
         describe(RobotSpec(parsed.adapter, parsed.backend, robot_type=robot_type))
-    except ImportError:
-        return  # not installed here (`AdapterNotInstalled` is an ImportError), which is no answer
+    except AdapterNotInstalled:
+        pass  # not installed here, which is no answer: the catalogue's word stands
     except AdapterError as e:
         raise RegistryError(str(e)) from None
+    return None if robot_type == kinds[0] else robot_type
 
 
 def _check_map_address(spec: str, map_address: str | None) -> None:
@@ -758,13 +771,13 @@ def _check_map_address(spec: str, map_address: str | None) -> None:
         )
 
 
-#: Fields added since, written to robots.json only while they hold something: `--host`'s two
-#: and `--map-address`. quackd 0.12 to 0.14 read the file with `extra="forbid"`, and every
-#: release before a field was added reads it the same way, so a key they have never heard of
-#: refuses the whole file, even one that is null, and every write saves every robot. Leaving the
-#: empty ones out keeps a registry that never named one readable by them, which matters because
-#: two installs on one machine share one ~/.quackd. A robot that does name one is a file they
-#: cannot read, and nothing short of dropping it could change that.
+#: Fields added since, written to robots.json only while they hold something: `--host`'s two,
+#: `--map-address` and `--robot-type`. quackd 0.12 to 0.14 read the file with `extra="forbid"`,
+#: and every release before a field was added reads it the same way, so a key they have never
+#: heard of refuses the whole file, even one that is null, and every write saves every robot.
+#: Leaving the empty ones out keeps a registry that never named one readable by them, which
+#: matters because two installs on one machine share one ~/.quackd. A robot that does name one is
+#: a file they cannot read, and nothing short of dropping it could change that.
 _OMITTED_WHEN_EMPTY = ("host", "host_token", "map_address", "robot_type")
 
 
@@ -857,7 +870,9 @@ class Registry:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
         _check_map_address(entry.spec, entry.map_address)
-        _check_robot_type(entry.spec, entry.robot_type)
+        kind = _check_robot_type(entry.spec, entry.robot_type)
+        if kind != entry.robot_type:
+            entry = entry.model_copy(update={"robot_type": kind})
         _check_reaches_nothing(entry)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
@@ -909,7 +924,9 @@ class Registry:
             # either, as the board's pair is
             _check_map_address(entry.spec, entry.map_address)
         if "robot_type" in changes or "spec" in changes:
-            _check_robot_type(entry.spec, entry.robot_type)
+            kind = _check_robot_type(entry.spec, entry.robot_type)
+            if kind != entry.robot_type:
+                entry = entry.model_copy(update={"robot_type": kind})
         _check_reaches_nothing(entry, fields=None if "spec" in changes else set(changes))
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:

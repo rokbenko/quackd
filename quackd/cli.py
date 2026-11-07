@@ -3937,6 +3937,14 @@ _ROBOT_TYPE = typer.Option(
     f"{' or '.join(BY_NAME['lerobot'].robot_types)}. The first when absent.",
     rich_help_panel="Robot",
 )
+_ROBOT_TYPE_EDIT = typer.Option(
+    None,
+    "--robot-type",
+    help="Which kind of robot this is, on lerobot "
+    f"{' or '.join(BY_NAME['lerobot'].robot_types)}. Replaces the stored one; --clear robot-type "
+    "goes back to the first.",
+    rich_help_panel="Robot",
+)
 _MAP_ADDR = typer.Option(
     None,
     "--map-address",
@@ -6997,6 +7005,16 @@ def robot_twin(
             hint="quackd robot twin takes a robot registered as lerobot:real",
         )
         return
+    if entry.robot_type is not None:
+        # stored only when it is not the default (`_check_robot_type`), and the simulator is the
+        # default's physics: a twin would rehearse this arm's task on another arm's reach
+        _fail(
+            f"{source} is an {entry.robot_type}, and {_TWIN_SPEC} is the physics model of an "
+            f"{BY_NAME['lerobot'].robot_types[0]}, so a twin would rehearse its task on another "
+            "arm's reach and payload",
+            hint="rehearse it on lerobot:mock, which takes its figures, or on the arm",
+        )
+        return
     if existing is not None and force and existing.key != _TWIN_SPEC:
         _fail(
             f"{target} is registered as {existing.key}, and --force replaces only a "
@@ -7279,7 +7297,7 @@ def robot_edit(
     spec: str | None = typer.Option(None, "--spec", help="Move it to another <adapter>:<backend>."),
     address: str | None = _ADDR,
     map_address: str | None = _MAP_ADDR,
-    robot_type: str | None = _ROBOT_TYPE,
+    robot_type: str | None = _ROBOT_TYPE_EDIT,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     token_env: str | None = _TOKEN_ENV,

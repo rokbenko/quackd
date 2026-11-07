@@ -192,6 +192,22 @@ def test_only_a_registered_lerobot_arm_has_a_twin() -> None:
     _refused(["duck-a"], "duck-a is microduck:mock", "only a LeRobot arm")
 
 
+def test_an_arm_of_another_type_has_no_twin_on_the_so101s_physics() -> None:
+    """The simulator is an SO-101's physics, which an SO-100 registered with `--robot-type` is not,
+    so a twin would rehearse its task on another arm's reach and payload, and copied the spec and
+    left the type behind."""
+    Registry().add_robot(
+        RobotEntry(
+            name="desk",
+            spec="lerobot:real",
+            address="/dev/ttyACM0",
+            robot_type="so100_follower",
+        )
+    )
+    _write(calibration_path("desk"), _calibration())
+    _refused(["desk"], "desk is an so100_follower", "physics model of an so101_follower")
+
+
 def test_a_taken_name_is_refused_and_force_replaces_only_a_simulator() -> None:
     registry = Registry()
     _arm(registry, _calibration())

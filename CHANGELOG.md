@@ -62,7 +62,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   quackd still reads the file, and `list-adapters --json` rows gain `robot_types`. A registered
   robot's type reaches everything that describes or builds it, `doctor` included. A type the adapter
   does not build is refused at `robot add`, and so is any type but the SO-101 on `lerobot:mujoco`,
-  which is a model of an SO-101. A Koch v1.1 is described in `quackd_lerobot/arms.py` and registered
+  which is a model of an SO-101, and `robot twin` refuses an arm of another type for the same reason.
+  The SO-101, the default, is stored as no type at all. A Koch v1.1 is described in
+  `quackd_lerobot/arms.py` and registered
   by nothing until somebody names a date to run one
   ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#which-arms)).
 
@@ -103,6 +105,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **No SO-100 has run quackd.** It is bound with the SO-101's owner and dates, at the project's
   owner's word, because it runs the same LeRobot class. Its figures were read from its maker's robot
   description by one reader: a reach to the jaw's pivot, and no payload, since nobody publishes one.
+  `quackd ui` neither sets nor shows a robot type, and a passport made on the robot carries the
+  SO-101's figures whichever arm it is.
 - **No described body's figures have been checked by a second reader, and none against a robot.** Each was
   read from the page its source names on the day it says, 2026-11-05, and the Unitree G1's on 2026-10-28,
   by one reader. Five choices are worth knowing. A quadruped's back load is a note and not a figure,
