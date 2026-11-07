@@ -128,6 +128,31 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The setup page names the extra to install as it is.** For an adapter not installed here it said
   `uv pip install "quackd[quackd[lerobot]]"`, putting a second `quackd[...]` round the catalogue's
   extra, which names the package already. It says `uv pip install "quackd[lerobot]"` now.
+- **Five rosbridge refs into urdfdom cited lines that say something else.** At the commit they
+  pin, `URDF_JOINT_LIMIT` cited line 127 of `joint.cpp`, a `catch` inside the parsing of `upper`,
+  for the four limit attributes, which that file reads on lines 102, 118, 134 and 150.
+  `URDF_JOINT_TREE` cited line 267, in the calibration parser, for the joint's name and its
+  parent and child links, which are on 342, 371 and 386. `URDF_JOINT_TYPE` and
+  `DOF_IS_NON_FIXED_JOINTS` cited line 287, in the mimic parser, for the six type strings, which
+  are on 406 to 416. And `URDF_MASS`'s note sent a reader to line 356 of `link.cpp` for the
+  optional inertial element, which is on 429. Each now cites the line that says it, at the same
+  pin, and each reads as moved on `rolling`, urdfdom's default branch, which the nightly compares
+  it with. What quackd reads from a URDF did not change: the attribute names were right and
+  their line numbers were not. Found by reading the file at its pin while the drift job was
+  under review. The job itself cannot find this: it compares a line with itself over time, so a
+  line that is the only one of its kind and never said what its ref claims reads as `same`.
+- **The ref for `microduck_rl`'s model licence cites its line.** `MESH_LICENSE` cited the README
+  as a whole, so a change to the sentence it quotes read as a page that changed, which is not
+  drift. It cites line 261 at the same pin now, and the nightly reports that sentence as changed.
+- **Three rosbridge refs pointed past the end of their file or at a closing bracket.**
+  `MSG_COMPRESSED_IMAGE` cited line 44 of a 41-line message definition, `OP_CALL_SERVICE`
+  cited line 780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift
+  job's first run found them; each now cites the line that names the thing, at the same pin.
+- **`quackd doctor` no longer cuts a long note with an ellipsis.** The upstream assumptions
+  table truncated a note that quotes a long URL, which the endpoint module's notes do, with a
+  character a cp1252 console cannot carry, so the command that is pasted into issues lost the
+  one thing the row was there to say. The column folds long words now.
+  `tests/test_doctor.py`'s codepage tests fail without this once the endpoint row is walked.
 
 ### Documentation
 
@@ -170,6 +195,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The adapter guide counts nine adapters where `uv sync --extra dev` installs them.** It said
   all eight, a count from before Huebot, in a shape the count guard did not read. The guard reads
   `all N editable` and `all N of them` now, on CONTRIBUTING.md as well as the guide.
+- **A nightly says when an upstream moved under a ref.** Every adapter cites what it reads
+  from upstream as refs pinned to a commit and a line, and nothing re-read them when upstream
+  moved: LeRobot replaced the arm's motor library on 2026-10-16 and a person noticed three weeks
+  later. `scripts/upstream_drift.py` fetches every cited file at its pin and at the branch or tag
+  the pin tracks, and tells three things apart. Drift is upstream having moved: a cited line that
+  no longer reads as it was read, a file, a directory, a branch or a repository that is gone, a
+  newer release on PyPI than the one a module read. A line that moved within its file is reported
+  and is not drift, and neither is a page that changed. A broken ref is one of quackd's own that
+  cannot be followed: a blank or bracket-only line, or a path with nothing at the pin, asked of the
+  API as well as the raw host. And a night something did not answer as it should is unchecked. It
+  exits 0, 1 for drift or a broken ref, which is work for somebody here, or 2 when nothing drifted
+  and something could not be checked, so an outage never reads as drift and never closes an issue.
+  `.github/workflows/upstream-drift.yml` runs it every night
+  and on demand, writes the report to the run's summary, and keeps one issue open per upstream
+  that needs somebody, labelled `upstream-drift`, edited in place while that lasts and closed
+  the night every ref reads as it was read. A night that could not check an upstream closes
+  nothing and rewrites nothing for it. A cited line that reads like others in its own file is
+  listed as a weak anchor, because it cannot be followed once it leaves its line: 35 cited lines
+  are that today. Modules say what their pin tracks where that is not the default branch, in
+  `BRANCH` on the Open Duck's and `microduck_rl`'s, and the Microduck's `RELEASE`,
+  `daemon-v0.16.1`, is compared with the newest `daemon-v` tag and not with a `main` it never
+  tracked. The arm's `UPSTREAMS` lists the
+  endpoint module it had left out, so `quackd doctor`'s pins table shows 14 rows for 14 modules
+  where it showed 13. `tests/test_upstream_drift.py` runs the script on fixtures, reaching
+  nothing, holds its walk to the suite's list of modules, and reads the workflow back. Run by
+  hand on 2026-11-05 it took a little over two minutes and found six upstreams moved, none broken and
+  none unchecked. LeRobot's `feetech/tables.py` is gone from its main branch, as the motor-library
+  change says, with 16 more cited lines changed. robotd is at `daemon-v0.18.5`, and its API
+  version line no longer reads 41. huggingface_hub is at 2.4.0 on PyPI where quackd read 1.29.0.
+  `microduck_rl` has changed the two files eleven of its refs cite whole, and its README now names
+  a licence version and a `LICENSE-MODELS.md` for its models where it had one sentence. And
+  AlohaMini's and MOSS's main branches each changed cited lines. None of these is re-read here:
+  each is an issue the first scheduled run opens.
 
 ### Known limitations
 

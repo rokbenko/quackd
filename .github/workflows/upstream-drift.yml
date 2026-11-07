@@ -1,0 +1,62 @@
+name: upstream drift
+
+# Every adapter cites what it reads from upstream as refs pinned to a commit and a line
+# (ADR-0022), and nothing re-read them when upstream moved: LeRobot replaced the arm's motor
+# library on 2026-10-16 and a person noticed three weeks later. This fetches every cited file
+# at its pin and at the branch or tag the pin tracks, and says which refs no longer point at
+# what they were read as. It runs nightly and on demand, and it gates nothing: red asks somebody
+# to go and read, and no release stops for it. It is apart from `ci` because it needs the network,
+# which that suite never does.
+#
+# Red means one of two things, and the summary says which. Exit 1: an upstream moved, or a ref
+# of quackd's own cannot be followed, and somebody should go and read it. Exit 2: something did
+# not answer as it should and nothing else was found, so the night says nothing either way.
+#
+# The first run is expected red for six upstreams, LeRobot among them, whose Feetech tables that
+# pull request removed, and MOSS, whose main moves most days. That is the point, not a fault.
+#
+# The script also keeps one issue open per upstream that needs somebody, labelled
+# `upstream-drift`, edits it in place while that lasts and closes it the night every ref reads
+# as it was read, so the finding outlives the run's logs. A night that could not check an
+# upstream closes nothing. That is the one write this workflow makes, and only in this
+# repository.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: every pinned ref against its baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Deliberately NOT continue-on-error: the run is the signal, and a green tick on a night
+    # something moved is the opposite of the point.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync quackd and its nine adapters, no SDKs
+        # The ref modules import `quackd.upstream` and nothing of any robot's SDK, so the dev
+        # extra is enough and nothing heavy is fetched.
+        run: uv sync --python 3.12 --extra dev
+
+      - name: Compare every ref with its baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          uv run --no-sync python scripts/upstream_drift.py \
+            --report "$GITHUB_STEP_SUMMARY" \
+            ${{ github.repository == 'rokbenko/quackd' && '--issues rokbenko/quackd' || '' }}

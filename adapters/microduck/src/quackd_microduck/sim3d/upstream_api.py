@@ -45,6 +45,9 @@ from quackd.upstream import UpstreamRef
 
 REPO = "https://github.com/pollen-robotics/microduck_rl"
 PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"  # develop, 2026-09-06
+BRANCH = "develop"
+"""The branch the pin sits on, which is not the repository's default: what the nightly drift
+job (`scripts/upstream_drift.py`) compares the pin against."""
 READ_ON = "2026-10-09"
 
 POLICIES_REPO = "https://huggingface.co/pollen-robotics/microduck-policies"
@@ -81,7 +84,7 @@ CODE_LICENSE = UpstreamRef(
 MESH_LICENSE = UpstreamRef(
     "3D model files are licensed under Creative Commons BY-SA-NC",
     "VERIFIED",
-    src(_README),
+    src(_README, 261),
     "one sentence in the README's License section: no CC version, no file headers, no "
     "LICENSE in assets/. Whether the MJCF XML counts as a '3D model file' is not stated, so "
     "quackd treats the XML and the meshes alike: fetched at run time, never shipped",
