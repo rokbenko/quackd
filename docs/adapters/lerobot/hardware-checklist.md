@@ -5,8 +5,11 @@ same arm, and [adapters/status.md](../status.md) lists exactly what it did and w
 over. That makes this a robot quackd has worked on, not a robot quackd is tested on. Four of
 the questions at the foot of this page came back from the first afternoon still unanswered,
 the second added more, and what quackd changed after the second has not run on an arm yet.
-This is the order to find out in, written so that each step can only fail in a way you can
-recover from.
+Both afternoons ran LeRobot 0.6.1, and quackd now installs 0.7.0, whose motor bus is new from
+the port it opens to the words a failure raises, so every step below is that bus's first time
+on an arm too, and the questions at the foot of the page say what only it can answer. This is
+the order to find out in, written so that each step can only fail in a way you can recover
+from.
 **Nothing moves until step 10, and from there a hand stays on the power switch.**
 
 This robot is unusual in a quiet way, and the quiet thing is what makes the order matter:
@@ -50,9 +53,10 @@ about to move.
    installs on any Python quackd supports, and through its own `[sdk]` extra, LeRobot. A
    plain `uv pip install quackd` brings neither, and no other robot's extra does either.
 
-   Two rows matter: `lerobot`, and `lerobot (feetech bus)`. The Feetech SDK lives in
-   lerobot's own `[feetech]` extra rather than its base dependencies, so a lerobot installed
-   without it imports perfectly and then cannot open a serial port. If `lerobot` itself stays
+   Two rows matter: `lerobot`, and `lerobot (feetech bus)`. rustypot, the library that drives
+   the motors since LeRobot 0.7.0, lives in lerobot's own `[feetech]` extra rather than its
+   base dependencies, so a lerobot installed without it imports perfectly and then cannot
+   build a follower, and the row shows rustypot's version. If `lerobot` itself stays
    `not installed` after a successful install, check `python --version`: the SDK half carries
    a `python_version >= '3.12'` marker and resolves to nothing below that, which leaves you
    the adapter, `lerobot:mock` and no arm.
@@ -762,7 +766,8 @@ parameter taken out of `--base-url`, `--address`, `--camera-url`, `--decision-ur
 - **What a joint reads in degrees Celsius**, cold and after ten minutes of work. quackd
   refuses to move at 60, below the servo's own 70 cut-off, and both numbers are Feetech's
   documentation rather than anything measured here. Nothing on the bench ran long enough to
-  find out what the second number is.
+  find out what the second number is. LeRobot 0.7.0 surfaces no overload or overheat alarm
+  at all, so that read is the only heat guard quackd has.
 - **Whether 5 degrees an action felt right.** The figure is quackd's own choice for a first
   run, not anything upstream recommends for this arm, and nobody has said whether it looked
   right standing next to the arm.
@@ -837,6 +842,24 @@ answer. Each is an open item in PLAN.md:
   would replace the simulator's default views.
 - **How fast a policy's loop runs on the real bus** with the server inferring on the same
   laptop, step 18's number.
+
+**And what LeRobot 0.7.0's bus does on an arm**, which no arm has shown yet:
+
+- **Whether an arm calibrated on 0.6.1 still reads as calibrated**, with every joint's travel
+  as it was and a reading at a fixed pose within a tick of 0.6.1's (step 6).
+- **Whether a second program on the arm's port is refused as it opens it.** Run `quackd doctor
+  --robot arm-01` in a second window while step 7's run holds the port, on Linux and macOS
+  above all, where the old bus let the two talk over each other. Keep a hand under the arm
+  while it tries: a doctor that does get the port switches torque off every motor for a moment.
+- **What the arm says with its servo supply off, and with one servo's cable out.** Fold it to
+  its rest pose first. With the supply off, run `quackd doctor --robot arm-01`: every motor
+  should be missing and the refusal should send you to the arm's cables and power. Then, with
+  the supply still off, unplug the cable into the gripper's servo, switch the supply back on
+  and run it again: the refusal should name `gripper`. Report how long each took to be said,
+  and the USB pull of step 13 the same way.
+- **Whether a stalled gripper or forearm still stops the move.** LeRobot 0.7.0 raises nothing
+  for an overload, so quackd's stall check and its 60 °C refusal are what is left: the forearm
+  held back in step 14's third Ctrl-C, and the gripper closed on foam in step 17.
 
 **And two with one answer each, from one arm on one laptop.** A second answer is what turns
 either of them from an anecdote into a fact:

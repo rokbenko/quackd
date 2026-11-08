@@ -29,9 +29,13 @@ and a follower that did only what the source says would get the firmware's part 
   still connected is disconnected by the same flag, as LeRobot's is (`up.ROBOT_DEL`). What the
   flag starts at is the real backend's to say, so the config has no default for it.
 - **The connect.** It opens the port, runs the handshake, and configures, which switches torque
-  off on every motor and back on. When either of the last two raises, the port stays open, and
-  every connect after it is refused as already connected until the port is closed through the
-  bus (`up.SO_CONNECT_REFUSES_WHILE_OPEN`), which is what the real backend's retry does.
+  off on every motor and back on. A handshake that raises closes the port behind it
+  (`up.HANDSHAKE_CLOSES_THE_PORT`). A configure that raises leaves it open, and every connect
+  after it is refused as already connected until the port is closed through the bus
+  (`up.SO_CONNECT_REFUSES_WHILE_OPEN`), which is what the real backend's retry does.
+- **The torque calls.** Each tries every motor it names whichever fails, and raises once,
+  naming each motor whose write got no reply (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and a
+  disconnect releases the port whatever its torque-off did (`up.DISCONNECT_RELEASES_THE_PORT`).
 
 The faults a bus can be told to have are `faults.py`'s to draw, and they are raised here, from
 functions named as upstream's and in upstream's words, so the real backend reads each one as it
@@ -76,12 +80,12 @@ NameOrID = str | int
 
 FOLLOWER_CLASS = "SOFollower"
 """The class an SO-101 follower is (`up.SO_FOLLOWER`), which LeRobot's refusals name."""
-BUS_CLASS = "FeetechMotorsBus"
+BUS_CLASS = "SerialMotorsBus"
 """The class its bus is (`up.SO_BUS`), named the same way."""
-NO_STATUS = "[TxRxResult] There is no status packet!"
-NOT_SENT = "[TxRxResult] Failed transmit instruction packet!"
-"""The servo SDK's words for a reply that never came and for a packet that never went out
-(`up.BUS_SYNC_READ_ERROR`)."""
+NO_STATUS = "Operation timed out"
+NOT_SENT = "Timeout error"
+"""serialport-rs's words for a reply that never came, and rustypot's for a packet that could not go
+out, which LeRobot ends its bus errors with (`up.BUS_SYNC_READ_ERROR`)."""
 DISCONNECT_RETRIES = 5
 """The extra tries upstream's bus disconnect gives its torque-off (`up.BUS_DISCONNECT`)."""
 MAX_RES = ENCODER_TICKS - 1
@@ -98,6 +102,8 @@ LOCK = "Lock"
 """The registers the simulated bus has: the two LeRobot normalises (`up.BUS_NORMALIZED_DATA`),
 the two quackd reads off the bus itself (`up.STS3215_REGISTERS`), and the lock every torque
 write is followed by (`up.BUS_ENABLE_TORQUE`)."""
+Lost = tuple[str, str]
+"""Where a torque fault lands: a motor's name and the register whose write got no reply."""
 
 
 class DeviceNotConnectedError(ConnectionError):
@@ -166,16 +172,6 @@ class SimMotor:
     id: int
 
 
-@dataclass
-class SimPortHandler:
-    """The serial port's two flags: open (`up.BUS_IS_CONNECTED`), and the servo SDK's busy
-    flag, which the real backend clears after it closes the port (`up.BUS_DISCONNECT`). No
-    fault here leaves it raised."""
-
-    is_open: bool = False
-    is_using: bool = False
-
-
 class SimBus:
     """The follower's motors bus: the port, the motor table, the torque writes and register
     reads the real backend makes through it, and the conversion between the calibration's
@@ -194,12 +190,14 @@ class SimBus:
         """The follower's own dict, as LeRobot hands its follower's to the bus."""
         self.motors = {name: SimMotor(int(motor_ids[name])) for name in JOINTS}
         self.port = port
-        self.port_handler = SimPortHandler()
+        self._open = False
+        """Whether the port is open, which is all LeRobot's bus knows of it
+        (`up.BUS_IS_CONNECTED`): there is no port handler and no busy flag (`up.NO_BUSY_FLAG`)."""
         self._faults = faults
 
     @property
     def is_connected(self) -> bool:
-        return self.port_handler.is_open
+        return self._open
 
     def _require_open(self) -> None:
         if not self.is_connected:
@@ -208,12 +206,18 @@ class SimBus:
     # ── the port ────────────────────────────────────────────────────────────────────────
 
     def connect(self, handshake: bool = True) -> None:
-        """Open the port, then run the handshake. A handshake that raises leaves it open."""
+        """Open the port, then run the handshake, and close the port again behind a handshake
+        that raises before raising it as it was (`up.HANDSHAKE_CLOSES_THE_PORT`)."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{BUS_CLASS} is already connected.")
-        self.port_handler.is_open = True
-        if handshake:
+        self._open = True
+        if not handshake:
+            return
+        try:
             self._handshake()
+        except Exception:
+            self._open = False
+            raise
 
     def _handshake(self) -> None:
         """`up.BUS_HANDSHAKE`, under upstream's name, which is how the real backend tells a
@@ -248,13 +252,15 @@ class SimBus:
 
     def disconnect(self, disable_torque: bool = True) -> None:
         """`up.BUS_DISCONNECT`: torque off on every motor first only when asked, then the port
-        shut. A port that is not open is refused, and a torque-off that raises leaves it open,
-        both as upstream's does."""
-        self._require_open()
-        if disable_torque:
-            self.port_handler.is_using = False
-            self.disable_torque(num_retry=DISCONNECT_RETRIES)
-        self.port_handler.is_open = False
+        shut whatever the torque-off did (`up.DISCONNECT_RELEASES_THE_PORT`). A port that is not
+        open is passed over without a word, as upstream's is."""
+        if not self.is_connected:
+            return
+        try:
+            if disable_torque:
+                self.disable_torque(num_retry=DISCONNECT_RETRIES)
+        finally:
+            self._open = False
 
     @property
     def is_calibrated(self) -> bool:
@@ -282,12 +288,13 @@ class SimBus:
         names = self._names(motors)
         self._torque_writes(names, False, num_retry, self._lost_torque_write(names))
 
-    def _lost_torque_write(self, names: Sequence[str]) -> tuple[str, str] | None:
+    def _lost_torque_write(self, names: Sequence[str]) -> Lost | None:
         """Where a torque fault lands: the `Torque_Enable` write of one of the motors named,
-        lost on the wire, so no reply comes. The motors before it took the write, and that one
-        and the ones after it did not, which is one of the states the real backend allows for
-        when a torque call raises part way. A call that names no motor makes no transaction,
-        so it is not counted."""
+        lost on the wire, so no reply comes and the write does not take. Every other motor named
+        takes its write, since a torque call tries them all (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), so
+        that motor alone is left as it was, which is one of the states the real backend allows
+        for when a torque call raises. A call that names no motor makes no transaction, so it is
+        not counted."""
         if not names:
             return None
         fault = self._faults.next(TORQUE)
@@ -298,11 +305,12 @@ class SimBus:
         self,
         motors: NameOrID | Sequence[NameOrID] | None = None,
         *,
-        lost: tuple[str, str] | None = None,
+        lost: Lost | None = None,
     ) -> Iterator[None]:
         """Upstream's context of the same name (`up.CONFIGURE_TORQUE_WRITES_ONCE`): torque off
-        on the motors named on the way in and back on in its `finally`, each write tried once.
-        `lost` is the one write, if any, whose reply does not come back."""
+        on the motors named on the way in and back on in its `finally`, each call tried once. A
+        switch off that raises leaves before the `try`, so nothing switches the motors back on.
+        `lost` is the one write of the switch back on, if any, whose reply does not come back."""
         self._require_open()
         names = self._names(motors)
         self._torque_writes(names, False, 0)
@@ -316,28 +324,37 @@ class SimBus:
         names: Sequence[str],
         on: bool,
         num_retry: int,
-        lost: tuple[str, str] | None = None,
+        lost: Lost | None = None,
     ) -> None:
-        """`Torque_Enable` and then `Lock` on one motor after another, in the order named, as a
-        Feetech bus writes them, and the error upstream's single write raises at `lost`
-        (`up.BUS_WRITE_ERROR_NAMES_THE_ID`). What was written before it stays written.
+        """`Torque_Enable` and then `Lock` on each motor, in the order named, as rustypot's
+        `set_torque` writes them, every motor tried whichever fails, and then the one error
+        upstream raises, naming each motor whose write got no reply in the order of their ids
+        (`up.TORQUE_TRIED_ON_EVERY_MOTOR`).
 
+        `lost` is the one write, if any, whose reply does not come back. A lost `Torque_Enable`
+        leaves that motor as it was; a lost `Lock` comes after its `Torque_Enable` went through.
         Each of these writes waits for its status packet, as a ping and a read do, so an arm
-        whose reads are lost answers none of them: the first one raises, and nothing is
-        written."""
-        if names and self._faults.reads_lost:
-            lost = (names[0], TORQUE_ENABLE)
-        value = int(on)
+        whose reads are lost answers none of them: every motor fails, and nothing is written.
+        A name the table does not know is a KeyError before anything is written, as upstream's
+        id lookup is."""
+        ids = {name: self.motors[name].id for name in names}
+        failed: list[str] = []
         for name in names:
-            motor_id = self.motors[name].id  # an unknown name is a KeyError, as upstream's write
-            for register in (TORQUE_ENABLE, LOCK):
-                if lost == (name, register):
-                    raise ConnectionError(
-                        f"Failed to write '{register}' on id_={motor_id} with '{value}' after "
-                        f"{num_retry + 1} tries. {NO_STATUS}"
-                    )
-                if register == TORQUE_ENABLE:
-                    self.world.set_torque(name, on)
+            if self._faults.reads_lost or lost == (name, TORQUE_ENABLE):
+                failed.append(name)
+                continue
+            self.world.set_torque(name, on)
+            if lost == (name, LOCK):
+                failed.append(name)
+        if failed:
+            details = ", ".join(
+                f"'{name}' (motor ID {ids[name]}): {NO_STATUS}"
+                for name in sorted(set(failed), key=lambda name: ids[name])
+            )
+            raise ConnectionError(
+                f"Failed to {'enable' if on else 'disable'} torque after {num_retry + 1} tries on "
+                f"{details}."
+            )
 
     # ── registers ───────────────────────────────────────────────────────────────────────
 
@@ -373,8 +390,9 @@ class SimBus:
         (`up.BUS_NORMALIZED_DATA`).
 
         A read that gets no reply raises upstream's sync read error, every motor it read listed
-        by id (`up.BUS_SYNC_READ_ERROR`): a register fault on its own read, and every read once
-        the reads are lost."""
+        by id and then the first of them, whose reply is the first that failed when nothing at
+        all came back (`up.BUS_SYNC_READ_ERROR`): a register fault on its own read, and every
+        read once the reads are lost."""
         self._require_open()
         names = self._names(motors)
         kind = {TORQUE_ENABLE: TORQUE_READ, TEMPERATURE: TEMPERATURE_READ}.get(data_name)
@@ -386,9 +404,10 @@ class SimBus:
         fault = self._faults.next(kind) if kind is not None else None
         if fault is not None or self._faults.reads_lost:
             ids = [self.motors[name].id for name in names]
+            first = f"motor {ids[0]}: " if ids else ""
             raise ConnectionError(
-                f"Failed to sync read '{data_name}' on ids={ids} after {num_retry + 1} tries. "
-                f"{NO_STATUS}"
+                f"Failed to sync read '{data_name}' from motor IDs {ids} after {num_retry + 1} "
+                f"tries. {first}{NO_STATUS}"
             )
         if data_name == TORQUE_ENABLE:
             torque = self.world.torques()
@@ -425,10 +444,10 @@ class SimBus:
             for name, value in values.items()
         }
         if self._faults.next(WRITE) is not None:
-            ids_values = {self.motors[name].id: tick for name, tick in ticks.items()}
+            ids = [self.motors[name].id for name in ticks]
             raise ConnectionError(
-                f"Failed to sync write '{data_name}' with ids_values={ids_values} after "
-                f"{num_retry + 1} tries. {NOT_SENT}"
+                f"Failed to sync write '{data_name}' to motor IDs {ids} after {num_retry + 1} "
+                f"tries. {NOT_SENT}"
             )
         if self._faults.reads_lost:
             return
@@ -556,9 +575,9 @@ class SimFollower:
 
     def connect(self, calibrate: bool = True) -> None:
         """`SOFollower.connect` in upstream's order: refused while the port is open, then the
-        port and the handshake, then the calibration check, which reads and writes nothing
-        here, then `configure()`. Nothing closes the port again when the handshake or the
-        configure raises."""
+        port and the handshake, which closes the port again behind it when it raises
+        (`up.HANDSHAKE_CLOSES_THE_PORT`), then the calibration check, which reads and writes
+        nothing here, then `configure()`. Nothing closes the port when the configure raises."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{FOLLOWER_CLASS} is already connected.")
         self.bus.connect()
@@ -576,9 +595,12 @@ class SimFollower:
         (`up.CONFIGURE_TORQUE_WRITES_ONCE`). The settings are the model's own, so none is
         written here.
 
-        A configure fault loses the reply to one motor's `Lock` write on the way back on: that
-        motor and the ones before it are holding, and the ones after it are still limp, which
-        is the state the real backend warns a person about (`real.SPLIT_TORQUE`)."""
+        A configure fault loses the reply to one motor's `Lock` write on the way back on. Every
+        motor is tried (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and that motor's `Torque_Enable` went
+        through before its `Lock`, so every motor is holding when the connect fails and LeRobot
+        names the one it could not confirm. The real backend cannot tell that from a lost
+        `Torque_Enable`, which would leave that motor limp, so it warns a person about either
+        (`real.SPLIT_TORQUE`)."""
         fault: Fault | None = self.faults.next(CONFIGURE)
         lost = None if fault is None else (fault.motor(list(self.bus.motors)), LOCK)
         with self.bus.torque_disabled(lost=lost):

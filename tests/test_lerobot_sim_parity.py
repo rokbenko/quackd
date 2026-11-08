@@ -466,7 +466,7 @@ async def test_a_seeded_configure_fault_fails_one_attempt_and_the_retry_goes_thr
     assert len(notes) == 1, notes
     assert notes[0].startswith(
         f"connect attempt 1 of {CONNECT_ATTEMPTS} failed on {joint} (id {n}): "
-        f"Failed to write 'Lock' on id_={n} with '1' after 1 tries. {NO_STATUS}"
+        f"Failed to enable torque after 1 tries on '{joint}' (motor ID {n}): {NO_STATUS}."
     ), notes[0]
     assert "without a write to any motor" in notes[0]
     assert r.robot.faults.injected == [fault]

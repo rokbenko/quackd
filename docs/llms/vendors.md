@@ -93,9 +93,9 @@ is [guides/openrouter.md](../guides/openrouter.md).
 
 ### Black Forest Labs
 
-FLUX 3 Action has an official SO-101 checkpoint, and quackd does not serve it yet: it is on
-LeRobot's main branch only and wants a large NVIDIA GPU, and its licence grants non-commercial
-use, with commercial use a question for its makers
+FLUX 3 Action has an official SO-101 checkpoint, and quackd does not serve it yet: it is a
+LeRobot type since 0.7.0 that quackd has not read, it wants a large NVIDIA GPU, and its licence
+grants non-commercial use, with commercial use a question for its makers
 ([guides/policies.md](../guides/policies.md#flux-3-action)).
 
 ### Local servers and your own decision LLMs

@@ -1244,6 +1244,7 @@ def test_a_pin_on_a_branch_that_is_not_the_default_says_which(
         ("quackd_microduck.upstream_api", "daemon-v"),
         ("quackd_huebot.upstream_api", "daemon-v"),
         ("quackd_toddlerbot.upstream_api", "v"),
+        ("quackd_lerobot.upstream_api", ""),
         ("quackd_lerobot.policy.upstream_api", ""),
     ],
 )
@@ -1256,6 +1257,30 @@ def test_a_pin_on_a_release_is_compared_with_the_newest_release_of_its_kind(
     script = _script()
     baseline = script.declared_baseline(module, script._repo_of(module.REPO))
     assert (baseline.kind, baseline.prefix) == ("tag", prefix)
+
+
+def test_another_repository_a_module_cites_at_a_release_is_compared_with_its_newest() -> None:
+    """The arm's refs cite rustypot, the library under LeRobot 0.7.0's bus, at its v1.13.1 tag.
+    Compared with rustypot's default branch, `develop`, they would read as drift the day it
+    moved a cited line, a release or none: the module names the release it read for each other
+    repository, as `BRANCHES` names a branch, and a repository it names neither way is still
+    compared with its default branch."""
+    module = importlib.import_module("quackd_lerobot.upstream_api")
+    script = _script()
+    assert module.RELEASES == {"pollen-robotics/rustypot": "v1.13.1"}
+    files, _elsewhere = script.cited_of(module)
+    cited = {f.repo for f in files}
+    assert cited == {"huggingface/lerobot", "pollen-robotics/rustypot"}, cited
+    for cite in files:
+        if cite.repo == "pollen-robotics/rustypot":
+            assert cite.sha == module.RUSTYPOT_PIN, cite
+    baseline = script.declared_baseline(module, "pollen-robotics/rustypot")
+    assert (baseline.kind, baseline.prefix) == ("tag", "v")
+    other = script.declared_baseline(module, "serialport/serialport-rs")
+    assert other.kind == "default"
+    widget = _module([], RELEASES={"someone/thing": "thing-v2.1"})
+    assert script.declared_baseline(widget, "someone/thing").prefix == "thing-v"
+    assert script.declared_baseline(widget, "someone/else").kind == "default"
 
 
 def test_the_nightly_runs_the_script_with_what_it_needs_and_nothing_more() -> None:

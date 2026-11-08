@@ -14,14 +14,15 @@ dependencies = ["quackd>=0.33.0,<0.34"]
 
 # The arm's own SDK. LeRobot needs Python 3.12 and pulls torch, and the marker keeps the lock
 # solvable on 3.11, where this package still installs and still gives you `lerobot:mock`.
-# `[feetech]` is where the serial SDK lives: without it `import lerobot` succeeds and opening
-# the arm's port fails, which is a worse thing to find out at a bench than at an install.
-# The ceiling is the first release that can carry rustypot. LeRobot's main calls itself 0.6.2 and
-# has replaced feetech-servo-sdk, the library upstream_api.py read the bus through, with it (its
-# #4672), so a fresh install must not take that the day it appears. Raise it with upstream_api.py,
-# after a run on an arm, and with the ignore in .github/dependabot.yml.
+# `[feetech]` is where the serial library lives: without it `import lerobot` succeeds and opening
+# the arm's port fails, which is a worse thing to find out at a bench than at an install. Since
+# 0.7.0 that library is rustypot, which replaced feetech-servo-sdk under one bus for every Feetech
+# and Dynamixel servo (LeRobot's #4672), and 0.7.0 is the release upstream_api.py was read at. The
+# floor is that release, because 0.6's bus is not the one quackd reads the arm through, and the
+# ceiling is the next minor, which may move it again. Raise it with upstream_api.py and with the
+# ignore in .github/dependabot.yml; PLAN.md says what an arm still owes the release before.
 [project.optional-dependencies]
-sdk = ["lerobot[feetech]>=0.6,<0.6.2; python_version >= '3.12'"]
+sdk = ["lerobot[feetech]>=0.7,<0.8; python_version >= '3.12'"]
 # The arm's simulator, `lerobot:mujoco`: MuJoCo on the CPU and nothing of LeRobot's, so it
 # installs on 3.11 as well. The SO-101's model is fetched at run time and never shipped.
 sim = ["mujoco>=3.12,<4"]
@@ -35,7 +36,7 @@ sim = ["mujoco>=3.12,<4"]
 # takes. No `[feetech]`, since the server never opens a serial port. A pi05, a pi0 or a GR00T
 # also wants a Hub token for its gated tokenizer (docs/adapters/lerobot/README.md).
 vla = [
-  "lerobot[smolvla,pi,xvla,diffusers-dep]>=0.6,<0.6.2; python_version >= '3.12'",
+  "lerobot[smolvla,pi,xvla,diffusers-dep]>=0.7,<0.8; python_version >= '3.12'",
   "dm-tree>=0.1.8,<1.0.0; python_version >= '3.12'",
 ]
 

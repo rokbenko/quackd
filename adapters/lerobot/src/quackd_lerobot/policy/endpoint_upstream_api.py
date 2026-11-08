@@ -4,12 +4,14 @@
 reaches it with `--policy-url hf:NAME` (`endpoint.py`). Every constant here is tagged VERIFIED,
 read on the day from the source linked, or UNVERIFIED, an assumption of ours with what quackd
 does about it. The sources are the API's own OpenAPI document (version 2.0.0 on the day),
-Hugging Face's pages about it, huggingface_hub at the commit its v1.29.0 tag names (the version
-`uv.lock` holds, and the wheel and the tag were compared file by file for every file cited),
-uv's own documentation for the image the container runs, and PyPI's for the release a container
-installs. `docs/adapters/lerobot/README.md` is the human-readable version, and
-`tests/test_upstream_api.py` proves UNVERIFIED names are only reachable from the files that
-live with them.
+Hugging Face's pages about it, huggingface_hub at the commit its v1.33.0 tag names (the version
+`uv.lock` holds, which LeRobot 0.7.0's floor of 1.31.0 moved it to, and the wheel and the tag
+were compared file by file for every file cited), uv's own documentation for the image the
+container runs, and PyPI's for the release a container installs. The day is `READ_ON` for
+huggingface_hub and for the Hub's answers MODEL_INFO quotes, both read again when the lock
+moved, and 2026-10-25 for everything else. `docs/adapters/lerobot/README.md` is the
+human-readable version, and `tests/test_upstream_api.py` proves UNVERIFIED names are only
+reachable from the files that live with them.
 
 **quackd has never created an Inference Endpoint.** Everything here was read, nothing was paid
 for, and `quackd policy endpoint` has run against the test suite's stand-ins on 127.0.0.1 alone
@@ -27,9 +29,9 @@ API_VERSION = "2.0.0"
 """The OpenAPI document's own `info.version`, on the day it was read."""
 DOCS = "https://huggingface.co/docs/inference-endpoints"
 HUB_REPO = "https://github.com/huggingface/huggingface_hub"
-PIN = "4237d95c603db491cb1070898c74c97e4d7c2582"  # the v1.29.0 tag
-HUB_VERSION = "1.29.0"
-READ_ON = "2026-10-25"
+PIN = "9eeace5e467939b8f6af6ff280a134bc7c22802f"  # the v1.33.0 tag
+HUB_VERSION = "1.33.0"
+READ_ON = "2026-11-08"
 
 
 def hub_src(path: str, line: int | None = None) -> str:
@@ -96,7 +98,7 @@ ENDPOINT_TYPES = UpstreamRef(
     "VERIFIED",
     API_DOC,
     "`EndpointType`, an endpoint's visibility. huggingface_hub keeps a fourth, "
-    f'`"protected"`, as deprecated for `"authenticated"` ({hub_src(_ENDPOINTS, 88)}). quackd '
+    f'`"protected"`, as deprecated for `"authenticated"` ({hub_src(_ENDPOINTS, 105)}). quackd '
     "creates `authenticated` and nothing else: `public` would put no account between anybody "
     "and the server, and what `private` admits is read two ways (PRIVATE_TYPE)",
 )
@@ -118,7 +120,7 @@ ENDPOINT_STATES = UpstreamRef(
     "VERIFIED",
     API_DOC,
     "`EndpointState`, as `status.state` says it, and as huggingface_hub's "
-    f"`InferenceEndpointStatus` spells it ({hub_src(_ENDPOINTS, 75)}). `quackd policy endpoint up` "
+    f"`InferenceEndpointStatus` spells it ({hub_src(_ENDPOINTS, 92)}). `quackd policy endpoint up` "
     "waits through the first two, pauses an endpoint that reaches `failed`, wakes one that "
     "`scaledToZero` with a request, and resumes one that is `paused`",
 )
@@ -141,7 +143,7 @@ CREATE_BODY = UpstreamRef(
     API_DOC,
     "the body `POST /v2/endpoint/{namespace}` takes, `name`, `type`, `provider`, `compute` and "
     "`model` required, and the shape huggingface_hub builds for it "
-    f"({hub_src(_API, 9551)}). `framework` is `custom` for a container of one's own, `command` "
+    f"({hub_src(_API, 9630)}). `framework` is `custom` for a container of one's own, `command` "
     "replaces the image's entrypoint and `args` are passed to it. quackd sends one replica at "
     "most, scaled to zero when idle, the uv image, `uvx` installing this quackd's release, and "
     "`quackd policy serve` behind the proxy's TLS",
@@ -197,16 +199,16 @@ HEALTH_PROBE = UpstreamRef(
 RESUME_RUNNING = UpstreamRef(
     "POST .../resume on a running endpoint answers 400 'already running'",
     "VERIFIED",
-    hub_src(_API, 10039),
+    hub_src(_API, 10124),
     "huggingface_hub takes that answer as no error and reads the endpoint again, and so does "
     "`quackd policy endpoint up`",
 )
 WAIT_POLL = UpstreamRef(
     "InferenceEndpoint.wait(timeout=None, refresh_every=5)",
     "VERIFIED",
-    hub_src(_ENDPOINTS, 245),
+    hub_src(_ENDPOINTS, 262),
     "huggingface_hub reads an endpoint every 5 s until it is `running` with a `url`, then asks "
-    "its health route there with the account's token and takes a 200 as ready (line 285). "
+    "its health route there with the account's token and takes a 200 as ready (line 302). "
     "`quackd policy endpoint up` waits the same way, and the health route it asks is the "
     "server's own `/v1/health`",
 )
@@ -222,7 +224,7 @@ TOKEN_LOOKUP = UpstreamRef(
     "where huggingface_hub finds the account's token (`get_token`, line 58): either variable, "
     "an empty one counting as unset, then the file (line 150), whose default lives in "
     "`HF_HOME`, itself `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface` by default "
-    f"({hub_src(_CONSTANTS, 158)}, and line 247 for the file). A token is taken with its line "
+    f"({hub_src(_CONSTANTS, 160)}, and line 250 for the file). A token is taken with its line "
     "breaks and the space around it removed (line 449). quackd reads those three and nothing "
     "more: no OIDC exchange, no Colab vault, and never `HF_ENDPOINT`, which moves where "
     "huggingface_hub sends the token (line 69 of constants.py), since no variable moves where "
@@ -234,16 +236,16 @@ HOME_VARIABLE = "HF_HOME"
 WHOAMI = UpstreamRef(
     "GET https://huggingface.co/api/whoami-v2",
     "VERIFIED",
-    hub_src(_API, 2373),
+    hub_src(_API, 2360),
     "the account a token belongs to: its `name`, and a `type` of `user` for a person, which is the "
-    f"namespace an endpoint is created in unless one is named ({hub_src(_API, 10125)}). The "
+    f"namespace an endpoint is created in unless one is named ({hub_src(_API, 10210)}). The "
     "route is rate limited, strictly on purpose, so `up` asks it once",
 )
 WHOAMI_PATH = "/api/whoami-v2"
 MODEL_INFO = UpstreamRef(
     "GET https://huggingface.co/api/models/{repo}/revision/{revision}",
     "VERIFIED",
-    hub_src(_API, 3323),
+    hub_src(_API, 3313),
     "a repository at a revision, with `private` true or false and `gated` false, `auto` or "
     "`manual`, read on the day for lerobot/smolvla_base (public) and google/paligemma-3b-pt-224 "
     "(manual). An endpoint fetches its checkpoint with a token of its own or none, so `up` "
@@ -324,7 +326,7 @@ GHCR_PULLS = UpstreamRef(
     doc("engines/custom_container"),
     "that an endpoint pulls a public image from ghcr.io with no credentials, named by its tag and "
     "its digest. huggingface_hub's own example of a custom image is one on ghcr.io "
-    f"({hub_src(_API, 9508)}), and the page names Docker Hub, Amazon ECR, Azure ACR and Google "
+    f"({hub_src(_API, 9568)}), and the page names Docker Hub, Amazon ECR, Azure ACR and Google "
     "GCR as registries an endpoint can reach, and not ghcr.io. The API takes `credentials` for "
     "a registry that wants them. quackd sends none, and keeps `IMAGE_FALLBACK`, the same image "
     "by the same digest on Docker Hub, for the day ghcr.io will not do",

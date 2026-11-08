@@ -455,8 +455,8 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
 
 def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path) -> None:
     """A pi05's relative actions are made absolute over the whole chunk, against the state it
-    was predicted from, as its training made them relative: it is not a policy asked every
-    tick, whatever LeRobot's own loop does with one (`upstream_api.VLA_PIPELINE`)."""
+    was predicted from, as its training made them relative and as LeRobot 0.7.0's own loop
+    anchors them too: it is not a policy asked every tick (`upstream_api.RELATIVE_ACTIONS`)."""
     relative, absolute = "relative_actions_processor", "absolute_actions_processor"
     assert {relative, absolute} <= set(up.PI05_STEP_NAMES)
     pre, post = _processors(extra_pre=[{"registry_name": relative, "config": {"enabled": True}}])
@@ -465,6 +465,22 @@ def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path
     assert not checkpoint.shape.per_tick and checkpoint.shape.pads_images
     assert checkpoint.shape.n_action_steps == N_ACTION_STEPS
     assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+
+
+@pytest.mark.parametrize("flag", up.PI05_MEMORY_FLAGS)
+def test_a_pi05_with_memory_is_refused_from_its_config_alone(tmp_path: Path, flag: str) -> None:
+    """A pi05 with MEM keeps one observation each time it is asked and looks back over them
+    `memory_stride` apart, a stride it learned in frames, and the server asks it once a chunk,
+    so it would look back over chunks where it learned frames (`upstream_api.PI05_MEMORY`). It
+    is refused on its `config.json`, before its processors are fetched, and one with its memory
+    off serves as any pi05 does."""
+    hub = _hub(tmp_path / "on", config=_act_config(type="pi05", **{flag: True}))
+    with pytest.raises(P.PipelineRefused, match=f"is a pi05 with memory \\({flag}\\)") as refused:
+        _fetch(hub, fps=float(FPS))
+    assert "look back over chunks where it learned to look back over frames" in str(refused.value)
+    assert [filename for _, _, filename in hub.asked] == [up.CONFIG_FILE]
+    off = _hub(tmp_path / "off", config=_act_config(type="pi05", **{flag: False}))
+    assert _fetch(off, fps=float(FPS)).shape.policy_type == "pi05"
 
 
 PALIGEMMA = "google/paligemma-3b-pt-224"
@@ -951,7 +967,7 @@ _N1_5_PACK = {"registry_name": up.GROOT_N1_5_STEP_NAMES[0], "config": {}}
             {"drop": ["action_decode_transform"], "embodiment_tag": "libero_sim"},
             "LIBERO's transform, to -1 or 1",
         ),
-        ({"action_decode_transform": "fancy"}, "none LeRobot 0.6.1 knows"),
+        ({"action_decode_transform": "fancy"}, f"none LeRobot {up.VERSION} knows"),
         ({"types": {"single_arm": "EEF"}}, "single_arm as an end-effector pose (EEF)"),
         ({"types": {"gripper": "BODY"}}, "gripper the type 'BODY', which is not joints"),
         (
@@ -970,8 +986,8 @@ _N1_5_PACK = {"registry_name": up.GROOT_N1_5_STEP_NAMES[0], "config": {}}
 def test_a_groot_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
     tmp_path: Path, kw: dict[str, Any], needle: str
 ) -> None:
-    """Each in a sentence of its own, before a weight is fetched: an N1.5, which LeRobot 0.6.1
-    no longer serves; LIBERO's gripper of -1 or 1; a group decoded as an end effector's pose; a
+    """Each in a sentence of its own, before a weight is fetched: an N1.5, which LeRobot no
+    longer serves; LIBERO's gripper of -1 or 1; a group decoded as an end effector's pose; a
     decode with no statistics, whose actions would reach the arm still normalised; a pack step
     looking for a camera its config has no image for; a config naming no base, which LeRobot
     would fill with its own at no revision; and a base whose backbone LeRobot would fetch
@@ -1021,6 +1037,81 @@ def test_a_groot_that_could_not_answer_here_is_refused_before_its_weights(
     asked = [filename for _, _, filename in hub.asked]
     assert up.WEIGHTS_FILE not in asked and not hub.snapshots, "something was fetched first"
     assert _fetch(hub, fps=float(FPS), pins=GROOT_PINS).shape.policy_type == "groot"
+
+
+def test_a_groot_whose_vlm_step_names_no_model_is_refused_before_its_weights(
+    tmp_path: Path,
+) -> None:
+    """LeRobot builds GR00T's VLM step with a backbone of its own when the step names none, and
+    loads that backbone's tokenizer and processors from the Hub the first time the step runs, at
+    no revision and trusting its repository's code (`upstream_api.GROOT_VLM_PROCESSOR`).
+    Nothing in such a checkpoint asks for a pin, so it is refused, as a SmolVLA config that names
+    no backbone is, whatever is pinned and before a weight."""
+    for pins in ((f"{GROOT_BASE}@{PINNED}",), GROOT_PINS):
+        hub = _groot(tmp_path / str(len(pins)))
+        del _step(hub, up.GROOT_VLM_STEP)["config"]["model_name"]
+        with pytest.raises(P.PipelineRefused, match="step names no model_name") as refused:
+            _fetch(hub, fps=float(FPS), pins=pins)
+        assert up.GROOT_BACKBONE in str(refused.value) and "--pin REPO@REVISION" in str(
+            refused.value
+        )
+        assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+        assert not hub.snapshots
+
+
+def _step(hub: FakeHub, name: str) -> dict[str, Any]:
+    """The pre-processor step `name` of the stand-in Hub's checkpoint, to change in place."""
+    pre = hub.files[(REPO, _commit(REPO))][up.PREPROCESSOR_FILE]
+    (step,) = [s for s in pre["steps"] if s.get("registry_name") == name]
+    return step
+
+
+SAVED_ARTIFACT = "tokenizer"
+"""The directory inside a checkpoint LeRobot 0.7.0 saves a tokenizer step's tokenizer to, which
+the step's config then names and its `artifacts` declare (`upstream_api.PROCESSOR_ARTIFACTS`).
+The tiny X-VLA's real save is held to it (`tiny_xvla`)."""
+
+
+@pytest.mark.parametrize(
+    ("build", "name", "key", "pins"),
+    [
+        (_pi0, "tokenizer_processor", "tokenizer_name", (f"{PALIGEMMA}@{PINNED}",)),
+        (_xvla, "tokenizer_processor", "tokenizer_name", (f"{BART}@{PINNED}",)),
+        (_smolvla, "tokenizer_processor", "tokenizer_name", (f"SomeOrg/Some-VLM@{PINNED}",)),
+        (_groot, up.GROOT_VLM_STEP, "model_name", GROOT_PINS),
+    ],
+    ids=["pi0", "xvla", "smolvla", "groot"],
+)
+def test_a_step_that_keeps_its_model_inside_the_checkpoint_is_refused_before_its_weights(
+    tmp_path: Path, build: Any, name: str, key: str, pins: tuple[str, ...]
+) -> None:
+    """LeRobot 0.7.0 saves a tokenizer step's tokenizer into the checkpoint's own directory, names
+    that copy in the step, and declares it in the step's `artifacts`, and a load puts that
+    directory in place of whatever the step names, from files quackd neither fetches nor checks
+    (`upstream_api.PROCESSOR_ARTIFACTS`). So a step that carries `artifacts` is refused, before a
+    pin or a weight, whether the step names the copy as LeRobot 0.7.0 saves it, still names a
+    Hub repository beside it, or names nothing and leaves the model to the copy alone, which
+    would have served with no pin at all. The same checkpoint as LeRobot 0.6.1 saved it, with no
+    `artifacts`, serves as it always has, its model pinned."""
+    as_saved = build(tmp_path / "saved by 0.6.1")
+    served = _fetch(as_saved, fps=float(FPS), pins=pins)
+    named = _step(as_saved, name)["config"][key]
+    where = str(as_saved.snapshot(named, PINNED, ()))
+    assert served.pre_overrides[name][key] == where
+    assert any(line.endswith(f" {named}@{PINNED}") for line in served.loaded), served.loaded
+    for shape in ("saved by 0.7.0", "beside a repository", "alone"):
+        hub = build(tmp_path / shape)
+        step = _step(hub, name)
+        if shape == "saved by 0.7.0":
+            step["config"][key] = SAVED_ARTIFACT
+        elif shape == "alone":
+            del step["config"][key]
+        step["artifacts"] = {key: SAVED_ARTIFACT}
+        with pytest.raises(P.PipelineRefused, match=r"inside the checkpoint \(`artifacts`\)") as no:
+            _fetch(hub, fps=float(FPS), pins=pins)
+        assert f"the model its {key} loads" in str(no.value), shape
+        assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked], shape
+        assert not hub.snapshots, shape
 
 
 def test_whether_a_package_would_import_is_found_without_importing_it() -> None:
@@ -1736,6 +1827,114 @@ def test_a_pi05_or_a_pi0_is_loaded_strictly_where_its_own_loader_would_not_be(
 
 
 @NEEDS_TORCH
+def test_a_pi05_saved_before_transformers_5_6_loads_its_vision_tower_strictly(
+    tmp_path: Path,
+) -> None:
+    """A checkpoint saved before transformers 5.6 keeps its SigLIP tower's weights under
+    `vision_tower.vision_model.`, which 5.6 flattened to `vision_tower.`, and every LeRobot 0.7.0
+    policy renames them as it loads (`upstream_api.LEGACY_VISION_KEYS`). `build_policy`'s own
+    strict load of a pi05 goes through that rename: a PreTrainedPolicy whose one weight sits
+    under a vision tower loads such a checkpoint whole, and a weight the rename leaves that the
+    policy does not have still refuses it."""
+    import torch
+    from lerobot.policies.pi05.configuration_pi05 import PI05Config
+    from lerobot.policies.pretrained import PreTrainedPolicy
+    from safetensors.torch import save_file
+
+    class Tower(PreTrainedPolicy):
+        config_class = PI05Config
+        name = "pi05"
+
+        def __init__(self, config: PI05Config) -> None:
+            super().__init__(config)
+            self.model = torch.nn.Module()
+            self.model.vision_tower = torch.nn.Linear(2, 2)
+
+        def _fix_pytorch_state_dict_keys(self, state: Any, config: Any) -> dict[str, Any]:
+            return dict(state)
+
+        def get_optim_params(self) -> Any:
+            return self.parameters()
+
+        def reset(self) -> None:
+            pass
+
+        def forward(self, batch: Any) -> Any:
+            raise NotImplementedError
+
+        def predict_action_chunk(self, batch: Any, **kw: Any) -> Any:
+            raise NotImplementedError
+
+        def select_action(self, batch: Any, **kw: Any) -> Any:
+            raise NotImplementedError
+
+    config = PI05Config(device="cpu")
+    assert config.type in P.LENIENT_LOADERS
+    weight, bias = torch.full((2, 2), 3.0), torch.full((2,), 5.0)
+    legacy = f"{P.MODEL_PREFIX}vision_tower.vision_model."
+    save_file({f"{legacy}weight": weight, f"{legacy}bias": bias}, str(tmp_path / up.WEIGHTS_FILE))
+    policy = P.build_policy(Tower, tmp_path, config)
+    tower = policy.model.vision_tower
+    assert torch.equal(tower.weight, weight) and torch.equal(tower.bias, bias)
+    extra = {f"{legacy}weight": weight, f"{legacy}bias": bias, f"{legacy}extra": torch.zeros(2)}
+    save_file(extra, str(tmp_path / up.WEIGHTS_FILE))
+    with pytest.raises(RuntimeError, match=re.escape("model.vision_tower.extra")):
+        P.build_policy(Tower, tmp_path, config)
+
+
+@NEEDS_TORCH
+@pytest.mark.parametrize("per_tick", [False, True])
+def test_a_policy_that_answers_a_policy_output_is_served_its_action(
+    tmp_path: Path, per_tick: bool
+) -> None:
+    """LeRobot 0.7.0 lets `predict_action_chunk` and `select_action` answer a `PolicyOutput`, the
+    action beside what the policy predicts besides it (`upstream_api.POLICY_OUTPUT`). None of
+    the types quackd serves does, and one that did would be served its action, row for row, and
+    nothing of its prediction, in chunks and asked every tick alike."""
+    import torch
+
+    n = len(JOINTS)
+    chunk = torch.arange(CHUNK_SIZE * n, dtype=torch.float32).reshape(1, CHUNK_SIZE, n)
+    prediction = {"subtask": ["reach"]}
+
+    class Predicting:
+        def predict_action_chunk(self, batch: Any) -> dict[str, Any]:
+            return {up.ACTION_KEY: chunk, "prediction": prediction}
+
+        def select_action(self, batch: Any) -> dict[str, Any]:
+            return {up.ACTION_KEY: chunk[:, 0], "prediction": prediction}
+
+        def reset(self) -> None:
+            pass
+
+    class Unchanged:
+        steps: list[Any] = []
+
+        def __call__(self, value: Any) -> Any:
+            return value
+
+        def reset(self) -> None:
+            pass
+
+    checkpoint = _fetch(_hub(tmp_path), fps=float(FPS))
+    shape = dataclasses.replace(checkpoint.shape, per_tick=per_tick)
+    runner = P.LeRobotRunner(
+        dataclasses.replace(checkpoint, shape=shape),
+        policy=Predicting(),
+        preprocessor=Unchanged(),
+        postprocessor=Unchanged(),
+        cameras={},
+        threads=1,
+        latency_s=0.0,
+    )
+    runner.begin(JOINTS, {})
+    runner.reset("reach")
+    answered = runner.next_chunk(Observation(0, {f"{m}.pos": 0.0 for m in JOINTS}), {})
+    rows = 1 if per_tick else N_ACTION_STEPS
+    assert [[action[m] for m in JOINTS] for action in answered.actions] == chunk[0, :rows].tolist()
+
+
+@NEEDS_TORCH
 def test_torch_gets_as_many_threads_however_often_a_checkpoint_loads(offline: TinyAct) -> None:
     """One fewer than torch takes on its own, asked once: asked again after a load has set it,
     torch says what that load set, and each load would take a thread fewer than the last."""
@@ -1763,11 +1962,14 @@ TINY_XVLA = "quackd-test/tiny-xvla"
 @dataclass(frozen=True)
 class TinyXvla:
     """A tiny random X-VLA and the tokenizer it names, in a Hub cache of their own, each at a
-    commit, and the percentiles its state was normalised with, in `JOINTS`' order."""
+    commit, the percentiles its state was normalised with, in `JOINTS`' order, and its
+    pre-processor's JSON as LeRobot saved it, before the fixture made it one LeRobot 0.6.1 would
+    have saved."""
 
     cache: Path
     q01: tuple[float, ...]
     q99: tuple[float, ...]
+    saved_preprocessor: str
 
     @property
     def spec(self) -> str:
@@ -1787,6 +1989,8 @@ def tiny_xvla(tmp_path_factory: pytest.TempPathFactory) -> TinyXvla:
     deviation as the SO-101 fine-tunes' are. Its tokenizer is a word-level one of a few words,
     saved where a pinned repository lands in the Hub's cache, and its processor names it by that
     repository, as a pushed checkpoint names BART's."""
+    import shutil
+
     torch = pytest.importorskip("torch")
     pytest.importorskip("transformers")
     from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
@@ -1885,16 +2089,22 @@ def tiny_xvla(tmp_path_factory: pytest.TempPathFactory) -> TinyXvla:
     policy.save_pretrained(snapshot)
     pre.save_pretrained(snapshot)
     post.save_pretrained(snapshot)
-    # a pushed checkpoint names its tokenizer by its Hub id, and the pin says at which commit
+    as_saved = (snapshot / up.PREPROCESSOR_FILE).read_text(encoding="utf-8")
+    # a pushed checkpoint names its tokenizer by its Hub id, and the pin says at which commit.
+    # LeRobot 0.7.0 also saves the tokenizer itself inside the checkpoint and names that copy in
+    # the step's `artifacts`, which the server refuses (upstream_api.PROCESSOR_ARTIFACTS), so the
+    # artifacts and the directories they name go, as a save by LeRobot 0.6.1 has none
     for name in (up.CONFIG_FILE, up.PREPROCESSOR_FILE):
         saved = json.loads((snapshot / name).read_text(encoding="utf-8"))
         if "tokenizer_name" in saved:
             saved["tokenizer_name"] = TINY_TOKENIZER
         for step in saved.get("steps", []):
+            for kept in step.pop("artifacts", {}).values():
+                shutil.rmtree(snapshot / kept)
             if "tokenizer_name" in step.get("config", {}):
                 step["config"]["tokenizer_name"] = TINY_TOKENIZER
         (snapshot / name).write_text(json.dumps(saved), encoding="utf-8")
-    return TinyXvla(cache, q01, q99)
+    return TinyXvla(cache, q01, q99, as_saved)
 
 
 @pytest.fixture
@@ -1949,3 +2159,35 @@ def test_a_tiny_xvla_is_served_offline_with_its_tokenizer_pinned(offline_xvla: T
     for action in chunk.actions:
         assert set(action) == set(JOINTS)
         assert all(math.isfinite(v) for v in action.values())
+
+
+@NEEDS_TRANSFORMERS
+def test_a_tiny_xvla_as_lerobot_saved_it_is_refused_before_its_weights(
+    offline_xvla: TinyXvla,
+) -> None:
+    """LeRobot 0.7.0 saved the tiny X-VLA's tokenizer inside the checkpoint, named that copy in
+    its tokenizer step and declared it in the step's `artifacts`, and the fixture took both away
+    to serve it as LeRobot 0.6.1 would have saved it (`upstream_api.PROCESSOR_ARTIFACTS`).
+    Served as LeRobot saved it, it is refused, and so is the same save with its step naming no
+    tokenizer at all, which would have loaded the copy in its directory with no pin."""
+    import shutil
+
+    saved = json.loads(offline_xvla.saved_preprocessor)
+    (step,) = [s for s in saved["steps"] if s["registry_name"] == "tokenizer_processor"]
+    assert step.get("artifacts") == {"tokenizer_name": SAVED_ARTIFACT}, step
+    assert step["config"]["tokenizer_name"] == SAVED_ARTIFACT
+    models = offline_xvla.cache / f"models--{TINY_XVLA.replace('/', '--')}" / "snapshots"
+    tokenizer = offline_xvla.cache / f"models--{TINY_TOKENIZER.replace('/', '--')}" / "snapshots"
+    for shape in ("as saved", "naming no tokenizer"):
+        commit = _commit(f"{TINY_XVLA} {shape}")
+        where = models / commit
+        if not where.exists():
+            shutil.copytree(models / _commit(TINY_XVLA), where)
+            shutil.copytree(tokenizer / _commit(TINY_TOKENIZER), where / SAVED_ARTIFACT)
+        doc = json.loads(offline_xvla.saved_preprocessor)
+        if shape == "naming no tokenizer":
+            for s in doc["steps"]:
+                s["config"].pop("tokenizer_name", None)
+        (where / up.PREPROCESSOR_FILE).write_text(json.dumps(doc), encoding="utf-8")
+        with pytest.raises(S.ServeRefused, match=r"inside the checkpoint \(`artifacts`\)"):
+            S.served_policy(S.ServeOptions(policy=f"{TINY_XVLA}@{commit}", fps=float(FPS)))

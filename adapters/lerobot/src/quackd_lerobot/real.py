@@ -2,9 +2,10 @@
 
 One SO-101 ran this backend on 2026-09-15 (lerobot 0.6.1, Windows 11, Python 3.12.12):
 connect, `get_observation`, `send_action`, the two register reads and `disconnect` all
-behaved as the rows in `upstream_api.py` say. The arm fell at the end of every one of those
-runs, which is why `close()` now returns it to a recorded rest pose first and keeps torque
-on when it could not get there.
+behaved as the rows in `upstream_api.py` then said. The arm fell at the end of every one of
+those runs, which is why `close()` now returns it to a recorded rest pose first and keeps
+torque on when it could not get there. It reads LeRobot 0.7.0 now, whose bus is rustypot's,
+and no arm has run on that.
 
 Every LeRobot name comes from `upstream_api.py` (ADR-0022). LeRobot is synchronous, so
 every call runs in a worker thread under one lock with a deadline, and a call that blows its
@@ -35,9 +36,9 @@ What this backend refuses to take on faith, because upstream cannot tell it:
 - **the arm can be told to jump.** `max_relative_target` is `None` upstream; quackd sets it,
   so one `send_action` moves a joint at most `max_step_deg`.
 - **one lost packet is not a dead arm.** LeRobot's connect writes torque off and on again to
-  every motor, one try per write (`up.CONFIGURE_TORQUE_WRITES_ONCE`), and a Feetech bus loses
+  every motor, one try per write (`up.CONFIGURE_TORQUE_WRITES_ONCE`), and a servo bus loses
   the odd status packet. So `connect()` closes the port without writing anything and tries
-  again, a few times, and says each time which joint the bus stopped answering for.
+  again, a few times, and says each time which joints the bus stopped answering for.
 
 `pick` and `manipulate` run an injected policy, a `PolicyRunner` or a `PolicyLike` object, one
 segment at a time in the policy loop (`policy/loop.py`). A checkpoint runs in a policy server of
@@ -137,15 +138,17 @@ from quackd_lerobot.verbs import (
     worth_saying,
 )
 
-STATUS = "LeRobot names verified at a pinned commit; one SO-101 driven on 2026-09-15"
+STATUS = "LeRobot names verified at its v0.7.0 tag; one SO-101 driven on 0.6.1 on 2026-09-15"
 _THREADS = DaemonThreads("quackd-lerobot")
 """Where every call that can hang runs, the bus's and the cameras'. Not asyncio's pool, which
 `asyncio.run` and the exit both join: a call that never came back held a run that had finished,
 and on Windows only closing the window ended it (`quackd.adapters.threads`)."""
 DISCONNECT_S = 15.0
 """How long a close waits for the disconnect that takes torque off. Its thread is a daemon, so the
-exit would otherwise cut it off with some motors let go and some not. Six writes with every retry
-take a second or two, so a bus that needs this long is a bus to say something about."""
+exit would otherwise cut it off with some motors let go and some not. Two writes to each of six
+motors, every motor tried and each tried six times, take some two seconds on a bus that has
+stopped answering (`up.STATUS_TIMEOUT_MS`), so a bus that needs this long is a bus to say
+something about."""
 POLICY_HZ = 10.0
 """The rate a `PolicyLike` object runs at, since it declares none: the verbs' own tick
 (`verbs.TICK_S`), so its step cap per send is the verbs' own too (`policy.loop.speed_cap`)."""
@@ -180,10 +183,10 @@ CONNECT_ATTEMPTS = 3
 
 LeRobot's connect switches torque off on every motor to configure it and back on afterwards,
 one write per register per motor and no retry (`up.CONFIGURE_TORQUE_WRITES_ONCE`), so one
-status packet lost anywhere on a Feetech bus fails the whole connect. A lost packet is the bus
+status packet lost anywhere on the bus fails the whole connect. A lost packet is the bus
 being a bus rather than the arm being broken, and the next attempt normally goes through. An
 arm that fails every attempt has something a further try will not fix, a loose cable or a
-servo that stopped answering, and the person is told which joint to look at instead."""
+servo that stopped answering, and the person is told which joints to look at instead."""
 CONNECT_PAUSE_S = 0.5
 """How long `connect()` waits between two attempts, with the port closed. Long enough for a
 reply still in flight to finish before the port is opened again, short enough that nobody at
@@ -198,16 +201,19 @@ PORT_CLOSE_DEADLINE_S = 5.0
 disconnect here has. A close that has not come back by then wedges the transport as any call
 does, and the next attempt is refused rather than put a second talker on the bus."""
 SPLIT_TORQUE = (
-    "Connecting switches torque off on every motor and back on one motor at a time, so some "
-    "motors may be left with torque on and others off: keep a hand under the arm, because the "
-    "ones that are off hold nothing up."
+    "Connecting switches torque off on every motor and back on, so some motors may be left with "
+    "torque on and others off: keep a hand under the arm, because the ones that are off hold "
+    "nothing up."
 )
 """What a refused connect tells the person at the arm when an attempt can have written torque:
 one that failed on a write, inside `configure()` or somewhere nothing can place
 (`may_have_written_torque`), or one still on the wire when quackd stopped waiting for it.
-`configure()` writes torque off on every motor and back on one motor after another
-(`up.CONFIGURE_TORQUE_WRITES_ONCE`), so where it stopped, the motors before that write can be
-holding and the ones after it limp."""
+`configure()` writes torque off on every motor and back on in a `finally`, each call trying every
+motor and naming each it could not switch (`up.CONFIGURE_TORQUE_WRITES_ONCE`): one lost on the
+way in leaves every motor but the ones named limp, since nothing switches them back on, and one
+lost on the way back on may leave the ones named limp, with the rest holding. It names no joint
+of its own, because the failure it follows may have been another write, a gain or a mode, or a
+call that never came back and named nothing."""
 KEPT_OVER_A_FAILED_CONNECT = (
     "Nothing has read where the arm is, so quackd kept whatever torque connecting switched on "
     "rather than let it go where it stands: hold the arm, and cut its power."
@@ -220,13 +226,48 @@ it is not something quackd knows. It keeps the torque, as a close does over an a
 answer (`TORQUE_UNKNOWN_AT_CLOSE`), and cutting the power is the way out, because
 `quackd robot release` connects the same way and would fail in the same place."""
 TORQUE_RETRIES = 5
-"""Extra tries LeRobot gives each `Torque_Enable` and `Lock` write when quackd lets go of the
-arm or takes hold of it again: the count upstream's own `disconnect()` gives its torque-off
-(`up.BUS_DISCONNECT`). LeRobot's default is none, and one lost packet there is a hand-off that
-happened to some motors and not to others."""
-MOTOR_ID = re.compile(r"\bid_=(\d+)")
-"""The motor a LeRobot bus error is about, wherever it sits in the sentence and whatever
-register and transaction result surround it (`up.BUS_WRITE_ERROR_NAMES_THE_ID`)."""
+"""Extra tries LeRobot gives each motor's `Torque_Enable` and `Lock` writes when quackd lets go of
+the arm or takes hold of it again: the count upstream's own `disconnect()` gives its torque-off
+(`up.BUS_DISCONNECT`). LeRobot's default is none, and with none, one lost packet is a hand-off
+that happened to every motor but the one it was lost on (`up.TORQUE_TRIED_ON_EVERY_MOTOR`)."""
+TORQUE_WRITES = 2
+"""What a torque call writes to each sts3215, `Torque_Enable` and then `Lock`
+(`up.BUS_ENABLE_TORQUE`)."""
+TORQUE_CALL_S = (
+    len(JOINTS)
+    * (TORQUE_RETRIES + 1)
+    * TORQUE_WRITES
+    * (up.STATUS_TIMEOUT_S + up.FLUSH_TRIES * up.FLUSH_PAUSE_S)
+    + 1.0
+)
+"""How long a release's or a take-hold's torque call may take before quackd stops waiting for
+it: room for both of each motor's writes to wait out LeRobot's status timeout after rustypot's
+three flush pauses (`up.STATUS_TIMEOUT_MS`, `up.NO_BUSY_FLAG`) on each of its
+`TORQUE_RETRIES` + 1 tries, and a second on top, the deadline every other call gets. A margin,
+not a bound: a try ends at its first write that gets no reply, so a motor that has stopped
+answering costs one wait a try, some 1.8 s over six, while a reply that comes back in pieces
+can wait more than once. LeRobot 0.7.0 tries every motor whichever fails
+(`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and the second this call used to get cut it short and
+wedged the transport over a call that was about to say which motors it could not reach. Running
+past this is still said safely: the release says the call did not come back and to hold the arm
+as though nothing holds it, and the take-hold refuses with the torque unknown."""
+MOTOR_ID = re.compile(r"\bmotor ID (\d+)\b")
+"""The motor a LeRobot bus error about one motor names, wherever it sits in the sentence and
+whatever register, value and reason surround it: `of motor ID <N>` for a write and `from motor
+ID <N>` for a read (`up.BUS_WRITE_ERROR_NAMES_THE_ID`). A sync read or a sync write says `motor
+IDs [...]`, which this never matches."""
+TORQUE_FAILED = re.compile(r"\bFailed to (?:en|dis)able torque after \d+ tries on ")
+"""The head of the one error a torque call raises once it has tried every motor
+(`up.TORQUE_TRIED_ON_EVERY_MOTOR`)."""
+TORQUE_FAILED_ON = re.compile(r"'[^']*' \(motor ID (\d+)\)")
+"""One motor a torque error names, `'<joint>' (motor ID <N>)`, of as many as failed."""
+FIRST_SILENT = re.compile(
+    r"\bFailed to sync read '[^']*' from motor IDs \[[^\]]*\] after \d+ tries\. motor (\d+): "
+)
+"""The motor a failed sync read names after its list (`up.BUS_SYNC_READ_ERROR`): the first whose
+own status packet did not come back whole, with every motor after it not known to answer."""
+FIRST_SILENT_LABEL = "the first that did not answer"
+"""What a joint named by `FIRST_SILENT` is said to be, beside its name and id."""
 HANDSHAKE_MOTOR_ID = re.compile(
     r"(?:Missing motor IDs|Motors with incorrect model numbers):\s*-\s*(\d+)\b"
 )
@@ -244,11 +285,11 @@ EXPECTED_LIST = re.compile(r"Full expected motor list \(id: model_number\):\s*(\
 from the bus's own motor table (`up.HANDSHAKE_NAMES_THE_ID`)."""
 EXPECTED_ID = re.compile(r"(\d+)\s*:")
 """One id out of `EXPECTED_LIST`'s dict."""
-WRITE_FAILED = re.compile(r"\bFailed to (?:sync )?write\b")
+WRITE_FAILED = re.compile(r"\bFailed to (?:(?:sync )?write|(?:en|dis)able torque)\b")
 """A LeRobot bus error about a write, to one motor or to several
-(`up.BUS_WRITE_ERROR_NAMES_THE_ID`). Every write a connect makes is inside `configure()`, after
-its torque-off has started, so a connect that failed on one may have left the motors in two
-torque states."""
+(`up.BUS_WRITE_ERROR_NAMES_THE_ID`), a torque call's among them (`up.TORQUE_TRIED_ON_EVERY_MOTOR`).
+Every write a connect makes is inside `configure()`, after its torque-off has started, so a
+connect that failed on one may have left the motors in two torque states."""
 
 ENCODER_TICKS = 4096
 """An sts3215 turn in encoder counts (`up.STS3215_RESOLUTION`); degrees use it less one."""
@@ -514,43 +555,96 @@ def joint_ranges(calibration: dict[str, Any]) -> dict[str, tuple[float, float]]:
     return ranges
 
 
-def motor_in_error(message: str, motors: Mapping[str, Any] | None) -> tuple[str, str] | None:
-    """The motor a LeRobot bus error is about, as `(label, name)`, or None when it names none.
+def motors_in_error(message: str, motors: Mapping[str, Any] | None) -> list[tuple[str, str]]:
+    """Every motor a LeRobot bus error is about, each as `(label, name)`, in the order the error
+    names them, or none.
 
-    LeRobot says which servo a failed write or read was for as `id_=<N>`, in a sentence that
-    changes with the register, the value and the transaction result around it
+    LeRobot says which servo a failed write or read was for as `motor ID <N>`, in a sentence
+    that changes with the register, the value and rustypot's reason around it
     (`up.BUS_WRITE_ERROR_NAMES_THE_ID`). The id is the servo's address on the bus, which nobody
     at the arm can see; the joint is what they can put a hand on. So the id is looked up in the
     bus's own motor table (`up.BUS_MOTORS`), which is what gave each servo its address, rather
     than read off the order the follower happens to list its motors in today.
 
-    The handshake that opens every connect names its motors differently: a servo that did not
-    answer its ping, or answered as another model, is a line `- <N> (...)` in a list
-    (`up.HANDSHAKE_NAMES_THE_ID`). That is the servo that stopped answering, or the cable to it
+    Three errors name their motors otherwise. A torque call tries every motor and names each one
+    it could not switch, `'<joint>' (motor ID <N>)`, joined by commas
+    (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and every one of them is named here. A sync read lists
+    every motor it asked, `motor IDs [...]`, and then says which reply failed first, as `motor
+    <M>` and why (`up.BUS_SYNC_READ_ERROR`): that one is named, as the first that did not answer,
+    because a cable that breaks at a motor silences every motor after it too, and the motors
+    after it are not known to be fine. And the handshake that opens every connect lists a servo
+    that did not answer, or answered with another model number, as a line `- <N> (...)`
+    (`up.HANDSHAKE_NAMES_THE_ID`): that is the servo that stopped answering, or the cable to it
     that came out, which is the failure a further attempt will not fix and the one the person
     most needs sent to the right joint for, so the first id listed is read the same way.
 
     `name` is the joint, and `label` is the joint with its id, `<joint> (id <N>)`, for the
     sentence that also quotes LeRobot. An id the table does not know is still worth saying, and
-    both are then `motor <N>`. A message with no id names nothing: a sync read or write is about
+    both are then `motor <N>`. A message with no id names nothing: a sync write is about
     several servos at once and a port that will not open is about none, and a guess would send
     somebody to the wrong cable.
 
-    Nor does a handshake that found no motor of the arm at all (`_every_motor_missing`). That
-    is what a servo supply switched off looks like, the state an arm is in after the power cut
-    a session ends on, and a cable out between the board and the first servo looks the same.
-    Naming the first id listed would send the person to one joint's cable for what is the whole
+    Nor does an error about every motor of the arm at once, a handshake that found none of them
+    (`_every_motor_missing`) or a torque call that reached none of them. That is what a servo
+    supply switched off looks like, the state an arm is in after the power cut a session ends
+    on, and a cable out between the board and the first servo looks the same. Naming every
+    joint, or the first, would send the person to the joints' cables for what is the whole
     arm's cables or its power, which is the guess this refuses to make."""
     if _every_motor_missing(message, motors):
+        return []
+    if (stuck := torque_failed_on(message)) is not None:
+        return [] if _every_motor(stuck, motors) else [_named(n, motors) for n in stuck]
+    if (silent := FIRST_SILENT.search(message)) is not None:
+        label, name = _named(int(silent.group(1)), motors)
+        return [(f"{label}, {FIRST_SILENT_LABEL}", name)]
+    ids = [int(n) for n in MOTOR_ID.findall(message)]
+    if not ids and (listed := HANDSHAKE_MOTOR_ID.search(message)) is not None:
+        ids = [int(listed.group(1))]
+    return [_named(n, motors) for n in _once(ids)]
+
+
+def motor_in_error(message: str, motors: Mapping[str, Any] | None) -> tuple[str, str] | None:
+    """The motors a LeRobot bus error is about as one `(label, name)`, the labels and the names
+    each listed as a sentence lists them, or None when it names none (`motors_in_error`)."""
+    named = motors_in_error(message, motors)
+    if not named:
         return None
-    found = MOTOR_ID.search(message) or HANDSHAKE_MOTOR_ID.search(message)
-    if found is None:
+    return _listed([label for label, _ in named]), _listed([name for _, name in named])
+
+
+def torque_failed_on(message: str) -> list[int] | None:
+    """The bus ids a torque call's error names as the motors whose writes it could not confirm,
+    in its order and each once (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), or None for an error that is
+    not a torque call's. Every other motor the call was given took its write."""
+    if TORQUE_FAILED.search(message) is None:
         return None
-    motor_id = int(found.group(1))
+    return _once([int(n) for n in TORQUE_FAILED_ON.findall(message)])
+
+
+def _named(motor_id: int, motors: Mapping[str, Any] | None) -> tuple[str, str]:
+    """`(label, name)` for one bus id, through the bus's own motor table (`up.BUS_MOTORS`)."""
     for joint, motor in dict(motors or {}).items():
         if getattr(motor, "id", None) == motor_id:
             return f"{joint} (id {motor_id})", str(joint)
     return f"motor {motor_id}", f"motor {motor_id}"
+
+
+def _once(ids: Sequence[int]) -> list[int]:
+    """`ids` in their order, each once."""
+    return list(dict.fromkeys(ids))
+
+
+def _listed(items: Sequence[str]) -> str:
+    """`a`, `a and b`, `a, b and c`."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _every_motor(ids: Sequence[int], motors: Mapping[str, Any] | None) -> bool:
+    """Whether `ids` are every motor in the bus's own table, which is a torque call that reached
+    none of the arm's motors. Unknown where the table is."""
+    table = {getattr(motor, "id", None) for motor in dict(motors or {}).values()}
+    known = {n for n in table if isinstance(n, int)}
+    return bool(known) and known <= set(ids)
 
 
 def _every_motor_missing(message: str, motors: Mapping[str, Any] | None) -> bool:
@@ -574,7 +668,7 @@ def _every_motor_missing(message: str, motors: Mapping[str, Any] | None) -> bool
 
 CALIBRATION_CHECK = ("is_calibrated", "read_calibration")
 """The frames of the calibration check LeRobot's connect makes between the handshake and
-`configure()` (`up.BUS_IS_CALIBRATED`, reached at so_follower.py line 99 whatever `calibrate`
+`configure()` (`up.BUS_IS_CALIBRATED`, reached at so_follower.py line 118 whatever `calibrate`
 says): reads of each motor's limits and offset, and no write."""
 TORQUE_WRITERS = ("configure", "torque_disabled", "enable_torque", "disable_torque")
 """The frames every torque write of a connect is made under: `configure()`, the
@@ -585,24 +679,25 @@ TORQUE_WRITERS = ("configure", "torque_disabled", "enable_torque", "disable_torq
 def may_have_written_torque(error: BaseException) -> bool:
     """Whether a connect attempt that failed with an open port can have written torque.
 
-    One connect opens the port, runs the bus's handshake (a ping and a model check per motor,
-    then the firmware reads), checks the calibration by reading every motor's limits and
-    offset, and only once all of that has returned runs `configure()`, where every torque write
-    of a connect is (`up.BUS_HANDSHAKE`, `up.BUS_IS_CALIBRATED`). So a failure placed in the
-    handshake or the calibration check left every motor's torque as it found it, and is not one
-    to warn a person about. The calibration check used to be missed: it runs after the
+    One connect opens the port, runs the bus's handshake (a read of each motor's model number,
+    then two sync reads of its firmware), checks the calibration by reading every motor's limits
+    and offset, and only once all of that has returned runs `configure()`, where every torque
+    write of a connect is (`up.BUS_HANDSHAKE`, `up.BUS_IS_CALIBRATED`). So a failure placed in
+    the handshake or the calibration check left every motor's torque as it found it, and is not
+    one to warn a person about. The calibration check used to be missed: it runs after the
     handshake, so a read of it that lost its status packet was taken for a failure in
     `configure()`, and the person told to keep a hand under an arm nothing had written to.
 
     Placed off the traceback rather than the words, because each stretch fails in several of
     them (a motor check, a firmware check, any one read) and a frame is the one thing they
-    share. LeRobot re-raises a serial error and a failed read from in there as its own port
-    error, `from` the one that happened, so the cause's traceback is read too. Only the cause:
+    share. LeRobot raises a failed handshake again as it was, its frame in its own traceback
+    (`up.HANDSHAKE_CLOSES_THE_PORT`), and makes its own port error only of an OSError from
+    opening the port, `from` that error, so the cause's traceback is read too. Only the cause:
     an exception's context is whatever was being handled when it was raised, which says nothing
     about where.
 
     Three things count as a possible torque write, in this order. A write that failed
-    (`failed_on_a_write`), wherever it was raised: the handshake at 0.6.1 writes nothing, and a
+    (`failed_on_a_write`), wherever it was raised: the handshake at 0.7.0 writes nothing, and a
     LeRobot whose did would be one to warn about. A failure placed under `configure()` or its
     torque calls (`TORQUE_WRITERS`). And a failure that cannot be placed at all, which costs at
     most a warning that was not needed; the other mistake costs a person's hand under the arm."""
@@ -628,8 +723,9 @@ def _frames_of(error: BaseException) -> set[str]:
 
 def failed_on_a_write(error: BaseException) -> bool:
     """Whether a connect failure is a write that failed (`WRITE_FAILED`), in its own words or
-    in those of the error it was raised from: LeRobot re-raises a `ConnectionError` from inside
-    its connect as its port error, and a write whose status packet was lost is one."""
+    in those of the error it was raised from: a LeRobot that raised its own error `from` a write
+    whose status packet was lost, as 0.6.1 raised its port error from any `ConnectionError` of
+    its handshake, still says what happened in the cause."""
     return any(WRITE_FAILED.search(str(at)) is not None for at in _cause_chain(error))
 
 
@@ -641,6 +737,31 @@ def _cause_chain(error: BaseException) -> list[BaseException]:
         chain.append(at)
         at = at.__cause__
     return chain
+
+
+def closed_by_its_handshake(error: BaseException) -> bool:
+    """Whether a connect attempt that left the port shut failed in LeRobot's handshake, which
+    shuts the port behind it and raises the failure again as it was
+    (`up.HANDSHAKE_CLOSES_THE_PORT`), so the handshake's frame is in the error's traceback. The
+    other way to a shut port is one that never opened, whose port error carries no such frame
+    (`up.BUS_HANDSHAKE`). The pings and reads went out over the first and nothing over the
+    second, and neither wrote to a motor."""
+    return up.BUS_HANDSHAKE.name in _frames_of(error)
+
+
+PORT_CLOSED_WRITING_NOTHING = "The port was closed without a write to any motor"
+"""What a connect note says of a port quackd closed behind a failed attempt (`_close_port`)."""
+PORT_CLOSED_BY_THE_HANDSHAKE = (
+    "LeRobot closed the port behind its failed handshake, which writes to no motor"
+)
+"""What it says of a port LeRobot closed behind its handshake (`closed_by_its_handshake`)."""
+PORT_NEVER_OPENED = "The port never opened, so nothing reached a motor"
+"""What it says of an attempt whose port did not open."""
+
+
+def _on(named: Sequence[tuple[str, str]]) -> str:
+    """` on <joints>` for a sentence about a failure, from `motors_in_error`, or nothing."""
+    return f" on {_listed([label for label, _ in named])}" if named else ""
 
 
 def _sentence(text: str) -> str:
@@ -843,6 +964,9 @@ class LeRobotReal:
         self.connect_pause_s = CONNECT_PAUSE_S
         self.connect_deadline_s = CONNECT_DEADLINE_S
         self.port_close_deadline_s = PORT_CLOSE_DEADLINE_S
+        self.torque_call_s = TORQUE_CALL_S
+        """A release's and a take-hold's deadline (`TORQUE_CALL_S`), which is also how long
+        whatever comes next waits for one an interrupt cut short (`_outwait_cancelled_call`)."""
         self._stop_check: Callable[[], bool] | None = None
         """What `connect()` asks, between attempts, whether a stop was asked for
         (`set_stop_check`). None is a connect nobody can stop but by cancelling it."""
@@ -1611,6 +1735,13 @@ class LeRobotReal:
         check or `configure()`, and nothing says which, and one LeRobot timed out itself could
         have been in any of them.
 
+        Each note says what became of the port: quackd closed it with no write to any motor,
+        LeRobot closed it behind a handshake that failed (`up.HANDSHAKE_CLOSES_THE_PORT`), or it
+        never opened. The last two both leave the port shut, and are told apart by the
+        handshake's frame in the error's traceback. The old pin's handshake left the port open,
+        so the notes knew two cases, and over 0.7.0's bus they would have said every attempt its
+        handshake failed was a port that never opened, with the pings and reads already out.
+
         A stop asked for while the attempts fail ends them (`set_stop_check`). It is looked
         for once an attempt has failed and its port is closed, and throughout the pause before
         the next, and a stop found there refuses the connect on the spot with the cameras let go
@@ -1639,31 +1770,32 @@ class LeRobotReal:
                 raise TransportError(said) from e
             except Exception as e:
                 port_was_open = self._port_open()
-                wrote = port_was_open and may_have_written_torque(e)
+                # shut behind a failed handshake, as LeRobot shuts it (up.HANDSHAKE_CLOSES_THE_PORT)
+                handshake = not port_was_open and closed_by_its_handshake(e)
+                wrote = (port_was_open or handshake) and may_have_written_torque(e)
                 split = split or wrote
-                where = motor_in_error(
+                named = motors_in_error(
                     str(e), getattr(getattr(self._robot, "bus", None), "motors", None)
                 )
                 await self._close_port()
                 if attempt == CONNECT_ATTEMPTS:
                     await self._close_cameras()
-                    raise TransportError(self._connect_refusal(e, where, split=split)) from e
-                stopped = self._connect_stopped(
-                    e, where, attempt, port_was_open=port_was_open, split=split
+                    raise TransportError(self._connect_refusal(e, named, split=split)) from e
+                then = (
+                    PORT_CLOSED_WRITING_NOTHING
+                    if port_was_open
+                    else PORT_CLOSED_BY_THE_HANDSHAKE
+                    if handshake
+                    else PORT_NEVER_OPENED
                 )
+                stopped = self._connect_stopped(e, named, attempt, then=then, split=split)
                 if self._stop_asked():
                     # asked for while this attempt was failing: nothing more goes on the bus
                     await self._close_cameras()
                     raise TransportError(stopped) from e
-                then = (
-                    "The port was closed without a write to any motor"
-                    if port_was_open
-                    else "The port never opened, so nothing reached a motor"
-                )
                 note = (
-                    f"connect attempt {attempt} of {CONNECT_ATTEMPTS} failed"
-                    + (f" on {where[0]}" if where else "")
-                    + f": {_one_line(e)} {then}, and connect runs again"
+                    f"connect attempt {attempt} of {CONNECT_ATTEMPTS} failed{_on(named)}: "
+                    f"{_one_line(e)} {then}, and connect runs again"
                 )
                 self.connect_notes.append(note)
                 logger.warning("%s", note)
@@ -1672,31 +1804,34 @@ class LeRobotReal:
                     raise TransportError(stopped) from e
 
     def _connect_refusal(
-        self, error: Exception, where: tuple[str, str] | None, *, split: bool
+        self, error: Exception, named: Sequence[tuple[str, str]], *, split: bool
     ) -> str:
         """What the person at the arm reads when every connect attempt failed.
 
         LeRobot's words first, because they are the evidence. Then the state the arm may be in:
-        an attempt that failed on a write, or inside `configure()`, may have stopped anywhere in
-        its torque writes, which go off on every motor and back on one motor at a time, so the
-        motors before the failed write can be holding and the ones after it limp. Nothing quackd
-        can write fixes that on a bus that will not answer, so it is said instead
-        (`SPLIT_TORQUE`), and only when an attempt can have written torque (`split`): one that
-        never opened the port wrote nothing, and neither did one refused before `configure()`
-        began, in the handshake (a servo that did not answer its ping among them) or in the
-        calibration check after it, which ping and read and write nothing. Then what to look
-        at: the cable of the joint LeRobot named, where it named one, with the servo supply,
-        since a servo with no power fails the same way as a cable that came out, and whatever
-        else might be holding the port, because the bus has one owner at a time. Where LeRobot
-        named no joint, every motor it had missing included, the arm's cables and power."""
+        an attempt that failed on a write, or inside `configure()`, may have stopped part way
+        through its torque writes, which go off on every motor and back on, so some motors can be
+        holding and others limp, the ones LeRobot named among them. Nothing quackd can write
+        fixes that on a bus that will not answer, so it is said instead (`SPLIT_TORQUE`), and
+        only when an attempt can have written torque (`split`): one that never opened the port
+        wrote nothing, and neither did one refused before `configure()` began, in the handshake
+        (a servo that did not answer among them) or in the calibration check after it, which read
+        and write nothing. Then what to look at: the cable of each joint LeRobot named, where it
+        named any (`motors_in_error`), with the servo supply, since a servo with no power fails
+        the same way as a cable that came out, and whatever else might be holding the port,
+        because the port opens for one program at a time (`up.PORT_OPENED_EXCLUSIVELY`). Where
+        LeRobot named no joint, or named every motor of the arm, the arm's cables and power."""
         head = f"lerobot {self.label}: connect failed {CONNECT_ATTEMPTS} times"
-        said = [f"{head}, the last on {where[0]}" if where else head]
+        said = [f"{head}, the last{_on(named)}" if named else head]
         said[0] += f": {_one_line(error)}"
         if split:
             said.append(SPLIT_TORQUE)
+        joints = [name for _, name in named]
         look = (
-            f"{where[1]}'s cable and connectors, that the servo supply is on,"
-            if where
+            f"{joints[0]}'s cable and connectors, that the servo supply is on,"
+            if len(joints) == 1
+            else f"the cables and connectors of {_listed(joints)}, that the servo supply is on,"
+            if joints
             else "the arm's cables and power,"
         )
         said.append(
@@ -1708,30 +1843,25 @@ class LeRobotReal:
     def _connect_stopped(
         self,
         error: Exception,
-        where: tuple[str, str] | None,
+        named: Sequence[tuple[str, str]],
         attempt: int,
         *,
-        port_was_open: bool,
+        then: str,
         split: bool,
     ) -> str:
         """What the person reads when a stop was asked for while the connect was failing.
 
         Said as a stop and not as a fault: the connect was not tried again because a person
         asked for things to stop, and the attempts it did make are no verdict on the cable. The
-        last attempt's failure is still quoted, LeRobot's words and the joint they name, because
+        last attempt's failure is still quoted, LeRobot's words and the joints they name, because
         it is what happened to the arm, and the half-energised warning still follows it where
         an attempt can have written torque (`split`), for `_connect_refusal`'s reason. And what
-        quackd did last: it closed the port, with no write to any motor, and sent nothing
-        more."""
-        then = (
-            "The port was closed without a write to any motor"
-            if port_was_open
-            else "The port never opened, so nothing reached a motor"
-        )
+        became of the port last (`then`): quackd closed it, with no write to any motor, LeRobot
+        closed it behind its handshake, or it never opened, and nothing more was sent."""
         said = [
             f"lerobot {self.label}: connect stopped after attempt {attempt} of "
             f"{CONNECT_ATTEMPTS}, because a stop was asked for.",
-            f"Attempt {attempt} failed" + (f" on {where[0]}" if where else "") + ":",
+            f"Attempt {attempt} failed{_on(named)}:",
             _one_line(error),
         ]
         if split:
@@ -1780,10 +1910,11 @@ class LeRobotReal:
         """Whether the serial port is open, off the port's own flag (`up.BUS_IS_CONNECTED`).
 
         Read after an attempt failed, to know whether it can have written to a motor. LeRobot
-        opens the port before it writes anything, and nothing in its connect closes it again
-        on the way out of a failure, so a closed port is an attempt that never reached the
-        servos. A flag and not a transaction, so not under `_call`. Unknown reads as open,
-        which costs at most a warning that was not needed."""
+        opens the port before it writes anything, and closes it again on the way out of one
+        failure alone, its handshake's, which writes nothing (`up.HANDSHAKE_CLOSES_THE_PORT`),
+        so a closed port is an attempt that wrote to no servo. A flag and not a transaction, so
+        not under `_call`. Unknown reads as open, which costs at most a warning that was not
+        needed."""
         try:
             return bool(self._robot.bus.is_connected)
         except Exception:
@@ -1792,29 +1923,18 @@ class LeRobotReal:
     async def _close_port(self) -> None:
         """Close the serial port and write nothing to any motor. Never raises.
 
-        `MotorsBus.disconnect(disable_torque=False)` (`up.BUS_DISCONNECT`): its torque-off is
-        inside `if disable_torque`, so this is the port's close and nothing else. It refuses a
-        port that is already shut (`check_if_not_connected`), which is an attempt that never
-        opened one, and a shut port is what this was going to leave anyway. Through `_call`,
-        because a close is still a call on the serial handle, and inside a function of no
-        arguments, because `_call` forwards positional arguments only.
+        `SerialMotorsBus.disconnect(disable_torque=False)` (`up.BUS_DISCONNECT`): its torque-off
+        is inside `if disable_torque`, so this is the port's close and nothing else, and a port
+        that is already shut, an attempt that never opened one or a handshake LeRobot closed
+        behind it, is passed over without a word. Through `_call`, because a close is still a
+        call on the serial handle, and inside a function of no arguments, because `_call`
+        forwards positional arguments only.
 
-        Then the port handler's busy flag is cleared, which upstream's own disconnect does too,
-        and inside the same `if disable_torque` that this close skips (`up.BUS_DISCONNECT`). The
-        servo SDK raises that flag before every packet it sends and lowers it once the reply is
-        in, and a serial error in between (a USB glitch in a write or a read) leaves it raised.
-        Reopening the port does not lower it, so every packet of every later attempt would be
-        answered "port in use" without reaching the wire, the handshake would find no motor at
-        all, and the refusal would name every motor as missing when not one had been reached,
-        in the one passing fault the retry is there to absorb. A flag on the handler and not a
-        transaction, so it writes nothing to a motor.
-
-        Cleared in the same call as the close, straight after it in the same worker thread, so
-        only while this close holds the bus's lock and only once the port has actually shut.
-        Not while another call's thread is on the wire: the flag is that thread's. Clearing it
-        after the call instead, whenever the transport was not wedged, cleared it too when the
-        close had run out of time still waiting for the lock, which leaves nothing wedged, in
-        the middle of the packet of whichever call was holding the lock."""
+        On the old pin it then lowered the servo SDK's busy flag, which a serial error in the
+        middle of a packet left raised and which reopening the port did not lower, so every
+        packet of the next attempt was answered "port in use" unsent. LeRobot 0.7.0's bus holds
+        no port handler and no such flag (`up.NO_BUSY_FLAG`): rustypot flushes whatever is
+        waiting on the line before every instruction instead, so there is nothing to lower."""
         bus = getattr(self._robot, "bus", None)
         if bus is None:
             return
@@ -1823,8 +1943,6 @@ class LeRobotReal:
             # named for the LeRobot call in it, which is what a wedge names (`_name_of`): a
             # close that has not come back is stuck in the port's close
             bus.disconnect(disable_torque=False)
-            with contextlib.suppress(Exception):
-                bus.port_handler.is_using = False
 
         with contextlib.suppress(Exception):
             await self._call(disconnect, deadline_s=self.port_close_deadline_s)
@@ -1953,7 +2071,9 @@ class LeRobotReal:
         with contextlib.suppress(Exception):
             self._robot.config.disable_torque_on_disconnect = True
         with contextlib.suppress(Exception):
-            await self._call(self._robot.disconnect, deadline_s=5.0)
+            # the close's own budget for the same torque-off, which tries every motor on
+            # LeRobot 0.7.0 (DISCONNECT_S)
+            await self._call(self._robot.disconnect, deadline_s=DISCONNECT_S)
         raise TransportError(why)
 
     async def close(self) -> None:
@@ -3121,7 +3241,7 @@ class LeRobotReal:
         except Exception as e:
             return refused(
                 "the arm did not answer before the release, so nothing was released "
-                f"({self.stop_error or f'{type(e).__name__}: {e}'})",
+                f"({self._quoted(e)})",
             )
         resting = bool(goal) and at_rest(goal, self._joints, recorded)
         if not anywhere and not resting:
@@ -3141,10 +3261,12 @@ class LeRobotReal:
         self._hold_written = False
         try:
             # up.BUS_DISABLE_TORQUE, with the retries upstream's own disconnect gives the same
-            # writes: without them one lost packet releases the motors before it and not the
-            # ones after, and the person is told the arm is theirs while part of it still holds
+            # writes: without them one lost packet leaves a motor holding while the rest let go,
+            # and the person is told the arm is theirs while part of it still holds. Every motor
+            # is tried whichever fails, so the call gets the time that takes (TORQUE_CALL_S)
             await self._call(
                 functools.partial(self._robot.bus.disable_torque, num_retry=TORQUE_RETRIES),
+                deadline_s=self.torque_call_s,
                 writes_torque=True,
             )
         except BaseException as e:
@@ -3156,17 +3278,16 @@ class LeRobotReal:
                 # The interrupt still goes on up, since it is not this method's to swallow.
                 self._in_hand = True
                 raise
-            # The writes go out one motor at a time, so a call that raised may have released
-            # the motors before the one it failed on and none after. Some joints are limp and
-            # some hold, and which is unknown: the person is told to treat it as limp, the next
-            # `stop` treats it the same way, and `close()`, unless a read of its own answers
-            # first, says that nothing read the release back and to cut the power to be sure.
+            # A release that raised has written to every motor it does not name, which let go,
+            # and each motor it names may still hold (up.TORQUE_TRIED_ON_EVERY_MOTOR); one that
+            # did not come back may have stopped anywhere. Either way part of the arm may hold
+            # and part be limp: the person is told to treat it as limp, the next `stop` treats it
+            # the same way, and `close()`, unless a read of its own answers first, says that
+            # nothing read the release back and to cut the power to be sure.
             self._in_hand = True
             return HandResult(
                 "released",
-                f"torque was being taken off {where} and the call did not come back "
-                f"({self.stop_error or f'{type(e).__name__}: {e}'}), so some joints may be "
-                "limp and some may still hold: hold the arm as though nothing holds it",
+                self._release_failed(where, e),
                 joints=before,
             )
         # Believed the moment the call returns, and before anything is read back. The
@@ -3180,8 +3301,7 @@ class LeRobotReal:
         except Exception as e:
             return HandResult(
                 "released",
-                f"torque is off {where}, and the arm then stopped answering "
-                f"({self.stop_error or f'{type(e).__name__}: {e}'})",
+                f"torque is off {where}, and the arm then stopped answering ({self._quoted(e)})",
                 joints=before,
             )
         if self._torque_error is not None:
@@ -3211,6 +3331,49 @@ class LeRobotReal:
             )
         return HandResult(
             "released", f"torque is off {where}", joints=dict(self._joints), torque_on=()
+        )
+
+    def _quoted(self, error: BaseException) -> str:
+        """What a hand-off quotes of the failure that ended it: the wedge's own reason
+        (`stop_error`) where the call ran out of time or met a bus still wedged, which is what
+        set it, and the error's own words otherwise. `stop_error` outlives the failure that set
+        it, a stop whose hold did not reach the arm among them, so quoting it over a LeRobot
+        error put an earlier failure where LeRobot's words belong, the joint a torque call
+        names among them."""
+        if isinstance(error, (TimeoutError, TransportError)) and self.stop_error:
+            return self.stop_error
+        return f"{type(error).__name__}: {error}"
+
+    def _release_failed(self, where: str, error: BaseException) -> str:
+        """What a release that raised says, `where` being "at the rest pose" or "where the arm
+        stands", always ending on holding the arm as though nothing holds it.
+
+        LeRobot's torque call tries every motor and names each whose write it could not confirm
+        (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), so the joints it does not name let go, and the ones
+        it names are the ones that may still hold, which is what the person holding the arm most
+        needs to hear. Where it names every motor of the arm, or the call raised something else
+        or never came back, which joints hold is unknown, and that is said instead."""
+        said = self._quoted(error)
+        motors = getattr(getattr(self._robot, "bus", None), "motors", None)
+        stuck = torque_failed_on(str(error))
+        if stuck and not _every_motor(stuck, motors):
+            joints = [_named(n, motors)[1] for n in stuck]
+            return (
+                f"torque was taken off {where} on every joint but {_listed(joints)}, whose "
+                f"{'write' if len(joints) == 1 else 'writes'} LeRobot could not confirm "
+                f"({said}), so {'it' if len(joints) == 1 else 'they'} may still hold: hold the "
+                "arm as though nothing holds it"
+            )
+        if stuck:
+            return (
+                f"torque was being taken off {where} and LeRobot could not confirm the write to "
+                f"any motor ({said}), so some joints may be limp and some may still hold: hold "
+                "the arm as though nothing holds it"
+            )
+        return (
+            f"torque was being taken off {where} and the call did not come back ({said}), so "
+            "some joints may be limp and some may still hold: hold the arm as though nothing "
+            "holds it"
         )
 
     async def take_hold(self) -> HandResult:
@@ -3348,17 +3511,20 @@ class LeRobotReal:
             # before it, and it is counted as the read before the write that it is.
             enabling = True
             self._hold_written = True
-            # up.BUS_ENABLE_TORQUE, retried like the release: one lost packet here refuses the
-            # hold with the joints before it energised and the rest still limp in a hand
+            # up.BUS_ENABLE_TORQUE, retried like the release, and every motor tried whichever
+            # fails (up.TORQUE_TRIED_ON_EVERY_MOTOR): a motor whose packets are lost on every try
+            # refuses the hold, with the joints LeRobot names possibly still limp in a hand and
+            # the rest energised
             await self._call(
                 functools.partial(self._robot.bus.enable_torque, num_retry=TORQUE_RETRIES),
+                deadline_s=self.torque_call_s,
                 writes_torque=True,
             )
             await self._send(placed, clip=False)
             await self.clock.sleep(TICK_S)
             await self._probe()
         except Exception as e:
-            reason = self.stop_error or f"{type(e).__name__}: {e}"
+            reason = self._quoted(e)
             if not enabling:
                 return self._before_writing(reason)
             return HandResult("refused", reason, energised=None)

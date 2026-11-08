@@ -39,7 +39,10 @@ dependencies = [
   "pydantic>=2.7,<3",
   "pyyaml>=6.0",
   "numpy>=1.26",
-  "pillow>=10.3",
+  # 13.0.0 is the first release with the fixes for the advisories CHANGELOG.md's 0.31.3 names,
+  # in the decoders a camera's picture reaches, and LeRobot 0.7.0 allows it, so no install of
+  # quackd takes an older one any more.
+  "pillow>=13",
   # `quackd ui`'s QR code for a phone (quackd/webui/launch.py), and imported nowhere else: pure
   # Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. Here rather than in the
   # `ui` extra so that the code survives an upgrade that keeps Streamlit and forgets the extra.
@@ -138,9 +141,10 @@ onboard = [
   "dbus-fast>=5.2,<6; platform_system == 'Linux'",
 ]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
-# `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
-# base dependency of lerobot). Without it `import lerobot` succeeds and opening the arm's port
-# fails, so it belongs in the extra rather than in a paragraph somebody has to read.
+# `[feetech]` is where the serial library lives (rustypot, which drives the arm's motors, and
+# pyserial, which `lerobot-find-port` lists the ports with, neither of them a base dependency of
+# lerobot). Without it `import lerobot` succeeds and opening the arm's port fails, so it belongs
+# in the extra rather than in a paragraph somebody has to read.
 lerobot = ["quackd-lerobot[sdk]>=0.33.0,<0.34"]
 # The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
 # of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
@@ -219,15 +223,6 @@ Homepage = "https://github.com/rokbenko/quackd"
 Repository = "https://github.com/rokbenko/quackd"
 Issues = "https://github.com/rokbenko/quackd/issues"
 Changelog = "https://github.com/rokbenko/quackd/blob/main/CHANGELOG.md"
-
-# What a checkout and CI resolve to, and never what a wheel asks for, so `quackd[lerobot]` from
-# PyPI still gets a Pillow under 13 (CHANGELOG.md, Known limitations). LeRobot 0.6.1 caps it
-# there and 13.0.0 is the only release with the fixes. LeRobot's main lifted that cap by moving
-# the pin and nothing else (its #5024), and `uv pip install` reads this too, so CI's policy job
-# runs LeRobot 0.6.1 on Pillow 13. It goes when the ceiling in adapters/lerobot/pyproject.toml
-# does.
-[tool.uv]
-override-dependencies = ["pillow>=13"]
 
 # One repository, several distributions. The adapters are their own packages so that
 # `uv pip install quackd` brings no robot and you choose the one you own.

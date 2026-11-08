@@ -143,10 +143,11 @@ Two rows decide whether a serial port can be opened at all:
 - lerobot (feetech bus)      not installed (quackd[lerobot])
 ```
 
-Both have to be green or the port will not open. The second one is the trap: the Feetech SDK
-lives in LeRobot's own `[feetech]` extra rather than in its base dependencies, so a plain
-`pip install lerobot` gives you a package that imports perfectly and then cannot talk to a
-motor. `quackd[lerobot]` asks for `lerobot[feetech]` for exactly that reason.
+Both have to be green or the port will not open. The second one is the trap: rustypot, the
+library that drives the motors since LeRobot 0.7.0, lives in LeRobot's own `[feetech]` extra
+rather than in its base dependencies, so a plain `pip install lerobot` gives you a package that
+imports perfectly and then cannot talk to a motor. `quackd[lerobot]` asks for `lerobot[feetech]`
+for exactly that reason.
 
 > [!WARNING]
 > If `lerobot` still reads `not installed` after an install that succeeded, check
@@ -1491,10 +1492,10 @@ connect.
 | `adapter 'lerobot' needs an extra` | the extra is not in this environment | install it, and check `python --version` is 3.12 or newer |
 | `lerobot (feetech bus)` missing in `doctor` | LeRobot is installed without its `[feetech]` extra | reinstall `quackd[lerobot]`, which asks for `lerobot[feetech]` |
 | `--address must be the arm's serial port` | no address, or it is not port shaped | Device Manager under Ports on Windows, `/dev/ttyACM0` elsewhere |
-| `connect failed 3 times: Could not connect on port ...` | wrong port, or something else already owns it | close any teleoperation, recording or serial monitor, then `lerobot-find-port` |
-| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to write 'Lock' ...`, and the run carries on | a status packet on one of the torque writes (`Lock` or `Torque_Enable`) LeRobot's connect makes to every motor was lost or came back garbled. quackd closed the port without writing anything and connected again, up to three attempts, and the run's transcript keeps the line | nothing, once. Support the arm while it connects, since each attempt drops torque for a moment. A joint named run after run is a cable to reseat |
-| `connect failed 3 times, the last on <joint> (id <N>): Failed to write ...` | every attempt failed on a status packet lost or garbled, and the arm may be left with some motors holding and others limp | keep a hand under the arm, check that joint's cable and connectors and the servo supply, make sure nothing else has the port open, then run again |
-| `connect failed 3 times, the last on <joint> (id <N>): ... Missing motor IDs: - <N> ...` | that servo never answered its ping: a cable out, no power to it, or an error such as an overload. Nothing had been written yet, so nothing is said about torque | check that joint's cable and connectors and the servo supply, then run again |
+| `connect failed 3 times: Could not connect on port ...` | wrong port, or something else already has it open: the port opens for one program at a time | close any teleoperation, recording, serial monitor or other quackd, then `lerobot-find-port` |
+| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to enable torque ...` (or `disable`), and the run carries on | a status packet on one of the torque writes (`Lock` or `Torque_Enable`) LeRobot's connect makes to every motor was lost or came back garbled, and LeRobot named each motor it could not switch. quackd closed the port without writing anything and connected again, up to three attempts, and the run's transcript keeps the line | nothing, once. Support the arm while it connects, since each attempt drops torque for a moment. A joint named run after run is a cable to reseat |
+| `connect failed 3 times, the last on <joint> (id <N>): Failed to enable torque ...` (or `Failed to write ...`) | every attempt failed on a status packet lost or garbled, and the arm may be left with some motors holding and others limp | keep a hand under the arm, check the cable and connectors of each joint named and the servo supply, make sure nothing else has the port open, then run again |
+| `connect failed 3 times, the last on <joint> (id <N>): ... Missing motor IDs: - <N> ...` | that servo never answered its ping: a cable out, or no power to it. An overloaded or overheated servo is no longer listed as missing, because LeRobot 0.7.0 reports neither alarm. Nothing had been written yet, so nothing is said about torque | check that joint's cable and connectors and the servo supply, then run again |
 | `connect failed 3 times: ... Missing motor IDs:` with every motor listed | no servo answered at all, which is what a servo supply switched off looks like, as after a power cut, or a cable out between the board and the first servo. So no joint is named | check that the servo supply is on, then the arm's cables, then run again |
 | `connect stopped after attempt <k> of 3, because a stop was asked for` | you pressed Ctrl-C while the connect was failing, so it was not tried again. The attempt's own failure follows | nothing for the stop. Read the failure as the rows above, and keep a hand under the arm if the message says some motors may be left with torque on |
 | `connect failed: a LeRobot call (connect) has not come back within 30 s; ...` and `keep a hand under the arm` | the connect ran past its deadline, and it may have stopped anywhere in the torque writes. It is not tried again | keep a hand under the arm, check the USB cable and that nothing else has the port, then run again |

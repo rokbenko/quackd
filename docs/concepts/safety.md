@@ -587,12 +587,12 @@ and quackd has to pick the right one. Whoever reads this one is holding the arm,
 instead that it is holding itself up is the sentence that gets an arm dropped. Where a release
 left some motors energised, "nothing is holding it up" would be the wrong one too, so that close
 names the joints that still read torque on and ends on cutting the power. And where nothing read
-the release back at all, a release that raised part way or that a Ctrl-C landed on, the close
-says exactly that, since the motors after the one a release stopped at keep their torque: hold
-the arm as though nothing holds it, put it down, and cut its power to be sure. A read speaks for
-the arm only when the bus carried it after the last torque write, release or take-hold, because
-the run's heartbeat reads the arm on its own clock, and a read that got the bus just before a
-write says nothing about what that write did.
+the release back at all, a release that raised or that a Ctrl-C landed on, the close says
+exactly that, since the motors LeRobot could not confirm, or every motor of a call that never
+came back, may keep their torque: hold the arm as though nothing holds it, put it down, and cut
+its power to be sure. A read speaks for the arm only when the bus carried it after the last
+torque write, release or take-hold, because the run's heartbeat reads the arm on its own clock,
+and a read that got the bus just before a write says nothing about what that write did.
 
 **An XLeRobot (a 12 kg dual-arm cart):**
 
@@ -725,7 +725,7 @@ write says nothing about what that write did.
   name code to import. `load_policy()` in the arm's backend, an older Python helper that nothing
   in quackd calls, still would, with none of the server's checks and no check at connect that
   what it built fits the arm (the `LOAD_POLICY` row in
-  [adapters/lerobot/README.md](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+  [adapters/lerobot/README.md](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
   The server's answers move the arm, so it wants a token on every request and binds loopback unless
   a TLS proxy stands in front of it, and the arm checks at connect, before any torque, that the
   policy fits this arm's motors, cameras and calibrated travel, and that the latency its server

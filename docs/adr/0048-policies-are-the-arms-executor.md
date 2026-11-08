@@ -370,7 +370,7 @@ always was.
   bus, with none of the server's reading before it builds and no check at connect that the
   policy fits the arm. Nothing in quackd calls it and no command reaches it, so only somebody's
   own Python can, and the `LOAD_POLICY` row on
-  [the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061) says so. Whether it
+  [the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070) says so. Whether it
   goes, with its test and its row, is not decided, and PLAN.md carries it as an open item.
 - [ADR-0003](0003-three-loops.md), [ADR-0004](0004-verb-registry.md),
   [ADR-0017](0017-robot-adapters-and-manifest.md), [ADR-0018](0018-core-verbs-extensions-aliases.md),

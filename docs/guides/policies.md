@@ -446,7 +446,7 @@ What a first real endpoint would settle, an ACT on a T4 for a few cents, is an o
 ## The policies
 
 quackd's server serves six LeRobot policy types, ACT, SmolVLA, pi05, pi0, X-VLA and GR00T
-N1.7, each allowed the processor steps read for it at LeRobot 0.6.1 and no other type's, an
+N1.7, each allowed the processor steps read for it at LeRobot 0.7.0 and no other type's, an
 X-VLA in its `auto` action mode alone ([below](#x-vla)) and a GR00T whose every action group is
 joints ([below](#gr00t-n17)). Any other type is refused before a byte of its weights is fetched,
 and pi0-FAST in a sentence of its own ([below](#pi0-and-why-not-pi0-fast)). MolmoAct2 is not
@@ -488,9 +488,9 @@ tokenizer it uses: accept its licence on the Hub, then `hf auth login` on the ma
 it. The server's extra brings LeRobot's `[pi]` with it, and the server fetches the tokenizer's
 files alone, 21.9 MB, and none of PaliGemma's 11.69 GB of weights, both read off the Hub on
 2026-10-25. It is a GPU policy. A pi05 that learned relative actions is served a whole chunk at
-a time, made absolute against the state it was predicted from, where LeRobot's own loop makes
-each action absolute against the state of the tick it is played at (`VLA_PIPELINE` in
-[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+a time, made absolute against the state it was predicted from, as LeRobot 0.7.0's own loop
+does now, where 0.6.1's made each action absolute against its own tick's state (`VLA_PIPELINE` in
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 Its licence is unclear: see [the table](#licences).
 
 ### Pi0, and why not Pi0-FAST
@@ -504,7 +504,7 @@ relative actions is served a whole chunk at a time, made absolute against the st
 predicted from, as a pi05's are, and it runs with any camera it is not given padded. Its own
 loader hands back a random network when its weights do not load, as pi05's does, so the server
 loads them itself, strictly (`PI0_FROM_PRETRAINED` in
-[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 
 **Pi0 has not run anywhere.** quackd has not loaded, benched or served one, on this project's
 laptop or on a GPU. Its checks were written against the SO-101 fine-tunes on the Hub on
@@ -545,7 +545,7 @@ end effector's pose, and `joint`, `franka_joint7` and `so101_bimanual` other rob
 each is refused before a pin or a weight, and so is LIBERO's post-processor step,
 `xvla_rotation_6d_to_axis_angle`, which turns an end-effector rotation into axis-angle and the
 gripper into -1 or 1 (`XVLA_ACTION_MODES` and `XVLA_LIBERO_ROTATION` in
-[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)). Its
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)). Its
 domain step hands the model the domain its data came from, which has to be one of the model's
 own. Its chunks are 32 actions by LeRobot's default and 30 in the SO-101 fine-tunes, it runs with
 a camera it is not given padded, and its own loader is strict.
@@ -587,7 +587,7 @@ trusting its repository's code. LeRobot loads Cosmos's tokenizer with `trust_rem
 hard-wired, and the pin leaves it nothing of the repository's own to trust: no `.py` is
 fetched, and a directory whose configs map a class to code is refused
 (`GROOT_BASE_MODEL` and `GROOT_VLM_PROCESSOR` in
-[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 
 **Joints, and nothing else.** A GR00T decodes its answer group by group, each unnormalised by
 its own statistics, and the SO-101 fine-tunes on the Hub come in two kinds. One learned its arm
@@ -597,7 +597,7 @@ it was predicted from, which is how LeRobot itself decodes one. The other learne
 actions and decodes by its dataset's statistics. Both are served. A group decoded as an end
 effector's pose (EEF) is refused, and so is LIBERO's gripper, which the decode turns into -1 or
 1, a decode with no statistics, whose actions would reach the arm still normalised to -1..1, and
-any GR00T N1.5 checkpoint, which LeRobot 0.6.1 no longer serves. Its chunks are 40 actions by
+any GR00T N1.5 checkpoint, which LeRobot 0.7.0 does not serve. Its chunks are 40 actions by
 LeRobot's default, and 16, 32 or 40 in the SO-101 fine-tunes read on the Hub on 2026-10-25.
 
 **Every camera, and its frame.** A GR00T pads no camera it is not given: it would see fewer
@@ -632,7 +632,7 @@ An N1.5 fine-tune is refused on its pre-processor's pack step, with 3,333 bytes 
 ✗ error: step 2 of
 zhoumiaosen/groot-n1p5-lora-libero10-gray@5c3bb1d8d272cbb5ba5429ebeb75ff3e24da813c's
 policy_preprocessor.json is 'groot_pack_inputs_v3', which only GR00T N1.5's processors name, and
-LeRobot 0.6.1 serves GR00T N1.7 alone: serve a GR00T fine-tuned on N1.7
+LeRobot 0.7.0 serves GR00T N1.7 alone: serve a GR00T fine-tuned on N1.7
 (upstream_api.GROOT_N1_5_REMOVED)
 ```
 
@@ -656,9 +656,10 @@ running it takes, from Black Forest Labs'
 [inference page](https://docs.bfl.ai/flux_3/flux3_action_inference), and from
 [LeRobot's FLUX 3 page](https://huggingface.co/docs/lerobot/main/en/flux3):
 
-- **LeRobot from its main branch**, which is not on PyPI: from a checkout,
-  `pip install -e ".[training,flux3,peft,diffusion]"`, then a NATTEN wheel built for that
-  machine's torch and CUDA, from `whl.natten.org`.
+- **LeRobot 0.7.0 or later**, the first release with FLUX 3, and a NATTEN wheel built for that
+  machine's torch and CUDA, from `whl.natten.org`. NATTEN had no wheel for the torch 2.15
+  LeRobot 0.7.0 installs, so its FLUX 3 page installs torch 2.13 first, then, from a checkout,
+  `pip install -e ".[training,flux3,peft,diffusion]"`, and the NATTEN wheel for that torch.
 - **Linux, Python 3.12 and an NVIDIA GPU.** The inference page says BF16 inference has been
   reported at about 32 GB of GPU memory, and that the peak depends on the checkpoint, the input
   resolution, the encoders and compilation.
@@ -731,7 +732,7 @@ server reads before it builds:
 - `config.json` and both processor files are fetched first, at the revision named, and a step
   named by a `class` key, or by any name outside the ones the checkpoint's own type uses, is
   refused before any weights are fetched. Each type is allowed the steps every policy is built
-  from and the ones its own processors add, read at LeRobot 0.6.1, and no other type's, so an
+  from and the ones its own processors add, read at LeRobot 0.7.0, and no other type's, so an
   ACT that names a pi05's tokenizer is refused.
 - A step that could trust a repository's code is told not to.
 - A model the checkpoint names inside itself is refused unless `--pin` fixes it at a whole
@@ -755,7 +756,7 @@ One path in quackd skips all of it. `load_policy()` in the arm's backend is an o
 helper that builds a LeRobot policy in the arm's own process, beside the serial bus, with none
 of the reading above. Nothing in quackd calls it and no command reaches it, so it runs only if
 your own Python calls it. The `LOAD_POLICY` row on
-[the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061) describes it, and
+[the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070) describes it, and
 whether it goes is an open item
 ([ADR-0048](../adr/0048-policies-are-the-arms-executor.md#consequences)).
 

@@ -16,8 +16,9 @@ every night and keeps one issue open per upstream that needs somebody.
 What it compares each module against is the module's own declaration: `BRANCH` when the pin
 sits on a branch that is not the default (`BRANCHES`, a mapping of `owner/repo` to a branch,
 for the other repositories a module cites), the newest release tag when the module names the
-release it read (`TAG`, `RELEASE`, `VERSION`, `HUB_VERSION`), and the repository's default
-branch otherwise. A tag with words before its number, `daemon-v0.16.1`, is compared with the
+release it read (`TAG`, `RELEASE`, `VERSION`, `HUB_VERSION`, and `RELEASES`, a mapping of
+`owner/repo` to a release, for the other repositories), and the repository's default branch
+otherwise. A tag with words before its number, `daemon-v0.16.1`, is compared with the
 newest tag that starts with the same words. A release-pinned module compared with `main` would
 be red by design, and a branch-pinned one compared with `main` would be red by accident.
 
@@ -373,11 +374,16 @@ def cited_of(module: ModuleType) -> tuple[list[Cited], list[str]]:
 
 
 def declared_baseline(module: ModuleType, repo: str) -> Baseline:
-    """How this module says a repository it cites should be compared: `BRANCHES` for any of
-    them, `BRANCH` or a release for its primary one, the default branch for the rest."""
+    """How this module says a repository it cites should be compared: `BRANCHES` or `RELEASES`
+    for any of them, `BRANCH` or a release for its primary one, the default branch for the
+    rest."""
     branches = getattr(module, "BRANCHES", None)
     if isinstance(branches, dict) and isinstance(branches.get(repo), str):
         return Baseline("branch", str(branches[repo]))
+    releases = getattr(module, "RELEASES", None)
+    read = releases.get(repo) if isinstance(releases, dict) else None
+    if isinstance(read, str) and (match := VERSION_TAIL.match(read)):
+        return Baseline("tag", "?", prefix=match.group(1))
     primary = _repo_of(str(getattr(module, "REPO", "") or getattr(module, "HUB_REPO", "")))
     if repo != primary:
         return Baseline("default", "?")

@@ -169,8 +169,9 @@ NOT_SERVED: tuple[NotServed, ...] = (
         maker="Black Forest Labs",
         type="flux3",
         why=(
-            "it is on LeRobot's main branch only, after 0.6.1, and needs Linux, an NVIDIA GPU "
-            "with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine"
+            "it is a LeRobot policy type since 0.7.0 that quackd has not read, and it needs Linux, "
+            "an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built "
+            "for that machine"
         ),
         would_change=(
             "a spike on a rented Linux GPU showing that `quackd policy check --bench` holds its "
@@ -206,7 +207,7 @@ NOT_SERVED: tuple[NotServed, ...] = (
         maker="the OpenVLA team (Stanford and partners)",
         type=None,
         why=(
-            "it is not a LeRobot policy type at 0.6.1, and it loads through transformers with "
+            "it is not a LeRobot policy type at 0.7.0, and it loads through transformers with "
             "its repository's own code (auto_map)"
         ),
         would_change="a LeRobot port of it",
@@ -247,7 +248,7 @@ NOT_SERVED: tuple[NotServed, ...] = (
         maker="NVIDIA",
         type=None,
         why=(
-            "they are in Isaac-GR00T's own format and not LeRobot checkpoints, and LeRobot 0.6.1 "
+            "they are in Isaac-GR00T's own format and not LeRobot checkpoints, and LeRobot 0.7.0 "
             "serves GR00T N1.7 alone"
         ),
         would_change="LeRobot reading them, or the same task fine-tuned on N1.7 through LeRobot",

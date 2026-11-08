@@ -8157,7 +8157,8 @@ def robot_release(
         )
     elif released.ok:
         # sent, and never read back: the arm is treated as limp, which is what keeps it up, and
-        # the motors after one whose write failed may still hold, which only the switch settles
+        # the motors whose writes LeRobot could not confirm may still hold, as may any motor of a
+        # call that never came back, which only the switch settles
         ui.err_console.print(
             ui.fail_line(
                 f"torque was taken off and could not be read back: {released.reason}",

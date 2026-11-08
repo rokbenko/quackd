@@ -185,8 +185,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
     "adapters/lerobot/src/quackd_lerobot/real.py": (
         "answering as another model",
         "(expected model: <M>)up.HANDSHAKE_NAMES_THE_ID`),",
-        "answered as another model, is",
-        "ping and a model check per",
     ),
     "adapters/lerobot/src/quackd_lerobot/upstream_api.py": (
         '"src/lerobot/model/kinematics.py"',
@@ -194,7 +192,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "reading on a model of the",
         'name -> Motor(id, model, norm_mode)"',
         "- <N> (expected model: <M>)'",
-        '"another model, each',
     ),
     "adapters/microduck/src/quackd_microduck/__init__.py": ("# protocol, the model and walking",),
     "adapters/microduck/src/quackd_microduck/transports/mujoco.py": (

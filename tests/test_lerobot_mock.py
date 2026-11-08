@@ -172,7 +172,9 @@ def test_the_bus_s_torque_turns_end_a_hand_off_the_ways_an_arm_can() -> None:
 def test_the_connect_and_the_disconnect_are_upstream_s() -> None:
     """A second connect is refused while the port is open, as LeRobot's is, the connect's
     configure leaves every motor on, and the disconnect drops torque as its config says when it
-    runs, which is the seam the real close lets go of an arm through."""
+    runs, which is the seam the real close lets go of an arm through. Closing the bus's port when
+    it is not open is passed over without a word, as LeRobot 0.7.0's is (motors_bus.py lines 452
+    and 453), which is how the real backend closes the port between two connect attempts."""
     arm = _follower()
     arm.torque["gripper"] = False
     arm.connect(False)
@@ -185,8 +187,45 @@ def test_the_connect_and_the_disconnect_are_upstream_s() -> None:
     arm.config.disable_torque_on_disconnect = True
     arm.disconnect()
     assert not any(arm.torque.values())
-    with pytest.raises(ConnectionError):
-        arm.bus.disconnect(disable_torque=False)  # a port that is not open is refused
+    arm.bus.disconnect(disable_torque=True)  # a port that is not open: nothing, and no write
+    assert not arm.is_connected and not any(arm.torque.values())
+
+
+def test_a_torque_call_tries_every_motor_and_names_the_ones_that_did_not_answer() -> None:
+    """LeRobot 0.7.0's torque calls try every motor whichever fails and then raise one error
+    naming each that did not answer, in the order of their ids (motors_bus.py lines 642 to 648,
+    rustypot's bus.rs lines 237 to 254). A motor in `unanswered` keeps its torque and every other
+    one takes the write, on a release, a take-hold, the connect's configure, which raises on its
+    way in and leaves the others limp, and the disconnect, which shuts the port all the same."""
+    arm = _follower()
+    arm.connect(False)
+    arm.unanswered = {"gripper", "elbow_flex"}
+    with pytest.raises(ConnectionError) as raised:
+        arm.bus.disable_torque(num_retry=5)
+    assert str(raised.value) == (
+        "Failed to disable torque after 6 tries on 'elbow_flex' (motor ID 3): Operation timed "
+        "out, 'gripper' (motor ID 6): Operation timed out."
+    )
+    assert {j for j, on in arm.torque.items() if on} == {"elbow_flex", "gripper"}
+    with pytest.raises(ConnectionError, match=r"^Failed to enable torque after 1 tries on "):
+        arm.bus.enable_torque()
+    assert all(arm.torque.values())
+
+    arm.config.disable_torque_on_disconnect = True
+    with pytest.raises(ConnectionError, match=r"^Failed to disable torque after 6 tries on "):
+        arm.disconnect()
+    assert not arm.is_connected, "the disconnect kept the port"
+    assert {j for j, on in arm.torque.items() if on} == {"elbow_flex", "gripper"}
+
+    arm.unanswered = {"wrist_roll"}
+    arm.torque["wrist_roll"] = True
+    with pytest.raises(ConnectionError, match=r"'wrist_roll' \(motor ID 5\)"):
+        arm.connect(False)
+    assert arm.is_connected, "a configure that raised closed the port"
+    assert {j for j, on in arm.torque.items() if on} == {"wrist_roll"}, "the others were not limp"
+    arm.unanswered = set()
+    arm.bus.disconnect(disable_torque=False)
+    assert not arm.is_connected
 
 
 def test_the_camera_draws_the_object_where_the_shoulder_points_and_not_once_it_is_held() -> None:
@@ -307,6 +346,26 @@ async def test_an_asked_release_a_motor_kept_on_through_closes_in_the_real_close
     await adapter.close()
     assert adapter.close_note == still_holding_at_rest(("elbow_flex",)), adapter.close_note
     assert adapter.close_note != LIMP_IN_HAND.format(why=LET_GO_TO_PLACE)
+
+
+async def test_a_release_over_a_motor_that_does_not_answer_names_it_as_the_arm_does() -> None:
+    """LeRobot 0.7.0's release tries every motor and names each one that did not answer, and the
+    real backend says which joint may still hold. The mock's follower answers so for a motor in
+    its `unanswered`, so the mock says it in the arm's words, every other joint let go."""
+    mock = LeRobotMock(rest_pose=rest_goal(REST))
+    adapter = LeRobotAdapter(mock)
+    await adapter.connect()
+    mock.follower.unanswered = {"gripper"}
+    released = await adapter.let_go(asked=True)
+    assert released.how == "released" and released.torque_on is None, released
+    assert released.reason.startswith(
+        "torque was taken off at the rest pose on every joint but gripper, whose write LeRobot "
+        "could not confirm (ConnectionError: Failed to disable torque after 6 tries on 'gripper' "
+        "(motor ID 6): Operation timed out.), so it may still hold"
+    ), released.reason
+    assert {j for j, on in mock.follower.torque.items() if on} == {"gripper"}
+    mock.follower.unanswered = set()
+    await adapter.close()
 
 
 async def test_a_raw_goal_moves_the_mock_one_step_of_the_cap_as_it_moves_the_arm() -> None:
