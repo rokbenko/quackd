@@ -436,12 +436,19 @@ class Executor:
         raised took the whole call with it: `run_verb` raised the stop's own error from inside
         the handler that exists to turn the verb's into a result, and the pilot got a traceback
         for a verb the result would have explained. `LoggedTransport.stop` caught it already; a
-        run without an event log had no such cover."""
+        run without an event log had no such cover.
+
+        A transport that knows its stop did not land says so in `stop_error` and does not raise,
+        which is how the core `stop` verb hears it. This stop is the same call, so it reads the
+        same attribute: without it, an abort said "a stop was sent" over an arm whose hold never
+        reached it."""
+        transport = self.logged_transport()
         try:
-            await self.logged_transport().stop()
+            await transport.stop()
         except Exception as e:
             return f"{type(e).__name__}: {e}"
-        return None
+        undelivered = getattr(transport, "stop_error", None)
+        return str(undelivered) if undelivered else None
 
     # ── policy ──────────────────────────────────────────────────────────────────────
 
