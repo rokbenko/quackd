@@ -700,6 +700,7 @@ def make(
     registered_name = robot_id
     if backend == "mock":
         from quackd_lerobot.mock import LeRobotMock
+        from quackd_lerobot.real import step_from_env
 
         # the mock draws its own view and reads no url, but a second camera is still refused
         # rather than dropped: only the real arm opens more than one, and a task rehearsed
@@ -707,7 +708,11 @@ def make(
         one_camera_url(camera_url, spec="lerobot:mock")
         return LeRobotAdapter(
             LeRobotMock(
-                rest_pose=rest_pose, registered_name=registered_name, robot_type=arm.robot_type
+                rest_pose=rest_pose,
+                registered_name=registered_name,
+                robot_type=arm.robot_type,
+                # the arm's own cap, from the same variable, since the mock runs the arm's code
+                max_step_deg=step_from_env(),
             ),
             robot_id=robot_id,
         )

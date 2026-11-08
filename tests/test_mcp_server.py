@@ -784,10 +784,10 @@ async def test_a_dry_run_session_never_moves_the_arm() -> None:
     await session.close()
     assert "rest" not in arm.sequence, f"a dry run drove the arm: {arm.sequence}"
     # the stop that ends every session still holds the arm where it stands, which writes the
-    # present position as the goal (`LeRobotReal._hold`) and moves nothing
-    stood = dict(REST) | {"shoulder_pan": 45.0}
-    moved = [a for a in arm.actions if any(goal != stood[j] for j, goal in a.items())]
-    assert moved == [], "a dry run sent a goal that moves the arm"
+    # present position as the goal (`LeRobotReal._hold`), moves nothing, and leaves the
+    # gripper out, so a squeeze is never sent its own reading
+    held = {j: v for j, v in (dict(REST) | {"shoulder_pan": 45.0}).items() if j != "gripper"}
+    assert all(a == held for a in arm.actions), f"a dry run sent more than a hold: {arm.actions}"
     assert arm.joints["shoulder_pan"] == 45.0
 
 

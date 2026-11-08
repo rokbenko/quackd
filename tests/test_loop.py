@@ -7,6 +7,7 @@ import contextlib
 import copy
 import itertools
 import json
+import math
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
@@ -1775,10 +1776,23 @@ def _folded(mock: LeRobotMock, pose: dict[str, float]) -> bool:
 
 
 def _only_held(mock: LeRobotMock, where: dict[str, float]) -> bool:
-    """Every goal the mock's arm was sent is where it already stood at `where`: a stop's hold,
-    which writes the present position as the goal (`LeRobotReal._hold`), and nothing that
-    moves a joint."""
-    return all(goal == where[joint] for action in mock.actions for joint, goal in action.items())
+    """Every goal the mock's arm was sent is a stop's hold of where it already stood at `where`:
+    the present position written as the goal (`LeRobotReal._hold`), with the gripper left out of
+    it, since a hold that sent the gripper its own reading would open a hand holding something,
+    and nothing that moves a joint."""
+    return all(
+        "gripper" not in action and all(goal == where[joint] for joint, goal in action.items())
+        for action in mock.actions
+    )
+
+
+def _sends_to_open(mock: LeRobotMock, start: float) -> int:
+    """How many gripper intents one opening sends on the mock from `start`: the gripper verb
+    sends before it reads, each send moves the gripper one step of the cap (the follower's
+    `max_relative_target`), and it stops sending once the gripper reads inside `GRIPPER_TOL` of
+    open. A second opening is one send more at least, since it too sends before it reads."""
+    step = float(mock.follower.config.max_relative_target)
+    return max(1, math.ceil((GRIPPER_OPEN - GRIPPER_TOL - start) / step))
 
 
 def _arm_duck() -> DuckFile:
@@ -3220,10 +3234,12 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
     )
     assert person.deliberate[1] is True, "its Enter opens the jaws on what is in them"
 
-    # one send moves the gripper a step of the cap, so the opening is several of them, each an
-    # intent the record keeps, and every one of them opens
-    opened = [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
-    assert opened and all(e["params"] == {"open": True} for e in opened), "opened, at the hand-back"
+    # one send moves the gripper a step of the cap, so the one opening is several sends, each an
+    # intent the record keeps, and a second opening would be one more
+    opened = [e["params"] for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
+    assert opened == [{"open": True}] * _sends_to_open(mock, PLACED["gripper"]), (
+        "opened once, at the hand-back"
+    )
     assert _stages(events) == ["released", "held", "unloaded"]
     assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "the thing put in it is theirs"
     assert mock.torque is False and mock.close_note is None, "the arm is down and let go of"
@@ -3357,8 +3373,8 @@ async def test_an_arm_that_slipped_as_torque_came_on_is_not_run_from(tmp_path: P
     assert _stages(events) == ["released", "held", "unloaded"], (
         "asked for, refused, and the gripper still emptied before the arm folded on it"
     )
-    opened = [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
-    assert opened and all(e["params"] == {"open": True} for e in opened), opened
+    opened = [e["params"] for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
+    assert opened == [{"open": True}] * _sends_to_open(mock, PLACED["gripper"]), opened
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
     assert _folded(mock, REST), f"folded up: {mock.joints}"
     assert mock.torque is False, "and only an arm that is down has its torque released"
@@ -4267,12 +4283,12 @@ async def test_the_gripper_opens_before_the_arm_folds_and_not_after(tmp_path: Pa
         if (e["kind"] == "intent" and e.get("intent") == "gripper")
         or (e["kind"] == "note" and e.get("text") == "moving to the rest pose")
     ]
-    # the opening is one send a tick until it is open, so its intents are a run of them
-    order = [what for what, _ in itertools.groupby(seen)]
     # a run folds twice, once before the pilot and once after it, so what is asserted is that
-    # the gripper falls between them rather than merely somewhere
-    assert order == ["fold", "gripper", "fold"], (
-        f"the gripper must open after the run and before the fold that would jam it: {seen}"
+    # the gripper falls between them rather than merely somewhere; its opening is one send a
+    # tick until it is open, and opening it twice would be one send more
+    opening = ["gripper"] * _sends_to_open(mock, PLACED["gripper"])
+    assert seen == ["fold", *opening, "fold"], (
+        f"the gripper must open once, after the run and before the fold that would jam it: {seen}"
     )
     assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "and it really did open"
 

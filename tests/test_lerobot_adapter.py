@@ -3511,7 +3511,12 @@ async def test_the_mock_parks_a_pose_past_its_travel_and_lets_go_of_it_the_same_
     # rest move stops driving
     assert floor <= mock.joints["shoulder_lift"] <= floor + TOL_DEG, mock.joints
     assert ceiling - TOL_DEG <= mock.joints["elbow_flex"] <= ceiling, mock.joints
-    assert [j for j, _, _ in result.clipped] == ["shoulder_lift", "elbow_flex"]
+    # and each clipped to that edge exactly, which is where the goal went: the tolerance above is
+    # how near the arm came to it, and a clip short of the edge would pass that alone
+    assert result.clipped == (
+        ("shoulder_lift", pose["shoulder_lift"], floor),
+        ("elbow_flex", pose["elbow_flex"], ceiling),
+    ), result.clipped
     assert result.note is not None and "lerobot-calibrate" in result.note
     await adapter.close()
     assert mock.torque is False and mock.close_note is None

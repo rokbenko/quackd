@@ -1,13 +1,17 @@
 """`lerobot:mock`: the real backend, driving an arm in memory.
 
-`LeRobotMock` is `LeRobotReal` with three things changed underneath it and nothing above, as
-`lerobot:mujoco` is (`sim/transport.py`). Its follower and its camera are built in memory
-(`fake_follower.py`), its clock moves only when something sleeps on it, and its policy is a
-script. Every line between those is the real backend's own: the connect, the travel read off a
-calibration and the refusals past it, the rest move, the hold, the release and the take-hold, the
-policy loop a segment runs in, and the close and what it says. A fix to any of them is a fix on
-the mock too, and a rehearsal on it says what the arm would say. It was a hand-written imitation
-of that code, its hand-off kept in step with the arm's by hand, and every fix had to be made twice.
+`LeRobotMock` is `LeRobotReal` with three things changed underneath it, as `lerobot:mujoco` is
+(`sim/transport.py`). Its follower and its camera are built in memory (`fake_follower.py`), its
+clock moves only when something sleeps on it, and its policy is a script. Nearly every line
+between those is the real backend's own: the connect, the travel read off a calibration and the
+refusals past it, the rest move, the hold, the release and the take-hold, the policy loop a
+segment runs in, and the close and what it says. Two things above it are the mock's, both on
+purpose. Its close lets go of an arm with no rest pose recorded, as the simulator's does, where
+the arm's keeps its torque and says so (`KEEPS_TORQUE_WITHOUT_A_POSE`). And a rest move told to
+fail (`rest_fails`) stalls with no hold sent, where the arm's holds where it stalled. A fix to
+anything else is a fix on the mock too, and a rehearsal on it says what the arm would say. It was
+a hand-written imitation of that code, its hand-off kept in step with the arm's by hand, and every
+fix had to be made twice.
 
 What it adds is what a test needs and an arm does not have:
 
@@ -21,9 +25,10 @@ What it adds is what a test needs and an arm does not have:
   `release_unread` and `hold_unread` are the follower's turns for the hand-off, and a joint in
   the follower's `stuck` takes its goal and does not move, which the real rest move then calls a
   stall in its own words. `rest_fails` is the one outcome scripted rather than made: a rest move
-  that has to drive stalls at once, sends nothing and says the reason it was given, so a test
-  can say why a fold missed, which every caller of the rest move has to handle. An arm already at
-  its pose reads `already` whatever it says, since the real move reads the arm before it drives.
+  that has to drive stalls at once, sends nothing, not even the hold an arm's stall ends on, and
+  says the reason it was given, so a test can say why a fold missed, which every caller of the
+  rest move has to handle. An arm already at its pose reads `already` whatever it says, since the
+  real move reads the arm before it drives.
   `refuse_kinds` and `fail_heartbeat_after` are what the mock transport always took.
 - **What a test reads.** `joints`, `actions`, `torque`, `holding`, `intents`, `stops`,
   `heartbeats` and `policy_runs`, and `sequence`, the order the stop, the rest move, the release,
@@ -43,7 +48,14 @@ from quackd_lerobot.fake_follower import FakeCamera, FakeFollower
 from quackd_lerobot.policy.loop import Segment
 from quackd_lerobot.policy.runner import Chunk, Features, Observation
 from quackd_lerobot.policy.scripted import SWEEP_DEG, SWEEP_JOINT, SWEEP_PERIOD_S
-from quackd_lerobot.real import CAMERA_NAME, POLICY_HZ, CameraSpec, LeRobotReal, joint_ranges
+from quackd_lerobot.real import (
+    CAMERA_NAME,
+    MAX_STEP_DEG,
+    POLICY_HZ,
+    CameraSpec,
+    LeRobotReal,
+    joint_ranges,
+)
 from quackd_lerobot.sim.follower import SimFollowerConfig
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
@@ -224,8 +236,9 @@ class LeRobotMock(LeRobotReal):
     `object_bearing_deg` and `object_distance_m` place the object for the camera, whose frames
     are `frame_size` pixels a side, and None for the bearing is a table with nothing on it.
     `robot_type` is which arm this stands in for (`arms.ARMS`), which the manifest takes its
-    sheet from. `rest_pose` and `registered_name` are the real backend's. The rest are the turns
-    the module's docstring lists."""
+    sheet from. `rest_pose`, `registered_name` and `max_step_deg` are the real backend's, and
+    `make("mock")` reads the step off `QUACKD_LEROBOT_MAX_STEP_DEG`, as it does for the arm. The
+    rest are the turns the module's docstring lists."""
 
     name = "mock"
     label = "mock"
@@ -235,7 +248,8 @@ class LeRobotMock(LeRobotReal):
     KEEPS_TORQUE_WITHOUT_A_POSE = False
     """The mock's arm drops on nothing, and a run of it needs no rest pose (it is not among
     `REST_POSE_BACKENDS`), so its close lets go of an arm with no pose recorded, as the
-    simulator's does and as the mock's always has (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
+    simulator's does and as the mock's always has, where the arm's keeps its torque and says so
+    (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
 
     def __init__(
         self,
@@ -250,6 +264,7 @@ class LeRobotMock(LeRobotReal):
         rest_pose: dict[str, float] | None = None,
         rest_fails: str | None = None,
         registered_name: str | None = None,
+        max_step_deg: float = MAX_STEP_DEG,
     ) -> None:
         self.script = MockPolicy()
         # the camera is the mock's own drawing and no url opens it: an empty one, which the
@@ -275,6 +290,7 @@ class LeRobotMock(LeRobotReal):
             rest_pose=rest_pose,
             clock=MockClock(),
             registered_name=registered_name,
+            max_step_deg=max_step_deg,
         )
         self.follower = FakeFollower(
             SimFollowerConfig(**self._config_kwargs()),

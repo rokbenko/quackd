@@ -657,6 +657,7 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(
     arm = built["arm"].transport
     assert "rest" not in arm.sequence, arm.sequence
     # the teardown's stop still holds the arm where it stands, which writes the present
-    # position as the goal and drives nothing anywhere
-    assert all(goal == REST[j] for a in arm.actions for j, goal in a.items()), arm.actions
+    # position as the goal, drives nothing anywhere, and leaves the gripper out of it
+    held = {j: v for j, v in REST.items() if j != "gripper"}
+    assert all(a == held for a in arm.actions), arm.actions
     assert arm.joints["shoulder_lift"] == -90.0, "still where the mock was built"

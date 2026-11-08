@@ -14,7 +14,7 @@ import pytest
 
 from quackd.sim2d.render import BALL
 from quackd.transport.base import Intent
-from quackd_lerobot import LeRobotAdapter
+from quackd_lerobot import LeRobotAdapter, make
 from quackd_lerobot.fake_follower import FakeCamera, FakeFollower, calibration_for
 from quackd_lerobot.mock import (
     GRIP_ON_OBJECT,
@@ -26,7 +26,7 @@ from quackd_lerobot.mock import (
     REST,
     LeRobotMock,
 )
-from quackd_lerobot.real import MAX_STEP_DEG, LeRobotReal, joint_ranges
+from quackd_lerobot.real import MAX_STEP_DEG, STEP_ENV, LeRobotReal, joint_ranges
 from quackd_lerobot.sim.follower import DeviceAlreadyConnectedError, SimFollowerConfig
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
@@ -232,6 +232,23 @@ async def test_the_mock_is_the_real_backend_and_reads_its_travel_off_its_calibra
     assert "camera" not in manifest.extras, "a view it draws has no url to name"
     await adapter.close()
     assert not mock.connected
+
+
+async def test_the_mock_moves_under_the_step_the_arm_s_variable_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`QUACKD_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm and its simulator, so a
+    rehearsal under a lowered cap moves as slowly as the arm will and says so in its manifest."""
+    lowered = MAX_STEP_DEG / 2
+    monkeypatch.setenv(STEP_ENV, str(lowered))
+    adapter = make("mock")
+    mock = adapter.transport
+    assert isinstance(mock, LeRobotMock)
+    manifest = await adapter.connect()
+    assert manifest.limits["step_deg"] == lowered
+    assert (await mock.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    assert mock.joints["shoulder_pan"] == REST["shoulder_pan"] + lowered, "one send, one step"
+    await adapter.close()
 
 
 async def test_a_change_to_the_real_close_is_a_change_to_the_mock_s(

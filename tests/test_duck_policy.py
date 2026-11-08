@@ -14,6 +14,7 @@ import json
 import math
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -547,12 +548,16 @@ def test_a_segment_is_charged_what_it_said_or_else_the_robots_clock_across_the_c
 
 
 async def _until(adapter: LeRobotAdapter, t: float) -> None:
-    """Let the mock's segments run until its clock reads `t`: they are the only sleepers on it."""
-    for _ in range(10_000):
-        if adapter.now() >= t:
-            return
-        await asyncio.sleep(0)
-    raise AssertionError(f"nothing ran the mock's clock to {t:g} s")
+    """Let the mock's segments run until its clock reads `t`: they are the only sleepers on it.
+
+    Each of their ticks is the real backend's bus calls, on threads of their own, so the wait
+    is bounded by the wall's seconds, on a clock of its own, and not by a count of turns of the
+    event loop, which a slow machine spends before the mock's clock gets there."""
+    deadline = time.monotonic() + 10.0
+    while adapter.now() < t:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"nothing ran the mock's clock to {t:g} s")
+        await asyncio.sleep(0.001)
 
 
 async def test_a_segment_cancelled_or_aborted_mid_way_is_charged_the_clock_it_ran_on() -> None:

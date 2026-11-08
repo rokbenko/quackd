@@ -2625,7 +2625,7 @@ started:
 
 ```
 quackd-mcp INFO arm-01: moved to the rest pose
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 ```
 
 Read the order. The park comes first, so the arm is folded before the client has a tool list at
@@ -2640,7 +2640,7 @@ between the park and the line that says it is up. Captured on the mock arm regis
 ```
 quackd-mcp INFO arm-01: moved to the rest pose
 quackd-mcp INFO arm-01: shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (quackd robot rest-pose arm-01) to make the fold reachable
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 ```
 
 The first `report_state` reads 5 where 45 was: the park stops driving once every joint is within
@@ -2878,7 +2878,7 @@ memory file, and that is the whole of what an MCP session puts on disk:
 
 ```
 quackd-mcp INFO arm-01: already at the rest pose
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 quackd-mcp INFO arm-01: tool    robot_run_verb verb='report_state', params={} on arm-01
 ```
 
@@ -3278,9 +3278,11 @@ Read the `->` line rather than the others. It is every intent that actually reac
 folded into one line: 21 goals across the two seconds asked for, the first three shown, each
 half a degree further along than the last, so that the wrist arrives when the time is up rather
 than as fast as the step cap allows. The rest are the LLM asking, the executor answering, and
-the budget after the call. The mock's move takes no time, `0.0 s`, and an arm's takes the two
-seconds. The server's stderr carries these same lines with a `quackd-mcp INFO arm-01: ` prefix
-on each, as the heartbeat block in check 4 shows.
+the budget after the call. The times in it are the wall's. The mock's two seconds pass on a
+clock of its own that moves only when something sleeps on it, so its move shows `0.0 s`, or a
+tenth or two on a busy machine, and an arm's takes the two seconds. The server's stderr carries
+these same lines with a `quackd-mcp INFO arm-01: ` prefix on each, as the heartbeat block in
+check 4 shows.
 
 `duration_s` is five seconds when the call names none, and goes up to 12. A longer one is
 refused before anything is sent, with
