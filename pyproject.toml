@@ -270,7 +270,7 @@ include = [
 # The README's images are served from raw.githubusercontent, so no published artefact ever
 # needed them. Keeping them out matters for one of them: `quackd-on-off.gif` renders
 # upstream's model
-# and carries its CC BY-SA-NC terms, and a published package must stay wholly Apache-2.0. An
+# and carries its CC BY-NC-SA terms, and a published package must stay wholly Apache-2.0. An
 # example's log is read on GitHub, so no published artefact needs its GIF or its frames either.
 exclude = [
   "docs/assets/*.gif", "docs/assets/*.png", "docs/assets/*.svg",

@@ -9,6 +9,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **The physics simulator's licence notice says what `microduck_rl` says now: CC BY-NC-SA 4.0 for
+  the meshes, and the Apache License 2.0 for `robot_walk.xml`.** `microduck:mujoco` fetched its
+  model at `microduck_rl`'s `2b25a48`, whose README licensed its 3D model files in one sentence,
+  "3D model files are licensed under Creative Commons BY-SA-NC.", with no version and nothing to
+  say whether `robot_walk.xml` was one of them. Upstream's `7cc1961` of 2026-10-09 named
+  CC BY-NC-SA 4.0 for the `.stl` meshes alone and added a `LICENSE-MODELS.md`, which puts the MJCF
+  robot descriptions under the Apache License 2.0 with the code. quackd now fetches at `develop`'s
+  head, `bae39f5` of 2026-10-27, where `robot_walk.xml` and its 38 meshes are the same bytes, so
+  the simulator walks exactly as it did, and the notice written beside them quotes the README and
+  `LICENSE-MODELS.md` there. The cache is named after the commit, so the first `microduck:mujoco`
+  run after upgrading fetches the model again, about 9 MB, without being asked, and leaves the old
+  commit's directory under `~/.quackd/cache/microduck_rl`, which can be deleted. The browser demo
+  fetches from the same commit. In `sim3d/upstream_api.py`, `MESH_LICENSE` cites the README's new
+  line, and a new ref, `MJCF_LICENSE`, cites the line of `LICENSE-MODELS.md` that names the XML, so
+  the nightly drift job reads both. The eleven refs that cite `scripts/infer_policy.py` and
+  `export.py` whole read as they did: the first only gained lines, an odometry overlay behind two
+  flags that are off unless given, and the second also loads a checkpoint from a training bundle
+  and writes the export's provenance beside the metadata quackd reads. The licences page, NOTICE,
+  the FAQ, the Microduck page, the browser demo's footer and two comments named no version, spelled
+  the licence as the old sentence did, or put `robot_walk.xml` under it, and say what upstream says
+  now.
+
 ### Documentation
 
 - **`uv.lock` takes `openai` 3.43.0, `laya` 0.4.22 and `types-pyyaml` 6.0.12.20261103, from

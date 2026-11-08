@@ -19,7 +19,7 @@
  * distributions here, not the same layout.
  */
 
-const RL_PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"; // microduck_rl develop, 2026-09-06
+const RL_PIN = "bae39f5900b318f7e87fc485c30a31213cfa14eb"; // microduck_rl develop, 2026-10-27
 const POLICY_REV = "6677ec007142bbaf05123a468f6ae58d13808786"; // microduck-policies v7, 2026-10-05
 const RAW = `https://raw.githubusercontent.com/pollen-robotics/microduck_rl/${RL_PIN}/src/mjlab_microduck/robot/microduck`;
 const POLICIES = `https://huggingface.co/pollen-robotics/microduck-policies/resolve/${POLICY_REV}`;
@@ -27,7 +27,10 @@ const POLICIES = `https://huggingface.co/pollen-robotics/microduck-policies/reso
 export const UPSTREAM = {
   model: `https://github.com/pollen-robotics/microduck_rl/tree/${RL_PIN}`,
   policies: `https://huggingface.co/pollen-robotics/microduck-policies/tree/${POLICY_REV}`,
-  meshLicence: "3D model files are licensed under Creative Commons BY-SA-NC",
+  meshLicence:
+    "The 3D model files (the `.stl` meshes in `src/mjlab_microduck/robot/microduck/assets/` and " +
+    "`src/mjlab_microduck/robot/xl330_test_bench/assets/`) are licensed under Creative Commons " +
+    "Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)",
 };
 
 // ── the contract, from upstream ────────────────────────────────────────────────────────

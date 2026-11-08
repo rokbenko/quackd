@@ -455,7 +455,7 @@ It is offered where `explore` is and the duck has a camera, and it asks first (`
 
 `microduck:mujoco` runs the robot Pollen trains, on the pair of policies Pollen trained before
 `velstand.onnx`. Two upstreams, both pinned, both fetched at run time into `~/.quackd/cache` and
-checked against a recorded sha256, and neither shipped: the 3D model files are CC BY-NC-SA
+checked against a recorded sha256, and neither shipped: the meshes are CC BY-NC-SA 4.0
 ([reference/licenses.md](../../reference/licenses.md)). Every name quackd relies on lives in
 [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py), and
 [ADR-0030](../../adr/0030-mujoco-physics-backend.md) is the reasoning.
@@ -467,16 +467,21 @@ first run fetches it. The real duck's other tests — that it walks, turns, stay
 to sit and stands itself up — go with the second. The gait numbers below are still one machine's
 word; the sweeps are not.
 
-Read: 2026-10-09, pinned at
-[`2b25a48`](https://github.com/pollen-robotics/microduck_rl/tree/2b25a48b08f1f17bc38c90bb03144c81fbd9ed07)
-(`develop`, 2026-09-06) and policies at
+Read: 2026-11-08, pinned at
+[`bae39f5`](https://github.com/pollen-robotics/microduck_rl/tree/bae39f5900b318f7e87fc485c30a31213cfa14eb)
+(`develop`, 2026-10-27) and policies at
 [`6677ec0`](https://huggingface.co/pollen-robotics/microduck-policies/tree/6677ec007142bbaf05123a468f6ae58d13808786)
 (`v7`, 2026-10-05), the set daemon-v0.16.1 seeds a robot with. The first read, on 2026-09-07,
-pinned the policies at `088524a`, from before `v5`, and `alpha_walking.onnx` and
-`alpha_stand.onnx` are the same bytes at both, so the simulator walks as it did. `develop` had
-moved on to `273afe0` by this read, and every file quackd fetches from it is the same bytes
-there, so the model's commit stays. daemon-v0.16.2 and later seed a robot with `v8`, which
-changes no policy but `velstand.onnx`, so the simulator's pair is the same bytes there too.
+pinned `microduck_rl` at `2b25a48` and the policies at `088524a`, from before `v5`, and
+`alpha_walking.onnx` and `alpha_stand.onnx` are the same bytes at both, so the simulator walks as
+it did. `develop` had moved on to `273afe0` by the read on 2026-10-09, and every file quackd
+fetches from it is the same bytes there, so the model's commit stayed. It moved on 2026-11-08, to
+`bae39f5`, though `robot_walk.xml` and its 38 meshes are the same bytes there too: upstream's
+README now names CC BY-NC-SA 4.0 for the meshes and a new `LICENSE-MODELS.md` puts the XML under
+Apache-2.0, and the notice quackd writes beside the files quotes the README of the commit they
+came from. The cache is named after the commit, so the first run after the move fetches the same
+files again. daemon-v0.16.2 and later seed a robot with `v8`, which changes no policy but
+`velstand.onnx`, so the simulator's pair is the same bytes there too.
 
 | What | Status | Why it matters |
 |---|---|---|

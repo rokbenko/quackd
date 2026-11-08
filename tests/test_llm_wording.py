@@ -367,7 +367,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
     "docs/faq.md": (
         "model in MuJoCo,",
         "dynamics are the model's, which",
-        "because the model files are",
         "it. Under the model's own",
         "switch on the model training toggle",
     ),

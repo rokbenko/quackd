@@ -16,12 +16,13 @@ This project builds on, interoperates with, and is grateful to:
 
   * microduck_rl (pollen-robotics/microduck_rl) — the training stack that
     produces the ONNX policies the robot runs, and the MuJoCo model the
-    physics backend walks. Code Apache-2.0. Its 3D model files
-    (robot_walk.xml and 38 STL meshes) are CC BY-NC-SA and are NOT included
-    in this project: --robot microduck:mujoco and the browser demo fetch them
-    from upstream at a pinned commit at run time, into ~/.quackd/cache or the
-    visitor's browser. Those non-commercial and share-alike terms apply to
-    your use of those files, not to quackd's code.
+    physics backend walks. Code Apache-2.0, and so is that model,
+    robot_walk.xml, by the repository's LICENSE-MODELS.md. Its 3D model
+    files, the 38 STL meshes the model names, are CC BY-NC-SA 4.0. Neither
+    is included in this project: --robot microduck:mujoco and the browser
+    demo fetch them from upstream at a pinned commit at run time, into
+    ~/.quackd/cache or the visitor's browser. Those non-commercial and
+    share-alike terms apply to your use of the meshes, not to quackd's code.
     https://github.com/pollen-robotics/microduck_rl
 
   * microduck-policies (pollen-robotics/microduck-policies, on the Hugging

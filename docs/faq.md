@@ -46,7 +46,7 @@ at a pinned commit, and `alpha_walking.onnx`, `alpha_stand.onnx` and their manif
 Hugging Face Hub at a pinned revision, into `~/.quackd/cache`. About 10 MB over the wire and 23
 on disk. Every file is checked against a sha256 recorded when it was read, a run that gets a
 different file fails rather than continues, and the licence notice is written beside them,
-because the model files are CC BY-NC-SA and quackd ships none of them
+because the meshes are CC BY-NC-SA 4.0 and quackd ships none of these files
 ([reference/licenses.md](reference/licenses.md)). `QUACKD_MICRODUCK_ASSETS` points at a
 `microduck_rl` checkout of your own instead, `QUACKD_CACHE_DIR` moves the cache, and
 `QUACKD_MUJOCO_BODY=puppet` runs a kinematic stand-in that downloads nothing and is the body the
