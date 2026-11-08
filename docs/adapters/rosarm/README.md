@@ -208,9 +208,6 @@ How `move_joints` works underneath:
   the client: quackd hands it nothing more, and a new run or session is what drives the arm
   again. It closes this client's socket alone, never roslibpy's event loop, which every client
   in the process shares, another robot's in a flock among them.
-- **The executor's own stops do not read this arm's word yet.** After an abort or a timeout
-  the executor sends a stop and says it was sent, even when the cancel could not go; the
-  `stop` verb says so, as it does on every body that reports an undelivered stop.
 - **When quackd goes quiet in the middle of a move, the arm finishes that move and holds there.**
   rosbridge cancels nothing for a client that has gone, the controller's own command timeout is
   off by default and counts from the end of a trajectory, and MotoROS2 is read to watch only its

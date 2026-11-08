@@ -275,13 +275,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
   reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
   hold the instant between. A socket that is already down is never handed one.
-- **In one process, a rosbridge base's close ends the industrial arm's socket too.** The base's
-  transport ends roslibpy's event loop when it closes, which every roslibpy client in the process
-  shares, so a flock of a base and an arm loses the arm's link, its readings and its cancel, when
-  the base's run ends first. The arm's own transport closes only its own socket.
-- **After an abort or a timeout, the executor's own stop says it was sent even when this arm's
-  cancel could not go.** The `stop` verb reads the arm's word and says so, and the executor
-  (`Executor._stop_after`) does not yet, on any body that reports an undelivered stop.
 - **Two arms answer less than the rest.** On the iiwa the LBR-Stack's stock open loop, in its
   position mode, reports what was sent rather than where the arm is, so quackd's own arrival check
   there proves only that the goal was played, and nothing quackd reads says whether that arm can
