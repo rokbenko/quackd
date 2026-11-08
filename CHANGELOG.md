@@ -11,6 +11,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **`uv.lock` takes `openai` 3.43.0, `laya` 0.4.22 and `types-pyyaml` 6.0.12.20261103, from
+  Dependabot's #74.** A refresh of the lock changes no requirement a user installs against. CI installs
+  neither openai nor laya, so its checks say the lock resolves. Through a stub of OpenAI's two APIs,
+  `quackd run hello-world` sent the same four requests from 3.42.1 as from 3.43.0, and laya's `Router`,
+  the one name quackd uses, is the same in both wheels.
 - **Seven more SO-101 examples lift the forearm instead of raising the shoulder alone.** E125, E142,
   E157, E166, E176, E179 and E182 raised the shoulder lift alone from the rest pose, which swings the
   folded jaws into the desk, as E116 did and as a run of E176 on a real arm showed. They lift the
