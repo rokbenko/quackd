@@ -41,8 +41,9 @@ from quackd.host import STALE_AFTER_S, HostClient, HostHello
 from quackd.perception import explicit_detector
 from quackd.perception.host import HostDetector
 from quackd.safety import Executor, allow_all
-from quackd.transport.base import DEFAULT_CAMERA_NAME, TransportError, camera_names_of, frames_of
+from quackd.transport.base import TransportError, camera_names_of, frames_of
 from quackd.verbs.registry import registry_from_manifest
+from quackd_lerobot.real import CAMERA_NAME as ARM_CAMERA
 from quackd_toddlerbot import ToddlerBotAdapter
 from quackd_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FRAME_SIZE, FakeHostd
@@ -190,10 +191,11 @@ async def test_lerobot_mock_keeps_its_primary_and_the_keys_end_with_host(
     assert manifest.verb_names() == (await own.connect()).verb_names(), "nothing unlocked"
     assert manifest.extras[EXTRAS_KEY]["primary"] is False
 
-    assert body.camera_keys == (DEFAULT_CAMERA_NAME, HOST_CAMERA_NAME)
+    # the mock's view is the real backend's camera, under the name the arm's own takes
+    assert body.camera_keys == (ARM_CAMERA, HOST_CAMERA_NAME)
     frames = await frames_of(body)
     assert [(f.name, f.primary) for f in frames] == [
-        (DEFAULT_CAMERA_NAME, True),
+        (ARM_CAMERA, True),
         (HOST_CAMERA_NAME, False),
     ]
     primary = await body.get_frame()
@@ -245,7 +247,7 @@ async def test_a_failing_extra_view_leaves_the_bodys_own_camera_working(
     await body.connect()
     hostd.camera_stopped(age_s=3.2)
     frames = await frames_of(body)
-    assert [f.name for f in frames] == [DEFAULT_CAMERA_NAME], "the arm's own view survives"
+    assert [f.name for f in frames] == [ARM_CAMERA], "the arm's own view survives"
     error = getattr(body, "camera_error", None)
     assert error is not None and error.startswith("host camera: ")
     await body.close()

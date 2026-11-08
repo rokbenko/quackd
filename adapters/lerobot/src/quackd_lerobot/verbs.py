@@ -500,8 +500,8 @@ def move_budget_s(distance: float, duration_s: float, step_deg: float | None) ->
     Bounded by `MOVE_HEADROOM_S` inside `MOVE_JOINTS_TIMEOUT_S`, so the verb always ends on its
     own verdict, with where the joint stopped, rather than on the executor's. A move the cap
     says needs longer than that (a step lowered through `QUACKD_LEROBOT_MAX_STEP_DEG`, a long
-    reach) runs out of time and says how far it got. Where no step is known, as on the mock,
-    whose goals land at once, the cap adds nothing."""
+    reach) runs out of time and says how far it got. Where no step is known, as on a manifest
+    that publishes none, the cap adds nothing."""
     cap_s = distance / (step_deg / TICK_S) if step_deg and step_deg > 0 else 0.0
     return min(max(duration_s, cap_s) + MOVE_SETTLE_S, MOVE_JOINTS_TIMEOUT_S - MOVE_HEADROOM_S)
 
@@ -1369,8 +1369,7 @@ async def _drive_gripper(
     and where it stops is the whole of what quackd knows about holding something.
 
     It is not ramped. What it sends is `Intent.gripper(open)`, a yes or a no that each backend
-    turns into its own fully open or fully shut, and that boolean is what the mock reads to
-    decide whether the jaws closed on something; a ramp would have to invent the numbers in
+    turns into its own fully open or fully shut, and a ramp would have to invent the numbers in
     between. A gripper named in `move_joints` is a joint with a goal, and ramps like one."""
     goal = {"gripper": GRIPPER_OPEN if open_ else GRIPPER_CLOSED}
     joints, state, how, why = await _drive(
@@ -1432,8 +1431,9 @@ async def pick(ctx: VerbContext, p: PickParams) -> VerbResult:
     close must not be followed by a hold. This verb's own cancellation, an executor timeout or
     an abort, cancels the segment on its way out.
 
-    A backend with no segment task, the mock, whose scripted policy is done by the time its
-    `do` is acknowledged, is watched by polling as `pick` always did (`_pick_polled`)."""
+    A backend with no segment task, whose policy is done by the time its `do` is acknowledged,
+    is watched by polling as `pick` always did (`_pick_polled`). None of the arm's own backends
+    is one: the mock was, and runs the real backend's segments now."""
     intent = Intent(kind="do", params={"skill": f"policy:pick:{p.target}", "max_s": p.max_s})
     if (fail := await send_or_fail(ctx, intent)) is not None:
         return _unstarted(fail)
@@ -1542,9 +1542,10 @@ async def manipulate(ctx: VerbContext, p: ManipulateParams) -> VerbResult:
     executor's repeat-failure rule. Ok is never a claim that the task is done: nothing on this
     arm can tell, and the pilot judges it from a fresh look at the arm.
 
-    A backend with no segment task, the mock, whose scripted policy has moved by the time its
-    `do` is acknowledged, runs the segment on its own clock and is watched by polling
-    (`_manipulate_polled`)."""
+    A backend with no segment task, whose policy has moved by the time its `do` is
+    acknowledged, runs the segment on its own clock and is watched by polling
+    (`_manipulate_polled`). None of the arm's own backends is one: the mock was, and runs the
+    real backend's segments now."""
     max_s = segment_seconds(ctx.transport)
     intent = Intent(
         kind="do",
@@ -1640,7 +1641,7 @@ def checked_segment_s(seconds: Any) -> float:
 async def _manipulate_polled(
     ctx: VerbContext, p: ManipulateParams, t0: float, max_s: float
 ) -> VerbResult:
-    """`manipulate` on a backend that runs no segment task, the mock: its segment runs until
+    """`manipulate` on a backend that runs no segment task: its segment runs until
     its `max_s` is up on the transport's clock, and the verb looks at it every `PICK_POLL_S`
     meanwhile. Something that ends it first, a stop, a release, a rest move or the next
     segment, is a failed `manipulate` naming it (`policy_stopped_by`), as on the arm, so a

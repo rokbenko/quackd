@@ -7,6 +7,7 @@ import contextlib
 import copy
 import itertools
 import json
+import math
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
@@ -58,11 +59,15 @@ from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
 from quackd_lerobot.verbs import (
     GRIPPER_OPEN,
+    GRIPPER_TOL,
+    JOINTS,
     LET_GO_TO_PLACE,
     LIMP_AT_REST,
     LIMP_IN_HAND,
+    TICK_S,
     TOL_DEG,
     UNCONFIRMED_IN_HAND,
+    at_rest,
     rest_goal,
 )
 from quackd_microduck import MicroduckAdapter
@@ -1763,6 +1768,33 @@ ARM_REST = {
 rather than a reading of `already`."""
 
 
+def _folded(mock: LeRobotMock, pose: dict[str, float]) -> bool:
+    """The mock's arm is at `pose` as the rest move judges it (`verbs.at_rest`). The move stops
+    driving once every joint is inside its tolerance, on the arm and so on the mock, which runs
+    the arm's move: a fold is there to within that, and not to the degree."""
+    return at_rest(rest_goal(pose), mock.joints, pose)
+
+
+def _only_held(mock: LeRobotMock, where: dict[str, float]) -> bool:
+    """Every goal the mock's arm was sent is a stop's hold of where it already stood at `where`:
+    the present position written as the goal (`LeRobotReal._hold`), with the gripper left out of
+    it, since a hold that sent the gripper its own reading would open a hand holding something,
+    and nothing that moves a joint."""
+    return all(
+        "gripper" not in action and all(goal == where[joint] for joint, goal in action.items())
+        for action in mock.actions
+    )
+
+
+def _sends_to_open(mock: LeRobotMock, start: float) -> int:
+    """How many gripper intents one opening sends on the mock from `start`: the gripper verb
+    sends before it reads, each send moves the gripper one step of the cap (the follower's
+    `max_relative_target`), and it stops sending once the gripper reads inside `GRIPPER_TOL` of
+    open. A second opening is one send more at least, since it too sends before it reads."""
+    step = float(mock.follower.config.max_relative_target)
+    return max(1, math.ceil((GRIPPER_OPEN - GRIPPER_TOL - start) / step))
+
+
 def _arm_duck() -> DuckFile:
     """A task an arm can run: it looks, it reads its own state, it stops."""
     from quackd.duckfile.parser import parse_duck_text
@@ -1826,11 +1858,18 @@ class ExplodingProvider:
 
 
 class StallingProvider:
-    """A pilot that never answers, so the run can be cancelled while it waits."""
+    """A pilot that never answers, so the run can be cancelled while it waits. `asked` is set
+    once the run is waiting on it, which a test waits for rather than for a fixed time: the mock
+    arm's rest move before the first call is the real backend's, a bus call or two a tick, and on
+    a busy machine that outlasts a fixed wait."""
 
     name, llm_id, supports_vision = "stalling", "test", False
 
+    def __init__(self) -> None:
+        self.asked = asyncio.Event()
+
     async def step(self, system: Any, history: Any, tools: Any) -> ProviderTurn:
+        self.asked.set()
         await asyncio.sleep(10)
         raise AssertionError("never reached")
 
@@ -1900,7 +1939,7 @@ async def test_every_way_a_run_ends_returns_the_arm_to_rest(ending: str, tmp_pat
     )
     if ending == "cancelled":
         task = asyncio.create_task(run_duck(cfg))
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(provider.asked.wait(), 30.0)  # cancelled while the pilot waits
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -1943,7 +1982,7 @@ async def test_an_arm_the_run_left_elsewhere_is_driven_home_before_the_torque_dr
         )
     )
     assert result.outcome == "success", result.reason
-    assert mock.joints["shoulder_pan"] == ARM_REST["shoulder_pan"], "driven back, not left there"
+    assert _folded(mock, ARM_REST), f"driven back, not left there: {mock.joints}"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     notes = [e["text"] for e in events if e["kind"] == "note"]
     assert notes[-1] == "at the rest pose", notes
@@ -2066,7 +2105,7 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(tmp_path: Path) ->
     )
     assert result.outcome == "success", result.reason
     assert "rest" not in mock.sequence, mock.sequence
-    assert mock.actions == [], "no goal was sent to a joint"
+    assert _only_held(mock, REST), f"a goal moved a joint: {mock.actions}"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     notes = [e["text"] for e in events if e["kind"] == "note"]
     assert not any(note.startswith("moving to the rest pose") for note in notes), notes
@@ -2095,7 +2134,7 @@ async def test_a_run_whose_first_rest_move_fails_never_asks_the_llm_anything(
     assert result.outcome == "aborted", result.reason
     assert "did not reach its rest pose" in result.reason and stalled in result.reason
     assert result.llm_calls == 0, "no LLM was asked anything"
-    assert mock.actions == [], "the move stalled, so nothing was ever sent to a joint"
+    assert _only_held(mock, REST), f"the move stalled, so nothing moved a joint: {mock.actions}"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert events[0]["kind"] == "run_start", "the abort is inside the run, not before it"
     end = next(e for e in events if e["kind"] == "run_end")
@@ -3195,10 +3234,14 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
     )
     assert person.deliberate[1] is True, "its Enter opens the jaws on what is in them"
 
-    opened = [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
-    assert [e["params"] for e in opened] == [{"open": True}], "opened once, at the hand-back"
+    # one send moves the gripper a step of the cap, so the one opening is several sends, each an
+    # intent the record keeps, and a second opening would be one more
+    opened = [e["params"] for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
+    assert opened == [{"open": True}] * _sends_to_open(mock, PLACED["gripper"]), (
+        "opened once, at the hand-back"
+    )
     assert _stages(events) == ["released", "held", "unloaded"]
-    assert mock.joints["gripper"] == GRIPPER_OPEN, "and the thing they put in it is theirs"
+    assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "the thing put in it is theirs"
     assert mock.torque is False and mock.close_note is None, "the arm is down and let go of"
 
 
@@ -3218,7 +3261,8 @@ async def test_the_time_a_person_takes_is_not_the_pilots_budget(tmp_path: Path) 
     result = await loop.run()
     assert result.outcome == "success", result.reason
     assert loop.budget.limits.max_minutes * 60 < takes_s, "or this proves nothing"
-    assert loop.budget.started_at == pytest.approx(takes_s), (
+    # the hold reads itself back a tick after its torque write, as the arm's does
+    assert loop.budget.started_at == pytest.approx(takes_s + TICK_S), (
         "the clock was restarted at the hold, not at the rest move ten minutes earlier"
     )
 
@@ -3329,10 +3373,10 @@ async def test_an_arm_that_slipped_as_torque_came_on_is_not_run_from(tmp_path: P
     assert _stages(events) == ["released", "held", "unloaded"], (
         "asked for, refused, and the gripper still emptied before the arm folded on it"
     )
-    opened = [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
-    assert [e["params"] for e in opened] == [{"open": True}]
+    opened = [e["params"] for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
+    assert opened == [{"open": True}] * _sends_to_open(mock, PLACED["gripper"]), opened
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
-    assert {j: mock.joints[j] for j in rest_goal(REST)} == rest_goal(REST), "folded up"
+    assert _folded(mock, REST), f"folded up: {mock.joints}"
     assert mock.torque is False, "and only an arm that is down has its torque released"
     assert mock.close_note is None
     assert not any("limp" in note for note in notes), "torque came on; nothing is limp"
@@ -3358,7 +3402,7 @@ async def test_nobody_answers_the_hand_back_so_the_gripper_stays_shut(tmp_path: 
     assert "nobody unloaded the gripper, so it stays shut and the arm folds up" in notes
     assert mock.joints["gripper"] == PLACED["gripper"], "still where their fingers left it"
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
-    assert {j: mock.joints[j] for j in rest_goal(REST)} == rest_goal(REST), "and folded up"
+    assert _folded(mock, REST), f"and folded up: {mock.joints}"
     assert mock.torque is False and mock.close_note is None
 
 
@@ -3388,7 +3432,7 @@ async def test_a_cancellation_in_the_hand_back_still_finishes_the_teardown(
     notes = [e["text"] for e in events if e["kind"] == "note"]
     assert "the gripper was left as it is, and the arm still folds up" in notes
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
-    assert {j: mock.joints[j] for j in rest_goal(REST)} == rest_goal(REST), "the fold ran"
+    assert _folded(mock, REST), f"the fold ran: {mock.joints}"
     assert mock.torque is False and mock.close_note is None
     assert (result.run_dir / "summary.json").exists()
 
@@ -3441,7 +3485,7 @@ async def test_the_hand_back_records_why_its_wait_ended(
     assert note in notes, notes
     assert not [e for e in events if e["kind"] == "intent" and e["intent"] == "gripper"]
     assert mock.joints["gripper"] == PLACED["gripper"], "the gripper stayed shut"
-    assert {j: mock.joints[j] for j in rest_goal(REST)} == rest_goal(REST), "and it folded up"
+    assert _folded(mock, REST), f"and it folded up: {mock.joints}"
 
 
 async def test_a_dry_run_never_takes_torque_off_an_arm(tmp_path: Path) -> None:
@@ -3458,7 +3502,7 @@ async def test_a_dry_run_never_takes_torque_off_an_arm(tmp_path: Path) -> None:
     assert result.outcome == "success", result.reason
     assert "let_go" not in mock.sequence and "take_hold" not in mock.sequence, mock.sequence
     assert "rest" not in mock.sequence, "the rest move is a real motion too"
-    assert mock.actions == [], "no goal was sent to a joint"
+    assert _only_held(mock, REST), f"a goal moved a joint: {mock.actions}"
     assert person.asked == [] and person.said == [], "and nobody was asked to do anything"
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3902,7 +3946,8 @@ async def test_a_press_from_before_the_question_does_not_spoil_its_enter(tmp_pat
     mock.stop = pressed_on_the_first_stop  # type: ignore[method-assign]
     result = await run_duck(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
-    assert mock.joints["gripper"] == 100.0, "the Enter opened nothing"
+    # open as the gripper verb leaves it, inside its tolerance of all the way
+    assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "the Enter opened nothing"
     assert mock.sequence.count("rest") == 2, "and the arm folded after it"
 
 
@@ -4009,7 +4054,7 @@ async def test_a_record_that_cannot_be_written_does_not_fold_under_the_hand(
     with contextlib.suppress(Exception):
         await loop.run()
     assert COUNT in person.said, "the fold went with nobody told and no count"
-    assert mock.joints["gripper"] == GRIPPER_OPEN, "and Enter still opened the jaws"
+    assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "and Enter still opened the jaws"
 
 
 async def test_a_disk_too_full_to_record_the_opening_holds_the_arm_and_says_so(
@@ -4232,18 +4277,20 @@ async def test_the_gripper_opens_before_the_arm_folds_and_not_after(tmp_path: Pa
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
-    order = [
+    seen = [
         "gripper" if e["kind"] == "intent" and e.get("intent") == "gripper" else "fold"
         for e in events
         if (e["kind"] == "intent" and e.get("intent") == "gripper")
         or (e["kind"] == "note" and e.get("text") == "moving to the rest pose")
     ]
     # a run folds twice, once before the pilot and once after it, so what is asserted is that
-    # the gripper falls between them rather than merely somewhere
-    assert order == ["fold", "gripper", "fold"], (
-        f"the gripper must open after the run and before the fold that would jam it: {order}"
+    # the gripper falls between them rather than merely somewhere; its opening is one send a
+    # tick until it is open, and opening it twice would be one send more
+    opening = ["gripper"] * _sends_to_open(mock, PLACED["gripper"])
+    assert seen == ["fold", *opening, "fold"], (
+        f"the gripper must open once, after the run and before the fold that would jam it: {seen}"
     )
-    assert mock.joints["gripper"] == GRIPPER_OPEN, "and it really did open"
+    assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, "and it really did open"
 
 
 async def test_a_terminal_that_goes_away_mid_wait_ends_the_run_instead_of_hanging(
@@ -4954,7 +5001,9 @@ async def test_a_hold_nothing_read_back_is_never_called_limp_and_the_arm_is_left
     assert not any("limp" in said or "never took hold" in said for said in person.said)
     assert [ask[0] for ask in person.asked] == [AgentLoop.PLACE_IT], person.asked
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
-    assert len(mock.actions) == 1, "only the take-hold's own write, where the hand had it"
+    # the take-hold writes where the hand has it before its torque write and again after it
+    placed = {j: mock.joints[j] for j in JOINTS}
+    assert mock.actions == [placed, placed], "only the take-hold's writes, where the hand had it"
     assert {j: mock.joints[j] for j in PLACED} == PLACED, "the arm was folded in a hand"
     assert mock.torque is True and mock.in_hand is True
     assert mock.close_note == UNCONFIRMED_IN_HAND, mock.close_note
@@ -5023,7 +5072,7 @@ async def test_a_ctrl_c_in_the_placement_wait_still_takes_hold_where_the_hand_ha
 
     assert result.reason == "kill switch"
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "close"]
-    assert {j: mock.joints[j] for j in rest_goal(REST)} == rest_goal(REST), "it was not folded"
+    assert _folded(mock, REST), f"it was not folded: {mock.joints}"
     assert mock.torque is False and mock.in_hand is False and mock.close_note is None
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     notes = [e["text"] for e in events if e["kind"] == "note"]
@@ -6774,25 +6823,28 @@ async def test_a_press_while_the_llm_is_thinking_ends_the_run_without_waiting_fo
     is, so the run ends `aborted` at once, the call on the record as cut short, and the arm is
     folded and let go of at its pose as at any end."""
     mock = LeRobotMock(rest_pose=ARM_REST)
+    provider = StallingProvider()
     loop = AgentLoop(
         RunConfig(
             duck=_arm_duck(),
-            provider=StallingProvider(),
+            provider=provider,
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
         )
     )
+    clock = asyncio.get_running_loop()
+    pressed: list[float] = []
 
     async def press() -> None:
+        await provider.asked.wait()  # the LLM is thinking, whatever the fold before it took
         await asyncio.sleep(0.2)
+        pressed.append(clock.time())
         loop.executor.abort.set()  # the kill switch's first press
 
-    clock = asyncio.get_running_loop()
     pressing = asyncio.ensure_future(press())
-    started = clock.time()
     result = await loop.run()
     await pressing
-    assert clock.time() - started < 5, "the run waited for the LLM's answer"
+    assert clock.time() - pressed[0] < 5, "the run waited for the LLM's answer"
     assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
     cut = next(e for e in _events(result.run_dir, "llm") if "error" in e)
     assert cut["error"] == "Aborted: kill switch", cut

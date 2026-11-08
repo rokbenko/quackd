@@ -1890,16 +1890,18 @@ async def _manipulate_meanwhile(body: str, meanwhile: str) -> tuple[bool, bool, 
         manifest = await adapter.connect()
         ex = Executor(registry_from_manifest(manifest, adapter), adapter, confirm=allow_all)
         paused = asyncio.Event()
-        sleep = mock.sleep
+        clock = mock.mock_clock
+        sleep = clock.sleep
 
         async def gated(seconds: float) -> None:
-            # the verb's first look at its running segment waits for the other verb
+            # the segment's first sleep waits for the other verb: it runs in the real backend's
+            # policy loop, which sleeps on the arm's clock, as the arm's segment does
             if mock.policy_running and not paused.is_set():
                 paused.set()
                 await go.wait()
             await sleep(seconds)
 
-        mock.sleep = gated  # type: ignore[method-assign]
+        clock.sleep = gated  # type: ignore[method-assign]
         running = asyncio.create_task(ex.run_verb("manipulate", {"instruction": "wave"}))
         await asyncio.wait_for(paused.wait(), 5.0)
         wrist = mock.joints["wrist_roll"]

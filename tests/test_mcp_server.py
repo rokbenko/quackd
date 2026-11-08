@@ -24,6 +24,7 @@ from quackd.transport.mock import MockTransport
 from quackd.transport.sim2d import Sim2DTransport
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import REST, LeRobotMock
+from quackd_lerobot.verbs import TOL_DEG
 
 TOOLS = {
     # 0.4: six fleet tools
@@ -742,7 +743,9 @@ async def test_a_session_starts_from_and_returns_to_the_rest_pose() -> None:
     await session.connect()
     try:
         assert arm.sequence[0] == "rest", f"something came before the rest move: {arm.sequence}"
-        assert arm.joints["shoulder_pan"] == REST["shoulder_pan"], "the arm never got there"
+        # there to within the tolerance the rest move stops driving at, on the arm as here
+        there = abs(arm.joints["shoulder_pan"] - REST["shoulder_pan"]) <= TOL_DEG
+        assert there, f"the arm never got there: {arm.joints}"
     finally:
         await session.close()
     assert arm.sequence[-3:] == ["stop", "rest", "close"], arm.sequence
@@ -780,7 +783,11 @@ async def test_a_dry_run_session_never_moves_the_arm() -> None:
     await session.connect()
     await session.close()
     assert "rest" not in arm.sequence, f"a dry run drove the arm: {arm.sequence}"
-    assert arm.actions == [], "a dry run sent a goal"
+    # the stop that ends every session still holds the arm where it stands, which writes the
+    # present position as the goal (`LeRobotReal._hold`), moves nothing, and leaves the
+    # gripper out, so a squeeze is never sent its own reading
+    held = {j: v for j, v in (dict(REST) | {"shoulder_pan": 45.0}).items() if j != "gripper"}
+    assert all(a == held for a in arm.actions), f"a dry run sent more than a hold: {arm.actions}"
     assert arm.joints["shoulder_pan"] == 45.0
 
 

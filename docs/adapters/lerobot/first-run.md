@@ -960,7 +960,7 @@ gripper and press Enter: the gripper opens all the way, and 3 s later the arm fo
 so take your hands away as soon as it is open. Leave it and the arm folds up with the
 gripper shut
 →  send    stop
-→  send    gripper(open=true)
+→  send    gripper x12 over 1.1 s (open true)
 ·  hand    unloaded: the gripper is open
 ·  note    folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
 folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q
@@ -1694,9 +1694,9 @@ Naming a decision LLM makes the mode `on`, so that is one flag rather than two. 
 confident enough about is executed from its answer, and the log says where the verb came from:
 
 ```
-   decide  report_state 0.97 >= 0.60 (0.00 s, ~821 tok ~$0.000034)
+   decide  report_state 0.97 >= 0.60 (0.00 s, ~833 tok ~$0.000035)
 ▶  verb    report_state() from decision
-   decide  repeat, to the pilot LLM (0.00 s, ~916 tok ~$0.000038)
+   decide  repeat, to the pilot LLM (0.00 s, ~925 tok ~$0.000039)
 ```
 
 Real lines again, from the same mock arm and the same fake, so read the numbers the way that
@@ -2625,7 +2625,7 @@ started:
 
 ```
 quackd-mcp INFO arm-01: moved to the rest pose
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 ```
 
 Read the order. The park comes first, so the arm is folded before the client has a tool list at
@@ -2640,13 +2640,15 @@ between the park and the line that says it is up. Captured on the mock arm regis
 ```
 quackd-mcp INFO arm-01: moved to the rest pose
 quackd-mcp INFO arm-01: shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (quackd robot rest-pose arm-01) to make the fold reachable
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 ```
 
-The first `report_state` reads 0 where 45 was. The mock's numbers, yours will be your arm's:
+The first `report_state` reads 5 where 45 was: the park stops driving once every joint is within
+5 degrees of the pose, on the arm and so on the mock, which runs the arm's own rest move. The
+mock's numbers, yours will be your arm's:
 
 ```
-shoulder_pan 0, shoulder_lift -90, elbow_flex 90, wrist_flex 0, wrist_roll 0, gripper 100; torque on; hottest shoulder_pan 30°C; holding nothing
+shoulder_pan 5, shoulder_lift -90, elbow_flex 90, wrist_flex 0, wrist_roll 0, gripper 100; torque on; hottest shoulder_pan 30°C; holding nothing
 ```
 
 **The whole feature is one line.** What the mock transport was asked to do across a session
@@ -2670,7 +2672,7 @@ The arm is left where it stood, on the mock still `shoulder_pan` 45, and its tor
 [M10](#m10-rehearse-with---dry-run) keeping its promise rather than a fault:
 
 ```
-quackd-mcp WARNING arm-01: the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+quackd-mcp WARNING arm-01: the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 **When the arm cannot reach the pose, the session never starts.** The server raises before it
@@ -2682,7 +2684,7 @@ stalls names the joint and both numbers, in the form `shoulder_lift is at -50 wi
 `when the time ran out` and the seconds:
 
 ```
-arm-01: the arm did not reach its rest pose: shoulder_lift stopped 40 deg short. the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+arm-01: the arm did not reach its rest pose: shoulder_lift stopped 40 deg short. the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; shoulder_lift stopped 40 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 The same warning reaches the server's stderr, under one line carrying the mock's scripted
@@ -2876,7 +2878,7 @@ memory file, and that is the whole of what an MCP session puts on disk:
 
 ```
 quackd-mcp INFO arm-01: already at the rest pose
-quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False
+quackd-mcp INFO quackd MCP server up: robot=arm-01 transport=mock dry_run=False detector=color_blob
 quackd-mcp INFO arm-01: tool    robot_run_verb verb='report_state', params={} on arm-01
 ```
 
@@ -3249,12 +3251,14 @@ read it as one of them. Restart the server and the five minutes start again.
 
 ```
 gripper open (stopped at 100/100)
-gripper closed on nothing (stopped at 0/100)
+gripper closed on nothing (stopped at 5/100)
 ```
 
-The mock lands exactly on its goal, which a real arm does not. The bench arm on 2026-09-15 was
-close rather than exact: commanded 100 it reported 98 and stood open, and closed it settled at 3
-with the jaws nearly touching. That 100 is open is an assumption about how your arm was assembled,
+The mock's gripper moves as the arm's does, a step of the cap a send, so the close ends where the
+verb calls it arrived, inside its tolerance of shut, and the mock was open already. A real arm
+lands nearer or further depending on its servo: the bench arm on 2026-09-15 was close rather than
+exact, commanded 100 it reported 98 and stood open, and closed it settled at 3 with the jaws
+nearly touching. That 100 is open is an assumption about how your arm was assembled,
 and everything quackd believes about holding rests on it. If yours runs the other way, stop here
 and say so in an issue.
 
@@ -3274,9 +3278,11 @@ Read the `->` line rather than the others. It is every intent that actually reac
 folded into one line: 21 goals across the two seconds asked for, the first three shown, each
 half a degree further along than the last, so that the wrist arrives when the time is up rather
 than as fast as the step cap allows. The rest are the LLM asking, the executor answering, and
-the budget after the call. The mock's move takes no time, `0.0 s`, and an arm's takes the two
-seconds. The server's stderr carries these same lines with a `quackd-mcp INFO arm-01: ` prefix
-on each, as the heartbeat block in check 4 shows.
+the budget after the call. The times in it are the wall's. The mock's two seconds pass on a
+clock of its own that moves only when something sleeps on it, so its move shows `0.0 s`, or a
+tenth or two on a busy machine, and an arm's takes the two seconds. The server's stderr carries
+these same lines with a `quackd-mcp INFO arm-01: ` prefix on each, as the heartbeat block in
+check 4 shows.
 
 `duration_s` is five seconds when the call names none, and goes up to 12. A longer one is
 refused before anything is sent, with

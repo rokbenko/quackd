@@ -173,12 +173,15 @@ def test_rest_pose_warns_about_a_fold_past_the_travel_and_still_records_it(
     rests, and a run parks at the edge of the travel and lets it settle there.
 
     The travel is narrowed here rather than the arm moved, so the mock's own resting joints
-    are the fold: one past its floor and one past its ceiling, on spans of nobody's arm."""
+    are the fold: one past its floor and one past its ceiling, on spans of nobody's arm. Each
+    span is the same either side of zero, as LeRobot's degrees formula centres every travel a
+    calibration records, which the mock's is now."""
     from quackd_lerobot import mock as lerobot_mock
 
     narrowed = dict(lerobot_mock.MOCK_RANGES)
-    narrowed["shoulder_lift"] = (REST["shoulder_lift"] + 23.0, 64.0)
-    narrowed["elbow_flex"] = (-58.0, REST["elbow_flex"] - 17.0)
+    lift, elbow = -(REST["shoulder_lift"] + 23.0), REST["elbow_flex"] - 17.0
+    narrowed["shoulder_lift"] = (-lift, lift)
+    narrowed["elbow_flex"] = (-elbow, elbow)
     monkeypatch.setattr(lerobot_mock, "MOCK_RANGES", narrowed)
     _seed_arm(tmp_path)
     recorded = runner.invoke(app, ["robot", "rest-pose", "arm-01", "--yes", *_reg(tmp_path)])

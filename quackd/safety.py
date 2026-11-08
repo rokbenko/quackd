@@ -267,10 +267,10 @@ def _segment_seconds(result: VerbResult | None, before: float | None, after: flo
     """What one policy segment charges against `policy_total_s`: the seconds its result says it
     ran. A result that does not say, or a call that ended with none, is charged the robot's
     clock across the call (`before` to `after`), since its segment may have run all of it: a
-    call the executor ended itself, a timeout, a verb that raised, a cancellation or an abort,
-    and the mock's `pick` that ends with nothing held. A `do` refused before its segment began
-    says it ran 0 s, however long the refusal took on the wall. A call nobody could time
-    charges nothing, and a number that is not one, a bool or a NaN, is never believed as one."""
+    call the executor ended itself, a timeout, a verb that raised, a cancellation or an abort.
+    A `do` refused before its segment began says it ran 0 s, however long the refusal took on
+    the wall. A call nobody could time charges nothing, and a number that is not one, a bool or
+    a NaN, is never believed as one."""
     said = None if result is None else result.data.get("seconds")
     if isinstance(said, int | float) and not isinstance(said, bool) and math.isfinite(said):
         return max(0.0, float(said))

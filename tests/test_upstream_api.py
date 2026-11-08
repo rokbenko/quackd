@@ -52,6 +52,9 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             "adapters/lerobot/sim/model.py",
             "adapters/lerobot/sim/world.py",
             "adapters/lerobot/sim/follower.py",
+            # and the mock's follower, which takes the best case of the goal kept through
+            # torque off where the simulator takes the worst
+            "adapters/lerobot/fake_follower.py",
         },
         ("https://github.com/huggingface/lerobot",),
     ),

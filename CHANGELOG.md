@@ -26,6 +26,49 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   refs, imported from the Microduck's, move with them. `tests/test_jsonrpc.py` names API 50, and the
   guard in `tests/test_docs.py` that holds the ADRs written since the daemon-v0.16.1 re-read names
   that day, which used to be the newest read's.
+- **`lerobot:mock` runs the real backend's own code, over an arm in memory.** The mock was a
+  hand-written copy of `lerobot:real`'s hand-off, kept in step with the arm's by hand, and it had
+  drifted: an arm `quackd robot release` let go of at its rest pose with a motor still on was told
+  to be put down, and one whose release nothing read back was called in your hands, where the arm's
+  own close says it lies in its fold, and its close never said why a rest move had missed. It is
+  `LeRobotReal` now over a follower and a camera in memory (`quackd_lerobot/fake_follower.py`), a
+  clock that moves only when something sleeps on it and a scripted policy, as `lerobot:mujoco` is
+  that backend over the simulated SO-101
+  ([ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)), so what it says
+  about the rest move, the hand-off and the close is the arm's, and a fix to them is a fix on the
+  mock, but for two things it does on purpose: its close lets go of an arm with no rest pose
+  recorded, as the simulator's does and as the mock's always has, where the arm's keeps its torque
+  and says so, and a rest move a test tells it to fail (`rest_fails`) sends no hold, where the arm's
+  holds where it stalled. Its description hashes as it did, `a72c88eaaa121ec6`. What changes on
+  `lerobot:mock`: a goal moves a joint one step of the arm's cap a send, 5 degrees or what
+  `QUACKD_LEROBOT_MAX_STEP_DEG` sets, which the mock now reads as the arm does, so one `joint`
+  intent moves a joint one step, a move faster than the cap takes the time the cap needs on the
+  mock's clock, the rest move and the gripper verb end inside their tolerance of the goal rather
+  than on it (`gripper closed on nothing (stopped at 5/100)`), and the manifest it connects with
+  says `limits.step_deg`, so the digest an MCP client's `robot_list` gives for it moves, from
+  `8fa46807d37f885b` to `411dc5a8b7a3891a` at the default step. `pick` and `manipulate` run in the
+  arm's policy loop, so `manipulate` says its chunks, clips and ticks a second after why it ended,
+  and a run's `summary.json` and its panel carry the policy block an arm with a policy has. The
+  state carries the arm's extras: it gains `assumptions`, `step_deg`, `range_clips`, `timing` and
+  `camera`, and loses `near_object` and `segment`. `assumptions` lists the arm's three stand-ins, so
+  the prompt gains its `## What is a stand-in on this robot` section and each observation's state
+  line carries `stand-ins=3-listed-in-extras.assumptions`. Its calls to the follower run on threads
+  of their own, as an arm's do, so `timing` differs from run to run, and in a flock the others'
+  first messages reach the arm's pilot before its first turn on some runs and after it on others.
+  The close names why the rest move missed after the shortfall, or that nothing moved the arm there.
+  Its camera is named `front`, as the arm's is, which shows beside a board's camera under `--host`,
+  and a `quackd doctor` that connects to it with a `--camera-url` gives it a camera row with the
+  size of the frame it draws, and under that the url doctor was given, which the mock never opens. A
+  `move` intent is refused as `an arm cannot move`, an unknown policy as `unknown skill`, and
+  anything but a stop after the close as `the arm's transport is closed`, and a `joint` intent sent
+  straight to an arm that was let go of goes to its limp servos, as on the arm, where the mock
+  refused it as `torque is off`; the verbs refuse it before it is sent, as they did. Code that drove
+  `LeRobotMock` reads `joints`, `actions`, `torque`, `holding`, `sequence` and the hand-off's knobs
+  as before, and `actions` has the real backend's own writes in it as well: the hold a stop writes,
+  and the pose a take-hold writes before the torque comes on and again after. The follower is
+  `mock.follower`, a travel narrowed in `MOCK_RANGES` has to be the same either side of zero, as a
+  calibrated one is, and the knobs that make a read fail now give its error's type,
+  `(ConnectionError: ...)`, as a register on the arm does.
 
 ### Fixed
 
@@ -77,6 +120,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   watch for it on blocks. MOSS's hardware designs are CC BY-NC-SA 4.0 from 1 November 2026, which
   [docs/adapters/moss/README.md](docs/adapters/moss/README.md) and
   [docs/reference/licenses.md](docs/reference/licenses.md) now say.
+- **The arm's pages quote what `lerobot:mock` prints now.** Every capture the change above moves was
+  run again and pasted as it reads: the close's lines in the release and hand-off sections of
+  [adapters/lerobot/README.md](docs/adapters/lerobot/README.md), the gripper's stop and the first
+  `report_state` after an MCP session's park in [first-run.md](docs/adapters/lerobot/first-run.md),
+  a `--by-hand` run's gripper opening, a panel's policy line, and the count a flock of three ends on
+  in [guides/flock.md](docs/guides/flock.md), which now says why that count is not the same on every
+  run. The token figures quoted from the mock in first-run.md and
+  [guides/decision-llms](docs/guides/decision-llms/README.md) had drifted from what the mock printed
+  before this change as well, and say what it prints now. In first-run.md the MCP server's
+  `server up` line carries the `detector=color_blob` it printed before this change too, and the time
+  a move on the mock shows is said to be the wall's. `.env.example` says the mock reads
+  `QUACKD_LEROBOT_MAX_STEP_DEG` as the arm and its simulator do.
 
 ### Known limitations
 

@@ -14,6 +14,7 @@ import json
 import math
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +64,13 @@ from quackd_lerobot.mock import LeRobotMock
 from quackd_lerobot.policy.loop import MAX_RATE_HZ
 from quackd_lerobot.policy.scripted import ScriptedRunner
 from quackd_lerobot.real import LeRobotReal
-from quackd_lerobot.verbs import MANIPULATE_S, MANIPULATE_TIMEOUT_S, TICK_S, lerobot_verbs
+from quackd_lerobot.verbs import (
+    GRIPPER_OPEN,
+    MANIPULATE_S,
+    MANIPULATE_TIMEOUT_S,
+    TICK_S,
+    lerobot_verbs,
+)
 from tests import fake_systemone
 from tests.test_decision import BUDGET, JEV, _fake, _observation, _records
 from tests.test_lerobot_adapter import FakeArm, SteppedClock
@@ -486,8 +493,8 @@ async def test_a_pick_spends_the_same_seconds_and_is_refused_once_they_are_spent
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`pick` hands the arm to the same learned policy `manipulate` does, so its seconds come
-    out of the same `total_s`: what it said it ran, or the clock it ran on when it says nothing,
-    as a pick that ends with nothing held does. Once they are spent the next of either verb is
+    out of the same `total_s`: what it said it ran, which a pick says whether or not it ended
+    with something held, as the arm's does. Once they are spent the next of either verb is
     refused, and charges no step."""
     adapter, mock, registry = await _mock_arm()
     fm = parse_duck_text(_v3((), allow=BOTH)).frontmatter
@@ -499,15 +506,18 @@ async def test_a_pick_spends_the_same_seconds_and_is_refused_once_they_are_spent
     assert (await ex.run_verb(POLICY_VERB, {"instruction": OTHERS[0]})).ok
     assert budget.policy_s == pytest.approx(picked.data["seconds"] + SEGMENT_S)
 
-    monkeypatch.setattr(mock, "_near_object", lambda: False)
+    # the block taken out of the jaws, the gripper opened and nothing left on the table, so the
+    # next pick shuts the jaws on nothing
+    monkeypatch.setattr(mock.follower, "held", False)
+    monkeypatch.setattr(mock.follower, "object_at", None)
+    mock.joints["gripper"] = GRIPPER_OPEN
     spent, before = budget.policy_s, adapter.now()
     missed = await ex.run_verb("pick", {"target": "the red block"})
-    assert not missed.ok and "seconds" not in missed.data, missed.summary
+    assert not missed.ok and "did not end with something held" in missed.summary, missed.summary
     charged = budget.policy_s - spent
-    assert charged > 0 and charged == pytest.approx(adapter.now() - before)
-
-    assert (await ex.run_verb(POLICY_VERB, {"instruction": OTHERS[0]})).ok
-    assert budget.policy_s >= budget.policy_total_s
+    assert charged > 0 and charged == pytest.approx(missed.data["seconds"])
+    assert charged == pytest.approx(adapter.now() - before), "and that is the clock it ran on"
+    assert budget.policy_s >= budget.policy_total_s, "and that spent what was left"
     steps = budget.steps
     for verb, params in (
         ("pick", {"target": "the red block"}),
@@ -516,7 +526,7 @@ async def test_a_pick_spends_the_same_seconds_and_is_refused_once_they_are_spent
         with pytest.raises(BudgetExceeded, match="total_s"):
             await ex.run_verb(verb, params)
     assert budget.steps == steps, "a refused segment charged a step"
-    assert mock.policy_runs == ["the red block", OTHERS[0], "the red block", OTHERS[0]]
+    assert mock.policy_runs == ["the red block", OTHERS[0], "the red block"]
     await adapter.disconnect()
 
 
@@ -538,12 +548,16 @@ def test_a_segment_is_charged_what_it_said_or_else_the_robots_clock_across_the_c
 
 
 async def _until(adapter: LeRobotAdapter, t: float) -> None:
-    """Let the mock's segments run until its clock reads `t`: they are the only sleepers on it."""
-    for _ in range(10_000):
-        if adapter.now() >= t:
-            return
-        await asyncio.sleep(0)
-    raise AssertionError(f"nothing ran the mock's clock to {t:g} s")
+    """Let the mock's segments run until its clock reads `t`: they are the only sleepers on it.
+
+    Each of their ticks is the real backend's bus calls, on threads of their own, so the wait
+    is bounded by the wall's seconds, on a clock of its own, and not by a count of turns of the
+    event loop, which a slow machine spends before the mock's clock gets there."""
+    deadline = time.monotonic() + 10.0
+    while adapter.now() < t:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"nothing ran the mock's clock to {t:g} s")
+        await asyncio.sleep(0.001)
 
 
 async def test_a_segment_cancelled_or_aborted_mid_way_is_charged_the_clock_it_ran_on() -> None:

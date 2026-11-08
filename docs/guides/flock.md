@@ -157,14 +157,17 @@ Every pilot declares for itself. The flock succeeds only when all of them declar
 ```
 +- + SUCCESS --------------------------------------------------------------------------------------+
 | every member declared success: duck, arm, cart                                                   |
-| members 3/3 succeeded - talk 3 - steps 0 - LLM calls 9 - tokens 19613+144 - time 3.3 s - cost $0 |
+| members 3/3 succeeded - talk 3 - steps 0 - LLM calls 9 - tokens 19946+144 - time 0.5 s - cost $0 |
 +--------------------------------------------------------------------------------------------------+
 ```
 
-That count is from a `--no-memory` run. With memory on it climbs by whatever each robot has
-remembered, because every note and every past outcome goes into that pilot's next prompt.
-The cost is the flock's, summed over its members, and it reads `$0` rather than `unpriced`
-here because the scripted pilot is priced at nothing rather than left without a rate.
+That count is from a `--no-memory` run, and it is not the same on every run. The mock arm's calls
+to its follower run on threads of their own, as an arm's do, so how long its connect takes
+varies, and the others' first messages reach its pilot before its first turn on some runs and
+after it on others. Two runs in eight said `19955+144`. With memory on it climbs by whatever each
+robot has remembered, because every note and every past outcome goes into that pilot's next
+prompt. The cost is the flock's, summed over its members, and it reads `$0` rather than
+`unpriced` here because the scripted pilot is priced at nothing rather than left without a rate.
 
 Otherwise the worst outcome wins, in the order `error`, `aborted`, `infeasible`, `budget`,
 `failure`, and the reason names every member that did not succeed, worst first. `error` beats
