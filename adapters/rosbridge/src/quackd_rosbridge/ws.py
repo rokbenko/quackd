@@ -53,9 +53,10 @@ def _off(value: str) -> str | None:
     return None if value == OFF else value
 
 
-def _param_text(value: Any) -> str:
+def param_text(value: Any) -> str:
     """A parameter arrives JSON-encoded (`upstream_api.PARAM_VALUE_JSON`), so a description is
-    a quoted string. A bridge that sends it raw is taken at its word rather than refused."""
+    a quoted string. A bridge that sends it raw is taken at its word rather than refused. Public,
+    since the industrial arm family reads a description off a bridge the same way."""
     if not isinstance(value, str):
         return ""
     try:
@@ -138,8 +139,91 @@ class ServiceLike(Protocol):
     def call(self, args: dict[str, Any], *, timeout: float) -> dict[str, Any]: ...
 
 
+class ActionLike(Protocol):
+    """The slice of `roslibpy.ActionClient` a client of an action uses: a goal sent, which
+    returns its id at once and answers through the three callbacks on roslibpy's thread, and a
+    goal cancelled by that id (`upstream_api.ACTION_SEND_GOAL`, `ACTION_CANCEL_GOAL`)."""
+
+    def send_goal(
+        self,
+        goal: dict[str, Any],
+        resultback: Callable[[Any], None],
+        feedback: Callable[[Any], None],
+        errback: Callable[[Any], None],
+    ) -> Any: ...
+
+    def cancel_goal(self, goal_id: Any) -> Any: ...
+
+
 TopicFactory = Callable[[Any, str, str], TopicLike]
 ServiceFactory = Callable[[Any, str, str], ServiceLike]
+ActionFactory = Callable[[Any, str, str], ActionLike]
+
+
+@dataclass(frozen=True)
+class Roslibpy:
+    """roslibpy as a transport here uses it: one connection, and a factory for each of the three
+    things made over it. A family over this binding (`quackd_rosarm`) builds the same four."""
+
+    ros: Any
+    topic: TopicFactory
+    service: ServiceFactory
+    action: ActionFactory
+    version: str | None
+
+
+def build_roslibpy(
+    host: str,
+    port: int,
+    secure: bool,
+    *,
+    adapter: str = "rosbridge",
+    extra: str = "quackd[rosbridge]",
+) -> Roslibpy:
+    """The connection and its factories, with roslibpy imported here and nowhere earlier, so an
+    install without it is told which extra to add by the adapter that needed it. The `Ros` is
+    built and not yet run: its constructor starts connecting (`upstream_api.ROS_CLIENT`), and
+    `run()` is what waits for it."""
+    try:
+        import roslibpy
+    except ImportError as e:
+        raise AdapterNotInstalled(adapter, extra) from e
+    ros = roslibpy.Ros(host, port, is_secure=secure)
+
+    def topics(client: Any, name: str, message_type: str) -> TopicLike:
+        topic: TopicLike = roslibpy.Topic(client, name, message_type, compression="none")
+        return topic
+
+    def services(client: Any, name: str, service_type: str) -> ServiceLike:
+        service = roslibpy.Service(client, name, service_type)
+
+        class _Call:
+            def call(self, args: dict[str, Any], *, timeout: float) -> dict[str, Any]:
+                # no callback, so this blocks until the answer or the deadline
+                answer = service.call(roslibpy.ServiceRequest(args), timeout=timeout)
+                return dict(answer) if answer is not None else {}
+
+        return _Call()
+
+    def actions(client: Any, name: str, action_type: str) -> ActionLike:
+        action = roslibpy.ActionClient(client, name, action_type)
+
+        class _Goals:
+            def send_goal(
+                self,
+                goal: dict[str, Any],
+                resultback: Callable[[Any], None],
+                feedback: Callable[[Any], None],
+                errback: Callable[[Any], None],
+            ) -> Any:
+                return action.send_goal(roslibpy.Goal(goal), resultback, feedback, errback)
+
+            def cancel_goal(self, goal_id: Any) -> Any:
+                return action.cancel_goal(goal_id)
+
+        return _Goals()
+
+    return Roslibpy(ros, topics, services, actions, getattr(roslibpy, "__version__", None))
 
 
 def twist_message(vx: float, vy: float, wz: float) -> dict[str, Any]:
@@ -239,29 +323,9 @@ class RosbridgeWs:
     # ── plumbing ────────────────────────────────────────────────────────────────────
 
     def _build(self) -> tuple[Any, TopicFactory, ServiceFactory]:
-        try:
-            import roslibpy
-        except ImportError as e:
-            raise AdapterNotInstalled("rosbridge", "quackd[rosbridge]") from e
-        self.roslibpy_version = getattr(roslibpy, "__version__", None)
-        ros = roslibpy.Ros(self.endpoint.host, self.endpoint.port, is_secure=self.endpoint.secure)
-
-        def factory(client: Any, name: str, message_type: str) -> TopicLike:
-            topic: TopicLike = roslibpy.Topic(client, name, message_type, compression="none")
-            return topic
-
-        def services(client: Any, name: str, service_type: str) -> ServiceLike:
-            service = roslibpy.Service(client, name, service_type)
-
-            class _Call:
-                def call(self, args: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-                    # no callback, so this blocks until the answer or the deadline
-                    answer = service.call(roslibpy.ServiceRequest(args), timeout=timeout)
-                    return dict(answer) if answer is not None else {}
-
-            return _Call()
-
-        return ros, factory, services
+        built = build_roslibpy(self.endpoint.host, self.endpoint.port, self.endpoint.secure)
+        self.roslibpy_version = built.version
+        return built.ros, built.topic, built.service
 
     def _on_odom(self, message: dict[str, Any]) -> None:  # roslibpy's thread
         at = time.monotonic()
@@ -415,7 +479,7 @@ class RosbridgeWs:
             if isinstance(answer, dict):
                 if answer.get("successful") is False:
                     errors.append(f"{param}: {answer.get('reason') or 'the bridge said no'}")
-                elif text := _param_text(answer.get("value")):
+                elif text := param_text(answer.get("value")):
                     summary, source, where = parse_urdf(text), "param", param
 
         if summary is None and (topic_name := self.endpoint.urdf_topic) is not None:

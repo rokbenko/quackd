@@ -129,7 +129,11 @@ Three upstreams, each pinned and read on 2026-09-02: roslibpy at `f5793db` (2.1.
 PyPI), rosbridge_suite at `aa9a7a3` (the `ros2` branch), and ros2/common_interfaces at
 `d54aa9b` (`rolling`). Two more were pinned and read on 2026-09-13, for introspection:
 ros/urdfdom at `bfcf29f` (what a URDF says) and ros/robot_state_publisher at `5526c76`
-(where the URDF usually is).
+(where the URDF usually is). On 2026-11-08 the same two pins were read again: fourteen refs
+that pointed at the wrong lines of their files now point at the right ones, and the action refs
+at the end of the table were added for the industrial arm family, which sends goals over this
+binding and imports them by name ([docs/adapters/rosarm/README.md](../rosarm/README.md)). This
+adapter sends no goal.
 
 ### VERIFIED (read from source at the pins)
 
@@ -179,13 +183,36 @@ ros/urdfdom at `bfcf29f` (what a URDF says) and ros/robot_state_publisher at `55
 | `subscribe carries an optional qos` | protocol 4.3.4; roslibpy 2.1.0 never sends one |
 | `a subscription is transient_local when every publisher on the topic is` | which is how a subscription made now still sees a description published at startup |
 | `std_msgs/msg/String` | `{data}`; what a `robot_description` topic carries |
-| `robot_state_publisher` | the node name, and it declares a `robot_description` parameter |
+| `robot_state_publisher` | the node name, and it declares a `robot_description` parameter, unless it is started with `use_robot_description_topic`, when it subscribes to the topic and declares none |
 | `/robot_description` | published `std_msgs::msg::String` with `QoS(1).transient_local()` |
 | `/robot_state_publisher:robot_description` | that parameter in the form above; the default of `?urdf_param=` |
 | `link/inertial/mass@value` | required inside an `inertial`, and the `inertial` itself is optional per link |
 | `joint@type in planar, floating, revolute, continuous, prismatic, fixed` | the six strings the parser accepts |
 | `joint/limit@lower,upper,effort,velocity` | `lower` and `upper` are optional |
 | `joint@name, joint/parent@link, joint/child@link` | the tree |
+| `op=send_action_goal {id, action, action_type, args, feedback}` | protocol 4.5.3; no message says a goal was accepted |
+| `op=cancel_action_goal {id, action}` | protocol 4.5.4; a goal that has completed cannot be cancelled |
+| `op=action_feedback {id, action, values}` | protocol 4.5.5 |
+| `op=action_result {id, action, values, status, result}` | protocol 4.5.6; `status` is action_msgs' integer, and `result: false` carries a string |
+| `rosbridge_library 2.0.0 has actions` | since 2.0.0, 2024-10-08, on the humble and the jazzy branch too; a bridge from before it answers no goal |
+| `send_action_goals_in_new_thread` | the capability's own default is false, and then a goal runs to its end on the thread that reads every message from its client, so a cancel waits behind it (rosbridge_suite issue #909) |
+| `IncomingQueue` | one thread per client, taking its messages one at a time |
+| `send_action_goals_in_new_thread defaults by branch` | true on `ros2` and on jazzy, false on humble, whose node warns at startup that goals will block the main thread |
+| `/rosbridge_websocket` | the node's name, and it declares every protocol parameter as a read-only ROS parameter, so rosapi can be asked for one |
+| `actions_glob` | a goal to an action it does not match is dropped with no `action_result` at all |
+| `No action server available` | the answer after a second with no server |
+| `Action goal was rejected` | a server's refusal, with status 0 and nothing of the server's reason |
+| `result true carries the goal's own status` | SUCCEEDED, CANCELED and ABORTED all arrive as `result: true` |
+| `a cancel reaches a goal the bridge is still running` | and the goal's own result answers it |
+| `a client that goes cancels nothing` | a goal sent goes on to its end after its client's socket closes |
+| `/rosapi/action_servers` | `create_service(GetActionServers, "~/action_servers")`, each name with an `_action/feedback` and an `_action/status` topic |
+| `rosapi_msgs/srv/GetActionServers` | no request fields; `{string[] action_servers}` |
+| `roslibpy.ActionClient(ros, name, action_type, reconnect_on_close=True)` | `reconnect_on_close` is stored and never read, so a goal does not outlive a reconnect |
+| `ActionClient.send_goal(goal, resultback, feedback, errback)` | returns the goal's id at once and always asks for feedback |
+| `ActionClient.cancel_goal(goal_id)` | its docstring says async cancelation is not yet supported on rosbridge |
+| `roslibpy.Goal(values)` | a UserDict |
+| `roslibpy.GoalStatus` | an Enum of action_msgs' statuses, 0 to 6 |
+| `resultback({status, values}) and errback({status, values})` | a status outside the Enum, a feedback after its result and an `op: status` are each skipped with a log line |
 
 ### UNVERIFIED (our assumptions, and what quackd does about each)
 
@@ -198,7 +225,7 @@ ros/urdfdom at `bfcf29f` (what a URDF says) and ros/robot_state_publisher at `55
 | `ODOM_YAW` | yaw from the quaternion's z and w, a planar base assumed |
 | `THREAD_SAFETY` | only the latest odometry and image are kept, under a lock; nothing calls back into the event loop from roslibpy's thread |
 | `ROS1_BRIDGE` | a ROS 1 rosbridge should accept the three-part type strings; not tried |
-| `DESCRIPTION_NAMES` | that the description is on `/robot_state_publisher`, un-namespaced, as a parameter; both names are in the address and either can be `off` |
+| `DESCRIPTION_NAMES` | that the description is on `/robot_state_publisher`, un-namespaced, as a parameter, which it is not on a node started with `use_robot_description_topic`; both names are in the address and either can be `off` |
 | `URDF_MASS_IS_THE_BODY` | that the link inertials add up to what the robot weighs; the figure is tagged official because the file is the robot's own, and the note says how many links had one |
 | `DOF_IS_NON_FIXED_JOINTS` | that every non-fixed joint is a degree of freedom, so wheels, casters and fingers all count |
 

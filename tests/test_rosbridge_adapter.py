@@ -266,6 +266,37 @@ async def test_ws_backend_without_the_extra_names_it() -> None:
         await adapter.connect()
 
 
+def test_the_builder_both_transports_call_names_whichever_extra_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The roslibpy builders were lifted out of `RosbridgeWs._build` into one function the
+    industrial arm family calls too, and a machine without roslibpy is still told to install the
+    extra of the adapter that needed it."""
+    import sys
+
+    from quackd_rosbridge.ws import RosbridgeWs, build_roslibpy
+
+    monkeypatch.setitem(sys.modules, "roslibpy", None)
+    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosbridge\]"):
+        RosbridgeWs(address="ws://robot.local:9090")._build()
+    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosarm\]"):
+        build_roslibpy("robot.local", 9090, False, adapter="rosarm", extra="quackd[rosarm]")
+
+
+async def test_the_base_describes_itself_as_it_did_before_the_builder_moved() -> None:
+    """`tests/golden/manifest_digests.json` holds the Microduck's and Huebot's descriptions only,
+    so the base's are pinned here: each digest was computed on origin/main before the builders
+    left `RosbridgeWs._build`, and is what it computes now."""
+    from quackd_rosbridge import describe, rosbridge_manifest
+
+    assert describe("mock").digest() == "8de813ddee5118f7"
+    assert describe("ws").digest() == "9ccfdccc7ff2f196"
+    adapter = make_adapter("rosbridge:mock")
+    assert (await adapter.connect()).digest() == "8de813ddee5118f7"
+    camera = rosbridge_manifest("ws", camera=True, image="/camera/compressed")
+    assert camera.digest() == "39671e48584ec5ff"
+
+
 # ── what the bridge says about the body ─────────────────────────────────────────────────
 
 
