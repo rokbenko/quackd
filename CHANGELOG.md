@@ -103,6 +103,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **The Microduck page warns that every `/frame` quackd pulls is a photo in the robot's vet book.**
+  From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
+  record an owner can share, and quackd asks for two a second for as long as it is connected, so a
+  note under "Getting a picture off a real Microduck" says so before anyone shares one.
 - **`uv.lock` takes `openai` 3.43.0, `laya` 0.4.22 and `types-pyyaml` 6.0.12.20261103, from
   Dependabot's #74.** A refresh of the lock changes no requirement a user installs against. CI installs
   neither openai nor laya, so its checks say the lock resolves. Through a stub of OpenAI's two APIs,
