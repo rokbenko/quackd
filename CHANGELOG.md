@@ -72,6 +72,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **After an abort or a timeout, the executor's own stop says when it did not land.** A verb the
+  executor ends, by an abort, a timeout, a verb that raised, a preemption or a pause, is followed by a
+  stop, and the executor said a stop was sent unless that call raised. A transport that knows its stop
+  did not land says so in `stop_error` without raising, which the core `stop` verb already reads: the
+  arm's real backend does, for a hold that never reached the arm. So an abort over such an arm said
+  `a stop was sent`, the one reassuring line that was not true. It says the stop failed now, with the
+  transport's reason, as the `stop` verb does.
 - **The physics simulator's licence notice says what `microduck_rl` says now: CC BY-NC-SA 4.0 for
   the meshes, and the Apache License 2.0 for `robot_walk.xml`.** `microduck:mujoco` fetched its
   model at `microduck_rl`'s `2b25a48`, whose README licensed its 3D model files in one sentence,

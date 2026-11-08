@@ -409,6 +409,57 @@ async def test_an_abort_whose_stop_raises_is_still_the_abort() -> None:
     assert transport.stops == 1
 
 
+class _UnheardStop(MockTransport):
+    """A body whose stop returns and did not land, and says so the way the arm's real backend
+    does, in `stop_error`, without raising: the core `stop` verb reads it, and so must the stop
+    the executor sends after a verb it ended."""
+
+    async def stop(self) -> None:
+        self.stops += 1
+        self.stop_error = "the hold did not reach the arm"
+
+
+#: What `_UnheardStop`'s stop says once the executor has read it.
+UNHEARD = "the stop sent after it failed: the hold did not reach the arm"
+
+
+async def test_a_verb_that_timed_out_whose_stop_did_not_land_says_so() -> None:
+    """Said `stopped` before: only a stop that raised was heard as failed."""
+    registry = VerbRegistry()
+
+    async def slow(ctx: VerbContext, _: NoParams) -> VerbResult:
+        await asyncio.sleep(1)
+        return VerbResult.success("never")
+
+    registry.register(Verb("slow", "slow", slow, timeout_s=0.05))
+    transport = _UnheardStop()
+    ex = Executor(registry, transport, contract=duck("slow").frontmatter)
+    result = await ex.run_verb("slow")
+    assert not result.ok and transport.stops == 1
+    assert result.summary == f"slow timed out after 0.05s; {UNHEARD}"
+
+
+async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -> None:
+    registry = VerbRegistry()
+    started = asyncio.Event()
+
+    async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
+        started.set()
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    registry.register(Verb("waiting", "waits", waiting, timeout_s=30))
+    transport = _UnheardStop()
+    ex = Executor(registry, transport, contract=duck("waiting").frontmatter)
+    running = asyncio.create_task(ex.run_verb("waiting"))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    ex.abort.set()
+    with pytest.raises(Aborted, match=UNHEARD) as aborted:
+        await asyncio.wait_for(running, timeout=5)
+    assert "a stop was sent" not in str(aborted.value)
+    assert transport.stops == 1
+
+
 async def test_no_contract_allows_safe_verbs_only(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
