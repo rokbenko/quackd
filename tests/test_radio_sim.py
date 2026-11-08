@@ -177,7 +177,9 @@ async def test_two_radios_hear_each_other_at_the_strength_their_distance_gives(
             seen = robot.heard[0]
             assert seen.beacon_id == other.beacon and seen.address == other.radio.address
             assert seen.true_m == 2.0
-            assert abs(seen.rssi - model.clean_rssi(2.0)) <= model.noise_bound_db
+            # the noise is cut off at its bound before the strength is rounded to a tenth, so
+            # a sighting heard at the bound can read up to 0.05 dB past it
+            assert abs(seen.rssi - model.clean_rssi(2.0)) <= model.noise_bound_db + 0.05
             assert {s.beacon_id for s in robot.heard} == {other.beacon}
         assert b.heard[0].flags == FLAG_LAN | FLAG_LINK and a.heard[0].flags == FLAG_LINK
     finally:
