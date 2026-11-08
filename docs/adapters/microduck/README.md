@@ -271,6 +271,12 @@ out of time, and gives up at once on anything else, such as a refused connection
 robot too old for the route. Whatever came last is in `camera_health()`, which `quackd doctor`
 prints under the camera's row, and a verb that finds no frame says it.
 
+> [!NOTE]
+> From `daemon-v0.17.3`, `mediad` counts every `GET /frame` it serves as a photo in the robot's
+> vet book, the record its owner can share. quackd asks for two a second from the connect to the
+> close, so ten minutes on `/frame` add about 1,200 photos to it, none of which anybody took. Bear
+> that in mind before you share a vet book after runs on `/frame`.
+
 The PNG carries no lens. A first frame taller than wide is taken for an alpha's, whose IMX219
 sees 62° along its long side and is turned upright for the PNG, so across a 720 by 1280 frame,
 the default 720p turned upright, quackd measures through 37.3°. That goes in the manifest as
