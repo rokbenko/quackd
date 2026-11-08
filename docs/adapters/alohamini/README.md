@@ -13,6 +13,21 @@ the only pin there is. The hardware repository
 BOM and no software quackd uses. Every name quackd spells lives in
 [`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../../adapters/alohamini/src/quackd_alohamini/upstream_api.py).
 
+> [!WARNING]
+> **Run the robot's host at the pin.** Upstream's `main` has moved past it in a way quackd does
+> not follow. Since
+> [`9e5eb5a`](https://github.com/liyiteng/lerobot_alohamini/commit/9e5eb5a887ccdbe44817c2f70eddb9d8c8a47607)
+> (2026-09-11) its host refuses a command that carries any key outside `action_features`, and
+> `lift_axis.vel` is not one. So a host from `main` drops whole every payload quackd sends
+> without a lift height, the stop below among them, and only the host's own watchdog stops the
+> base and the lift, a second after the last command it took. quackd read `main` again on
+> 2026-11-08, at `ec65318`, and stays at `ab4462b` until it follows. Check that commit out on
+> the robot before you start either host:
+>
+> ```bash
+> git -C lerobot_alohamini checkout ab4462b713aeb24d0473f1ec6c8812290ab19510
+> ```
+
 **Nothing here has ever run on a robot.**
 
 ```bash

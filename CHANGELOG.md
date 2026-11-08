@@ -36,6 +36,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [docs/adapters/moss/README.md](docs/adapters/moss/README.md) and
   [docs/reference/licenses.md](docs/reference/licenses.md) now say.
 
+### Known limitations
+
+- **quackd's AlohaMini adapter does not stop a host from upstream's current main.** Since `9e5eb5a`
+  (2026-09-11) upstream's host refuses any command that carries a key outside the robot's
+  `action_features`, and `lift_axis.vel`, the zero every payload quackd sends carries when it is not
+  driving the lift, is not one. So such a host drops whole every payload quackd sends without a lift
+  height, `stop` among them, and only its own watchdog stops the base and the lift, a second after
+  the last command it took. quackd read main again on 2026-11-08, at `ec65318`, and stays at
+  `ab4462b`, the commit its code was written against.
+  [docs/adapters/alohamini/README.md](docs/adapters/alohamini/README.md), its hardware checklist
+  and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
+  robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
+  the lift on the newer host is not settled.
+
 ## [0.33.0] — 2026-11-07
 
 0.33.0 says what an adapter is made of. An adapter carried three things in one package: the body,
