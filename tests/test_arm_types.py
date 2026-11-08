@@ -57,7 +57,9 @@ def test_the_catalogue_lists_the_types_the_adapter_builds_in_its_order() -> None
     assert BY_NAME["lerobot"].robot_types == tuple(t for t, arm in ARMS.items() if arm.drivable)
     assert next(iter(ARMS)) == ROBOT_TYPE
     assert "koch_follower" in ARMS and "koch_follower" not in BY_NAME["lerobot"].robot_types
-    assert all(not row.robot_types for row in BY_NAME.values() if row.name != "lerobot")
+    # the industrial arms are the other adapter with types of its own (tests/test_rosarm_adapter.py)
+    typed = ("lerobot", "rosarm")
+    assert all(not row.robot_types for row in BY_NAME.values() if row.name not in typed)
 
 
 def test_every_type_that_is_built_names_who_answers_for_it_and_when() -> None:
@@ -194,9 +196,10 @@ def test_a_type_the_adapter_does_not_list_is_refused_at_the_door(tmp_path: Path)
 
 def test_a_spec_with_a_type_its_adapter_does_not_take_is_refused_rather_than_dropped() -> None:
     """A robot registered as another arm would otherwise be built as the default one."""
-    with pytest.raises(AdapterError, match="takes no robot type, which only lerobot has"):
+    takers = "takes no robot type, which only lerobot and rosarm have"
+    with pytest.raises(AdapterError, match=takers):
         describe(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
-    with pytest.raises(AdapterError, match="takes no robot type, which only lerobot has"):
+    with pytest.raises(AdapterError, match=takers):
         make_adapter(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
 
 

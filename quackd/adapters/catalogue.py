@@ -1,4 +1,4 @@
-"""The nine robots quackd publishes and the bodies it only describes, as data, importing none.
+"""The ten robots quackd publishes and the bodies it only describes, as data, importing none.
 
 `factory.py` builds robots; this file only says which ones exist. The split matters because
 `quackd list-adapters` and `quackd doctor` have to render the whole table on a machine where
@@ -6,9 +6,9 @@ none of the adapters is installed, and a table that had to import an adapter to 
 not. Everything here is a string.
 
 An adapter that is installed also describes itself, through the `quackd.adapters` entry point
-group, and a third party's adapter is discovered that way and nowhere else. The nine below
+group, and a third party's adapter is discovered that way and nowhere else. The ten below
 are only the ones quackd ships and supports, listed in a fixed order because the tables that
-print them are order sensitive and `tests/test_adapters.py` pins it. The tenth row is not an
+print them are order sensitive and `tests/test_adapters.py` pins it. The last row is not an
 adapter: it lists the bodies quackd describes from one YAML each and drives no part of
 (ADR-0077), so that `--robot described:<name>` parses, registers and describes like any other.
 
@@ -116,9 +116,10 @@ class AdapterInfo:
     """How its real backends reach the robot, among `ROUTES`; two where a body takes two."""
     robot_types: tuple[str, ...] = ()
     """The kinds of robot one adapter drives through one SDK, which `quackd robot add
-    --robot-type` chooses among, the default first: LeRobot's robot types, on the arm. Only the
-    ones it builds, so a type it describes and does not drive is never registered. Empty on every
-    adapter whose body is one kind (ADR-0075)."""
+    --robot-type` chooses among, the default first: LeRobot's robot types on the arm, the four body
+    files on rosarm. Only the ones it builds on some backend, so a type it describes and builds
+    nowhere is never registered, and a backend that refuses one is refused at the door too
+    (`factory.refusal`). Empty on every adapter whose body is one kind (ADR-0075)."""
 
     def __post_init__(self) -> None:
         if not self.tiers:
@@ -386,10 +387,31 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         family=("wheeled",),
         route=("wire", "bridge"),
     ),
+    # An industrial arm on ROS 2, a family over the rosbridge package's binding (ADR-0075). Its
+    # bodies are described ones too, and `ws` is bound code refused at `make()` for every one
+    # until an owner names a date (ADR-0076), so it is tiered described, the best tier any body
+    # has, which a test holds to `quackd_rosarm.bodies.ws_tier`.
+    AdapterInfo(
+        name="rosarm",
+        backends=("mock", "ws"),
+        status="",
+        summary="an industrial arm on ROS 2, driven through rosbridge",
+        extra="quackd[rosarm]",
+        sdk="roslibpy",
+        robot_types=("ur5e", "kuka-lbr-iisy-3-r760", "kuka-lbr-iiwa-7-r800", "yaskawa-motomini"),
+        tiers={
+            "mock": _rehearsed("the ws transport over a fake rosbridge and a fake arm"),
+            "ws": Tier(
+                "described", note="bound code, refused at make() until an owner names a date"
+            ),
+        },
+        family=("arm",),
+        route=("sdk",),
+    ),
 )
 
 DESCRIBED = "described"
-"""The tenth row's name, and the adapter a described body is reached through:
+"""The last row's name, and the adapter a described body is reached through:
 `--robot described:<body>`."""
 
 DESCRIBED_BODIES: tuple[str, ...] = (
@@ -414,8 +436,8 @@ OFFICIAL = (
     *OFFICIAL,
     # The row that is not an adapter: every backend is a body quackd lists, registers and reasons
     # about from its maker's figures, with report_state and stop as its only verbs (ADR-0077).
-    # Appended after the nine so that the tables' order and the count of adapters stay as they
-    # were; `kind` is what keeps "nine adapters" true.
+    # Appended after the adapters so that the tables' order and the count of adapters stay as
+    # they were; `kind` is what keeps the row out of the count of adapters.
     AdapterInfo(
         name=DESCRIBED,
         backends=DESCRIBED_BODIES,
@@ -560,13 +582,14 @@ _CONNECT: dict[str, dict[str, Connect]] = {
         ),
     },
 }
-"""What connecting each real backend of the nine takes (`AdapterInfo.connect`)."""
+"""What connecting each real backend of the ten takes (`AdapterInfo.connect`). `rosarm:ws` has
+none: nobody can connect it until an owner names a date, and the page offers no fields for it."""
 
 OFFICIAL = tuple(replace(info, connect=_CONNECT.get(info.name, {})) for info in OFFICIAL)
 
 BY_NAME: dict[str, AdapterInfo] = {info.name: info for info in OFFICIAL}
-"""Every row by name, the nine adapters first and the described row last."""
+"""Every row by name, the ten adapters first and the described row last."""
 
 ADAPTERS: tuple[AdapterInfo, ...] = tuple(info for info in OFFICIAL if info.kind == "adapter")
-"""The nine rows that are adapters: what the count of adapters, the extras and the
+"""The ten rows that are adapters: what the count of adapters, the extras and the
 distributions follow (`tests/test_docs.py` holds the badge and the pages to it)."""

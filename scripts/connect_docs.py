@@ -44,7 +44,7 @@ def _code(text: str) -> str:
 
 
 def rows() -> str:
-    """One row per real backend of the nine, in the catalogue's order."""
+    """One row per real backend of the ten, in the catalogue's order."""
     lines = [
         "| Robot | `--address` | For example | With none given | Token | More |",
         "|---|---|---|---|---|---|",

@@ -97,12 +97,20 @@ def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
     `quackd run` on the same robot. That is only true while these two expressions agree,
     and they are written in two files that know nothing about each other."""
     from quackd.adapters.base import AdapterError, adapter_name, backend_name
-    from quackd.adapters.factory import BACKENDS, RobotSpec, make_adapter, resolve_robot
+    from quackd.adapters.factory import (
+        BACKENDS,
+        RobotSpec,
+        make_adapter,
+        refusal,
+        resolve_robot,
+    )
 
     for adapter, backends in BACKENDS.items():
         for backend in backends:
             cli_key = resolve_robot(f"{adapter}:{backend}").key  # quackd/cli.py
             spec = RobotSpec(adapter, backend, "member")
+            if refusal(spec) is not None:
+                continue  # refused before it is built (ADR-0076), so nothing ever keys a memory
             try:
                 transport = make_adapter(spec)
             except AdapterError as e:

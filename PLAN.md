@@ -7,12 +7,13 @@ Legend: 🔨 in progress · ⬜ todo · ⏸ blocked (with reason)
 
 ## Only a human can
 
-Eight bring-ups still need hardware quackd has never touched, one per body that has not met
-any: the other eight of the nine. The ninth happened, an SO-101 arm running
+Nine bring-ups still need hardware quackd has never touched, one per body that has not met
+any: the other nine of the ten. The tenth happened, an SO-101 arm running
 `lerobot:real` on 2026-09-15, which flipped its row in
 [`docs/adapter-status.md`](docs/adapters/status.md), and the same arm ran again on 2026-09-23,
-registered as `arm-01`. Each of the eight ends the same way: flip that backend's row, and not
-before.
+registered as `arm-01`. Each of the nine ends the same way: flip that backend's row, and not
+before. The industrial arm's starts earlier, with an owner and a date for `rosarm:ws`, which
+only Rok can name, and a CI job against a real controller in a container, which can come first.
 
 - ⏸ **An Open Duck Mini v2**, the most reachable of the eight because you can build it. Run
   `open_duck:bridge` against a duck you built, work through
@@ -396,7 +397,7 @@ before.
   measured have changed since, in the abort path and in the arena's geometry, so nothing here can
   re-run it. Locally it is `python web/serve.py`, then <http://localhost:8000/simulator/>.
 - ⬜ The coordinator flock does not know `open_duck` yet (`flock/runner.py` knows one adapter).
-  A pilot flock knows all nine. A hardware flock of either kind waits on robots shipping.
+  A pilot flock knows all ten. A hardware flock of either kind waits on robots shipping.
 - ⏸ **A real LLM recording**, in either simulator, to replace a scripted-pilot asset and drop
   the label (see [docs/assets](docs/assets/README.md)). Needs a key.
 - ⬜ **The browser demo is not at parity with the backend.** Seven of the manifest's fifteen

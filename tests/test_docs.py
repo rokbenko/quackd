@@ -56,7 +56,7 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.
 
-    Every other upstream in the project has a doc-completeness guard, the eight other adapter
+    Every other upstream in the project has a doc-completeness guard, the nine other adapter
     pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
     Without the second loop the newest table is the only one that can go stale in silence.
     """
@@ -533,7 +533,17 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 
 @pytest.mark.parametrize(
     "adapter",
-    ["lerobot", "rosbridge", "open_duck", "xlerobot", "alohamini", "toddlerbot", "huebot", "moss"],
+    [
+        "lerobot",
+        "rosbridge",
+        "open_duck",
+        "xlerobot",
+        "alohamini",
+        "toddlerbot",
+        "huebot",
+        "moss",
+        "rosarm",
+    ],
 )
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
@@ -2290,6 +2300,7 @@ _VERB_TABLE_ROWS = {
     "toddlerbot": "| ToddlerBot |",
     "huebot": "| Huebot |",
     "moss": "| MOSS |",
+    "rosarm": "| Industrial arm on ROS 2 |",
 }
 
 _CORE_VERBS = frozenset(
@@ -4610,7 +4621,7 @@ def test_the_described_bodies_table_is_what_scripts_bodies_docs_writes() -> None
 
 
 def test_the_readme_sends_a_reader_to_the_described_bodies() -> None:
-    """The front page's table is the nine quackd drives. The bodies it only describes are named
+    """The front page's table is the ten quackd drives. The bodies it only describes are named
     under it as what they are, with where their numbers and the way to add one live."""
     section = README.split("\n## Which robots work\n", 1)[1].split("\n## ", 1)[0]
     assert "**Described bodies.**" in section

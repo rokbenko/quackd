@@ -57,6 +57,7 @@ from quackd.adapters.factory import (
     drives,
     needs_rest_pose,
     parse_robot_spec,
+    refusal,
 )
 from quackd.dotenv_names import from_dotenv
 from quackd.host import clean_token, parse_host
@@ -735,15 +736,14 @@ def _check_robot_type(spec: str, robot_type: str | None) -> str | None:
     no other."""
     if robot_type is None:
         return None
-    from quackd.adapters.factory import ADAPTERS, describe, info
+    from quackd.adapters.factory import describe, info, robot_type_takers
 
     parsed = parse_robot_spec(spec)
     kinds = info(parsed.adapter).robot_types
     if not kinds:
-        takers = " and ".join(row.name for row in ADAPTERS if row.robot_types)
         raise RegistryError(
-            f"{spec} takes no --robot-type, which only {takers} has: leave it out, or forget a "
-            "stored one with --clear robot-type"
+            f"{spec} takes no --robot-type, which only {robot_type_takers()}: leave it out, or "
+            "forget a stored one with --clear robot-type"
         )
     if robot_type not in kinds:
         raise RegistryError(
@@ -757,6 +757,17 @@ def _check_robot_type(spec: str, robot_type: str | None) -> str | None:
     except AdapterError as e:
         raise RegistryError(str(e)) from None
     return None if robot_type == kinds[0] else robot_type
+
+
+def _check_drivable(spec: str, robot_type: str | None) -> None:
+    """Refuse a robot its adapter will not build, in the words its `make()` refuses with, rather
+    than store one that every run would then refuse: `rosarm:ws`, which is bound code nobody has
+    named a date for on any arm (ADR-0076). Asked of the catalogue where the adapter is not
+    installed (`factory.refusal`), so a machine that cannot build it refuses it the same."""
+    parsed = parse_robot_spec(spec)
+    why = refusal(RobotSpec(parsed.adapter, parsed.backend, robot_type=robot_type))
+    if why is not None:
+        raise RegistryError(why)
 
 
 def _check_map_address(spec: str, map_address: str | None) -> None:
@@ -873,6 +884,7 @@ class Registry:
         kind = _check_robot_type(entry.spec, entry.robot_type)
         if kind != entry.robot_type:
             entry = entry.model_copy(update={"robot_type": kind})
+        _check_drivable(entry.spec, entry.robot_type)
         _check_reaches_nothing(entry)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
@@ -927,6 +939,7 @@ class Registry:
             kind = _check_robot_type(entry.spec, entry.robot_type)
             if kind != entry.robot_type:
                 entry = entry.model_copy(update={"robot_type": kind})
+            _check_drivable(entry.spec, entry.robot_type)
         _check_reaches_nothing(entry, fields=None if "spec" in changes else set(changes))
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:

@@ -158,6 +158,7 @@ class FakeRos:
     def __init__(self) -> None:
         self.is_connected = False
         self.runs = 0
+        self.closed = 0
         self.terminated = False
 
     def run(self, timeout: float = 5.0) -> None:
@@ -165,6 +166,7 @@ class FakeRos:
         self.is_connected = True
 
     def close(self, timeout: float = 5.0) -> None:
+        self.closed += 1
         self.is_connected = False
 
     def terminate(self) -> None:
@@ -247,7 +249,9 @@ async def test_ws_backend_speaks_verified_topics_and_messages() -> None:
     ros.is_connected = True
     await adapter.close()
     assert topics["/odom"].unsubscribed and topics["/cam/compressed"].unsubscribed
-    assert topics["/base/cmd_vel"].unadvertised and ros.terminated
+    # its own socket closed, and roslibpy's reactor, which every client in the process shares,
+    # left running for the others
+    assert topics["/base/cmd_vel"].unadvertised and ros.closed == 1 and not ros.terminated
     assert topics["/base/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
 
 
@@ -264,6 +268,37 @@ async def test_ws_backend_without_the_extra_names_it() -> None:
     adapter = make_adapter("rosbridge:ws", address="ws://robot.local:9090")
     with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosbridge\]"):
         await adapter.connect()
+
+
+def test_the_builder_both_transports_call_names_whichever_extra_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The roslibpy builders were lifted out of `RosbridgeWs._build` into one function the
+    industrial arm family calls too, and a machine without roslibpy is still told to install the
+    extra of the adapter that needed it."""
+    import sys
+
+    from quackd_rosbridge.ws import RosbridgeWs, build_roslibpy
+
+    monkeypatch.setitem(sys.modules, "roslibpy", None)
+    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosbridge\]"):
+        RosbridgeWs(address="ws://robot.local:9090")._build()
+    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosarm\]"):
+        build_roslibpy("robot.local", 9090, False, adapter="rosarm", extra="quackd[rosarm]")
+
+
+async def test_the_base_describes_itself_as_it_did_before_the_builder_moved() -> None:
+    """`tests/golden/manifest_digests.json` holds the Microduck's and Huebot's descriptions only,
+    so the base's are pinned here: each digest was computed on origin/main before the builders
+    left `RosbridgeWs._build`, and is what it computes now."""
+    from quackd_rosbridge import describe, rosbridge_manifest
+
+    assert describe("mock").digest() == "8de813ddee5118f7"
+    assert describe("ws").digest() == "9ccfdccc7ff2f196"
+    adapter = make_adapter("rosbridge:mock")
+    assert (await adapter.connect()).digest() == "8de813ddee5118f7"
+    camera = rosbridge_manifest("ws", camera=True, image="/camera/compressed")
+    assert camera.digest() == "39671e48584ec5ff"
 
 
 # ── what the bridge says about the body ─────────────────────────────────────────────────

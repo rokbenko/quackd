@@ -704,9 +704,10 @@ def test_the_hint_names_a_body_that_could_or_says_none_does() -> None:
     assert able.startswith("By their datasheets, xlerobot and alohamini could")
     assert "needs manipulator=gripper, payload_kg=1" in able
 
-    nobody = solo_hint({"payload_kg": 3.0}, duck)
-    assert nobody.startswith("No robot installed here meets needs payload_kg=3")
-    assert "the most is toddlerbot at 1.484 kg" in nobody
+    # the UR5e the industrial arm family describes by default carries 5 kg, the most here
+    nobody = solo_hint({"payload_kg": 6.0}, duck)
+    assert nobody.startswith("No robot installed here meets needs payload_kg=6")
+    assert "the most is rosarm at 5 kg" in nobody
 
     assert solo_hint({}, duck) == "", "a task that named no need has nothing to match"
 
@@ -780,7 +781,8 @@ def test_bodies_that_could_reads_only_the_static_descriptions() -> None:
     from quackd.adapters.factory import bodies_that_could, installed_manifests
 
     assert [name for name, _m in installed_manifests()] == list(ADAPTER_NAMES)
-    assert [name for name, _m, _missing in bodies_that_could({"payload_kg": 3.0})] == []
+    assert [name for name, _m, _missing in bodies_that_could({"payload_kg": 6.0})] == []
+    assert [name for name, _m, _missing in bodies_that_could({"payload_kg": 3.0})] == ["rosarm"]
     named = [name for name, _m, _missing in bodies_that_could({"manipulator": "gripper"})]
     assert named == ["lerobot", "xlerobot", "alohamini", "moss"]
     # every backend of a named body agrees, because the sheet does not vary with one

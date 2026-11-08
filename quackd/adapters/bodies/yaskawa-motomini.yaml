@@ -34,6 +34,6 @@ datasheet:
     - "work beside a person without a guard: Yaskawa makes no collaborative claim for it"
   notes:
     - "it ships with no gripper; a tool is the integrator's, so arms stands for the bare wrist here"
-    - "joints move at 315 to 600 degrees per second by the flyer; quackd clamps nothing here because it drives nothing"
+    - "joints move at 315 to 600 degrees per second by the flyer"
     - "repeatability 0.02 mm, 200 or 230 VAC, IP30, by the flyer"
     - "what the arm does on a stop or when its agent falls silent is not documented on the pages read"

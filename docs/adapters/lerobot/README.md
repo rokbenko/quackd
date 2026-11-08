@@ -2769,7 +2769,7 @@ connects and before a run directory exists:
 | `--by-hand is one person placing one arm, and this run has several robots` | one pair of hands and one terminal. Dropping `--flock` and `--robots` is the fix, and the flag is refused rather than quietly applied to the first body |
 | `--by-hand and --dry-run ask for opposite things: one takes torque off the arm, the other moves nothing` | a dry run moves nothing at either end, and taking torque off an arm is the one thing here that is not a command to the robot but a change to it. Rehearse with `--dry-run`, then run it again with `--by-hand` |
 | `--by-hand waits for you to press Enter, and there is no terminal to ask on` | the wait reads a real keystroke. With nobody to ask, the release would happen and nothing would ever pick the arm back up |
-| `microduck:mock is not a body a person places by hand: only the LeRobot arm is` | a body declares `supports_hand_off`, and eight of the nine do not. `quackd list-adapters` |
+| `microduck:mock is not a body a person places by hand: only the LeRobot arm is` | a body declares `supports_hand_off`, and nine of the ten do not. `quackd list-adapters` |
 | `--by-hand releases the arm at its recorded rest pose, and this arm has none recorded` | the release refuses anywhere but the recorded pose, so an arm without one could never be handed over at all. Said here rather than after it has connected: `quackd robot rest-pose NAME`. A real arm never gets this far, because every run of one with no rest pose is refused first, `--by-hand` or not ([The rest pose](#the-rest-pose)), so this line is the mock's and the simulator's |
 
 > [!NOTE]
@@ -3741,7 +3741,7 @@ compared against one, and the ✅ it carries never raises `lerobot:real`'s.
 On 2026-09-15 an SO-101 follower, calibrated as `arm-01` and reached as `--robot lerobot:real
 --address COM3` with no registered name, ran on Windows 11 with
 Python 3.12.12, lerobot 0.6.1 and quackd 0.9.0, piloted by OpenAI's `gpt-6-astra`. This is the
-only one of quackd's nine bodies that has been on hardware at all.
+only one of quackd's ten bodies that has been on hardware at all.
 
 What ran:
 

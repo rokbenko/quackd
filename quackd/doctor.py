@@ -90,6 +90,7 @@ EXTRAS = {
     "lerobot-sim (mujoco)": ("mujoco", "quackd[lerobot-sim]"),
     "lerobot-vla (transformers)": ("transformers", "quackd[lerobot-vla]"),
     "rosbridge": ("roslibpy", "quackd[rosbridge]"),
+    "rosarm (roslibpy)": ("roslibpy", "quackd[rosarm]"),
     "microduck camera (webrtc)": ("aiortc", "quackd[microduck-camera]"),
     "xlerobot": ("zmq", "quackd[xlerobot]"),
     "alohamini": ("zmq", "quackd[alohamini]"),
@@ -125,7 +126,7 @@ CORE_MODULES = (
 Progress = Any
 """`progress(message)`, or None: what the spinner says while a slow question is asked."""
 
-_ADAPTER_HINT = "quackd list-adapters shows the nine that ship and their backends"
+_ADAPTER_HINT = "quackd list-adapters shows the ten that ship and their backends"
 
 FLOCK_NOTE = (
     "flock mode (--flock, flock.roles): sim2d only, in-process bus by default. The MQTT bus "
@@ -2176,8 +2177,8 @@ def verdict(report: DoctorReport) -> Any:
     counters = [
         f"{sum(1 for e in report.extras if e.ok)}/{len(report.extras)} extras",
         # a fraction, not a total: since every adapter became its own package the number that
-        # matters is how many are here, and "9 adapters" beside a table of nine `not
-        # installed` rows reads as nine you have
+        # matters is how many are here, and "10 adapters" beside a table of ten `not
+        # installed` rows reads as ten you have
         f"{sum(1 for a in adapters if a.get('adapter_installed'))}/{len(adapters)} adapters "
         "installed",
         f"{described} described bodies",

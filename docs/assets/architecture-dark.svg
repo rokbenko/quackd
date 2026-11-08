@@ -15,11 +15,11 @@
 <text x="36" y="208" font-size="15" fill="#e6edf3" font-weight="600">Behaviour family: what bodies of a kind do alike</text>
 <g id="family-arm">
 <rect x="36" y="218" width="193" height="144" rx="8" fill="#0d1117" stroke="#3d444d"/>
-<text x="52" y="240" font-size="14" fill="#e6edf3" font-weight="600">Servo arm</text>
-<text x="52" y="258" font-size="13" fill="#9198a1">rest pose, fold first,</text>
-<text x="52" y="276" font-size="13" fill="#9198a1">hand-off, travel clip,</text>
-<text x="52" y="294" font-size="13" fill="#9198a1">paced joint moves</text>
-<text x="52" y="318" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan></text>
+<text x="52" y="240" font-size="14" fill="#e6edf3" font-weight="600">Arm</text>
+<text x="52" y="258" font-size="13" fill="#9198a1">joint goals inside the</text>
+<text x="52" y="276" font-size="13" fill="#9198a1">travel, paced; a servo</text>
+<text x="52" y="294" font-size="13" fill="#9198a1">arm parks and hands off</text>
+<text x="52" y="318" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan><tspan>, </tspan><tspan data-adapter="rosarm" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosarm</tspan></text>
 </g>
 <g id="family-biped">
 <rect x="241" y="218" width="193" height="144" rx="8" fill="#0d1117" stroke="#3d444d"/>
@@ -56,7 +56,8 @@
 <text x="52" y="468" font-size="14" fill="#e6edf3" font-weight="600">Import the SDK</text>
 <text x="52" y="486" font-size="13" fill="#9198a1">upstream ships a package with a</text>
 <text x="52" y="504" font-size="13" fill="#9198a1">client</text>
-<text x="52" y="528" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan><tspan>, </tspan><tspan data-adapter="rosbridge" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosbridge</tspan><tspan> (roslibpy)</tspan></text>
+<text x="52" y="528" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="lerobot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">lerobot</tspan><tspan>, </tspan><tspan data-adapter="rosbridge" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosbridge</tspan><tspan> (roslibpy)</tspan><tspan>,</tspan></text>
+<text x="52" y="546" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="rosarm" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">rosarm</tspan><tspan> (roslibpy)</tspan></text>
 </g>
 <g id="route-wire">
 <rect x="309.333" y="446" width="261.333" height="180" rx="8" fill="#0d1117" stroke="#3d444d"/>

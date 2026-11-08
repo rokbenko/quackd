@@ -634,6 +634,8 @@ def _clamp_words(limits: dict[str, float]) -> str:
         parts.append(f"joints within a normalised {norm:g}")
     if (grip := limits.get("gripper")) is not None:
         parts.append(f"gripper 0 to {grip:g}")
+    if (share := limits.get("speed_share")) is not None:
+        parts.append(f"{share:g} of each joint's rated speed")
     return ", ".join(parts)
 
 
@@ -742,14 +744,24 @@ def body_lines(manifest: RobotManifest) -> list[str]:
         lines.append(f"- quackd clamps you to {clamps}.")
     if ranges:
         travel = ", ".join(f"{joint} {lo:g} to {hi:g}" for joint, (lo, hi) in ranges.items())
-        # the second sentence is the servo's rule, and it is here because a reading past the
-        # travel beside this line is otherwise a contradiction a careful pilot refuses to move on
-        lines.append(
-            f"- Each joint's travel in degrees, read from its own calibration, and the only "
-            f"goals quackd will send: {travel}. A joint can read past its travel when it was "
-            "folded or placed there with torque off, which is where a rest pose usually is; "
-            "goals are still limited to the travel."
-        )
+        source = manifest.extras.get("joint_range_from")
+        if source:
+            # an arm whose travel is its robot's own description rather than a calibration of
+            # servos is driven by its own controller, and nothing here puts it down limp
+            lines.append(
+                f"- Each joint's travel in degrees, read from {source}, and the only goals "
+                f"quackd will send: {travel}."
+            )
+        else:
+            # the second sentence is the servo's rule, and it is here because a reading past the
+            # travel beside this line is otherwise a contradiction a careful pilot refuses to
+            # move on
+            lines.append(
+                f"- Each joint's travel in degrees, read from its own calibration, and the only "
+                f"goals quackd will send: {travel}. A joint can read past its travel when it was "
+                "folded or placed there with torque off, which is where a rest pose usually is; "
+                "goals are still limited to the travel."
+            )
     if manifest.sensors:
         lines.append(f"- Senses: {', '.join(manifest.sensors)}.")
     if ds.cannot:

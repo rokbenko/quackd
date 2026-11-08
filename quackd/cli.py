@@ -336,7 +336,7 @@ _REGISTRY_DIR = typer.Option(
 
 NEWLINE = "\n"
 
-_ADAPTER_HINT = "quackd list-adapters shows the nine that ship and their backends"
+_ADAPTER_HINT = "quackd list-adapters shows the ten that ship and their backends"
 
 
 def _expand(patterns: list[str]) -> list[str]:
@@ -3930,19 +3930,23 @@ _ADDR = typer.Option(
     "(unix:///run/robotd.sock, tcp://host:port).",
     rich_help_panel="Robot",
 )
+_ROBOT_TYPES_SAID = "; ".join(
+    f"on {row.name}, {' or '.join(row.robot_types)}" for row in BY_NAME.values() if row.robot_types
+)
+"""Every adapter's robot types, as the help says them, from the catalogue: one adapter's list
+written here by hand went stale the day a second adapter had types of its own."""
 _ROBOT_TYPE = typer.Option(
     None,
     "--robot-type",
-    help="Which kind of robot this is, for an adapter that drives more than one: on lerobot, "
-    f"{' or '.join(BY_NAME['lerobot'].robot_types)}. The first when absent.",
+    help="Which kind of robot this is, for an adapter that drives more than one: "
+    f"{_ROBOT_TYPES_SAID}. The first when absent.",
     rich_help_panel="Robot",
 )
 _ROBOT_TYPE_EDIT = typer.Option(
     None,
     "--robot-type",
-    help="Which kind of robot this is, on lerobot "
-    f"{' or '.join(BY_NAME['lerobot'].robot_types)}. Replaces the stored one; --clear robot-type "
-    "goes back to the first.",
+    help=f"Which kind of robot this is: {_ROBOT_TYPES_SAID}. Replaces the stored one; "
+    "--clear robot-type goes back to the first.",
     rich_help_panel="Robot",
 )
 _MAP_ADDR = typer.Option(

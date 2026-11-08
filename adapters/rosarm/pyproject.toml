@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quackd-rosarm"
+dynamic = ["version"]
+description = "An industrial arm on ROS 2, driven through rosbridge, as a quackd robot: rehearsed against a fake, refused against a real arm until an owner names a date. Install it as quackd[rosarm]."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Rok Benko" }]
+# A family over the rosbridge package's binding (ADR-0075): its roslibpy plumbing and its VERIFIED
+# protocol refs are that package's, so both move with this one, and scripts/set_version.py moves
+# both windows.
+dependencies = ["quackd>=0.33.0,<0.34", "quackd-rosbridge>=0.33.0,<0.34"]
+
+[project.optional-dependencies]
+# roslibpy, through the binding's own extra, so the two can never ask for different ones
+sdk = ["quackd-rosbridge[sdk]>=0.33.0,<0.34"]
+
+[project.entry-points."quackd.adapters"]
+rosarm = "quackd_rosarm"
+
+[project.urls]
+Homepage = "https://github.com/rokbenko/quackd"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/rosarm/README.md"
+
+[tool.hatch.version]
+path = "src/quackd_rosarm/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quackd_rosarm"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "README.md", "pyproject.toml"]
+
+[tool.uv.sources]
+quackd = { workspace = true }
+quackd-rosbridge = { workspace = true }

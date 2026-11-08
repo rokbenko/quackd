@@ -1,9 +1,9 @@
-"""Ten packages are released together, so nothing about them may drift apart.
+"""Eleven packages are released together, so nothing about them may drift apart.
 
-quackd is one repository and ten distributions now: the core and one per robot. That buys
+quackd is one repository and eleven distributions now: the core and one per robot. That buys
 an install with no robot in it, and it costs a set of facts that have to agree and that no
-single file owns. A version in ten places, a catalogue in the core that names nine
-adapters none of which it imports, an entry point in each of those nine, and a dependency
+single file owns. A version in eleven places, a catalogue in the core that names ten
+adapters none of which it imports, an entry point in each of those ten, and a dependency
 window in both directions. Every one of those is a thing somebody can half-update.
 """
 
@@ -42,7 +42,7 @@ WINDOW = re.compile(
     r"(?P<dist>quackd(?:-[a-z-]+)?)(?:\[[a-z]+\])?"
     r">=(?P<floor>\d+\.\d+(?:\.\d+)?),<(?P<ceiling>\d+\.\d+)"
 )
-"""A window one of the ten packages pins another with, as `scripts/set_version.py` writes it."""
+"""A window one of the eleven packages pins another with, as `scripts/set_version.py` writes it."""
 
 
 def _release(text: str) -> tuple[int, ...]:
@@ -84,7 +84,7 @@ def test_every_adapter_directory_is_a_workspace_member() -> None:
 def test_an_adapter_carries_the_same_version_as_the_core(member: Path) -> None:
     """Each package carries its own `__version__`, because an adapter's sdist holds only its
     own source and cannot read the core's. They ship together, so they must not differ.
-    `scripts/set_version.py` writes all ten at once for exactly this reason."""
+    `scripts/set_version.py` writes all eleven at once for exactly this reason."""
     src = next((member.parent / "src").glob("quackd_*/__init__.py"))
     found = re.search(r'^__version__ = "([^"]+)"$', src.read_text(encoding="utf-8"), re.M)
     assert found, f"{src} has no __version__"
@@ -129,6 +129,21 @@ def test_huebot_installs_the_family_it_is_a_body_of_in_the_same_window() -> None
     assert len(re.findall(pattern.group(1), f"{core!r} {family!r}".replace("'", '"'))) == 2
 
 
+def test_the_arm_family_installs_the_binding_it_drives_through_in_the_same_window() -> None:
+    """The industrial arms are a family over rosbridge's binding (ADR-0075): their transport
+    builds its roslibpy through `quackd_rosbridge.ws` and reads the protocol from its refs, so
+    an arm with no rosbridge package does not import, and the SDK it asks for is the binding's
+    own extra. Both windows are the core's and move with it, as the Huebot's do."""
+    member = _toml(REPO / "adapters" / "rosarm" / "pyproject.toml")
+    deps = member["project"]["dependencies"]
+    core = next(d for d in deps if d.startswith("quackd>="))
+    binding = next(d for d in deps if d.startswith("quackd-rosbridge>="))
+    assert binding.removeprefix("quackd-rosbridge") == core.removeprefix("quackd"), deps
+    (sdk,) = member["project"]["optional-dependencies"]["sdk"]
+    assert sdk == "quackd-rosbridge[sdk]" + core.removeprefix("quackd"), sdk
+    assert member["tool"]["uv"]["sources"]["quackd-rosbridge"] == {"workspace": True}
+
+
 def test_the_core_publishes_an_extra_for_every_robot_it_names() -> None:
     """The catalogue is what `list-adapters` prints on a machine with nothing installed, so
     the extra it names has to be one that exists and that pulls in that adapter's package."""
@@ -166,7 +181,7 @@ def test_every_extra_pins_the_adapter_it_installs_to_this_release() -> None:
 
 
 def _windows(root: Path) -> list[str]:
-    """Every window in the ten `pyproject.toml` files under `root`, as written."""
+    """Every window in the eleven `pyproject.toml` files under `root`, as written."""
     found = []
     for path in [root / "pyproject.toml", *sorted(root.glob("adapters/*/pyproject.toml"))]:
         found += re.findall(r'"(quackd[^"]*>=[^"]*)"', path.read_text(encoding="utf-8"))
@@ -176,8 +191,8 @@ def _windows(root: Path) -> list[str]:
 def test_set_version_starts_every_window_at_the_release_for_a_patch_and_for_a_minor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`scripts/set_version.py`, run on a copy of the ten packages for the next patch and then
-    the next minor, writes every window this suite holds the ten to: a patch raises each
+    """`scripts/set_version.py`, run on a copy of the eleven packages for the next patch and
+    then the next minor, writes every window this suite holds the eleven to: a patch raises each
     floor to itself, `>=X.Y.Z,<X.Y+1`, and a minor moves the whole window, `>=X.Y.0,<X.Y+1`. It
     has to read the windows written before 0.16.1, from the minor alone, as well as the ones it
     writes, or the release after would leave every window where it was."""
@@ -236,7 +251,7 @@ def test_the_arms_extras_stop_below_the_release_that_can_carry_rustypot() -> Non
 
 
 def test_every_published_adapter_is_installed_for_the_suite() -> None:
-    """The dev extra carries all nine without their SDKs, so the suite drives every body
+    """The dev extra carries all ten without their SDKs, so the suite drives every body
     against a mock. One missing would not fail loudly; its tests would quietly skip."""
     installed = {ep.name for ep in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)}
     published = {row.name for row in ADAPTERS}  # the described row is in the core, no package

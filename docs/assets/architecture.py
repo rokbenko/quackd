@@ -50,7 +50,7 @@ MONO = "ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace"
 TITLE = "Only the body layer is one per robot: below it, each robot sits by its kind and its route"
 
 FAMILIES: dict[str, tuple[str, str]] = {
-    "arm": ("Servo arm", "rest pose, fold first, hand-off, travel clip, paced joint moves"),
+    "arm": ("Arm", "joint goals inside the travel, paced; a servo arm parks and hands off"),
     "biped": ("Biped on a runtime", "a twist re-sent while it walks, skills, a posture, a deadman"),
     "wheeled": ("Wheeled base", "a twist, a stop that zeroes it, places where odometry allows"),
     "humanoid": (

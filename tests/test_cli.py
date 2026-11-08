@@ -1292,7 +1292,10 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
     assert "INFEASIBLE" in out
     assert "far past a beak" in out
     assert "No robot installed here meets needs" in out
-    assert "toddlerbot at 1.484 kg" in out
+    # the industrial arm carries 3 kg and holds nothing, so no "most" explains the refusal,
+    # and a body quackd only describes is named apart, as one it drives no part of
+    assert "the most is" not in out
+    assert "franka-research-3 could" in out
 
 
 # ── .env ────────────────────────────────────────────────────────────────────────────────
@@ -1593,7 +1596,7 @@ def test_by_hand_is_refused_for_a_flock(tmp_path: Path) -> None:
 def test_by_hand_is_refused_on_a_body_that_is_not_the_arm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Eight of the nine bodies here have nothing to hand over: a walking duck with its torque
+    """Nine of the ten bodies here have nothing to hand over: a walking duck with its torque
     off is a duck on the floor. The refusal names the body, because the flag is right and the
     `--robot` beside it is the half to change.
 
@@ -1971,7 +1974,7 @@ def test_release_answered_no_never_connects(
 
 
 def test_release_refuses_a_body_that_is_not_the_arm(tmp_path: Path) -> None:
-    """A walking duck with its torque off is a duck on the floor, and eight bodies of nine are
+    """A walking duck with its torque off is a duck on the floor, and nine bodies of ten are
     never handed to a person at all: `supports_hand_off` is the arm's alone."""
     reg = tmp_path / "registry"
     added = runner.invoke(

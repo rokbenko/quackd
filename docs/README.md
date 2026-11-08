@@ -75,6 +75,7 @@ to try a real one in.
 | ToddlerBot | [adapters/toddlerbot/README.md](adapters/toddlerbot/README.md) | [hardware checklist](adapters/toddlerbot/hardware-checklist.md) |
 | Huebot | [adapters/huebot/README.md](adapters/huebot/README.md) | [hardware checklist](adapters/huebot/hardware-checklist.md) |
 | MOSS, a tracked rover that picks up litter | [adapters/moss/README.md](adapters/moss/README.md) | [hardware checklist](adapters/moss/hardware-checklist.md) |
+| An industrial arm on ROS 2: a UR5e, a KUKA LBR iisy or iiwa, a Yaskawa MotoMini | [adapters/rosarm/README.md](adapters/rosarm/README.md) | none, and refused until somebody names a date for its first run |
 
 - [Adapter status](adapters/status.md): what has run against its real target, and what has not.
 - [Described bodies](adapters/status.md#described-bodies): robots quackd describes from one file
@@ -88,7 +89,7 @@ to try a real one in.
 
 - [The `.duck` file](reference/duck-spec.md): the task format, spec v0 to v4. It is normative.
 - [The robot manifest](reference/manifest-spec.md): what a connected robot is and can do, as data.
-- [Licenses](reference/licenses.md): the ten distributions, every upstream they reach, and on
+- [Licenses](reference/licenses.md): the eleven distributions, every upstream they reach, and on
   what terms.
 
 ## Concepts

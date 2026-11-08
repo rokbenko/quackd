@@ -16,9 +16,12 @@ from quackd.perception import is_simulated
 BLOCKS = {info.name: info.connect for info in ADAPTERS}
 
 
-def test_every_real_backend_of_the_nine_says_how_to_connect_it_and_no_simulator_does() -> None:
+def test_every_real_backend_of_the_ten_says_how_to_connect_it_and_no_simulator_does() -> None:
     for info in ADAPTERS:
-        real = sorted(b for b in info.backends if not is_simulated(b))
+        # a backend described on an adapter is bound code its make() refuses until somebody names
+        # a date (ADR-0076): there is nothing to connect yet, so the page offers no fields for it
+        refused = {b for b, tier in info.tiers.items() if tier.name == "described"}
+        real = sorted(b for b in info.backends if not is_simulated(b) and b not in refused)
         assert sorted(info.connect) == real, info.name
         # ADR-0076: a backend with a connect block is one that reaches a robot, which is what
         # the bound and verified tiers mean, so the two lists are one list
@@ -38,6 +41,8 @@ def test_the_described_row_connects_nothing() -> None:
 
 def test_each_block_names_its_own_adapters_page() -> None:
     for info in ADAPTERS:
+        if not info.connect:
+            continue  # rosarm, which connects nothing until an owner names a date
         docs = importlib.import_module(f"quackd_{info.name}").UPSTREAMS[0][2]
         assert {block.docs for block in info.connect.values()} == {docs}, info.name
 

@@ -43,6 +43,7 @@ members = [
     "quackd-microduck",
     "quackd-moss",
     "quackd-open-duck",
+    "quackd-rosarm",
     "quackd-rosbridge",
     "quackd-toddlerbot",
     "quackd-xlerobot",
@@ -4062,6 +4063,7 @@ dev = [
     { name = "quackd-microduck" },
     { name = "quackd-moss" },
     { name = "quackd-open-duck" },
+    { name = "quackd-rosarm" },
     { name = "quackd-rosbridge" },
     { name = "quackd-toddlerbot" },
     { name = "quackd-xlerobot" },
@@ -4145,9 +4147,13 @@ robots = [
     { name = "quackd-microduck" },
     { name = "quackd-moss" },
     { name = "quackd-open-duck" },
+    { name = "quackd-rosarm", extra = ["sdk"] },
     { name = "quackd-rosbridge", extra = ["sdk"] },
     { name = "quackd-toddlerbot" },
     { name = "quackd-xlerobot" },
+]
+rosarm = [
+    { name = "quackd-rosarm", extra = ["sdk"] },
 ]
 rosbridge = [
     { name = "quackd-rosbridge", extra = ["sdk"] },
@@ -4228,6 +4234,9 @@ requires-dist = [
     { name = "quackd-open-duck", marker = "extra == 'dev'", editable = "adapters/open_duck" },
     { name = "quackd-open-duck", marker = "extra == 'open-duck'", editable = "adapters/open_duck" },
     { name = "quackd-open-duck", marker = "extra == 'robots'", editable = "adapters/open_duck" },
+    { name = "quackd-rosarm", marker = "extra == 'dev'", editable = "adapters/rosarm" },
+    { name = "quackd-rosarm", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosarm" },
+    { name = "quackd-rosarm", extras = ["sdk"], marker = "extra == 'rosarm'", editable = "adapters/rosarm" },
     { name = "quackd-rosbridge", marker = "extra == 'dev'", editable = "adapters/rosbridge" },
     { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosbridge" },
     { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'rosbridge'", editable = "adapters/rosbridge" },
@@ -4248,7 +4257,7 @@ requires-dist = [
     { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
     { name = "zeroconf", marker = "extra == 'onboard'", specifier = ">=0.132" },
 ]
-provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "moss", "mujoco", "onboard", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "ui", "xlerobot", "yolo"]
+provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "moss", "mujoco", "onboard", "open-duck", "openai", "openrouter", "qwen", "robots", "rosarm", "rosbridge", "toddlerbot", "ui", "xlerobot", "yolo"]
 
 [[package]]
 name = "quackd-alohamini"
@@ -4355,6 +4364,27 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "quackd", editable = "." }]
+
+[[package]]
+name = "quackd-rosarm"
+source = { editable = "adapters/rosarm" }
+dependencies = [
+    { name = "quackd" },
+    { name = "quackd-rosbridge" },
+]
+
+[package.optional-dependencies]
+sdk = [
+    { name = "quackd-rosbridge", extra = ["sdk"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "quackd", editable = "." },
+    { name = "quackd-rosbridge", editable = "adapters/rosbridge" },
+    { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'sdk'", editable = "adapters/rosbridge" },
+]
+provides-extras = ["sdk"]
 
 [[package]]
 name = "quackd-rosbridge"
