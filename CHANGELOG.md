@@ -9,6 +9,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **Seven more SO-101 examples lift the forearm instead of raising the shoulder alone.** E125, E142,
+  E157, E166, E176, E179 and E182 raised the shoulder lift alone from the rest pose, which swings the
+  folded jaws into the desk, as E116 did and as a run of E176 on a real arm showed. They lift the
+  forearm on the elbow alone now, which carries the jaws up from the first degree, so E142's progress
+  bar is the forearm, and E157's detailed wave lifts the forearm and straightens the wrist in one move.
+  E200's card says to clear about 40 cm for its second line, which runs E116's reach.
+
 ## [0.33.0] — 2026-11-07
 
 0.33.0 says what an adapter is made of. An adapter carried three things in one package: the body,

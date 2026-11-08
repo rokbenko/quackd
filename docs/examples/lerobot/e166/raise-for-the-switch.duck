@@ -5,7 +5,7 @@
 ---
 duck: 1
 name: e166-raise-for-the-switch
-description: "A small, slow raise, for the power switch to cut."
+description: "A small, slow lift of the forearm, for the power switch to cut."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ persona: "Practical and honest: say so when you cannot do something."
 
 # Task
 
-Raise your shoulder lift slowly by about twenty degrees from where it is, over ten seconds, then report your state.
+Lift your forearm slowly by about twenty degrees from where it is, moving the elbow alone, over ten seconds, then report your state.
 
 ## Strategy
 

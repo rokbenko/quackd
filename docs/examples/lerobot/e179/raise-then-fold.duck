@@ -4,7 +4,7 @@
 ---
 duck: 1
 name: e179-raise-then-fold
-description: "Raise a little and declare, so the run's own fold can be stopped."
+description: "Lift the forearm a little and declare, so the run's own fold can be stopped."
 author: rok
 requires: [move_joints]
 verbs:
@@ -23,7 +23,7 @@ persona: "Practical and honest: say so when you cannot do something."
 
 # Task
 
-Raise your shoulder lift slowly by about thirty degrees from where it is, over five seconds, then declare success.
+Lift your forearm slowly by about thirty degrees from where it is, moving the elbow alone, over five seconds, then declare success.
 
 ## Strategy
 

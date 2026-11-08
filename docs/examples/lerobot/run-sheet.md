@@ -2976,11 +2976,11 @@ quackd run docs/examples/lerobot/e141/deploy-press.duck --robot arm-01 --by-hand
 
 Free space. Its files are in [e142/](e142/).
 
-**Goal.** Show that a physical progress bar for a running job can be driven by any script that calls `quackd run`. No contact needed — the arm just rises a quarter of the way for each 25%.
+**Goal.** Show that a physical progress bar for a running job can be driven by any script that calls `quackd run`. No contact needed — the forearm just rises a quarter of the way for each 25%.
 
-**Expect.** The arm rises a quarter of the way at each 25% step and reaches vertical at 100%. Should work reliably — simple free-space motion driven by a number in the goal. Four consecutive runs make the progress bar.
+**Expect.** The forearm rises a quarter of the way at each 25% step, on the elbow alone, and points about straight up at 100%. Should work reliably — simple free-space motion driven by a number in the goal. Four consecutive runs make the progress bar.
 
-- The arm rises a quarter for each 25%. Run four times with the percentage in the goal; later wire it to a real job.
+- The forearm rises a quarter for each 25%. Run four times with the percentage in the goal; later wire it to a real job.
 
 **25 percent**
 
@@ -3623,6 +3623,7 @@ Free space. Its files are in [e157/](e157/).
 **Expect.** One of three outcomes: terse goal uses more turns; detailed goal uses more tokens per turn; no meaningful difference. All three are interesting. Run three trials each and report the real numbers.
 
 - Three trials each; compare total tokens. The two task files carry nothing but the goal, so the wording is the only difference.
+- From the rest pose, a wave that starts with the shoulder alone pushes the jaws into the desk and stalls, as E116's raise did, and that costs turns. The detailed goal starts by lifting the forearm for that reason: say whether the terse one runs into it.
 
 **Terse, trial 1**
 
@@ -3935,7 +3936,7 @@ Contact or precision. Its files are in [e166/](e166/).
 
 - An inline switch on the servo supply, on your side of the desk, within reach. Everything after this leans on it, so it comes before any line that moves a joint on purpose: after E119's first line and E136, and before the rest.
 - Foam under the forearm, and one hand under it in the air before you press Enter, never between two links. The raise is small on purpose.
-- Cut the supply as soon as the shoulder starts to lift.
+- Cut the supply as soon as the forearm starts to lift.
 - Then fold the limp arm by hand into its rest pose and turn the supply back on. The next run's rest move finds it there.
 
 **Cut it, and leave it off**
@@ -4316,7 +4317,7 @@ Free space. Its files are in [e182/](e182/).
 
 **Expect.** The press ends the call that is still out, throws away whatever it would have said, and the run ends ABORTED, `kill switch`, in under a second on the stand-in server it was rehearsed against, whose call would have taken a minute. The arm folds at once. The call's `llm` record in `transcript.jsonl` says what it cut short.
 
-- Let it make its raise. Press Ctrl-C once while the status line says it is waiting on the LLM. Hand on the switch.
+- Let it lift its forearm. Press Ctrl-C once while the status line says it is waiting on the LLM. Hand on the switch.
 
 ```bash
 quackd run docs/examples/lerobot/e182/think-hard.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --effort high --max-steps 6 --no-memory
@@ -4823,6 +4824,7 @@ Free space. Its files are in [e200/](e200/).
 **Expect.** Either one motion or a staircase. Say which, and whether it arrived when the time was up. On the second line, what `duration_s` the LLM passes and whether the arm takes about that long, with no refusal over the arm's state. Slow motion on a marker taped to the gripper shows it best, and so would a long exposure with an LED, as in E137.
 
 - Close-up of the wrist. The longest time a move may ask for is 12 seconds.
+- For the second line, clear about 40 cm in front of the base, because the arm reaches out over it.
 
 **The wrist, twelve seconds**
 
