@@ -1,6 +1,6 @@
 """The Microduck's model and policies, fetched at run time and never shipped.
 
-The meshes are CC BY-NC-SA and quackd is Apache-2.0, so they cannot travel in the wheel,
+The meshes are CC BY-NC-SA 4.0 and quackd is Apache-2.0, so they cannot travel in the wheel,
 the repository or a test fixture (`docs/reference/licenses.md`). What can travel is a commit hash
 and a sha256 per file: the first `--robot microduck:mujoco` downloads upstream's tarball at the
 pinned commit, keeps the one directory it needs under `~/.quackd/cache`, checks every file
@@ -52,9 +52,13 @@ LOCK_STALE_S = 1800.0
 
 NOTICE = f"""These files were fetched from {up.REPO} at commit {up.PIN} and are not part of quackd.
 
-Upstream's README says: "{up.MESH_LICENSE.name}". The code around them is Apache-2.0.
-Non-commercial and share-alike terms apply to your use of these model files; quackd
-neither ships nor redistributes them. https://creativecommons.org/licenses/by-nc-sa/4.0/
+Upstream's README says: "{up.MESH_LICENSE.name}".
+
+Its LICENSE-MODELS.md says: "{up.MJCF_LICENSE.name}".
+
+So robot_walk.xml is Apache-2.0, and the meshes under assets/ are CC BY-NC-SA 4.0, whose
+non-commercial and share-alike terms apply to your use of them. quackd ships and redistributes
+neither. https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 The policies were fetched from {up.POLICIES_REPO} at revision {up.POLICIES_PIN} and are
 Apache-2.0.

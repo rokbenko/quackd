@@ -7,7 +7,7 @@ proves UNVERIFIED names are only reachable from the `mujoco` backend.
 
 Two upstreams meet here. The robot's MuJoCo model and its meshes come from
 https://github.com/pollen-robotics/microduck_rl at commit
-2b25a48b08f1f17bc38c90bb03144c81fbd9ed07 (`develop`, the default branch, 2026-09-06). The
+bae39f5900b318f7e87fc485c30a31213cfa14eb (`develop`, the default branch, 2026-10-27). The
 policies it trains are published to the Hugging Face Hub as
 https://huggingface.co/pollen-robotics/microduck-policies, read at revision
 6677ec007142bbaf05123a468f6ae58d13808786 (tag `v7`, 2026-10-05).
@@ -23,18 +23,37 @@ every robotd from daemon-v0.13.0 walks and stands on, `v6` replaced `alpha_sitst
 same bytes there. Of the other files the refs below cite, `LICENSE`, `export.py` and the velocity
 task's config did not change, and `README.md` and `scripts/infer_policy.py` only gained lines,
 the licence sentence and every fact of the control loop reading as they did. So the commit
-stays: moving it would rename the cache and nothing else, and send every user to fetch the same
-10 MB again.
+stayed at 2b25a48b08f1f17bc38c90bb03144c81fbd9ed07: moving it would have renamed the cache and
+nothing else, and sent every user to fetch the same 10 MB again.
 
 daemon-v0.16.2, released on 2026-10-12, seeds a robot with `v8` instead (POLICY_SET). `v8`
 changes `velstand.onnx` and `manifest.json` and no other file, so the two policies quackd
 fetches are the same bytes there, and the revision stays at `v7`.
 
+The model's repository was read again on 2026-11-08, after `scripts/upstream_drift.py`, run on
+2026-11-05, found the README's licence sentence gone and the two files eleven refs cite whole
+changed. `develop` was 48 commits past 2b25a48 by then, at bae39f5 (2026-10-27), and
+`robot_walk.xml` and its 38 meshes are the same bytes there, as are `LICENSE` and the velocity
+task's config. `scripts/infer_policy.py` only gained lines, an odometry overlay behind two flags
+that are off unless given, and `export.py` writes the export's provenance into the ONNX metadata
+beside the keys quackd reads. What changed is the licence. The README's one sentence on the 3D
+model files named no version and left open whether the XML was one. It now licenses the `.stl`
+meshes under CC BY-NC-SA 4.0 and sends a reader to a new `LICENSE-MODELS.md`, which puts the MJCF
+robot descriptions, `robot_walk.xml` among them, under the Apache License 2.0 with the code
+(MESH_LICENSE, MJCF_LICENSE), and `pyproject.toml` declares `Apache-2.0 AND CC-BY-NC-SA-4.0`.
+So the commit moved this time, though no byte quackd fetches did: the notice quackd writes
+beside the files quotes the README of the commit they came from, and only a commit whose README
+says the licence as upstream states it now makes the notice say it. The cache is named after
+the commit, so the first run after the move fetches the same files again and leaves the old
+directory where it was. The policies stay at `v7`, whose model card still says apache-2.0, and
+the Hub's `v9` of 2026-11-06 is the same bytes as `v7` in every one of its 13 files.
+
 quackd never imports `microduck_rl`: it requires Python 3.12 exactly, pulls torch, warp
 and mjlab, and needs a CUDA GPU to train. What quackd needs from it is three files' worth
 of facts (the model, the walking policy's contract, the control loop of its own CPU
 rehearsal script `scripts/infer_policy.py`) and the files themselves, fetched at run time
-into a user cache and never shipped, because the meshes are CC BY-NC-SA and the code is not.
+into a user cache and never shipped, because the meshes are CC BY-NC-SA 4.0 and the code is
+not.
 
 Nothing here has been run against a physical Microduck.
 """
@@ -44,11 +63,11 @@ from __future__ import annotations
 from quackd.upstream import UpstreamRef
 
 REPO = "https://github.com/pollen-robotics/microduck_rl"
-PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"  # develop, 2026-09-06
+PIN = "bae39f5900b318f7e87fc485c30a31213cfa14eb"  # develop, 2026-10-27
 BRANCH = "develop"
 """The branch the pin sits on, which is also the repository's default: what the nightly drift
 job (`scripts/upstream_drift.py`) compares the pin against, whatever the default becomes."""
-READ_ON = "2026-10-09"
+READ_ON = "2026-11-08"
 
 POLICIES_REPO = "https://huggingface.co/pollen-robotics/microduck-policies"
 POLICIES_PIN = "6677ec007142bbaf05123a468f6ae58d13808786"  # v7, 2026-10-05
@@ -79,15 +98,36 @@ CODE_LICENSE = UpstreamRef(
     "VERIFIED",
     src("LICENSE"),
     "the unmodified Apache-2.0 text, 'Copyright 2026 Pollen Robotics'; pyproject declares "
-    "license = 'Apache-2.0'",
+    "license = 'Apache-2.0 AND CC-BY-NC-SA-4.0' and license-files LICENSE and "
+    "LICENSE-MODELS.md, the second for the meshes (MESH_LICENSE)",
 )
 MESH_LICENSE = UpstreamRef(
-    "3D model files are licensed under Creative Commons BY-SA-NC",
+    "The 3D model files (the `.stl` meshes in `src/mjlab_microduck/robot/microduck/assets/` and "
+    "`src/mjlab_microduck/robot/xl330_test_bench/assets/`) are licensed under Creative Commons "
+    "Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)",
     "VERIFIED",
-    src(_README, 261),
-    "one sentence in the README's License section: no CC version, no file headers, no "
-    "LICENSE in assets/. Whether the MJCF XML counts as a '3D model file' is not stated, so "
-    "quackd treats the XML and the meshes alike: fetched at run time, never shipped",
+    src(_README, 274),
+    "the README's License section, lines 272 to 274, quoted without the link around the "
+    "licence's name and without the full stop. Line 275 sends a reader to LICENSE-MODELS.md 'for "
+    "the exact scope and attribution', which names the same licence for the same two globs and "
+    "for nothing else (MJCF_LICENSE). In what it calls a summary of the legal code, it asks "
+    "whoever shares the files or an adaptation of them to credit Pollen Robotics and link the "
+    "repository, link the licence, say that they modified the files if they did, and license "
+    "the adaptation under CC BY-NC-SA 4.0. At 2b25a48, the commit read before this one, the "
+    "section gave the 3D model files one sentence, '3D model files are licensed under Creative "
+    "Commons BY-SA-NC.', with no version. quackd fetches the meshes at run time and never ships "
+    "them, and the notice it writes beside them quotes this",
+)
+MJCF_LICENSE = UpstreamRef(
+    "Everything else in this repository, including the MJCF robot descriptions (`.xml`), the "
+    "export configs (`config_mjcf_*.json`, `config.json`) and the Onshape part metadata "
+    "(`.part`), is licensed under the Apache License 2.0",
+    "VERIFIED",
+    src("LICENSE-MODELS.md", 17),
+    "LICENSE-MODELS.md, new since 2b25a48, lines 17 to 19, quoted without the full stop and the "
+    "link to LICENSE after it. So robot_walk.xml is Apache-2.0, as the code is, where quackd had "
+    "treated it like the meshes because nothing upstream said which it was. quackd fetches it "
+    "with them at run time and ships neither all the same, as it does every upstream asset",
 )
 POLICY_LICENSE = UpstreamRef(
     "apache-2.0",
@@ -267,7 +307,9 @@ POLICY_METADATA = UpstreamRef(
     "VERIFIED",
     src("src/mjlab_microduck/export.py"),
     "ONNX metadata_props written at export. quackd reads joint order, the home pose and "
-    "the action scale from the file rather than hard-coding them",
+    "the action scale from the file rather than hard-coding them. At this pin export.py adds "
+    "the export's provenance after them, task_id and, when it has them, checkpoint, "
+    "checkpoint_sha256, export_commit and export_dirty, which quackd does not read",
 )
 JOINT_ORDER = UpstreamRef(
     "left_hip_yaw, left_hip_roll, left_hip_pitch, left_knee, left_ankle, neck_pitch, "

@@ -37,7 +37,7 @@ Thumbs.db
 *.stackdump
 
 # upstream assets, never vendored (docs/reference/licenses.md). A real microduck:mujoco run leaves
-# upstream's CC BY-SA-NC model in ~/.quackd/cache, and a debugging copy next to the checkout
+# upstream's CC BY-NC-SA model in ~/.quackd/cache, and a debugging copy next to the checkout
 # is one `git add -A` from being permanent in a public history. The SO-101's model from
 # SO-ARM100 is Apache-2.0, and it stays upstream all the same.
 *.onnx
