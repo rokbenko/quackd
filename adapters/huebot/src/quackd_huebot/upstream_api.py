@@ -4,7 +4,7 @@ Huebot's own API is closed. Its maker, Leif Rydenfalk, wrote to Rok Benko on 202
 shim to run on the robot that answers the JSON-RPC the Microduck's `robotd` speaks, and named
 `hello`, `robot.move`, `robot.stop`, `robot.head`, `robot.state` and `robot.health`. So the
 protocol here is robotd's, read in the Microduck's own source at the pin the Microduck adapter
-reads it at, daemon-v0.16.1 (d818af5), and every ref that says what that protocol is stays
+reads it at, daemon-v0.18.8 (4a763dd), and every ref that says what that protocol is stays
 VERIFIED, as a fact about the protocol.
 
 Whether Huebot's shim answers it that way is another matter. Nobody has seen the shim, Huebot's own

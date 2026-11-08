@@ -638,9 +638,10 @@ async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
     and so does the floor, the oldest read: 16 stays refused, and so does the version just
     below the floor, in words that name both numbers.
     """
-    # Named, not `>= 41`: a bump has to come past this line and past a fresh read of upstream,
-    # rather than sailing through because the number only went up.
-    assert CURRENT_API == 41, "re-read duck-ipc-proto at a new pin before changing this"
+    # Named, not `>= 50`: a bump has to come past this line and past a fresh read of upstream,
+    # rather than sailing through because the number only went up. 41 was daemon-v0.16.1's, read
+    # on 2026-10-08, and 50 is daemon-v0.18.8's, read on 2026-11-08.
+    assert CURRENT_API == 50, "re-read duck-ipc-proto at a new pin before changing this"
     assert FLOOR == 23, "the floor is the oldest contract quackd has read end to end"
     for below in (16, FLOOR - 1):
         fake = FakeRobotd(api_version=below)

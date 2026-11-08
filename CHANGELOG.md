@@ -9,6 +9,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **quackd reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** quackd
+  read the Microduck's robotd on 2026-10-08 at daemon-v0.16.1, on API 41, and so warned about every
+  release from daemon-v0.17.3 on, the newest on API 50. It reads robotd at daemon-v0.18.8 (`4a763dd`)
+  now, every reference in `upstream_api.py` is anchored there, and a robotd on API 50 connects with no
+  warning, where one on API 41 to 49 is now served with one, as every version but the one read is.
+  The nine bumps add or remove only calls quackd does not make, so nothing it sends or reads changed
+  shape. What robotd does changed more than what it says, and the Microduck page and the refs say
+  what each change does to quackd: `limp_fall` is on by default, the idle look-around takes the head
+  over rather than adding to it, a stock pad's Y and bumpers play emotions, and while an emotion
+  plays robotd holds the twist at zero and reports it so, which ends a quackd walk saying robotd did
+  not take its twist. Every `GET /frame` quackd pulls counts as a photo in the robot's vet book, and
+  the beta's camera has a calibration that only quackd's WebRTC camera reads. Huebot's protocol
+  refs, imported from the Microduck's, move with them. `tests/test_jsonrpc.py` names API 50, and the
+  guard in `tests/test_docs.py` that holds the ADRs written since the daemon-v0.16.1 re-read names
+  that day, which used to be the newest read's.
+
 ### Fixed
 
 - **The physics simulator's licence notice says what `microduck_rl` says now: CC BY-NC-SA 4.0 for

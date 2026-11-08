@@ -435,6 +435,12 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     )
 
 
+#: The day quackd read robotd at daemon-v0.16.1, the re-read `_RETIRED_MICRODUCK_CLAIMS` dates
+#: from. Written out rather than taken from `up.READ_ON`, which moves with every re-pin: the read of
+#: 2026-11-08 left it behind, and the guard below would have stopped reading every ADR since.
+_RE_READ_AT_DAEMON_V0_16_1 = "2026-10-08"
+
+
 def _adrs_dated_from(day: str) -> list[Path]:
     """The ADRs whose `**Date:**` is `day` or later, an ISO date compared as one."""
     found: list[Path] = []
@@ -455,8 +461,9 @@ def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() ->
     moved step 8 to a pad switched off and every living page had stopped saying the pad out-ranks
     quackd, and the guard did not look at it. Older ADRs are not read here, so their history
     stands."""
-    adrs = _adrs_dated_from(up.READ_ON)
-    assert adrs, f"no ADR is dated on or after the re-read of {up.READ_ON}, ADR-0051 among them"
+    day = _RE_READ_AT_DAEMON_V0_16_1
+    adrs = _adrs_dated_from(day)
+    assert adrs, f"no ADR is dated on or after the re-read of {day}, ADR-0051 among them"
     stale = [
         f"docs/adr/{path.name}: {claim!r}"
         for path in adrs
