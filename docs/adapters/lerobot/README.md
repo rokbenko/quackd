@@ -173,9 +173,10 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    ```
 
    Every run leaves a folder under `runs/`, in the folder you ran it from, and `quackd log` replays
-   it by name: `quackd log lerobot-lookout`. The mock is quackd's own stand-in and runs none of the
-   real backend's code. `lerobot:mujoco` runs all of that code over a physics model of the arm, which
-   is where a task file is rehearsed before it meets one. Its first connect fetches the maker's model.
+   it by name: `quackd log lerobot-lookout`. The mock runs the real backend's own code over an arm in
+   memory, with no physics under it and a scripted policy of its own. `lerobot:mujoco` runs the same
+   code over a physics model of the arm, which is where a task file is rehearsed before it meets one.
+   Its first connect fetches the maker's model.
    Nothing has compared the simulator against an arm, and
    [what it proves](#what-it-proves-and-what-it-does-not) is short.
 
@@ -561,7 +562,7 @@ hurt somebody. They shape everything below:
 
 | `--robot` | Status | What it is |
 |---|---|---|
-| `lerobot:mock` | ✅ | an arm in memory: goals land instantly, the gripper stops on the object, a scripted policy answers `pick` and `manipulate`, and it refuses an out-of-range goal in the same words the real one does |
+| `lerobot:mock` | ✅ | `lerobot:real`'s own code over an arm in memory: a goal lands a step of the cap at a time, the gripper stops on the object, a scripted policy answers `pick` and `manipulate` in the real backend's policy loop, and every refusal, hand-off and close line is the real backend's own, since it is that backend's code |
 | `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm on two afternoons, 2026-09-15 on quackd 0.9.0 and 2026-09-23 on quackd 0.12.0, with lerobot 0.6.1 and no policy. What changed after 2026-09-23 has not run on an arm yet |
 | `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
 
@@ -1249,9 +1250,10 @@ and it is there for a bench session to say how fast this arm's bus and a policy'
 the policy for one segment. Its preconditions are `pick`'s, torque on and nothing hot, and it
 is confirm-gated like `pick`. An instruction of nothing but blanks is refused on every
 backend, the mock included, in the same words, and the verb takes one line of plain text no
-longer than a task file may list, whether a task lists any or not. On the mock the segment
-runs its time on the mock's clock, and a stop, a release, a rest move or the next segment ends
-it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
+longer than a task file may list, whether a task lists any or not. On the mock the segment runs
+in this same loop on the mock's clock, its scripted policy walking the arm toward the object, and
+it runs its time unless a stop, a release, a rest move or the next segment ends it sooner, while a
+verb that sends a goal meanwhile is refused, as on the arm.
 
 - **A task file can hold it to its own words and its own time.** A v3 file's `policy` section
   ([reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)) lists the instructions
@@ -2558,7 +2560,7 @@ verdict, the declaration and the `asked` record of each question left out:
 ▶  verb    report_state()
 ✓  result  report_state ok: shoulder_pan 0, shoulder_lift -20, elbow_flex 40, wrist_flex 15, wrist_roll 0, gripper 35; torque on; hottest shoulder_pan 30°C; holding nothing (0.0 s, 0 intents)
 →  send    stop
-→  send    gripper(open=true)
+→  send    gripper x12 over 1.1 s (open true)
 ·  hand    unloaded: the gripper is open
 ·  note    folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
 ·  note    moving to the rest pose
@@ -2621,8 +2623,9 @@ left out):
 ┌─ ✗ ABORTED ─────────────────────────────────────────────────────────────────────────┐
 │ nobody placed the arm: it was released at its rest pose for somebody to put it      │
 │ somewhere, and nothing was pressed                                                  │
-│ steps 0 · LLM calls 0 · tokens 0+0 · time 0.3 s (LLM 0.0 s) · cost $0               │
-│ run dir  runs\20261104-204230-lerobot-lookout                                       │
+│ steps 0 · LLM calls 0 · tokens 0+0 · time 0.2 s (LLM 0.0 s) · policy 0 segments ·   │
+│ cost $0                                                                             │
+│ run dir  runs\20261108-123951-lerobot-lookout                                       │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2729,10 +2732,10 @@ torque register that does not answer, and with the log's copy of the second line
 left out:
 
 ```
-·  hand    hold refused: the arm did not say whether torque came back on (RuntimeError: Incorrect status packet!), and a hold nothing confirmed is not a hold
-·  note    the arm did not take hold: the arm did not say whether torque came back on (RuntimeError: Incorrect status packet!), and a hold nothing confirmed is not a hold
+·  hand    hold refused: the arm did not say whether torque came back on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold
+·  note    the arm did not take hold: the arm did not say whether torque came back on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold
 quackd could not confirm whether the arm has torque (the arm did not say whether torque came back
-on (RuntimeError: Incorrect status packet!), and a hold nothing confirmed is not a hold), so the
+on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold), so the
 run stops here: keep hold of the arm as though it may move or drop, and cut its power to be sure
 →  send    stop
 ·  hand    skipped: the arm is still in your hands
@@ -2815,10 +2818,10 @@ which is a run, an MCP session, a flock, `doctor --robot NAME` and the `robot` c
 spec such as `doctor --robot lerobot:real` builds the arm with no name, and leaves `NAME` as it
 is rather than offering the calibration id as a name nobody may have registered. Captured from a
 `--dry-run` on `lerobot:mock` registered as `arm-01` with its pose's `shoulder_pan` at 30, which
-a dry run never drives it to:
+a dry run never drives it to, so the parenthesis ends on nothing having moved it there:
 
 ```
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 > [!CAUTION]
@@ -2998,20 +3001,27 @@ said 0, and the command exits 0 only then. Everything else exits 1 and says whic
 | `... is not a body quackd takes torque off: only the LeRobot arm is` | the name is a body that does not declare `supports_hand_off` |
 
 After `torque still reads on`, the close's last line says what quackd then did, and never sends
-you back to the command that has just failed. Some motors held and the rest let go, so the arm
-is in your hands with those joints still energised, and the close keeps whatever torque there
-is. Captured on `lerobot:mock` registered as `arm-01`, folded to its pose, its release made to
-keep `elbow_flex` on, since an in-memory release otherwise always takes. On an arm with no rest
-pose, released where it stands after Enter, the second line reads
-`torque is off where the arm stands except on elbow_flex, which still read on` and the
-parenthesis `(torque was taken off where it stood, because you asked for it)` instead:
+you back to the command that has just failed. Some motors held and the rest let go, and the close
+keeps whatever torque there is. Let go of at its rest pose, the arm lies in its fold with those
+joints still energised, and the line says to leave it where it rests. Captured on `lerobot:mock`
+registered as `arm-01`, folded to its pose, its release made to keep `elbow_flex` on, since an
+in-memory release otherwise always takes:
 
 ```
 ✗ error: torque still reads on for elbow_flex: cut the power
   torque is off at the rest pose except on elbow_flex, which still read on
-⚠ the arm is in your hands (it was folded to its rest pose and let go of there, because you asked
-for it), but elbow_flex still reads torque on and holds: keep hold of the arm, put it down, and cut
-its power to let go of it
+⚠ the arm lies at its rest pose, folded and let go of there because you asked for it, but
+elbow_flex still reads torque on: leave it where it rests, and cut its power to let go of it
+```
+
+On an arm with no rest pose, released where it stands after Enter, the arm is in your hands with
+those joints energised, and the last two lines read instead:
+
+```
+  torque is off where the arm stands except on elbow_flex, which still read on
+⚠ the arm is in your hands (torque was taken off where it stood, because you asked for it), but
+elbow_flex still reads torque on and holds: keep hold of the arm, put it down, and cut its power to
+let go of it
 ```
 
 Every motor held, away from the rest pose, after both folds missed and Enter at the second
@@ -3021,8 +3031,9 @@ question, so nothing was released and torque is kept. The same arm, every motor 
 ✗ error: torque still reads on for shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll,
 gripper: cut the power
   the arm still reports torque on, so it was not released
-⚠ the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30) and the release did not
-take, so torque was left on and it will not fall as it stands: hold it and cut its power
+⚠ the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30
+deg short) and the release did not take, so torque was left on and it will not fall as it stands:
+hold it and cut its power
 ```
 
 Every motor held at the rest pose, which is where the folded arm is: the close lets go of it
@@ -3040,19 +3051,20 @@ read found: the arm limp in your hands, or the joints still on by name, with the
 what lets go of them. When no read answers, or on an arm with no rest pose, which the close does
 not read, nothing has read the release back, so the close does not say the arm is limp either:
 the call may have stopped at one motor's write and left the motors after it holding. Its line
-says that, and ends on the power switch. The mock's close takes no read of its own, so a mock
-release whose read-back failed always ends this way. Captured on `lerobot:mock` registered as
-`arm-01`, folded to its pose, its read-back made to fail, since an in-memory release otherwise
-always reads back:
+says that, and ends on the power switch, and over an arm let go of at its rest pose it says the
+arm lies in its fold and to leave it there. Captured on `lerobot:mock` registered as `arm-01`,
+folded to its pose, its torque register made to stop answering once the release went out, since
+an in-memory release otherwise always reads back, so the close's own read of it finds nothing
+either:
 
 ```
 ✗ error: torque was taken off and could not be read back: torque is off at the rest pose, and the
-torque register did not answer to confirm it (the capture's stand-in for a register that did not
-answer)
+torque register did not answer to confirm it (ConnectionError: the capture's stand-in for a
+register that did not answer)
   hold the arm as though nothing holds it, and cut its power to be sure
-⚠ the arm is in your hands (it was folded to its rest pose and let go of there, because you asked
-for it), but nothing read its torque back after the release went out, so it may be limp only in
-part: hold it as though nothing holds it, put it down, and cut its power to be sure
+⚠ the arm was folded to its rest pose and its release went out there, but nothing read its torque
+back, so it may still hold itself up in its fold, all of it or part of it: leave it where it rests,
+and cut its power to be sure
 ```
 
 **The same two questions at the end of a run.** A run with you at its terminal puts them itself,
@@ -3103,7 +3115,7 @@ And left alone at the first question:
 ```
 ·  release kept: nobody pressed Enter
 ·  note    nobody pressed Enter, so torque stays on and the arm holds itself up
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 The record says which of those ended each wait. A Ctrl-C at a question, the first of the run or a
@@ -3127,7 +3139,7 @@ questions, and the interrupt landing there:
 ·  release kept: interrupted before the release was sent
 ·  note    the release was interrupted before anything was sent, so torque is as it was
 the release was interrupted before anything was sent, so torque is as it was
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 Either way the close, the summary and the rest of the teardown still happen. When the release is
@@ -3699,8 +3711,9 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 
 ## Status
 
-`lerobot:mock` runs every arm verb through the executor in the test suite, including the
-confirm gate on `pick`, the `holding` precondition on `place` and the heat refusal.
+`lerobot:mock` is `lerobot:real`'s own code over an arm in memory, and runs every arm verb
+through the executor in the test suite, including the confirm gate on `pick`, the `holding`
+precondition on `place` and the heat refusal.
 `lerobot:real` is exercised against a fake arm and a fake policy (verified method names, no
 serial port), and it has now run on one real arm, on 2026-09-15 and again on 2026-09-23.
 

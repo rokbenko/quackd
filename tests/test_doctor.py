@@ -1513,11 +1513,19 @@ class _TwoEyes(LeRobotMock):
     Each row leaves its size out: `probe` fills that in from the frames it actually read, so
     a camera can only claim a size by having handed a picture over."""
 
-    camera_keys = ("top", "side")
-
     def __init__(self, *, blind: tuple[str, ...] = ()) -> None:
         super().__init__()
         self.blind = blind
+
+    @property
+    def camera_keys(self) -> tuple[str, ...]:
+        """Two cameras, whatever the connect opened: the mock draws one view, and this hands it
+        over under both names."""
+        return ("top", "side")
+
+    @camera_keys.setter
+    def camera_keys(self, _opened: tuple[str, ...]) -> None:
+        pass
 
     async def get_frames(self) -> list[CameraFrame]:
         image = await self.get_frame()

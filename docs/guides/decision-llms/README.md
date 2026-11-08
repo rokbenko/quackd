@@ -915,11 +915,11 @@ Here is the estimated reading, on the mock arm with a fake in the server's place
 coming back from it. The `~` is the whole of the difference, and it sits on both numbers:
 
 ```text
-   decide  report_state 0.97 >= 0.60 (0.00 s, ~992 tok ~$0.000042)
+   decide  report_state 0.97 >= 0.60 (0.00 s, ~894 tok ~$0.000038)
 ```
 
-That is 992 tokens rather than the 527 quoted further up, and the arithmetic is on the record:
-this turn's state was 2,669 characters and its questions 1,299, which is `(2669 + 1299) // 4`.
+That is 894 tokens rather than the 527 quoted further up, and the arithmetic is on the record:
+this turn's state was 2,279 characters and its questions 1,299, which is `(2279 + 1299) // 4`.
 Both halves moved. The state grew because a real turn carries a real reading, and the questions
 are smaller than the 527 row's 1,721 because that row was measured by hand before this code
 existed and because the criteria are one line per verb on offer, which is two here and five once

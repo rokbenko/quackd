@@ -2028,11 +2028,11 @@ class LeRobotReal:
             # Whoever is reading this has the arm in their hand. The torque note below would
             # tell them it is holding itself up, which is the one thing it may not be.
             #
-            # Why it is limp, as the mock says it: why it was let go of. It used to fall back
-            # on the rest shortfall (`why`), which `_not_resting` builds by joining the shortfall
-            # to the rest move's reason, and that reason begins with the same shortfall, so the
-            # person holding the arm read it twice and never read that it was let go of for
-            # them to place and never taken hold of again.
+            # Why it is limp, as the mock's own close used to say it: why it was let go of. It
+            # used to fall back on the rest shortfall (`why`), which `_not_resting` builds by
+            # joining the shortfall to the rest move's reason, and that reason begins with the
+            # same shortfall, so the person holding the arm read it twice and never read that it
+            # was let go of for them to place and never taken hold of again.
             limp = self._let_go_why or LET_GO_TO_PLACE
             # A take-hold's torque write went out since the release, and the arm is still in a
             # hand, so it may be energised, and only a torque read since that write says

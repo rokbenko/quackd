@@ -27,6 +27,8 @@ from quackd.flock.pilots import (
     union_problems,
 )
 from quackd.memory import RobotMemory
+from quackd_lerobot.mock import REST
+from quackd_lerobot.verbs import at_rest, rest_goal
 
 MIXED = {
     "duck": RobotSpec("microduck", "mock", "duck"),
@@ -633,7 +635,12 @@ async def test_a_member_with_a_rest_pose_is_put_down_before_its_torque_is_releas
     # the first `rest` is the start of the run, so a member acts from the same arm every
     # time; the second is the teardown, in the window the docstring names
     assert arm.sequence == ["rest", "stop", "rest", "close"], arm.sequence
-    assert arm.actions == [dict(ARM_REST)], "one move, and it really went there"
+    # one move, sent a tick at a time under the step cap, and the stop's hold where it ended:
+    # nothing was sent anywhere but the rest pose, to within the move's tolerance
+    assert arm.actions, "the arm was never moved"
+    for sent in arm.actions:
+        assert at_rest({joint: ARM_REST[joint] for joint in sent}, sent), sent
+    assert at_rest(rest_goal(ARM_REST), arm.joints), f"it really went there: {arm.joints}"
     assert arm.torque is False, "an arm at its rest pose may be let go of"
     assert arm.close_note is None, "so there is nothing to warn about"
 
@@ -649,5 +656,7 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(
 
     arm = built["arm"].transport
     assert "rest" not in arm.sequence, arm.sequence
-    assert arm.actions == [], "nothing was driven anywhere"
+    # the teardown's stop still holds the arm where it stands, which writes the present
+    # position as the goal and drives nothing anywhere
+    assert all(goal == REST[j] for a in arm.actions for j, goal in a.items()), arm.actions
     assert arm.joints["shoulder_lift"] == -90.0, "still where the mock was built"

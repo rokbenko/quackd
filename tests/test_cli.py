@@ -2569,8 +2569,10 @@ def _holding_out(monkeypatch: pytest.MonkeyPatch, holdouts: tuple[str, ...]) -> 
         (
             ("elbow_flex",),
             0,
-            "but elbow_flex still reads torque on and holds: keep hold of the arm, put it down, "
-            "and cut its power to let go of it",
+            # the arm lies in its fold with no hand on it, as the real close reads it; the mock's
+            # own close used to tell the person to put down an arm that was down
+            "but elbow_flex still reads torque on: leave it where it rests, and cut its power "
+            "to let go of it",
         ),
     ],
     ids=["refused after two folds missed", "refused at rest", "one motor held out"],

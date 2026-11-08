@@ -39,7 +39,8 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import HeartbeatError, Intent, TransportError, primary_of
+from quackd.transport.base import DuckState, HeartbeatError, Intent, TransportError, primary_of
+from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
 from quackd_lerobot import JOINTS, LeRobotAdapter, lerobot_manifest, make, published_travel
 from quackd_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
@@ -217,6 +218,17 @@ def test_registry_from_the_manifest_has_joints_not_legs() -> None:
 
 def _executor(adapter: LeRobotAdapter, manifest: Any, **kwargs: Any) -> Executor:
     return Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest, **kwargs)
+
+
+async def _sent_there(adapter: Any, goals: dict[str, float]) -> None:
+    """Send the mock's arm `goals` until it reads there. One send moves a joint at most the step
+    cap, on the mock as on the arm, so a goal further off than that takes several sends."""
+    joints = adapter.transport.joints if isinstance(adapter, LeRobotAdapter) else adapter.joints
+    for _ in range(100):
+        if all(joints[joint] == goal for joint, goal in goals.items()):
+            return
+        assert (await adapter.send_intent(Intent.joint(goals, 1.0))).accepted
+    raise AssertionError(f"the mock's arm never got to {goals}: {joints}")
 
 
 async def test_mock_arm_runs_every_verb_through_the_executor() -> None:
@@ -1821,13 +1833,20 @@ async def test_pick_looks_once_more_before_calling_a_finished_policy_a_failed_gr
 
     Without the second look that is a `pick` reporting nothing held with the object in the
     jaws. It is also what a macOS runner saw on 2026-09-21, where the same race failed
-    `test_real_backend_runs_an_injected_policy_for_pick` once and has not since."""
+    `test_real_backend_runs_an_injected_policy_for_pick` once and has not since.
 
-    class SettlesAfterTheLastPoll(LeRobotMock):
+    Asked of a backend that runs no segment task of its own, whose policy is done by the time
+    its `do` is acknowledged, which is the one `pick` polls (`verbs._pick_polled`). The mock
+    was that backend, and runs the real backend's segments now."""
+
+    class SettlesAfterTheLastPoll(MockTransport):
         """Idle by the time `pick` first looks, and holding only on the read after that."""
 
+        name = "mock"
+        policy_available = True
+
         def __init__(self) -> None:
-            super().__init__()
+            super().__init__(states=[DuckState(policy="idle", posture="unknown")])
             self.looks = 0
             self.watching = False
 
@@ -1835,16 +1854,16 @@ async def test_pick_looks_once_more_before_calling_a_finished_policy_a_failed_gr
             ack = await super().send_intent(intent)
             if intent.kind == "do":
                 self.watching = True  # the policy ran and finished between polls
-                self.policy = "idle"
             return ack
 
         async def get_state(self) -> Any:
-            if self.watching:
-                self.looks += 1
-                # 1 is the read before the loop, 2 is the poll that finds the policy idle
-                # with the grasp still settling, and 3 is the look after the settle
-                self.holding = self.looks >= 3
-            return await super().get_state()
+            state = await super().get_state()
+            if not self.watching:
+                return state
+            self.looks += 1
+            # 1 is the read before the loop, 2 is the poll that finds the policy idle with the
+            # grasp still settling, and 3 is the look after the settle
+            return state.model_copy(update={"holding": self.looks >= 3})
 
     transport = SettlesAfterTheLastPoll()
     adapter = LeRobotAdapter(transport)
@@ -3432,26 +3451,27 @@ async def test_the_mock_arm_goes_to_its_rest_pose_and_records_the_order_it_happe
     mock = LeRobotMock(rest_pose=dict(REST))
     adapter = LeRobotAdapter(mock)
     await adapter.connect()
-    assert (await adapter.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    await _sent_there(adapter, {"shoulder_pan": 30.0})
     assert mock.sequence == []
     result = await adapter.go_to_rest()
     assert result.how == "arrived" and result.reached
     assert mock.actions[-1] == rest_goal(REST), mock.actions
     assert "gripper" not in mock.actions[-1]
-    assert mock.joints["shoulder_pan"] == 0.0
+    # the move ends once the arm is inside the tolerance, where the arm's own move ends
+    assert abs(mock.joints["shoulder_pan"]) <= TOL_DEG, mock.joints
     await adapter.close()
     assert mock.sequence == ["rest", "close"]
     assert mock.torque is False and mock.close_note is None
 
 
 async def test_a_mock_arm_told_to_fail_its_rest_move_stalls_without_moving() -> None:
-    """Offline, goals land the instant they are sent, so the one thing a mock cannot do to
-    itself is fail to arrive. Every caller of the rest move has to handle that, so the mock
-    can be told to."""
+    """Offline nothing is ever in the arm's way, so the one thing a mock cannot do to itself
+    is fail to arrive. Every caller of the rest move has to handle that, so the mock can be
+    told to."""
     mock = LeRobotMock(rest_pose=dict(REST), rest_fails="elbow_flex is stuck against the desk")
     adapter = LeRobotAdapter(mock)
     await adapter.connect()
-    assert (await adapter.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    await _sent_there(adapter, {"shoulder_pan": 30.0})
     sent = len(mock.actions)
     result = await adapter.go_to_rest()
     assert result.how == "stalled" and not result.reached and result.recorded
@@ -3471,7 +3491,7 @@ def _mock_past(joint: str, by: float) -> float:
 
 
 async def test_the_mock_parks_a_pose_past_its_travel_and_lets_go_of_it_the_same_way() -> None:
-    """Offline is where a person rehearses a run, and the mock's `_goto` already clamps like
+    """Offline is where a person rehearses a run, and the mock's goals already clamped like
     the servo, so before this a pose past its travel stalled offline the way it did on the
     bench, and went unnoticed because the mock called any move `arrived` without looking.
     Now it clips, judges, names and releases exactly as the arm does, in the same words, and
@@ -3487,7 +3507,10 @@ async def test_the_mock_parks_a_pose_past_its_travel_and_lets_go_of_it_the_same_
     result = await adapter.go_to_rest()
     assert result.how == "arrived", result.reason
     floor, ceiling = MOCK_RANGES["shoulder_lift"][0], MOCK_RANGES["elbow_flex"][1]
-    assert mock.joints["shoulder_lift"] == floor and mock.joints["elbow_flex"] == ceiling
+    # parked at each edge, inside the half-line's tolerance of it, which is where the arm's own
+    # rest move stops driving
+    assert floor <= mock.joints["shoulder_lift"] <= floor + TOL_DEG, mock.joints
+    assert ceiling - TOL_DEG <= mock.joints["elbow_flex"] <= ceiling, mock.joints
     assert [j for j, _, _ in result.clipped] == ["shoulder_lift", "elbow_flex"]
     assert result.note is not None and "lerobot-calibrate" in result.note
     await adapter.close()
@@ -3522,12 +3545,8 @@ async def test_the_mock_judges_its_own_rest_move_rather_than_assuming_it_arrived
     """A mock whose goals do not land is not a mock that arrived. Its `rest_fails` hook is how
     a test asks for a stall on purpose; this is the other way to get one, a goal that went out
     and did nothing, and it has to be read back like the arm's."""
-
-    class Seized(LeRobotMock):
-        def _goto(self, goals: dict[str, float]) -> None:
-            self.actions.append(dict(goals))
-
-    mock = Seized(rest_pose=dict(REST) | {"elbow_flex": 30.0})
+    mock = LeRobotMock(rest_pose=dict(REST) | {"elbow_flex": 30.0})
+    mock.follower.stuck = set(JOINTS)  # seized: every goal is taken and nothing moves
     adapter = LeRobotAdapter(mock)
     await adapter.connect()
     result = await adapter.go_to_rest()
@@ -4103,7 +4122,7 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     mock = LeRobotMock(rest_pose=dict(REST))
     adapter = LeRobotAdapter(mock)
     await adapter.connect()
-    assert (await adapter.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    await _sent_there(adapter, {"shoulder_pan": 30.0})
     away = await adapter.let_go()
     assert away.how == "refused" and "the arm is not at its rest pose" in away.reason
     assert "shoulder_pan is at 30 with a goal of 0" in away.reason, away.reason
@@ -5301,7 +5320,7 @@ async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks
     mock = LeRobotMock(rest_pose=dict(REST))
     adapter = LeRobotAdapter(mock)
     await adapter.connect()
-    assert (await adapter.send_intent(Intent.joint(away, 1.0))).accepted
+    await _sent_there(adapter, away)
 
     refused = await adapter.let_go()
     assert refused.how == "refused" and "the arm is not at its rest pose" in refused.reason
@@ -5368,7 +5387,7 @@ async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend
     adapter = LeRobotAdapter(transport)
     await adapter.connect()
     if backend == "mock":
-        assert (await adapter.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+        await _sent_there(adapter, {"shoulder_pan": 30.0})
     refused = await adapter.let_go(asked=True)
     assert refused.how == "refused" and "the arm is not at its rest pose" in refused.reason
     assert arm.torque is True
@@ -5422,7 +5441,7 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
     switch is the one way out after it."""
     mock = make("mock", robot_id=name, rest_pose=dict(REST))
     await mock.connect()
-    assert (await mock.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    await _sent_there(mock, {"shoulder_pan": 30.0})
     await mock.close()
     real = make("real", address="COM5", robot_id=name, rest_pose=dict(FOLDED))
     assert getattr(real.transport, "registered_name", None) == name
@@ -5451,7 +5470,7 @@ async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id(
     a person can see is a placeholder."""
     mock = make("mock", rest_pose=dict(REST))
     await mock.connect()
-    assert (await mock.send_intent(Intent.joint({"elbow_flex": 40.0}, 1.0))).accepted
+    await _sent_there(mock, {"elbow_flex": 40.0})
     await mock.close()
 
     arm = FakeArm(step=40.0, stuck=("shoulder_lift",))
@@ -5666,7 +5685,9 @@ async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_w
     mock.release_unread = "a reason made up for this test"
     released = await mock.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on is None, released
-    assert "did not answer to confirm it (a reason made up for this test)" in released.reason
+    # the read's own error, as the real backend quotes every register it could not read
+    said = "did not answer to confirm it (ConnectionError: a reason made up for this test)"
+    assert said in released.reason, released.reason
     await mock.close()
     assert mock.close_note == UNREAD_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), mock.close_note
 

@@ -4,9 +4,10 @@ An arm has no legs, no head and no voice, so its manifest lists none of that: `m
 `go_to`, `search_scan`, `say` and `gaze` do not exist here. What it has is joints, a
 gripper, `place`, and, when a policy is available, `pick` and `manipulate`, each one skill
 intent that the arm's own learned controller executes (the thesis, unchanged). Three
-backends: `mock` (offline, scripted), `real` (LeRobot behind `quackd[lerobot]`, Python 3.12
-or newer, first driven on an arm on 2026-09-15) and `mujoco` (the real backend's own code over
-a physics model of the SO-101, behind `quackd[lerobot-sim]`, for rehearsing a task at home).
+backends: `mock` (the real backend's own code over an arm in memory with a scripted policy,
+offline), `real` (LeRobot behind `quackd[lerobot]`, Python 3.12 or newer, first driven on an
+arm on 2026-09-15) and `mujoco` (the real backend's own code over a physics model of the
+SO-101, behind `quackd[lerobot-sim]`, for rehearsing a task at home).
 """
 
 from __future__ import annotations
@@ -214,8 +215,8 @@ class LeRobotAdapter:
         self.backend = transport.name
         self.robot_id = robot_id or DEFAULT_ID
         self.manifest: RobotManifest | None = None
-        # known before connect for the mock (a class attribute) and for a real backend
-        # with an injected policy; refreshed at connect
+        # known before connect for the mock, whose script is its policy, and for a real
+        # backend with an injected policy; refreshed at connect
         self._policy = bool(getattr(transport, "policy_available", False))
 
     async def connect(self) -> RobotManifest:
@@ -280,8 +281,8 @@ class LeRobotAdapter:
 
     def rests_where_it_reads(self) -> None:
         """The arm's own (`LeRobotReal.rests_where_it_reads`), where it has one: `rest-pose` reads
-        an arm folded by hand, and its close then lets go of it there. The mock lets go of an arm
-        with no pose as it always did, and has nothing to take."""
+        an arm folded by hand, and its close then lets go of it there. The mock and the simulator
+        run the arm's own, and would let go of an arm with no pose without it."""
         rests = getattr(self.transport, "rests_where_it_reads", None)
         if callable(rests):
             rests()
@@ -378,9 +379,10 @@ class LeRobotAdapter:
 
     def set_stop_check(self, check: Callable[[], bool] | None) -> None:
         """Hand the backend a way to hear that a stop was asked for while it connects, or take
-        it away. Passed on to a backend that retries its connect (`LeRobotReal`), and a no-op
-        on one that does not, which is the mock. The agent loop hands its abort flag's `is_set`
-        to any body that has this before it connects, and takes it back afterwards."""
+        it away. Passed on to a backend that retries its connect (`LeRobotReal`, which the mock
+        and the simulator are too), and a no-op on one that does not. The agent loop hands its
+        abort flag's `is_set` to any body that has this before it connects, and takes it back
+        afterwards."""
         forward = getattr(self.transport, "set_stop_check", None)
         if callable(forward):
             forward(check)
@@ -402,8 +404,8 @@ class LeRobotAdapter:
     @property
     def policy_segment(self) -> Any:
         """The policy segment the backend's last `do` started, for `pick` or `manipulate` to
-        wait on, or None on a backend that runs none, the mock. Proxied for `stop_error`'s
-        reason: a verb's `ctx.transport` is this adapter."""
+        wait on, or None on a backend that runs none. Proxied for `stop_error`'s reason: a
+        verb's `ctx.transport` is this adapter."""
         return getattr(self.transport, "policy_segment", None)
 
     @property
@@ -466,8 +468,8 @@ class LeRobotAdapter:
     def policy_served(self) -> dict[str, Any] | None:
         """What the arm's policy is, as it was last heard and with nothing asked now: the
         server's address, redacted, and what it serves, for a policy served by another process
-        (`PolicyLoop.served`), an empty dict for one in this process, and None for an arm with
-        no policy, the mock included, whose policy is its own script."""
+        (`PolicyLoop.served`), an empty dict for one in this process, the mock's own script among
+        them, and None for an arm with no policy."""
         loop = getattr(self.transport, "policy_loop", None)
         return None if loop is None else loop.served()
 
