@@ -5,7 +5,7 @@
 ---
 duck: 1
 name: e125-network-pull
-description: "Raise the shoulder and hold, reporting every step."
+description: "Lift the forearm and hold, reporting every step."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ persona: "Game for anything and honest about this body: commit to the bit, and s
 
 # Task
 
-Raise your shoulder lift slowly to negative 30 degrees and hold, reporting state every step.
+Lift your forearm slowly with the elbow alone until elbow_flex is about 0, where the forearm points about straight up, and hold there, reporting state every step.
 
 ## Strategy
 
