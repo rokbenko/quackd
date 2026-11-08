@@ -8,7 +8,7 @@ it). A test proves UNVERIFIED names stay inside the backend that needs them.
 `quackd doctor` prints every UNVERIFIED list on your machine.
 
 One row below has met hardware: `lerobot:real`, on a LeRobot SO-101 arm, on 2026-09-15 and again
-on 2026-09-23. Eight of the nine bodies here have still never been driven by quackd, and the row
+on 2026-09-23. Nine of the ten bodies here have still never been driven by quackd, and the row
 that has was driven on one arm for two afternoons, the second on quackd 0.12.0. Nothing changed
 since that afternoon has run on it: the rest pose clipped into the travel,
 `quackd robot release` with the fold it now makes before it lets go, the two questions a run
@@ -24,14 +24,17 @@ Every backend carries a tier, in the catalogue and in the second table below, an
 | 🤖 **verified** | The real robot has moved under quackd, and the row names who ran it and the first day it did |
 | 🧪 **bound** | Code that reaches a real robot and has never met one. The row names who answers for its first hardware run and a date |
 | ✅ **rehearsed** | Runs whole tasks with no robot: in a simulator, or against a scripted mock, in CI |
-| 📄 **described** | A body quackd lists and reasons about and drives no part of: one file of its maker's figures. [Described bodies](#described-bodies) lists them |
+| 📄 **described** | A body quackd lists and reasons about and drives no part of: one file of its maker's figures. [Described bodies](#described-bodies) lists them. One backend is described too, `rosarm:ws`: bound code nobody has named an owner for, which refuses to start until somebody does |
 
 The rule since 2026-11-05
 ([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) is that a
 bound backend enters this repository only with a named owner and a date for its first hardware
 run, and a test holds every row to it. The eight bound
 backends that were here before the rule say `grandfathered 0.33.0` where an owner would be, with
-the day the rule was adopted: nobody has promised a run for any of them.
+the day the rule was adopted: nobody has promised a run for any of them. Since 2026-11-08
+([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) bound code
+may also enter with no owner as `described`, refused at `make()` and at `quackd robot add` in
+the rule's words until somebody names a date, and `rosarm:ws` is the one backend that has.
 
 > [!IMPORTANT]
 > `uv pip install quackd` installs the core and no robot at all. Every body below is its own
@@ -48,9 +51,10 @@ the day the rule was adopted: nobody has promised a run for any of them.
 | ToddlerBot | `quackd[toddlerbot]` | `quackd-toddlerbot` |
 | Huebot | `quackd[huebot]` | `quackd-huebot` |
 | MOSS | `quackd[moss]` | `quackd-moss` |
+| Industrial arm on ROS 2 | `quackd[rosarm]` | `quackd-rosarm` |
 
 So `uv pip install "quackd[open_duck]"` buys the Open Duck Mini and nothing else, and
-`quackd[robots]` buys all nine, each with the SDK its real backend needs. Two extras buy the
+`quackd[robots]` buys all ten, each with the SDK its real backend needs. Two extras buy the
 duck and one heavy thing it can do: `quackd[mujoco]` is `quackd-microduck[mujoco]`, the duck
 with its physics simulator, and `quackd[microduck-camera]` is the duck with its WebRTC camera.
 One buys the arm's simulator: `quackd[lerobot-sim]` is `quackd-lerobot[sim]`, the arm with
@@ -59,7 +63,7 @@ MuJoCo and without LeRobot, so it installs on Python 3.11 as well.
 An adapter that is not installed keeps its row in `quackd list-adapters` and in
 `quackd doctor`, marked not installed. Naming one anyway refuses with the extra to type:
 `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`. With nothing installed
-at all, every command that needs a body refuses and names all nine.
+at all, every command that needs a body refuses and names all ten.
 
 | Adapter | `--robot` | Tier | Notes | Upstream file | Page |
 |---|---|---|---|---|---|
@@ -87,6 +91,8 @@ at all, every command that needs a body refuses and names all nine.
 | | `huebot:jsonrpc` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker is writing for the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
 | MOSS | `moss:mock` | ✅ rehearsed | | | [adapters/moss/README.md](moss/README.md) |
 | | `moss:cockpit` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | MOSS's own cockpit for the state, a goal, the explorer and the soft stop, and quackd's own bridge on the rover for the twist, the timed frames, the arm cycle and the litter mission's stop. Every upstream name VERIFIED at the commit read, or UNVERIFIED with what quackd does about it. The client is exercised against a fake of the cockpit and against the bridge in its fake mode over loopback, and twice against MOSS's own cockpit in its demo mode, on Windows and in a Linux container, never run against a rover | [`adapters/moss/src/quackd_moss/upstream_api.py`](../../adapters/moss/src/quackd_moss/upstream_api.py) | |
+| Industrial arm on ROS 2 | `rosarm:mock` | ✅ rehearsed | the ws transport over a fake rosbridge and a fake arm, for each of the four arms: a UR5e, a KUKA LBR iisy 3 R760, a KUKA LBR iiwa 7 R800 and a Yaskawa MotoMini. Each fake is written from reading that driver's source at a pinned commit, and no job runs the transport against a real controller yet | | [adapters/rosarm/README.md](rosarm/README.md) |
+| | `rosarm:ws` | 📄 described | bound code with no owner, so `make()` and `quackd robot add` refuse it in the owner rule's words until somebody names a date for its first hardware run ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). Every name it sends and reads is read at a pinned commit, VERIFIED or UNVERIFIED with what quackd does about it, and the protocol's through rosbridge's own refs. It has met no controller and no robot | [`adapters/rosarm/src/quackd_rosarm/upstream_api.py`](../../adapters/rosarm/src/quackd_rosarm/upstream_api.py) | |
 
 ## Described bodies
 
@@ -98,7 +104,9 @@ limits, no sensors, no safety authority. Its only verbs are `report_state` and `
 pilot handed one is told before it reads a single figure that nothing here moves it. `quackd robot add b2 described:unitree-b2` registers
 one like any other robot; `quackd list-verbs --robot described:unitree-b2` shows the two verbs.
 An address, a camera, a token and a rest pose are refused, since there is no robot to reach, and
-`quackd robot list --probe` says `described: nothing to reach`.
+`quackd robot list --probe` says `described: nothing to reach`. Four of them, the UR5e, the two
+KUKA LBRs and the MotoMini, are also the arms `rosarm:mock` rehearses, from the same files:
+`described:ur5e` is still a body nothing moves.
 Every figure below was read from the page its source names, on the day it says, by one reader,
 and checked by nobody else: nothing here has met quackd on hardware, and nothing here moves.
 

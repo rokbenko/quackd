@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from quackd.adapters.base import CONNECTING_TAKES_TORQUE_OFF
+from quackd.adapters.base import CONNECTING_TAKES_TORQUE_OFF, published_travel, said_past
 from quackd.duckfile.schema import DEFAULT_SEGMENT_S, INSTRUCTION_MAX_CHARS, instruction_line
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import send_or_fail
@@ -384,47 +384,10 @@ def ramp_start(
     return start
 
 
-def published_travel(lo: float, hi: float) -> list[float]:
-    """A joint's travel as the manifest publishes it: to a tenth of a degree, rounded inward.
-
-    Inward, never to nearest, because the published figure is a promise two readers act on.
-    The pilot is told it as the travel, and asks for its ends; `move_joints` clips the start of
-    a ramp into it. The backend refuses any goal outside the travel it computed exactly, and
-    rounding to nearest can move an end outward by up to a twentieth of a degree: the pilot
-    asks for the edge it was shown and is refused, and a ramp from a joint folded past its
-    travel begins a hair outside it and is refused before it has moved. Inward, every published
-    angle is one the backend takes.
-
-    Each end is checked against the float it came from rather than trusted to the arithmetic,
-    because that float is what the backend compares a goal with: ten times a float can round
-    to a whole number the float itself lies a hair short of, and then the tenth it gives is a
-    hair outside. Such an end moves one tenth further in. A travel published a tenth narrower
-    costs nothing; one published a hair wider is the refusal this exists to prevent.
-
-    Here rather than beside the manifest it publishes, because `range_refusal` prints a travel
-    the same way and the manifest's module imports this one."""
-    low = math.ceil(lo * 10.0)
-    if low / 10.0 < lo:
-        low += 1
-    high = math.floor(hi * 10.0)
-    if high / 10.0 > hi:
-        high -= 1
-    return [low / 10.0 + 0.0, high / 10.0 + 0.0]
-
-
-def said_past(value: float, shown_lo: float, shown_hi: float) -> str:
-    """A number outside a travel printed as `shown_lo..shown_hi`, as the sentence saying so
-    prints it: to a tenth, unless a tenth would round it onto that travel, and then as it is.
-
-    A value a few hundredths past an edge is outside it, and its tenth is the edge itself, so a
-    sentence printing the tenth would name a number inside the range it says the value lies
-    outside. The travel printed beside it is `published_travel`, rounded inward, which is never
-    wider than the travel the value was judged against, so the value as it is always lies
-    outside what is printed."""
-    said = f"{float(value):.1f}"
-    if shown_lo <= float(said) <= shown_hi:
-        said = repr(float(value))
-    return said
+# `published_travel` and `said_past` live in the core (`quackd.adapters.base`), since the
+# industrial arm family publishes a travel the same way, and are imported above under their
+# old names: `move_joints` clips the start of a ramp into the published travel, and the backend
+# refuses any goal outside the travel it computed exactly, which is why it is rounded inward.
 
 
 def range_refusal(goals: Mapping[str, float], travel: Mapping[str, Any]) -> str | None:

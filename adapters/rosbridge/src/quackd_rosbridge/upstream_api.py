@@ -58,6 +58,7 @@ def rsp(path: str, line: int | None = None) -> str:
 _ROS = "src/roslibpy/ros.py"
 _CORE = "src/roslibpy/core.py"
 _COMM = "src/roslibpy/comm/comm.py"
+_AUTOBAHN = "src/roslibpy/comm/comm_autobahn.py"
 _PROTO = "ROSBRIDGE_PROTOCOL.md"
 _LOADER = "rosbridge_library/src/rosbridge_library/internal/ros_loader.py"
 _CONV = "rosbridge_library/src/rosbridge_library/internal/message_conversion.py"
@@ -588,6 +589,23 @@ ACTION_RESULT_HANDLER = UpstreamRef(
     "the message is then skipped (comm_autobahn.py lines 35 to 45); result false goes to errback "
     "(lines 179 to 181). A feedback after its result unpacks None and is skipped the same way "
     "(lines 152 to 153), and an op of status has no handler (line 41)",
+)
+ONE_REACTOR = UpstreamRef(
+    "reactor.callFromThread(reactor.stop)",
+    "VERIFIED",
+    src(_AUTOBAHN, 281),
+    "Ros.terminate() stops Twisted's reactor (lines 278 to 284), the one module level reactor "
+    "every roslibpy client in a process runs on (line 12), started once on a daemon thread "
+    "(lines 186 to 191): ending one client so ends every client's socket",
+)
+QUEUED_UNTIL_READY = UpstreamRef(
+    'self.once("ready", callback)',
+    "VERIFIED",
+    src(_AUTOBAHN, 99),
+    "a send handed over while no socket is up waits for the next ready (lines 95 to 99), an action "
+    "goal among them (ros.py lines 291 to 307), and the factory reconnects after any close the "
+    "client did not ask for (lines 109 to 114), so what was queued goes out once the bridge is "
+    "back",
 )
 
 

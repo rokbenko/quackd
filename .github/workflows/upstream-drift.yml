@@ -48,7 +48,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync quackd and its nine adapters, no SDKs
+      - name: Sync quackd and its ten adapters, no SDKs
         # The ref modules import `quackd.upstream` and nothing of any robot's SDK, so the dev
         # extra is enough and nothing heavy is fetched.
         run: uv sync --python 3.12 --extra dev

@@ -147,6 +147,11 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "pick_and_drop": (2, "confirm"),
         "stow_arm": (1, "confirm"),
     },
+    "rosarm": {
+        # every move is put to a person, whatever its confidence (ADR-0078)
+        "move_joints": (None, "confirm"),
+        "report_state": (1, "read"),
+    },
 }
 
 
@@ -203,12 +208,12 @@ def test_every_class_in_the_table_has_a_floor_to_answer_to() -> None:
 def test_move_joints_is_never_a_choice_on_any_body_that_has_one() -> None:
     """The requirement the whole rule was written to satisfy.
 
-    Three bodies offer `move_joints` and all three are refused, for the same reason twice
+    Four bodies offer `move_joints` and all four are refused, for the same reason twice
     over: `positions` is a required object, and its keys — the joint names — are not in the
     schema at all. They live in a `field_validator`, so there is nothing to enumerate even in
     principle, and a classifier that tried would be inventing angles."""
     bodies = [b for b in ADAPTER_NAMES if "move_joints" in _verbs(b)]
-    assert len(bodies) == 3, f"expected three arms, found {bodies}"
+    assert len(bodies) == 4, f"expected four arms, found {bodies}"
     for body in bodies:
         verb = _verbs(body)["move_joints"]
         assert discrete_calls(verb.tool_schema()) is None, f"{body} would author joint angles"

@@ -24,6 +24,7 @@ from quackd_microduck import upstream_api
 from quackd_microduck.sim3d import upstream_api as microduck_rl_api
 from quackd_moss import upstream_api as moss_api
 from quackd_open_duck import upstream_api as open_duck_api
+from quackd_rosarm import upstream_api as rosarm_api
 from quackd_rosbridge import upstream_api as rosbridge_api
 from quackd_toddlerbot import upstream_api as toddlerbot_api
 from quackd_xlerobot import upstream_api as xlerobot_api
@@ -103,6 +104,37 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             # introspection: what a description says, and where it usually is
             "https://github.com/ros/urdfdom",
             "https://github.com/ros/robot_state_publisher",
+        ),
+    ),
+    (
+        rosarm_api,
+        {
+            "adapters/rosarm/upstream_api.py",
+            # the transport under both backends, which lists them among the state's assumptions,
+            # the body records they qualify, and the fake, which reproduces what they say
+            "adapters/rosarm/transport.py",
+            "adapters/rosarm/bodies.py",
+            "adapters/rosarm/fake.py",
+        },
+        (
+            # the binding's refs, imported by name from quackd_rosbridge.upstream_api
+            "https://github.com/gramaziokohler/roslibpy",
+            "https://github.com/RobotWebTools/rosbridge_suite",
+            "https://github.com/ros2/common_interfaces",
+            # the controller, the action and its statuses
+            "https://github.com/ros-controls/ros2_controllers",
+            "https://github.com/ros-controls/control_msgs",
+            "https://github.com/ros2/rcl_interfaces",
+            # the four drivers and the descriptions they read
+            "https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver",
+            "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description",
+            "https://github.com/kuka-ros/kuka_drivers",
+            "https://github.com/kuka-ros/kuka_robot_descriptions",
+            "https://github.com/lbr-stack/lbr_fri_ros2_stack",
+            "https://github.com/Yaskawa-Global/motoros2",
+            "https://github.com/Yaskawa-Global/motoros2_interfaces",
+            "https://github.com/Yaskawa-Global/motoman_ros2_support_packages",
+            "https://github.com/ros-industrial/industrial_core",
         ),
     ),
     (
@@ -211,6 +243,7 @@ IDS = [
     "lerobot_policy",
     "lerobot_endpoint",
     "rosbridge",
+    "rosarm",
     "open_duck",
     "xlerobot",
     "alohamini",
@@ -855,3 +888,56 @@ def test_huebot_and_the_microduck_read_one_protocol() -> None:
     ):
         assert getattr(huebot_api, name) == getattr(upstream_api, name), name
     assert set(huebot_api.NOT_STANDING_LABELS) == set(upstream_api.NOT_STANDING_LABELS)
+
+
+def test_the_industrial_arms_read_the_protocol_through_the_binding() -> None:
+    """The family speaks rosbridge through roslibpy, so every protocol ref it relies on is the
+    rosbridge adapter's own object, imported by name, and a re-pin there moves both (ADR-0075).
+    Its own refs are pinned to full commits, and its UNVERIFIED ones are the ones its page names."""
+    shared = rosarm_api.PROTOCOL_REFS
+    assert len(shared) >= 25
+    for ref in shared:
+        found = [v for v in vars(rosbridge_api).values() if v is ref]
+        assert found, f"{ref.name} is not the binding's own object"
+    own = [ref for ref in rosarm_api.all_refs() if ref not in shared]
+    for ref in own:
+        assert re.search(r"/blob/[0-9a-f]{40}/", ref.source), ref
+    pins = {rosarm_api.PIN, rosarm_api.PIN_UR, rosarm_api.PIN_KUKA, rosarm_api.PIN_LBR}
+    assert all(len(pin) == 40 for pin in pins)
+    assert rosarm_api.PIN_HUMBLE not in " ".join(r.source for r in rosarm_api.all_refs()), (
+        "humble is cited in notes only: the nightly follows one branch per repository"
+    )
+    unverified = {r.name for r in rosarm_api.refs_by_status("UNVERIFIED")}
+    assert unverified == {
+        "STOCK_NAMES",
+        "BRIDGE_NODE_NAME",
+        "STATUS_TYPES_LOADED",
+        "UR_PROTECTIVE_STOP",
+        "IIWA_STATUS",
+        "IIWA_READINGS",
+        "MOTO_FIRST_POINT",
+        "MOTO_SINGLE_GOAL",
+        "ONE_MOVE_WHEN_QUIET",
+        "FAKE_FROM_READING",
+    }
+
+
+def test_the_arm_bodies_take_their_names_from_the_refs_that_read_them() -> None:
+    """A body record's action and joints are the names its driver's files give, as the VERIFIED
+    ref beside them says them: a record changed on one side alone is a name nobody read."""
+    from quackd_rosarm.bodies import BODIES
+
+    ur, iisy, iiwa, moto = (BODIES[t] for t in BODIES)
+    assert ur.action == rosarm_api.UR_ACTION.name
+    assert ", ".join(ur.joints) == rosarm_api.UR_JOINTS.name
+    assert ", ".join(iisy.joints) == rosarm_api.IISY_JOINTS.name
+    assert ", ".join(iiwa.joints) == rosarm_api.IIWA_JOINTS.name
+    assert iiwa.action.startswith(rosarm_api.IIWA_NAMESPACE.name + "/")
+    assert moto.action == "/" + rosarm_api.MOTO_ACTION.name
+    assert moto.joints == tuple(rosarm_api.MOTO_JOINTS.name % n for n in range(1, 7))
+    assert rosbridge_api.GOAL_THREAD_PARAM.name == "send_action_goals_in_new_thread"
+    assert rosbridge_api.BRIDGE_NODE_PARAMS.name == "/rosbridge_websocket"
+    assert rosbridge_api.SVC_ACTION_SERVERS.name == "/rosapi/action_servers"
+    assert (
+        rosarm_api.MSG_FOLLOW_JOINT_TRAJECTORY.name == "control_msgs/action/FollowJointTrajectory"
+    )

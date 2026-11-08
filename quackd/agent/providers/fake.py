@@ -641,6 +641,30 @@ def lerobot_lookout_strategy(obs: Observation, step: int, history: list[Exchange
     )
 
 
+def rosarm_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Read an industrial arm back and report it: where its joints are, whether a move is running
+    and what its driver says about itself, and nothing that moves a joint."""
+    state = obs.features.get("state") or {}
+    extras = state.get("extras") or {}
+    if _count_calls(history, "report_state") == 0:
+        return ToolCall(name="report_state", arguments={})
+    if not extras.get("joints"):
+        return ToolCall(
+            name="declare_failure",
+            arguments={"reason": "the arm reported no joints; a human should check its driver"},
+        )
+    joints = extras.get("joints") or {}
+    where = ", ".join(f"{name} {value:.0f}" for name, value in joints.items())
+    move = extras.get("move") or {}
+    moving = "a move is running" if move.get("status") == "running" else "no move running"
+    driver = extras.get("driver") or {}
+    if driver.get("can_move") is False:
+        says = f"the driver says it cannot move: {driver.get('says')}"
+    else:
+        says = f"the driver says {driver.get('says')}" if driver.get("says") else "no driver word"
+    return ToolCall(name="declare_success", arguments={"reason": f"{where}; {moving}; {says}"})
+
+
 def _result_of(history: list[Exchange], verb: str) -> dict[str, Any]:
     """The newest result of `verb` the pilot was shown, or an empty one."""
     for exchange in reversed(history):
@@ -724,6 +748,7 @@ STRATEGIES: dict[str, Strategy] = {
     "toddlerbot-lookout": toddlerbot_lookout_strategy,
     "lerobot-lookout": lerobot_lookout_strategy,
     "moss-lookout": moss_lookout_strategy,
+    "rosarm-lookout": rosarm_lookout_strategy,
     "find-the-ball": find_the_ball_strategy,
     "favourite-spot": favourite_spot_strategy,
 }

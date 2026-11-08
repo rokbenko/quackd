@@ -94,8 +94,8 @@ jobs:
           python - <<'PY'
           import json
           rows = json.load(open("report.json"))["adapters"]
-          # nine adapters, none here, and the row of bodies quackd only describes (ADR-0077)
-          assert len(rows) == 10, rows
+          # ten adapters, none here, and the row of bodies quackd only describes (ADR-0077)
+          assert len(rows) == 11, rows
           assert not any(r["adapter_installed"] or r["installed"] for r in rows), rows
           (described,) = [r for r in rows if r["kind"] == "described"]
           assert len(described["backends"]) >= 11, described
@@ -133,6 +133,16 @@ jobs:
           grep -q stand_up verbs.txt
           ! grep -q gaze verbs.txt
           ./thin/bin/quackd doctor --robot huebot:mock --json > report.json
+      - name: A family over another package's binding brings that package with it
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 cell
+          uv pip install --python cell dist/quackd-*.whl dist/quackd_rosbridge-*.whl dist/quackd_rosarm-*.whl
+          ./cell/bin/quackd list-verbs --robot rosarm:mock > verbs.txt
+          grep -q move_joints verbs.txt
+          ! grep -q introspect verbs.txt
+          ./cell/bin/quackd doctor --robot rosarm:mock --json > report.json
 
   physics:
     name: physics · mujoco + osmesa

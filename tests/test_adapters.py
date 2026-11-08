@@ -279,6 +279,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "toddlerbot",
         "huebot",
         "moss",
+        "rosarm",
         "described",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
@@ -311,7 +312,9 @@ PARKS_NOTHING = (
     "moss:mock",
     "moss:cockpit",
 )
-"""Every adapter but lerobot: the bodies that hold their own posture when the power goes."""
+"""Every adapter but lerobot and rosarm: the bodies that hold their own posture when the power
+goes. rosarm parks nothing either, and says why in words of its own, which
+tests/test_rosarm_adapter.py holds."""
 
 ADDRESSES = {"huebot:jsonrpc": "tcp://127.0.0.1:9870"}
 """What a body needs to be built at all: huebot:jsonrpc refuses to be built without one,
@@ -331,7 +334,8 @@ ONE_CAMERA = (
 )
 """Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real` and its
 simulator `lerobot:mujoco`, and nothing else, but MOSS's two: its cameras come from the rover
-itself, so it takes no `--camera-url` at all, and tests/test_moss_adapter.py says so."""
+itself, so it takes no `--camera-url` at all, and tests/test_moss_adapter.py says so. rosarm's two
+read no camera either, and tests/test_rosarm_adapter.py says so."""
 
 
 @pytest.mark.parametrize("spec", PARKS_NOTHING)

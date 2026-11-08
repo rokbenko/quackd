@@ -7,7 +7,7 @@ confidence per figure, and nothing a body nobody drives could honestly claim: no
 verbs that move, no limits, no safety authority. The loader builds the `RobotManifest` with
 `report_state` and `stop` as its only verbs, and a pilot handed one is told so in its prompt.
 
-The catalogue's tenth row lists the bodies as its backends, so every path that reads an
+The catalogue's last row lists the bodies as its backends, so every path that reads an
 adapter's name, `--robot`, the registry, a flock's roster, `quackd ui`, reaches one through this
 module as it reaches any other body. The few that must not treat one as a robot to drive ask
 `quackd.adapters.factory.drives`: the fallback when no robot is named, a probe, the registry's
@@ -17,6 +17,7 @@ manifest's `extras.described`.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 from collections.abc import AsyncIterator, Mapping, Sequence
 from functools import cache
@@ -98,6 +99,14 @@ def _data(name: str) -> dict[str, Any]:
         encoding="utf-8"
     )
     return parse_body(name, text)
+
+
+def body_data(name: str) -> dict[str, Any]:
+    """A body file's fields, read once and checked, for a family that drives the body it
+    describes: the industrial arms' (`quackd_rosarm`) takes the maker, the embodiment and the
+    datasheet from here, so the figures live in one file whichever row reaches the body. A copy,
+    so a caller that adds to it changes nothing another one reads."""
+    return copy.deepcopy(_data(name))
 
 
 def manifest_from(name: str, data: Mapping[str, Any], robot_id: str | None = None) -> RobotManifest:
@@ -268,6 +277,7 @@ __all__ = [
     "BodyFileError",
     "DescribedAdapter",
     "DescribedBody",
+    "body_data",
     "body_files",
     "body_manifest",
     "conditions",

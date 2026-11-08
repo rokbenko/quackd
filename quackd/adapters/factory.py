@@ -81,7 +81,7 @@ def _installed() -> dict[str, str]:
 
 
 def adapter_names() -> tuple[str, ...]:
-    """Every adapter quackd can talk about: the nine it publishes, in their fixed order,
+    """Every adapter quackd can talk about: the ten it publishes, in their fixed order,
     then anything else installed here, alphabetically. A name quackd publishes keeps its
     place whether or not it is installed, because the tables that list them are a catalogue
     rather than an inventory."""
@@ -171,7 +171,7 @@ def is_official(name: str) -> bool:
 
 
 ADAPTER_NAMES = tuple(i.name for i in ADAPTERS)
-"""The nine adapters quackd publishes, which every count of adapters follows. The described
+"""The ten adapters quackd publishes, which every count of adapters follows. The described
 row is not among them: it drives nothing (`DESCRIBED_BODIES` is its list)."""
 BACKENDS = {i.name: i.backends for i in ADAPTERS}
 ADAPTER_STATUS = {i.name: i.status for i in ADAPTERS}
@@ -225,7 +225,7 @@ def parse_robot_spec(text: str) -> RobotSpec:
     row = info(adapter)
     backends = row.backends
     if not backend and row.kind == "described":
-        # the nine have a first backend that a bare name means; this row's backends are each a
+        # the adapters have a first backend that a bare name means; this row's backends are each a
         # different robot, and picking the first alphabetically would be picking for you
         raise AdapterError(
             f"{adapter} names no body by itself: --robot {adapter}:<body>, one of "
@@ -279,7 +279,7 @@ def default_spec() -> RobotSpec:
         publishes = ", ".join(n for n in ADAPTER_NAMES if n != "microduck")
         raise NoRobotNamed(
             'no robot adapter is installed: uv pip install "quackd[microduck]" '
-            f"(or {publishes}; quackd[robots] installs all nine), "
+            f"(or {publishes}; quackd[robots] installs all ten), "
             "then --robot <adapter>:<backend>"
         )
     if len(usable) == 1:
@@ -397,12 +397,50 @@ def _takes_policy(spec: RobotSpec, fn: Any) -> None:
         )
 
 
+def robot_type_takers() -> str:
+    """The adapters that take a robot type, as a refusal of one names them: `lerobot has`, or
+    `lerobot and rosarm have`."""
+    takers = [row.name for row in ADAPTERS if row.robot_types]
+    named = takers[0] if len(takers) == 1 else ", ".join(takers[:-1]) + " and " + takers[-1]
+    return f"{named} {'has' if len(takers) == 1 else 'have'}"
+
+
 def _takes_robot_type(spec: RobotSpec, fn: Any) -> None:
     """Refuse a robot type for a body whose adapter drives one kind, rather than drop it: a robot
     registered as another arm would otherwise be described and built as the default one."""
     if not _takes(fn, "robot_type"):
-        takers = " and ".join(row.name for row in ADAPTERS if row.robot_types)
-        raise AdapterError(f"{spec.key} takes no robot type, which only {takers} has")
+        raise AdapterError(f"{spec.key} takes no robot type, which only {robot_type_takers()}")
+
+
+def refusal(spec: RobotSpec) -> str | None:
+    """Why this robot's adapter will not build it, asked before anything is built, or None.
+
+    The adapter module's own `refusal(backend, robot_type)` where it is installed and has one, in
+    the words its `make()` refuses with. Where it is not installed, or is from another release,
+    the catalogue's word: a backend tiered `described` on an adapter's row is bound code nobody
+    has named a date for (ADR-0076), which its adapter refuses to build whatever the robot type.
+    The registry asks this at `quackd robot add` and `robot edit`, so a robot that cannot run is
+    never written down."""
+    row = BY_NAME.get(spec.adapter)
+    if row is not None and row.kind != "adapter":
+        return None
+    try:
+        module = _module(spec.adapter)
+    except AdapterError:
+        # not installed, or from another release, which whatever builds it refuses with what
+        # to reinstall: the catalogue's word is the one this goes by
+        module = None
+    ask = getattr(module, "refusal", None) if module is not None else None
+    if callable(ask):
+        said = ask(spec.backend, spec.robot_type)
+        return str(said) if said else None
+    tier = row.tiers.get(spec.backend) if row is not None else None
+    if tier is not None and tier.name == "described":
+        return (
+            f"{spec.key} is described and not driven: bound code needs a named owner and a date "
+            "for its first hardware run (docs/adr/0076), and nobody has named either"
+        )
+    return None
 
 
 def _takes_map_address(spec: RobotSpec, fn: Any) -> None:

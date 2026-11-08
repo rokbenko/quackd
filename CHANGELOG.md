@@ -9,6 +9,62 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **An industrial arm on ROS 2, the tenth adapter, rehearsed only.** `quackd[rosarm]` installs
+  `quackd-rosarm`, a family over the rosbridge adapter's binding for four arms quackd already
+  described from their makers' figures: a Universal Robots UR5e, a KUKA LBR iisy 3 R760, a KUKA LBR
+  iiwa 7 R800 and a Yaskawa MotoMini, each behind a ROS 2 driver, its maker's for three of them and
+  the LBR-Stack for the iiwa ([docs/adapters/rosarm/README.md](docs/adapters/rosarm/README.md)).
+  `--robot-type` names the arm, and a UR5e is what nobody naming one gets. `rosarm:mock` is the
+  transport `ws` runs, over a fake rosbridge and a fake of each arm's driver, both written from
+  reading their sources at pinned commits, and it is rehearsed: `rosarm-lookout`, a new bundled task
+  that moves nothing, and a slow wave run on all four arms through the agent loop. `rosarm:ws` is
+  bound code nobody has named a date for, so it is tiered described and `make()` refuses it in the
+  owner rule's words
+  ([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). Its verbs
+  are `report_state`, `stop` and `move_joints`. A move is one goal to every joint, inside the travel
+  the robot's own description gives and at most a tenth of each joint's rated speed at its fastest,
+  never sent over a running one, and every move asks a person first, on the mock as on `ws`, unless
+  the run or the MCP session was started with `--yes`, or a script answers on stdin, which answer it
+  as they answer every gate. It has arrived only when every joint reads within half a degree of its
+  goal on `/joint_states`, whatever the controller answered. No goal goes to an arm whose driver has
+  said it cannot move, on the three arms whose drivers say so, and a driver that has said nothing is
+  believed. At connect a bridge that runs action goals on the thread that reads its client is
+  refused, since its cancel would land after the move, in words that name rosbridge_suite issue #909
+  and the flag that fixes it, and so is a description that gives a joint no finite travel or no
+  rated speed above zero. A move is refused too while another is still being watched, and while any
+  joint reads past its travel, and a socket that drops is let go of for good, since roslibpy would
+  send what it held back once it reconnected by itself, by closing this client's socket and never
+  the event loop every roslibpy client in the process shares. The transport keeps the ceiling too,
+  for any intent it is handed, and never takes a rated speed above the stock description's. quackd
+  never powers, enables, un-brakes or un-stops an arm, parks none and drives no tool, so `gripper`,
+  `place`, `pick` and `manipulate` are withheld with why. CI's packaging job installs the wheel
+  beside rosbridge's and lists its verbs. What changes for you: `quackd robot add cell-1 rosarm:mock
+  --robot-type ur5e` registers one, `quackd list-adapters --json` has eleven rows, the industrial
+  arm's before the described one, and the hint after an infeasible verdict names `rosarm` for a
+  payload up to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
+- **`quackd robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
+  anything is written and in the words `make()` refuses it with, so no `robots.json` holds a robot
+  that cannot run. `quackd robot add cell-2 rosarm:ws --robot-type ur5e --address
+  ws://127.0.0.1:9090` exits 1 with `rosarm:ws on a ur5e is described and not driven: bound code
+  needs a named owner and a date for its first hardware run (docs/adr/0076), and nobody has named
+  either for this arm; rosarm:mock rehearses it (docs/adapters/rosarm/README.md#status)`. An adapter
+  answers through a module level `refusal(backend, robot_type)`, and one with none is asked through
+  the catalogue, where a backend tiered described on an adapter's row is refused. An adapter from
+  another release is asked nothing and the catalogue's tier is the word, and its run refuses the
+  release itself, as before. `--robot-type`'s help names every adapter that takes one and its types,
+  and a robot type given to an adapter that takes none is refused as one `which only lerobot and
+  rosarm have`.
+- **What an adapter over another's package can build on.** `quackd.adapters.described.body_data`
+  hands a package a copy of a body file's figures, which the arms' manifests take theirs from, so
+  `described:ur5e` and `rosarm:mock` on a UR5e carry the same figures. `published_travel` and
+  `said_past` moved from the SO-101's verbs to `quackd.adapters.base`, where any arm's verbs can use
+  them, and `quackd_lerobot.verbs` still has them. `quackd_rosbridge.ws.build_roslibpy` builds
+  roslibpy's client and its topic, service and action clients for any transport over rosbridge, and
+  `param_text` reads a parameter rosapi returns. The rosbridge base describes itself as it did,
+  which `tests/test_rosbridge_adapter.py` pins by the digests of its manifests from before the move.
+
 ### Changed
 
 - **quackd reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** quackd
@@ -161,6 +217,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `server up` line carries the `detector=color_blob` it printed before this change too, and the time
   a move on the mock shows is said to be the wall's. `.env.example` says the mock reads
   `QUACKD_LEROBOT_MAX_STEP_DEG` as the arm and its simulator do.
+- **ADR-0078, an industrial arm is moved one confirmed goal at a time, and never brought up by
+  quackd.** The industrial arm family's own calls, which no earlier record covers: quackd sends a
+  goal and its cancel and nothing that powers, enables, un-brakes or un-stops an arm, parks none,
+  asks a person before every move, refuses a bridge that cannot cancel in time, and says that when
+  it goes quiet one move runs on, at most 12 s long
+  ([docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)).
+  [ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) is amended by
+  a dated note: bound code may also enter with no owner when its backend is tiered described and its
+  `make()` refuses it in that record's words until somebody names a date, which a test holds, and
+  `rosarm:ws` is the first.
+- **The industrial arm's page, and ten adapters wherever quackd counts them.**
+  [docs/adapters/rosarm/README.md](docs/adapters/rosarm/README.md) says what is rehearsed and what
+  is owed, what the bridge has to run, the address and its keys, the four arms' drivers side by
+  side, the verbs offered and withheld, what stops an arm, its units and limits, and every ref it
+  reads by, VERIFIED and UNVERIFIED, the binding's among them. The rosbridge page lists the action
+  refs the family reads through it. The README, its badge, the guides, the concepts pages,
+  CONTRIBUTING and RELEASING count ten adapters and eleven distributions; the status page, the
+  safety page's other bodies, the manifest spec, the docs map and the licences page carry the arm;
+  and the architecture picture draws it in the arm family's box, now titled Arm, since a rest pose,
+  a fold and a hand-off are the servo arm's alone. The architecture page's row for Huebot no longer
+  says its transport is a copy of the Microduck's, which 0.33.0 made one record over the Microduck's
+  own.
 
 ### Known limitations
 
@@ -175,6 +253,35 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
   robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
   the lift on the newer host is not settled.
+- **The industrial arm has met nothing real.** The fake bridge and the fake arms are written from
+  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, and nothing
+  has compared them with a running controller. A job in CI against ros2_control's mock hardware and
+  a stock JointTrajectoryController, in a `ros:jazzy` and a `ros:humble` container, is what would,
+  and it is owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an
+  owner and a date for one. Each body's names, its action, joints, readings and status topics, are a
+  stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
+  joints, and the connect checks the action and the joints against what the bridge lists; a status
+  topic a cell names otherwise is never read, and then `can_move` believes the driver.
+- **When quackd goes quiet in the middle of a move, the arm finishes that move.** rosbridge cancels
+  nothing for a client that has gone, the JointTrajectoryController's own timeout is off by default,
+  and MotoROS2 is read to watch only its own agent, so the bound is one move, at most 12 s at the
+  speed asked, after which the arm holds. The heartbeat cancels what it can reach while quackd runs,
+  and the pendant's stop is the brake.
+- **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
+  reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
+  hold the instant between. A socket that is already down is never handed one.
+- **In one process, a rosbridge base's close ends the industrial arm's socket too.** The base's
+  transport ends roslibpy's event loop when it closes, which every roslibpy client in the process
+  shares, so a flock of a base and an arm loses the arm's link, its readings and its cancel, when
+  the base's run ends first. The arm's own transport closes only its own socket.
+- **After an abort or a timeout, the executor's own stop says it was sent even when this arm's
+  cancel could not go.** The `stop` verb reads the arm's word and says so, and the executor
+  (`Executor._stop_after`) does not yet, on any body that reports an undelivered stop.
+- **Two arms answer less than the rest.** On the iiwa the LBR-Stack's stock open loop, in its
+  position mode, reports what was sent rather than where the arm is, so quackd's own arrival check
+  there proves only that the goal was played, and nothing quackd reads says whether that arm can
+  move. On the MotoMini, a goal that reaches an arm whose energy saving function has turned its
+  servos off makes MotoROS2 turn them on itself, which nothing quackd sends can rule out.
 
 ## [0.33.0] — 2026-11-07
 

@@ -84,7 +84,7 @@ only. Use `tegrastats`, whose `GR3D_FREQ` field is the GPU, or `jtop` from `jets
 for the same numbers with a screen around them. The host daemon reads one `tegrastats` line
 for `quackd doctor --host`.
 
-**Two of quackd's nine bodies can carry a Jetson.** A ToddlerBot has one on its back,
+**Two of quackd's ten bodies can carry a Jetson.** A ToddlerBot has one on its back,
 and `bridge/toddlerbot/` is the daemon that runs there
 ([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)), and one of MOSS's builds puts
 a Jetson Orin Nano Super in the rover, where MOSS's own stack runs and quackd's bridge beside it

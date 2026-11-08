@@ -61,6 +61,7 @@ def test_bundled_list() -> None:
         "favourite-spot",
         "arm-grip-check",
         "moss-lookout",
+        "rosarm-lookout",
     }
 
 

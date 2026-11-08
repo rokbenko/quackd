@@ -3,22 +3,23 @@
 An adapter is how a robot joins quackd. It answers one question, "what is this body and
 what can it do", as a `RobotManifest`, and it moves the body through intents the robot's
 own controllers execute. Everything else (the loop, the executor, the `.duck` contract,
-the MCP server) is shared. quackd ships nine: `microduck`,
-`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`, `toddlerbot`, `huebot` and `moss`. This page is the recipe; [ADR-0017](../adr/0017-robot-adapters-and-manifest.md),
+the MCP server) is shared. quackd ships ten: `microduck`,
+`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`, `toddlerbot`, `huebot`, `moss` and `rosarm`. This page is the recipe; [ADR-0017](../adr/0017-robot-adapters-and-manifest.md),
 [ADR-0018](../adr/0018-core-verbs-extensions-aliases.md) and
 [ADR-0022](../adr/0022-per-adapter-upstream-refs.md) are the reasons.
 
 An adapter is its own distribution. `uv pip install quackd` installs the loop and no robot,
 and each body arrives as a package of its own: `quackd-microduck`, `quackd-lerobot`,
 `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`,
-`quackd-toddlerbot`, `quackd-huebot`, `quackd-moss`, each fetched by the extra you already type
-(`quackd[lerobot]`, and `quackd[robots]` for all nine). An installed package announces itself through the
-`quackd.adapters` entry point group, and that group is the only way the core finds one.
+`quackd-toddlerbot`, `quackd-huebot`, `quackd-moss`, `quackd-rosarm`, each fetched by the extra
+you already type (`quackd[lerobot]`, and `quackd[robots]` for all ten). An installed package
+announces itself through the `quackd.adapters` entry point group, and that group is the only
+way the core finds one.
 
 > [!NOTE]
-> That entry point is the whole of the contract, so the nine above have no privileges you
+> That entry point is the whole of the contract, so the ten above have no privileges you
 > do not have. A robot quackd has never heard of can be published to PyPI by anyone, and
-> `quackd list-adapters` finds it the moment it is installed, listed after the nine. The
+> `quackd list-adapters` finds it the moment it is installed, listed after the ten. The
 > rest of this page is written for an adapter that lands in this repository, because that is
 > the longer version; [publishing one yourself](#publishing-one-yourself) says which of it
 > you can skip.
@@ -77,12 +78,12 @@ quackd = { workspace = true }
 
 | Line | Why it is that way |
 |---|---|
-| `dependencies = ["quackd>=0.33.0,<0.34"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own nine start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../../RELEASING.md)) |
+| `dependencies = ["quackd>=0.33.0,<0.34"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own ten start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../../RELEASING.md)) |
 | `[project.optional-dependencies] sdk` | the library the real backend imports, and only that backend. A machine without it still gets `lerobot:mock`, still validates a `.duck` against the arm and still prints it in `list-adapters`. `quackd[lerobot]` in the core pins `quackd-lerobot[sdk]`, so the extra a reader types buys both halves. An adapter whose robot side you ship yourself declares no `sdk` at all: `quackd-open-duck` and `quackd-toddlerbot` have none |
 | the environment marker | LeRobot needs Python 3.12 and pulls torch. The marker is what keeps the lock solvable on 3.11, where this package still installs and the mock still runs |
 | `[project.entry-points."quackd.adapters"]` | `lerobot = "quackd_lerobot"` is the robot's name mapped to the module carrying `describe`, `make`, `implementations` and `conditions`. This is how quackd finds it, and the only way it finds a third party's |
-| `[tool.hatch.version] path` | the version lives in `src/quackd_lerobot/__init__.py` as `__version__`, because an adapter's sdist holds only its own source and cannot read the core's. `scripts/set_version.py X.Y.Z` writes all nine at once |
-| `[tool.uv.sources] quackd = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync --extra dev` install the core and all nine editable. An adapter published from somewhere else deletes this block and depends on the released core |
+| `[tool.hatch.version] path` | the version lives in `src/quackd_lerobot/__init__.py` as `__version__`, because an adapter's sdist holds only its own source and cannot read the core's. `scripts/set_version.py X.Y.Z` writes all eleven at once, the core's among them |
+| `[tool.uv.sources] quackd = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync --extra dev` install the core and all ten editable. An adapter published from somewhere else deletes this block and depends on the released core |
 
 The `README.md` is the package's PyPI page. Keep it to what the body is, the one command
 that installs it, what has actually been run against hardware, and a link to the full page
@@ -207,7 +208,7 @@ nothing and has no entry.
 
 The page draws them as Markdown, so put addresses and commands in backticks. Keep `default`
 and `token_env` your transport's own: the page tells a person what quackd uses when they leave
-the address empty, and the nine's are held to their transports' constants by
+the address empty, and the ten's are held to their transports' constants by
 `tests/test_adapters_connect.py`. A block that cannot be read is left out and your adapter kept,
 as doctor treats its rows: it is help, not a contract.
 
@@ -232,7 +233,7 @@ A row quackd publishes carries a tier for every backend, a family and a route, i
 `quackd/adapters/catalogue.py`
 ([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md),
 [ADR-0075](../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). Your module may declare the same three, and
-`quackd list-adapters` then prints your tiers as it prints the nine's and `--json` carries
+`quackd list-adapters` then prints your tiers as it prints the ten's and `--json` carries
 them. A module that declares none keeps its `STATUS` line.
 
 | Attribute | What it is |
@@ -328,11 +329,11 @@ arms, the mock's cannot either. A mock that is easier than the body is a task th
 and fails there, and it is the only kind of bug this repository cannot catch for you.
 
 Then the real backend, and the shape of that depends entirely on what the robot gives you.
-Two of the nine adapters import an SDK. The others could not.
+Three of the ten adapters import an SDK, one of them through another's. The others could not.
 
 | Route | When | Who does it | What it costs |
 |---|---|---|---|
-| **Import the SDK** | upstream ships an installable package with a client | `lerobot:real`, `rosbridge:ws` | an optional extra, a lazy import inside `connect()`, a lock around a synchronous SDK |
+| **Import the SDK** | upstream ships an installable package with a client | `lerobot:real`, `rosbridge:ws`, and `rosarm:ws` through rosbridge's builder | an optional extra, a lazy import inside `connect()`, a lock around a synchronous SDK |
 | **Speak its wire** | upstream ships a host process but is not installable, or installing it would drag in torch and a Python floor | `xlerobot:zmq`, `alohamini:zmq` | reading the wire from source rather than the docs, and owning the framing yourself |
 | **Ship the robot side** | upstream has no network API of any kind | `open_duck:bridge`, `toddlerbot:bridge` | a daemon in `bridge/`, a protocol you define at both ends, and everything below |
 
@@ -407,10 +408,10 @@ What the three rules above actually cost, beyond writing it:
 
 ### A simulator, if the cartoon world already draws the body
 
-Four of the nine bodies here ship a `sim2d` backend. The arena itself stayed in the core
+Four of the ten bodies here ship a `sim2d` backend. The arena itself stayed in the core
 (`quackd/sim2d/`, with `quackd/transport/mock.py` beside it) when the robots moved out into
 their own packages, because neither was ever one robot's: the Microduck uses `Sim2DTransport`
-as it is and the other three subclass it, and seven of the nine mocks draw their synthetic
+as it is and the other three subclass it, and seven of the ten mocks draw their synthetic
 frame with `quackd/sim2d/render.py`. It is worth writing when the shared 2D world can represent the
 body honestly and the robot has a task worth running end to end; it is not worth writing for a
 body the world would have to lie about. It earns a ✅ only with a seeded acceptance sweep that
@@ -542,6 +543,19 @@ changes. The row for your refs in `tests/test_upstream_api.py` names your `body.
 spell them, and the family's package may not: `tests/test_microduck_body.py` holds that, and the
 digest of every description either body can give.
 
+The industrial arms are the other shape: a new family over a binding another package already
+has. Nobody had driven the four arms `rosarm` describes, so its verbs, its transport, its body
+records and its fake are its own, in `adapters/rosarm/`. What it shares is the wire. Its
+transport builds roslibpy through `quackd_rosbridge.ws.build_roslibpy`, the one builder the
+wheeled base uses too, and its `upstream_api.py` imports the protocol's refs from
+`quackd_rosbridge.upstream_api` by name, so a re-pin of rosbridge moves the arms with it. The
+refs the arms need and the base does not, the action operations among them, are read and
+pinned in the binding's file all the same, because the protocol is the binding's. Its
+`pyproject.toml` depends on `quackd-rosbridge` in the core's window, and its `sdk` extra is the
+binding's own, `quackd-rosbridge[sdk]`, so roslibpy is named in one place.
+`tests/test_upstream_api.py` holds every protocol ref the arms rely on to be the binding's own
+object, and `tests/test_workspace.py` holds the two windows together.
+
 Every backend carries a **tier**
 ([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)): described,
 a body quackd lists and reasons about from one YAML and drives no part of; rehearsed, a mock or
@@ -555,6 +569,9 @@ nobody here can run enters as a described body, one YAML under `quackd/adapters/
 [CONTRIBUTING.md](../../CONTRIBUTING.md#add-a-described-body) is the recipe), or is
 published out of tree as the last section says, where it needs nothing from this repository.
 The eight bound backends that were here before the rule are grandfathered, and their rows say so.
+Bound code with no owner may also enter as `described`, refused by its `make()` in the rule's
+words until somebody names a date, which is how `rosarm:ws` is here
+([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)).
 
 ## The checklist
 
@@ -589,12 +606,13 @@ Then, for one quackd publishes:
    `Connect` block for each real backend, which a row in `tests/test_adapters_connect.py` holds
    to the transport's constants. A backend that reaches a robot is `bound`, and its tier names
    who answers for its first hardware run and the date: `tests/test_described.py` refuses a
-   bound row without both. Then `python docs/assets/architecture.py` redraws the picture on the
+   bound row without both, and a `described` one whose `make()` does not refuse it in the rule's
+   words for every robot type. Then `python docs/assets/architecture.py` redraws the picture on the
    README and on [concepts/architecture.md](../concepts/architecture.md#four-layers) with your
    robot in the boxes its family and route name, and a robot that speaks a wire no adapter has
    spoken needs that wire's label in the script's `WIRES` first, which the script says. The
    catalogue is
-   strings and imports nothing, which is what lets the table print the whole nine on a machine
+   strings and imports nothing, which is what lets the table print the whole ten on a machine
    with none of them installed, each marked "not installed". Append, never insert: the tables
    that print these rows are order sensitive and a test pins them.
 7. A `quackd[<name>]` extra in the core's `pyproject.toml` pointing at `quackd-<name>` (with
@@ -616,7 +634,7 @@ machine where it is installed:
 
 | What happens | Why |
 |---|---|
-| `quackd list-adapters` shows your robot, after the nine and alphabetically among any others | `adapter_names()` reads the entry point group and appends what it does not publish |
+| `quackd list-adapters` shows your robot, after the ten and alphabetically among any others | `adapter_names()` reads the entry point group and appends what it does not publish |
 | `--robot <yours>:<backend>` builds the body | the factory imports your module and calls its `make()` |
 | `quackd list-verbs`, `quackd validate`, the MCP tool list and the prompt all know your verbs | they come from your manifest, the same as everyone's |
 | `quackd doctor` prints your upstream pins and your probes | from your `UPSTREAMS` and `doctor_rows()` |

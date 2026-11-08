@@ -56,7 +56,7 @@ def connect(adapter: str, backend: str) -> Any | None:
 
     try:
         known = info(adapter)
-    except Exception:  # an adapter that is not installed and is not one of the nine
+    except Exception:  # an adapter that is not installed and is not one of the ten
         return None
     return dict(getattr(known, "connect", None) or {}).get(backend)
 

@@ -1,10 +1,10 @@
 """The bodies quackd only describes (ADR-0077), and the tiers every backend carries (ADR-0076).
 
 A described body is one YAML under `quackd/adapters/bodies/` and no code, reached as
-`described:<name>` through the catalogue's tenth row. What these tests hold is the honesty of
+`described:<name>` through the catalogue's last row. What these tests hold is the honesty of
 that: every figure names a source and the day it was read, the body's only verbs are
 `report_state` and `stop`, every path that could claim to reach a robot is refused, the prompt
-says quackd drives no part of it, and the tenth row never counts as an adapter anywhere an
+says quackd drives no part of it, and the last row never counts as an adapter anywhere an
 adapter is counted. The tier tests hold the owner rule: bound and verified code names who
 answers for it and when.
 """
@@ -310,15 +310,25 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
         f" By their makers' figures alone, {FRANKA} could too, and quackd drives no part of it: "
         "each is a described body."
     ), hint
-    # nobody quackd drives carries 3 kg, and six described bodies do by their makers' figures:
-    # the first sentence still says no robot here could, and the last names three and counts
-    nobody = solo_hint({"payload_kg": 3.0}, None)
-    assert nobody.startswith("No robot installed here meets needs payload_kg=3"), nobody
-    assert "the most is toddlerbot" in nobody, "the most is about bodies quackd drives"
-    assert nobody.endswith(
+    # of the bodies quackd drives, the industrial arm's rehearsal carries 3 kg by its UR5e's
+    # figure, and six described bodies do by their makers': the first sentence names it, the
+    # last names three and counts, and each says which kind of body it names
+    three = solo_hint({"payload_kg": 3.0}, None)
+    assert three.startswith("By their datasheets, rosarm could (needs payload_kg=3)."), three
+    assert three.endswith(
         f" By their makers' figures alone, {FRANKA}, {DESCRIBED}:kuka-lbr-iisy-3-r760, "
-        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 3 more could, and quackd drives no part of them: "
-        "each is a described body."
+        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 3 more could too, and quackd drives no part of "
+        "them: each is a described body."
+    ), three
+    # nobody quackd drives carries 6 kg, and two described bodies do: the first sentence still
+    # says no robot here could, with the most about bodies quackd drives
+    nobody = solo_hint({"payload_kg": 6.0}, None)
+    assert nobody.startswith("No robot installed here meets needs payload_kg=6"), nobody
+    assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies quackd drives"
+    assert nobody.endswith(
+        f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 and "
+        f"{DESCRIBED}:menlo-asimov-1 could, and quackd drives no part of them: each is a described "
+        "body."
     ), nobody
     assert "described" not in solo_hint({"payload_kg": 500.0}, None)
     assert solo_hint({}, None) == ""
@@ -337,7 +347,7 @@ def test_a_described_body_is_never_the_default_robot(monkeypatch: pytest.MonkeyP
 
 
 def test_the_row_names_no_body_by_itself() -> None:
-    """The nine have a first backend a bare name means. This row's backends are each a different
+    """The ten have a first backend a bare name means. This row's backends are each a different
     robot, so a bare `--robot described` is refused with the bodies there are."""
     from quackd.adapters.factory import parse_robot_spec
 
@@ -345,7 +355,7 @@ def test_the_row_names_no_body_by_itself() -> None:
         parse_robot_spec(DESCRIBED)
     assert "--robot described:<body>" in str(e.value) and "unitree-b2" in str(e.value)
     assert parse_robot_spec("described:unitree-b2").key == "described:unitree-b2"
-    assert parse_robot_spec("microduck").key == "microduck:sim2d", "the nine keep their first"
+    assert parse_robot_spec("microduck").key == "microduck:sim2d", "the ten keep their first"
 
 
 def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_path: Path) -> None:
@@ -574,10 +584,29 @@ def test_every_backend_has_a_tier_and_bound_code_names_its_owner(info: AdapterIn
             # for; a verified one's is the day it ran
             assert when <= dt.date.today(), (info.name, backend)
             assert tier.owner != GRANDFATHERED, "a run that happened has somebody's name on it"
-        if tier.name == "described":
-            assert info.kind == "described", f"{info.name}:{backend} is described on an adapter"
+        if tier.name == "described" and info.kind == "adapter":
+            # bound code nobody has named a date for, which an adapter may carry only where its
+            # make() refuses it in the owner rule's words, for every robot type (ADR-0076)
+            _refused_by_the_owner_rule(info, backend)
     if info.kind == "described":
         assert {tier.name for tier in info.tiers.values()} == {"described"}
+
+
+OWNER_RULE = "bound code needs a named owner and a date for its first hardware run (docs/adr/0076)"
+"""The words every refusal of bound code nobody answers for carries, the Koch's included."""
+
+
+def _refused_by_the_owner_rule(info: AdapterInfo, backend: str) -> None:
+    from quackd.adapters.factory import refusal
+
+    for robot_type in info.robot_types or (None,):
+        spec = RobotSpec(info.name, backend, robot_type=robot_type)
+        with pytest.raises(AdapterError) as refused:
+            make_adapter(spec)
+        said = str(refused.value)
+        assert OWNER_RULE in said, (info.name, backend, robot_type, said)
+        # the registry's door asks the same question and is told the same words
+        assert refusal(spec) == said, (info.name, backend, robot_type)
 
 
 @pytest.mark.parametrize("info", ADAPTERS, ids=lambda i: i.name)
@@ -589,10 +618,14 @@ def test_an_adapter_names_its_family_and_its_route(info: AdapterInfo) -> None:
         assert info.family[1] == "arm", "a second family is a body's arms"
     assert info.route and all(r in ROUTES for r in info.route), info.name
     # every simulator and mock is rehearsed, and every backend with a connect block reaches a
-    # robot, which is what bound and verified mean
+    # robot, which is what bound and verified mean; a backend described on an adapter is bound
+    # code its make() refuses (above), and has no connect block, since nobody can connect it
     reaching = {b for b, t in info.tiers.items() if t.name in ("bound", "verified")}
+    refused = {b for b, t in info.tiers.items() if t.name == "described"}
     assert reaching == set(info.connect), info.name
-    assert all(info.tiers[b].name == "rehearsed" for b in info.backends if b not in reaching)
+    assert all(
+        info.tiers[b].name == "rehearsed" for b in info.backends if b not in reaching | refused
+    )
 
 
 def test_the_nine_are_grandfathered_and_say_so() -> None:
@@ -606,6 +639,8 @@ def test_the_nine_are_grandfathered_and_say_so() -> None:
     for name, backend in bound:
         tier = BY_NAME[name].tiers[backend]
         assert (tier.owner, tier.date) == (GRANDFATHERED, RULE_ADOPTED), (name, backend)
+    # the industrial arms came after the rule, and their bound code waits for a date
+    assert BY_NAME["rosarm"].tiers["ws"].name == "described"
     (verified,) = [
         (info.name, b) for info in ADAPTERS for b, t in info.tiers.items() if t.name == "verified"
     ]

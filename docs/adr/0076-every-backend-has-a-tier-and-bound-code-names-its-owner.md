@@ -1,6 +1,12 @@
 # ADR-0076: Every backend has a tier, and bound code names its owner
 
-**Status:** accepted · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (an adapter is a family, a body file and a binding) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md), whose "no row gets ✅ unless we exercised it" becomes one of four tiers · Implemented in 0.33.0 in `quackd/adapters/catalogue.py` (the `Tier` on every backend) and the tests that hold it · Documented in [docs/adapters/status.md](../adapters/status.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md#add-an-adapter)
+**Status:** accepted, amended · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (an adapter is a family, a body file and a binding) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md), whose "no row gets ✅ unless we exercised it" becomes one of four tiers · Implemented in 0.33.0 in `quackd/adapters/catalogue.py` (the `Tier` on every backend) and the tests that hold it · Documented in [docs/adapters/status.md](../adapters/status.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md#add-an-adapter)
+
+**Amended 2026-11-08 by [ADR-0078](0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md):**
+Bound code may also enter with no owner when its backend is tiered `described` and its `make()`
+refuses it in this record's words until somebody names a date, as the Koch's arm type is
+refused; a test holds every such refusal, and the day a date is named the backend becomes
+`bound` with that owner and date. `rosarm:ws` is the first such backend.
 
 ## Context
 

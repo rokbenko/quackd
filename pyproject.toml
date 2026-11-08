@@ -5,13 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "quackd"
 dynamic = ["version", "readme"]
-description = "One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Microduck, Huebot, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot, MOSS and ROS bases."
+description = "One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Microduck, Huebot, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot, MOSS, ROS bases and industrial arms on ROS 2."
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
 keywords = [
   "microduck", "huebot", "open-duck-mini", "lerobot", "so-101", "xlerobot", "alohamini", "toddlerbot", "moss", "humanoid", "ros", "ros2", "rosbridge",
+  "rosarm", "industrial-arm", "ur5e", "kuka", "motoman",
   # "robot-fleet" is a PyPI search term people type, and the one place the retired word stays on purpose.
   "robotics", "embodied-ai", "physical-ai", "llm-agents", "multi-robot", "robot-fleet",
   "mcp", "model-context-protocol", "mujoco",
@@ -116,6 +117,7 @@ robots = [
   "quackd-toddlerbot>=0.33.0,<0.34",
   "quackd-huebot>=0.33.0,<0.34",
   "quackd-moss>=0.33.0,<0.34",
+  "quackd-rosarm[sdk]>=0.33.0,<0.34",
 ]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
@@ -149,6 +151,10 @@ lerobot-sim = ["quackd-lerobot[sim]>=0.33.0,<0.34"]
 # imports. Install it where the policy runs, on the laptop beside the arm or on a rented GPU.
 lerobot-vla = ["quackd-lerobot[vla]>=0.33.0,<0.34"]
 rosbridge = ["quackd-rosbridge[sdk]>=0.33.0,<0.34"]
+# An industrial arm on ROS 2 through rosbridge: a family over the rosbridge package's binding, so
+# it brings that package and, through its extra, the same roslibpy. Rehearsed only: its ws backend
+# refuses every arm until an owner names a date for its first hardware run (ADR-0076).
+rosarm = ["quackd-rosarm[sdk]>=0.33.0,<0.34"]
 # XLeRobot is not an installable package: its own install is copying files into a lerobot
 # tree. So quackd speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
 # the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot/README.md).
@@ -193,6 +199,7 @@ dev = [
   "quackd-toddlerbot",
   "quackd-huebot",
   "quackd-moss",
+  "quackd-rosarm",
   # The one robot SDK dev carries, because it is the only way the xlerobot wire protocol is
   # exercised for real: tests/test_xlerobot_host.py runs quackd's client against a fake host
   # over loopback sockets. It is a small pure wheel on every platform CI runs, unlike torch
@@ -237,6 +244,7 @@ quackd-alohamini = { workspace = true }
 quackd-toddlerbot = { workspace = true }
 quackd-huebot = { workspace = true }
 quackd-moss = { workspace = true }
+quackd-rosarm = { workspace = true }
 
 [tool.hatch.version]
 path = "quackd/__init__.py"
@@ -295,6 +303,7 @@ known-first-party = [
   "quackd_moss",
   "quackd_lerobot",
   "quackd_open_duck",
+  "quackd_rosarm",
   "quackd_rosbridge",
   "quackd_toddlerbot",
   "quackd_xlerobot",
@@ -311,7 +320,7 @@ ignore = ["RUF012", "B008"]
 "tests/**" = ["T20"]
 # The scripts that build the README's assets are run by hand and report as they go.
 "docs/assets/*.py" = ["T20"]
-# Run by hand at a release and reports which of the ten files it rewrote, which is the
+# Run by hand at a release and reports which of the eleven files it rewrote, which is the
 # whole of its user interface.
 "scripts/*.py" = ["T20"]
 # The run sheet's two helpers are run by hand too, and what they print is what they are for.

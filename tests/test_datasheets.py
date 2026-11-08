@@ -19,7 +19,7 @@ from quackd_microduck import upstream_api as up
 from quackd_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
-# the described bodies (ADR-0077) are held to the same honesty as the nine: a source per figure
+# the described bodies (ADR-0077) are held to the same honesty as the ten: a source per figure
 SPECS += [RobotSpec(DESCRIBED, body) for body in DESCRIBED_BODIES]
 
 

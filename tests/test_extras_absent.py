@@ -11,7 +11,8 @@ import pytest
 from quackd.adapters.catalogue import BY_NAME
 
 ADAPTERS = tuple(BY_NAME)
-"""The nine quackd publishes, in the order every table that prints them uses."""
+"""The ten quackd publishes and the row of bodies it describes, in the order every table that
+prints them uses."""
 
 HEAVY = (
     "torch",
@@ -87,6 +88,7 @@ assert [r["name"] for r in rows] == [
     "toddlerbot",
     "huebot",
     "moss",
+    "rosarm",
     "described",
 ], rows
 # every adapter that needs a library reports itself unusable when that library is gone. Asked
@@ -103,6 +105,16 @@ make_adapter("microduck:mujoco")
 make_adapter("lerobot:real", address="COM5")
 make_adapter("rosbridge:ws", address="ws://robot.local:9090")
 make_adapter("huebot:jsonrpc", address="tcp://127.0.0.1:9870")
+# the industrial arms' rehearsal builds over its fake bridge, and their bound code is refused in the
+# owner rule's words before anything is built, roslibpy or no roslibpy
+make_adapter(RobotSpec("rosarm", "mock", robot_type="yaskawa-motomini"))
+from quackd.adapters.base import AdapterError
+try:
+    make_adapter("rosarm:ws", address="ws://cell.local:9090")
+except AdapterError as e:
+    assert "docs/adr/0076" in str(e), e
+else:
+    raise AssertionError("rosarm:ws was built")
 # MOSS's cockpit backend builds with no address, pointed at the tunnel's near end, and opens
 # nothing until it connects
 make_adapter("moss:cockpit")
@@ -262,7 +274,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
     all without a single adapter present.
 
     Driven through the discovery seam rather than by uninstalling anything, because the suite
-    runs in an environment that has all nine and a test may not take them away from it."""
+    runs in an environment that has all ten and a test may not take them away from it."""
     import quackd.adapters.factory as factory
     from quackd.adapters.base import AdapterNotInstalled
     from quackd.adapters.factory import NoRobotNamed
@@ -305,7 +317,10 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         said = buf.getvalue()
         assert "no robot adapter is installed" in said, said
         assert "the simulator and the scripted pilot run here" not in said, said
-        assert "0/9 adapters installed" in " ".join(said.split()), said
+        from quackd.adapters.factory import ADAPTER_NAMES
+
+        counted = f"0/{len(ADAPTER_NAMES)} adapters installed"
+        assert counted in " ".join(said.split()), said
 
         # a pilot flock does not reach past the refusal for a hardcoded duck either
         from quackd.flock.runner import member_specs

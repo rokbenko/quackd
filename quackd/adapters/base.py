@@ -10,6 +10,7 @@ supplies the verbs only this robot has. `heartbeat()` stays the watchdog contrac
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
@@ -182,8 +183,8 @@ class HandResult:
 async def let_go_if_any(transport: Any, **kw: Any) -> HandResult:
     """Release the body into a person's hands, on anything that can be handed over.
 
-    Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of nine does
-    this, and the other eight should not have to carry a method to say so.
+    Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of ten does
+    this, and the other nine should not have to carry a method to say so.
 
     `kw` goes to the body's own `let_go` untouched, and the arm takes two keywords. `anywhere`
     skips the rule that it is released only at its rest pose, for the question that drops it,
@@ -251,6 +252,50 @@ def refuse_rest_pose(adapter: str, rest_pose: Any) -> None:
             f"{adapter} does not return to a rest pose, so one cannot be kept for it: "
             "quackd robot edit NAME --clear rest-pose"
         )
+
+
+# ── a joint's travel, as an arm's manifest publishes it ─────────────────────────────────
+
+
+def published_travel(lo: float, hi: float) -> list[float]:
+    """A joint's travel as an arm's manifest publishes it: to a tenth of a degree, rounded inward.
+
+    Inward, never to nearest, because the published figure is a promise two readers act on.
+    The pilot is told it as the travel, and asks for its ends, and the body refuses any goal
+    outside the travel it holds exactly: rounding to nearest can move an end outward by up to a
+    twentieth of a degree, and the pilot asks for the edge it was shown and is refused. Inward,
+    every published angle is one the body takes.
+
+    Each end is checked against the float it came from rather than trusted to the arithmetic,
+    because that float is what a goal is compared with: ten times a float can round to a whole
+    number the float itself lies a hair short of, and then the tenth it gives is a hair outside.
+    Such an end moves one tenth further in. A travel published a tenth narrower costs nothing;
+    one published a hair wider is the refusal this exists to prevent.
+
+    In the core because both arm families publish a travel this way: the SO-101's from its
+    calibration file, an industrial arm's from the description its bridge serves."""
+    low = math.ceil(lo * 10.0)
+    if low / 10.0 < lo:
+        low += 1
+    high = math.floor(hi * 10.0)
+    if high / 10.0 > hi:
+        high -= 1
+    return [low / 10.0 + 0.0, high / 10.0 + 0.0]
+
+
+def said_past(value: float, shown_lo: float, shown_hi: float) -> str:
+    """A number outside a travel printed as `shown_lo..shown_hi`, as the sentence saying so
+    prints it: to a tenth, unless a tenth would round it onto that travel, and then as it is.
+
+    A value a few hundredths past an edge is outside it, and its tenth is the edge itself, so a
+    sentence printing the tenth would name a number inside the range it says the value lies
+    outside. The travel printed beside it is `published_travel`, rounded inward, which is never
+    wider than the travel the value was judged against, so the value as it is always lies
+    outside what is printed."""
+    said = f"{float(value):.1f}"
+    if shown_lo <= float(said) <= shown_hi:
+        said = repr(float(value))
+    return said
 
 
 # ── cameras ─────────────────────────────────────────────────────────────────────────────
@@ -491,8 +536,8 @@ class RobotAdapter(Protocol):
         ...
 
     # `let_go` and `take_hold` are deliberately NOT here. This protocol is runtime-checkable
-    # and structural, so a method on it is a method every one of the nine bodies must carry,
-    # and eight of them are never handed to a person. A body that can be declares
+    # and structural, so a method on it is a method every one of the ten bodies must carry,
+    # and nine of them are never handed to a person. A body that can be declares
     # `supports_hand_off = True`; the callers reach it through `let_go_if_any` and
     # `take_hold_if_any`, which is the same way a rest move reaches a bare transport.
 
