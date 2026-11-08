@@ -13,6 +13,7 @@ import contextlib
 import io
 import math
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -590,10 +591,17 @@ async def test_uninstalling_ends_the_thread_and_says_nothing_of_it() -> None:
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="no pty on Windows")
 
 
-def _drain(master: int) -> None:
-    with contextlib.suppress(OSError):
-        while os.read(master, 1024):
-            pass
+def _drain(master: int, stop: threading.Event) -> None:
+    """Read what the terminal echoes off its far end until told to stop, never waiting inside a
+    read. On macOS a close of the master waits for a read on it to return, and while anything
+    else still holds the terminal, a guard watching it after a test killed its run, say, that read
+    returns only when the guard gives up, after `GUARD_WATCHES_S`. Those are the ten minutes
+    every macOS job of CI spent in this fixture's teardown, with the close waiting on the read."""
+    with contextlib.suppress(OSError, ValueError):
+        while not stop.is_set():
+            ready, _, _ = select.select([master], [], [], 0.05)
+            if ready and not os.read(master, 1024):
+                return
 
 
 @pytest.fixture
@@ -604,11 +612,13 @@ def pty_pair() -> Any:
     import pty
 
     master, slave = pty.openpty()
-    draining = threading.Thread(target=_drain, args=(master,), daemon=True)
+    stop = threading.Event()
+    draining = threading.Thread(target=_drain, args=(master, stop), daemon=True)
     draining.start()
     yield master, slave
-    os.close(slave)
+    stop.set()
     draining.join(2)
+    os.close(slave)
     os.close(master)
 
 

@@ -294,11 +294,17 @@ def test_two_strangers_with_no_shared_network_meet_over_a_link_and_part(loop: Lo
     for robot in robots:
         loop.call(robot.start(), 5)
     try:
+        # the event as well as the plan: the plan reads met from the talker's session, and the
+        # meeter's worker tells the event only once its attempt returns
         run(
             air,
             loop,
             robots,
-            lambda: a.state_of(high) == "met" and b.state_of(low) == "met",
+            lambda: (
+                a.state_of(high) == "met"
+                and b.state_of(low) == "met"
+                and any(e.kind == "met" for e in a.events)
+            ),
             fake_s=10,
         )
         assert a.talker.sessions[b.did].startswith("ble://")
@@ -317,7 +323,20 @@ def test_two_strangers_with_no_shared_network_meet_over_a_link_and_part(loop: Lo
             lambda: b.did in a.talker.left,
             fake_s=policy.window_s + policy.far_hold_s + 5,
         )
-        run(air, loop, robots, lambda: len(a.links) == 0 and len(b.links) == 0, fake_s=5)
+        # the part leaves, closes the link and only then tells, all on the meeter's worker, so
+        # the closed links alone can be read before the event lands: a loaded machine read
+        # `met` here two runs in five, on v0.32.0's code as on this one
+        run(
+            air,
+            loop,
+            robots,
+            lambda: (
+                len(a.links) == 0
+                and len(b.links) == 0
+                and any(e.kind == "parted" for e in a.events)
+            ),
+            fake_s=5,
+        )
         assert a.did not in b.talker.peers_open()
         assert [e.kind for e in a.events][-1] == "parted"
     finally:

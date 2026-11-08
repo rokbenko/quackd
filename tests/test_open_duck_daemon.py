@@ -974,8 +974,24 @@ def test_the_shim_intercepts_the_import_form_upstream_actually_uses(tmp_path: Pa
         proc.wait(timeout=15)
     ticks = tmp_path / "ticks.json"
     assert ticks.exists(), "upstream's loop never ran, so the shim never fed it"
-    seen = json.loads(ticks.read_text())
+    seen = _read_ticks(ticks)
     assert seen and all(len(v) == 7 for v in seen), "seven floats, every tick"
+
+
+def _read_ticks(path: Path, *, within_s: float = 3.0) -> list[list[float]]:
+    """The ticks the fake loop last moved into place. On Windows the file can stay held for a
+    moment after the writer is gone, by its last replace or by a scanner opening a file that has
+    just appeared, and a read in that moment raises PermissionError. It failed a CI job once
+    (PR #74's py3.11 Windows run, 2026-11-06), so the read waits for the file as it would for a
+    slow one, and a file still held after `within_s` fails as before."""
+    deadline = time.monotonic() + within_s
+    while True:
+        try:
+            return json.loads(path.read_text())
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def test_a_slow_boot_is_not_mistaken_for_a_missing_shim(tmp_path: Path) -> None:
