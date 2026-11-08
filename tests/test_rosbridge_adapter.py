@@ -158,6 +158,7 @@ class FakeRos:
     def __init__(self) -> None:
         self.is_connected = False
         self.runs = 0
+        self.closed = 0
         self.terminated = False
 
     def run(self, timeout: float = 5.0) -> None:
@@ -165,6 +166,7 @@ class FakeRos:
         self.is_connected = True
 
     def close(self, timeout: float = 5.0) -> None:
+        self.closed += 1
         self.is_connected = False
 
     def terminate(self) -> None:
@@ -247,7 +249,9 @@ async def test_ws_backend_speaks_verified_topics_and_messages() -> None:
     ros.is_connected = True
     await adapter.close()
     assert topics["/odom"].unsubscribed and topics["/cam/compressed"].unsubscribed
-    assert topics["/base/cmd_vel"].unadvertised and ros.terminated
+    # its own socket closed, and roslibpy's reactor, which every client in the process shares,
+    # left running for the others
+    assert topics["/base/cmd_vel"].unadvertised and ros.closed == 1 and not ros.terminated
     assert topics["/base/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
 
 

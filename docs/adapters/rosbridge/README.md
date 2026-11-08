@@ -214,7 +214,7 @@ adapter sends no goal.
 | `roslibpy.GoalStatus` | an Enum of action_msgs' statuses, 0 to 6 |
 | `resultback({status, values}) and errback({status, values})` | a status outside the Enum, a feedback after its result and an `op: status` are each skipped with a log line |
 | `self.once("ready", callback)` | a send handed over while the socket is down waits, and goes out when the client reconnects by itself: an action goal too, which is why the industrial arm lets go of a client whose socket dropped |
-| `reactor.callFromThread(reactor.stop)` | `Ros.terminate()` stops the one reactor every roslibpy client in a process runs on, so it ends every client's socket: this adapter's own close calls it, and the industrial arm closes its own socket instead |
+| `reactor.callFromThread(reactor.stop)` | `Ros.terminate()` stops the one reactor every roslibpy client in a process runs on, so it ends every client's socket: this adapter and the industrial arm each close their own socket instead, and leave the reactor to the rest |
 
 ### UNVERIFIED (our assumptions, and what quackd does about each)
 

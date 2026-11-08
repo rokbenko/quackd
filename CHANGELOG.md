@@ -178,6 +178,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   packets, which the note says now, with the pendant's stop as the brake. A pilot handed
   `described:` one of the three reads the corrected notes. No generated table shows them, so
   `scripts/bodies_docs.py` changed nothing.
+- **A rosbridge base's close ends its own socket and no other.** It ended roslibpy's event loop,
+  which every roslibpy client in the process runs on, so in a flock a base whose run ended first
+  took the other robots' links down with it: another base's, or the industrial arm's, with its
+  readings and its cancel. It closes its own client now, as the arm's transport does, and the loop
+  runs on for the rest, on the daemon thread it has always run on.
 
 ### Documentation
 

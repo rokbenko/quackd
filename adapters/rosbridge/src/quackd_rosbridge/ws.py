@@ -550,8 +550,11 @@ class RosbridgeWs:
             with contextlib.suppress(Exception):
                 self._cmd.unadvertise()
         if self._ros is not None:
+            # this client's own socket and nothing more: `terminate()` stops the one reactor every
+            # roslibpy client in the process runs on (`up.ONE_REACTOR`), so a base whose run ended
+            # first took an industrial arm's link, or another base's, down with it in a flock
             with contextlib.suppress(Exception):
-                await asyncio.to_thread(self._ros.terminate)
+                await asyncio.to_thread(self._ros.close, self.timeout_s)
 
     def _publish_twist(self, vx: float, vy: float, wz: float) -> None:
         if self._cmd is None:
