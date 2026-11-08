@@ -78,11 +78,11 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
 - [The simulator's upstream: SO-ARM100](#the-simulators-upstream-so-arm100)
   * [VERIFIED (read from the model and its README at the pin)](#verified-read-from-the-model-and-its-readme-at-the-pin)
   * [UNVERIFIED (our assumptions about the model, and what quackd does about each)](#unverified-our-assumptions-about-the-model-and-what-quackd-does-about-each)
-- [The policies' upstream: LeRobot 0.6.1](#the-policies-upstream-lerobot-061)
-  * [VERIFIED (read from source at the v0.6.1 tag)](#verified-read-from-source-at-the-v061-tag)
+- [The policies' upstream: LeRobot 0.7.0](#the-policies-upstream-lerobot-070)
+  * [VERIFIED (read from source at the v0.7.0 tag)](#verified-read-from-source-at-the-v070-tag)
   * [UNVERIFIED (our assumptions about policies, and what quackd does about each)](#unverified-our-assumptions-about-policies-and-what-quackd-does-about-each)
 - [The endpoint's upstream: Hugging Face Inference Endpoints](#the-endpoints-upstream-hugging-face-inference-endpoints)
-  * [VERIFIED (read on the day from the API, Hugging Face's pages and huggingface_hub 1.29.0)](#verified-read-on-the-day-from-the-api-hugging-faces-pages-and-huggingface_hub-1290)
+  * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-1330)
   * [UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)](#unverified-our-assumptions-about-hugging-face-and-what-quackd-does-about-each)
 - [Status](#status)
   * [What one afternoon proved, and what it did not](#what-one-afternoon-proved-and-what-it-did-not)
@@ -144,9 +144,10 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    Check it took. The first line prints the release you got, and this page and the task files are
    `main`'s, which can be ahead of it: [the changelog](../../../CHANGELOG.md) says what each release
    changed. The first row of the second must be `gpt-6-sol`, marked default, and the third must tick
-   these three rows. LeRobot 0.6.1 is the version that has run on an arm, and the install takes a newer
-   one if there is one. A `not installed` after an install that succeeded usually means the wrong
-   Python, and [Installing it](#installing-it) says why.
+   these three rows. The install takes LeRobot 0.7, whose new motor bus, rustypot, is the second
+   row, and no arm has run quackd on it yet: 0.6.1 is the version that has, and quackd no longer
+   installs it. A `not installed` after an install that succeeded usually means the wrong Python,
+   and [Installing it](#installing-it) says why.
 
    ```bash
    quackd --version
@@ -155,8 +156,8 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    ```
 
    ```
-   ✓ lerobot                         0.6.1
-   ✓ lerobot (feetech bus)           1.0.0
+   ✓ lerobot                         0.7.0
+   ✓ lerobot (feetech bus)           1.13.1
    ✓ lerobot-sim (mujoco)            3.17.0
    ```
 
@@ -563,7 +564,7 @@ hurt somebody. They shape everything below:
 | `--robot` | Status | What it is |
 |---|---|---|
 | `lerobot:mock` | ✅ | `lerobot:real`'s own code over an arm in memory: a goal lands a step of the cap at a time, the gripper stops on the object, a scripted policy answers `pick` and `manipulate` in the real backend's policy loop, and every refusal, hand-off and close line is the real backend's own, since it is that backend's code, though with no rest pose recorded its close lets go of the arm, as the simulator's does, where the arm's keeps its torque and says so |
-| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm on two afternoons, 2026-09-15 on quackd 0.9.0 and 2026-09-23 on quackd 0.12.0, with lerobot 0.6.1 and no policy. What changed after 2026-09-23 has not run on an arm yet |
+| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm on two afternoons, 2026-09-15 on quackd 0.9.0 and 2026-09-23 on quackd 0.12.0, with lerobot 0.6.1 and no policy. What changed after 2026-09-23 has not run on an arm yet, LeRobot 0.7.0's bus, which quackd installs now, included, and the backend has run over that bus's own code with rustypot's `Bus`, the part that talks to the port, replaced by a fake (`tests/test_lerobot_real_bus.py`) |
 | `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
 
 From a terminal:
@@ -652,10 +653,11 @@ Two rows in `doctor` decide whether a serial port can be opened at all:
 · lerobot (feetech bus)      not installed (quackd[lerobot])
 ```
 
-The second one is the trap. The Feetech SDK lives in LeRobot's own `[feetech]` extra rather
-than in its base dependencies, so a `pip install lerobot` gives you a package that imports
-perfectly and then cannot talk to a motor. `quackd[lerobot]` asks for `lerobot[feetech]` for
-that reason. Both rows have to be green before `lerobot:real` can do anything.
+The second one is the trap. rustypot, the library that drives the motors and opens the port,
+lives in LeRobot's own `[feetech]` extra rather than in its base dependencies, so a
+`pip install lerobot` gives you a package that imports perfectly and then cannot build a
+follower. `quackd[lerobot]` asks for `lerobot[feetech]` for that reason. Both rows have to be
+green before `lerobot:real` can do anything, and the second shows rustypot's version.
 
 The SDK carries a `python_version >= '3.12'` marker, because that is LeRobot's floor while
 quackd's own is 3.11. On 3.11 the extra installs the adapter and the SDK resolves to nothing,
@@ -663,13 +665,19 @@ so `lerobot:mock` works and `doctor` keeps saying `not installed` however many t
 install it: check `python --version` first.
 
 > [!NOTE]
-> The extra asks for a LeRobot below 0.6.2, and `quackd[lerobot-vla]` stops at the same place.
-> LeRobot's main branch has replaced `feetech-servo-sdk`, the library that talks to the motors,
-> with `rustypot`, and nothing on this page has been read or run against that. LeRobot 0.6.1
-> also holds Pillow under 13, so this install has Pillow 12.3.0, with the advisories that
-> release carries, until quackd moves to LeRobot's next release. What they can still reach is
-> under Known limitations in the [changelog](../../../CHANGELOG.md). Inside a checkout of this
-> repository `uv pip` reads its override and installs Pillow 13 instead.
+> The extra asks for LeRobot 0.7, from 0.7.0 and below 0.8, and `quackd[lerobot-vla]` asks for
+> the same. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
+> `rustypot`, under one bus for every Feetech and Dynamixel servo, and quackd was read again
+> against it, but no arm has run quackd on it yet: 0.6.1 is the release that has. rustypot
+> opens the port for one program at a time on every system, so a second program on the arm's
+> port, a teleoperation, a recording, a serial monitor or another quackd, is refused as it
+> opens it, where on Linux and macOS it used to open it and talk over the first, unless it
+> runs as root and takes no lock. quackd is refused the same way on a port another program
+> holds for itself, which on Linux and macOS is a program that locked it, as LeRobot 0.7.0's
+> own tools do: one that opened it with no lock does not stop quackd there, so close it first.
+> LeRobot 0.7.0 also reports no overload and no overheat from a servo at all, so quackd's own
+> temperature read is the one heat guard. What else is unconfirmed is under Known limitations
+> in the [changelog](../../../CHANGELOG.md).
 
 Without the extra, every real-arm command ends the same way, and this is what it looks like:
 
@@ -1206,7 +1214,7 @@ policy object is handed to the backend in Python. A checkpoint loads in
 [a policy server of its own](#a-policy-in-a-process-of-its-own-quackd-policy-serve), and the arm
 reaches it through `RemoteRunner`, the server's client. `real.py` still has `load_policy(path)`,
 which would load one in the arm's own process and which nothing calls or has run: it is the
-`LOAD_POLICY` row in [the policies' table](#the-policies-upstream-lerobot-061) below. Setting a
+`LOAD_POLICY` row in [the policies' table](#the-policies-upstream-lerobot-070) below. Setting a
 server up, on the laptop or on a rented GPU, is [guides/policies.md](../../guides/policies.md).
 
 `pick` runs its policy as a segment, a loop of its own on the arm's clock that reads the arm,
@@ -1332,7 +1340,7 @@ verb that sends a goal meanwhile is refused, as on the arm.
 ### A policy in a process of its own: `quackd policy serve`
 
 A checkpoint's processors are code: loading one imports whatever class its JSON names
-(`PROCESSOR_CLASS_IMPORT` in [the policies' table](#the-policies-upstream-lerobot-061)). So no
+(`PROCESSOR_CLASS_IMPORT` in [the policies' table](#the-policies-upstream-lerobot-070)). So no
 quackd command loads a checkpoint in the process that owns the arm's serial bus
 ([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)), and
 [guides/policies.md](../../guides/policies.md) is how to set one up, with the licences of the ones
@@ -1473,7 +1481,7 @@ quackd policy serve --policy OWNER/NAME@REVISION --fps 30
 ```
 
 It serves ACT, SmolVLA, pi05, pi0, X-VLA and GR00T N1.7 checkpoints, the types whose
-processors quackd has read at LeRobot 0.6.1, an X-VLA in its `auto` action mode alone
+processors quackd has read at LeRobot 0.7.0, an X-VLA in its `auto` action mode alone
 ([guides/policies.md](../../guides/policies.md#x-vla)) and a GR00T whose every action group is
 joints ([guides/policies.md](../../guides/policies.md#gr00t-n17)), and refuses pi0-FAST, whose
 policy runs its tokenizer's own code
@@ -1481,7 +1489,7 @@ policy runs its tokenizer's own code
 builds a tiny random ACT, puts it in a Hub cache of its own and serves it
 offline through the real server to the real client and an arm behind it, and serves a tiny random
 X-VLA the same way, its tokenizer pinned at a commit (`POLICY_PIPELINE` in
-[the policies' table](#the-policies-upstream-lerobot-061)). On 2026-09-28 a trained ACT from the
+[the policies' table](#the-policies-upstream-lerobot-070)). On 2026-09-28 a trained ACT from the
 Hub, `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was
 served on a laptop's CPU and drove a twin of the lab's arm on the simulator, and
 `lerobot/smolvla_base` loaded there and took minutes a chunk, so it never answered a step
@@ -1532,8 +1540,8 @@ Loading one reads before it builds, and refuses rather than guesses:
   many. An ACT that ensembles its chunks over time is asked every tick and is refused without a
   GPU (`TICK_MODE`). A pi05 or a pi0 that learned relative actions is not: its whole chunk is
   made absolute against the state it was predicted from, which is how its training made it
-  relative, where LeRobot's own loop makes each action absolute against the state of the tick it
-  is played at (`VLA_PIPELINE`).
+  relative, as LeRobot 0.7.0's own loop now does too, where 0.6.1's made each action absolute
+  against the state of the tick it was played at (`VLA_PIPELINE`).
 
 Each camera the arm has is the image of its own name, `observation.images.front` from the camera
 called `front`, unless `--cameras NAME=KEY` maps it, and a key that is not one of the
@@ -1960,9 +1968,9 @@ Each fault is raised in LeRobot's own words, so the connect retries it as it wou
 and says so as it would:
 
 ```
-WARNING  connect attempt 1 of 3 failed on wrist_flex (id 4): Failed to write 'Lock' on id_=4 with
-         '1' after 1 tries. [TxRxResult] There is no status packet! The port was closed without a
-         write to any motor, and connect runs again
+WARNING  connect attempt 1 of 3 failed on wrist_flex (id 4): Failed to enable torque after 1 tries
+         on 'wrist_flex' (motor ID 4): Operation timed out. The port was closed without a write to
+         any motor, and connect runs again
 ```
 
 A connect that gives up in words under a plan, as the arm's does once its retries are spent, is
@@ -2186,22 +2194,24 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   where it stands, and, at a terminal and without `--json`, on its asking whether to drop it into
   your hands ([doctor](#doctor-and-robot-list---probe)).
 - **A packet lost while connecting is tried again, and said.** Those torque writes are a
-  `Torque_Enable` and a `Lock` per motor, off on every motor and back on one at a time, each
-  tried once (`up.CONFIGURE_TORQUE_WRITES_ONCE`), so one status packet the bus drops, or that
-  comes back garbled, fails the whole connect and leaves the port open behind it. On 2026-09-23
-  that ended three of 26 runs on an SO-101 before they began, on a different motor each time,
-  and the next connect went through every time. quackd now closes the port through the bus
-  without writing to any motor (`up.BUS_DISCONNECT` with `disable_torque` False: the follower's
-  own `disconnect()` would first switch torque off on every motor again, on the bus that has
-  just lost a packet), waits half a second and connects again, up to three attempts in all. Each
-  retry is a WARNING line while it happens, a note in the run's transcript and an advice line in
-  `doctor`, and it names the joint through the bus's own motor table (`up.BUS_MOTORS`) rather
-  than by an assumed order:
+  `Torque_Enable` and a `Lock` per motor, off on every motor and back on, motor by motor, each
+  tried once (`up.CONFIGURE_TORQUE_WRITES_ONCE`). LeRobot 0.7.0 tries every motor whichever
+  fails and then names each one it could not switch (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), so one
+  status packet the bus drops, or that comes back garbled, still fails the whole connect and
+  leaves the port open behind it. On 2026-09-23, on LeRobot 0.6.1, that ended three of 26 runs
+  on an SO-101 before they began, on a different motor each time, and the next connect went
+  through every time. quackd now closes the port through the bus without writing to any motor
+  (`up.BUS_DISCONNECT` with `disable_torque` False: the follower's own `disconnect()` would first
+  switch torque off on every motor again, on the bus that has just lost a packet), waits half a
+  second and connects again, up to three attempts in all. Each retry is a WARNING line while it
+  happens, a note in the run's transcript and an advice line in `doctor`, and it names every
+  joint LeRobot named, through the bus's own motor table (`up.BUS_MOTORS`) rather than by an
+  assumed order:
 
   ```
-  connect attempt 1 of 3 failed on <joint> (id <N>): Failed to write 'Lock' on id_=<N> with
-  '1' after 1 tries. [TxRxResult] There is no status packet! The port was closed without a
-  write to any motor, and connect runs again
+  connect attempt 1 of 3 failed on <joint> (id <N>): Failed to enable torque after 1 tries on
+  '<joint>' (motor ID <N>): Operation timed out. The port was closed without a write to any
+  motor, and connect runs again
   ```
 
   A camera opened before the arm stays open across the attempts. A connect that blew its 30
@@ -2211,14 +2221,17 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   the same way and the refusal says the arm may be left half energised
   ([When it will not work](#when-it-will-not-work)), if any attempt can have written torque:
   one that failed on a write or inside `configure()`, one that failed somewhere nothing can
-  place, or a connect that ends on a timeout. A servo that does not answer its ping is refused
-  by LeRobot's handshake, before `configure()` has written anything (`up.BUS_HANDSHAKE`), so
-  that refusal names the joint (`up.HANDSHAKE_NAMES_THE_ID`) and says nothing about torque. So
-  does a read lost in the calibration check LeRobot's connect makes between the handshake and
-  `configure()`, whatever `calibrate` says (so_follower.py line 99, `up.BUS_IS_CALIBRATED`),
-  which reads each motor's limits and writes nothing. A handshake that found none of the arm's
-  motors, which is how a servo supply that is switched off looks, names no joint at all, since
-  one joint's cable would be a guess, and sends you to the arm's cables and power.
+  place, or a connect that ends on a timeout. A servo that does not answer is refused by
+  LeRobot's handshake, before `configure()` has written anything (`up.BUS_HANDSHAKE`), so that
+  refusal names the joint (`up.HANDSHAKE_NAMES_THE_ID`) and says nothing about torque, and
+  LeRobot closes the port behind it itself, which the note says
+  (`up.HANDSHAKE_CLOSES_THE_PORT`). So does a read lost in the calibration check LeRobot's
+  connect makes between the handshake and `configure()`, whatever `calibrate` says
+  (so_follower.py line 118, `up.BUS_IS_CALIBRATED`), which reads each motor's limits and writes
+  nothing, and names the first motor that did not answer. A handshake that found none of the
+  arm's motors, which is how a servo supply that is switched off looks, names no joint at all,
+  since one joint's cable would be a guess, and sends you to the arm's cables and power, as
+  does a torque call that reached none of them.
 
   A stop asked for while a connect is failing ends it: a Ctrl-C during a `quackd run`, whose
   first press sets the run's abort flag, is looked for once an attempt has failed and throughout
@@ -2228,12 +2241,13 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   during an attempt that then connects is answered by the run as any other stop is, after the
   rest move that opens it.
 
-  A serial error in the middle of a packet, a USB glitch rather than a lost reply, leaves the
-  servo SDK's busy flag raised, and reopening the port does not lower it, so the next attempt
-  would be answered "port in use" before a byte went out and refused as every motor missing.
-  quackd lowers the flag when it closes the port between attempts, in the same call and once
-  the port has shut, so never under another call's packet. Upstream's own disconnect lowers it
-  too, and lowering it writes nothing to a motor (`up.BUS_DISCONNECT`).
+  The port opens for one program at a time (`up.PORT_OPENED_EXCLUSIVELY`), so a connect while a
+  teleoperation, a recording, a serial monitor or another quackd holds it fails before anything
+  is sent, and its note says the port never opened. On Linux and macOS that takes a program that
+  locked the port, as another quackd and LeRobot 0.7.0's own tools do: one that opened it with no
+  lock, as an older LeRobot or a serial monitor may, does not stop the connect, and the two then
+  talk over each other, so close it first. Nor does the lock keep out a program run as root that
+  takes none, after quackd has the port.
 - **`pick` and `manipulate` are confirm-gated**: a learned policy moves the whole arm. Its
   actions are capped at the verbs' own speed, per second rather than per send, so a policy
   faster than the verbs' tick takes smaller steps rather than moving faster, and a goal past the
@@ -2993,7 +3007,7 @@ said 0, and the command exits 0 only then. Everything else exits 1 and says whic
 | What you see | What it means |
 |---|---|
 | `torque still reads on for <joints>: cut the power` | those motors kept their torque through the release, or every motor did and nothing was released. The ones not named are limp, and the close's line after it says which case it was: below |
-| `torque was taken off and could not be read back: ...` | the release went out and the read that would confirm it failed, or the release call itself did not come back part way through its motors, and then the motors after the one it failed on kept their torque. quackd reads that silence as a release, so hold the arm as though nothing holds it, and cut its power to be sure. The close's line after it says what its own read of the arm finds, when it takes one, which it does on an arm with a rest pose, and that read answers: the arm limp in your hands, or the joints still on by name. Only when no read answers does it say that nothing read the release back |
+| `torque was taken off and could not be read back: ...` | the release went out and the read that would confirm it failed, or the release call itself raised or did not come back. A torque call that raised has tried every motor, and the line names each joint whose write LeRobot could not confirm, which may still hold, or says it could confirm none; one that raised anything else, or did not come back, may have stopped anywhere. quackd reads that silence as a release, so hold the arm as though nothing holds it, and cut its power to be sure. The close's line after it says what its own read of the arm finds, when it takes one, which it does on an arm with a rest pose, and that read answers: the arm limp in your hands, or the joints still on by name. Only when no read answers does it say that nothing read the release back |
 | `nothing was released: ...` | the arm did not answer before the release, so nothing was sent. Whether it is holding itself up is not something quackd could read, so hold it |
 | `torque stays on and nothing was released: ...` | no Enter at a question about a fold that missed: the arm holds itself up where the fold stopped. Clear its way and run the command again, or hold it and cut its power |
 | `the fold was stopped where it was, and nothing was released: ...` | Ctrl-C or `q` during a fold |
@@ -3050,12 +3064,12 @@ rest pose the close reads the arm before it decides, and when that read answers 
 read found: the arm limp in your hands, or the joints still on by name, with the power switch as
 what lets go of them. When no read answers, or on an arm with no rest pose, which the close does
 not read, nothing has read the release back, so the close does not say the arm is limp either:
-the call may have stopped at one motor's write and left the motors after it holding. Its line
-says that, and ends on the power switch, and over an arm let go of at its rest pose it says the
-arm lies in its fold and to leave it there. Captured on `lerobot:mock` registered as `arm-01`,
-folded to its pose, its torque register made to stop answering once the release went out, since
-an in-memory release otherwise always reads back, so the close's own read of it finds nothing
-either:
+the call may have left the motors LeRobot named holding, or stopped anywhere if it never came
+back. Its line says that, and ends on the power switch, and over an arm let go of at its rest pose
+it says the arm lies in its fold and to leave it there. Captured on `lerobot:mock` registered as
+`arm-01`, folded to its pose, its torque register made to stop answering once the release went
+out, since an in-memory release otherwise always reads back, so the close's own read of it finds
+nothing either:
 
 ```
 ✗ error: torque was taken off and could not be read back: torque is off at the rest pose, and the
@@ -3292,13 +3306,13 @@ touched by anything in the first block: these all happen before or during connec
 | `doctor` shows `lerobot` green and `lerobot (feetech bus)` missing | LeRobot is installed without its `[feetech]` extra, so it imports and cannot open a serial port | `uv pip install "quackd[lerobot]"`, which asks for `lerobot[feetech]` |
 | `lerobot real: --address must be the arm's serial port` | no `--address` at all | pass the port. `--address needs --robot, so quackd knows what it is connecting to` means the opposite mistake, an address with no robot to apply it to |
 | `lerobot real: --address 'x' is not a serial port; it looks like COM5 on Windows or /dev/ttyACM0 elsewhere` | the address is not port-shaped | on Windows find it in Device Manager under Ports; on Linux it is usually `/dev/ttyACM0` |
-| `lerobot real: connect failed 3 times: Could not connect on port ...` | the port is wrong, or something else already owns it. It is tried three times like any connect failure, since a port busy for a moment is as passing as a lost packet | LeRobot's own words come through, and they name `lerobot-find-port`, which is the way to be sure. The Feetech bus has one owner at a time, so close any teleoperation, recording or serial monitor still holding it, and on Linux check that your user can open the port (upstream's own line is `sudo chmod 666 /dev/ttyACM0`; the port's group, usually `dialout`, is the version that survives a reboot). No attempt opened the port, so nothing was written to a motor and the message says nothing about torque |
-| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to write 'Lock' on id_=<N> ...`, and the session carries on | a status packet on one of the torque writes LeRobot's connect makes (`Lock` or `Torque_Enable`) was lost or came back garbled, and quackd closed the port without writing anything and connected again. Seen three times on 2026-09-23, each on the first connect after the power had been off | nothing, once. The same joint named session after session is a cable to reseat: the one into that servo, and its connectors |
-| `lerobot real: connect failed 3 times, the last on <joint> (id <N>): Failed to write ...` | every attempt failed, the last one on that servo. The torque writes may have stopped part way, so some motors can be holding and others limp, which the message says | keep a hand under the arm. Check that joint's cable and connectors, that the servo supply is on, and that nothing else has the port open, then connect again. A message that names no joint says to check the arm's cables and power instead |
-| `lerobot real: connect failed 3 times, the last on <joint> (id <N>): FeetechMotorsBus motor check failed on port ...: Missing motor IDs: - <N> ...` | the servo at that address did not answer its ping on any attempt: a cable out, a servo with no power, or one answering with an error such as an overload, which LeRobot lists as missing too. `Motors with incorrect model numbers` in the same place is a servo that answered as another model. LeRobot's handshake reports it before anything is written, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors and that the servo supply is on, then connect again |
-| `lerobot real: connect failed 3 times: FeetechMotorsBus motor check failed on port ...: Missing motor IDs: - <N> ...` with every motor listed and `Full found motor list (id: model_number): {}` | no servo answered its ping on any attempt. That is what a servo supply that is switched off looks like, which is how the arm is after a power cut, and a cable out between the board and the first servo looks the same, so no joint is named | check that the servo supply is on, then the arm's cables and their connectors, and that nothing else has the port open, then connect again. Nothing was written, so the message says nothing about torque unless an earlier attempt got as far as writing |
-| `lerobot real: connect failed 3 times, the last on <joint> (id <N>): Failed to read 'Min_Position_Limit' on id_=<N> ...` (or `Max_Position_Limit`, `Homing_Offset`) | every attempt lost a reply in the calibration check LeRobot's connect makes after the handshake and before `configure()`. It reads and writes nothing, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors, that the servo supply is on, and that nothing else has the port open, then connect again |
-| `lerobot real: connect stopped after attempt <k> of 3, because a stop was asked for. ...` | a Ctrl-C, or `q`, while the connect was failing. The attempt's own failure follows, LeRobot's words and the joint they name, then that the port was closed without a write and connect was not tried again | nothing to fix for the stop. Read the failure as the rows above, and where the message says some motors may be left with torque on and others off, keep a hand under the arm |
+| `lerobot real: connect failed 3 times: Could not connect on port ...` | the port is wrong, or another program holds it for itself: it opens for one program at a time on every system, Linux and macOS included since LeRobot 0.7.0, where that takes a program that locked it. It is tried three times like any connect failure, since a port busy for a moment is as passing as a lost packet | LeRobot's own words come through, and they name `lerobot-find-port`, which is the way to be sure. Close any teleoperation, recording, serial monitor or other quackd still holding it, and on Linux check that your user can open the port (upstream's own line is `sudo chmod 666 /dev/ttyACM0`; the port's group, usually `dialout`, is the version that survives a reboot). No attempt opened the port, so nothing was written to a motor, every note says the port never opened, and the message says nothing about torque |
+| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to enable torque after 1 tries on '<joint>' (motor ID <N>): ...` (or `disable`), and the session carries on | a status packet on one of the torque writes LeRobot's connect makes (`Lock` or `Torque_Enable`) was lost or came back garbled. LeRobot tried every other motor and named each one it could not switch, and quackd names every joint it named, closed the port without writing anything and connected again. Seen three times on 2026-09-23, on LeRobot 0.6.1, each on the first connect after the power had been off | nothing, once. The same joint named session after session is a cable to reseat: the one into that servo, and its connectors |
+| `lerobot real: connect failed 3 times, the last on <joint> (id <N>): Failed to enable torque ...` (or `disable torque`, or `Failed to write ...`) | every attempt failed, the last one on that servo, or on each servo it names. The torque writes may have stopped part way, so some motors can be holding and others limp, which the message says | keep a hand under the arm. Check that joint's cable and connectors, or each named joint's, that the servo supply is on, and that nothing else has the port open, then connect again. A message that names no joint says to check the arm's cables and power instead, and so does one whose torque call reached none of the motors |
+| `lerobot real: connect failed 3 times, the last on <joint> (id <N>): SerialMotorsBus motor check failed on port '...': Missing motor IDs: - <N> ...` | the servo at that address did not answer its ping on any attempt: a cable out, or a servo with no power. An overloaded or overheated servo answers its ping and is not listed, because LeRobot 0.7.0 reports neither alarm. `Motors with incorrect model numbers` in the same place is a servo that answered as another model. LeRobot's handshake reports it before anything is written and closes the port behind it, which each note says, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors and that the servo supply is on, then connect again |
+| `lerobot real: connect failed 3 times: SerialMotorsBus motor check failed on port '...': Missing motor IDs: - <N> ...` with every motor listed and `Full found motor list (id: model_number): {}` | no servo answered its ping on any attempt. That is what a servo supply that is switched off looks like, which is how the arm is after a power cut, and a cable out between the board and the first servo looks the same, so no joint is named | check that the servo supply is on, then the arm's cables and their connectors, and that nothing else has the port open, then connect again. Nothing was written, so the message says nothing about torque unless an earlier attempt got as far as writing |
+| `lerobot real: connect failed 3 times, the last on <joint> (id <N>), the first that did not answer: Failed to sync read 'Min_Position_Limit' from motor IDs [1, 2, 3, 4, 5, 6] after 1 tries. motor <N>: ...` (or `Max_Position_Limit`, `Homing_Offset`) | every attempt lost a reply in the calibration check LeRobot's connect makes after the handshake and before `configure()`. The joint named is the first whose reply did not come, and a cable that breaks there silences the motors after it too, as a supply cut after the handshake does from the first motor on. It reads the motors and writes nothing, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors, that the servo supply is on, and that nothing else has the port open, then connect again |
+| `lerobot real: connect stopped after attempt <k> of 3, because a stop was asked for. ...` | a Ctrl-C, or `q`, while the connect was failing. The attempt's own failure follows, LeRobot's words and the joints they name, then what became of the port, closed by quackd with no write, closed by LeRobot behind its handshake, or never opened, and that connect was not tried again | nothing to fix for the stop. Read the failure as the rows above, and where the message says some motors may be left with torque on and others off, keep a hand under the arm |
 | `lerobot real: connect failed: a LeRobot call (connect) has not come back within 30 s; ...` with `keep a hand under the arm` | the connect ran past its 30 second deadline, or LeRobot timed out itself and its own words follow `connect failed:`. It is never tried again, because its thread may still be on the bus, and it may have stopped anywhere in the torque writes | keep a hand under the arm, and cut its power to let go of it: whatever torque the connect switched on stays on once quackd has exited. Once the process has exited the port is free again; check the USB cable and that nothing else has the port open, then connect again |
 | `lerobot real: the arm is not calibrated; run LeRobot's calibration first` | LeRobot read the motors back and they do not match a calibration | run `lerobot-calibrate` under the id quackd will use, and see [the id section](#the-name-you-give-the-arm-is-its-calibration-id) |
 | `lerobot real: the arm reports no calibration file, so nothing knows how far each joint travels` | there is no file for this id | the same fix, and check the path `doctor` prints |
@@ -3366,8 +3380,18 @@ If you hit one of these, or fail to, that is exactly what the
 ## Upstream API
 
 Upstream pinned at
-[`fbb811f`](https://github.com/huggingface/lerobot/tree/fbb811fca92504439792b97d216f0d00c2268382)
-(`main`, 2026-09-01), first read 2026-09-02 and read again on 2026-09-13. Every name quackd
+[`410c095`](https://github.com/huggingface/lerobot/tree/410c095eacc0011d998a73383eb94abed2715af0),
+the commit LeRobot's `v0.7.0` tag names, read on 2026-11-08. 0.7.0 replaced the servo SDK the
+arm's bus spoke through with rustypot, so the rows about the bus below its Python are read from
+rustypot at
+[`7aa85e1`](https://github.com/pollen-robotics/rustypot/tree/7aa85e13143594ea4fd4ed9f29e3e29d39b5de85)
+(`v1.13.1`, the only release so far in the range LeRobot 0.7.0 allows, from 1.13.1 and below 2),
+and what two rows say of the port's exclusive open and of the words for a reply that never came
+from serialport-rs at
+[`2a62b22`](https://github.com/serialport/serialport-rs/tree/2a62b225b2dd043fa982f91d0fb54c7e26fb221e)
+(`v4.9.0`, the version rustypot's lock file pins). The rows were first read on 2026-09-02 and
+2026-09-13 at `main` of 2026-09-01, and every one was read again at the tag. An SO-101 has run
+the rows read at that old pin, on LeRobot 0.6.1, and none has run these. Every name quackd
 spells for the arm lives in
 [`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
 and why the adapter is shaped the way it is is
@@ -3379,8 +3403,8 @@ and why the adapter is shaped the way it is is
 |---|---|
 | `lerobot` | PyPI and import name |
 | `>=3.12` | requires-python; quackd's floor is 3.11, so the extra carries a marker |
-| `0.6.2` | the version at the pin; PyPI had 0.6.1 |
-| `lerobot[feetech]` | the only home of the serial SDK and pyserial; `quackd[lerobot]` asks for it |
+| `0.7.0` | the release the pin is, and PyPI's |
+| `lerobot[feetech]` | the extra that brings rustypot, which drives the motors and opens the port, and pyserial, neither of them a base dependency of lerobot. A plain `lerobot` imports and then builds no follower, so `quackd[lerobot]` asks for it, and `doctor` has a row for rustypot |
 | `lerobot.robots.Robot` | the abstract base every robot implements |
 | `Robot.connect(calibrate=True)` | quackd passes False; connect() then writes no calibration into the motors |
 | `Robot.disconnect()` | |
@@ -3408,8 +3432,8 @@ and why the adapter is shaped the way it is is
 | `lerobot.robots.so_follower.SO100FollowerConfig` | the same class, under the SO-100's name |
 | `koch_follower` | another class, on another bus: described here, and built by nothing |
 | `lerobot.robots.koch_follower.KochFollowerConfig` | its `use_degrees` defaults to False, where the SO's defaults to True |
-| `shoulder_pan to gripper on a DynamixelMotorsBus: xl430-w250 on the first two, xl330-m288 on the other four` | the Koch's bus: the SO-101's six joint names, on servos of another maker |
-| `Torque_Enable (64, 1) and Present_Temperature (146, 1)` | the two registers quackd reads off a bus, in the Dynamixel table. How that bus fails has not been read |
+| `shoulder_pan to gripper on a SerialMotorsBus: xl430-w250 on the first two, xl330-m288 on the other four` | the Koch's bus: the SO-101's six joint names, on servos of another maker, on the one bus class the SO-101 uses too |
+| `Torque_Enable (64, 1) and Present_Temperature (146, 1)` | the two registers quackd reads off a bus, in rustypot's XL430 and XL330 tables. How a Dynamixel bus fails has not been read |
 | `lerobot.robots.so_follower.SO101Follower` | an alias of SOFollower |
 | `SOFollower.name is so_follower` | the calibration subdirectory, shared by SO-100 and SO-101 |
 | `SO101FollowerConfig(port, disable_torque_on_disconnect=True, max_relative_target=None, cameras={}, use_degrees=True, position_p_coefficient=16, position_i_coefficient=0, position_d_coefficient=32, num_read_retries=2)` | every safety-shaped field is passed explicitly rather than inherited, and `disable_torque_on_disconnect` is passed as False, the opposite of upstream's default, so a disconnect quackd did not ask for keeps torque |
@@ -3424,38 +3448,46 @@ and why the adapter is shaped the way it is is
 | `use_degrees=True -> body joints in degrees` | |
 | `gripper is 0..100` | whatever use_degrees says |
 | `disconnect() disables torque by default` | `disable_torque_on_disconnect` defaults to True, so LeRobot lets the arm go limp at every disconnect, the one it makes of a follower nobody closed included. Under that default an exit that skipped quackd's close, a second Ctrl-C during the rest move or a crash, could drop the arm, so quackd builds the follower with it False and its close writes it every time: True over an arm at its recorded rest pose, which is the limp end of every clean session, and False over one that did not reach the pose it was recorded resting in, and over a real arm with none recorded, which only a probe such as `doctor` reaches, a run of one being refused: 0.23 and before wrote True there and let it fall where it stood. The one exception is `quackd robot rest-pose`, whose read of an arm with no pose takes the pose it reads for its rest, so the arm a person has just folded is let go of where it lies. A connect quackd refuses once the arm is energised (not calibrated, no calibration file, no motors bus) writes True before its own disconnect, and one that fails any other way closes the port and keeps torque. Nothing runs when the process is killed |
-| `disconnect() reads config.disable_torque_on_disconnect when it runs` | the flag is read off the config instance inside `disconnect()` rather than copied at construction, and the config is a plain dataclass, so the value on the instance when `disconnect()` runs is what it does, whoever calls it. The config is built asking for False and every connect asks again, so a disconnect quackd did not make keeps torque, and quackd writes True immediately before its own only over an arm that may be let go. Read against lerobot 0.6.1, the version the first real arm ran |
+| `disconnect() reads config.disable_torque_on_disconnect when it runs` | the flag is read off the config instance inside `disconnect()` rather than copied at construction, and the config is a plain dataclass, so the value on the instance when `disconnect()` runs is what it does, whoever calls it. The config is built asking for False and every connect asks again, so a disconnect quackd did not make keeps torque, and quackd writes True immediately before its own only over an arm that may be let go. Read first against lerobot 0.6.1, the version the first real arm ran, and the same at the tag |
 | `Max_Torque_Limit 500 on the gripper` | with Protection_Current 250 and Overload_Torque 25: the native authority. The line's own comment calls 500 half the maximum, so the arm simulator gives its model gripper half of that model's force range |
 | `the five body joints get no torque or current cap` | the caps sit inside a check for the gripper's name |
 | `configure_motors() writes Return_Delay_Time 0 and Acceleration 254` | called inside torque_disabled(), so connecting drops torque briefly |
 | `SOFollower.is_connected is the serial port plus the cameras` | |
-| `SOFollower.connect() refuses while the port is open` | `check_if_already_connected`, and `is_connected` is the port's flag. connect() opens the port first and configures last, and nothing shuts the port when configure() raises, so a retried connect has to close it first (`MotorsBus.disconnect(False)`) |
-| `configure() switches torque off and on again with no retry` | `torque_disabled()` calls `disable_torque()` and `enable_torque()` with `num_retry` 0, each a `Torque_Enable` then a `Lock` write per motor, so one status packet lost or garbled fails the whole connect with the motors in two torque states. The bench arm did this on three connects on 2026-09-23; quackd connects again, up to three attempts |
-| `SOFollower.bus is a FeetechMotorsBus` | the attribute registers are read through |
+| `SOFollower.connect() refuses while the port is open` | `check_if_already_connected`, and `is_connected` is the port's flag. connect() opens the port first and configures last. A failed handshake shuts the port itself, and nothing shuts it when the calibration check or configure() raises, so a retried connect has to close it first (`SerialMotorsBus.disconnect(False)`) |
+| `configure() switches torque off and on again with no retry` | `torque_disabled()` calls `disable_torque()` and `enable_torque()` with `num_retry` 0, each a `Torque_Enable` then a `Lock` write per motor, every motor tried and each that failed named, so one status packet lost or garbled fails the whole connect with the port left open. Lost on the way in, it leaves every motor but the ones named limp, since nothing switches them back on; lost on the way back on, the ones named may be limp and the rest hold. The bench arm did this on three connects on 2026-09-23, on LeRobot 0.6.1; quackd connects again, up to three attempts |
+| `SOFollower.bus is a SerialMotorsBus` | the attribute registers are read through, and the class LeRobot's refusals name for the bus. `FeetechMotorsBus` is a deprecated alias of it that the follower does not use |
 | `no deadman: nothing stops the arm when the client goes quiet` | the class has no thread, timer or timeout; a goal stands until the next write |
 | `RobotKinematics sets a URDF joint to np.deg2rad(degrees)` | LeRobot's own kinematics helper puts a reading on a model of the arm in radians with no offset and no sign, in forward and inverse kinematics alike. The arm simulator follows it for the five arm joints, which is what [`JOINT_ZERO` and `JOINT_SIGN`](#unverified-our-assumptions-about-the-model-and-what-quackd-does-about-each) assume |
-| `MotorsBus.disable_torque()` | never called on quackd's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `quackd run --by-hand`'s, and `quackd robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `quackd robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `quackd doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no LLM can ask for it. On a Feetech bus it writes `Torque_Enable` 0 then `Lock` 0 per motor, and quackd asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
-| `MotorsBus.enable_torque()` | called by `take_hold()`, to pick up an arm a person has just placed, with `num_retry=5` as for the release. It writes `Torque_Enable` 1 **and then `Lock` 1** per motor, two writes a motor rather than one |
-| `MotorsBus.disconnect(disable_torque=True)` | the `disable_torque()` call is inside `if disable_torque`, so False closes the port and leaves every motor holding the goal it was last written: what an arm that missed its rest pose gets instead of falling, and how the port is closed between two connect attempts without a write to any motor. The same branch clears the port handler's busy flag (`port_handler.is_using = False`, motors_bus.py lines 557 and 558), which a serial error in the middle of a packet leaves set and which reopening the port does not clear, so quackd clears it after its own close: without that, every packet of the next attempt is answered "port in use" and the connect is refused as every motor missing |
-| `MotorsBus.motors: name -> Motor(id, model, norm_mode)` | the table that gives each servo its bus address; a bus error's id is turned into a joint through it, never through an assumed order |
-| `Failed to write '<register>' on id_=<N> with '<value>' after <k> tries. <result>` | what a single write or read that failed raises. quackd reads the id out of it to name the joint; a sync read or write names several and quackd names none |
-| `_handshake` | what `MotorsBus.connect()` runs once the port is open: a ping per motor and the firmware reads, and no write. `configure()`, where every write of a connect is, comes after it, so a connect refused in the handshake left every motor's torque as it was, and its refusal does not tell you to keep a hand under the arm. quackd tells the two apart by this frame in the error's traceback |
-| `Missing motor IDs: / Motors with incorrect model numbers: - <N> (...)` | what the handshake raises for a servo that did not answer its ping, or answered as another model: one line per motor. A servo answering with its error bit set, an overload say, is listed as missing too. quackd names the joint of the first id listed, through the bus's motor table |
-| `Failed to sync read '<register>' on ids=[<N>, ...] after <k> tries. <result>` | what a read of several motors at once raises when no good reply came back, and a sync write says `Failed to sync write` when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The result is the servo SDK's own words, `[TxRxResult] There is no status packet!` for a reply that never came. Neither names one motor, so quackd names no joint. The arm simulator fails its reads and goal writes in these words. A read that ends a run says `the arm did not answer: ConnectionError: ` in front of them |
+| `SerialMotorsBus.disable_torque()` | never called on quackd's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `quackd run --by-hand`'s, and `quackd robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `quackd robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `quackd doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no LLM can ask for it. On an sts3215 it writes `Torque_Enable` 0 then `Lock` 0 to each motor in turn, through rustypot, the pair tried `num_retry` + 1 times a motor and every motor tried even after one fails, and quackd asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
+| `SerialMotorsBus.enable_torque()` | called by `take_hold()`, to pick up an arm a person has just placed, with `num_retry=5` as for the release. It writes `Torque_Enable` 1 **and then `Lock` 1** to each motor, two writes a motor rather than one, every motor tried, and connect makes the same call with no retry at all |
+| `Failed to <enable\|disable> torque after <k> tries on '<joint>' (motor ID <N>): <error>, ...` | the one error a torque call raises, once rustypot has tried every motor and handed back each that still failed: one `'<joint>' (motor ID <N>): <error>` a motor, joined by commas. So a torque call that raised has reached every motor it does not name, and those took the write, while each it names may not have, where the old pin's call stopped at the first write that failed. quackd names every joint it names, through the bus's motor table, and counts it as a failed write. A release that raised says which joints may still hold, or that it could confirm the write to no motor where the error names them all, and a connect whose error names every motor of the arm is said as the arm's cables and power |
+| `rustypot's Bus.set_torque tries every motor and hands back each that still failed` | rustypot's half of the row above: each motor's `Torque_Enable` and then its `Lock` in one try, retried together, a failure kept by id and the next motor tried. A try ends at its first write that gets no reply, so a motor that does not answer never gets its `Lock`. Its own row so the nightly compares it with rustypot's newest release, since LeRobot 0.7.0 allows any rustypot below 2: a `set_torque` that stopped at its first failure would have quackd say joints let go that still hold |
+| `SerialMotorsBus.disconnect(disable_torque=True)` | the `disable_torque()` call is inside `if disable_torque`, so False closes the port and leaves every motor holding the goal it was last written: what an arm that missed its rest pose gets instead of falling, and how the port is closed between two connect attempts without a write to any motor. A bus already closed returns without a word |
+| `SerialMotorsBus.disconnect() releases the port whatever its torque-off did` | the torque-off runs in a `try` whose `finally` closes the port, so a disconnect that raised has still shut it, and has tried every motor: the ones its error names may still hold. On the old pin a torque-off that raised left the port open |
+| `the bus holds rustypot's Bus and no port handler` | rustypot's `Bus` while the port is open, and nothing otherwise, is the whole of the connection. There is no port handler and no busy flag that a serial error in the middle of a packet could leave raised: rustypot flushes whatever is waiting on the line before every instruction, up to three times 5 ms apart, and fails with `Timeout error` when bytes keep coming. quackd's close used to lower that flag after its own, and has nothing to lower now |
+| `SerialMotorsBus.motors: name -> Motor(id, model, norm_mode)` | the table that gives each servo its bus address; a bus error's id is turned into a joint through it, never through an assumed order |
+| `Failed to write <value> to '<register>' of motor ID <N> after <k> tries. <error>` | what a single write that got no good reply raises, and a single read says `Failed to read '<register>' from motor ID <N> after <k> tries. <error>`. quackd reads `motor ID <N>` out of it to name the joint. The error a motor that refused an instruction would raise never comes from an sts3215, whose status byte is alarms only |
+| `_handshake` | what `SerialMotorsBus.connect()` runs once the port is open: a ping per motor and the firmware reads, and no write. `configure()`, where every write of a connect is, comes after it, and so does the calibration check, which reads the motors and writes nothing, so a connect refused in either left every motor's torque as it was, and its refusal does not tell you to keep a hand under the arm. quackd tells either from a connect that failed in `configure()` by its frames in the error's traceback, this one's or the calibration check's |
+| `a failed handshake closes the port behind it` | LeRobot catches whatever the handshake raises, closes the port and raises it again, so a connect refused there, a servo that did not answer among them, leaves the port shut, where the old pin left it open. A failure in the calibration check or in `configure()` still leaves it open. So a port shut after a failed connect either never opened or was closed by this, and quackd's note says which, by the handshake's frame |
+| `Missing motor IDs: / Motors with incorrect model numbers: - <N> (...)` | what the handshake raises, headed `SerialMotorsBus motor check failed on port '<port>':`, for a servo that did not answer its ping, or answered as another model: one line per motor. A servo answering with an alarm set, an overload say, answers its ping and is not listed, where the old pin listed it as missing. quackd names the joint of the first id listed, through the bus's motor table, and names none when every motor is listed |
+| `Failed to sync read '<register>' from motor IDs [<N>, ...] after <k> tries. motor <M>: <error>` | what a read of several motors at once raises when no good reply came back, listing every motor it read, and a sync write says `Failed to sync write '<register>' to motor IDs [<N>, ...]` only when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The words after the list are rustypot's: `motor <M>: ` and why, M being the first motor whose own reply did not come back whole, and every motor after it not known to be fine, since a cable that breaks at one motor silences the ones after it. `Operation timed out` is serialport-rs's for a reply that never came, and `Timeout error` rustypot's for a packet that could not go out. quackd names motor M as the first that did not answer, and names no joint for a sync write. The arm simulator fails its reads and goal writes in these words. A read that ends a run says `the arm did not answer: ConnectionError: ` in front of them |
 | `sts3215 model number 777` | what an SO-101 servo answers a ping with, and what the handshake prints beside each id it lists. The arm simulator's handshake fault prints it where the arm's would |
 | `check_if_not_connected refuses a call on a port that is not open` | ``<class> is not connected. Run `.connect()` first.``, a ConnectionError, on the follower's observation, send and disconnect and on every bus read and write, and its twin says `<class> is already connected.` for a connect. The arm simulator refuses in the same words under upstream's class names |
-| `MotorsBus.is_connected is port_handler.is_open` | a port flag, not a reply: why the heartbeat reads the arm |
-| `FeetechMotorsBus.is_calibrated reads the motors back` | a missing, stale or foreign file all read as not calibrated |
+| `SerialMotorsBus.is_connected is whether it holds rustypot's Bus` | whether the port is open, not a reply: an unplugged arm stays connected until somebody closes the bus, which is why the heartbeat reads the arm |
+| `SerialMotorsBus.is_calibrated reads the motors back` | `Min_Position_Limit`, `Max_Position_Limit` and `Homing_Offset` off every motor, in sync reads with no retry, compared with the file: a missing, stale or foreign file all read as not calibrated. LeRobot's connect makes this check between the handshake and `configure()`, so a lost reply in it fails a connect that has written nothing |
 | `write_calibration() is reached only through calibrate()` | quackd cannot move an arm's zero by accident |
-| `MotorsBus.sync_read(data_name, motors=None, normalize=True, num_retry=0)` | one transaction for every motor named |
-| `NORMALIZED_DATA is Goal_Position and Present_Position` | every other register comes back raw |
+| `SerialMotorsBus.sync_read(data_name, motors=None, *, normalize=True, num_retry=0)` | one transaction for every motor named, on an SO-101, and a retry sends it again |
+| `normalized_data is goal_position and present_position, matched without case` | every other register comes back raw, and quackd asks for raw anyway |
 | `MotorCalibration(id, drive_mode, homing_offset, range_min, range_max)` | raw encoder ticks, not degrees |
 | `Invalid calibration for motor '<motor>': min and max are equal.` | LeRobot loads a file whose range_min equals its range_max and refuses the first reading or goal through that motor. The arm simulator refuses the file as it reads it |
 | `degrees = (raw - mid) * 360 / 4095` | how a calibration file becomes a range in degrees, centred on zero |
 | `a degrees goal is not clamped to the calibrated range` | the two 0..100 modes are clamped and DEGREES is not, so the servo's own clamp is what stops a goal past the travel, silently: why quackd refuses |
 | `write_calibration() writes Min_Position_Limit and Max_Position_Limit, and the servo clamps Goal_Position to them` | the servo clamps every goal to the calibrated travel and never a reading, seen on an SO-101 on 2026-09-23: why a rest pose is clipped into the travel and a joint past it gets no goal |
 | `sts3215 resolution 4096` | one tick is about 0.088 degrees |
-| `Torque_Enable (40, 1) and Present_Temperature (63, 1)` | the two registers quackd reads; upstream reads neither |
+| `Torque_Enable (40, 1) and Present_Temperature (63, 1)` | the two registers quackd reads, in rustypot's STS3215 table; upstream reads neither. `Present_Load`, `Present_Voltage`, `Status`, `Present_Current` and `Max_Temperature_Limit` are in the same table, and quackd reads none of them yet |
+| `an sts3215's status byte is alarms only, and nothing raises on one` | rustypot's STS3215 definition says `status_alarms_only: true`, so no status an sts3215 sends counts as a refusal, and LeRobot drops the status byte. An overloaded or overheated servo answers reads and writes as any other and passes the handshake, where the old pin's single reads, writes and pings raised on any error bit. So LeRobot 0.7.0 surfaces no overload and no overheat at all, and quackd's own temperature read, refused at 60, is the only heat guard it has. The `Status` register holds the alarms, and quackd does not read it. What a servo's own protection does to its torque meanwhile is its firmware's, and nobody here has measured it |
+| `rustypot opens the port exclusively, on every platform` | serialport-rs opens it with no sharing on Windows, and with `TIOCEXCL` and an exclusive `flock` that fails rather than waits on Linux and macOS, its default there. A second program opening the arm's port while quackd holds it is refused at open, and so is quackd opening one another program holds for itself, which LeRobot says as `Could not connect on port ...`. On Linux and macOS a program that opened the port first with no lock, as pyserial does unless asked, does not stop quackd opening it too: serialport-rs's own comment says its lock holds only against programs that lock as well. Nor does `TIOCEXCL` stop root, so a program run as root that takes no lock opens the port beside quackd. The old SDK's pyserial locked the port on Windows alone, so on Linux and macOS two programs could talk over each other on one bus |
+| `each attempt waits 50 ms for a status packet` | LeRobot's default timeout, longer than a USB adapter's 16 ms latency timer, handed to rustypot as the port's read timeout, and a retry waits again. A release or a take-hold with `num_retry=5` spends some 300 ms on each motor that does not answer, every motor tried, so some 1.8 s over six silent motors, past the 1 s quackd gives most calls: their torque calls get a deadline of their own, worked out from these numbers |
 | `Camera.async_read(timeout_ms)` | the most recent new frame |
 | `Camera.read()` | |
 | `OpenCVCamera converts BGR to RGB when color_mode is RGB` | channel order is a config choice |
@@ -3477,7 +3509,7 @@ and why the adapter is shaped the way it is is
 ### UNVERIFIED (our assumptions, and what quackd does about each)
 
 A policy's names, and the one assumption about running one, are in
-[the policies' table](#the-policies-upstream-lerobot-061) below, read at the version a policy
+[the policies' table](#the-policies-upstream-lerobot-070) below, read at the version a policy
 server runs.
 
 | Name | What quackd does |
@@ -3485,10 +3517,10 @@ server runs.
 | `TORQUE_ENABLE_HOLDS_PRESENT` | what a servo does with the goal it was last told when torque comes back on. `enable_torque()` writes `Torque_Enable` and then `Lock` on each motor, neither of them a goal, so whether the motor then holds where it is or drives to that stale goal is the firmware's business and is documented nowhere quackd can read. It matters because the goal last written before a hand-off is the rest pose the arm has since been lifted out of by hand, so a snap back to it would happen with somebody's fingers in the way. `take_hold()` writes the present position as the goal **before** enabling torque, writes it again after, and reads the arm back to check it stayed, so the assumption is never relied on in either direction. A joint placed past its calibrated travel is where that cannot work: a goal written there is clamped to the limit (`POSITION_LIMITS_CLAMP_GOALS`), and no goal leaves the servo the last one it had, the rest move's, which only this row could say it ignores. So `take_hold()` leaves torque off and refuses while any body joint reads outside its travel |
 | `GRIPPER_OPEN_VALUE` | 100 is assumed open; which end is open is how the arm was calibrated, and the checklist asks for it by hand |
 | `HOLDING_INFERRED` | holding is the gripper told to close, settled, and short of shut; listed in `extras.assumptions`. A gripper a person closed by hand is a position and not a grip, so an arm placed with `--by-hand` reports nothing held until the pilot closes the gripper itself |
-| `TEMPERATURE_C` | the register is read raw and treated as Celsius; the 60 °C refusal and the 70 °C cut-off are Feetech's numbers, not measured |
+| `TEMPERATURE_C` | the register is read raw and treated as Celsius; the 60 °C refusal and the 70 °C cut-off are Feetech's numbers, not measured. LeRobot 0.7.0 surfaces no overheat alarm, so this read is the only heat guard quackd has |
 | `JOINT_RANGES` | each joint's travel is computed from the calibration file and a goal outside it is refused. It is not the mechanical limit on every arm: a calibration that never saw a joint folded all the way leaves the fold past it, as the bench arm's did on 2026-09-23, which is why a rest pose is clipped into the travel. Whether it is the mechanical limit on any given arm is unverified |
-| `SERIAL_PORT` | `--address` is checked for shape and nothing more |
-| `THREAD_SAFETY` | every call is serialised under one lock in a worker thread with a deadline; a blown deadline wedges the transport |
+| `SERIAL_PORT` | `--address` is checked for shape and nothing more. The port opens for one program at a time, so whatever else holds it for itself is a refusal at connect, and on Linux and macOS a program that opened it with no lock is not |
+| `THREAD_SAFETY` | every call is serialised under one lock in a worker thread with a deadline; a blown deadline wedges the transport. Under LeRobot, rustypot's `Bus` serialises its calls on a lock of its own and lets go of the GIL while it talks, and its close takes that lock holding the GIL, so a close made while another thread's call is on the wire would hold up every Python thread until the call ends. quackd makes no close over a call it has lost. It opens the port holding the GIL too, so an open that blocks, a Bluetooth port's say, holds up every Python thread, quackd's deadlines and Ctrl-C among them, until it returns |
 | `CAMERA_INDEX_MOVES` | an index is a scan position, not an identity: it can move on a replug or a reboot, and a laptop's own webcam usually holds 0. quackd records the index it opened and cannot tell you it is the camera you meant |
 | `WINDOWS_CAMERA_BACKEND` | which backend a Windows machine needs for a given webcam is not knowable in advance, so quackd keeps upstream's ANY and gives the owner `?backend=msmf` |
 
@@ -3556,47 +3588,53 @@ Line endings in the model do not count, because Git for Windows checks it out wi
 | `GRIPPER_MAP` | LeRobot's 0..100 is mapped linearly over the model's gripper hinge, with the closed end found from the loaded model rather than assumed, and a reading is clipped to 0..100 |
 | `WRIST_CAMERA_POSE` | whether upstream's printed mount sits where your wrist camera sits. quackd renders the wrist view from the mount as the model places it and never claims it is your camera's view |
 
-## The policies' upstream: LeRobot 0.6.1
+<a id="the-policies-upstream-lerobot-061"></a>
+
+## The policies' upstream: LeRobot 0.7.0
 
 `pick` and `manipulate` hand the arm to a learned policy, and a quackd command loads a LeRobot
 checkpoint only in [a policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve),
 never in the process that owns the arm's bus. Only `load_policy()`, which nothing in quackd
 calls, would load one there (`LOAD_POLICY`, below). The names quackd relies on here are read
-against lerobot 0.6.1, the version the laptop that drives the lab arm runs, at the commit its
-tag names,
-[`7e241bd`](https://github.com/huggingface/lerobot/tree/7e241bd630a3719a56157a497ce5d08f244784f1)
-(`v0.6.1`), and were read on 2026-09-27, rather than at the `main` commit
-[the arm's own table](#upstream-api) is pinned to. The installed 0.6.1 wheel and the tag were
-compared file by file that day, and every file these rows cite was the same. Every name lives in
+against lerobot 0.7.0, at the commit its tag names,
+[`410c095`](https://github.com/huggingface/lerobot/tree/410c095eacc0011d998a73383eb94abed2715af0)
+(`v0.7.0`), the commit [the arm's own table](#upstream-api) is pinned to as well. They
+were first read at 0.6.1 and read again at 0.7.0 on 2026-11-08, when the installed
+0.7.0 wheel and the tag were compared file by file, and every file these rows cite that the
+wheel carries was the same; `pyproject.toml` and `remote_inference/README.md`, which it does not
+carry, were read at the tag. Every name lives in
 [`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
 
 **No trained checkpoint has been loaded by quackd in CI or on a GPU.** CI's `policy` job loads a
-tiny random ACT and a tiny random X-VLA through the real server, on the CPU and offline, which is
-what `POLICY_PIPELINE` below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
-the Hub drove a twin of the lab's arm on the simulator and `lerobot/smolvla_base` never answered
-a step in time ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05, pi0,
-GR00T N1.7, a trained X-VLA and tick mode have not run at all.
+tiny random ACT and a tiny random X-VLA through the real server, on the CPU and offline, on
+LeRobot 0.7.0, which is what `POLICY_PIPELINE` below rests on. Trained checkpoints have been
+loaded only on one laptop's CPU, where an ACT from the Hub drove a twin of the lab's arm on the
+simulator and `lerobot/smolvla_base` never answered a step in time
+([guides/policies.md](../../guides/policies.md#smolvla-and-act)), both before LeRobot
+0.7.0. pi05, pi0, GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 
-### VERIFIED (read from source at the v0.6.1 tag)
+### VERIFIED (read from source at the v0.7.0 tag)
 
 | Name | Why quackd relies on it |
 |---|---|
 | `lerobot.policies.pretrained.PreTrainedPolicy` | |
-| `lerobot.configs.policies.PreTrainedConfig` | a checkpoint's own config, read before the policy class is built; the one policy name that is not in the factory |
+| `lerobot.configs.policies.PreTrainedConfig` | a checkpoint's own config, read before the policy class is built; the one policy name that is not in the factory. Since 0.7.0 it carries a `dtype`, which a name in `config.json` decodes to, and `from_pretrained` sets the path it was read from, which no code of the six served types reads |
 | `a policy's config carries no fps` | the rate a policy runs at is the fps of the data it learned from, so the server takes a rate it is given and never guesses one, and the rate travels with where it came from |
-| `PreTrainedPolicy.from_pretrained(path, *, config=None, local_files_only=False, revision=None, strict=False)` | a local directory or a Hub repo id, at a revision, and the policy comes back in eval mode. Left lenient, a weight the file lacks is only logged and the model keeps what it was built with, so the server asks for `strict=True` and refuses a checkpoint whose weights are not its model's |
-| `PreTrainedPolicy.select_action(batch: dict[str, Tensor]) -> Tensor` | one action per call |
-| `PreTrainedPolicy.predict_action_chunk(batch: dict[str, Tensor]) -> Tensor` | the whole chunk for one observation, which is what a step is answered with |
+| `PreTrainedPolicy.from_pretrained(path, *, config=None, local_files_only=False, revision=None, strict=False)` | a local directory or a Hub repo id, at a revision, and the policy comes back in eval mode; since 0.7.0 a config with no device raises, which the server never meets, since it sets one. Left lenient, a weight the file lacks is only logged and the model keeps what it was built with, so the server asks for `strict=True` and refuses a checkpoint whose weights are not its model's |
+| `PreTrainedPolicy.select_action(batch: dict[str, Tensor]) -> Tensor, or PolicyOutput` | one action per call, or since 0.7.0 a `PolicyOutput` holding it beside what the policy predicts besides |
+| `PreTrainedPolicy.predict_action_chunk(batch: dict[str, Tensor]) -> Tensor, or PolicyOutput` | the whole chunk for one observation, which is what a step is answered with, or since 0.7.0 a `PolicyOutput` holding it |
+| `PolicyOutput, {"action": Tensor, "prediction": ...}, which select_action and predict_action_chunk may answer in place of a tensor` | new at 0.7.0: the action, and what the policy predicts besides it. Of LeRobot's policies g05 answers one when it predicts something besides its action, and lingbot_va when it is told to return its predicted video; none of the six quackd serves does. The server takes the `action` of one all the same, so a policy that answered one would be served its action and nothing of its prediction |
 | `PreTrainedPolicy.reset()` | |
 | `lerobot.policies.factory.get_policy_class(name)` | |
-| `lerobot.policies.factory.make_pre_post_processors(policy_cfg, pretrained_path=None, pretrained_revision=None)` | the observation and the action tensor each go through one, loaded at the revision given |
+| `lerobot.policies.factory.make_pre_post_processors(policy_cfg, pretrained_path=None, pretrained_revision=None)` | the observation and the action tensor each go through one, loaded at the revision given. Since 0.7.0 it first asks a type for processors of its own, which GR00T alone of the served types has, and GR00T's builds them from its config only for a checkpoint whose `config.json` names no `type`, which the server refuses: every served type loads the processor JSONs the server checked |
 | `lerobot.policies.factory.make_policy(cfg)` | |
 | `lerobot.policies.utils.build_inference_frame(observation, device, ds_features, task, robot_type)` | picks the keys `ds_features` names out of a raw observation, which is why a reset declares the motors in the bus's order and each camera |
 | `lerobot.policies.utils.make_robot_action(action_tensor, ds_features)` | one action row to a dict by name, so a chunk is turned into actions a row at a time |
 | `ACTConfig.chunk_size and n_action_steps` | how many actions one inference predicts and how many of them are played, 100 and 100 for ACT and 50 and 50 for SmolVLA. The server reports both |
 | `ACTConfig.temporal_ensemble_coeff` | set, ACT is asked every step with `n_action_steps` 1, which is the loop's tick mode |
 | `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no quackd command loads a checkpoint beside the arm's bus. Only `load_policy()` would (`LOAD_POLICY`), and nothing in quackd calls it |
-| `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it. A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, so a pinned model whose files map a class to code, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused |
+| `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it, and it refuses a step that keeps its tokenizer inside the checkpoint instead (the artifacts row below). A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, so a pinned model whose files map a class to code, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused |
+| `a processor step's artifacts: directories inside the checkpoint that LeRobot loads in place of the config keys they name` | new at 0.7.0: a save writes what a step saved, a tokenizer step's tokenizer every time, into a directory inside the checkpoint, names that directory in the step's config and declares it in the step's `artifacts`, and a load puts the directory in place of whatever the step names. Every SmolVLA, pi05, pi0 and X-VLA that LeRobot 0.7.0 saves names its tokenizer this way. quackd fetches no such directory and checks none, so the server refuses any step that carries `artifacts`, before a pin or a weight, and a checkpoint LeRobot 0.7.0 saved with a tokenizer step is refused until quackd fetches and checks a checkpoint's own artifact directories |
 | `config.json, model.safetensors, policy_preprocessor.json, policy_postprocessor.json, train_config.json` | the files a checkpoint is read from, each fetched at the revision named, the config and the processors before anything else, and nothing else of the repository |
 | `train_config.json's dataset.repo_id and dataset.revision; meta/info.json's fps` | where a checkpoint's rate is read when the server is given no `--fps`, and only at a commit or a tag, since the checkpoint chose that revision and a branch would give a rate that could change between two serves |
 | `observation.state, observation.images.<name>, action` | the keys a policy's state, images and action go by. An image's frame is handed over under its key with `observation.images.` cut off, which is why each camera is the image of its own name |
@@ -3604,43 +3642,46 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `"act", "smolvla", "pi05", "pi0", "xvla", "groot"` | the types whose processors the allowlist was read from, each its own, and any other is refused before its weights are fetched |
 | `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | LeRobot's default steps, and all of ACT's. Every served type's processors are built from all five but GR00T N1.7's, which leave the normaliser pair out |
 | `smolvla_new_line_processor, tokenizer_processor` | the steps SmolVLA's pre-processor adds. With the row above, the only steps a SmolVLA may name, and the server allows each type its own steps and no other type's |
-| `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name |
-| `pi0_new_line_processor, tokenizer_processor, relative_actions_processor, absolute_actions_processor` | the steps pi0's processors add: pi05's, with a step that ends the task with a newline for PaliGemma's tokenizer in place of pi05's state tokenizer. With the row above, the only steps a pi0 may name |
+| `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name. Since 0.7.0 its tokenizer step names the config's text tokenizer, and its state step leaves the state out of the prompt for a pi05 with proprioceptive memory |
+| `pi0_new_line_processor, tokenizer_processor, relative_actions_processor, absolute_actions_processor` | the steps pi0's processors add: pi05's, with a step that ends the task with a newline for PaliGemma's tokenizer in place of pi05's state tokenizer. With the row above, the only steps a pi0 may name. Since 0.7.0 its tokenizer step names the config's text tokenizer |
+| `PI05Config.text_tokenizer_name and PI0Config.text_tokenizer_name, google/paligemma-3b-pt-224 unless a config says otherwise` | new at 0.7.0: pi05's and pi0's processor factories name their tokenizer step's tokenizer by it, and nothing else reads it, so a served checkpoint's tokenizer is the one its saved step names, which the server pins or refuses, as it refuses one kept inside the checkpoint. A config that names another tokenizer changes nothing the server loads |
 | `tokenizer_processor, xvla_image_to_float, xvla_imagenet_normalize, xvla_add_domain_id, xvla_image_scale` | the steps X-VLA's processors add, each but the tokenizer a fixed transform of the data, the domain step handing the model the domain its data came from, which has to be one of the model's own. With the row above, the only steps an X-VLA may name |
 | `X-VLA's action_mode: ee6d, joint, agibot_ee6d, franka_joint7, auto, so101_bimanual` | what an X-VLA's answer means, set in its config, `ee6d` unless it says otherwise. `auto` is the dataset's own action, an SO-101's joints, and the server serves it alone, refusing every other mode before a pin or a weight |
-| `xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the gripper into -1 or 1` | LIBERO's post-processor step, for an end effector and LIBERO's gripper, refused in a sentence of its own |
-| `XVLAPolicy.from_pretrained loads its weights strictly` | so the server's own strict load asks nothing more of it. Its Florence-2 is built from its config, never fetched, so its tokenizer is the one model it names |
 | `groot_n1_7_pack_inputs_v1, groot_n1_7_vlm_encode_v1, groot_n1_7_action_decode_v1, groot_action_unpack_unnormalize_v2, relative_actions_processor, absolute_actions_processor` | the steps GR00T N1.7's processors are built from besides the default ones: the pack step, the backbone's encoder, one of two decode steps, and the relative and absolute steps one that learned relative actions without grouped statistics adds. With the row above, the only steps a GR00T may name |
 | `GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise` | the base a GR00T is built from before its own weights replace it, filled with LeRobot's own when a config names none, so that is refused, and pinned otherwise. Its backbone is built from a config LeRobot carries only while the base names `nvidia/Cosmos-Reason2-2B`, so the pinned base's `config.json` is read before any weight and another backbone refused |
-| `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust |
+| `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust. A step that names no `model_name` gets LeRobot's own backbone, `nvidia/Cosmos-Reason2-2B`, loaded at no revision, so the server refuses one, as it refuses a SmolVLA config with no backbone; LeRobot 0.6.1 filled it the same way, and until this release quackd let such a step through with no pin |
 | `groot_n1_7_action_decode_v1 unnormalises each action group and makes a relative one absolute against the state the pack step cached` | the decode of a checkpoint whose statistics come grouped, beside the one for a checkpoint that took its dataset's. An EEF group, LIBERO's gripper and a decode with no statistics are each refused, since the arm would take its actions as joints it never meant |
 | `a relative GR00T's chunk is decoded whole, against the state it was predicted from` | LeRobot refuses to decode one an action at a time, and the server decodes every chunk whole |
 | `a relative GR00T keeps its state's percentiles in the pack step's raw_stats` | where LeRobot's normaliser keeps none, so the server reads the state's and the action's q01 and q99 from there, group by group, and reports them for the arm's frame check |
-| `LeRobot 0.6.1 serves GR00T N1.7 alone, and refuses N1.5's step names` | so an N1.5 checkpoint, by its steps, its `tokenizer_assets_repo` or its base, is refused in a sentence of its own |
+| `LeRobot 0.7.0 serves GR00T N1.7 alone, and refuses N1.5's step names` | so an N1.5 checkpoint, by its steps, its `tokenizer_assets_repo` or its base, is refused in a sentence of its own |
 | `GR00T's pack step feeds every camera in alphabetical order when none is one its video modality keys name` | it pads no missing view, so the arm needs a camera for every image a GR00T looks at, and a checkpoint whose modality keys name an image its config does not is refused |
 | `a GR00T N1.7 answers with diffusers and dm-tree beside what every family needs, and LeRobot's own [groot] extra adds the rest for training` | so the server's extra brings those two, about 25 MB, rather than LeRobot's `[groot]`, about 340 MB, and a GR00T on a server that cannot import either is refused before a pin or a weight, since LeRobot would find out only once the model is built |
+| `xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the gripper into -1 or 1` | LIBERO's post-processor step, for an end effector and LIBERO's gripper, refused in a sentence of its own |
+| `XVLAPolicy.from_pretrained loads its weights strictly` | so the server's own strict load asks nothing more of it. Its Florence-2 is built from its config, never fetched, so its tokenizer is the one model it names |
 | `overrides={"device_processor": {"device": device}}` | how upstream's own loops put a loaded pre-processor on their device. The server does the same and puts the post-processor's on the CPU, where the answers are read |
 | `lerobot.utils.device_utils.auto_select_torch_device()` | the device a checkpoint is loaded on, and whether the server says it has a GPU |
-| `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does |
+| `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does, `lerobot.inference` since 0.7.0 |
 | `NormalizerProcessorStep.state_dict() -> {'<feature>.<stat>': Tensor}` | where the state's and the action's 1st and 99th percentiles are read, which the arm holds against its travel |
 | `PI05Config.action_feature_names, a list of names or None` | the action's dimensions by name, where a checkpoint has them, which the arm checks against its bus |
 | `SmolVLA, pi05, pi0 and X-VLA run with some of their images missing` | an ACT takes every image it names, and so does a GR00T, so the arm refuses either with an image no camera is mapped to, and says which of the others' go padded. pi0 pads a missing one with -1 and a mask of zero, and X-VLA pads out to its own number of views with zeros |
 | `ACTConfig.pretrained_backbone_weights = "ResNet18_Weights.IMAGENET1K_V1"` | torchvision would fetch these as ACT is built, before the checkpoint's own weights replace them, so the server sets it to None |
-| `RelativeActionsProcessorStep caches the state each time the pre-processor runs` | training makes a chunk relative to one state, and the absolute step adds back the state cached last. LeRobot's own loop runs the pre-processor every tick, so each action it plays from its queue is made absolute against the state of the tick it is played at. The server makes a whole chunk absolute against the state it was predicted from, as OpenPI does, and serves such a pi05 in chunks |
-| `PI05Policy.from_pretrained returns the model without its weights when they do not load` | pi05's own loader catches a load that fails, prints a line and hands back the model as it was built, a random network. The server loads a pi05's weights the way that loader does, its key fixes and a `model.` prefix, strictly and with nothing caught |
-| `PI0Policy.from_pretrained returns the model without its weights when they do not load` | pi0's loader is pi05's, so the server loads a pi0's weights the same way, with pi0's own key fixes |
+| `RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it while a policy bound to it still plays the chunk predicted from it` | training makes a chunk relative to one state, and the absolute step adds back the state cached. At 0.6.1 LeRobot's own loop cached it every tick, so each action it played from its queue was made absolute against the state of the tick it was played at; at 0.7.0 its rollout and eval hold the state while the chunk predicted from it plays out. The server makes a whole chunk absolute against the state it was predicted from, as OpenPI does and LeRobot's own loop now does too, and serves such a pi05 in chunks |
+| `PI05Policy.from_pretrained returns the model without its weights when they do not load` | pi05's own loader catches a load that fails, prints a line and hands back the model as it was built, a random network. The server loads a pi05's weights the way that loader does, its key fixes and a `model.` prefix, strictly and with nothing caught, and fills nothing in where 0.7.0's loader fills a missing memory projection as it was built, so a checkpoint that lacks one is refused |
+| `a pi05 with MEM keeps one observation each time it is asked, and looks back over them memory_stride apart` | new at 0.7.0: a pi05 with visual or proprioceptive memory looks back over the observations it was asked with, a stride apart that its config counts in frames, and LeRobot's own loop asks it every tick. The server asks it once a chunk, so it would look back over chunks where it learned frames, and a pi05 with memory is refused on its `config.json` |
+| `PI0Policy.from_pretrained returns the model without its weights when they do not load` | pi0's loader is pi05's, and it kept 0.6.1's shape at 0.7.0, so the server loads a pi0's weights the same way, with pi0's own key fixes |
+| `PreTrainedPolicy renames a state dict's vision_tower.vision_model. keys to vision_tower. as it loads one` | new at 0.7.0, for a checkpoint saved before transformers 5.6 flattened SigLIP's vision tower: every LeRobot policy renames those weights as it loads them, so the server's own strict load of a pi05 or a pi0 takes such a checkpoint as LeRobot's loaders do, and still refuses a weight the policy lacks |
 | `PI0FastPolicy loads the FAST tokenizer with trust_remote_code=True` | hard-wired in the policy rather than in a processor step an override could reach, so serving a pi0-FAST would run its tokenizer's repository's own Python. The server refuses the type on its `config.json` |
-| `async inference unpickles what it is sent` | LeRobot's own policy server and robot client `pickle.loads` what they receive, over an insecure port, which is why quackd has a protocol of its own |
-| `the async robot client imports torch` | and the arm's process is the one quackd keeps free of torch |
-| `observations_similar(obs1, obs2, lerobot_features, atol=1)` | the async server skips an observation near the last one it ran, and quackd's runs every step it is asked |
-| `SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"]` | the policies the async server will load, and anything else is refused there |
-| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). Beside it a tiny random X-VLA, its Florence-2 built from its config and a tokenizer of a few words pinned at a commit, fetched from the cache alone and served through the same server and client. ACT and X-VLA on the CPU and nothing else, and random ones, so nothing about what a trained policy does to an arm follows from it |
+| `LeRobot 0.6.1's async inference unpickled what it was sent, and 0.7.0's remote inference, which replaced it, decodes bounded MessagePack` | 0.6.1's policy server and robot client `pickle.loads` what they received, over an insecure port, which is why quackd has a protocol of its own. 0.7.0 removed that module, and the remote inference that replaced it, over zenoh, decodes bounded MessagePack with its extensions refused; quackd has read no more of it than that and runs neither |
+| `LeRobot 0.6.1's async robot client imported torch, and 0.7.0's remote client does too` | and the arm's process is the one quackd keeps free of torch, which 0.7.0's remote client imports as 0.6.1's async one did |
+| `LeRobot 0.6.1's async server skipped an observation near the last one, and 0.7.0's remote inference takes the newest observation each time it asks for a chunk` | 0.6.1's async server skipped an observation near the last one it ran; 0.7.0's remote engine keeps the newest and compares none, and quackd's server runs every step it is asked |
+| `LeRobot 0.6.1's async server took SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"], and 0.7.0's remote server takes any type it can build` | 0.6.1's async server loaded those and refused anything else, an X-VLA among them; 0.7.0's remote server builds whatever type a checkpoint names, against no list of its own. quackd's server takes the types it read, through allowlists of its own |
+| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). Beside it a tiny random X-VLA, its Florence-2 built from its config and a tokenizer of a few words pinned at a commit, fetched from the cache alone and served through the same server and client. ACT and X-VLA on the CPU and nothing else, and random ones, so nothing about what a trained policy does to an arm follows from it. The job runs LeRobot 0.7.0 with torch 2.15 on the CPU, transformers 5.22.2 and huggingface-hub 2.4.0 |
 
 ### UNVERIFIED (our assumptions about policies, and what quackd does about each)
 
 | Name | What quackd does |
 |---|---|
-| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is not what LeRobot's own loop does (`RelativeActionsProcessorStep caches the state each time the pre-processor runs`), and it is how training made the chunk relative, so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
+| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is how training made the chunk relative, and since 0.7.0 what LeRobot's own loop does too (`RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it while a policy bound to it still plays the chunk predicted from it`), so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
 | `LOAD_POLICY` | `load_policy()` in the arm's backend builds a policy in the arm's own process, the one no checkpoint is to load in, and hands the pre-processor a raw observation `build_inference_frame` would have shaped first. Nothing calls it and nothing has run it. What reaches the arm from any policy is quackd's rule: the verbs' step cap, and a goal outside the travel clipped and counted, unlike a verb's goal, which is refused |
 
@@ -3652,11 +3693,11 @@ run reaches it with `--policy-url hf:NAME`
 ([guides/policies.md](../../guides/policies.md#on-a-hugging-face-endpoint)). The names it relies
 on were read on 2026-10-25 from the API's own
 [OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
-from Hugging Face's pages about the service, from uv's and PyPI's documentation for what a
-container installs, and from huggingface_hub 1.29.0, the version `uv.lock` holds, at the commit
-its tag names,
-[`4237d95`](https://github.com/huggingface/huggingface_hub/tree/4237d95c603db491cb1070898c74c97e4d7c2582)
-(`v1.29.0`). Every file of huggingface_hub's these rows cite was compared with the installed
+from Hugging Face's pages about the service and from uv's and PyPI's documentation for what a
+container installs, and on 2026-11-08 from huggingface_hub 1.33.0, the version `uv.lock` holds
+now that LeRobot 0.7.0 asks for 1.31.0 or newer, at the commit its tag names,
+[`9eeace5`](https://github.com/huggingface/huggingface_hub/tree/9eeace5e467939b8f6af6ff280a134bc7c22802f)
+(`v1.33.0`). Every file of huggingface_hub's these rows cite was compared with the 1.33.0
 wheel's that day and was the same. Every name lives in
 [`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
 
@@ -3667,7 +3708,7 @@ container on 127.0.0.1 alone, with a scripted policy behind them
 The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
 worst: quackd's own token on the server is the lock, whatever the proxy in front does.
 
-### VERIFIED (read on the day from the API, Hugging Face's pages and huggingface_hub 1.29.0)
+### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)
 
 | Name | Why quackd relies on it |
 |---|---|
@@ -3715,7 +3756,11 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 through the executor in the test suite, including the confirm gate on `pick`, the `holding`
 precondition on `place` and the heat refusal.
 `lerobot:real` is exercised against a fake arm and a fake policy (verified method names, no
-serial port), and it has now run on one real arm, on 2026-09-15 and again on 2026-09-23.
+serial port), and it has now run on one real arm, on 2026-09-15 and again on 2026-09-23, both
+times on LeRobot 0.6.1. It also runs over LeRobot 0.7.0's own follower and bus in CI's policy
+job, with rustypot's `Bus`, the part that talks to the port, replaced by a fake that answers in
+rustypot's words (`tests/test_lerobot_real_bus.py`), and no arm has run it on 0.7.0, whose motor
+bus is new from the port it opens to the words a failure raises.
 
 The 2026-09-23 afternoon ran quackd 0.12.0, so what quackd does about that afternoon has not run
 on an arm yet: parking a rest pose at the edge of its travel, `stop` leaving out a joint that

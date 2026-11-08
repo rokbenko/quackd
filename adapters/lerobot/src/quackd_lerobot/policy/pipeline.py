@@ -13,13 +13,16 @@ server imports it with none of them installed, and serves a scripted policy that
    (`upstream_api.POLICY_TYPES`), and its features are a state, images and an action. Every
    processor step is named by a registry name read at the pin for that type (`STEPS_BY_TYPE`),
    and a step named by a `class` key is refused, so nothing is imported from a path a
-   checkpoint chose. A step that could trust a repository's own code is told not to, and a
-   model a checkpoint names inside itself, SmolVLA's backbone or a tokenizer, is refused unless
-   `--pin REPO@REVISION` says which revision to fetch it at
+   checkpoint chose, as is a step that keeps a model in a directory inside the checkpoint
+   (`artifacts`), which LeRobot would load in place of the one the step names
+   (`upstream_api.PROCESSOR_ARTIFACTS`). A step that could trust a repository's own code is
+   told not to, and a model a checkpoint names inside itself, SmolVLA's backbone or a
+   tokenizer, is refused unless `--pin REPO@REVISION` says which revision to fetch it at
    (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). A SmolVLA config that names no backbone is
-   refused too, since LeRobot would fill in its own. A pin is a commit or a tag, and never a
-   branch, which moves (`check_fixed`). What a type's own code reads besides is read as it
-   reads it (`check_family`).
+   refused too, since LeRobot would fill in its own, and so is a GR00T VLM step that names
+   none (`upstream_api.GROOT_VLM_PROCESSOR`). A pin is a commit or a tag, and never a branch,
+   which moves (`check_fixed`). What a type's own code reads besides is read as it reads it
+   (`check_family`).
 3. The rate is `--fps`, or else the fps of the dataset `train_config.json` names, read at the
    revision it names, a commit or a tag, or else the server refuses to start
    (`upstream_api.TRAIN_DATASET`).
@@ -41,10 +44,12 @@ order, then the pre-processor, then `predict_action_chunk` cut to `n_action_step
 post-processor over the whole chunk at once, and `make_robot_action` makes each row a goal per
 motor. One lock holds the three together, so a reset never lands between them, and a reset
 resets the policy and both processors. A policy asked every tick (an ACT with temporal
-ensembling) goes through `select_action` instead, one action a step. A pi05 or a pi0 that
+ensembling) goes through `select_action` instead, one action a step. A policy that answers a
+`PolicyOutput` is served its action (`upstream_api.POLICY_OUTPUT`). A pi05 or a pi0 that
 learned relative actions stays on chunks: its whole chunk is made absolute against the state it
-was predicted from, which is how its training made it relative, and not re-anchored each tick
-as LeRobot's own loop does (`upstream_api.RELATIVE_ACTIONS`, `VLA_PIPELINE`).
+was predicted from, which is how its training made it relative, and how LeRobot 0.7.0's own
+loop anchors one too, where 0.6.1's re-anchored each tick (`upstream_api.RELATIVE_ACTIONS`,
+`VLA_PIPELINE`).
 """
 
 from __future__ import annotations
@@ -102,8 +107,8 @@ REFUSED_STEPS: Mapping[str, str] = {
     ),
     **{
         name: (
-            "which only GR00T N1.5's processors name, and LeRobot 0.6.1 serves GR00T N1.7 alone: "
-            "serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+            f"which only GR00T N1.5's processors name, and LeRobot {up.VERSION} serves GR00T N1.7 "
+            "alone: serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
         )
         for name in up.GROOT_N1_5_STEP_NAMES
     },
@@ -130,6 +135,11 @@ config that leaves one out is refused, because LeRobot fills it with its own def
 name it would then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`,
 `GROOT_BASE_MODEL`)."""
 TRUST_KEY = "trust_remote_code"
+ARTIFACTS_KEY = "artifacts"
+"""The key of a step that names, for keys of its config, directories inside the checkpoint that
+LeRobot loads in their place, which is how LeRobot 0.7.0 saves a tokenizer step's tokenizer
+(`upstream_api.PROCESSOR_ARTIFACTS`). quackd fetches no such directory and checks none, so a
+step that carries the key is refused."""
 TOKENIZER_FILES = ("*.json", "*.txt", "*.model", "*.jinja")
 """What is fetched of a pinned model a step names: its configs and tokenizer files, which are
 all a tokenizer loads, and never its weights, a `.py` that remote code would run from, nor a
@@ -236,9 +246,11 @@ def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
     The policy is a type the server has read the processors of (`upstream_api.POLICY_TYPES`),
     and a type it read and will not serve is refused first, saying why (`REFUSED_TYPES`); its
     inputs are one state and some images, and its output one action
-    (`upstream_api.FEATURE_TYPES`, `FEATURE_KEYS`); its chunking fits the protocol; and a policy
+    (`upstream_api.FEATURE_TYPES`, `FEATURE_KEYS`); its chunking fits the protocol; a policy
     asked every tick is refused without a GPU, since it has to answer inside one
-    (`upstream_api.TICK_MODE`)."""
+    (`upstream_api.TICK_MODE`); and a pi05 with memory is refused, since it keeps one
+    observation each time it is asked and the server asks it once a chunk
+    (`upstream_api.PI05_MEMORY`)."""
     if not isinstance(config, Mapping):
         raise PipelineRefused(f"{spec}'s {up.CONFIG_FILE} is not a JSON object")
     policy_type = config.get("type")
@@ -297,6 +309,15 @@ def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
             "every tick, and this machine has no GPU to answer inside one: serve it on a GPU, "
             "or serve a checkpoint trained without temporal ensembling"
         )
+    memory = [flag for flag in up.PI05_MEMORY_FLAGS if policy_type == "pi05" and config.get(flag)]
+    if memory:
+        raise PipelineRefused(
+            f"{spec} is a pi05 with memory ({', '.join(memory)}), which keeps one observation "
+            "each time it is asked and looks back over them memory_stride apart, a stride it "
+            "learned in frames, and the server asks it once a chunk, so it would look back over "
+            "chunks where it learned to look back over frames: serve a pi05 trained without "
+            "memory (upstream_api.PI05_MEMORY)"
+        )
     names = config.get("action_feature_names")
     action_names: tuple[str, ...] | None = None
     if names is not None:
@@ -324,8 +345,11 @@ def check_processor(doc: Any, filename: str, spec: str, policy_type: str) -> lis
     A step is named by a registry name its type allows (`STEPS_BY_TYPE`) or it is refused, one
     no type may name with a sentence of its own (`REFUSED_STEPS`), and a step with a `class`
     key is refused whatever else it says, because loading one imports that path
-    (`upstream_api.PROCESSOR_CLASS_IMPORT`). A state file is a plain `.safetensors` name
-    beside the JSON."""
+    (`upstream_api.PROCESSOR_CLASS_IMPORT`). A step that carries `artifacts` is refused too,
+    whatever its config names, because LeRobot would load the directories they name inside the
+    checkpoint in that config's place, and quackd fetches and checks none of them
+    (`upstream_api.PROCESSOR_ARTIFACTS`). A state file is a plain `.safetensors` name beside
+    the JSON."""
     steps = doc.get("steps") if isinstance(doc, Mapping) else None
     if not isinstance(steps, list):
         raise PipelineRefused(f"{spec}'s {filename} is not a processor: it has no list of steps")
@@ -352,6 +376,21 @@ def check_processor(doc: Any, filename: str, spec: str, policy_type: str) -> lis
                 f"processor steps quackd has read and allows for a {policy_type!r} policy: "
                 f"{', '.join(sorted(allowed))}"
             )
+        if ARTIFACTS_KEY in step:
+            kept = step[ARTIFACTS_KEY]
+            what = (
+                f"the model its {', '.join(map(str, kept))[:80]} loads"
+                if isinstance(kept, Mapping) and kept
+                else "what it loads"
+            )
+            raise PipelineRefused(
+                f"step {n} of {spec}'s {filename} keeps {what} in a directory inside the "
+                f"checkpoint (`artifacts`), as LeRobot {up.VERSION} saves a tokenizer, and LeRobot "
+                "would load it from there in place of whatever the step names, from files quackd "
+                "neither fetches nor checks: serve a copy of the checkpoint whose step names a Hub "
+                "repository there and carries no artifacts, as one LeRobot 0.6.1 saved does, and "
+                "pin that with --pin REPO@REVISION (upstream_api.PROCESSOR_ARTIFACTS)"
+            )
         config = step.get("config", {})
         if not isinstance(config, Mapping):
             raise PipelineRefused(f"step {n} of {spec}'s {filename} has a config that is not one")
@@ -371,8 +410,10 @@ def nested_models(
     """Every model a checkpoint names inside itself, as repo -> the key that names it. Each is
     a Hub id, or refused: the server loads nothing by a path a checkpoint wrote. A key of
     `config.json` its type has (`NESTED_CONFIG_KEYS`) is refused when it is missing, since
-    LeRobot would load its own default in its place, at no revision. A step's is not: a
-    tokenizer step with no name loads nothing and fails to build."""
+    LeRobot would load its own default in its place, at no revision, and so is a GR00T VLM
+    step's `model_name`, which LeRobot fills with a backbone of its own whose tokenizer and
+    processors it loads trusting their repository's code (`upstream_api.GROOT_VLM_PROCESSOR`).
+    A tokenizer step's is not: one with no name loads nothing and fails to build."""
     found: dict[str, str] = {}
     for key in NESTED_CONFIG_KEYS.get(str(config.get("type")), ()):
         if config.get(key) is None:
@@ -381,6 +422,15 @@ def nested_models(
                 "default in its place, from the Hub at whatever revision it has that day: serve "
                 f"a copy of the checkpoint whose {up.CONFIG_FILE} names it, and pin that with "
                 "--pin REPO@REVISION"
+            )
+    for step in steps:
+        if step["registry_name"] == up.GROOT_VLM_STEP and step["config"].get("model_name") is None:
+            raise PipelineRefused(
+                f"{spec}'s {up.GROOT_VLM_STEP} step names no model_name, and LeRobot would build "
+                f"it with {up.GROOT_BACKBONE} in its place, whose tokenizer and processors it "
+                "loads from the Hub at whatever revision it has that day, trusting its "
+                "repository's code: serve a copy of the checkpoint whose step names it, and pin "
+                "that with --pin REPO@REVISION (upstream_api.GROOT_VLM_PROCESSOR)"
             )
     for key, value, _ in _named(config, steps):
         if value is None:
@@ -539,15 +589,15 @@ def _check_groot(
     n1_5 = isinstance(base, str) and any(mark in base.lower() for mark in up.GROOT_N1_5_BASES)
     if n1_5 or config.get("tokenizer_assets_repo") is not None:
         raise PipelineRefused(
-            f"{spec} is a GR00T N1.5 checkpoint, and LeRobot 0.6.1 serves GR00T N1.7 alone: serve "
-            "a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+            f"{spec} is a GR00T N1.5 checkpoint, and LeRobot {up.VERSION} serves GR00T N1.7 alone: "
+            "serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
         )
     transform = config.get("action_decode_transform", up.GROOT_AUTO_TRANSFORM)
     named = transform.lower() if isinstance(transform, str) else transform
     if named not in (None, "none", "", up.GROOT_AUTO_TRANSFORM, up.GROOT_LIBERO):
         raise PipelineRefused(
             f"{spec}'s action_decode_transform is {str(transform)[:80]!r}, which is none LeRobot "
-            "0.6.1 knows (upstream_api.GROOT_DECODE)"
+            f"{up.VERSION} knows (upstream_api.GROOT_DECODE)"
         )
     if named == up.GROOT_LIBERO or (
         named == up.GROOT_AUTO_TRANSFORM
@@ -1237,10 +1287,12 @@ class LeRobotRunner:
                     raw, torch.device(self.checkpoint.device), features, task=self._task
                 )
                 batch = self._pre(frame)
+                # either may answer a PolicyOutput, the action beside a prediction, and the arm
+                # is served the action alone (up.POLICY_OUTPUT)
                 if self.shape.per_tick:
-                    rows = [self._post(self._policy.select_action(batch))]
+                    rows = [self._post(_action_of(self._policy.select_action(batch)))]
                 else:
-                    chunk = self._policy.predict_action_chunk(batch)
+                    chunk = _action_of(self._policy.predict_action_chunk(batch))
                     if chunk.ndim == 2:
                         chunk = chunk.unsqueeze(0)
                     chunk = self._post(chunk[:, : self.chunk])
@@ -1257,6 +1309,13 @@ class LeRobotRunner:
         # the features it runs on, and every begin and step after this is refused.
         self._closed = True
         self._features = None
+
+
+def _action_of(answer: Any) -> Any:
+    """The action a policy answered: its tensor, or the `action` of a `PolicyOutput`, which
+    LeRobot 0.7.0 lets `select_action` and `predict_action_chunk` answer with what the policy
+    predicts besides (`upstream_api.POLICY_OUTPUT`). None of the types served answers one."""
+    return answer[up.ACTION_KEY] if isinstance(answer, Mapping) else answer
 
 
 @functools.cache

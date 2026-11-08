@@ -86,7 +86,7 @@ EXTRAS = {
     "lan (zeroconf)": ("zeroconf", "quackd[lan]"),
     "lan (mqtt)": ("paho.mqtt.client", "quackd[lan]"),
     "lerobot": ("lerobot", "quackd[lerobot]"),
-    "lerobot (feetech bus)": ("scservo_sdk", "quackd[lerobot]"),
+    "lerobot (feetech bus)": ("rustypot", "quackd[lerobot]"),
     "lerobot-sim (mujoco)": ("mujoco", "quackd[lerobot-sim]"),
     "lerobot-vla (transformers)": ("transformers", "quackd[lerobot-vla]"),
     "rosbridge": ("roslibpy", "quackd[rosbridge]"),
@@ -97,9 +97,10 @@ EXTRAS = {
     "ui (the page quackd ui serves)": ("streamlit", "quackd[ui]"),
 }
 # Packages looked up by distribution metadata only, never imported: importing lerobot pulls
-# torch into a diagnostics command, which is exactly what doctor is not. The Feetech SDK is the
-# half of `quackd[lerobot]` that opens the serial port, and a lerobot installed without its
-# `[feetech]` extra imports cleanly and then cannot reach an arm, so doctor asks for it by name.
+# torch into a diagnostics command, which is exactly what doctor is not. rustypot is the half of
+# `quackd[lerobot]` that opens the serial port and drives the arm's motors, a native library
+# doctor has no reason to load, and a lerobot installed without its `[feetech]` extra imports
+# cleanly and then cannot build a follower, so doctor asks for it by name.
 # Laya is here for the same reason as lerobot rather than for its own: it is the one decision
 # LLM that runs in this process, so it carries torch too, and the decision table below prints a
 # version for every row on a machine that is only reading the table. transformers is the half
@@ -109,7 +110,7 @@ EXTRAS = {
 # maybe somebody still pressing Ctrl-C (`safety.AfterTheClose`).
 _METADATA_ONLY = {
     "lerobot": "lerobot",
-    "scservo_sdk": "feetech-servo-sdk",
+    "rustypot": "rustypot",
     "laya": "laya",
     "transformers": "transformers",
     "streamlit": "streamlit",

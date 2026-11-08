@@ -29,9 +29,11 @@ change to both.
   no session. A server listens only once its policy is built, so one that answers is ready.
   It is a call added to version 1, and a client that never asks it sees nothing change.
 
-It is not LeRobot's own async inference, which unpickles what it is sent over an insecure
-port, needs torch in the client, and skips an observation near the last one
-(`upstream_api.ASYNC_PICKLE`, `ASYNC_CLIENT_NEEDS_TORCH`, `ASYNC_SKIPS_SIMILAR`).
+It is not LeRobot's own. LeRobot 0.6.1's async inference unpickled what it was sent over an
+insecure port, needed torch in the client, and skipped an observation near the last one, and
+0.7.0 replaced it with remote inference over zenoh, which decodes bounded MessagePack and
+compares no observations, but whose client still imports torch, in the process quackd keeps
+free of it (`upstream_api.ASYNC_PICKLE`, `ASYNC_CLIENT_NEEDS_TORCH`, `ASYNC_SKIPS_SIMILAR`).
 
 **Every number is checked, on both sides.** JSON is parsed with a `parse_constant` that
 refuses `NaN` and `Infinity`, which Python's `json` reads by default, and a `parse_float` that

@@ -18,6 +18,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 import quackd
 from quackd.adapters.catalogue import ADAPTERS, BY_NAME, ENTRY_POINT_GROUP
@@ -237,17 +238,52 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
         assert name in BY_NAME, f"{name} is installed but quackd does not publish it"
 
 
-def test_the_arms_extras_stop_below_the_release_that_can_carry_rustypot() -> None:
-    """LeRobot's main calls itself 0.6.2 and has replaced the library that talks to the arm's
-    motors, so a fresh `quackd[lerobot]` must not take it before somebody has read it and run an
-    arm on it. Whoever reads a newer one changes `PYPI_VERSION_READ`, and this sends them to the
-    ceilings, the override in the root pyproject.toml and the ignore in dependabot.yml."""
-    assert upstream_api.PYPI_VERSION_READ == "0.6.1"
+def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
+    """LeRobot 0.7.0 replaced the library that talks to the arm's motors with rustypot, and
+    upstream_api.py was read against it, so `quackd[lerobot]` and `quackd[lerobot-vla]` ask for
+    that minor and stop below the next, which may move the bus again. Both reach LeRobot through
+    quackd-lerobot's own extras, which is where the window is. Whoever reads a newer one changes
+    `PYPI_VERSION_READ`, and this sends them to the windows and the ignore in dependabot.yml.
+
+    The override that lifted 0.6.1's cap on Pillow for a checkout went with 0.6.1: a checkout
+    that resolves past what a wheel asks for is CI testing something nobody installs."""
+    assert upstream_api.PYPI_VERSION_READ == "0.7.0"
     member = _toml(REPO / "adapters" / "lerobot" / "pyproject.toml")
     extras = member["project"]["optional-dependencies"]
     for name in ("sdk", "vla"):
         (asks,) = [r for r in extras[name] if _dist(r) == "lerobot"]
-        assert ">=0.6,<0.6.2;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
+        assert ">=0.7,<0.8;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
+    core = _toml(REPO / "pyproject.toml")
+    for extra, theirs in (("lerobot", "sdk"), ("lerobot-vla", "vla")):
+        (asks,) = core["project"]["optional-dependencies"][extra]
+        assert asks.startswith(f"quackd-lerobot[{theirs}]>="), f"quackd[{extra}] asks for {asks}"
+    assert "override-dependencies" not in core.get("tool", {}).get("uv", {})
+    ignores = yaml.safe_load((REPO / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    (uv,) = [u for u in ignores["updates"] if u["package-ecosystem"] == "uv"]
+    (lerobot,) = [i for i in uv["ignore"] if i["dependency-name"] == "lerobot"]
+    assert lerobot["versions"] == [">=0.8"], lerobot
+
+
+def test_ci_serves_the_policies_on_the_lerobot_their_refs_read() -> None:
+    """CI's policy job is what POLICY_PIPELINE's VERIFIED rests on, so it installs the LeRobot
+    `policy/upstream_api.py` was read at, and torch from the CPU index inside the window that
+    release asks for (`torch>=2.7,<2.16.0`, `torchvision>=0.22.0,<0.30.0`, its pyproject.toml
+    lines 62 and 63). The job pinned 0.6.1 by a line of its own, which nothing held to the
+    refs, so a re-read could have left CI serving the release before it. The same job runs the
+    arm's real backend over LeRobot's own bus, which the arm's refs were read at too, and which
+    needs rustypot, so it is the same release and its `[feetech]` extra, and the run requires
+    rustypot rather than skipping without it."""
+    from quackd_lerobot.policy import upstream_api as policies
+
+    assert policies.VERSION == upstream_api.VERSION
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    job = ci["jobs"]["policy"]
+    runs = [step.get("run", "") for step in job["steps"]]
+    (install,) = [run for run in runs if "lerobot[" in run]
+    assert f'"lerobot[xvla,feetech]=={policies.VERSION}"' in install, install
+    assert '"torch>=2.7,<2.16" "torchvision>=0.22,<0.30"' in install, install
+    assert any("tests/test_lerobot_real_bus.py" in run for run in runs), runs
+    assert job["env"]["QUACKD_REQUIRE_LEROBOT_BUS"] == "1"
 
 
 def test_every_published_adapter_is_installed_for_the_suite() -> None:

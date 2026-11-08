@@ -125,6 +125,47 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `mock.follower`, a travel narrowed in `MOCK_RANGES` has to be the same either side of zero, as a
   calibrated one is, and the knobs that make a read fail now give its error's type,
   `(ConnectionError: ...)`, as a register on the arm does.
+- **The arm's extras take LeRobot 0.7, whose motor bus is new.** `quackd[lerobot]`,
+  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot from 0.7.0 and below 0.8, where they
+  stopped below 0.6.2. 0.7.0 replaced `feetech-servo-sdk`, the library under the SO-101's bus, with
+  rustypot, under one `SerialMotorsBus` for every Feetech and Dynamixel servo, so every LeRobot name
+  the arm relies on was read again at the `v0.7.0` tag, and the bus below LeRobot's Python at
+  rustypot's `v1.13.1`. What changes for you: `doctor`'s `lerobot (feetech bus)` row shows rustypot's
+  version, 1.13.1 today, and a servo answering with an overload or an overheat no longer reads as
+  missing at connect, because LeRobot 0.7.0 reports neither, as Known limitations says. Calibration
+  files are unchanged, by LeRobot's release notes. No arm has run quackd on 0.7.0, and Known
+  limitations lists what the arm owes, step by step.
+- **A second program on the arm's port is refused as it opens it, on Linux and macOS too.** rustypot
+  opens the port for one program at a time on every system. The old SDK's pyserial did that on Windows
+  alone, so on Linux and macOS a teleoperation, a recording, a serial monitor or a second quackd could
+  open the arm's port beside a run and talk over it on one bus. Now the second one fails as it opens,
+  unless it runs as root and takes no lock. A quackd that comes second fails in LeRobot's words,
+  `Could not connect on port ...`, its notes say the port never opened, so nothing reached a motor,
+  and its refusal says to check that nothing else has the port open. On Linux and macOS that takes a
+  first program that locked the port, as LeRobot 0.7.0's own tools do: one that opened it with no
+  lock, as pyserial does unless asked, still does not stop quackd. What changes for you: close
+  whatever holds the port before a run, as on Windows already.
+- **Pillow 13 is quackd's own floor, and `pyproject.toml` has no `override-dependencies`.** LeRobot
+  0.7.0 allows Pillow 13, so the override that lifted 0.6.1's `Pillow<13` for a checkout and for CI is
+  gone, and quackd asks for `pillow>=13`, the first release with the fixes for the advisories 0.31.3
+  named. What changes for you: installing quackd beside a Pillow 12 or older upgrades it, and
+  `quackd[lerobot]`, `quackd[lerobot-vla]` and `quackd[robots]` on Python 3.12 or later no longer
+  install Pillow 12.3.0, which was 0.31.3's first Known limitation. CI's policy job no longer runs the
+  picture tests on a Pillow under 13, since no install takes one now.
+- **The policy server reads LeRobot 0.7.0.** Every LeRobot name `quackd policy serve` and its client
+  rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 62 rows, five of
+  them new, 59 VERIFIED and 3 UNVERIFIED, and the installed wheel matched the tag in every file they
+  cite that it carries. A policy that answers 0.7.0's `PolicyOutput` in place of a tensor is served
+  its action, though none of the six types quackd serves answers one. A pi05 or a pi0 saved before
+  transformers 5.6 loads its vision tower through 0.7.0's rename of its `vision_tower.vision_model.`
+  keys, and the server's load is still strict. LeRobot 0.7.0 removed its async inference, which quackd
+  never ran because it unpickled what it was sent, so the four rows about it say what 0.6.1 did and
+  what 0.7.0's remote inference does instead, and quackd runs neither. What changes for you: a
+  processor step that keeps its tokenizer or its model inside the checkpoint, 0.7.0's `artifacts`, is
+  refused before a pin or a weight, because quackd fetches and checks no such directory, so a SmolVLA,
+  pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
+  0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
+  the server asks it once a chunk, and its memory looks back a stride it learned in frames.
 
 ### Fixed
 
@@ -183,6 +224,43 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   took the other robots' links down with it: another base's, or the industrial arm's, with its
   readings and its cancel. It closes its own client now, as the arm's transport does, and the loop
   runs on for the rest, on the daemon thread it has always run on.
+- **A fault on LeRobot 0.7.0's bus names its joints.** quackd found the servo a failure was about by
+  0.6.1's words, `id_=<N>`, which 0.7.0 says nowhere, so over the new bus a failed torque call, a
+  failed read or write and a failed read of several motors would each have named no joint, and sent
+  the person at the arm to all of its cables and its power for one loose cable. Only the handshake,
+  whose words did not change, still named one. It reads 0.7.0's sentences now. A torque call tries
+  every motor and names each one it could not switch, and quackd names them all: `connect attempt 1
+  of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both cables, and a release
+  you asked for that raised names the joints that may still hold, every other one having let go. The
+  close's own release at the rest pose still says only that some motors may hold. A read of several
+  motors at once names the first motor that did not answer, said as that, since a cable that breaks
+  there silences the ones after it too. A handshake that found none of the arm's motors, or a torque
+  call that reached none, still names none. And a connect note tells a port that never opened from
+  one LeRobot closed behind its handshake, which writes to no motor and which the old bus left open.
+  `tests/test_lerobot_adapter.py` builds each of those sentences as LeRobot does, citing the line
+  that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
+  over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that talks
+  to the port, replaced by a fake that answers in rustypot's words. The mock's follower,
+  `quackd_lerobot/fake_follower.py`, speaks 0.7.0's bus too: a torque call tries every motor and
+  names each that did not answer (`unanswered`, a turn for tests), and a port already shut is
+  passed over without a word, so a rehearsal names a joint as the arm would.
+- **A release or a take-hold over motors that do not answer gets the time LeRobot 0.7.0 takes.** Its
+  torque call tries every motor, six tries each with `num_retry=5`, each waiting 50 ms for a reply, so a
+  release over six silent motors takes some 1.8 s where 0.6.1's stopped at the first. That is past the
+  1 s quackd gives a call, after which it would have refused every call on the bus until that one came
+  back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
+  rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
+  motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+
+### Security
+
+- **A GR00T whose VLM step names no model is refused, where LeRobot would load its own backbone
+  unpinned.** LeRobot fills a `groot_n1_7_vlm_encode_v1` step that names no `model_name` with
+  `nvidia/Cosmos-Reason2-2B`, and loads its tokenizer and processors at no revision, with
+  `trust_remote_code=True`, on the first chunk. The server pinned only a `model_name` a step named,
+  so since 0.26.0 a GR00T whose processors left it out ran whatever code that repository held on the
+  day, past `--pin`. LeRobot's own saves always write it, so it took an edited file. Such a step is
+  refused now, before a pin or a weight, and `tests/test_policy_pipeline.py` fails without this.
 
 ### Documentation
 
@@ -248,6 +326,32 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a fold and a hand-off are the servo arm's alone. The architecture page's row for Huebot no longer
   says its transport is a copy of the Microduck's, which 0.33.0 made one record over the Microduck's
   own.
+- **`uv.lock` takes LeRobot 0.7.0, rustypot 1.13.1 and one huggingface_hub, 1.33.0.**
+  `feetech-servo-sdk`, `deepdiff` and `orderly-set` leave it, `sentencepiece` 0.2.3 comes in with
+  LeRobot's `[pi]`, and on Python 3.12 or later `transformers` is 5.22.2, as LeRobot 0.7.0's policy
+  extras pin it, with the `tokenizers` 0.23.3 it asks for. LeRobot's floor of 1.31.0 split the hub
+  between Python 3.11 and the rest, and `uv lock --upgrade-package huggingface-hub` put both on
+  1.33.0, the newest that `diffusers` 0.39.0 allows. `uv lock` keeps whatever still fits, so `torch`
+  2.11.0, `setuptools` 81.0.0 and, on Python 3.11, `transformers` 5.5.4 stay, and with them the five
+  Dependabot alerts dismissed in 0.31.3. LeRobot 0.7.0 allows a fixed torch, and torch from 2.13 no
+  longer caps setuptools below 82, so moving the three is a `uv lock --upgrade-package` away, left for
+  a person, since it moves torch four minors.
+- **Every LeRobot name the arm relies on is read again, at the `v0.7.0` tag.** `upstream_api.py`'s 113
+  rows were read at 410c095, the commit the tag names, and the bus below LeRobot's Python at
+  rustypot's `v1.13.1` and serialport-rs's `v4.9.0`: 104 VERIFIED and 9 UNVERIFIED, and each row
+  about something 0.7.0 removed says what replaced it. Eight are new: the torque calls trying every
+  motor, in LeRobot and again in rustypot, the bus's disconnect releasing the port whatever its
+  torque-off did, the busy flag that is gone, the port a failed handshake closes, the alarms nothing
+  raises on, the port opened for one program, and the 50 ms each try waits. The nightly drift job
+  compares the module with LeRobot's newest release tag and its rustypot rows with rustypot's,
+  because it declares both releases now, and `scripts/upstream_drift.py` reads a second repository's
+  release (`RELEASES`) for that. It compares the line a row cites as its source and none its note
+  cites, which is why rustypot's torque call has a row of its own.
+  `policy/endpoint_upstream_api.py`'s rows were read again at huggingface_hub 1.33.0 (`9eeace5`):
+  of the 17 lines they cite, 12 moved and none changed what a row says, and `create_inference_endpoint`
+  no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
+  checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
+  changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
 
 ### Known limitations
 
@@ -284,6 +388,55 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   there proves only that the goal was played, and nothing quackd reads says whether that arm can
   move. On the MotoMini, a goal that reaches an arm whose energy saving function has turned its
   servos off makes MotoROS2 turn them on itself, which nothing quackd sends can rule out.
+- **No arm has run quackd on LeRobot 0.7.0.** One SO-101 ran it on 0.6.1, on 2026-09-15 and
+  2026-09-23. What is here about 0.7.0's bus was read from LeRobot's, rustypot's and serialport-rs's
+  source, and run over LeRobot's own follower and bus with a fake in place of rustypot's `Bus`, which
+  answers in rustypot's words but is not its code. Owed on the arm, in order: a fresh install whose
+  `doctor` shows rustypot; a connect with the arm's calibration file from 0.6.1, reading as
+  calibrated with every joint's travel as it was; readings at a fixed pose within a tick of 0.6.1's;
+  plausible torque and temperature reads; a small move, the step cap, the goal clamp, the rest move
+  and a hold; `quackd robot release` and the take-hold, with torque read back on all six motors; a
+  close at rest that goes limp, and one away from it that keeps holding and frees the port; a second
+  quackd or `doctor` on the port while a run holds it, refused as it opens; the USB cable pulled
+  mid-session, its heartbeat, its words and its 50 ms waits, with no wedge; the servo supply off, every
+  motor missing and the arm's cables and power; one servo cable out, naming that joint; Ctrl-C during
+  a release and during a take-hold, now that rustypot lets go of Python's lock while it talks; a
+  stalled gripper or forearm, which raises nothing now, with the 60 °C refusal still holding; and a
+  trained ACT through the policy server on 0.7.0. And a release over motors that stopped answering,
+  timed against the 5.68 s it gets. What rustypot says for a reply that comes back short, and what each
+  system says for a port another program holds, nobody has seen.
+- **LeRobot 0.7.0 reports no overload and no overheat, so quackd's temperature read is the only heat
+  guard.** An sts3215's status byte is alarms only, so a servo whose overload or overheat protection
+  has tripped answers every read and write as any other, and LeRobot drops the byte, while its own
+  protection may cap or cut its torque with the torque register still reading on, which nobody here
+  has measured. quackd does not read the servo's `Status` register. What is left is its refusal to
+  move a joint at 60 °C, below the servo's own 70 °C cut-off, both Feetech's numbers and neither
+  measured, and its stall check on a move.
+- **Opening the arm's port holds up every Python thread until the open returns.** rustypot opens the
+  port without letting go of Python's lock, where pyserial let go of it, so an open that blocks, as a
+  Bluetooth port's can, stops quackd's own deadlines and its Ctrl-C until it returns. A USB adapter's
+  port does not normally block as it opens.
+- **On Linux, Python 3.14 builds rustypot from source.** rustypot 1.13.1, the only release so far in
+  the range LeRobot 0.7.0 allows, from 1.13.1 and below 2, has no Linux wheel for CPython 3.14, so
+  `quackd[lerobot]` there needs a Rust toolchain. Windows on x86-64 and macOS have wheels for it.
+- **A policy server on a Hugging Face Endpoint may find no GPU.** Its container installs torch from
+  PyPI, which on Linux is a CUDA 13 build needing NVIDIA driver 580.65 or newer, by LeRobot 0.7.0's
+  release notes. Which driver the endpoints' GPUs run has not been read. On an older one torch finds
+  no GPU, and `quackd policy endpoint up` pauses the endpoint and quotes its log, as it does for any
+  server with none.
+- **`quackd[laya]` beside the policy server's extra runs on transformers 5.22, which nobody has
+  checked.** laya asks for any transformers from 4.48, and LeRobot 0.7.0's policy extras, which
+  `quackd[lerobot-vla]` installs, pin 5.22, so on Python 3.12 or later the lock and an install of both
+  put laya on 5.22, which is also the newest transformers on PyPI today.
+- **A SmolVLA, pi05, pi0 or X-VLA checkpoint that LeRobot 0.7.0 saved is refused by the policy
+  server.** LeRobot 0.7.0's `save_pretrained` writes each `tokenizer_processor` step, which those four
+  types' pre-processors all have, with `"tokenizer_name": "tokenizer"` and, beside it,
+  `"artifacts": {"tokenizer_name": "tokenizer"}`, and saves the tokenizer's files in the checkpoint's
+  `tokenizer/` directory, and the server refuses any step that carries `artifacts` until quackd fetches
+  and checks a checkpoint's own artifact directories. A checkpoint LeRobot 0.6.1 saved, or a 0.7.0 save
+  whose step names the tokenizer's Hub repository and carries no `artifacts`, serves as before with
+  `--pin`. An ACT or a GR00T N1.7 that 0.7.0 saved carries none: ACT has no tokenizer step, and no
+  GR00T step saves artifacts.
 
 ## [0.33.0] — 2026-11-07
 

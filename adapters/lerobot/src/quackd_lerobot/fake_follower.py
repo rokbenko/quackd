@@ -31,16 +31,20 @@ plain as the backend's code allows:
   open past it.
 - **Torque per motor**, written and read on the bus as the backend writes and reads it, with
   the turns a test gives the hand-off to end the ways an arm's can: motors that keep their
-  torque through a release (`holdouts`), joints that sag as torque comes on (`slips`), and a
-  torque register that stops answering after a release or after a take-hold.
+  torque through a release (`holdouts`), motors that answer no torque write (`unanswered`),
+  joints that sag as torque comes on (`slips`), and a torque register that stops answering
+  after a release or after a take-hold. A torque call tries every motor it names whichever
+  fails, and then raises one error naming each that did not answer, in LeRobot 0.7.0's words
+  (`up.TORQUE_TRIED_ON_EVERY_MOTOR`).
 - **The disconnect** drops torque when the config says so as it runs
-  (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`).
+  (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), and shuts the port whatever that did
+  (`up.DISCONNECT_RELEASES_THE_PORT`).
 
 One thing here is the mock's and not the arm's: a read, a send and a torque write answer whether
 or not the port is open, where LeRobot's refuse them on a closed one. The mock has always answered
 before it was connected and after it was closed, tests drive it that way, and an arm in memory has
-no cable to come out. A second connect while the port is open is refused as upstream's is, and so
-is closing the bus's port when it is not open.
+no cable to come out. A second connect while the port is open is refused as upstream's is, and
+closing the bus's port when it is not open is passed over without a word, as LeRobot 0.7.0's is.
 
 `FakeCamera` is the view the mock offers, read as the real backend reads a webcam. Nothing here
 imports LeRobot or MuJoCo.
@@ -59,18 +63,17 @@ from PIL import Image, ImageDraw
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
 from quackd_lerobot import upstream_api as up
 from quackd_lerobot.sim.follower import (
-    BUS_CLASS,
+    DISCONNECT_RETRIES,
     FOLLOWER_CLASS,
     GRIPPER,
     MAX_RES,
+    NO_STATUS,
     TEMPERATURE,
     TORQUE_ENABLE,
     DeviceAlreadyConnectedError,
-    DeviceNotConnectedError,
     NameOrID,
     SimFollowerConfig,
     SimMotor,
-    SimPortHandler,
     ensure_safe_goal_position,
 )
 from quackd_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
@@ -123,43 +126,79 @@ def calibration_for(travel: Mapping[str, tuple[float, float]]) -> dict[str, Fake
 
 
 class FakeBus:
-    """The follower's motors bus: the port's flags, the motor table, and the torque writes and
-    register reads the real backend makes through it (`up.BUS_ENABLE_TORQUE`,
+    """The follower's motors bus: whether the port is open, the motor table, and the torque writes
+    and register reads the real backend makes through it (`up.BUS_ENABLE_TORQUE`,
     `up.BUS_DISABLE_TORQUE`, `up.STS3215_REGISTERS`). What a write does to the arm is the
     follower's."""
 
     def __init__(self, arm: FakeFollower) -> None:
         self.arm = arm
         self.motors = {name: SimMotor(up.SO_MOTOR_IDS[name]) for name in JOINTS}
-        self.port_handler = SimPortHandler()
+        self._open = False
+        """Whether the port is open, which is all LeRobot's bus knows of it
+        (`up.BUS_IS_CONNECTED`): there is no port handler and no busy flag (`up.NO_BUSY_FLAG`)."""
 
     @property
     def is_connected(self) -> bool:
-        """The port's open flag (`up.BUS_IS_CONNECTED`)."""
-        return self.port_handler.is_open
+        """Whether the port is open, and not a reply from any motor (`up.BUS_IS_CONNECTED`)."""
+        return self._open
+
+    def open_port(self) -> None:
+        self._open = True
+
+    def shut_port(self) -> None:
+        self._open = False
 
     def disconnect(self, disable_torque: bool = True) -> None:
         """`up.BUS_DISCONNECT`: torque off on every motor first only when asked, then the port
-        shut, and a port that is not open refused, as upstream's is. The real backend closes the
-        port this way between two connect attempts."""
+        shut whatever the torque-off did (`up.DISCONNECT_RELEASES_THE_PORT`). A port that is not
+        open is passed over without a word, as upstream's is. The real backend closes the port
+        this way between two connect attempts."""
         if not self.is_connected:
-            raise DeviceNotConnectedError(f"{BUS_CLASS} is not connected. Run `.connect()` first.")
-        if disable_torque:
-            self.port_handler.is_using = False
-            self.arm.set_torque(JOINTS, on=False)
-        self.port_handler.is_open = False
+            return
+        try:
+            if disable_torque:
+                self.disable_torque(num_retry=DISCONNECT_RETRIES)
+        finally:
+            self.shut_port()
 
     def enable_torque(
         self, motors: NameOrID | Sequence[NameOrID] | None = None, num_retry: int = 0
     ) -> None:
-        """`up.BUS_ENABLE_TORQUE`, how a take-hold picks the arm back up."""
-        self.arm.take_hold(self._names(motors))
+        """`up.BUS_ENABLE_TORQUE`, how a take-hold picks the arm back up: every motor named is
+        tried, those in the arm's `unanswered` left as they were, and then the one error for
+        them (`raise_for_unanswered`)."""
+        names = self._names(motors)
+        self.arm.take_hold([name for name in names if name not in self.arm.unanswered])
+        self.raise_for_unanswered(names, on=True, num_retry=num_retry)
 
     def disable_torque(
         self, motors: NameOrID | Sequence[NameOrID] | None = None, num_retry: int = 0
     ) -> None:
-        """`up.BUS_DISABLE_TORQUE`, how a release lets go."""
-        self.arm.let_go(self._names(motors))
+        """`up.BUS_DISABLE_TORQUE`, how a release lets go, tried on every motor named as the
+        take-hold's torque write is (`enable_torque`)."""
+        names = self._names(motors)
+        self.arm.let_go([name for name in names if name not in self.arm.unanswered])
+        self.raise_for_unanswered(names, on=False, num_retry=num_retry)
+
+    def raise_for_unanswered(self, names: Sequence[str], *, on: bool, num_retry: int) -> None:
+        """Once a torque call has tried every motor it names, the one ConnectionError LeRobot
+        0.7.0 raises for those that did not answer, each `'<joint>' (motor ID <N>): ` and
+        rustypot's words for a reply that never came, in the order of their ids
+        (`up.TORQUE_TRIED_ON_EVERY_MOTOR`, `up.RUSTYPOT_SET_TORQUE`), or nothing when every motor
+        answered."""
+        failed = sorted(
+            {name for name in names if name in self.arm.unanswered},
+            key=lambda name: self.motors[name].id,
+        )
+        if failed:
+            details = ", ".join(
+                f"'{name}' (motor ID {self.motors[name].id}): {NO_STATUS}" for name in failed
+            )
+            raise ConnectionError(
+                f"Failed to {'enable' if on else 'disable'} torque after {num_retry + 1} tries on "
+                f"{details}."
+            )
 
     def sync_read(
         self,
@@ -209,9 +248,11 @@ class FakeFollower:
     `temperature` are per motor; `held` is whether the object is between the jaws; `actions` is
     every goal sent, in order, by joint name, as asked for and before the step cap. The turns:
     `stuck` (joints that take a goal and do not move), `holdouts` (motors that keep their torque
-    through a release), `slips` (degrees a joint sags by as torque comes on, which the goal
-    written straight after does not undo), and `unread_after_release` and `unread_after_hold`
-    (the reason the torque register gives for not answering, from that write on)."""
+    through a release, with nothing said), `unanswered` (motors that answer no torque write, so
+    theirs does not take and the call names them once it has tried every other motor), `slips`
+    (degrees a joint sags by as torque comes on, which the goal written straight after does not
+    undo), and `unread_after_release` and `unread_after_hold` (the reason the torque register
+    gives for not answering, from that write on)."""
 
     def __init__(
         self,
@@ -239,6 +280,7 @@ class FakeFollower:
         self.actions: list[dict[str, float]] = []
         self.stuck: set[str] = set()
         self.holdouts: tuple[str, ...] = ()
+        self.unanswered: set[str] = set()
         self.slips: dict[str, float] = {}
         self.unread_after_release: str | None = None
         self.unread_after_hold: str | None = None
@@ -282,20 +324,31 @@ class FakeFollower:
     def connect(self, calibrate: bool = True) -> None:
         """`SOFollower.connect`: refused while the port is open
         (`up.SO_CONNECT_REFUSES_WHILE_OPEN`), then the port, and `configure()`, which switches
-        torque off on every motor and back on and so leaves every one of them on. Nothing to
-        calibrate: the calibration is here."""
+        torque off on every motor and back on, each call trying every motor
+        (`up.CONFIGURE_TORQUE_WRITES_ONCE`). So it leaves every motor on, unless one is in
+        `unanswered`: then the switch off raises naming it before anything switches the others
+        back on, as LeRobot's does, and the port stays open. Nothing to calibrate: the
+        calibration is here."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{FOLLOWER_CLASS} is already connected.")
-        self.bus.port_handler.is_open = True
-        self.set_torque(JOINTS, on=True)
+        self.bus.open_port()
+        answered = [name for name in JOINTS if name not in self.unanswered]
+        self.set_torque(answered, on=False)
+        self.bus.raise_for_unanswered(JOINTS, on=False, num_retry=0)
+        self.set_torque(answered, on=True)
 
     def disconnect(self) -> None:
         """`SOFollower.disconnect`: torque off on every motor first when the config says so as
-        this runs (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), then the port shut. A port that was
-        never opened is shut all the same, since the mock answers without one."""
-        if self.config.disable_torque_on_disconnect:
-            self.set_torque(JOINTS, on=False)
-        self.bus.port_handler.is_open = False
+        this runs (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), every motor tried, then the port
+        shut whatever that did (`up.DISCONNECT_RELEASES_THE_PORT`), and then the one error for
+        the motors in `unanswered`, which keep their torque. A port that was never opened is shut
+        all the same, since the mock answers without one."""
+        try:
+            if self.config.disable_torque_on_disconnect:
+                self.set_torque([name for name in JOINTS if name not in self.unanswered], on=False)
+                self.bus.raise_for_unanswered(JOINTS, on=False, num_retry=DISCONNECT_RETRIES)
+        finally:
+            self.bus.shut_port()
 
     # ── reads and writes ────────────────────────────────────────────────────────────────
 

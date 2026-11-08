@@ -47,7 +47,7 @@ Hugging Face rents by the hour. Why it is shaped this way is
 
 <!-- end generated: policy-served -->
 
-Each is a LeRobot policy type, read at LeRobot 0.6.1 before quackd serves it: its processors,
+Each is a LeRobot policy type, read at LeRobot 0.7.0 before quackd serves it: its processors,
 its loader, how it pads a camera it is not given and how it turns its answer into goals for the
 arm's joints. A checkpoint of any other type is refused before a byte of its weights is fetched,
 and so is one of these types whose own settings would not answer in the arm's joints, such as an
@@ -93,14 +93,14 @@ otherwise stays on this machine. How each is set up is in
 
 | Not served | Maker | LeRobot type | Why not | What would change that |
 |---|---|---|---|---|
-| FLUX 3 Action | Black Forest Labs | `flux3` | it is on LeRobot's main branch only, after 0.6.1, and needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine | a spike on a rented Linux GPU showing that `quackd policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives the simulator end to end |
+| FLUX 3 Action | Black Forest Labs | `flux3` | it is a LeRobot policy type since 0.7.0 that quackd has not read, and it needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine | a spike on a rented Linux GPU showing that `quackd policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives the simulator end to end |
 | Pi0-FAST | Physical Intelligence | `pi0_fast` | its policy loads the FAST action tokenizer with trust_remote_code=True, hard-wired, so serving it runs Python code the tokenizer's repository brings with it | LeRobot loading the FAST tokenizer without the repository's own code |
 | MolmoAct2 | Ai2 | `molmoact2` | its base model maps its classes to code of its own (auto_map), which quackd refuses in every model it loads | a decision to read that code and exempt it, or a port whose model loads with code transformers already has |
-| OpenVLA | the OpenVLA team (Stanford and partners) | none | it is not a LeRobot policy type at 0.6.1, and it loads through transformers with its repository's own code (auto_map) | a LeRobot port of it |
+| OpenVLA | the OpenVLA team (Stanford and partners) | none | it is not a LeRobot policy type at 0.7.0, and it loads through transformers with its repository's own code (auto_map) | a LeRobot port of it |
 | the Pi API | Physical Intelligence | none | it is a hosted beta, from 2026-10-13, behind a waitlist, with no public protocol to speak | a public protocol, and access to it |
 | the Gemini Robotics VLA | Google DeepMind | none | it is offered to partners only. Gemini Robotics-ER 2, which is public, is a planner, and quackd already carries it as a pilot row (gemini-robotics-er-2-preview), which nothing on record has flown | public access to the VLA itself |
 | vLLM-Omni and the OpenPI wire | the vLLM project | none | it serves several VLAs over OpenPI's WebSocket protocol, but it is a server you run and not a vendor, and its wire is not the checked JSON quackd's client speaks | a client for that wire that keeps every check quackd's own protocol makes |
-| Isaac-GR00T N1.6 checkpoints | NVIDIA | none | they are in Isaac-GR00T's own format and not LeRobot checkpoints, and LeRobot 0.6.1 serves GR00T N1.7 alone | LeRobot reading them, or the same task fine-tuned on N1.7 through LeRobot |
+| Isaac-GR00T N1.6 checkpoints | NVIDIA | none | they are in Isaac-GR00T's own format and not LeRobot checkpoints, and LeRobot 0.7.0 serves GR00T N1.7 alone | LeRobot reading them, or the same task fine-tuned on N1.7 through LeRobot |
 
 <!-- end generated: policy-refused -->
 

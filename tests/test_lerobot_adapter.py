@@ -342,11 +342,12 @@ class FakeCalibration:
 class FakeBus:
     """The registers `get_observation()` does not read (`up.STS3215_REGISTERS`), the port a
     retried connect closes (`up.BUS_DISCONNECT`), and the motor table a bus error's id is looked
-    up in (`up.BUS_MOTORS`).
+    up in (`up.BUS_MOTORS`), as LeRobot 0.7.0's SerialMotorsBus has them.
 
     The port's open flag lives on the arm and not here, the way `SOFollower.is_connected` is
     the bus's flag (`up.SO_IS_CONNECTED`): a test that swaps in another bus mid-session keeps
-    the arm it had connected."""
+    the arm it had connected. A bus error is raised in upstream's own words, and a torque call
+    that meets one names every motor, as a bus that fails for one call fails for them all."""
 
     def __init__(self, arm: FakeArm, motors: dict[str, Any] | None = None) -> None:
         self.arm = arm
@@ -357,10 +358,6 @@ class FakeBus:
         )
         """name -> something with an `.id`, the one field of a `Motor` quackd reads. A test
         about naming the joint in an error builds its own table, in no particular order."""
-        self.port_handler = SimpleNamespace(is_using=False)
-        """The servo SDK's port handler, for its busy flag (`up.BUS_DISCONNECT`): raised before
-        every packet and lowered once the reply is in, so a serial error in between leaves it
-        raised, and while it is raised every packet is answered "port in use" unsent."""
 
     @property
     def is_connected(self) -> bool:
@@ -368,36 +365,37 @@ class FakeBus:
         return self.arm.connected
 
     def disconnect(self, disable_torque: bool = True) -> None:
-        """`MotorsBus.disconnect`: the busy flag cleared and torque off first, only when asked,
-        then the port shut.
+        """`SerialMotorsBus.disconnect`: torque off first, only when asked, then the port shut
+        whatever the torque-off did (`up.DISCONNECT_RELEASES_THE_PORT`).
 
-        It refuses a port that is not open, as upstream's `check_if_not_connected` does, which
-        is the call a retry makes after an attempt that never got the port open."""
+        A port that is not open is passed over without a word (motors_bus.py lines 452 and
+        453), which is the call a retry makes after an attempt that never got the port open,
+        or whose handshake LeRobot closed it behind."""
         self.arm.calls.append(("bus.disconnect", disable_torque))
         if not self.arm.connected:
-            raise ConnectionError("FeetechMotorsBus is not connected. Run `.connect()` first.")
-        if disable_torque:
-            self.port_handler.is_using = False  # motors_bus.py line 558, under the same flag
-            self.disable_torque(num_retry=5)  # upstream's own count (motors_bus.py line 559)
-        self.arm.connected = False
+            return
+        try:
+            if disable_torque:
+                self.disable_torque(num_retry=5)  # upstream's own count (motors_bus.py line 457)
+        finally:
+            self.arm.connected = False
 
     def _handshake(self) -> None:
         """`up.BUS_HANDSHAKE`, under upstream's own name, because the name is how quackd tells
-        a failure in here from one in `configure()`: pings and reads, and no write.
-
-        A busy flag left raised answers every ping "port in use", so every motor is missing,
-        as upstream reports it. Otherwise the next of `arm.handshake_errors` is raised."""
-        if self.port_handler.is_using:
-            raise _motor_check_failed(missing=[motor.id for motor in self.motors.values()])
+        a failure in here from one in `configure()`: reads, and no write. The next of
+        `arm.handshake_errors` is raised."""
         if self.arm.handshake_errors and (refused := self.arm.handshake_errors.pop(0)):
             raise refused
+
+    def _ids(self) -> list[int]:
+        return [motor.id for motor in self.motors.values()]
 
     def sync_read(
         self, data_name: str, motors: Any = None, *, normalize: bool = True, num_retry: int = 0
     ) -> dict[str, int]:
         self.arm.reads.append((data_name, normalize, num_retry))
         if self.arm.bus_error:
-            raise RuntimeError("Incorrect status packet!")
+            raise _lost_sync_read(data_name, self._ids(), num_retry + 1, CORRUPT)
         if data_name == "Torque_Enable":
             # per motor, as upstream reads it: a motor that kept its torque through a release
             # reads 1 while the rest read 0
@@ -418,7 +416,7 @@ class FakeBus:
         included, and the retries asked for are kept for a test to read."""
         self.arm.torque_retries.append(("enable_torque", num_retry))
         if self.arm.bus_error:
-            raise RuntimeError("Incorrect status packet!")
+            raise _torque_failed(True, self.motors, num_retry + 1, CORRUPT)
         self.arm.timeline.append("enable_torque")
         if self.arm.torque_refuses:
             return
@@ -434,7 +432,7 @@ class FakeBus:
         `disable_torque` of its own for a test to be accidentally green against."""
         self.arm.torque_retries.append(("disable_torque", num_retry))
         if self.arm.bus_error:
-            raise RuntimeError("Incorrect status packet!")
+            raise _torque_failed(False, self.motors, num_retry + 1, CORRUPT)
         self.arm.timeline.append("disable_torque")
         self.arm.torque = False
         if self.arm.bus_error_after_release:
@@ -498,12 +496,13 @@ class FakeArm:
         through."""
         self.port_errors: list[BaseException | None] = []
         """The same, raised before the port opens: a port that is wrong, or owned by something
-        else, so the attempt never reached a motor. None is a port that opens."""
+        else, so the attempt never reached a motor (`_port_refused`). None is a port that
+        opens."""
         self.handshake_errors: list[BaseException | None] = []
         """The same, raised by the bus's handshake once the port is open and before anything is
-        written: a servo that did not answer its ping, or answered as another model. An
-        `OSError` among them comes out as LeRobot's port error, raised from it, as upstream's
-        `_connect` does. None is a handshake that passes."""
+        written: a servo that did not answer, answered as another model, or lost a firmware
+        read. LeRobot closes the port behind it and raises it again as it was
+        (`up.HANDSHAKE_CLOSES_THE_PORT`). None is a handshake that passes."""
         self.torque_retries: list[tuple[str, int]] = []
         """Every torque call on the bus and the `num_retry` it was given, in order."""
         self.temperature: dict[str, float] = dict.fromkeys(JOINTS, 30.0)
@@ -553,8 +552,9 @@ class FakeArm:
 
     def connect(self, calibrate: bool = True) -> None:
         """`SOFollower.connect` in upstream's order: refused while the port is open
-        (`up.SO_CONNECT_REFUSES_WHILE_OPEN`), then the port, then the bus's handshake, then
-        `configure()`, and nothing closes the port again when either of the last two raises."""
+        (`up.SO_CONNECT_REFUSES_WHILE_OPEN`), then the port, then the bus's handshake, which
+        closes the port behind it when it raises and raises it again as it was (motors_bus.py
+        lines 424 to 430), then `configure()`, and nothing closes the port when that raises."""
         self.calls.append(("connect", calibrate))
         if self.connected:
             # DeviceAlreadyConnectedError is a ConnectionError upstream
@@ -564,11 +564,9 @@ class FakeArm:
         self.connected = True
         try:
             self.bus._handshake()
-        except OSError as e:  # MotorsBus._connect, motors_bus.py lines 536 to 540
-            raise ConnectionError(
-                "\nCould not connect on port 'COM7'. Make sure you are using the correct port."
-                "\nTry running `lerobot-find-port`\n"
-            ) from e
+        except Exception:
+            self.connected = False  # SerialMotorsBus._connect closes it (motors_bus.py line 429)
+            raise
         if self.connect_errors and (lost := self.connect_errors.pop(0)) is not None:
             raise lost
 
@@ -1757,7 +1755,7 @@ async def test_torque_and_temperature_are_measured_rather_than_assumed() -> None
 
 
 async def test_a_corrupt_register_read_costs_a_reading_and_not_the_run() -> None:
-    """A Feetech bus returns the odd corrupt status packet. Losing the run over one would
+    """A servo bus returns the odd corrupt status packet. Losing the run over one would
     be worse than the disease, so the positions are the liveness check and the registers
     are not."""
     arm = FakeArm()
@@ -1766,7 +1764,7 @@ async def test_a_corrupt_register_read_costs_a_reading_and_not_the_run() -> None
     arm.bus_error = True
     await adapter.heartbeat()
     state = await adapter.get_state()
-    assert "Incorrect status packet" in state.extras["register_error"]
+    assert f"motor 1: {CORRUPT}" in state.extras["register_error"]
     assert state.extras["torque"] is True  # the last known reading stands
 
 
@@ -4452,12 +4450,14 @@ def _notes(run_dir: Any) -> list[str]:
 
 
 class EnergisesThenRaises(FakeBus):
-    """A bus whose torque write reaches every motor and then raises, as a lost status packet
-    after the last write does: the arm is energised and the call says it failed."""
+    """A bus whose torque write reaches every motor and then raises, as the last motor's `Lock`
+    reply lost after its `Torque_Enable` went through does: the arm is energised and the call
+    names the motor it could not confirm (`up.TORQUE_TRIED_ON_EVERY_MOTOR`)."""
 
     def enable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
         super().enable_torque(motors, num_retry=num_retry)
-        raise ConnectionError(f"Failed to write 'Torque_Enable' after {num_retry + 1} tries.")
+        last = {"gripper": self.motors["gripper"]}
+        raise _torque_failed(True, last, num_retry + 1, NO_STATUS)
 
 
 @pytest.mark.parametrize("fault", ["the torque register goes quiet", "enable_torque raises"])
@@ -4645,7 +4645,7 @@ class QuietAfterItsWrite(FakeBus):
         if data_name == "Torque_Enable":
             self.arm.timeline.append("unanswered" if self.quiet else "read")
             if self.quiet:
-                raise RuntimeError("Incorrect status packet!")
+                raise _lost_sync_read(data_name, self._ids(), num_retry + 1, CORRUPT)
         return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
 
 
@@ -5265,10 +5265,11 @@ async def test_a_release_that_went_out_and_was_not_confirmed_is_a_release_in_a_h
     fault: str,
 ) -> None:
     """ADR-0039's rule, now held from the moment the release is sent and not only once it has
-    returned. A release call that raised has written some motors and not others, one at a
-    time, so part of the arm may be limp: it used to come back `released` with the arm still
-    reported in nobody's hands, and the close would then have told the person holding it that
-    it holds itself up. `torque_on` is None, so nobody is told torque reads off."""
+    returned. A release call that raised may have let some motors go and not others, so part of
+    the arm may be limp: it used to come back `released` with the arm still reported in nobody's
+    hands, and the close would then have told the person holding it that it holds itself up.
+    `torque_on` is None, so nobody is told torque reads off. A release whose error names every
+    motor of the arm says it could confirm none, and so that any joint may still hold."""
     arm = _spanned()
     recorded, reading = _stopped_short(arm)
     arm.positions.update(reading)
@@ -5285,7 +5286,8 @@ async def test_a_release_that_went_out_and_was_not_confirmed_is_a_release_in_a_h
     if fault == "the read-back":
         assert "did not answer to confirm it" in released.reason, released.reason
     else:
-        assert "the call did not come back" in released.reason, released.reason
+        assert "LeRobot could not confirm the write to any motor" in released.reason
+        assert "some joints may be limp and some may still hold" in released.reason
         assert "hold the arm as though nothing holds it" in released.reason
     assert transport._in_hand is True
     await transport.close()
@@ -5626,6 +5628,10 @@ async def test_a_close_while_an_interrupted_release_is_still_out_says_nothing_re
     arm.bus = SlowRelease(arm)
     arm.torque_holdouts = {sorted(SPANS)[1]}
     transport = LeRobotReal("COM5", robot=arm, rest_pose=recorded if pose == "recorded" else None)
+    # the close waits for a release an interrupt cut short as long as the release's own
+    # deadline, and this release stays out longer than that, as one on a bus that stopped
+    # answering does
+    transport.torque_call_s = 1.0
     await transport.connect()
 
     release = asyncio.ensure_future(transport.let_go(anywhere=True))
@@ -5644,35 +5650,42 @@ async def test_a_close_while_an_interrupted_release_is_still_out_says_nothing_re
 
 
 class GivesUpPartWay(FakeBus):
-    """A bus whose release writes the motors before one of them and then raises on it, as
-    upstream's `disable_torque` does when one motor's write fails: the motors after it keep
-    their torque (`arm.torque_holdouts`)."""
+    """A bus whose release reaches every motor and cannot confirm one, as upstream's
+    `disable_torque` raises when one motor's write gets no reply (`up.TORQUE_TRIED_ON_EVERY_MOTOR`):
+    every other motor lets go, and that one keeps its torque (`arm.torque_holdouts`), named in
+    the error by name and id."""
 
     def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
         super().disable_torque(motors, num_retry=num_retry)
         (stuck,) = self.arm.torque_holdouts
-        raise ConnectionError(
-            f"Failed to write 'Torque_Enable' on id_={self.motors[stuck].id} with '0' after "
-            f"{num_retry + 1} tries. {NO_STATUS}"
-        )
+        raise _torque_failed(False, {stuck: self.motors[stuck]}, num_retry + 1, NO_STATUS)
 
 
 async def test_a_release_that_raised_part_way_on_an_arm_with_no_pose_is_not_called_limp() -> None:
-    """`quackd robot release` on an arm registered with no rest pose: the release raised part
-    way, which leaves the motors after the failed one energised, and the close, which makes no
-    read of its own without a pose to judge against, ended on "nothing is holding it up" right
-    after telling the person that some joints may still hold. It ends on nothing having read
-    the release back now, and on the power switch."""
+    """`quackd robot release` on an arm registered with no rest pose: the release raised, which
+    leaves the motor LeRobot names energised, and the close, which makes no read of its own
+    without a pose to judge against, ended on "nothing is holding it up" right after telling the
+    person that a joint may still hold. It ends on nothing having read the release back now, and
+    on the power switch. The release names the joint that may still hold, since LeRobot 0.7.0
+    tries every motor and names each it could not confirm, and every other one let go."""
     arm = _spanned()
     arm.positions.update({j: _inside(arm, j, 0.3) for j in SPANS})
     arm.bus = GivesUpPartWay(arm)
-    arm.torque_holdouts = {sorted(SPANS)[-1]}
+    stuck = sorted(SPANS)[-1]
+    arm.torque_holdouts = {stuck}
     transport = LeRobotReal("COM5", robot=arm)
     await transport.connect()
 
     released = await transport.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on is None, released
-    assert "some joints may be limp and some may still hold" in released.reason
+    assert released.reason.startswith(
+        f"torque was taken off where the arm stands on every joint but {stuck}, whose write "
+        f"LeRobot could not confirm (ConnectionError: Failed to disable torque after "
+        f"{TORQUE_RETRIES + 1} tries on '{stuck}' (motor ID {arm.bus.motors[stuck].id}): "
+    ), released.reason
+    assert released.reason.endswith(
+        "so it may still hold: hold the arm as though nothing holds it"
+    ), released.reason
     reads = len(arm.reads)
     await transport.close()
     assert len(arm.reads) == reads, "the close made a read of its own after all"
@@ -5680,6 +5693,46 @@ async def test_a_release_that_raised_part_way_on_an_arm_with_no_pose_is_not_call
     assert note == UNREAD_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), note
     assert "nothing is holding it up" not in note and "cut its power to be sure" in note
     assert arm.config.disable_torque_on_disconnect is False
+
+
+async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
+    """`stop_error` outlives the failure that set it: a stop whose hold did not reach the arm
+    leaves it set until a hold does. The release and the take-hold quoted it in place of the
+    error that ended them, so a release LeRobot refused over one joint quoted an earlier stop's
+    failure, and a take-hold whose torque call named the joint that may still be limp named
+    nothing. Each quotes LeRobot's own words now, and `stop_error` only for a call that ran out
+    of time or met a wedged bus, which is what sets it (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = _spanned()
+    arm.positions.update({j: _inside(arm, j, 0.3) for j in SPANS})
+    arm.bus = GivesUpPartWay(arm)
+    stuck = sorted(SPANS)[-1]
+    arm.torque_holdouts = {stuck}
+    transport = LeRobotReal("COM5", robot=arm)
+    await transport.connect()
+    transport.stop_error = earlier
+    released = await transport.let_go(anywhere=True)
+    assert released.how == "released", released
+    assert earlier not in released.reason, released.reason
+    assert (
+        f"(ConnectionError: Failed to disable torque after {TORQUE_RETRIES + 1} tries on "
+        f"'{stuck}' (motor ID {arm.bus.motors[stuck].id}): "
+    ) in released.reason, released.reason
+    await transport.close()
+
+    arm, transport = _handover_arm()
+    await transport.connect()
+    assert (await transport.let_go()).how == "released"
+    arm.positions.update(HAND_PLACED)
+    arm.bus = EnergisesThenRaises(arm)
+    transport.stop_error = earlier
+    held = await transport.take_hold()
+    assert held.how == "refused" and held.energised is None, held
+    assert held.reason.startswith(
+        f"ConnectionError: Failed to enable torque after {TORQUE_RETRIES + 1} tries on "
+        f"'gripper' (motor ID {arm.bus.motors['gripper'].id}): "
+    ), held.reason
+    await transport.close()
 
 
 async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_words() -> None:
@@ -5814,7 +5867,7 @@ class OneRegisterDown(FakeBus):
     ) -> dict[str, int]:
         if data_name in self.dead:
             self.arm.reads.append((data_name, normalize, num_retry))
-            raise RuntimeError("Incorrect status packet!")
+            raise _lost_sync_read(data_name, self._ids(), num_retry + 1, CORRUPT)
         return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
 
 
@@ -5909,18 +5962,86 @@ REWIRED = {
 and one id (7) that is a prefix of another (72). A test that names the right joint off this
 cannot be doing it by position or by a prefix match."""
 
-NO_STATUS = "[TxRxResult] There is no status packet!"
-CORRUPT = "[TxRxResult] Incorrect status packet!"
-NOT_SENT = "[TxRxResult] Failed transmit instruction packet!"
+NO_STATUS = "Operation timed out"
+"""serialport-rs's words for a reply that never came (`up.BUS_SYNC_READ_ERROR`), which LeRobot
+ends a bus error with."""
+CORRUPT = "Checksum error"
+"""rustypot's for a reply that came back garbled (src/dynamixel_protocol/mod.rs line 955 at its
+v1.13.1 tag)."""
+NOT_SENT = "Timeout error"
+"""rustypot's for a packet that could not go out (lines 802 to 805 there)."""
+TORQUE_REGISTERS = ("Torque_Enable", "Lock")
+"""The two writes a torque call makes to each motor (`up.BUS_ENABLE_TORQUE`)."""
+
+
+def _joint_of(motor_id: int) -> str:
+    """The joint a test's id belongs to, in `REWIRED` or in the follower's own table, which
+    share no id."""
+    tables = {**{n: j for j, n in REWIRED.items()}, **dict(enumerate(JOINTS, start=1))}
+    return tables[motor_id]
+
+
+def _torque_failed(on: bool, motors: Mapping[str, Any], tries: int, result: str) -> ConnectionError:
+    """`SerialMotorsBus._set_torque`'s one error once every motor was tried
+    (`up.TORQUE_TRIED_ON_EVERY_MOTOR`, motors_bus.py lines 642 to 648): each motor whose write
+    got no good reply, `'<joint>' (motor ID <N>): <reason>`, in the order of their ids, as
+    rustypot hands them back, joined by commas."""
+    details = ", ".join(
+        f"'{joint}' (motor ID {motor.id}): {result}"
+        for joint, motor in sorted(motors.items(), key=lambda item: item[1].id)
+    )
+    return ConnectionError(
+        f"Failed to {'enable' if on else 'disable'} torque after {tries} tries on {details}."
+    )
 
 
 def _lost_write(register: str, motor_id: int, value: int, result: str) -> ConnectionError:
-    """`MotorsBus.write`'s own sentence for a write whose status packet did not come back
-    (`up.BUS_WRITE_ERROR_NAMES_THE_ID`), for whatever register, id, value and transaction
-    result a test picks. One try, which is what `configure()` gives each torque write."""
+    """What `configure()` raises for one write whose status packet did not come back, for
+    whatever register, id, value and reason a test picks. One try, which is what `configure()`
+    gives every write. A `Torque_Enable` or a `Lock` goes out in a torque call, which names the
+    motor it could not switch by name and id (`_torque_failed`), the switch on for a 1 and the
+    switch off for a 0; any other is `SerialMotorsBus.write`'s own sentence
+    (`up.BUS_WRITE_ERROR_NAMES_THE_ID`, motors_bus.py lines 1182 to 1185)."""
+    if register in TORQUE_REGISTERS:
+        motors = {_joint_of(motor_id): SimpleNamespace(id=motor_id)}
+        return _torque_failed(bool(value), motors, 1, result)
     return ConnectionError(
-        f"Failed to write '{register}' on id_={motor_id} with '{value}' after 1 tries. {result}"
+        f"Failed to write {value} to '{register}' of motor ID {motor_id} after 1 tries. {result}"
     )
+
+
+def _lost_read(register: str, motor_id: int, tries: int, result: str) -> ConnectionError:
+    """`SerialMotorsBus.read`'s own sentence for a read that got no good reply (motors_bus.py
+    lines 1134 to 1137)."""
+    return ConnectionError(
+        f"Failed to read '{register}' from motor ID {motor_id} after {tries} tries. {result}"
+    )
+
+
+def _lost_sync_read(
+    register: str, ids: Sequence[int], tries: int, result: str, first: int | None = None
+) -> ConnectionError:
+    """`SerialMotorsBus.sync_read`'s own sentence (motors_bus.py lines 1236 to 1239) for a read
+    that got no good reply: every motor it asked, by id, and then rustypot's `motor <M>: ` and
+    why, M being the first whose reply failed, the first asked when nothing came back
+    (`up.BUS_SYNC_READ_ERROR`)."""
+    at = ids[0] if first is None else first
+    return ConnectionError(
+        f"Failed to sync read '{register}' from motor IDs {list(ids)} after {tries} tries. "
+        f"motor {at}: {result}"
+    )
+
+
+def _port_refused(port: str) -> ConnectionError:
+    """LeRobot's port error, raised from the OSError rustypot's open raised (motors_bus.py lines
+    417 to 421): a wrong port, or one another program holds, since the port opens for one at a
+    time (`up.PORT_OPENED_EXCLUSIVELY`). The OSError's words here are synthetic."""
+    error = ConnectionError(
+        f"\nCould not connect on port '{port}'. Make sure you are using the correct port."
+        "\nTry running `lerobot-find-port`\n"
+    )
+    error.__cause__ = OSError("the port is held by another program (a synthetic error)")
+    return error
 
 
 SOME_MODEL = 4321
@@ -5932,11 +6053,12 @@ def _motor_check_failed(
     wrong: Mapping[int, tuple[str, int]] | None = None,
     port: str = "COM7",
 ) -> RuntimeError:
-    """`_assert_motors_exist`'s own refusal, line for line (`up.HANDSHAKE_NAMES_THE_ID`), for
-    whatever ids a test picks: a line per motor that did not answer its ping, and one per motor
-    that answered as another model, given as `id -> (joint, the model it answered as)`."""
+    """`_assert_motors_exist`'s own refusal, line for line (`up.HANDSHAKE_NAMES_THE_ID`,
+    motors_bus.py lines 350 to 371), for whatever ids a test picks: a line per motor that did not
+    answer, and one per motor that answered as another model, given as `id -> (joint, the model it
+    answered as)`."""
     wrong = dict(wrong or {})
-    lines = [f"FeetechMotorsBus motor check failed on port '{port}':"]
+    lines = [f"SerialMotorsBus motor check failed on port '{port}':"]
     if missing:
         lines.append("\nMissing motor IDs:")
         lines.extend(f"  - {n} (expected model: {SOME_MODEL})" for n in missing)
@@ -5947,9 +6069,10 @@ def _motor_check_failed(
             for n, (joint, found) in wrong.items()
         )
     lines.append("\nFull expected motor list (id: model_number):")
-    lines.append(pformat(dict.fromkeys([*missing, *wrong], SOME_MODEL), indent=4))
+    lines.append(pformat(dict.fromkeys([*missing, *wrong], SOME_MODEL), indent=4, sort_dicts=False))
     lines.append("\nFull found motor list (id: model_number):")
-    lines.append(pformat({n: found for n, (_joint, found) in wrong.items()}, indent=4))
+    found_models = {n: found for n, (_joint, found) in wrong.items()}
+    lines.append(pformat(found_models, indent=4, sort_dicts=False))
     return RuntimeError("\n".join(lines))
 
 
@@ -5982,10 +6105,12 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
     failures: int,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Bench, 2026-09-23: runs ended before they began, at connect, on LeRobot's `Failed to
-    write ... after 1 tries`, each on the first connect after a power cut and on a different
-    motor each time, and the next connect by hand went through. quackd gave up on the first
-    lost packet and left the port open behind it.
+    """Bench, 2026-09-23, on LeRobot 0.6.1: runs ended before they began, at connect, on
+    LeRobot's `Failed to write ... after 1 tries`, each on the first connect after a power cut
+    and on a different motor each time, and the next connect by hand went through. quackd gave
+    up on the first lost packet and left the port open behind it. At 0.7.0 a lost `Torque_Enable`
+    or `Lock` reply is a torque call's error naming the motor by name and id, and any other write
+    is the bus's own sentence naming its id, and either is the same lost packet.
 
     Now the port is closed through the bus with no torque write (the follower's own disconnect
     would have switched torque off on every motor, on the bus that had just lost a packet), the
@@ -5993,7 +6118,8 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
     for the record, naming the joint through the bus's own motor table."""
     arm, camera, transport = _rewired()
     motor_id = REWIRED[joint]
-    arm.connect_errors = [_lost_write(register, motor_id, value, result)] * failures
+    lost = _lost_write(register, motor_id, value, result)
+    arm.connect_errors = [lost] * failures
     adapter = LeRobotAdapter(transport)
     with caplog.at_level(logging.WARNING, logger="quackd.lerobot"):
         manifest = await adapter.connect()
@@ -6008,8 +6134,7 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
     assert len(notes) == failures, notes
     for k, note in enumerate(notes, start=1):
         assert note.startswith(
-            f"connect attempt {k} of {CONNECT_ATTEMPTS} failed on {joint} (id {motor_id}): "
-            f"Failed to write '{register}' on id_={motor_id}"
+            f"connect attempt {k} of {CONNECT_ATTEMPTS} failed on {joint} (id {motor_id}): {lost}"
         ), note
         assert result in note and "without a write to any motor" in note, note
     warned = [r.getMessage() for r in caplog.records if r.name == "quackd.lerobot"]
@@ -6028,22 +6153,23 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
 async def test_a_connect_that_fails_every_attempt_names_the_joint_and_says_hold_the_arm(
     joint: str, register: str, result: str, port: str
 ) -> None:
-    """The arm that keeps losing packets. Each attempt may have stopped anywhere in the
-    torque writes, which go off on every motor and back on one at a time, so the motors before
-    the failed write can be holding and the ones after it limp. The refusal carries LeRobot's
-    words, names the joint it named, says the arm may be half energised, and names the cable
-    and the port to check. The port is left shut and the camera closed, and not one torque write
-    went out on the way, on the bus that would not answer."""
+    """The arm that keeps losing packets. Each attempt may have stopped part way through the
+    torque writes, which go off on every motor and back on, so some motors can be holding and
+    others limp. The refusal carries LeRobot's words, names the joint it named, says the arm may
+    be half energised, and names the cable and the port to check. The port is left shut and the
+    camera closed, and not one torque write went out on the way, on the bus that would not
+    answer."""
     arm, camera, transport = _rewired(port)
     motor_id = REWIRED[joint]
-    arm.connect_errors = [_lost_write(register, motor_id, 1, result)] * CONNECT_ATTEMPTS
+    lost = _lost_write(register, motor_id, 1, result)
+    arm.connect_errors = [lost] * CONNECT_ATTEMPTS
     with pytest.raises(TransportError) as raised:
         await LeRobotAdapter(transport).connect()
 
     why = str(raised.value)
     assert why.startswith(
         f"lerobot real: connect failed {CONNECT_ATTEMPTS} times, the last on {joint} "
-        f"(id {motor_id}): Failed to write '{register}' on id_={motor_id}"
+        f"(id {motor_id}): {lost}"
     ), why
     assert result in why
     assert "some motors may be left with torque on and others off" in why, why
@@ -6064,24 +6190,29 @@ async def test_a_connect_that_fails_every_attempt_names_the_joint_and_says_hold_
 def test_the_joint_is_named_through_the_bus_s_own_table_and_never_by_position() -> None:
     """The id in LeRobot's message is a bus address nobody at the arm can see. It is turned
     into a joint through the motor table that gave each servo its address, whatever register,
-    value, try count or transaction result surrounds it, and read or write alike. An id the
-    table does not know is still said, as a motor; a message that names several motors or none
-    names no joint, because a guess sends somebody to the wrong cable.
+    value, try count or reason surrounds it, and read or write alike. An id the table does not
+    know is still said, as a motor; a message that names several motors at once without saying
+    which failed, or none, names no joint, because a guess sends somebody to the wrong cable.
 
-    The handshake names its motors in lists instead, and only `id_=` was read, so a servo that
-    stopped answering its ping, the failure the connect retry says a further try will not fix,
-    was refused with "check the arm's cables and power" although LeRobot had said which one."""
+    The words are LeRobot 0.7.0's: `of motor ID <N>` for a write (motors_bus.py lines 1182 to
+    1185), `from motor ID <N>` for a read (1134 to 1137) and `motor ID <N> refused it` for a
+    refusal (1187 to 1191). quackd read 0.6.1's `id_=<N>`, which 0.7.0 says nowhere, so every
+    one of them named no joint until it was read again.
+
+    The handshake names its motors in lists instead, and only the id was read, so a servo that
+    stopped answering, the failure the connect retry says a further try will not fix, was
+    refused with "check the arm's cables and power" although LeRobot had said which one."""
     table = {joint: SimpleNamespace(id=n) for joint, n in REWIRED.items()}
     for joint, n in REWIRED.items():
         for message in (
-            f"Failed to write 'Lock' on id_={n} with '1' after 1 tries. {CORRUPT}",
-            f"Failed to write 'Goal_Position' on id_={n} with '2311' after 4 tries. "
-            "[RxPacketError] Overload error!",
-            f"Failed to read 'Present_Temperature' on id_={n} after 3 tries. {NO_STATUS}",
+            f"Failed to write 16 to 'P_Coefficient' of motor ID {n} after 1 tries. {CORRUPT}",
+            f"Failed to write 2311 to 'Goal_Position' of motor ID {n} after 4 tries. {NOT_SENT}",
+            f"Failed to read 'Present_Temperature' from motor ID {n} after 3 tries. {NO_STATUS}",
+            f"Failed to write 0 to 'Lock': motor ID {n} refused it with error status 0x08.",
         ):
             assert motor_in_error(message, table) == (f"{joint} (id {n})", joint), message
     stranger = max(REWIRED.values()) + 1
-    said = f"Failed to write 'Lock' on id_={stranger} with '0' after 1 tries. {NOT_SENT}"
+    said = str(_lost_write("Max_Torque_Limit", stranger, 500, NOT_SENT))
     assert motor_in_error(said, table) == (f"motor {stranger}", f"motor {stranger}")
     assert motor_in_error(said, None) == (f"motor {stranger}", f"motor {stranger}")
     # the handshake lists the servos it could not find, or found as another model, one a line;
@@ -6099,13 +6230,180 @@ def test_the_joint_is_named_through_the_bus_s_own_table_and_never_by_position() 
     lost = str(_motor_check_failed(missing=[stranger]))
     assert motor_in_error(lost, table) == (f"motor {stranger}", f"motor {stranger}")
     for nameless in (
-        f"Failed to sync read 'Present_Position' on ids=[7, 9, 17] after 3 tries. {NO_STATUS}",
-        f"Failed to sync write 'Goal_Position' with ids_values={{72: 2048}} after 1 tries. "
-        f"{CORRUPT}",
-        "\nCould not connect on port 'COM7'. Make sure you are using the correct port."
-        "\nTry running `lerobot-find-port`\n",
+        # a sync write's packet that could not go out (motors_bus.py lines 1292 to 1295), which
+        # waits for no reply and so names no motor that failed
+        f"Failed to sync write 'Goal_Position' to motor IDs [72, 7] after 1 tries. {NOT_SENT}",
+        # a sync read that could not go out at all, with no reply to name a motor by
+        f"Failed to sync read 'Present_Position' from motor IDs [7, 9, 17] after 3 tries. "
+        f"{NOT_SENT}",
+        str(_port_refused("COM7")),
+        "SerialMotorsBus is not connected. Run `.connect()` first.",
     ):
         assert motor_in_error(nameless, table) is None, nameless
+
+
+def test_a_torque_error_names_every_joint_it_could_not_switch() -> None:
+    """LeRobot 0.7.0's torque calls try every motor and raise once, naming each motor whose
+    write they could not confirm by name and id, `'<joint>' (motor ID <N>): <reason>`, joined by
+    commas (motors_bus.py lines 642 to 648, rustypot's set_torque at bus.rs lines 229 to 255).
+    Every joint it names is named, through the bus's own table and in the error's order, whatever
+    rustypot's reason says, and none it does not: the motors it leaves out took the write. One
+    that names every motor of the arm names none, as a handshake that found no motor does, since
+    that is the arm's cables or its power. The message counts as a failed write, so a connect
+    that met one warns that the arm may be half energised."""
+    from quackd_lerobot.real import failed_on_a_write, motors_in_error, torque_failed_on
+
+    table = {joint: SimpleNamespace(id=n) for joint, n in REWIRED.items()}
+    some = {joint: table[joint] for joint in ("wrist_roll", "shoulder_pan", "gripper")}
+    for on in (True, False):
+        for reason in (NO_STATUS, CORRUPT, NOT_SENT, "Incorrect id (9 instead of 72)"):
+            error = _torque_failed(on, some, TORQUE_RETRIES + 1, reason)
+            said = str(error)
+            by_id = sorted(some, key=lambda joint: table[joint].id)  # 7, 9, 72
+            assert torque_failed_on(said) == [table[joint].id for joint in by_id], said
+            assert motors_in_error(said, table) == [
+                (f"{joint} (id {table[joint].id})", joint) for joint in by_id
+            ], said
+            assert motor_in_error(said, table) == (
+                "gripper (id 7), wrist_roll (id 9) and shoulder_pan (id 72)",
+                "gripper, wrist_roll and shoulder_pan",
+            ), said
+            assert failed_on_a_write(error), said
+    one = str(_torque_failed(True, {"elbow_flex": table["elbow_flex"]}, 1, NO_STATUS))
+    assert one == (
+        "Failed to enable torque after 1 tries on 'elbow_flex' (motor ID 31): Operation timed out."
+    )
+    assert motor_in_error(one, table) == ("elbow_flex (id 31)", "elbow_flex")
+    everyone = str(_torque_failed(False, table, TORQUE_RETRIES + 1, NO_STATUS))
+    assert torque_failed_on(everyone) == sorted(REWIRED.values())
+    assert motors_in_error(everyone, table) == [] and motor_in_error(everyone, table) is None
+    assert torque_failed_on(str(_lost_write("P_Coefficient", 31, 16, NO_STATUS))) is None
+
+
+def test_a_sync_read_names_its_first_motor_that_did_not_answer() -> None:
+    """A sync read that got no good reply lists every motor it asked, `motor IDs [...]`, and
+    then rustypot's `motor <M>: ` and why (motors_bus.py lines 1236 to 1239, rustypot's
+    SyncReadError at dynamixel_protocol/mod.rs lines 997 to 1001): M is the first motor whose own
+    status packet did not come back whole, and the motors after it are not known to be fine,
+    since a cable that breaks at one motor silences every motor after it. That motor is named, as
+    the first that did not answer, and the list is never read for a joint."""
+    table = {joint: SimpleNamespace(id=n) for joint, n in REWIRED.items()}
+    for joint, n in REWIRED.items():
+        for register in ("Min_Position_Limit", "Firmware_Major_Version", "Present_Position"):
+            said = str(_lost_sync_read(register, list(REWIRED.values()), 1, NO_STATUS, first=n))
+            assert motor_in_error(said, table) == (
+                f"{joint} (id {n}), the first that did not answer",
+                joint,
+            ), said
+    nothing = str(_lost_sync_read("Torque_Enable", [17, 72, 7], 3, NO_STATUS))
+    assert motor_in_error(nothing, table) == (
+        "wrist_flex (id 17), the first that did not answer",
+        "wrist_flex",
+    )
+    garbled = str(
+        _lost_sync_read("Torque_Enable", [17, 72, 7], 3, "Incorrect id (7 instead of 72)", first=72)
+    )
+    assert motor_in_error(garbled, table) == (
+        "shoulder_pan (id 72), the first that did not answer",
+        "shoulder_pan",
+    )
+
+
+async def test_a_connect_whose_torque_call_named_two_joints_sends_the_person_to_both() -> None:
+    """A torque call in `configure()` that could not switch two motors names both
+    (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and so does every note and the refusal, in the error's
+    order, which is by id, with the cable of each to check, the warning that the arm may be half
+    energised, and the port. Before, a single `id_=` was read off the message, and at 0.7.0 that
+    was nothing at all."""
+    arm, _camera, transport = _rewired()
+    two = {joint: SimpleNamespace(id=REWIRED[joint]) for joint in ("elbow_flex", "gripper")}
+    lost = _torque_failed(True, two, 1, NO_STATUS)
+    arm.connect_errors = [lost] * CONNECT_ATTEMPTS
+    with pytest.raises(TransportError) as raised:
+        await LeRobotAdapter(transport).connect()
+    why = str(raised.value)
+    both = "gripper (id 7) and elbow_flex (id 31)"
+    assert why.startswith(
+        f"lerobot real: connect failed {CONNECT_ATTEMPTS} times, the last on {both}: {lost}"
+    ), why
+    assert SPLIT_TORQUE in why, why
+    assert (
+        "Check the cables and connectors of gripper and elbow_flex, that the servo supply is on, "
+        "and that nothing else has COM7 open"
+    ) in why, why
+    assert len(transport.connect_notes) == CONNECT_ATTEMPTS - 1
+    for k, note in enumerate(transport.connect_notes, start=1):
+        assert note.startswith(
+            f"connect attempt {k} of {CONNECT_ATTEMPTS} failed on {both}: {lost}"
+        ), note
+
+
+def test_the_torque_calls_deadline_covers_every_motor_tried_on_a_silent_arm() -> None:
+    """The deadline a release and a take-hold get is built from what LeRobot 0.7.0 does on an
+    arm that has stopped answering, read where the refs read it: every motor tried
+    (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), with room for both of its writes to wait 50 ms for a
+    reply on each try, after rustypot's flush of up to three tries 5 ms apart
+    (`up.STATUS_TIMEOUT_MS`, `up.NO_BUSY_FLAG`). A silent motor waits once a try, since a try
+    ends at its first write that gets no reply, so some 1.8 s over six silent motors is past the
+    second every other call gets, and inside this. The numbers are the refs' own, so this holds
+    the deadline to what was read, and only an arm can say what rustypot takes."""
+    from quackd_lerobot import upstream_api as up
+    from quackd_lerobot.real import TORQUE_CALL_S, TORQUE_WRITES
+
+    assert f"waits {round(up.STATUS_TIMEOUT_S * 1000)} ms" in up.STATUS_TIMEOUT_MS.name
+    assert f"`default_timeout: int = {round(up.STATUS_TIMEOUT_S * 1000)}`" in (
+        up.STATUS_TIMEOUT_MS.note
+    )
+    flush = f"up to three times {round(up.FLUSH_PAUSE_S * 1000)} ms apart"
+    assert up.FLUSH_TRIES == 3 and flush in up.NO_BUSY_FLAG.note
+    assert TORQUE_WRITES == 2 and "Torque_Enable 1 and then Lock 1" in up.BUS_ENABLE_TORQUE.note
+    silent = len(JOINTS) * (TORQUE_RETRIES + 1) * up.STATUS_TIMEOUT_S
+    assert silent == pytest.approx(1.8)
+    worst = silent * TORQUE_WRITES + len(JOINTS) * (TORQUE_RETRIES + 1) * TORQUE_WRITES * (
+        up.FLUSH_TRIES * up.FLUSH_PAUSE_S
+    )
+    assert TORQUE_CALL_S > worst > silent > LeRobotReal("COM5").timeout_s
+    assert LeRobotReal("COM5").torque_call_s == TORQUE_CALL_S
+
+
+@pytest.mark.parametrize("deadline_s", [1.0, 0.1], ids=["time enough", "cut short"])
+async def test_a_release_that_takes_every_motors_time_comes_back_naming_what_holds(
+    deadline_s: float,
+) -> None:
+    """A release over an arm with one silent motor takes LeRobot 0.7.0 that motor's every try
+    before it raises naming it, which is past the second most calls get. With the time its
+    deadline gives it (`TORQUE_CALL_S`), the release comes back and says the joint that may still
+    hold; cut short, as it was before, it is a call that did not come back, and the person hears
+    only that some joints may hold. Either way the arm is treated as in a hand. Scaled down:
+    the release takes 0.3 s against a call deadline of 0.1 s."""
+
+    class SlowAndPartial(GivesUpPartWay):
+        def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
+            time.sleep(0.3)
+            super().disable_torque(motors, num_retry=num_retry)
+
+    arm = _spanned()
+    arm.positions.update({j: _inside(arm, j, 0.3) for j in SPANS})
+    arm.bus = SlowAndPartial(arm)
+    stuck = sorted(SPANS)[0]
+    arm.torque_holdouts = {stuck}
+    transport = LeRobotReal("COM5", robot=arm, timeout_s=0.1)
+    transport.torque_call_s = deadline_s
+    await transport.connect()
+    try:
+        released = await transport.let_go(anywhere=True)
+        assert released.how == "released" and transport._in_hand is True, released
+        if deadline_s > 0.3:
+            assert f"on every joint but {stuck}, whose write LeRobot" in released.reason
+            assert transport._wedged is None
+        else:
+            assert "the call did not come back" in released.reason, released.reason
+            assert "(disable_torque) has not come back" in released.reason, released.reason
+    finally:
+        for _ in range(50):
+            if transport._wedged is None or transport._wedged.done():
+                break
+            await asyncio.sleep(0.02)
 
 
 @pytest.mark.parametrize(
@@ -6205,47 +6503,62 @@ async def test_a_connect_that_timed_out_is_never_tried_again(how: str) -> None:
         release.set()
 
 
+def _beneath(error: BaseException, cause: BaseException) -> BaseException:
+    """`error` as though it had been raised `from` `cause`."""
+    error.__cause__ = cause
+    return error
+
+
 @pytest.mark.parametrize(
-    ("script", "named", "torque_said"),
+    ("script", "label", "torque_said"),
     [
-        pytest.param("missing", True, False, id="a servo that never answers its ping"),
-        pytest.param("wrong model", True, False, id="a servo that answers as another model"),
-        pytest.param("serial", False, False, id="a serial error LeRobot calls a port error"),
-        pytest.param("wrote first", True, True, id="a lost write, then a servo that is gone"),
-        pytest.param("a write", True, True, id="a failed write, wherever it was raised"),
-        pytest.param("a lost write", False, True, id="a lost write LeRobot calls a port error"),
+        pytest.param("missing", "", False, id="a servo that never answers"),
+        pytest.param("wrong model", "", False, id="a servo that answers as another model"),
+        pytest.param(
+            "firmware read", ", the first that did not answer", False, id="a lost firmware read"
+        ),
+        pytest.param("wrote first", "", True, id="a lost write, then a servo that is gone"),
+        pytest.param("a write", "", True, id="a failed write, wherever it was raised"),
+        pytest.param("a lost write", None, True, id="a lost write beneath another error"),
     ],
 )
 async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_torque(
-    script: str, named: bool, torque_said: bool
+    script: str, label: str | None, torque_said: bool
 ) -> None:
     """A servo that stopped answering, or the cable to it that came out, is the failure a
     further attempt will not fix, and LeRobot reports it from the handshake that opens every
-    connect: a list of the ids that did not answer their ping. quackd read only `id_=`, so the
+    connect: a list of the ids that did not answer, or a firmware read that lost a reply, which
+    names the first motor that did not answer. quackd once read 0.6.1's `id_=` alone, so the
     refusal sent the person to "the arm's cables and power" although LeRobot had named the
     servo, and told them to keep a hand under the arm because the port had opened, when the
-    handshake pings and reads and not one torque write had gone out.
+    handshake reads and not one torque write had gone out.
 
     Now the joint is named through the bus's own table, and the torque warning is given only
     when an attempt can have written torque: a lost write earlier in the same connect still
     earns it, because a later attempt that writes nothing leaves the motors where it found
-    them. A serial error in the handshake comes out as LeRobot's port error, raised from it,
-    and is placed by the error it was raised from. A failed write is the other sign torque can
-    have been written, read off the words and those of the error it was raised from, and it
-    warns wherever it was raised: the handshake at 0.6.1 writes nothing, and a LeRobot whose
-    handshake did would be one to warn about."""
+    them. LeRobot 0.7.0 closes the port behind a failed handshake and raises it again as it was
+    (`up.HANDSHAKE_CLOSES_THE_PORT`, motors_bus.py lines 424 to 430), so each note says LeRobot
+    closed it, and not that it never opened, with the reads already out. A failed write is the
+    other sign torque can have been written, read off the words and those of the error it was
+    raised from, and it warns wherever it was raised: the handshake at 0.7.0 writes nothing, and
+    a LeRobot whose handshake did would be one to warn about."""
+    from quackd_lerobot.real import PORT_CLOSED_BY_THE_HANDSHAKE, PORT_CLOSED_WRITING_NOTHING
+
     arm, camera, transport = _rewired()
     joint, n = next(iter(REWIRED.items()))
     refused: BaseException = {
         "missing": _motor_check_failed(missing=[n]),
         "wrong model": _motor_check_failed(wrong={n: (joint, SOME_MODEL + 1)}),
-        "serial": OSError("ClearCommError failed (a synthetic glitch)"),
+        "firmware read": _lost_sync_read(
+            "Firmware_Major_Version", list(REWIRED.values()), 1, NO_STATUS, first=n
+        ),
         "wrote first": _motor_check_failed(missing=[n]),
         "a write": RuntimeError(
-            f"Failed to write 'Lock' on id_={n} with '0' after 1 tries. [RxPacketError] "
-            "Overload error!"
+            f"Failed to write 0 to 'Lock': motor ID {n} refused it with error status 0x08."
         ),
-        "a lost write": _lost_write("Lock", n, 0, NOT_SENT),
+        # 0.6.1 raised its port error from a write its handshake lost; 0.7.0 raises nothing so,
+        # and quackd still reads the cause
+        "a lost write": _beneath(_port_refused("COM7"), _lost_write("Lock", n, 0, NOT_SENT)),
     }[script]
     arm.handshake_errors = [refused] * CONNECT_ATTEMPTS
     if script == "wrote first":
@@ -6256,7 +6569,10 @@ async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_t
 
     why = str(raised.value)
     head = f"lerobot real: connect failed {CONNECT_ATTEMPTS} times"
-    assert why.startswith(f"{head}, the last on {joint} (id {n}): " if named else f"{head}: ")
+    named = label is not None
+    assert why.startswith(
+        f"{head}, the last on {joint} (id {n}){label}: " if named else f"{head}: "
+    ), why
     assert (SPLIT_TORQUE in why) is torque_said, why
     look = (
         f"{joint}'s cable and connectors, that the servo supply is on,"
@@ -6267,8 +6583,14 @@ async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_t
     assert arm.calls.count(("connect", False)) == CONNECT_ATTEMPTS
     assert arm.timeline == [] and not arm.is_connected
     assert camera.calls == ["connect", "disconnect"]
-    for note in transport.connect_notes:
-        assert "The port was closed without a write to any motor" in note, note
+    for k, note in enumerate(transport.connect_notes, start=1):
+        then = (
+            PORT_CLOSED_WRITING_NOTHING
+            if script == "wrote first" and k == 1
+            else PORT_CLOSED_BY_THE_HANDSHAKE
+        )
+        assert f" {then}, and connect runs again" in note, note
+        assert "never opened" not in note, note
 
 
 @pytest.mark.parametrize(
@@ -6342,67 +6664,56 @@ async def test_a_connect_that_ends_on_a_timeout_says_hold_the_arm_when_torque_ma
         release.set()
 
 
-async def test_a_serial_error_that_left_the_port_busy_does_not_fail_the_next_attempt() -> None:
-    """The servo SDK raises its port handler's busy flag before every packet and lowers it when
-    the reply is in, so a serial error in between (a USB glitch in a write) leaves it raised,
-    and reopening the port does not lower it. quackd closed the port between attempts without
-    the torque-off, and upstream clears the flag only inside that same branch, so every packet
-    of the next attempts was answered "port in use" unsent: the handshake found no motor, and
-    the retry built for a passing fault failed in the one it should have absorbed, blaming
-    every motor. The close now lowers the flag itself, and writes nothing doing so."""
+async def test_a_port_close_needs_no_port_handler_and_writes_nothing() -> None:
+    """LeRobot 0.7.0's bus holds rustypot's Bus and no port handler (`up.NO_BUSY_FLAG`), so the
+    close between two attempts is the bus's own disconnect with its torque-off skipped, and
+    nothing after it: it used to lower the servo SDK's busy flag on the port handler, an
+    attribute this bus does not have, where the AttributeError went by unseen. A port already
+    shut, by a handshake LeRobot closed it behind or by the close before, is passed over
+    without a word (motors_bus.py lines 452 and 453), so a second close neither raises nor
+    writes, and the transport is not left thinking a call failed."""
+    touched: list[str] = []
 
-    class Glitch(FakeArm):
-        def connect(self, calibrate: bool = True) -> None:
-            super().connect(calibrate)
-            if self.calls.count(("connect", False)) == 1:
-                self.bus.port_handler.is_using = True  # raised for a packet, never lowered
-                raise OSError("WriteFile failed (a synthetic glitch)")
+    class Watched(FakeBus):
+        def __getattr__(self, name: str) -> Any:  # only for attributes the bus does not have
+            touched.append(name)
+            raise AttributeError(name)
 
-    arm = Glitch()
+    arm = FakeArm()
+    arm.bus = Watched(arm)
     transport = LeRobotReal("COM7", robot=arm)
-    transport.connect_pause_s = 0.0
     await transport.connect()
+    await transport._close_port()
+    assert arm.calls[-1] == ("bus.disconnect", False) and not arm.is_connected
+    await transport._close_port()
+    assert arm.calls[-1] == ("bus.disconnect", False) and not arm.is_connected
+    assert "port_handler" not in touched, touched
+    assert arm.timeline == [] and arm.torque_retries == [], "a close wrote torque"
+    assert transport.stop_error is None and transport._wedged is None
 
-    assert arm.is_connected and arm.bus.port_handler.is_using is False
-    assert arm.calls.count(("connect", False)) == 2, "the attempt after the glitch failed"
-    assert ("bus.disconnect", False) in arm.calls and ("bus.disconnect", True) not in arm.calls
-    assert arm.timeline == [] and arm.torque_retries == [], "torque was written between them"
-    (note,) = transport.connect_notes
-    assert "WriteFile failed" in note, note
 
-
-async def test_a_port_close_that_ran_out_of_time_waiting_for_the_bus_leaves_its_flag_alone() -> (
-    None
-):
-    """The busy flag was cleared after the close's own call whenever the transport was not
-    wedged, and a close that ran out of time still waiting for the bus's lock wedges nothing,
-    because its call never started. So the flag of whichever call held the lock was lowered in
-    the middle of that call's packet, by a close that had not closed anything. It is cleared in
-    the same call as the close now, straight after it, so only under the lock and only once the
-    port has shut."""
+async def test_a_port_close_that_ran_out_of_time_waiting_for_the_bus_never_runs() -> None:
+    """A close between two attempts that runs out of its time still waiting for the bus's lock
+    wedges nothing, because its call never started, and it must not go out once the lock is
+    free: the call that held the lock has the bus, and a close behind it is a close nobody is
+    waiting for any more. A close made with the bus free closes the port."""
     arm = FakeArm()
     transport = LeRobotReal("COM7", robot=arm, timeout_s=2.0)
     await transport.connect()
     transport.port_close_deadline_s = 0.1
-    seen: list[bool] = []
 
     def a_packet() -> None:
-        arm.bus.port_handler.is_using = True  # raised for its packet, as the servo SDK does
         time.sleep(0.4)
-        seen.append(arm.bus.port_handler.is_using)
-        arm.bus.port_handler.is_using = False
 
     other = asyncio.ensure_future(transport._call(a_packet))
     await asyncio.sleep(0.05)  # the packet holds the lock
     await transport._close_port()
     assert ("bus.disconnect", False) not in arm.calls, "the close ran after all"
     await other
-    assert seen == [True], "a close that never ran lowered another call's flag mid-packet"
     assert arm.is_connected
 
-    await transport._close_port()  # with the bus free, it closes and lowers the flag
+    await transport._close_port()  # with the bus free, it closes
     assert ("bus.disconnect", False) in arm.calls and not arm.is_connected
-    assert arm.bus.port_handler.is_using is False
 
 
 async def test_a_handshake_that_found_no_motor_names_no_joint_and_says_cables_and_power() -> None:
@@ -6439,7 +6750,7 @@ async def test_a_handshake_that_found_no_motor_names_no_joint_and_says_cables_an
 
 class ChecksItsCalibration(FakeArm):
     """`SOFollower.connect` in upstream's order with the calibration check in its place: the
-    port, the handshake, then `not self.is_calibrated and calibrate` (so_follower.py line 99,
+    port, the handshake, then `not self.is_calibrated and calibrate` (so_follower.py line 118,
     evaluated whatever `calibrate` says), then `configure()`. `calibration_errors` are raised
     from inside the check's reads, and `configure_errors` from inside `configure()`, from a
     calibration read it makes itself when `configure_reads` says so."""
@@ -6494,10 +6805,11 @@ async def test_a_read_lost_in_the_calibration_check_before_configure_wrote_no_to
     told the person to keep a hand under an arm nothing had written to. A failure placed in the
     check is a read now, like one in the handshake; one placed under `configure()`, or one that
     cannot be placed, still earns the warning, and so does a calibration read made from inside
-    `configure()`, which would come after its torque-off. Synthetic ids and registers."""
+    `configure()`, which would come after its torque-off. The check's reads are sync reads at
+    0.7.0 (motors_bus.py lines 753 to 756). Synthetic ids and registers."""
     arm = ChecksItsCalibration()
     n = arm.bus.motors[sorted(JOINTS)[2]].id
-    lost = ConnectionError(f"Failed to read 'Homing_Offset' on id_={n} after 1 tries. {NO_STATUS}")
+    lost = _lost_sync_read("Homing_Offset", arm.bus._ids(), 1, NO_STATUS, first=n)
     if where == "calibration check":
         arm.calibration_errors = [lost] * CONNECT_ATTEMPTS
     else:
@@ -6508,7 +6820,7 @@ async def test_a_read_lost_in_the_calibration_check_before_configure_wrote_no_to
     with pytest.raises(TransportError) as raised:
         await transport.connect()
     why = str(raised.value)
-    assert "Failed to read 'Homing_Offset'" in why, why
+    assert "Failed to sync read 'Homing_Offset'" in why, why
     assert (SPLIT_TORQUE in why) is torque_said, why
     assert arm.calls.count(("connect", False)) == CONNECT_ATTEMPTS
     assert arm.timeline == [] and not arm.is_connected
@@ -6547,7 +6859,8 @@ async def test_a_stop_asked_for_while_a_connect_fails_ends_the_attempts(
     asked = threading.Event()
     arm = StoppedDuring(asked.set if when == "attempt" else threading.Timer(0.15, asked.set).start)
     n = arm.bus.motors[sorted(JOINTS)[-1]].id
-    arm.connect_errors = [_lost_write("Lock", n, 1, NO_STATUS)] * CONNECT_ATTEMPTS
+    lost = _lost_write("Lock", n, 1, NO_STATUS)
+    arm.connect_errors = [lost] * CONNECT_ATTEMPTS
     camera = FakeCamera()
     transport = LeRobotReal(
         "COM7", robot=arm, camera=parse_camera_url("opencv://0"), camera_object=camera
@@ -6562,7 +6875,7 @@ async def test_a_stop_asked_for_while_a_connect_fails_ends_the_attempts(
         f"lerobot real: connect stopped after attempt 1 of {CONNECT_ATTEMPTS}, because a stop "
         "was asked for."
     ), why
-    assert f"Failed to write 'Lock' on id_={n}" in why and SPLIT_TORQUE in why, why
+    assert f"{lost}" in why and SPLIT_TORQUE in why, why
     assert "The port was closed without a write to any motor, and connect was not tried" in why
     assert arm.calls == [("connect", False), ("bus.disconnect", False)], arm.calls
     assert arm.timeline == [] and not arm.is_connected
@@ -8139,10 +8452,7 @@ class _TorqueUnread(FakeBus):
     ) -> dict[str, int]:
         if data_name == "Torque_Enable":
             self.arm.reads.append((data_name, normalize, num_retry))
-            raise RuntimeError(
-                "Failed to sync read 'Torque_Enable' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. "
-                "[TxRxResult] There is no status packet!"
-            )
+            raise _lost_sync_read(data_name, self._ids(), num_retry + 1, NO_STATUS)
         return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
 
 

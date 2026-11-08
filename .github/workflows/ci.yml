@@ -277,14 +277,20 @@ jobs:
   # cache of its own (tests/test_policy_pipeline.py). They are what POLICY_PIPELINE's VERIFIED
   # rests on, for those two types on the CPU and nothing more.
   #
+  # It is also the one job with LeRobot installed, so the arm's real backend runs here over
+  # LeRobot's own follower and bus, with rustypot's Bus, the part that talks to the port,
+  # replaced by a fake (tests/test_lerobot_real_bus.py), which needs the `[feetech]` extra for
+  # rustypot's servo definitions. That is what the joint naming and the handshake's port rest
+  # on, and it opens no serial port.
+  #
   # torch comes from its CPU wheel index first, because this runner has no GPU and the default
-  # wheels carry CUDA's gigabytes, and LeRobot after it, at the version policy/upstream_api.py
-  # was read at, with its X-VLA extra for transformers, which keeps the torch already there.
-  # `uv pip` reads pyproject.toml's override-dependencies too, so LeRobot runs on Pillow 13 here,
-  # as it does in a checkout, and not on the 12.3.0 a PyPI install of the extra gets.
-  # `--no-sync` from then on, or `uv run`
-  # would sync them both away again. Not a matrix: nothing here differs by platform that the
-  # default suite does not already run six times.
+  # wheels carry CUDA's gigabytes, inside the window LeRobot 0.7.0 asks for, and LeRobot after
+  # it, at the version policy/upstream_api.py was read at, with its X-VLA extra for transformers,
+  # which keeps the torch already there. Nothing here holds huggingface-hub below 2, as diffusers
+  # does in uv.lock, so this job runs the newest hub LeRobot allows. `--no-sync` from then on, or
+  # `uv run` would sync them both away again. Not a matrix: nothing here differs by platform that
+  # the default suite does not already run six times. Pillow is the lock's here as in every job,
+  # 13 being quackd's floor and inside LeRobot 0.7.0's cap, so no job runs an older one.
   policy:
     name: policy · torch cpu + lerobot, a tiny ACT and a tiny X-VLA offline
     runs-on: ubuntu-latest
@@ -296,6 +302,8 @@ jobs:
       # without it a runner where torch did not install would skip the half that matters and
       # go green having proved nothing, as QUACKD_REQUIRE_GL is for the physics job
       QUACKD_REQUIRE_TORCH: "1"
+      # the same for the arm's bus: no rustypot is a failure here, not a skip
+      QUACKD_REQUIRE_LEROBOT_BUS: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -303,17 +311,12 @@ jobs:
           enable-cache: true
       - name: Sync (default deps + dev extra)
         run: uv sync --python 3.12 --extra dev
-      - name: torch from its CPU wheel index, then LeRobot 0.6.1
+      - name: torch from its CPU wheel index, then LeRobot 0.7.0
         run: |
-          uv pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.7,<2.12" "torchvision>=0.22,<0.27"
-          uv pip install "lerobot[xvla]==0.6.1"
+          uv pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.7,<2.16" "torchvision>=0.22,<0.30"
+          uv pip install "lerobot[xvla,feetech]==0.7.0"
       - name: Prove the imports before blaming the pipeline
         run: |
-          uv run --no-sync python -c "import torch, lerobot, transformers; from lerobot.policies.act.modeling_act import ACTPolicy; from lerobot.policies.xvla.modeling_xvla import XVLAPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
-      - name: A tiny ACT and a tiny X-VLA through the real server, and the protocol with torch installed
-        run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py
-      # --no-config, or uv reads the override and has nothing to do. Every other job has Pillow 13.
-      - name: The pictures quackd decodes, on the Pillow a PyPI install of the arm's extras gets
-        run: |
-          uv pip install --no-config "pillow<13"
-          uv run --no-sync pytest tests/test_image_formats.py tests/test_images.py tests/test_host_client.py tests/test_rosbridge_adapter.py
+          uv run --no-sync python -c "import torch, lerobot, transformers, rustypot; from lerobot.policies.act.modeling_act import ACTPolicy; from lerobot.policies.xvla.modeling_xvla import XVLAPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
+      - name: A tiny ACT and a tiny X-VLA through the real server, the protocol with torch installed, and the arm over LeRobot's own bus
+        run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py tests/test_lerobot_real_bus.py

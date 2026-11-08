@@ -403,8 +403,12 @@ Also in scope:
   `--pin REPO@REVISION` fixes its revision at a whole commit or a tag, fetching it with no `.py`
   and no pickle, and refusing it if its directory in the Hub's cache holds anything but configs,
   tokenizer files and safetensors all the same, or maps a class to code (`auto_map`). A SmolVLA
-  that names no backbone is refused, since LeRobot would load a default of its own, and every
-  weight is loaded strictly, so a checkpoint is never served as a random network. Only a tiny
+  that names no backbone is refused, since LeRobot would load a default of its own, and so is a
+  GR00T whose VLM step names no backbone, whose default LeRobot loads trusting its repository's
+  code, and a step that keeps what it loads, a tokenizer say, in a directory inside the
+  checkpoint (`artifacts`), which LeRobot 0.7.0 would load in place of what the step names, from
+  files quackd neither fetches nor checks. Every weight is loaded strictly, so a checkpoint is
+  never served as a random network. Only a tiny
   random ACT has been loaded by it, in CI. The arm checks at connect, before any torque, that
   what the server says it serves fits the arm, and again as every segment starts, so a server
   started again with another policy drives nothing. What would be a security issue: a goal
@@ -417,7 +421,7 @@ Also in scope:
   starting a segment. No quackd command loads a checkpoint in the arm's own process.
   `load_policy()` in the arm's backend, an older Python helper that nothing in quackd calls,
   still would, with none of the checks above and no check at connect, as the `LOAD_POLICY` row in
-  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-061)
+  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-070)
   says. Whether to remove it is an open item in PLAN.md.
 - **The policy server on a Hugging Face Endpoint** (`quackd policy endpoint`,
   `adapters/lerobot/src/quackd_lerobot/policy/endpoint.py`,

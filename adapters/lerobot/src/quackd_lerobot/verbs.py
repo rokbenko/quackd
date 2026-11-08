@@ -867,17 +867,18 @@ UNREAD_IN_HAND = (
 """The close's line for an arm in a person's hands whose release no torque read has answered
 for: `LIMP_IN_HAND` and `still_holding_in_hand` each say what a read found, and here none did.
 
-Two ways reach it. A release whose call raised part way, or that a Ctrl-C landed on while it
-was on the wire, has gone out to some motors and maybe not to the rest, and upstream's
-`disable_torque` writes one motor at a time and stops at the first write that fails
-(`upstream_api.BUS_DISABLE_TORQUE`), so the motors after it keep their torque. And a release
-that returned and whose read-back then failed, or found the torque register silent. Unless the
-close's own read of the arm answers first, which on an arm with no rest pose it never makes,
-and which a bus still wedged by the release refuses. "Nothing is holding it up" would then be a
-sentence about motors nobody asked, over an arm that may have some still holding, and that arm
-is also kept energised past the close. So this says the release went out, that nothing read it
-back, and the one way to be certain, which is the switch. And it tells the person to hold the
-arm as though it were limp, which is the reading that never drops one."""
+Two ways reach it. A release whose call raised, or that a Ctrl-C landed on while it was on the
+wire, and which motors took it is not known: upstream's `disable_torque` tries every motor and
+names each whose write it could not confirm, and those may keep their torque
+(`upstream_api.TORQUE_TRIED_ON_EVERY_MOTOR`), and a call that never came back may have stopped
+anywhere. And a release that returned and whose read-back then failed, or found the torque
+register silent. Unless the close's own read of the arm answers first, which on an arm with no
+rest pose it never makes, and which a bus still wedged by the release refuses. "Nothing is
+holding it up" would then be a sentence about motors nobody asked, over an arm that may have
+some still holding, and that arm is also kept energised past the close. So this says the
+release went out, that nothing read it back, and the one way to be certain, which is the
+switch. And it tells the person to hold the arm as though it were limp, which is the reading
+that never drops one."""
 
 
 LET_GO_TO_PLACE = "it was let go of for you to place and never taken hold of again"

@@ -196,6 +196,42 @@ def test_a_missing_core_package_is_a_failure_and_a_missing_extra_is_not() -> Non
     assert report.ok, "an extra nobody installed is a choice, not a fault"
 
 
+def test_the_arms_serial_library_row_asks_for_rustypot_by_its_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LeRobot 0.7.0 drives the arm's motors through rustypot, which its `[feetech]` extra brings
+    and its base does not (`upstream_api.FEETECH_EXTRA`), so the `lerobot (feetech bus)` row asks
+    for rustypot and no longer for the servo SDK it replaced, which no install of the arm has
+    now. It is looked up by its distribution's metadata and never imported, as lerobot is, so
+    doctor loads no native library it does not need."""
+    module, extra = doctor.EXTRAS["lerobot (feetech bus)"]
+    assert (module, extra) == ("rustypot", "quackd[lerobot]")
+    assert doctor._METADATA_ONLY[module] == "rustypot"
+    assert "scservo_sdk" not in doctor._METADATA_ONLY
+    assert all(name != "scservo_sdk" for name, _ in doctor.EXTRAS.values())
+
+    def not_imported(name: str, package: str | None = None) -> Any:
+        raise AssertionError(f"doctor imported {name}")
+
+    asked: list[str] = []
+
+    def version(distribution: str) -> str:
+        asked.append(distribution)
+        if distribution == "rustypot":
+            return "1.13.1"
+        raise doctor.md.PackageNotFoundError(distribution)
+
+    def absent(distribution: str) -> str:
+        raise doctor.md.PackageNotFoundError(distribution)
+
+    monkeypatch.setattr(doctor.importlib, "import_module", not_imported)
+    monkeypatch.setattr(doctor.md, "version", version)
+    assert doctor._installed("rustypot") == "1.13.1"
+    assert asked == ["rustypot"]
+    monkeypatch.setattr(doctor.md, "version", absent)
+    assert doctor._installed("rustypot") is None
+
+
 def test_an_unknown_robot_fails_the_report_rather_than_raising() -> None:
     report = doctor.collect("nope:x")
     assert report.robot is not None and report.robot.error is not None

@@ -65,6 +65,7 @@ from quackd_lerobot.sim.camera import CAMERA_HINT, RenderError, SimCamera, verti
 from quackd_lerobot.sim.clock import SUBSTEPS, SimClock
 from quackd_lerobot.sim.faults import EXAMPLE, TORQUE_READ, FaultPlan
 from quackd_lerobot.sim.follower import (
+    DISCONNECT_RETRIES,
     NO_STATUS,
     NOT_SENT,
     DeviceAlreadyConnectedError,
@@ -1183,7 +1184,11 @@ def test_a_torque_call_switches_only_the_motors_it_names(mjcf: str) -> None:
 
     faulty = _follower(arm, faults=FaultPlan.parse("torque=1", seed=0))
     faulty.connect(False)
-    with pytest.raises(ConnectionError, match=rf"on id_={faulty.bus.motors[gripper].id} "):
+    said = (
+        f"Failed to disable torque after 1 tries on '{gripper}' "
+        f"(motor ID {faulty.bus.motors[gripper].id}): {NO_STATUS}."
+    )
+    with pytest.raises(ConnectionError, match=f"^{re.escape(said)}$"):
         faulty.bus.disable_torque(gripper)
     assert all(faulty.world.torques().values())
 
@@ -1205,20 +1210,26 @@ def test_a_limp_joint_keeps_its_goal_until_torque_drives_it_there(mjcf: str) -> 
 def test_a_failed_connect_leaves_the_port_open_until_the_bus_closes_it(mjcf: str) -> None:
     """Upstream's order: nothing closes the port when configure() raises, every connect after
     it is refused as already connected, and a close through the bus that writes nothing is
-    what lets the next one through. The torque writes stopped where the reply went missing."""
+    what lets the next one through, and passes over a port already shut without a word. The
+    torque call that lost the reply tried every motor (`upstream_api.TORQUE_TRIED_ON_EVERY_MOTOR`)
+    and named the one, whose `Lock` reply was lost after its `Torque_Enable` went through, so
+    every motor holds."""
     follower = _follower(_arm(mjcf), faults=FaultPlan.parse("configure=1", seed=0))
-    with pytest.raises(ConnectionError, match=r"^Failed to write 'Lock' on id_=\d+ with '1'"):
+    lost = (
+        r"^Failed to enable torque after 1 tries on '\w+' \(motor ID \d+\): Operation timed out\.$"
+    )
+    with pytest.raises(ConnectionError, match=lost):
         follower.connect(False)
     assert follower.is_connected
     with pytest.raises(DeviceAlreadyConnectedError, match=r"^SOFollower is already connected\.$"):
         follower.connect(False)
-    (fault,) = follower.faults.injected
-    at = JOINTS.index(fault.motor(list(JOINTS)))
     torque = follower.world.torques()
-    assert [torque[name] for name in JOINTS] == [k <= at for k in range(len(JOINTS))]
+    assert all(torque.values()), "a motor the switch back on reached was left limp"
     follower.bus.disconnect(disable_torque=False)
     assert not follower.is_connected
     assert follower.world.torques() == torque, "closing the port wrote torque"
+    follower.bus.disconnect(disable_torque=True)  # shut already: nothing to release, no word
+    assert follower.world.torques() == torque, "a close of a shut port wrote torque"
 
 
 def test_a_closed_port_refuses_in_lerobots_words(mjcf: str) -> None:
@@ -1231,7 +1242,7 @@ def test_a_closed_port_refuses_in_lerobots_words(mjcf: str) -> None:
     ):
         with pytest.raises(DeviceNotConnectedError, match=said):
             call()
-    with pytest.raises(DeviceNotConnectedError, match=r"^FeetechMotorsBus is not connected"):
+    with pytest.raises(DeviceNotConnectedError, match=r"^SerialMotorsBus is not connected"):
         follower.bus.sync_read("Torque_Enable", normalize=False)
 
 
@@ -1272,24 +1283,33 @@ def test_every_injected_fault_is_sorted_as_lerobots_own_would_be(mjcf: str) -> N
 
     follower, error = raised("handshake=1", lambda f: f.connect(False))
     assert isinstance(error, RuntimeError) and "motor check failed on port" in str(error)
+    assert str(error).startswith("SerialMotorsBus motor check failed on port")
     assert not may_have_written_torque(error), "a ping wrote nothing"
     assert motor_in_error(str(error), follower.bus.motors) == named(follower)
     assert all(follower.world.torques().values()), "the handshake touched torque"
+    assert not follower.is_connected, "a failed handshake left the port open"
 
     follower, error = raised("configure=1", lambda f: f.connect(False))
     assert may_have_written_torque(error)
     assert motor_in_error(str(error), follower.bus.motors) == named(follower)
-    assert str(error).endswith(f"after 1 tries. {NO_STATUS}")
+    _label, joint = named(follower)
+    assert str(error) == (
+        f"Failed to enable torque after 1 tries on '{joint}' "
+        f"(motor ID {follower.bus.motors[joint].id}): {NO_STATUS}."
+    )
 
     follower, error = raised(
         "torque=1", lambda f: connected(f).bus.disable_torque(num_retry=TORQUE_RETRIES)
     )
-    assert f"with '0' after {TORQUE_RETRIES + 1} tries. {NO_STATUS}" in str(error)
-    assert str(error).startswith("Failed to write 'Torque_Enable' on id_=")
+    _label, joint = named(follower)
+    assert str(error) == (
+        f"Failed to disable torque after {TORQUE_RETRIES + 1} tries on '{joint}' "
+        f"(motor ID {follower.bus.motors[joint].id}): {NO_STATUS}."
+    )
     assert motor_in_error(str(error), follower.bus.motors) == named(follower)
-    at = JOINTS.index(named(follower)[1])
+    # every motor tried: the one it names still holds, and every other one let go
     torque = follower.world.torques()
-    assert [torque[name] for name in JOINTS] == [k >= at for k in range(len(JOINTS))]
+    assert [torque[name] for name in JOINTS] == [name == joint for name in JOINTS]
 
     for spec, register in (
         ("torque_read=1", "Torque_Enable"),
@@ -1299,15 +1319,22 @@ def test_every_injected_fault_is_sorted_as_lerobots_own_would_be(mjcf: str) -> N
             spec, lambda f, r=register: connected(f).bus.sync_read(r, normalize=False, num_retry=2)
         )
         ids = [motor.id for motor in follower.bus.motors.values()]
-        assert (
-            str(error)
-            == f"Failed to sync read '{register}' on ids={ids} after 3 tries. {NO_STATUS}"
+        assert str(error) == (
+            f"Failed to sync read '{register}' from motor IDs {ids} after 3 tries. "
+            f"motor {ids[0]}: {NO_STATUS}"
         )
-        assert motor_in_error(str(error), follower.bus.motors) is None, "a sync read names no joint"
+        # nothing came back, so the first motor asked is the first that did not answer
+        first = next(iter(follower.bus.motors))
+        assert motor_in_error(str(error), follower.bus.motors) == (
+            f"{first} (id {ids[0]}), the first that did not answer",
+            first,
+        )
 
     follower, error = raised("write=1", lambda f: connected(f).send_action({f"{PAN}.pos": 1.0}))
-    assert str(error).startswith("Failed to sync write 'Goal_Position' with ids_values={")
-    assert str(error).endswith(f"after 1 tries. {NOT_SENT}")
+    assert str(error) == (
+        f"Failed to sync write 'Goal_Position' to motor IDs [{follower.bus.motors[PAN].id}] "
+        f"after 1 tries. {NOT_SENT}"
+    )
     assert motor_in_error(str(error), follower.bus.motors) is None
     assert follower.world.goal(PAN) == pytest.approx(0.0), "a packet that never went out moved it"
 
@@ -1323,7 +1350,10 @@ def test_reads_lost_stay_lost_for_everyone_the_heartbeat_included(mjcf: str) -> 
     heartbeat()  # not the second observation: the heartbeat's are not counted
     follower.get_observation()
     assert heartbeat()[f"{PAN}.pos"] == pytest.approx(0.0, abs=TICK_DEG)
-    lost = r"^Failed to sync read 'Present_Position' on ids=\[[\d, ]+\] after 3 tries\. "
+    lost = (
+        r"^Failed to sync read 'Present_Position' from motor IDs \[[\d, ]+\] after 3 tries\. "
+        r"motor \d+: Operation timed out$"
+    )
     with pytest.raises(ConnectionError, match=lost):
         follower.get_observation()
     with pytest.raises(ConnectionError, match="Failed to sync read 'Torque_Enable'"):
@@ -1341,14 +1371,17 @@ def test_reads_lost_stay_lost_for_everyone_the_heartbeat_included(mjcf: str) -> 
         follower.connect(False)
     assert motor_in_error(str(unanswered.value), follower.bus.motors) is None
     assert not may_have_written_torque(unanswered.value)
+    assert not follower.is_connected, "the handshake left the port open behind it"
 
 
 def test_a_lost_arm_answers_no_torque_write_and_takes_no_goal(mjcf: str) -> None:
     """An arm whose reads are lost has dropped off the bus. A torque write waits for its status
-    packet as a read does, so the first one raises in upstream's words with nothing written,
-    and a disconnect asked to drop torque leaves the port open, as upstream's does
-    (`upstream_api.BUS_DISCONNECT`). A goal's sync write waits for no reply, so it raises
-    nothing, and no motor takes it."""
+    packet as a read does, so a torque call that tries every motor gets no reply from any, and
+    raises in upstream's words naming every one, with nothing written
+    (`upstream_api.TORQUE_TRIED_ON_EVERY_MOTOR`), which names no joint to look at. A disconnect
+    asked to drop torque raises the same and still releases the port, as upstream's does
+    (`upstream_api.DISCONNECT_RELEASES_THE_PORT`). A goal's sync write waits for no reply, so it
+    raises nothing, and no motor takes it."""
     follower = _follower(_arm(mjcf), cap=None, faults=FaultPlan.parse("read_loss_from=1", seed=0))
     follower.connect(False)
     with pytest.raises(ConnectionError, match="Failed to sync read 'Present_Position'"):
@@ -1356,25 +1389,32 @@ def test_a_lost_arm_answers_no_torque_write_and_takes_no_goal(mjcf: str) -> None
     bus, world = follower.bus, follower.world
     holding = world.torques()
     assert all(holding.values())
-    first = next(iter(bus.motors))
-    for call, value in ((bus.disable_torque, 0), (bus.enable_torque, 1)):
+    # in the order of their ids, as rustypot hands the failures back
+    every = ", ".join(
+        f"'{name}' (motor ID {motor.id}): {NO_STATUS}"
+        for name, motor in sorted(bus.motors.items(), key=lambda item: item[1].id)
+    )
+    for call, verb in ((bus.disable_torque, "disable"), (bus.enable_torque, "enable")):
         with pytest.raises(ConnectionError) as unanswered:
             call(num_retry=TORQUE_RETRIES)
         assert str(unanswered.value) == (
-            f"Failed to write 'Torque_Enable' on id_={bus.motors[first].id} with '{value}' "
-            f"after {TORQUE_RETRIES + 1} tries. {NO_STATUS}"
+            f"Failed to {verb} torque after {TORQUE_RETRIES + 1} tries on {every}."
         )
+        assert motor_in_error(str(unanswered.value), bus.motors) is None, "the whole arm is gone"
     assert world.torques() == holding, "a motor on a bus that answers nothing took a torque write"
     goal = world.goal(PAN)
     sent = follower.send_action({f"{PAN}.pos": MAX_STEP_DEG})
     assert sent == {f"{PAN}.pos": MAX_STEP_DEG}
     assert world.goal(PAN) == goal, "a motor on a bus that answers nothing took a goal"
     assert follower.config.disable_torque_on_disconnect
-    with pytest.raises(ConnectionError, match=r"^Failed to write 'Torque_Enable' on id_="):
+    with pytest.raises(
+        ConnectionError,
+        match=rf"^Failed to disable torque after {DISCONNECT_RETRIES + 1} tries on ",
+    ):
         follower.disconnect()
-    assert follower.is_connected, "a disconnect whose torque-off raised closed the port"
+    assert not follower.is_connected, "a disconnect whose torque-off raised left the port open"
     assert world.torques() == holding
-    follower.bus.disconnect(disable_torque=False)
+    follower.bus.disconnect(disable_torque=False)  # shut already: passed over without a word
     assert not follower.is_connected
 
 

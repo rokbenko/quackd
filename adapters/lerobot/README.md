@@ -10,8 +10,9 @@ uv pip install "quackd[lerobot-sim]"   # the simulator: MuJoCo and no LeRobot, o
 uv pip install "quackd[lerobot-vla]"   # the policy server: LeRobot, torch and transformers, on Python 3.12
 ```
 
-One SO-101 has run this adapter, on 2026-09-15 and again on 2026-09-23. Every LeRobot name it
-relies on is read from upstream source at a pinned commit and listed in `upstream_api.py`.
+One SO-101 has run this adapter, on 2026-09-15 and again on 2026-09-23, on LeRobot 0.6.1. Every
+LeRobot name it relies on is read from upstream source at a pinned commit and listed in
+`upstream_api.py`, now LeRobot 0.7.0's, whose new motor bus no arm has run it on.
 
 `lerobot:mujoco` is the real backend's own code over a physics model of the SO-101, the maker's
 model from TheRobotStudio's SO-ARM100, fetched at a pinned commit on first use and never

@@ -1,7 +1,7 @@
 """The arm types this adapter knows, as data (ADR-0075).
 
-What drives an arm here reads LeRobot's `Robot` and `MotorsBus`, and the SO follower's own
-behaviour and its Feetech registers where it has to (`up.SO_CONNECT_REFUSES_WHILE_OPEN`,
+What drives an arm here reads LeRobot's `Robot` and `SerialMotorsBus`, and the SO follower's own
+behaviour and its sts3215 registers where it has to (`up.SO_CONNECT_REFUSES_WHILE_OPEN`,
 `up.STS3215_REGISTERS` and their like). So an arm of that class comes as a record in this file, and
 an arm of another class needs those read again first. A record is what differs: what the manifest
 calls it, its sheet, and how far it has got. The owner rule holds here as it does for a backend
@@ -213,7 +213,8 @@ ARMS: dict[str, ArmType] = {
                 "verified",
                 owner="rok",
                 date="2026-09-15",
-                note="one SO-101, driven on 2026-09-15 and again on 2026-09-23",
+                note="one SO-101, driven on LeRobot 0.6.1 on 2026-09-15 and again on "
+                "2026-09-23; LeRobot 0.7.0's bus has not met it",
             ),
         ),
         ArmType(

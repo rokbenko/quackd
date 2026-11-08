@@ -250,8 +250,9 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
                 "verified",
                 owner="rok",
                 date="2026-09-15",
-                note="one SO-101, driven on 2026-09-15 and again on 2026-09-23; an SO-100 runs "
-                "the same code and none has; Python 3.12+",
+                note="one SO-101, driven on LeRobot 0.6.1 on 2026-09-15 and again on 2026-09-23, "
+                "and LeRobot 0.7.0's bus has not met it; an SO-100 runs the same code and none "
+                "has; Python 3.12+",
             ),
             "mujoco": _rehearsed(
                 "the real backend over a physics model of the SO-101, needs "

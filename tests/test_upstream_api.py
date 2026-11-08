@@ -57,7 +57,8 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             # torque off where the simulator takes the worst
             "adapters/lerobot/fake_follower.py",
         },
-        ("https://github.com/huggingface/lerobot",),
+        # rustypot is the library under LeRobot 0.7.0's bus, and its tables are its own
+        ("https://github.com/huggingface/lerobot", "https://github.com/pollen-robotics/rustypot"),
     ),
     (
         lerobot_policy_api,
@@ -587,10 +588,19 @@ def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
         assert word in step_cap.note, word
     # the words the simulated bus fails in, and the model number its handshake prints
     assert lerobot_api.STS3215_MODEL_NUMBER.name.endswith(f" {lerobot_api.STS3215_MODEL}")
+    from quackd_lerobot.sim import follower as simulated
+
     sync = lerobot_api.BUS_SYNC_READ_ERROR
     assert sync.name.startswith("Failed to sync read '") and "sync write" in sync.note
-    for result in ("There is no status packet!", "Failed transmit instruction packet!"):
-        assert result in sync.note, result
+    # serialport-rs's words for a reply that never came, and rustypot's for a packet that never
+    # went out, which the simulated bus fails in
+    assert (simulated.NO_STATUS, simulated.NOT_SENT) == ("Operation timed out", "Timeout error")
+    for result in (simulated.NO_STATUS, simulated.NOT_SENT):
+        assert f"`{result}`" in sync.note, result
+    assert "motor <M>: <error>" in sync.name
+    torque = lerobot_api.TORQUE_TRIED_ON_EVERY_MOTOR
+    assert torque.name.startswith("Failed to <enable|disable> torque after <k> tries on '<joint>'")
+    assert f"SOFollower.bus is a {simulated.BUS_CLASS}" == lerobot_api.SO_BUS.name
     assert "is not connected. Run `.connect()` first." in lerobot_api.NOT_CONNECTED.note
     assert "is already connected." in lerobot_api.NOT_CONNECTED.note
     # the finger meshes the simulator cuts pads from are files the pin fetches
@@ -599,13 +609,15 @@ def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
         assert f"assets/{mesh}.stl" in so_arm100_api.FILES
 
 
-def test_the_policy_refs_are_read_at_the_version_the_laptop_runs() -> None:
-    """LeRobot's policy names are read against the release a policy server installs, 0.6.1,
-    at the commit its tag names, and not at the `main` commit the arm's own refs are pinned
-    to. Every one of them cites that commit, none of them is left in the arm's file, and the
-    file says which version it read."""
+def test_the_policy_refs_are_read_at_the_release_a_policy_server_installs() -> None:
+    """LeRobot's policy names are read against the release a policy server installs, at the
+    commit its tag names, which since 0.7.0 is the commit the arm's own refs are pinned to as
+    well: the arm's bus and the server's policies come from one release. Every one of them
+    cites that commit, none of them is left in the arm's file, and the file says which version
+    it read."""
     pin = lerobot_policy_api.PIN
-    assert len(pin) == 40 and pin.isalnum() and pin != lerobot_api.PIN
+    assert len(pin) == 40 and pin.isalnum()
+    assert lerobot_policy_api.VERSION == lerobot_api.VERSION and pin == lerobot_api.PIN
     for ref in lerobot_policy_api.all_refs():
         assert pin in ref.source, ref
     assert lerobot_policy_api.VERSION == lerobot_api.PYPI_VERSION_READ
@@ -652,10 +664,12 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
         assert ref.status == "VERIFIED", ref
     assert api.DEVICE_STEP in api.DEFAULT_STEP_NAMES and api.DEVICE_STEP in api.DEVICE_OVERRIDE.name
     assert api.POLICY_TYPES.name == ", ".join(f'"{t}"' for t in api.SERVED_TYPES)
-    # LeRobot's own async server lists no X-VLA, and quackd never runs that server
-    # (ASYNC_PICKLE), so its list says only which served types it would also take
+    # LeRobot 0.6.1's async server listed no X-VLA, and 0.7.0 replaced it with a remote server
+    # that takes any type it can build (ASYNC_SUPPORTED_POLICIES). quackd runs neither
+    # (ASYNC_PICKLE), so the old list says only which served types that server took
     served_there = set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
     assert set(api.SERVED_TYPES) - served_there == {"xvla"}
+    assert "takes any type it can build" in api.ASYNC_SUPPORTED_POLICIES.name
     # the X-VLA facts the pipeline reads as data, beside the refs that read them
     assert api.XVLA_SERVED_MODE in api.XVLA_ACTION_MODES.name.split(": ", 1)[1].split(", ")
     assert api.XVLA_DEFAULT_MODE in api.XVLA_ACTION_MODES.name

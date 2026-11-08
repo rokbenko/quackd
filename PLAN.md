@@ -279,18 +279,19 @@ only Rok can name, and a CI job against a real controller in a container, which 
 
 - ⏸ **FLUX 3 Action has not run anywhere, and quackd does not serve it.** It needs a rented
   Linux machine with an NVIDIA GPU, about 32 GB of it in BF16 by Black Forest Labs' own report,
-  LeRobot from its main branch at the commit that added it or later, which is not on PyPI, and a
-  NATTEN built for that machine's torch and CUDA. The spike is to serve the official
-  `flux-3-action-so101` there behind `ssh -L`, and it has to show three things before quackd
-  claims the policy: that `quackd policy check --bench` holds the checkpoint's rate through the
-  tunnel, that its delta actions stay anchored when quackd clips a goal, and that the checkpoint
-  at a pinned revision drives the simulator end to end, on the generic arm or with the frame
-  check accepted. Whatever it shows, passed or not, gets written down, and only a pass gives it
-  refs of its own and a place in the server's list of policy types. Until then its page says
-  what running it takes and that nobody has ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
+  LeRobot 0.7.0 or later, the first release with it, and a NATTEN built for that machine's torch
+  and CUDA, which had no wheel for the torch 2.15 LeRobot 0.7.0 installs. The spike is to serve
+  the official `flux-3-action-so101` there behind `ssh -L`, and it has to show three things
+  before quackd claims the policy: that `quackd policy check --bench` holds the checkpoint's rate
+  through the tunnel, that its delta actions stay anchored when quackd clips a goal, and that the
+  checkpoint at a pinned revision drives the simulator end to end, on the generic arm or with
+  the frame check accepted. Whatever it shows, passed or not, gets written down, and only a pass
+  gives it refs of its own and a place in the server's list of policy types. Until then its
+  page says what running it takes and that nobody has
+  ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
 - ⏸ **Pi0-FAST is refused, and stays refused while LeRobot loads its tokenizer's own code.**
   Its policy loads the FAST action tokenizer with `trust_remote_code=True`, hard-wired in its
-  constructor at LeRobot 0.6.1, so serving one would run the Python its tokenizer's repository
+  constructor at LeRobot 0.7.0, so serving one would run the Python its tokenizer's repository
   brings with it, and the server refuses the type on its `config.json`
   ([docs/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)). What would change that
   is a LeRobot release that loads the tokenizer with code transformers already has, read at its
@@ -458,14 +459,16 @@ only Rok can name, and a CI job against a real controller in a container, which 
   lines on the LeRobot mock's scripted policy alone. Owed: a session on `lerobot:mujoco` with
   `quackd policy serve --policy scripted:sweep`, three lines with a brake mid-segment, from the
   keyboard and from the page, then the same on the arm with a trained checkpoint.
-- ⬜ **LeRobot's next release, which takes a run on the arm.** `quackd-lerobot`'s extras stop below
-  0.6.2, because LeRobot's main has replaced `feetech-servo-sdk` with `rustypot` and dropped the
-  tables `upstream_api.py` cites (its #4672), and moved to transformers 5.22 and torch 2.15. Owed
-  when it ships: read both `upstream_api.py` files against it, change `doctor`'s `scservo_sdk` rows,
-  the `port_handler` line in `real.py` and the bus `sim/follower.py` stands in for, run the arm, then
-  raise the ceiling and Dependabot's ignore, drop `override-dependencies` from `pyproject.toml` and
-  raise the core's Pillow floor to 13. That gets `quackd[lerobot]` off Pillow 12.3.0, and the lock
-  past the last five Dependabot alerts.
+- ⬜ **LeRobot 0.7.0 on the arm.** `quackd-lerobot`'s extras take LeRobot from 0.7.0 and below
+  0.8, whose motor bus is rustypot under one `SerialMotorsBus` (its #4672). Both `upstream_api.py`
+  files were read at the `v0.7.0` tag, `doctor` has a rustypot row, `real.py` names the joints in
+  0.7.0's words, `sim/follower.py` stands in for the new bus, Dependabot's ignore moved with the
+  ceiling, `override-dependencies` is gone and the core's Pillow floor is 13, so `quackd[lerobot]`
+  is off Pillow 12.3.0. Owed: the arm, which has only ever run 0.6.1, through the steps
+  CHANGELOG.md's Known limitations lists, with a release over silent motors timed against
+  `TORQUE_CALL_S`. Then the lock past the last five Dependabot alerts, which LeRobot 0.7.0 now
+  allows: `uv lock --upgrade-package` for torch, setuptools and transformers, a move of torch
+  from 2.11 to 2.15 that wants a person's word.
 
 ## Open elsewhere
 
