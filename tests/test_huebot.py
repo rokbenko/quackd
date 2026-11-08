@@ -778,6 +778,9 @@ async def test_a_subscribe_answer_with_no_skill_list_offers_no_skill_verb() -> N
 # ── a walk, its echo and the deadman ────────────────────────────────────────────────────
 
 
+# a margin on a wall clock, half the deadman between two feeds: in CI's parallel stage a loaded
+# macOS runner put 0.28 s between two of them (main's run on 49db6a2e, as on 2026-10-28)
+@pytest.mark.serial
 async def test_a_walk_feeds_the_deadman_and_the_shim_echoes_it(shim: FakeShim) -> None:
     """A walk re-sends `robot.move` every 100 ms, so robotd's 500 ms deadman never fires while a
     verb walks, and the shim's own `move.requested` shows each twist it took. Clamped to
