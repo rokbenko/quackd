@@ -234,9 +234,11 @@ ROBOT_MODEL_DEFAULTS_DISAGREE = UpstreamRef(
     'robot_model: str = "alohamini2"',
     "VERIFIED",
     src(_CONFIG, 54),
-    "the host defaults to alohamini2 while the client defaults to alohamini1 (line 105), and "
-    "nothing cross-checks them. quackd derives the model from the observed key set instead of "
-    "from any config, so a mismatch is impossible rather than silent.",
+    "the host's own config says alohamini2, but the host's --robot_model flag defaults to "
+    "alohamini1 and overwrites it (alohamini_host.py:106 and 141), and the client's config says "
+    "alohamini1 (line 105), so a host runs whatever its flag says and nothing cross-checks that "
+    "against the client. quackd derives the model from the observed key set instead of from any "
+    "config, so a mismatch is impossible rather than silent.",
 )
 
 # ── the lift, which is where a stop is won or lost ───────────────────────────────────────

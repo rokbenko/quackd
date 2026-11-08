@@ -166,8 +166,8 @@ default. None of this has met a real arm.
 
 Three SKUs. `alohamini1` has six joints per arm; `alohamini2` and `alohamini2pro` have seven,
 inserting `wrist_yaw`. quackd derives which from the observed key set, never from config,
-because the host defaults to `alohamini2` while upstream's own client defaults to `alohamini1`
-and nothing cross-checks them. A `--no_follower` host runs the base and the lift alone. quackd detects that from the
+because the host's config says `alohamini2`, its own `--robot_model` flag says `alohamini1` and
+wins, upstream's own client says `alohamini1`, and nothing cross-checks them. A `--no_follower` host runs the base and the lift alone. quackd detects that from the
 first observation's key set and drops `move_joints`, `gripper` and `home_arms`, leaving
 eight verbs rather than eleven: `report_state`, `stop`, `move`, `lift`, `observe`, `go_to`,
 `search_scan` and `approach_and`. The lift survives because it is not an arm.

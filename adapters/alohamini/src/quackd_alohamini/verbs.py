@@ -89,9 +89,10 @@ def joint_range(joint: str) -> tuple[float, float]:
 def model_from_keys(keys: Iterable[object] | None) -> str:
     """Which SKU the host is running, from the observation's own key set.
 
-    The host defaults to alohamini2 and upstream's client defaults to alohamini1, and nothing
-    cross-checks them (`upstream_api.ROBOT_MODEL_DEFAULTS_DISAGREE`), so a mismatch would
-    silently zero-fill two joints. Reading the wire instead makes that impossible."""
+    The host's config says alohamini2, its own `--robot_model` flag says alohamini1 and wins,
+    upstream's client says alohamini1, and nothing cross-checks them
+    (`upstream_api.ROBOT_MODEL_DEFAULTS_DISAGREE`), so a mismatch would silently zero-fill two
+    joints. Reading the wire instead makes that impossible."""
     names = {str(k) for k in (keys or ())}
     return "alohamini2" if any("wrist_yaw" in n for n in names) else "alohamini1"
 

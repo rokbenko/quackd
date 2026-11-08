@@ -19,9 +19,13 @@ in the sdist and never in the wheel. It is plain standard library plus whatever 
 already needed, and the two functions that do the work take any object with the right
 attributes, so they are tested with fakes and no robot.
 
-Requires upstream installed on the robot:
+Requires upstream installed on the robot, at the commit quackd was read against. A host from
+upstream's main refuses every payload quackd sends without a lift height, its stop among them
+(docs/adapters/alohamini/README.md):
     git clone https://github.com/liyiteng/lerobot_alohamini
-    cd lerobot_alohamini && pip install -e ".[all]"
+    cd lerobot_alohamini
+    git checkout ab4462b713aeb24d0473f1ec6c8812290ab19510
+    pip install -e ".[all]"
     python quackd_alohamini_host.py --robot_model alohamini2
 """
 
@@ -107,9 +111,12 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as e:
         # stderr rather than print: bridge code follows the same no-print rule as the package
         sys.stderr.write(
-            "quackd's AlohaMini host needs upstream installed on this robot:\n"
+            "quackd's AlohaMini host needs upstream installed on this robot, at the commit\n"
+            "quackd was read against, since a host from upstream's main refuses quackd's stop:\n"
             "  git clone https://github.com/liyiteng/lerobot_alohamini\n"
-            '  cd lerobot_alohamini && pip install -e ".[all]"\n'
+            "  cd lerobot_alohamini\n"
+            "  git checkout ab4462b713aeb24d0473f1ec6c8812290ab19510\n"
+            '  pip install -e ".[all]"\n'
             f"({e})\n"
         )
         return 2
