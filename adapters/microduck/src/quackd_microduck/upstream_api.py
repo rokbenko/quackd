@@ -5,47 +5,43 @@ Every constant is tagged VERIFIED (read from upstream source, link given) or UNV
 is the human-readable version of this file; `tests/test_upstream_api.py` proves that
 UNVERIFIED names are only reachable from the experimental transport.
 
-Pinned and read on 2026-10-08, at daemon-v0.16.1 (API 41). The pin is a release now rather than
-whatever `main` was on the day, because a robot runs a release. `main` was three commits past
-the tag on the day of the read, with the same `duck-ipc-proto` byte for byte, and one of the
-three turns `limp_fall` back on, which no release had done yet. daemon-v0.16.2 was the first
-that did, on 2026-10-12 (LIMP_FALL).
+Pinned and read on 2026-11-08, at daemon-v0.18.8 (API 50), the newest release that day. The pin
+is a release rather than whatever `main` was on the day, because a robot runs a release.
 
-This is the third read. The first, on 2026-08-28, was against `main` with no pin, and in the
+This is the fourth read. The first, on 2026-08-28, was against `main` with no pin, and in the
 week after it upstream went from API 16 to 23 and `Skill` stopped being an enum, which a moving
 link could not show (ADR-0022). The second, on 2026-09-04, pinned `main` at bc41fb5 on API 23.
 quackd's handshake accepted that number and no other, so it refused every robotd release from
 daemon-v0.12.0 (API 27) on at connect. It now serves any number from API_FLOOR up and warns on
 every one but API_VERSION, which is upstream's own rule (VERSION_SKEW, ADR-0051): a robot
 quackd has not read is refused by the calls that changed, by name, rather than by its number.
+The third, on 2026-10-08, pinned daemon-v0.16.1 (d818af5) on API 41.
 
 What changed between the last two reads, for the names quackd actually uses, is the version
-number and fields added to three of the types it reads: `RobotState` gained `t_ns`, `imu`,
-`frames`, `skeleton`, `velocities` and `currents_ma`, `SafetyState` gained `picked_up`, and
-`HealthResult` gained `cpu_throttle`, each of which a reader that does not know it skips. Every
-other type quackd sends or reads, `hello`'s both ways, the intents' params, `LookResult`,
-`IntentResult`, `SubscribeResult`, `MoveState` and the sound tags, reads the same at both pins,
-doc comments and serde attributes included, and so do the error codes. The drift elsewhere is
-not purely additive. GitHub's compare of the two `lib.rs` files counts 1240 lines added and 44
-removed, and outside the version number and the crate's own tests the removals are two doc lines
-and `BusHealth` losing its `Copy` derive, none of them in a shape quackd sends or reads.
-Upstream's own rule for the number is "A bump promises nothing in either direction" (above
-`API_VERSION` in `lib.rs`).
+number and doc comments. The nine bumps from 41 to 50 add or remove only calls quackd does not
+make: the vet book (`robot.vetbook`, `robot.vetbookNote`, `robot.vetbookTally`, `vetbook.share`),
+updates of the operating system (`os.*`), anonymous usage data (`telemetry.*`), an outcome in the
+update log, and `robot.remoteSessionActive`, which is gone. Every type quackd sends or reads,
+`hello`'s both ways, the intents' params, `LookResult`, `IntentResult`, `SubscribeResult`,
+`RobotState` and the blocks in it, `HealthResult`, the sound tags and the error codes, reads the
+same at both pins but for two doc comments: `SubscribeResult.skills` lists the robot's emotions
+after its skills (SKILL_SOURCE), and a servo or the IMU board that goes quiet on a running robot
+is reported as degraded rather than unhealthy, with `healthy` false either way (ROBOT_HEALTH).
+Two error codes were added, both for calls quackd does not make. Upstream's own rule for the
+number is "A bump promises nothing in either direction" (above `API_VERSION` in `lib.rs`).
 
-robotd has also changed what it does without changing a shape. A stock robot walks and stands
-on one network, `velstand.onnx` (VELSTAND), and with no standing network to hand a fall back
-to, `limp_fall` is off, so a fall changes nothing in robotd. The duck looks around on its own
-once nobody has steered its head for two seconds and it has then stood still for two more
-(IDLE_HEAD), and a pick-up detector pauses the policy while somebody holds it
-(SAFETY_PICKED_UP). That is robotd at the pin: from daemon-v0.16.2 `limp_fall` is on (below).
-
-Upstream released daemon-v0.16.2, v0.16.3, v0.17.0 and v0.17.1 on 2026-10-12, each on API 41.
-Read against the pin, none changes the shape of anything quackd sends or reads, and robotd's
-own source is the same outside its tests, but daemon-v0.16.2 changed three defaults cited here:
-`limp_fall` is on, so robotd takes a falling duck off its policy, poses it and hands it back
+robotd has also changed what it does without changing a shape. From daemon-v0.16.2 `limp_fall`
+is on by default, so robotd takes a falling duck off its policy, poses it and hands it back
 (LIMP_FALL), a robot is seeded with the policy set `v8` (VELSTAND), and a gamepad's full stick
-asks for 0.4 m/s forward and 1.0 rad/s of turn (NO_TWIST_CLAMP). The refs stay read at the pin,
-and the ones whose default moved say what changed and the release that changed it.
+asks for 0.4 m/s forward and 1.0 rad/s of turn (NO_TWIST_CLAMP). From daemon-v0.17.3 the idle
+look-around's timings are settings, and from daemon-v0.17.9 it takes the head over rather than
+adding to it (IDLE_HEAD). From daemon-v0.18.8 `robot.do` plays an emotion as well as a skill,
+and while one plays robotd holds the twist at zero and reports it so, which quackd cannot tell
+from a twist robotd did not take (MOVE_ECHO). The pad's mapping is a crate of its own, shared
+with a second pad daemon for a pad over UDP (PAD_DRIVES), every `GET /frame` counts as a photo
+in the robot's vet book (MEDIAD_FRAME_HTTP), and the beta's camera has a calibration
+(IMX219_FOV). A stock robot still walks and stands on one network, `velstand.onnx` (VELSTAND),
+and a pick-up detector still pauses the policy while somebody holds it (SAFETY_PICKED_UP).
 
 Nothing here has been run against a physical Microduck.
 """
@@ -55,11 +51,11 @@ from __future__ import annotations
 from quackd.upstream import Status, UpstreamRef
 
 REPO = "https://github.com/pollen-robotics/microduck"
-PIN = "d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1"  # daemon-v0.16.1, 2026-10-07
-RELEASE = "daemon-v0.16.1"
+PIN = "4a763dd893f3982c3a11c136468ccf5d26bcc28a"  # daemon-v0.18.8, 2026-11-06
+RELEASE = "daemon-v0.18.8"
 """The tag the pin is. robotd answers hello with its crate's version as `daemon_version`, which
 is this without the `daemon-v` on a robot that runs the release."""
-READ_ON = "2026-10-08"
+READ_ON = "2026-11-08"
 
 
 def src(path: str, line: int | None = None) -> str:
@@ -82,21 +78,23 @@ __all__ = ["Status", "UpstreamRef"]  # re-exported: this file's own refs are the
 
 JSONRPC_VERSION = "2.0"
 API_VERSION = UpstreamRef(
-    "41",
+    "50",
     "VERIFIED",
-    src(_PROTO, 454),
+    src(_PROTO, 519),
     "duck-ipc-proto API_VERSION at the pin: the version quackd read, and the one it sends in "
-    "hello. It was 16 on 2026-08-28 and 23 at the previous pin, on 2026-09-04. A robotd on any "
-    "version from API_FLOOR up is served, as upstream's own clients serve one (VERSION_SKEW), "
-    "and one on any version but this is warned about: in the log, in doctor and in every "
-    "state's extras.robotd.",
+    "hello. It was 16 on 2026-08-28, 23 at the pin of 2026-09-04 and 41 at the pin of "
+    "2026-10-08, daemon-v0.16.1. A robotd on any version from API_FLOOR up is served, as "
+    "upstream's own clients serve one (VERSION_SKEW), and one on any version but this is warned "
+    "about: in the log, in doctor and in every state's extras.robotd. The version notes for v42 "
+    "to v50 (lib.rs:455-518) add or remove calls quackd does not make, and v48's changes what "
+    "robot.health says of a quiet servo, not its shape (ROBOT_HEALTH).",
 )
 API_FLOOR = UpstreamRef(
     "23",
     "VERIFIED",
     src(_PROTO, 165),
-    "The oldest duck-ipc-proto quackd has read end to end. The previous read, at bc41fb5 on "
-    "2026-09-04, was on API 23, which is the version note this cites, and daemon-v0.11.0 was the "
+    "The oldest duck-ipc-proto quackd has read end to end. The read at bc41fb5 on "
+    "2026-09-04 was on API 23, which is the version note this cites, and daemon-v0.11.0 was the "
     "first release on it. Everything quackd sends has the same shape there as at the pin, and so "
     "does everything it reads but safety.picked_up and frames, which a robotd that old does not "
     "report. A robotd below this is refused at connect, and so is a hello that names no version, "
@@ -108,8 +106,8 @@ VERSION_SKEW = UpstreamRef(
     src(_PROTO, 57),
     "Upstream's rule for two peers on different versions (lib.rs:51-82). 'A bump promises "
     "nothing in either direction', and no daemon refuses a peer over the number: robotd answers "
-    "hello without comparing (robotd/src/main.rs:5397), and robotctl warns once and carries on, "
-    "because 'a call that cannot be served will name itself' (robotctl/src/main.rs:1571-1572). "
+    "hello without comparing (robotd/src/main.rs:5832), and robotctl warns once and carries on, "
+    "because 'a call that cannot be served will name itself' (robotctl/src/main.rs:1622-1623). "
     "'What refuses instead' is the call: a method a release does not have is METHOD_NOT_FOUND "
     "naming it, and a params member it does not know is INVALID_PARAMS naming the member, since "
     "every params type denies unknown fields. A notification gets neither, because nothing "
@@ -120,20 +118,20 @@ VERSION_SKEW = UpstreamRef(
 FRAMING = UpstreamRef(
     "NDJSON: one JSON-RPC 2.0 object per line",
     "VERIFIED",
-    src(_ARCH_DOC, 190),
+    src(_ARCH_DOC, 229),
     "'Wire format: JSON-RPC 2.0, one object per line (NDJSON).'",
 )
 LINES_IN_ORDER = UpstreamRef(
     "robotd reads a connection's lines in order",
     "VERIFIED",
-    src("robotd/src/main.rs", 4188),
-    "One task per connection reads its lines one at a time (robotd/src/main.rs:4182-4349). A "
+    src("robotd/src/main.rs", 4591),
+    "One task per connection reads its lines one at a time (robotd/src/main.rs:4585-4752). A "
     "notification such as robot.move is applied as it is read, before the next line is "
-    "(main.rs:4309-4316), and a request is answered before the line after it is read "
-    "(main.rs:4343-4347). So an answer to any call quackd wrote after a robot.move says robotd "
+    "(main.rs:4712-4719), and a request is answered before the line after it is read "
+    "(main.rs:4746-4750). So an answer to any call quackd wrote after a robot.move says robotd "
     "has read and stored that twist, which is when MOVE_ECHO can first show it. State frames "
     "reach the connection from a broadcast the control loop publishes into, decimated to the "
-    "rate asked for (main.rs:4254-4266), so one built just before the twist was stored can still "
+    "rate asked for (main.rs:4657-4669), so one built just before the twist was stored can still "
     "go out after that answer, and none built after it can be held back past the next. The same "
     "task writes the frames and the answers, a line at a time, and writes a request's answer "
     "straight after it handles the request, so every frame written before the answer to a "
@@ -143,35 +141,35 @@ LINES_IN_ORDER = UpstreamRef(
 OTHER_DAEMONS_ANSWER_HELLO = UpstreamRef(
     "updaterd answers hello too",
     "VERIFIED",
-    src("updater/src/ipc.rs", 538),
+    src("updater/src/ipc.rs", 568),
     "updaterd shares duck-ipc-proto with robotd and answers hello with its own API_VERSION, "
-    "release and revision (updater/src/ipc.rs:538-549), and every robot.* call, robot.subscribe "
+    "release and revision (updater/src/ipc.rs:568-579), and every robot.* call, robot.subscribe "
     "among them, with METHOD_NOT_FOUND 'robot.* is served by robotd, not updaterd', because "
-    "'Reaching this means a client aimed the wrong socket' (ipc.rs:777-815). So a hello that "
+    "'Reaching this means a client aimed the wrong socket' (ipc.rs:866-906). So a hello that "
     "passes does not say which daemon answered it, and a robot.subscribe that is "
     "METHOD_NOT_FOUND, a call every robotd from API_FLOOR up has, says it was not robotd.",
 )
 RUNTIME_DIR_ENV = UpstreamRef(
     "DUCK_RUNTIME_DIR",
     "VERIFIED",
-    src(_PROTO, 532),
+    src(_PROTO, 608),
     "Moves runtime_root(), the directory each daemon publishes /run/<service>/identity.json under "
-    "(lib.rs:520-541), and nothing else: 'Not a configuration knob for a robot — nothing on the "
+    "(lib.rs:596-617), and nothing else: 'Not a configuration knob for a robot — nothing on the "
     "board sets it', it exists for upstream's tests and for a daemon run by hand. robotd's socket "
-    "is a literal --socket default, SOCKET_ROBOTD (robotd/src/main.rs:235), which it does not "
+    "is a literal --socket default, SOCKET_ROBOTD (robotd/src/main.rs:247), which it does not "
     "move, and scripts/duck-sim names each simulated robotd's socket itself. quackd does not read "
     "it: with no --address, it connects to SOCKET_ROBOTD.",
 )
 
-SOCKET_ROBOTD = UpstreamRef("/run/robotd.sock", "VERIFIED", src(_PROTO, 500))
-SOCKET_CONFIGD = UpstreamRef("/run/configd.sock", "VERIFIED", src(_PROTO, 501))
-SOCKET_UPDATERD = UpstreamRef("/run/updaterd.sock", "VERIFIED", src(_PROTO, 487))
-SOCKET_PADD = UpstreamRef("/run/padd/pad.sock", "VERIFIED", src(_PROTO, 508), "pad.input only")
-SOCKET_TOFD = UpstreamRef("/run/tofd/tof.sock", "VERIFIED", src(_PROTO, 513), "tof.stream only")
+SOCKET_ROBOTD = UpstreamRef("/run/robotd.sock", "VERIFIED", src(_PROTO, 576))
+SOCKET_CONFIGD = UpstreamRef("/run/configd.sock", "VERIFIED", src(_PROTO, 577))
+SOCKET_UPDATERD = UpstreamRef("/run/updaterd.sock", "VERIFIED", src(_PROTO, 552))
+SOCKET_PADD = UpstreamRef("/run/padd/pad.sock", "VERIFIED", src(_PROTO, 584), "pad.input only")
+SOCKET_TOFD = UpstreamRef("/run/tofd/tof.sock", "VERIFIED", src(_PROTO, 589), "tof.stream only")
 SOCKET_MEDIA = UpstreamRef(
     "/run/mediad/media.sock",
     "VERIFIED",
-    src(_PROTO, 517),
+    src(_PROTO, 593),
     "mediad's own socket, for media.frame only, and local-only: 'a raw camera frame is for a "
     "recorder or perception process on the robot, not a multi-megabyte WebRTC control reply'.",
 )
@@ -181,7 +179,7 @@ SOCKET_MEDIA = UpstreamRef(
 HELLO = UpstreamRef(
     "hello",
     "VERIFIED",
-    src(_PROTO, 593),
+    src(_PROTO, 669),
     "params {api_version}; result {api_version, daemon_version, revision}. The last two are "
     "always on the wire and may be null: revision is null 'for a build that did not come from "
     "CI'.",
@@ -189,53 +187,56 @@ HELLO = UpstreamRef(
 ROBOT_MOVE = UpstreamRef(
     "robot.move",
     "VERIFIED",
-    src(_PROTO, 647),
+    src(_PROTO, 721),
     "NOTIFICATION (no id). params {vx, vy, vyaw} m/s, rad/s, trunk frame; x fwd, y left, +vyaw left. "
     "Continuous: robotd's deadman zeroes velocity when these stop arriving.",
 )
 ROBOT_STOP = UpstreamRef(
-    "robot.stop", "VERIFIED", src(_PROTO, 654), "request; zero velocity, NOT limp"
+    "robot.stop", "VERIFIED", src(_PROTO, 728), "request; zero velocity, NOT limp"
 )
 ROBOT_HEAD = UpstreamRef(
     "robot.head",
     "VERIFIED",
-    src(_PROTO, 649),
+    src(_PROTO, 723),
     "NOTIFICATION {neck_pitch, head_pitch, head_yaw, head_roll} rad, HEAD_PARAMS, in joint "
     "space. robotd stores it as it arrives, from any client, in the one head slot robot.look "
-    "writes too (robotd/src/main.rs:4364-4365), and robot.state.head reports that slot smoothed "
-    "toward each new value a little every control tick, with any idle glance added on top "
-    "(main.rs:3059-3060 and :3099-3104). quackd sends it for one thing, to hold a gaze: the head "
-    "a robot.look answered with, sent again every GAZE_HOLD_S (IDLE_HEAD).",
+    "writes too (robotd/src/main.rs:4767-4768), and robot.state.head reports that slot smoothed "
+    "toward each new value a little every control tick (main.rs:3399-3400 and :4117). While the "
+    "idle look-around runs it takes the head over: the slot's head is scaled down as the "
+    "look-around fades in, and its glances are added (main.rs:3444-3445). quackd sends it for "
+    "one thing, to hold a gaze: the head a robot.look answered with, sent again every "
+    "GAZE_HOLD_S (IDLE_HEAD).",
 )
 ROBOT_LOOK = UpstreamRef(
     "robot.look",
     "VERIFIED",
-    src(_PROTO, 652),
+    src(_PROTO, 726),
     "request {x, y, z, neck_pitch} trunk-frame point -> {head, clamped}. LookResult.head is "
     "'What was handed to the same path robot.head feeds — resend these to hold the gaze' "
-    "(lib.rs:2233), which since daemon-v0.16.1 matters: see IDLE_HEAD.",
+    "(lib.rs:2476), which since daemon-v0.16.1 matters: see IDLE_HEAD.",
 )
 #: HeadParams: the four head joints robot.head takes and LookResult.head answers with, in the
-#: order robot.state.head carries them (lib.rs:2206-2211). The type defaults a member it is not
+#: order robot.state.head carries them (lib.rs:2449-2454). The type defaults a member it is not
 #: sent to 0, and denies one it does not know.
 HEAD_PARAMS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
 ROBOT_DO = UpstreamRef(
     "robot.do",
     "VERIFIED",
-    src(_PROTO, 703),
+    src(_PROTO, 777),
     "request {skill} -> IntentResult {accepted, reason?}. Answered on accept/refuse, not on "
-    "completion: 'a refusal names the scripted move already holding the robot'.",
+    "completion: 'a refusal names the scripted move already holding the robot'. From "
+    "daemon-v0.18.8 it plays an emotion as well as a skill (SKILLS, MOVE_ECHO).",
 )
 ROBOT_POSE = UpstreamRef(
     "robot.pose",
     "VERIFIED",
-    src(_PROTO, 708),
+    src(_PROTO, 782),
     "NOTIFICATION {z, roll, pitch, active} standing body pose offsets",
 )
 ROBOT_ENABLE = UpstreamRef(
     "robot.enable",
     "VERIFIED",
-    src(_PROTO, 656),
+    src(_PROTO, 730),
     "request {on, toggle?} -> {accepted, reason?}; `toggle` is #[serde(default)], so sending "
     "{on} alone is valid. This is POLICY execution, not a flag: upstream says it 'can bring a "
     "limp robot up as a side effect of being asked to drive', so treat it as motion.",
@@ -243,22 +244,22 @@ ROBOT_ENABLE = UpstreamRef(
 ROBOT_INIT = UpstreamRef(
     "robot.init",
     "VERIFIED",
-    src(_PROTO, 674),
+    src(_PROTO, 748),
     "power the joints and ramp to the home pose; MOVES EVERY JOINT. quackd never sends this.",
 )
 ROBOT_RELAX = UpstreamRef(
     "robot.relax",
     "VERIFIED",
-    src(_PROTO, 680),
+    src(_PROTO, 754),
     "torque off — the robot collapses. quackd never sends this.",
 )
 ROBOT_SOUND = UpstreamRef(
-    "robot.sound", "VERIFIED", src(_PROTO, 722), "request {tag, hold?}; tags only, no TTS"
+    "robot.sound", "VERIFIED", src(_PROTO, 796), "request {tag, hold?}; tags only, no TTS"
 )
 ROBOT_SUBSCRIBE = UpstreamRef(
     "robot.subscribe",
     "VERIFIED",
-    src(_PROTO, 841),
+    src(_PROTO, 966),
     "request {hz?} -> SubscribeResult, then robot.state notifications. State is NOT pushed "
     "until this is sent. The answer also carries what is constant for the process: "
     "{accepted, walk?, stand?, unavailable?, sitstand?, ground_pick?, skills[]}.",
@@ -266,32 +267,32 @@ ROBOT_SUBSCRIBE = UpstreamRef(
 ROBOT_STATE = UpstreamRef(
     "robot.state",
     "VERIFIED",
-    src(_PROTO, 3860),
+    src(_PROTO, 4260),
     "notification {t, move{requested,applied,limited_by}, head[4], policy, "
     "safety{fallen,limp,gravity,gain?,picked_up}, loop{hz,missed}, joints, targets, "
     "velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}. "
     "head is the head robotd commands this tick: the slot robot.look and robot.head write, "
-    "smoothed, with the idle look-around's glances on top (ROBOT_HEAD).",
+    "smoothed, and taken over by the idle look-around while it runs (ROBOT_HEAD).",
 )
 STATE_ODOM = UpstreamRef(
     "robot.state.odom",
     "VERIFIED",
-    src(_PROTO, 4061),
+    src(_PROTO, 4461),
     "{position: [x, y, z] in metres, z the trunk's height above the ground plane; yaw in "
-    "radians} (lib.rs:4061-4066). 'The contact-odometry estimate: trunk pose in the world frame "
+    "radians} (lib.rs:4461-4466). 'The contact-odometry estimate: trunk pose in the world frame "
     "the IMU chose at boot. There is no magnetometer and no absolute reference', the frame being "
-    "'wherever the robot was when it came up' (lib.rs:4056-4059). The field is `default` "
-    "(lib.rs:3918-3922), so a robotd from before the estimator sends no key, which quackd reads "
+    "'wherever the robot was when it came up' (lib.rs:4456-4459). The field is `default` "
+    "(lib.rs:4318-4322), so a robotd from before the estimator sends no key, which quackd reads "
     "as no odometry. quackd reads it as a pose whose frame lasts one connection and begins again "
     "when the duck is picked up, falls or rides a fall down (quackd.space.odometry).",
 )
 STATE_T_NS = UpstreamRef(
     "robot.state.t_ns",
     "VERIFIED",
-    src(_PROTO, 3931),
+    src(_PROTO, 4331),
     "CLOCK_MONOTONIC at the tick in nanoseconds, 'the same clock as TofFrame::t_ns, so a mapper "
     "can put a state sample and a depth frame on one axis'; zero from a daemon predating it, "
-    "where 't is still the loop's own elapsed time' (lib.rs:3931-3935). quackd times odometry by "
+    "where 't is still the loop's own elapsed time' (lib.rs:4331-4335). quackd times odometry by "
     "it, and by t on a robotd that sends no t_ns.",
 )
 TOF_FOV = UpstreamRef(
@@ -305,7 +306,7 @@ TOF_FOV = UpstreamRef(
 )
 TOF_FOV_DEG = 45.0
 """TOF_FOV, as a number."""
-#: The order robot.state.joints is indexed in, JOINT_NAMES (lib.rs:552-568): the left leg, the
+#: The order robot.state.joints is indexed in, JOINT_NAMES (lib.rs:628-644): the left leg, the
 #: neck, head and mouth, then the right leg.
 JOINT_NAMES = (
     "left_hip_yaw",
@@ -327,35 +328,44 @@ JOINT_NAMES = (
 MOVE_ECHO = UpstreamRef(
     "robot.state.move.requested",
     "VERIFIED",
-    src("robotd/src/main.rs", 3746),
+    src("robotd/src/main.rs", 4113),
     "The twist robotd was last asked for, as it was asked. robot.move stores [vx, vy, vyaw] "
-    "untouched (robotd/src/main.rs:4361) and every state frame reports it as requested, beside "
+    "untouched (robotd/src/main.rs:4764) and every state frame reports it as requested, beside "
     "applied, the twist the control loop hands its controller: the one asked for, or zero once the "
     "deadman finds it stale, smoothed toward each new value and held at zero through robotd's "
-    "limp-fall sequence (main.rs:3049-3058, :3093-3094). robotd's own test holds requested to what "
-    "was asked: 'what the client asked for must survive to the stream' (main.rs:7419), so the "
-    "deadman does not zero it. robot.stop does, and is answered at once (main.rs:5311-5314, "
-    "robotd/src/intents.rs:320-323). robot.move is a notification, so robotd answers nothing "
-    "when it cannot parse one, and this is the only place quackd can see whether a twist was "
-    "taken. Once the state has gone a few frames without showing one it sent, counted over the "
-    "walks of a verb up to each stop, quackd sends no robot.move until the verb that sent it "
-    "ends.",
+    "limp-fall sequence (main.rs:3385-3398, :3437-3438). robotd's own test holds requested to what "
+    "was asked: 'what the client asked for must survive to the stream' (main.rs:7940), so the "
+    "deadman does not zero it. robot.stop does, and is answered at once (main.rs:5752-5755, "
+    "robotd/src/intents.rs:327-330). So does an emotion, new in daemon-v0.18.8: while robot.do "
+    "plays one, robotd puts a zero twist in place of the one asked for on every tick of it, and "
+    "requested reports that zero (robotd/src/emotion.rs:12-17 and :77-78, main.rs:2631-2635). "
+    "robot.move is a notification, so robotd answers nothing when it cannot parse one, and this "
+    "is the only place quackd can see whether a twist was taken. Once the state has gone a few "
+    "frames without showing one it sent, counted over the walks of a verb up to each stop, "
+    "quackd sends no robot.move until the verb that sent it ends. An emotion that plays while a "
+    "verb walks, one a stock pad's Y or bumpers start among them (PAD_DRIVES), ends the walk "
+    "that way, and the verb says robotd did not take its twist, since nothing in the state says "
+    "an emotion is playing.",
 )
 ROBOT_HEALTH = UpstreamRef(
     "robot.health",
     "VERIFIED",
-    src(_PROTO, 3552),
+    src(_PROTO, 3940),
     "request -> {healthy, degraded?, reason?, battery{volts,percent}?, motors?, cpu_temp_c?, "
-    "cpu_throttle?, control_loop?, bus, imu?}. quackd reads healthy, reason and battery.",
+    "cpu_throttle?, control_loop?, bus, imu?}. quackd reads healthy, reason and battery. "
+    "degraded is 'Only meaningful when healthy is false' (lib.rs:3942-3952), and from v48 a "
+    "servo or the IMU board that goes quiet on a running robot is degraded, naming what went "
+    "silent, where it was unhealthy (lib.rs:495-502). healthy is false either way, so quackd's "
+    "heartbeat stops a verb on both, as it did.",
 )
-ROBOT_MODE = UpstreamRef("robot.mode", "VERIFIED", src(_PROTO, 759), "request -> {mode}")
+ROBOT_MODE = UpstreamRef("robot.mode", "VERIFIED", src(_PROTO, 833), "request -> {mode}")
 ROBOT_SET_MODE = UpstreamRef(
-    "robot.setMode", "VERIFIED", src(_PROTO, 767), "request {mode: 'walk'|'roller'}"
+    "robot.setMode", "VERIFIED", src(_PROTO, 841), "request {mode: 'walk'|'roller'}"
 )
 ROBOT_POLICIES = UpstreamRef(
     "robot.policies",
     "VERIFIED",
-    src(_PROTO, 773),
+    src(_PROTO, 847),
     "request -> PoliciesResult {mode, enabled, slots, skills, homed?, sitting?}: what each "
     "policy slot runs, whether the duck has reached its home pose, and whether it is 'parked in "
     "its seat'. Documented, not called. The policy label on every robot.state frame already "
@@ -365,59 +375,74 @@ ROBOT_POLICIES = UpstreamRef(
     "ever stop saying it.",
 )
 TOF_STREAM = UpstreamRef(
-    "tof.stream", "VERIFIED", src(_PROTO, 936), "on tofd socket; then tof.frame notifications (8x8)"
+    "tof.stream",
+    "VERIFIED",
+    src(_PROTO, 1061),
+    "on tofd socket; then tof.frame notifications (8x8)",
 )
-TOF_FRAME = UpstreamRef("tof.frame", "VERIFIED", src(_PROTO, 953))
+TOF_FRAME = UpstreamRef("tof.frame", "VERIFIED", src(_PROTO, 1078))
 PAD_INPUT = UpstreamRef(
     "pad.input",
     "VERIFIED",
-    src(_PROTO, 920),
+    src(_PROTO, 1045),
     "The raw input stream of the pad padd drives from, which padd answers itself on SOCKET_PADD. "
     "It exists because 'padd polls the last known stick value and keeps sending it at 50 Hz', so "
     "a radio that stops delivering reports still looks like a live driver to robotd, and only "
-    "this stream shows the gap (lib.rs:908-919). It is a tap and ranks nothing: what the pad asks "
-    "for reaches robotd as robot.move and robot.do, the calls any client makes (PAD_DRIVES).",
+    "this stream shows the gap (lib.rs:1033-1044). It is a tap and ranks nothing: what the pad "
+    "asks for reaches robotd as robot.move and robot.do, the calls any client makes (PAD_DRIVES).",
 )
 PAD_DRIVES = UpstreamRef(
     "padd drives while a pad is connected",
     "VERIFIED",
-    src("padd/src/main.rs", 1230),
-    "From the moment a gamepad connects ('pad connected — driving', padd/src/main.rs:727), padd "
-    "sends robot.move on every tick its sticks ask for motion, fifty a second (lib.rs:915-916), "
+    src("pad-map/src/continuous.rs", 22),
+    "From the moment a gamepad connects ('pad connected — driving', padd/src/main.rs:444), padd "
+    "sends robot.move on every tick its sticks ask for motion, fifty a second (lib.rs:1040-1041), "
     "and re-sends an unchanged stop every HEARTBEAT, 100 ms, while they do not: 'without it "
     "robotd's twist would age past the deadman while a pad sat connected and idle' "
-    "(main.rs:1215-1229). robotd keeps one twist and ranks no client above another: robot.move "
-    "sets it whoever sent it (robotd/src/main.rs:4358-4362), and a continuous intent is "
-    "'last-writer-wins' (lib.rs:636-641, robotd/src/intents.rs:7-10). So a pad does not out-rank "
-    "quackd. While its sticks are still, its stops and quackd's re-sent twist land in turn, ten "
-    "a second each, and robot.state.move.requested shows whichever came last (MOVE_ECHO). A stick "
-    "that asks for motion is sent more often than quackd re-sends, so the pad's twist is the one "
-    "robotd holds most of the time. The buttons are robot.do requests, and a pad nobody has "
-    "configured runs sit_toggle on A (robotd-params/src/lib.rs:214 and :233). With the pad gone, "
-    "padd sends nothing, and after PAD_LOST_SIT, 1 s, it asks robotd to sit a robot that is not "
-    "sitting already (padd/src/main.rs:190-193 and :1174-1205).",
+    "(pad-map/src/continuous.rs:7-22, padd/src/main.rs:511-516). What a pad asks for is worked "
+    "out in pad-map since daemon-v0.17.0, a crate netpadd runs too, which drives robotd from a "
+    "pad over UDP in padd's place when [netpad] enabled says so (padd/src/main.rs:157-160, "
+    "pad-map/src/loss.rs:8-11). robotd keeps one twist and ranks no client above another: "
+    "robot.move sets it whoever sent it (robotd/src/main.rs:4761-4765), and a continuous intent "
+    "is 'last-writer-wins' (lib.rs:710-715, robotd/src/intents.rs:7-10). So a pad does not "
+    "out-rank quackd. While its sticks are still, its stops and quackd's re-sent twist land in "
+    "turn, ten a second each, and robot.state.move.requested shows whichever came last "
+    "(MOVE_ECHO). A stick that asks for motion is sent more often than quackd re-sends, so the "
+    "pad's twist is the one robotd holds most of the time. The buttons are robot.do requests, "
+    "and a pad nobody has configured runs sit_toggle on A, the ground pick on B and the emotions "
+    "excited, yes and no on Y and the two bumpers (robotd-params/src/lib.rs:387-391 and "
+    ":419-424). With the pad gone, padd sends nothing, and after PAD_LOST_SIT, 1 s, it asks "
+    "robotd to sit a robot that is not sitting already, and asks again every 100 ms for 5 s more "
+    "while robotd refuses (pad-map/src/loss.rs:17-28, padd/src/main.rs:388-427 and :543-550).",
 )
 
 SKILLS = UpstreamRef(
     "ground_pick | kick_left | kick_right | sit_toggle | roulade",
     "VERIFIED",
-    src(_PROTO, 2412),
-    "`pub type Skill = String` — 'A name, not an enumeration.' These five are still the names a "
+    src(_PROTO, 2655),
+    "`pub type Skill = String`: 'A name, not an enumeration.' These five are still the skills a "
     "stock robot answers to, but a robot's skills are config now, so an unknown one is refused "
-    "with the list it does know. SKILL_SOURCE is where a client learns the real list.",
+    "with the list it does know. From daemon-v0.18.8 robot.do plays an emotion too, a head, "
+    "body and beak timeline with a sound, and a release ships thirteen: angry, curious, defiant, "
+    "devastated, excited, impatient, laugh, mmh, mock, no, sad, yes and yes_fast "
+    "(robotd/emotions/, robotd/src/emotion.rs:1-10, robotd/src/main.rs:5333-5346). quackd sends "
+    "none of them. SKILL_SOURCE is where a client learns the real list.",
 )
 SKILL_SOURCE = UpstreamRef(
     "robot.subscribe -> SubscribeResult.skills",
     "VERIFIED",
-    src(_PROTO, 2905),
+    src(_PROTO, 3284),
     "'The configurable one-shot skills this robot has, in priority order, and the names "
     "robot.do answers to. A list rather than a field per skill, because which skills a robot "
-    "has is now config: a client learns them here instead of assuming five.'",
+    "has is now config: a client learns them here instead of assuming five. The emotions in "
+    "`[emotions] dir` come last.' (lib.rs:3284-3289). robotd lists the release's own emotions "
+    "there as well as the ones in that directory (robotd/src/emotion.rs:7-10, "
+    "robotd/src/main.rs:5732-5739).",
 )
 SOUND_TAGS = UpstreamRef(
     "alarm | greet | inquire | peck | chirp | coo | wheee",
     "VERIFIED",
-    src(_PROTO, 2244),
+    src(_PROTO, 2487),
     "SoundTag enum, snake_case on the wire",
 )
 SOUND_TAG_LIST = ("alarm", "greet", "inquire", "peck", "chirp", "coo", "wheee")
@@ -434,7 +459,7 @@ DEADMAN = UpstreamRef(
     src(_ROBOTD_DOC, 561),
     "'if intents stop arriving, the velocity goes to zero. Stop is not limp'. robotd zeroes a "
     "twist older than [safety] deadman_ms, 'Intent age past which the velocity is zeroed', 500 ms "
-    "by default (robotd-params/src/lib.rs:1961-1962 and :2045). Our walk verb re-sends robot.move "
+    "by default (robotd-params/src/lib.rs:2444-2445 and :2536). Our walk verb re-sends robot.move "
     "at 10 Hz, so robotd's twist never grows that old while a verb walks, and the deadman stops "
     "the legs only once quackd's twists stop arriving: a link that drops, a process that dies. A "
     "connected pad's stops reach robotd sooner than that (PAD_DRIVES).",
@@ -449,32 +474,36 @@ PAD_LOST_SIT_S = 1.0
 NO_TWIST_CLAMP = UpstreamRef(
     "robotd clamps no twist",
     "VERIFIED",
-    src("robotd/src/main.rs", 3931),
+    src("robotd/src/main.rs", 4327),
     "What limits a tick, robot.state's move.limited_by, is the deadman, a joint target past the "
     "actuator's travel, or one that is not finite, and nothing else (robotd/src/main.rs:"
-    "3931-3937). While the walking policy drives, the twist robot.move last asked for reaches "
+    "4327-4333). While the walking policy drives, the twist robot.move last asked for reaches "
     "its observation as it was asked, smoothed toward each new value, until the deadman zeroes "
-    "a stale one (main.rs:3052-3058, duck-control/src/obs.rs:210-215) or a client holds the "
-    "body-pose mode, robot.pose with active true, in which the controller zeroes it "
-    "(robotd/src/control.rs:528-530 and :639-641). It zeroes its own copy (control.rs:626), so "
-    "robot.state's move.requested and move.applied (main.rs:3746-3747) never show that zero. padd "
-    "sends a zero twist with every pose in its own body-pose mode (padd/src/main.rs:1078-1079), "
-    "which move.requested does show, as it shows a pad's stops (PAD_DRIVES). And the policy 'only "
-    "follows commands inside the range it was trained on — asking for more than that is "
-    "asking, not getting' (robotd-params/src/lib.rs:109-110). [pad_drive], what a gamepad's "
-    "full stick asks for, is 'what the *pad* asks for, not a limit on the robot. A robot.move "
-    "from anywhere else is not bounded by it' (lib.rs:108-109): 0.3 m/s forward and back, 0.3 "
-    "m/s sideways and 1.5 rad/s of turn at the pin (lib.rs:133-138). From daemon-v0.16.2 it is "
-    "0.4 m/s forward and back and 1.0 rad/s of turn, since v8's velstand 'tracks yaw commands' "
-    "and that is 'what that policy follows well on the robot' (lib.rs:129-139 there). The "
-    "Microduck's speed caps are quackd's own: its manifest's limits, 0.3 m/s forward, 0.2 m/s "
-    "sideways and 1.0 rad/s of turn, the turn the pad asks for from daemon-v0.16.2, which every "
-    "verb that walks is clamped to (quackd.verbs.core.speed_limits).",
+    "a stale one (main.rs:3388-3398, duck-control/src/obs.rs:210-215), an emotion plays "
+    "(MOVE_ECHO), or a client holds the body-pose mode, robot.pose with active true, in which "
+    "the controller zeroes it (robotd/src/control.rs:528-530 and :639-641). The controller "
+    "zeroes its own copy (control.rs:626), so robot.state's move.requested and move.applied "
+    "(main.rs:4113-4114) never show that zero. From daemon-v0.18.6 the smoothing can be held to "
+    "an acceleration too, [policy] accel_vx, accel_vy and accel_vyaw, and only the roller's "
+    "forward and back has one by default: 'walking never asked for a limit' (main.rs:1897-1910, "
+    "robotd-params/src/lib.rs:2419-2426). padd sends a zero twist with every pose in its own "
+    "body-pose mode (pad-map/src/mapper.rs:520-521), which move.requested does show, as it shows "
+    "a pad's stops (PAD_DRIVES). And the policy 'only follows commands inside the range it was "
+    "trained on — asking for more than that is asking, not getting' "
+    "(robotd-params/src/lib.rs:254-255). [pad_drive], what a gamepad's full stick asks for, is "
+    "'what the *pad* asks for, not a limit on the robot. A robot.move from anywhere else is not "
+    "bounded by it' (lib.rs:253-254): 0.4 m/s forward and back, 0.3 m/s sideways and 1.0 rad/s "
+    "of turn, since v8's velstand 'tracks yaw commands' and that is 'what that policy follows "
+    "well on the robot' (lib.rs:274-284). It has been that since daemon-v0.16.2, and was 0.3 m/s "
+    "forward and back and 1.5 rad/s of turn to daemon-v0.16.1. The Microduck's speed caps are "
+    "quackd's own: its manifest's limits, 0.3 m/s forward, 0.2 m/s sideways and 1.0 rad/s of "
+    "turn, the turn the pad asks for, which every verb that walks is clamped to "
+    "(quackd.verbs.core.speed_limits).",
 )
 STATE_NEEDS_SUBSCRIBE = UpstreamRef(
     "robot.state is not pushed until robot.subscribe",
     "VERIFIED",
-    src(_ROBOTD_DOC, 752),
+    src(_ROBOTD_DOC, 758),
     "'robot.subscribe turns a connection into a stream; the loop publishes into a bounded "
     "broadcast and never waits on a subscriber, so a slow client gets a gap rather than "
     "applying backpressure.' A connection that never subscribes learns nothing about the "
@@ -485,40 +514,41 @@ FALLEN_IS_A_REPORT = UpstreamRef(
     "VERIFIED",
     src(_ROBOTD_DOC, 566),
     "'The fall verdict is a report, not a rule. It is computed every tick — projected gravity "
-    "in the trunk frame, debounced 0.2 s', and it 'gates nothing'. Nor does robotd stand a "
-    "fallen duck up at the pin: limp_fall, its one answer to a fall, is off by default (VELSTAND "
-    "says why), and 'With it off, a fall changes nothing: the policy keeps driving and the "
-    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 limp_fall "
-    "is on by default again, and robotd poses a duck it catches falling and hands it back to the "
-    "policy (LIMP_FALL), while the verdict still gates nothing. Refusing to walk a fallen robot "
-    "is quackd's own decision, so quackd must actually be reading the frame to make it.",
+    "in the trunk frame, debounced 0.2 s', and it 'gates nothing'. robotd's one answer to a fall "
+    "is limp_fall, on by default at the pin as it has been since daemon-v0.16.2 "
+    "(robotd-params/src/lib.rs:2539): robotd poses a duck it catches falling and hands it back "
+    "to the policy (LIMP_FALL), while the verdict still gates nothing. With it off, as it was by "
+    "default from daemon-v0.13.0 to daemon-v0.16.1 (VELSTAND says why), 'a fall changes "
+    "nothing: the policy keeps driving and the humans stay in charge' (lib.rs:2460-2461). "
+    "Refusing to walk a fallen robot is quackd's own decision, so quackd must actually be "
+    "reading the frame to make it.",
 )
 LIMP_FALL = UpstreamRef(
     "robotd's limp-fall sequence",
     "VERIFIED",
-    src("robotd/src/main.rs", 2883),
+    src("robotd/src/main.rs", 3219),
     "[safety] limp_fall, 'The only thing the daemon does about a fall' "
-    "(robotd-params/src/lib.rs:1975). Off by default at the pin (lib.rs:2048), and on by default "
-    "again from daemon-v0.16.2, where that line reads true and robotd's own source is the same as "
-    "at the pin outside its tests. daemon-v0.11.0 and daemon-v0.12.0 had it on by default too, "
-    "handing the duck back to the standing network (lib.rs:1576 at daemon-v0.11.0, :1666 at "
-    "daemon-v0.12.0), and daemon-v0.13.0 turned it off as velstand became the default walk "
-    "(lib.rs:1771 there). On, robotd takes a duck off its policy once fresh readings from a ready "
-    "IMU predict a fall while the walking or standing network drives it, unless the duck is "
-    "already down, and never during a skill, a ground pick, a sit or the rise from one "
-    "(robotd/src/main.rs:2913-2950, robotd/src/control.rs:376-386), so it catches no fall during "
-    "quackd's kick or grab. It holds the twist at zero until it hands the duck back "
-    "(main.rs:3049-3055). It lets the duck land limp, each tick labelled limp_fall with "
-    "safety.limp true, until it has landed or limp_fall_max_ms, 1.5 s, has passed, then ramps it "
-    "to the standing pose over limp_fall_pose_ms, 0.6 s, labelled limp_pose (main.rs:2952-2999, "
-    ":3470-3491 and :3757, lib.rs:2055-2056). Then it hands the duck back to the policy, where "
-    "'with nobody driving the standing network is what command magnitude selects — which is the "
-    "stand-up. A client that *is* driving gets its walk back' (main.rs:2991-2993). With no "
-    "standing network loaded, as on a stock robot, 'the hand-back is to velstand at zero command, "
-    "which stands still' (lib.rs:1971-1973 at daemon-v0.16.2), and that velstand gets the duck up "
-    "from there is upstream's word on v8 (VELSTAND). It drops the sequence only when something "
-    "else takes the robot: the policy disabled, the torque off or the joints ramping home, the "
-    "shutdown sit, or the power off (main.rs:2896-2911). quackd sends no walk meanwhile: both "
+    "(robotd-params/src/lib.rs:2457). On by default at the pin (lib.rs:2539), as it has been "
+    "since daemon-v0.16.2, and off by default at daemon-v0.16.1 (lib.rs:2048 there). "
+    "daemon-v0.11.0 and daemon-v0.12.0 had it on by default too, handing the duck back to the "
+    "standing network (lib.rs:1576 at daemon-v0.11.0, :1666 at daemon-v0.12.0), and "
+    "daemon-v0.13.0 turned it off as velstand became the default walk (lib.rs:1771 there). On, "
+    "robotd takes a duck off its policy once fresh readings from a ready IMU predict a fall "
+    "while the walking or standing network drives it, unless the duck is already down, and "
+    "never during a skill, a ground pick, a sit or the rise from one (robotd/src/main.rs:"
+    "3249-3286, robotd/src/control.rs:376-386), so it catches no fall during quackd's kick or "
+    "grab. It holds the twist at zero until it hands the duck back (main.rs:3385-3391). It lets "
+    "the duck land limp, each tick labelled limp_fall with safety.limp true, until it has landed "
+    "or limp_fall_max_ms, 1.5 s, has passed, then ramps it to the standing pose over "
+    "limp_fall_pose_ms, 0.6 s, labelled limp_pose (main.rs:3288-3335, :3816-3837 and :4124, "
+    "lib.rs:2547-2548). Then it hands the duck back to the policy, where 'with nobody driving "
+    "the standing network is what command magnitude selects — which is the stand-up. A client "
+    "that *is* driving gets its walk back' (main.rs:3327-3329). With no standing network loaded, "
+    "as on a stock robot, 'the hand-back is to velstand at zero command, which stands still' "
+    "(lib.rs:2453-2455), and that velstand gets the duck up from there is upstream's word on v8 "
+    "(VELSTAND). It drops the sequence only when something else takes the robot: the policy "
+    "disabled, the torque off or the joints ramping home, the shutdown sit, or the power off "
+    "(main.rs:3232-3247). quackd sends no walk meanwhile: both "
     "labels and safety.limp read as not standing, as safety.fallen does, and a verb that was "
     "walking is held until it ends. stand_up says so of a duck robotd still has in the sequence "
     "when its wait for the duck to stand is over, ten seconds after its request. With these "
@@ -534,7 +564,7 @@ LIMP_FALL_LABELS = ("limp_fall", "limp_pose")
 SAFETY_PICKED_UP = UpstreamRef(
     "safety.picked_up",
     "VERIFIED",
-    src(_PROTO, 4104),
+    src(_PROTO, 4504),
     "'Somebody is holding the robot: the pick-up detector ([pickup]) has paused the policy and "
     "the legs hold the pause pose until it is put back down', and while it is true the policy "
     "label reads held. 'Absent from a robotd that predates the detector, which reads as never "
@@ -548,11 +578,11 @@ SAFETY_PICKED_UP = UpstreamRef(
 STATE_FRAMES = UpstreamRef(
     "RobotState.frames",
     "VERIFIED",
-    src(_PROTO, 3944),
+    src(_PROTO, 4344),
     "{camera, tof, head_imu?}: where the camera and the ToF sensor are in the trunk frame at "
     "this tick's measured head joints, 'from the same head FK robot.look uses'. A pose is "
     "{pos} in metres and {quat} scalar-first [w, x, y, z], and camera is the OpenCV camera "
-    "frame, '+x right, +y down, +z along the optical axis' (lib.rs:3963-3974). On the stream "
+    "frame, '+x right, +y down, +z along the optical axis' (lib.rs:4363-4374). On the stream "
     "since API 24, which first shipped in daemon-v0.12.0 on API 27. quackd turns camera's "
     "optical axis, quat applied to [0, 0, 1], into extras.head_yaw_deg and head_pitch_deg, "
     "where the camera points from the trunk, positive left and up: the convention the "
@@ -577,28 +607,40 @@ HEAD_YAW_SIGN = UpstreamRef(
 IDLE_HEAD = UpstreamRef(
     "robotd's idle look-around",
     "VERIFIED",
-    src("robotd/src/idle_head.rs", 26),
+    src("robotd-params/src/lib.rs", 1097),
     "New in daemon-v0.16.1, the first release with it, on API 41; daemon-v0.16.0, on API 39, "
     "has none, and the commit that brought it to upstream's main was still on API 39. robotd "
-    "counts the duck still once the policy has the robot, nothing asks it to move, nobody has "
-    "commanded the head for IDLE_AFTER (2 s), and it is not falling, held, singing or running a "
-    "skill (robotd/src/main.rs:3071-3078), and once it has counted it still for IDLE_AFTER more "
-    "(idle_head.rs:118-120), so no sooner than twice IDLE_AFTER after the last head command, it "
-    "glances around on top of the commanded head, up to 0.6 rad of yaw and 0.2 rad of pitch, "
-    "fading in and out over FADE (1.5 s) 'so it never jumps' (idle_head.rs:16-17). A robot.look or "
-    "robot.head from anyone resets the wait, 'so a client steering the head is never fought' "
-    "(robotd/src/intents.rs:247-248), and only for as long as it keeps steering. So quackd holds a "
-    "gaze: after a robot.look it sends LookResult.head again as robot.head every GAZE_HOLD_S, half "
-    "of IDLE_AFTER, until a stop, the next look, another client steering the head, a link that "
-    "fails or the end of the connection. And go_to and search_scan wait FADE after centring the "
-    "head, since a glance that was under way when the look arrived takes that long to fade out, "
-    "and on mediad's /frame they steer only on a frame taken after the wait "
-    "(MEDIA_FRAME_ON_REQUEST).",
+    "counts the duck still once the look-around is on in the robot's mode, which by default it "
+    "is when walking and is not on the roller (robotd-params/src/lib.rs:1031-1033 and "
+    ":1138-1140), the policy has the robot, nothing asks it to move, nobody has commanded the "
+    "head for IDLE_AFTER (2 s), and it is not falling, held, singing or running a skill "
+    "(robotd/src/main.rs:3409-3422), and once it has counted it still for IDLE_AFTER more "
+    "(robotd/src/idle_head.rs:118-125), so no sooner than twice IDLE_AFTER after the last head "
+    "command, it takes the head over. 'It looks around the straight head, not wherever the head "
+    "was last left': it eases the commanded head back to the middle as it fades in and hands it "
+    "back as it fades out, both over FADE (1.5 s), 'so nothing jumps' (idle_head.rs:21-25, "
+    "robotd/src/main.rs:3444-3445). Around the middle it glances up to 0.6 rad of yaw and 0.2 "
+    "rad of pitch, with small shifts and a slow drift on top, leans the neck up to 0.15 rad, now "
+    "and then tilts the head 0.3 rad, and once it has been idle 45 s now and then yawns, the head "
+    "tipping back (robotd-params/src/lib.rs:1097-1125). IDLE_AFTER and FADE are [idle] after_s "
+    "and fade_s from daemon-v0.17.3, read here at their defaults, and the head is taken over "
+    "rather than added to from daemon-v0.17.9. A robot.look or robot.head from anyone resets the "
+    "wait, 'so a client steering the head is never fought' (robotd/src/intents.rs:253-254), and "
+    "only for as long as it keeps steering. So quackd holds a gaze: after a robot.look it sends "
+    "LookResult.head again as robot.head every GAZE_HOLD_S, half of IDLE_AFTER, until a stop, "
+    "the next look, another client steering the head, a link that fails or the end of the "
+    "connection. And go_to and search_scan wait FADE after centring the head, since a glance "
+    "that was under way when the look arrived takes that long to fade out, and on mediad's "
+    "/frame they steer only on a frame taken after the wait (MEDIA_FRAME_ON_REQUEST). A robot "
+    "retuned to glance sooner or fade longer is not one quackd can see, since no call reports "
+    "[idle]: its gaze hold can then let go, taking a glance for another client's head, and "
+    "go_to and search_scan can steer on a frame a glance is still fading out of.",
 )
 #: The idle look-around in numbers (IDLE_HEAD): robotd counts the duck still only once nobody
-#: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3076), starts the look-around once
-#: it has counted it still for IDLE_AFTER more (robotd/src/idle_head.rs:26 and :118-120), and
-#: fades it in or out over FADE (:29).
+#: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3420), starts the look-around once
+#: it has counted it still for IDLE_AFTER more (robotd/src/idle_head.rs:118-125), and fades it
+#: in or out over FADE (:127). Both are [idle] settings, after_s and fade_s, and these are their
+#: defaults (robotd-params/src/lib.rs:1097-1098).
 IDLE_AFTER_S = 2.0
 IDLE_FADE_S = 1.5
 #: The API version the first release with the idle look-around reports, daemon-v0.16.1's. A
@@ -608,16 +650,17 @@ IDLE_HEAD_SINCE_API = 41
 VELSTAND = UpstreamRef(
     "velstand.onnx",
     "VERIFIED",
-    src("robotd-params/src/lib.rs", 1861),
+    src("robotd-params/src/lib.rs", 2336),
     "The walk a stock robotd loads at the pin: 'The velstand gait (set v5) walks on a twist and "
     "stands still at zero command, so no standing network is loaded by default', and "
     "alpha_walking.onnx and alpha_stand.onnx 'stay in the set for a board that loads them back "
-    "by hand' (robotd-params/src/lib.rs:1856-1859). Its subscribe answer names it in `walk`. "
-    "limp_fall's stand-up hands the duck to the standing network, which is why limp_fall is "
-    "'Off by default since the velstand gait became the default walk' (lib.rs:1971). "
-    "daemon-v0.16.2 turns it back on, and with no standing network loaded 'the hand-back is to "
-    "velstand at zero command, which stands still' (lib.rs:1971-1973 there; LIMP_FALL). It also "
-    "seeds a robot with the policy set v8, where daemon-v0.16.1 seeds v7 (scripts/"
+    "by hand' (robotd-params/src/lib.rs:2331-2334). Its subscribe answer names it in `walk`. "
+    "limp_fall's stand-up hands the duck to the standing network, which is why limp_fall was "
+    "'Off by default since the velstand gait became the default walk' from daemon-v0.13.0 to "
+    "daemon-v0.16.1 (lib.rs:1971 at daemon-v0.16.1). It is on from daemon-v0.16.2, and with no "
+    "standing network loaded 'the hand-back is to velstand at zero command, which stands still' "
+    "(lib.rs:2453-2455; LIMP_FALL). robotd seeds a robot with the policy set v8, as every "
+    "release has since daemon-v0.16.2, where daemon-v0.16.1 seeded v7 (scripts/"
     "seed-policies.sh:51 at each), and moves a board on an older official set up to it on "
     "update. v8 changes no policy but velstand.onnx, and its manifest says that 'From v8 it gets "
     "up from a fall smoothly and reliably instead of violently or getting stuck on its back, and "
@@ -646,12 +689,13 @@ POLICY_LABELS_DRIVEN = UpstreamRef(
     "cannot be found (control.rs:605-609). Whether the duck is seated is the controller's seat "
     "latch: 'sit' while it holds the seat, 'rise' on the way up, and walk or stand once it is "
     "up (control.rs:627-648). The label names a role and not a file: 'Two releases with "
-    "different gaits both report walk' (robotd-design.md:761-762).",
+    "different gaits both report walk' (robotd-design.md:767-768). An emotion reports no label "
+    "of its own: the policy goes on driving under it (robotd/src/emotion.rs:12-17).",
 )
 POLICY_LABELS_NOT_DRIVEN = UpstreamRef(
     "held, homing, rest, limp_fall, limp_pose",
     "VERIFIED",
-    src("robotd/src/main.rs", 3461),
+    src("robotd/src/main.rs", 3807),
     "The labels of a tick no network drove, from the match that picks policy_label every tick: "
     "limp_fall and limp_pose for the two halves of the limp-fall sequence, rest for the end of "
     "a shutdown, held while the pick-up detector pauses the policy (SAFETY_PICKED_UP), when "
@@ -679,13 +723,13 @@ NOT_STANDING_LABELS = {
 UNWIND_SUFFIX = ":unwind"
 #: The labels of a tick robotd does not count the duck still on, whatever else holds, so that
 #: its idle look-around cannot be waiting out IDLE_AFTER through one (IDLE_HEAD). limp_fall and
-#: limp_pose are the two halves of the limp-fall sequence (robotd/src/main.rs:3479 and :3490),
-#: which robotd's still excludes (main.rs:3072), and ground_pick, rise and skill are a scripted
+#: limp_pose are the two halves of the limp-fall sequence (robotd/src/main.rs:3825 and :3836),
+#: which robotd's still excludes (main.rs:3416), and ground_pick, rise and skill are a scripted
 #: move under way, which the controller counts as busy (robotd/src/control.rs:382-386) and still
-#: excludes too (main.rs:3078), as it does a configured skill reporting its own name, and that
+#: excludes too (main.rs:3422), as it does a configured skill reporting its own name, and that
 #: name with UNWIND_SUFFIX. held is not one of them: robotd also labels held a tick on which its
-#: policy failed while it went on driving (main.rs:3527). A frame whose safety.picked_up or
-#: safety.limp is true comes from a tick robotd did not count still on either (main.rs:3757-3760).
+#: policy failed while it went on driving (main.rs:3873). A frame whose safety.picked_up or
+#: safety.limp is true comes from a tick robotd did not count still on either (main.rs:4124-4127).
 NOT_STILL_LABELS = ("limp_fall", "limp_pose", "ground_pick", "rise", "skill")
 
 # ── where a frame comes from ────────────────────────────────────────────────────────────
@@ -706,11 +750,14 @@ MEDIAD_FRAME_HTTP = UpstreamRef(
     "(Cache-Control no-store) and at most four at a time. When it cannot hand one out, four "
     "being encoded already, no frame from its capture, or none within the 3 s it waits for one "
     "(snapshot.rs:9), it answers 503 'Camera snapshot unavailable; retry when capture is "
-    "running.' (mediad/src/web.rs:102-133). The port is 8080 on every address by default "
+    "running.' (mediad/src/web.rs:102-136). The port is 8080 on every address by default "
     "(mediad/src/main.rs:32 and :79), with no authentication. New since bc41fb5, where the port "
-    "served the console page alone: it first shipped in daemon-v0.13.0. When --camera-url's path "
-    "is MEDIAD_FRAME_PATH, quackd pulls it at a rate of its own, lower than any other camera's, "
-    "waits through a 503 at connect, takes the lens from the first frame's shape "
+    "served the console page alone: it first shipped in daemon-v0.13.0. From daemon-v0.17.3 "
+    "mediad counts every PNG it serves as a photo taken, which it adds to the robot's vet book "
+    "once a minute (mediad/src/web.rs:119-122, mediad/src/vetbook.rs:1-5 and :20-23), so each "
+    "frame quackd pulls is one more photo in a book its owner can publish. When --camera-url's "
+    "path is MEDIAD_FRAME_PATH, quackd pulls it at a rate of its own, lower than any other "
+    "camera's, waits through a 503 at connect, takes the lens from the first frame's shape "
     "(ALPHA_UPRIGHT_FOV), and records whether the route has answered as "
     "extras.robotd.mediad_frame.",
 )
@@ -724,7 +771,7 @@ MEDIA_FRAME_ON_REQUEST = UpstreamRef(
     "mediad's capture branch copies a frame out only for a reader that has asked for one, and 'A "
     "reader waits for the next frame rather than taking the last one. The demand has to be "
     "answered by a capture that happens *after* it' (mediad/src/pipeline.rs:265-284), stamped "
-    "captured_at at 'the moment the buffer existed' (pipeline.rs:1151-1153). GET /frame asks "
+    "captured_at at 'the moment the buffer existed' (pipeline.rs:1158-1160). GET /frame asks "
     "for its picture that way, through media.frame on SOCKET_MEDIA, once the request has reached "
     "it (mediad/src/web.rs:102-113, mediad/src/snapshot.rs:8-49, mediad/src/frame.rs:9 and "
     ":195), so the PNG it answers with was taken after quackd sent the request. The PNG carries "
@@ -736,7 +783,7 @@ MEDIA_FRAME_ON_REQUEST = UpstreamRef(
 MEDIA_FRAME = UpstreamRef(
     "media.frame",
     "VERIFIED",
-    src(_PROTO, 599),
+    src(_PROTO, 675),
     "On SOCKET_MEDIA: 'One raw camera frame. mediad answers the JSON-RPC header, followed "
     "immediately by the bytes named in that header', the header being {width, height, format, "
     "bytes, captured_at_unix_us, rotate} with format UYVY. 'Deliberately not a Call', so it "
@@ -748,7 +795,7 @@ MEDIA_VIDEO = UpstreamRef(
     src("mediad/src/session.rs", 57),
     "{width, height, rotate, mono_ns, real_ns, intrinsics?}: what the video is, which mediad "
     "answers itself on each WebRTC peer's control datachannel, as a call and as a notification "
-    "it pushes when the channel opens (mediad/src/session.rs:35-54 and :82-114). The push can be "
+    "it pushes when the channel opens (mediad/src/session.rs:35-54 and :160-192). The push can be "
     "lost: 'Pushing it when the channel appears races the browser', so upstream's own console "
     "asks, 'because a question it asks when it is ready cannot arrive too early'. width and "
     "height are the frame as it is sent, which nothing on the robot turns (CAMERA_MOUNT), rotate "
@@ -766,10 +813,11 @@ MEDIA_VIDEO = UpstreamRef(
 CAMERA_MOUNT = UpstreamRef(
     "an alpha's camera is mounted a quarter turn off upright, a beta's upright",
     "VERIFIED",
-    src("robotd-params/src/board.rs", 82),
+    src("robotd-params/src/board.rs", 100),
     "camera_mount_degrees is 90 on the Zero 3W, the alpha board, whose 'IMX219 sits a quarter "
-    "turn off', and 0 on the beta, whose 'GC2093 sits the right way up', and mediad tells every "
-    "consumer that angle as media.video's rotate (robotd-params/src/board.rs:77-87). Nothing on "
+    "turn off', and 0 on the beta, whose 'GC2093 sits the right way up', and on the beta's main "
+    "board with its V1.0 face board, a board new since daemon-v0.16.1, and mediad tells every "
+    "consumer that angle as media.video's rotate (robotd-params/src/board.rs:95-105). Nothing on "
     "the robot turns the pixels, 'Nothing converts and nothing rotates' "
     "(mediad/src/pipeline.rs:28), since a videoflip cost the encoder its zero-copy path, so the "
     "WebRTC track off an alpha is sideways and the consumer turns it. Upstream's uyvy crate, "
@@ -778,17 +826,17 @@ CAMERA_MOUNT = UpstreamRef(
     "(uyvy/src/lib.rs:56-80). quackd's WebRTC camera turns each frame the same way. A mediad "
     "started with --flip-in-pipeline turns the pixels in its pipeline as well and still reports "
     "the mount as rotate and the size the camera takes as media.video's width and height "
-    "(mediad/src/main.rs:557-594 and :614-615), so a frame that comes in tall where those "
+    "(mediad/src/main.rs:571-608 and :628-629), so a frame that comes in tall where those "
     "describe a wide one is one the pipeline turned, and quackd hands it out as it came rather "
     "than turn it onto its side again.",
 )
 ALPHA_INTRINSICS = UpstreamRef(
     "the alpha family's camera calibration",
     "VERIFIED",
-    src("robotd-params/src/lib.rs", 645),
+    src("robotd-params/src/lib.rs", 859),
     "CameraIntrinsics::alpha(), 'the head camera module and M12 lens every alpha unit carries — "
     "one part across the family, so one solve is every unit's calibration', solved on a 1280 by "
-    "720 frame 'as mediad sends it (unrotated)' (robotd-params/src/lib.rs:634-661), its numbers "
+    "720 frame 'as mediad sends it (unrotated)' (robotd-params/src/lib.rs:848-875), its numbers "
     "ALPHA_SOLVE. mediad sends it as media.video's intrinsics, scaled to the stream and "
     "with source family, unless the robot carries a solve of its own "
     "(mediad/src/camera.rs:221-234). Turned upright, an alpha frame is as wide as the rows it "
@@ -811,27 +859,29 @@ ALPHA_SOLVE = {
 IMX219_FOV = UpstreamRef(
     "an IMX219 sees 62 degrees across its frame's long side",
     "VERIFIED",
-    src("mediad/src/sensor.rs", 99),
+    src("mediad/src/sensor.rs", 120),
     "hfov_deg of the IMX219, the alpha robots' head camera behind its M12 lens, the 'Horizontal "
     "field of view across a frame in [Sensor::mode], degrees', that mode being 1920 by 1080 "
-    "(mediad/src/sensor.rs:36-39 and :81-101). It is the same at every size mediad streams "
+    "(mediad/src/sensor.rs:38-41 and :101-122). It is the same at every size mediad streams "
     "at, since each is the sensor's whole field scaled: 'the field of view is what stays fixed "
     "as the ISP scales the frame to whatever [media] quality asks for' (mediad/src/camera.rs:"
-    "16-18). The beta's GC2093 has none, since 'nobody has measured this lens yet' "
-    "(sensor.rs:110-111). IMX219_FOV_DEG is the number.",
+    "16-18). The beta's GC2093 had none at daemon-v0.16.1, since 'nobody has measured this lens "
+    "yet', and from daemon-v0.18.0 it has a solve of its own, CameraIntrinsics::beta, '~85° "
+    "across the 16:9 frame', and an hfov_deg of 85.2 (sensor.rs:131-132 and :152-153), which "
+    "mediad sends as media.video's intrinsics. IMX219_FOV_DEG is the number.",
 )
 #: The IMX219's field of view across its frame's long side, in degrees (IMX219_FOV).
 IMX219_FOV_DEG = 62.0
 FEATURE_STREAM = UpstreamRef(
     "media.detections",
     "VERIFIED",
-    src("mediad/src/main.rs", 676),
+    src("mediad/src/main.rs", 690),
     "mediad's duck detector, pushed as a notification {width, height, took_ms, "
     "boxes[{x0,y0,x1,y1,score}]} (mediad/src/detect.rs:332) on each WebRTC peer's control "
     "datachannel and nowhere else: 'Detections go to the peer as notifications, on the same "
     "channel the console already reads robot.state from'. It finds ducks, not balls. Off by "
     "default, and two looks a second when on: '2 Hz is a thermal number, not a taste' "
-    "(robotd-params/src/lib.rs:698-724, [duck_detector]). quackd's WebRTC camera keeps the "
+    "(robotd-params/src/lib.rs:912-938, [duck_detector]). quackd's WebRTC camera keeps the "
     "newest one and steers on none of them.",
 )
 
@@ -845,7 +895,7 @@ RENDEZVOUS_LANE = UpstreamRef(
     "rendezvous service, which mediad's relay bridges to the robot's own sockets. Upstream names "
     "two limits on it. "
     "'No pixels': 'Video over this would be base64 inside JSON at the rate below', so frames "
-    "come from WebRTC or media.stream (docs/design/remote-access-design.md:589-590). And 'What "
+    "come from WebRTC or media.stream (docs/design/remote-access-design.md:608-609). And 'What "
     "it is not is a teleop lane': 'The rendezvous allows 1200 requests per 60 s per peer', and "
     "'exceeding it earns a `429` on the *whole peer*, which would take the robot's own lease "
     "down with it'. A walk under quackd re-sends its twist against robotd's deadman until it "
@@ -859,18 +909,19 @@ STAND_UP_RPC = UpstreamRef(
     "stand_up asks robotd's policy to drive (robot.enable), which upstream does not promise "
     "gets a fallen duck up",
     "UNVERIFIED",
-    src("robotd-params/src/lib.rs", 1970),
+    src("robotd-params/src/lib.rs", 2453),
     "No such RPC. robot.enable {on: true} is policy execution, which 'can bring a limp robot up "
     "as a side effect of being asked to drive', and robot.init, the call upstream names for "
     "bringing up a duck that is on its feet, moves every joint and is never sent. On a robot "
     "whose policy is enabled already, as it is when the duck fell while the policy drove it, "
-    "robot.enable {on: true} only sets the flag again (robotd/src/main.rs:5319-5328, "
-    "robotd/src/intents.rs:470-472), so what stand_up learns comes from reading the duck as it "
-    "waits, every quarter second for up to ten seconds. robotd's own stand-up after a fall is the end of limp_fall, and at the pin limp_fall "
-    "is off by default: 'With it off, a fall changes nothing: the policy keeps driving and the "
-    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on "
-    "again, and robotd hands a duck it caught falling back to velstand once it has posed it "
-    "(LIMP_FALL), which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand "
+    "robot.enable {on: true} only sets the flag again (robotd/src/main.rs:5760-5769, "
+    "robotd/src/intents.rs:494-496), so what stand_up learns comes from reading the duck as it "
+    "waits, every quarter second for up to ten seconds. robotd's own stand-up after a fall is "
+    "the end of limp_fall, on by default at the pin as it has been since daemon-v0.16.2 "
+    "(robotd-params/src/lib.rs:2539): robotd hands a duck it caught falling back to velstand "
+    "once it has posed it (LIMP_FALL), which upstream says gets up from a fall from v8 on "
+    "(VELSTAND). On daemon-v0.16.1 it is off, and 'With it off, a fall changes nothing: the "
+    "policy keeps driving and the humans stay in charge' (lib.rs:2460-2461). Whether velstand "
     "gets a duck off the floor has not been seen under quackd on either release. A duck robotd "
     "still has in that sequence when stand_up's wait is over is told so, and to run stand_up "
     "again in a moment. The sequence is over within about 2.1 s by default, so that is a fall "
@@ -881,7 +932,7 @@ STAND_UP_RPC = UpstreamRef(
 ALPHA_UPRIGHT_FOV = UpstreamRef(
     "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",
     "UNVERIFIED",
-    src("mediad/src/sensor.rs", 99),
+    src("mediad/src/sensor.rs", 120),
     "quackd's own reading of mediad's GET /frame (MEDIAD_FRAME_HTTP), whose PNG carries no lens. "
     "On a stock robot only an alpha's camera gives a picture taller than wide: its IMX219 is "
     "mounted a quarter turn off upright (CAMERA_MOUNT) and turned upright for the PNG, so the 62 "
@@ -889,9 +940,11 @@ ALPHA_UPRIGHT_FOV = UpstreamRef(
     "across its width it sees 2*atan(tan(31 degrees) * w/h), 37.3 degrees at 720 by 1280. That "
     "is the module's design, with the principal point at the centre, and not a calibration: the "
     "alpha family's own solve gives a little more (ALPHA_INTRINSICS). It rests on the shape "
-    "alone. A beta's camera sits upright and gives a wide picture, which gets no lens, but "
-    "upstream's scripts/duck-sim renders its twin's camera rolled like an alpha's, at MuJoCo's 45 "
-    "degrees across the frame as sent (mediad/src/main.rs:245-248, mediad/src/camera.rs:236-256), "
+    "alone. A beta's camera sits upright and gives a wide picture, which gets no lens here, "
+    "although upstream has had a solve of the beta's lens since daemon-v0.18.0, 85.2 degrees "
+    "across its frame (IMX219_FOV). And upstream's scripts/duck-sim renders its twin's camera "
+    "rolled like an alpha's, at MuJoCo's 45 "
+    "degrees across the frame as sent (mediad/src/main.rs:246-249, mediad/src/camera.rs:236-256), "
     "so a tall /frame from a twin is 45 degrees wide and this is wrong there. The first frame of "
     "a working /frame camera sets the manifest's camera_fov_deg from it and names this "
     "assumption beside it, so detections through it say they are uncalibrated and the log says "

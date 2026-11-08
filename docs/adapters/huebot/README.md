@@ -46,7 +46,7 @@ other here. It has no `grab` either, until Huebot's maker says what `ground_pick
 ## What Huebot's shim must answer
 
 This is what quackd needs from the shim, call by call, in the shapes robotd uses at
-`daemon-v0.16.1`, where quackd read them. Its maker named six calls: `hello`, `robot.move`,
+`daemon-v0.18.8`, where quackd read them. Its maker named six calls: `hello`, `robot.move`,
 `robot.stop`, `robot.head`, `robot.state` and `robot.health`. quackd also needs four more,
 `robot.subscribe`, `robot.do`, `robot.sound` and `robot.enable`, and does not send
 `robot.head` yet. A call the shim does not answer fails the verb that sent it, by name, and a
@@ -314,9 +314,9 @@ so, and `--fov-deg` gives it the real one.
 
 ## Upstream API
 
-The protocol was read on 2026-10-08, in the Microduck's own source, pinned at
-[`d818af5`](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1)
-(`daemon-v0.16.1`), **API v41**, the pin the [Microduck adapter](../microduck/README.md) reads it
+The protocol was read on 2026-11-08, in the Microduck's own source, pinned at
+[`4a763dd`](https://github.com/pollen-robotics/microduck/tree/4a763dd893f3982c3a11c136468ccf5d26bcc28a)
+(`daemon-v0.18.8`), **API v50**, the pin the [Microduck adapter](../microduck/README.md) reads it
 at. Every name quackd spells lives in
 [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../../adapters/huebot/src/quackd_huebot/upstream_api.py),
 which imports the protocol's from the Microduck's by name, so a re-pin of the one moves the other.

@@ -72,7 +72,7 @@ the ONNX at export. The whole contract is cited at a pin in
 `CONTROL`, `POLICY_METADATA`), which is what the MuJoCo backend reads. Upstream's
 `manifest.json` lists every policy with its kind (perpetual, scripted or episodic) and its
 command encoding. `robotd` checks the shape at load and points at policies by slot in
-`robotd.toml` (`[policy] walk = ...`). At daemon-v0.16.1 the slots are `walk`, `stand`,
+`robotd.toml` (`[policy] walk = ...`). At daemon-v0.18.8 the slots are `walk`, `stand`,
 `sitstand`, `ground_pick`, `kick_left`, `kick_right` and `roulade`, and roller mode puts the
 roller and its crouch in `walk` and `ground_pick`. The default `walk` is `velstand.onnx`, one
 network that walks on a twist and stands still at zero command, so `stand` is empty unless a

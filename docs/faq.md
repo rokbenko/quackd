@@ -402,8 +402,8 @@ is POSIX-only; forward it with `ssh -L 9870:/run/robotd.sock <robot>` and use
 `--address tcp://127.0.0.1:9870`.
 
 **Can I run it on my Microduck today?** `--robot microduck:jsonrpc` speaks `duck-ipc-proto` as
-quackd read it at daemon-v0.16.1, API v41, serves a robot on any version from API v23 up with a
-warning when it is not v41, and has never touched hardware. Start with `--dry-run`,
+quackd read it at daemon-v0.18.8, API v50, serves a robot on any version from API v23 up with a
+warning when it is not v50, and has never touched hardware. Start with `--dry-run`,
 read [adapters/microduck/README.md](adapters/microduck/README.md), and tell us what happened.
 
 ## Driving it from somewhere else
