@@ -20,7 +20,9 @@ plain as the backend's code allows:
   servo with a tick to spare gets there. There are no dynamics, and no whole ticks: a reading
   is the goal that was sent, to the bit.
 - **A limp joint does not move.** A goal written with torque off is taken and not driven to,
-  and neither is one written to a joint in `stuck`, a joint seized or held back.
+  then or once torque comes back on: the best case of `up.TORQUE_ENABLE_HOLDS_PRESENT`, as the
+  tests' `FakeArm` has it, where the simulator gives the worst. A goal written to a joint in
+  `stuck`, a joint seized or held back, is not driven to either.
 - **Only the keys given.** A send moves the joints it names and leaves the others where they
   are, which is what lets a hold leave the gripper's squeeze alone.
 - **The jaws stop on the object.** Closing with the arm within `near_deg` of where the object
