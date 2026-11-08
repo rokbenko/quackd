@@ -13,6 +13,21 @@ the only pin there is. The hardware repository
 BOM and no software quackd uses. Every name quackd spells lives in
 [`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../../adapters/alohamini/src/quackd_alohamini/upstream_api.py).
 
+> [!WARNING]
+> **Run the robot's host at the pin.** Upstream's `main` has moved past it in a way quackd does
+> not follow. Since
+> [`9e5eb5a`](https://github.com/liyiteng/lerobot_alohamini/commit/9e5eb5a887ccdbe44817c2f70eddb9d8c8a47607)
+> (2026-09-11) its host refuses a command that carries any key outside `action_features`, and
+> `lift_axis.vel` is not one. So a host from `main` drops whole every payload quackd sends
+> without a lift height, the stop below among them, and only the host's own watchdog stops the
+> base and the lift, a second after the last command it took. quackd read `main` again on
+> 2026-11-08, at `ec65318`, and stays at `ab4462b` until it follows. Check that commit out on
+> the robot before you start either host:
+>
+> ```bash
+> git -C lerobot_alohamini checkout ab4462b713aeb24d0473f1ec6c8812290ab19510
+> ```
+
 **Nothing here has ever run on a robot.**
 
 ```bash
@@ -151,8 +166,8 @@ default. None of this has met a real arm.
 
 Three SKUs. `alohamini1` has six joints per arm; `alohamini2` and `alohamini2pro` have seven,
 inserting `wrist_yaw`. quackd derives which from the observed key set, never from config,
-because the host defaults to `alohamini2` while upstream's own client defaults to `alohamini1`
-and nothing cross-checks them. A `--no_follower` host runs the base and the lift alone. quackd detects that from the
+because the host's config says `alohamini2`, its own `--robot_model` flag says `alohamini1` and
+wins, upstream's own client says `alohamini1`, and nothing cross-checks them. A `--no_follower` host runs the base and the lift alone. quackd detects that from the
 first observation's key set and drops `move_joints`, `gripper` and `home_arms`, leaving
 eight verbs rather than eleven: `report_state`, `stop`, `move`, `lift`, `observe`, `go_to`,
 `search_scan` and `approach_and`. The lift survives because it is not an arm.

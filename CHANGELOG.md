@@ -46,6 +46,33 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   forearm on the elbow alone now, which carries the jaws up from the first degree, so E142's progress
   bar is the forearm, and E157's detailed wave lifts the forearm and straightens the wrist in one move.
   E200's card says to clear about 40 cm for its second line, which runs E116's reach.
+- **MOSS is read again, at upstream's `d1cbe1f`.** The nightly drift job found that MOSS's main had
+  moved lines quackd cites, and they had moved without changing: every line a ref cites, and every
+  line its note names, reads the same at `d1cbe1f` (2026-11-07) as at `d288647`, so neither
+  `moss:cockpit` nor the bridge changes. Three refs that sat on an `@rpc` line, which reads like
+  others in its file, sit on the `def` under it now, which the job can follow. dimOS stays at
+  `a7d19f7`, the commit MOSS's Software.md still installs, so the job's dimOS rows, which it reads
+  against dimOS's own main, stay open: a rover runs what Software.md installs. A new ref,
+  `MOSS_TRACK_SIGN`, is MOSS's own setting for a rover that drives backwards on a positive twist,
+  as the maker's did, and step 5 of
+  [docs/adapters/moss/hardware-checklist.md](docs/adapters/moss/hardware-checklist.md) says to
+  watch for it on blocks. MOSS's hardware designs are CC BY-NC-SA 4.0 from 1 November 2026, which
+  [docs/adapters/moss/README.md](docs/adapters/moss/README.md) and
+  [docs/reference/licenses.md](docs/reference/licenses.md) now say.
+
+### Known limitations
+
+- **quackd's AlohaMini adapter does not stop a host from upstream's current main.** Since `9e5eb5a`
+  (2026-09-11) upstream's host refuses any command that carries a key outside the robot's
+  `action_features`, and `lift_axis.vel`, the zero every payload quackd sends carries when it is not
+  driving the lift, is not one. So such a host drops whole every payload quackd sends without a lift
+  height, `stop` among them, and only its own watchdog stops the base and the lift, a second after
+  the last command it took. quackd read main again on 2026-11-08, at `ec65318`, and stays at
+  `ab4462b`, the commit its code was written against.
+  [docs/adapters/alohamini/README.md](docs/adapters/alohamini/README.md), its hardware checklist
+  and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
+  robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
+  the lift on the newer host is not settled.
 
 ## [0.33.0] — 2026-11-07
 

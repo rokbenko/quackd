@@ -8,10 +8,11 @@ physical rover drives and demonstrates pick-and-drop motions. Autonomous litter 
 full field test are not yet demonstrated."
 
 Upstream: [metrox-eth/moss](https://github.com/metrox-eth/moss). Its code is Apache-2.0, its
-hardware design files CERN-OHL-S-2.0 and its documentation CC BY 4.0. Read on **2026-10-20**,
+hardware designs CC BY-NC-SA 4.0 from 1 November 2026, where copies given out before then keep
+the CERN-OHL-S-2.0 they came with, and its documentation CC BY 4.0. Read on **2026-11-08**,
 pinned at
-[`d288647`](https://github.com/metrox-eth/moss/tree/d288647adb2b7a132a69d89afa2f1b45d37b288a)
-(`main`, 2026-10-18). MOSS's software is `moss_dimos`, a blueprint package for dimOS, which is
+[`d1cbe1f`](https://github.com/metrox-eth/moss/tree/d1cbe1f0bc3c9728f398d9da5cbcf23a849d7d9e)
+(`main`, 2026-11-07). MOSS's software is `moss_dimos`, a blueprint package for dimOS, which is
 read at
 [`a7d19f7`](https://github.com/dimensionalOS/dimos/tree/a7d19f76158b01739b26e7a17390f89764aaef83),
 the commit MOSS's own Software.md installs. Neither has a software release, and MOSS's CHANGELOG
@@ -476,7 +477,7 @@ asked.
 
 ## Upstream API
 
-### VERIFIED (read from upstream source on 2026-10-20, at `d288647` and dimOS `a7d19f7`)
+### VERIFIED (read from upstream source at `d1cbe1f` on 2026-11-08, and at dimOS `a7d19f7` on 2026-10-20)
 
 | Thing | Value | Used for |
 |---|---|---|
@@ -521,6 +522,7 @@ asked.
 | Power floor | `20` | percent, which the mock applies too |
 | Pivot power | `100` | percent, for every turn on the spot |
 | Track mixing | `twist_to_tracks` | `+wz` turns left, and `vy` is dropped |
+| Track sign | `MOSS_TRACK_SIGN` | `-1` where a forward twist drives the rover backwards, which the checklist's step 5 shows |
 | Firmware ceiling | `100` | percent, the length of a stop from full power |
 | Firmware deadman | `0.300` | s, and the bridge's own twist deadman is as long |
 | Base adapter stale | `0.500` | s, behind the bridge's deadman |

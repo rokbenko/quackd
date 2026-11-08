@@ -6,12 +6,14 @@ is `docs/adapters/moss/README.md`, which names every ref here.
 
 Two upstreams, both pinned by commit because neither has a software release:
 
-- MOSS, https://github.com/metrox-eth/moss at d288647adb2b7a132a69d89afa2f1b45d37b288a (main,
-  2026-10-18, read 2026-10-20). Its own CHANGELOG says nothing is frozen, and some of its docs
+- MOSS, https://github.com/metrox-eth/moss at d1cbe1f0bc3c9728f398d9da5cbcf23a849d7d9e (main,
+  2026-11-07, read 2026-11-08). Its own CHANGELOG says nothing is frozen, and some of its docs
   lag its code, so every ref below is read from code, but for the maker's own words and
   figures, which come from MOSS's README, its BOM, one of its docs and an issue, and say so.
 - dimOS, https://github.com/dimensionalOS/dimos at a7d19f76158b01739b26e7a17390f89764aaef83,
-  the commit MOSS's own Software.md installs.
+  the commit MOSS's own Software.md installs (Software.md:48), as it did at the last pin.
+  dimOS's own main has moved on since, which the nightly drift job reports, and a rover
+  runs it only once Software.md moves.
 
 quackd imports neither. The cockpit is spoken over HTTP, and everything the cockpit cannot do
 goes through quackd's own bridge on the rover (`bridge/moss/`), which is the one place that
@@ -34,8 +36,8 @@ from typing import Literal, cast
 from quackd.upstream import UpstreamRef
 
 REPO = "https://github.com/metrox-eth/moss"
-PIN = "d288647adb2b7a132a69d89afa2f1b45d37b288a"  # main, 2026-10-18
-READ_ON = "2026-10-20"
+PIN = "d1cbe1f0bc3c9728f398d9da5cbcf23a849d7d9e"  # main, 2026-11-07
+READ_ON = "2026-11-08"
 
 DIMOS_REPO = "https://github.com/dimensionalOS/dimos"
 DIMOS_PIN = "a7d19f76158b01739b26e7a17390f89764aaef83"  # what MOSS's Software.md installs
@@ -79,8 +81,9 @@ _WEBCAM = "dimos/hardware/sensors/camera/webcam.py"
 _CAMERA_INFO = "dimos/msgs/sensor_msgs/CameraInfo.py"
 
 LICENCE = "Apache-2.0"
-"""MOSS's code. Its hardware files are CERN-OHL-S-2.0 and its documentation CC BY 4.0
-(README.md:76). quackd copies none of it."""
+"""MOSS's code. Its hardware designs are CC BY-NC-SA 4.0 from 1 November 2026, where copies
+given out before then keep the CERN-OHL-S-2.0 they came with, and its documentation is CC BY
+4.0 (README.md:90 and 92). quackd copies none of it."""
 
 # ── the cockpit: MOSS's only network surface ─────────────────────────────────────────────
 
@@ -357,49 +360,49 @@ LCM_CHANNEL_NAME = UpstreamRef(
 MPS_AT_LIMIT = UpstreamRef(
     "0.32",
     "VERIFIED",
-    src(_ADAPTER, 294),
+    src(_ADAPTER, 298),
     "MossGeometry.mps_at_limit, m/s at full power, measured by its maker on the floor. Above "
     "quackd's 0.3 schema cap, so the cap binds and max_vx is 0.3.",
 )
 MIN_PCT_FLOOR = UpstreamRef(
     "20",
     "VERIFIED",
-    src(_ADAPTER, 297),
+    src(_ADAPTER, 301),
     "MossGeometry.min_pct: a non zero track below this percent is raised to it (floor_tracks, "
-    "line 187), so a slow command is not slow. The mock does the same.",
+    "line 191), so a slow command is not slow. The mock does the same.",
 )
 PIVOT_PCT = UpstreamRef(
     "100",
     "VERIFIED",
-    src(_ADAPTER, 125),
+    src(_ADAPTER, 129),
     "PIVOT_PCT_DEFAULT: tracks in opposite directions are sent at this percent on both "
-    "(pivot_tracks, line 217, applied on every write at line 727). Any spin on the spot, and any "
+    "(pivot_tracks, line 221, applied on every write at line 732). Any spin on the spot, and any "
     "arc whose inner track reverses, runs both tracks at full power.",
 )
 TWIST_TO_TRACKS = UpstreamRef(
     "twist_to_tracks",
     "VERIFIED",
-    src(_ADAPTER, 319),
+    src(_ADAPTER, 323),
     "v_left = vx minus wz times track/2 and v_right = vx plus wz times track/2, so +wz turns "
     "left. vy is dropped: a tracked base cannot strafe, and max_vy is 0.",
 )
 FIRMWARE_MAX_PCT = UpstreamRef(
     "100",
     "VERIFIED",
-    src(_ADAPTER, 103),
+    src(_ADAPTER, 107),
     "the firmware's percent ceiling. A stop from full power takes the ramp's fall times this.",
 )
 FIRMWARE_DEADMAN_S = UpstreamRef(
     "0.300",
     "VERIFIED",
-    src(_ADAPTER, 104),
+    src(_ADAPTER, 108),
     "FIRMWARE_COMMAND_TIMEOUT_S, Control.h's COMMAND_TIMEOUT_MS: the board stops the tracks "
     "this long after the last drive. The bridge's own twist deadman is the same length.",
 )
 ADAPTER_STALE_S = UpstreamRef(
     "0.500",
     "VERIFIED",
-    src(_ADAPTER, 107),
+    src(_ADAPTER, 111),
     "STALE_S: no fresh twist for this long and the base adapter sends stop once and holds.",
 )
 VELOCITY_TASK_TIMEOUT_S = UpstreamRef(
@@ -412,7 +415,7 @@ VELOCITY_TASK_TIMEOUT_S = UpstreamRef(
 RAMP_MS = UpstreamRef(
     "MOSS_RAMP_MS",
     "VERIFIED",
-    src(_ADAPTER, 538),
+    src(_ADAPTER, 543),
     '"UP DOWN", ms per percent of rise and fall, sent to the firmware at connect. The launcher '
     'exports "5 5" unless pulsing (moss-fly.sh:79), so a stop from full power takes 0.5 s. The '
     "bridge reads it from the stack's environment and reports the stop's length.",
@@ -436,9 +439,20 @@ LAUNCHER_EXPLORE_RADIUS = UpstreamRef(
 STALL_S = UpstreamRef(
     "1.0",
     "VERIFIED",
-    src(_ADAPTER, 114),
+    src(_ADAPTER, 118),
     "a commanded track whose encoder barely moved for this long is a stall: the base stops, "
     "counts it and flags it until the next accepted command. The mock stalls the same way.",
+)
+TRACK_SIGN = UpstreamRef(
+    "MOSS_TRACK_SIGN",
+    "VERIFIED",
+    src(_ADAPTER, 406),
+    "1 by default, or -1 where the firmware's positive drives the rover backwards, as it did on "
+    "the maker's own: the sign goes on both tracks on the wire (line 773) and comes off the "
+    "encoder ticks (line 984), while commands, the floor, the stall guard and the odometry keep "
+    "forward positive (lines 63 to 66). So quackd's twist means the same either way, and on a "
+    "rover that needs -1 and has not got it a forward twist drives it backwards, which the "
+    "hardware checklist's step 5 shows on blocks.",
 )
 TRACK_M = UpstreamRef(
     "0.266",
@@ -558,37 +572,37 @@ MISSION_TICK_HZ = UpstreamRef(
 MISSION_INPUTS = UpstreamRef(
     "objects, odom, goal_reached",
     "VERIFIED",
-    src(_MISSION, 374),
+    src(_MISSION, 382),
     "LitterMission's only In streams. It listens to no stop: the soft stop does not end it, "
     "and from the moment a moss-litter stack starts it goes for any confirmed litter in view.",
 )
 MISSION_LOOP = UpstreamRef(
     "LitterMission._run",
     "VERIFIED",
-    src(_MISSION, 472),
-    "the 10 Hz tick, which publishes the mission's commands through _do (line 485) while not "
-    "self._stop.is_set() (line 474). Its start publishes explore_cmd as well when it starts "
-    "itself (line 428), and its stop a zero on tele_cmd_vel (line 436).",
+    src(_MISSION, 480),
+    "the 10 Hz tick, which publishes the mission's commands through _do (line 493) while not "
+    "self._stop.is_set() (line 482). Its start publishes explore_cmd as well when it starts "
+    "itself (line 436), and its stop a zero on tele_cmd_vel (line 444).",
 )
 MISSION_STOP_RPC = UpstreamRef(
     "LitterMission.stop",
     "VERIFIED",
-    src(_MISSION, 430),
+    src(_MISSION, 439),
     "an @rpc: sets the stop event, joins the loop for up to 2 s, publishes a zero tele twist "
-    "(line 436) and calls super().stop() (line 439), which closes its RPC service and stops its "
+    "(line 444) and calls super().stop() (line 447), which closes its RPC service and stops its "
     "streams (module.py:200). It does not touch a pick already running.",
 )
 MISSION_STATUS_RPC = UpstreamRef(
     "LitterMission.mission_status",
     "VERIFIED",
-    src(_MISSION, 441),
+    src(_MISSION, 450),
     "state, target, picked and skipped. Once stop() has closed the RPC service it answers "
     "nothing, which is how the bridge confirms a stop.",
 )
 MISSION_PICK_SUBPROCESS = UpstreamRef(
     "[sys.executable, tools/moss_arm_play.py]",
     "VERIFIED",
-    src(_MISSION, 512),
+    src(_MISSION, 520),
     "the mission picks by running the arm script as a subprocess in a thread of its own, with a "
     "PICK_TIMEOUT_S of 180 (line 72). stop() leaves that thread and that process alone.",
 )
@@ -596,17 +610,17 @@ MISSION_PICK_CMD = UpstreamRef(
     "MOSS_PICK_CMD",
     "VERIFIED",
     src(_MISSION, 65),
-    "the stack's own override of the pick command (line 400 reads it, line 512 splits it). The "
+    "the stack's own override of the pick command (line 408 reads it, line 520 splits it). The "
     "bridge reads it from the stack's environment to find the mission's pick when it is not "
     "the maker's script.",
 )
 MISSION_STOP_LEAVES_PICK = UpstreamRef(
     "LitterMission.stop leaves its pick running",
     "VERIFIED",
-    src(_MISSION, 431),
+    src(_MISSION, 439),
     "stop() sets the stop event, joins the 10 Hz loop, publishes a zero and closes the module "
-    "(lines 431 to 439), and never touches self._pick_thread or the subprocess.run it waits on "
-    "(lines 507 to 527). A pick in flight outlives the stop: its script, still importing dimOS "
+    "(lines 439 to 447), and never touches self._pick_thread or the subprocess.run it waits on "
+    "(lines 515 to 535). A pick in flight outlives the stop: its script, still importing dimOS "
     "and reading the joints (moss_arm_play.py lines 86 to 110), sends its one trajectory after "
     "any cancel, and the coordinator plays the whole cycle. So the bridge's stop ends that "
     "script first, then cancels the trajectory and reads the arm twice.",
@@ -623,7 +637,7 @@ MISSION_AUTOSTART = UpstreamRef(
     "MOSS_MISSION_AUTOSTART",
     "VERIFIED",
     src(_MISSION, 67),
-    "1 by default (explore_cmd at start, line 427), but tools/moss-fly.sh litter sets 0 "
+    "1 by default (explore_cmd at start, line 435), but tools/moss-fly.sh litter sets 0 "
     "(moss-fly.sh:251), so collect_litter starts the explorer itself.",
 )
 PICK_TIMEOUT_S = UpstreamRef(
@@ -699,7 +713,7 @@ ARM_CALIBRATION_ENV = UpstreamRef(
     "MOSS_ARM_CALIB",
     "VERIFIED",
     src(_ARM, 45),
-    "a calibration file elsewhere. calibration_path() (line 105) reads it from the environment it "
+    "a calibration file elsewhere. calibration_path() (line 119) reads it from the environment it "
     "is given, else from its own process's, and the drive pose and the maker's script take the "
     "arm's poses from that file. The bridge runs the script in the moss-arm run's own "
     "environment and reads the drive pose with it, never with its own.",
@@ -707,9 +721,9 @@ ARM_CALIBRATION_ENV = UpstreamRef(
 DRIVE_POSE = UpstreamRef(
     "drive_pose_rad",
     "VERIFIED",
-    src(_ARM, 234),
+    src(_ARM, 248),
     "the pose the arm rests in for driving, from the calibration when it exists, else "
-    "DRIVE_TICKS (line 99).",
+    "DRIVE_TICKS (line 113).",
 )
 GAP_OPEN_M = UpstreamRef(
     "0.090",
@@ -916,7 +930,7 @@ STATUS_LINE = UpstreamRef(
 BLOCKS_FIRST = UpstreamRef(
     "Put it on blocks for the first run",
     "VERIFIED",
-    src("README.md", 72),
+    src("README.md", 86),
     "a prototype with a lithium battery and no certified protection. The checklist starts here.",
 )
 MASS = UpstreamRef(
@@ -938,8 +952,8 @@ ARM_MASS = UpstreamRef(
 BOM_SERVOS = UpstreamRef(
     "ST3215 12 V serial bus servo",
     "VERIFIED",
-    src("BOM.md", 42),
-    "five of them on the arm, and a CF35-12 on the gripper (line 43): six actuated joints.",
+    src("BOM.md", 44),
+    "five of them on the arm, and a CF35-12 on the gripper (line 45): six actuated joints.",
 )
 NOT_A_RUNTIME_CLAIM = UpstreamRef(
     "not a claim about battery capacity or runtime",
@@ -953,7 +967,7 @@ NOT_A_RUNTIME_CLAIM = UpstreamRef(
 MISSION_STAYS_STOPPED = UpstreamRef(
     "MISSION_STAYS_STOPPED",
     "UNVERIFIED",
-    src(_MISSION, 430),
+    src(_MISSION, 439),
     "nothing read restarts a module whose stop() has run, but no run has shown it. quackd treats "
     "a stopped mission as stopped until the stack restarts: the bridge remembers the run it "
     "stopped, and collect_litter refuses until the run is a new one.",
@@ -1043,7 +1057,7 @@ ARM_PLAY_STARTUP = UpstreamRef(
 PIDS_NOT_REUSED = UpstreamRef(
     "PIDS_NOT_REUSED",
     "UNVERIFIED",
-    src(_MISSION, 512),
+    src(_MISSION, 520),
     "that a pid the bridge read for the mission's pick, and for the processes under it, still "
     "names that process when the bridge signals it, two graces later at most. Linux reuses a "
     "pid only once it has gone round the others, which nothing rules out within seconds. The "

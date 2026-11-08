@@ -12,6 +12,21 @@ https://github.com/liyiteng/AlohaMini (commit 17c6a98d, 2026-07-01) holds the CA
 of materials and no software quackd uses: its own README says lerobot_alohamini is the single
 source of truth for software.
 
+Upstream's main has moved past the pin in a way quackd's code does not follow, so the pin stays.
+Read again on 2026-11-08 at ec65318f4cc3d830242f6e987d43f46e6b61f0a5 (main, 2026-10-09): since
+9e5eb5a (2026-09-11) the host refuses a command that carries any key outside
+AlohaMini.action_features (alohamini_host.py:322 there), and lift_axis.vel is not one of them
+(alohamini.py:318). So a host from main drops whole every payload quackd sends without a lift
+height, its stop among them, and only the host's own watchdog stops the base and the lift, a
+second after the last command it took. The same read found the rest a port would meet: the host
+loop runs at 50 Hz, the three base velocities default to zero, the lift's height branch wins over
+its velocity branch, the watchdog holds the arms where they read before it stops the rest and
+fires only once a command was taken, a command may carry a `_command` identity and the host takes
+commands from one client at a time, the arms keep their goals between commands under a speed and
+acceleration profile, and the state JSON gains `_robot_metadata` and `_safety`. The arms are still
+never given torque. Nothing here decides how quackd should stop the lift on such a host, and
+docs/adapters/alohamini/README.md says what to run on the robot meanwhile.
+
 quackd never imports it. The project is a **fork of LeRobot that calls itself `lerobot`**, is
 not published to PyPI, and installs only from a 133 MB git clone on Python 3.12 with torch. A
 name collision with HuggingFace's own package is not a dependency quackd can express, so the
@@ -168,7 +183,8 @@ LIFT_VEL_IS_NOT_A_STATE_KEY = UpstreamRef(
     src(_ROBOT, 231),
     "commented out of _state_ft, so it can never appear in a recorded dataset and upstream's "
     "own action space does not carry it. quackd injects it anyway, because it is the only "
-    "thing that stops the lift.",
+    "thing that stops the lift. A host from upstream's main refuses any payload carrying it, "
+    "which the module's docstring says more of.",
 )
 ARM_KEY_PREFIXES = UpstreamRef(
     'startswith("arm_left_")',
@@ -218,9 +234,11 @@ ROBOT_MODEL_DEFAULTS_DISAGREE = UpstreamRef(
     'robot_model: str = "alohamini2"',
     "VERIFIED",
     src(_CONFIG, 54),
-    "the host defaults to alohamini2 while the client defaults to alohamini1 (line 105), and "
-    "nothing cross-checks them. quackd derives the model from the observed key set instead of "
-    "from any config, so a mismatch is impossible rather than silent.",
+    "the host's own config says alohamini2, but the host's --robot_model flag defaults to "
+    "alohamini1 and overwrites it (alohamini_host.py:106 and 141), and the client's config says "
+    "alohamini1 (line 105), so a host runs whatever its flag says and nothing cross-checks that "
+    "against the client. quackd derives the model from the observed key set instead of from any "
+    "config, so a mismatch is impossible rather than silent.",
 )
 
 # ── the lift, which is where a stop is won or lost ───────────────────────────────────────

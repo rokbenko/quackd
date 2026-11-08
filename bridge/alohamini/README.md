@@ -29,13 +29,18 @@ Three things happen around it:
 
 ## Running it
 
-It needs upstream installed on the robot, in upstream's own environment:
+It needs upstream installed on the robot, in upstream's own environment, at the commit quackd
+was read against:
 
 ```bash
 git clone https://github.com/liyiteng/lerobot_alohamini
 cd lerobot_alohamini
+git checkout ab4462b713aeb24d0473f1ec6c8812290ab19510
 pip install -e ".[all]"
 ```
+
+A host from upstream's `main` refuses every payload quackd sends without a lift height, its stop
+among them, which [the adapter's page](../../docs/adapters/alohamini/README.md) says more of.
 
 Then, from that environment, with this file wherever you like:
 
