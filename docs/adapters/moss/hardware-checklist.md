@@ -75,7 +75,10 @@ assume, or give an LLM a goal narrow enough to reach one verb.
    half a second with MOSS's launcher, and the cockpit's page shows the goal gone.
 5. **Kill quackd mid `move`.** `move` with `vx` 0.1 for ten seconds, then kill the quackd process
    outright (`kill -9`, or End task), so no clean stop goes out. The bridge's own deadman stops
-   the tracks 0.3 s after the last twist, plus the ramp. If they keep turning, stop here.
+   the tracks 0.3 s after the last twist, plus the ramp. If they keep turning, stop here. Watch
+   which way they turn first: a positive `vx` is forward. If they turn the way that drives the
+   rover backwards, as the maker's own rover did, the stack needs `MOSS_TRACK_SIGN=-1` in its
+   `robot.env`, and every twist quackd sends drives the other way until it has it.
 
 ## On the floor
 
