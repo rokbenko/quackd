@@ -251,7 +251,10 @@ async def test_two_centrals_overhearing_each_other_never_take_each_others_answer
 async def test_a_central_that_never_asks_anything_is_closed_as_idle() -> None:
     policy = replace(FAST, first_request_s=0.2)
     central, peripheral, _, _ = await linked(policy=policy)
-    await until(lambda: central.closed is not None, within_s=2.0)
+    # both ends: the central finishes on the CLOSE as soon as its pipe takes it, which can be
+    # before the peripheral's send of it returns and the peripheral finishes too, and reading the
+    # peripheral in that moment found it still open on main's macOS CI on 2026-11-08
+    await until(lambda: central.closed is not None and peripheral.closed is not None, within_s=2.0)
     assert peripheral.closed == "closed here (idle)"
     assert central.closed == "closed by the other robot (idle)"
 
