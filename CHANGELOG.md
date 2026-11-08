@@ -100,6 +100,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the FAQ, the Microduck page, the browser demo's footer and two comments named no version, spelled
   the licence as the old sentence did, or put `robot_walk.xml` under it, and say what upstream says
   now.
+- **Fourteen of the rosbridge adapter's upstream refs pointed at the wrong lines of their pinned
+  files,** thirteen of them VERIFIED: `SERVICE` and `SERVICE_CALL` at lines of roslibpy's
+  ActionClient, `SERVICE_REQUEST` at a comment in its `Service`, `ROS_GET_PARAM` at a docstring,
+  `ROSAPI_NODE` and `SVC_TOPICS` at a comment, `PARAM_NAME_FORM` and `DESCRIPTION_PARAM` at a
+  signature's last line, `PARAM_VALUE_JSON` at the setter, `SUBSCRIBE_QOS` at a table rule,
+  `SUBSCRIBER_QOS_FOLLOWS_PUBLISHERS` at a docstring, and `RSP_NODE`, `DESCRIPTION_TOPIC` and
+  `DESCRIPTION_NAMES` at an inline and a return. The nightly could not see it, since those lines
+  have content and have not moved. Each points at the line that says what it says now, read again at
+  the same pins on 2026-11-08, and so does every line number in their notes. Reading
+  robot_state_publisher again settled what had been left open: a node started with
+  `use_robot_description_topic` declares no `robot_description` parameter and subscribes to the
+  topic instead, which `RSP_NODE` and `DESCRIPTION_NAMES` now say. What changes for you: nothing
+  quackd does, and `quackd doctor` and the rosbridge page link to the lines meant.
+- **Three body files said what the industrial arm family makes untrue, and the iisy's said what its
+  driver does not do.** The UR5e's, the iisy's and the MotoMini's speed notes said quackd clamps
+  nothing because it drives nothing, and the family clamps each joint to a tenth of its rated speed.
+  The iisy's note said KUKA's ROS 2 drivers end the connection on a missed packet. Read in
+  `kuka_drivers` at its pin, the RSI driver ends external control after a second with no state from
+  the controller, and its RSI configuration decides whether the last command is held between
+  packets, which the note says now, with the pendant's stop as the brake. A pilot handed
+  `described:` one of the three reads the corrected notes. No generated table shows them, so
+  `scripts/bodies_docs.py` changed nothing.
 
 ### Documentation
 

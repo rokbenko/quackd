@@ -34,6 +34,6 @@ datasheet:
   notes:
     - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
     - "safety rated PL d, category 3, with torque sensors in every axis, by the datasheet"
-    - "joints move at 200 to 400 degrees per second by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "joints move at 200 to 400 degrees per second by the datasheet"
     - "rated for 5 to 45 degrees C and IP30 by the datasheet; its mains voltage is not on the pages read"
-    - "KUKA's ROS 2 drivers end the connection on a missed packet, and the pendant's stop is the brake"
+    - "KUKA's RSI driver ends external control after a second with no state from the controller, and its RSI configuration decides whether the last command is held between packets; the pendant's stop is the brake"

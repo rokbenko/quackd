@@ -35,5 +35,5 @@ datasheet:
     - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
     - "safety rated PL d, category 3, with 17 configurable safety functions, by the datasheet"
     - "its emergency stop is category 1 and removes drive power at standstill; a protective stop keeps drive power (UR's manual)"
-    - "joints turn 360 degrees each way at up to 180 degrees per second and the tool moves at up to 4 m/s by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "joints turn 360 degrees each way at up to 180 degrees per second and the tool moves at up to 4 m/s by the datasheet"
     - "100 to 240 VAC, IP54, any mounting, by the datasheet; UR lists the UR7e as its upgraded version"
