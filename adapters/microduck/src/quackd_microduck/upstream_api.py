@@ -346,8 +346,11 @@ MOVE_ECHO = UpstreamRef(
     "verb walks, one a stock pad's Y or bumpers start among them (PAD_DRIVES), ends the walk "
     "that way, since nothing in the state says an emotion is playing, and the verb says robotd "
     "has not taken its twist. When the frame it quotes said a zero twist, the only one an "
-    "emotion leaves, it names an emotion as one cause beside a twist robotd could not parse and "
-    "another client's, and says robotd logs 'emotion started' as one begins (main.rs:2820).",
+    "emotion leaves, on a robotd that names daemon-v0.18.8 or later in its hello "
+    "(EMOTIONS_SINCE), it names an emotion as one cause beside a twist robotd could not parse "
+    "and another client's, and says robotd logs 'emotion started' as one begins (main.rs:2820). "
+    "The API version cannot say which robotd that is: daemon-v0.18.6 and daemon-v0.18.7 report "
+    "API 50 too, and play no emotion.",
 )
 ROBOT_HEALTH = UpstreamRef(
     "robot.health",
@@ -430,6 +433,11 @@ SKILLS = UpstreamRef(
     "(robotd/emotions/, robotd/src/emotion.rs:1-10, robotd/src/main.rs:5333-5346). quackd sends "
     "none of them. SKILL_SOURCE is where a client learns the real list.",
 )
+#: The release robot.do first plays an emotion in, daemon-v0.18.8 (SKILLS): robotd/src/emotion.rs
+#: is not at daemon-v0.18.7, and daemon-v0.18.6 and daemon-v0.18.7 report API 50 as
+#: daemon-v0.18.8 does, so it is the release a robotd names in hello, not its API version, that
+#: says whether it can play one (MOVE_ECHO).
+EMOTIONS_SINCE = (0, 18, 8)
 SKILL_SOURCE = UpstreamRef(
     "robot.subscribe -> SubscribeResult.skills",
     "VERIFIED",

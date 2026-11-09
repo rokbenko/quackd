@@ -321,6 +321,19 @@ def test_verified_vocabulary_matches_upstream_enums() -> None:
     )
 
 
+def test_the_release_that_plays_emotions_is_the_one_read() -> None:
+    """A verdict that robotd has not taken a twist names an emotion as a cause only on a robotd
+    from `EMOTIONS_SINCE` on, so that has to be the release the VERIFIED ref that read the
+    emotions names, and the release quackd read has to be one of them."""
+    since = "daemon-v" + ".".join(str(n) for n in upstream_api.EMOTIONS_SINCE)
+    skills = upstream_api.SKILLS
+    assert f"From {since} robot.do plays an emotion" in skills.note
+    assert skills.status == "VERIFIED" and upstream_api.PIN in skills.source
+    read = tuple(int(n) for n in upstream_api.RELEASE.removeprefix("daemon-v").split("."))
+    assert read >= upstream_api.EMOTIONS_SINCE
+    assert "EMOTIONS_SINCE" in upstream_api.MOVE_ECHO.note
+
+
 def test_microduck_refs_are_pinned_to_a_commit() -> None:
     """The Microduck was the one upstream cited at `main` rather than at a hash.
 

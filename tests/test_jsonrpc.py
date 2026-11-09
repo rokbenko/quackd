@@ -63,6 +63,7 @@ from quackd_microduck.transports.jsonrpc_unix import (
     default_address,
     move_echo_after_s,
     parse_address,
+    release_key,
     state_stale_after_s,
 )
 from quackd_microduck.webrtc import WebRtcCamera
@@ -187,6 +188,9 @@ class FakeRobotd:
     ) -> None:
         self.api_version = api_version
         """What `hello` answers in `api_version`, NO_VERSION to leave it out."""
+        self.daemon_version: Any = up.RELEASE.removeprefix("daemon-v")
+        """What `hello` answers in `daemon_version`: the release quackd read, as robotd names
+        it, by default."""
         self.healthy = healthy
         # The duck as the next state frame will describe it. Each frame is built from these when
         # it is sent, so a test can pick the duck up, lay it down or start a skill mid-verb.
@@ -438,10 +442,7 @@ class FakeRobotd:
                 continue
             result: Any
             if method == "hello":
-                result = {
-                    "daemon_version": up.RELEASE.removeprefix("daemon-v"),
-                    "revision": up.PIN[:7],
-                }
+                result = {"daemon_version": self.daemon_version, "revision": up.PIN[:7]}
                 if self.api_version is not NO_VERSION:
                     result["api_version"] = self.api_version
             elif method == "robot.health":
@@ -2216,9 +2217,19 @@ async def test_a_walk_robotd_does_not_take_stops_and_says_so(
     await t.close()
 
 
-@pytest.mark.parametrize("other", ["emotion", "stick"], ids=["an-emotion", "a-pad-stick"])
+@pytest.mark.parametrize(
+    ("other", "release"),
+    [
+        ("emotion", "0.18.8"),
+        ("emotion", "0.19.0"),
+        ("stick", "0.18.8"),
+        ("zero", "0.18.7"),
+        ("zero", None),
+    ],
+    ids=["an-emotion", "a-newer-one", "a-pad-stick", "an-older-one", "no-release-named"],
+)
 async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
-    registry: VerbRegistry, robotd: FakeRobotd, other: str
+    registry: VerbRegistry, robotd: FakeRobotd, other: str, release: str | None
 ) -> None:
     """While an emotion plays robotd reports a zero twist in place of the one it was asked for,
     and nothing in its state says one is playing (`up.MOVE_ECHO`), so a walk under way when
@@ -2227,11 +2238,17 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
     parse and another client's alone, which sent the pilot and the robot's owner looking for a
     bug or a second program when the pad was the thing to look at. They name an emotion too
     now, when the state said a zero twist, and not when it showed another client's moving one,
-    which no emotion leaves."""
+    which no emotion leaves. Nor on a robotd from before daemon-v0.18.8, the first release that
+    plays one, though two of the releases before it report API 50 as it does, nor on one whose
+    hello names no release: there an emotion, a pad button that starts one and a log line that
+    says so would each send whoever read the words looking for something that is not there."""
+    robotd.daemon_version = release
     if other == "emotion":
         robotd.emotion = "yes"  # the left bumper of a pad nobody has configured
-    else:
+    elif other == "stick":
         robotd.drop_moves, robotd.twist = True, [0.2, 0.0, 0.0]  # a stick held forward
+    else:
+        robotd.drop_moves = True  # the state goes on saying zero, as an emotion's would
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     duration = 10 * move_echo_after_s(t.state_hz)
@@ -2243,6 +2260,9 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
     if other == "stick":
         assert "still says it was asked for [0.2, 0, 0]" in said, said
         assert "emotion" not in said, said
+    elif other == "zero":
+        assert "still says it was asked for [0, 0, 0]" in said, said
+        assert "emotion" not in said, said
     else:
         assert _moves(robotd) and not robotd.rejected, "robotd took every twist it was sent"
         assert "still says it was asked for [0, 0, 0]" in said, said
@@ -2251,6 +2271,33 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
         assert "a stock pad's Y and bumpers" in said and "'emotion started'" in said, said
     assert "could not parse" in said and "another client" in said, said
     await t.close()
+
+
+@pytest.mark.parametrize(
+    ("named", "key", "plays"),
+    [
+        ("0.18.8", (0, 18, 8, 1), True),
+        ("0.18.10", (0, 18, 10, 1), True),
+        ("1.0.0+abc123", (1, 0, 0, 1), True),
+        ("0.18.7", (0, 18, 7, 1), False),
+        ("0.18.8-rc.1", (0, 18, 8, 0), False),
+        ("0.18", None, False),
+        ("v0.18.8", None, False),
+        ("0.18.8-", None, False),
+        (None, None, False),
+        (18, None, False),
+    ],
+)
+def test_a_daemon_version_is_read_as_the_release_it_names(
+    named: object, key: object, plays: bool
+) -> None:
+    """robotd names its crate's version in `hello`, and whether it can play an emotion is read
+    off it, so a pre-release of daemon-v0.18.8 comes before daemon-v0.18.8, `0.18.10` after
+    `0.18.9`, and anything that is not three numbers names no release and plays none."""
+    assert release_key(named) == key
+    t = JsonRpcUnixTransport("tcp://127.0.0.1:1")
+    t.answered = {"daemon_version": named}
+    assert t._plays_emotions() is plays
 
 
 @pytest.mark.parametrize("verb", ["go_to", "search_scan"])

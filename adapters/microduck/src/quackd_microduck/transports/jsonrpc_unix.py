@@ -323,6 +323,22 @@ def _id_of(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def release_key(version: Any) -> tuple[int, int, int, int] | None:
+    """A `hello`'s `daemon_version` in the order releases come in, or None for one that names
+    no release: robotd names its crate's version, `0.18.8` on daemon-v0.18.8 (`up.RELEASE`).
+
+    The fourth number is 0 for a pre-release, such as `0.18.8-rc.1`, and 1 for the release
+    itself, since a pre-release comes before the release it leads to. Build metadata after a `+`
+    changes nothing."""
+    if not isinstance(version, str):
+        return None
+    release, dash, pre = version.strip().partition("+")[0].partition("-")
+    parts = release.split(".")
+    if len(parts) != 3 or not all(p.isascii() and p.isdigit() for p in parts) or (dash and not pre):
+        return None
+    return (int(parts[0]), int(parts[1]), int(parts[2]), 0 if dash else 1)
+
+
 #: How often a held gaze goes out again (`_hold_gaze`): half of robotd's IDLE_AFTER, the wait
 #: since the last head command after which it counts the duck still (`up.IDLE_HEAD`), so a
 #: re-send that a tunnel holds up for as long again as a whole period still lands before robotd
@@ -1863,6 +1879,16 @@ class JsonRpcUnixTransport:
         `MicroduckAdapter.connect` offers a gated body's verbs by (`Body.skill_verbs`)."""
         return None if self.subscribed is None else self._skills()
 
+    def _plays_emotions(self) -> bool:
+        """Whether this robotd can play an emotion: the release it named in `hello` is
+        daemon-v0.18.8 or later (`up.EMOTIONS_SINCE`). Its API version cannot say, since
+        daemon-v0.18.6 and daemon-v0.18.7 report API 50 as daemon-v0.18.8 does and play none,
+        and a `hello` that names no release says nothing either. A verdict that robotd has not
+        taken a twist names an emotion as a cause only where one can play, since it says where
+        to look for one (`_not_taken`)."""
+        key = release_key((self.answered or {}).get("daemon_version"))
+        return key is not None and key >= (*up.EMOTIONS_SINCE, 1)
+
     def _read(self) -> StateRead:
         """The newest state frame and what it says about the duck, without asking robotd
         anything: `robot.move` is held back on this, every tenth of a second, mid-verb."""
@@ -2469,8 +2495,9 @@ class JsonRpcUnixTransport:
         place, with nothing in the frame to say why (`up.MOVE_ECHO`). The words named the first
         two alone, which sent whoever read them after a walk an emotion had stopped looking for
         the wrong thing. The body's `zero_twist` names the third when the frame said a zero
-        twist, the only one an emotion leaves. Holding the walk back is right whichever it is:
-        the duck is not doing what quackd asked."""
+        twist, the only one an emotion leaves, on a robotd that can play one
+        (`_plays_emotions`). Holding the walk back is right whichever it is: the duck is not
+        doing what quackd asked."""
         words = self.body.words
         moving = [sent for sent in self._unshown if any(sent.twist)]
         if not moving or self._last_state_at is None:
@@ -2516,8 +2543,10 @@ class JsonRpcUnixTransport:
             else ""
         )
 
-        # an emotion leaves a zero twist in every frame it plays through, and nothing else there
-        zeroed = words.zero_twist if asked is not None and not any(asked) else ""
+        # an emotion leaves a zero twist in every frame it plays through, and no field there
+        # names it, on a robotd from the release that plays them
+        zero = asked is not None and not any(asked)
+        zeroed = words.zero_twist if zero and self._plays_emotions() else ""
 
         def either(these: str, after: str) -> str:
             return (
