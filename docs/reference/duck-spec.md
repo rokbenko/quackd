@@ -107,6 +107,7 @@ worded alike ([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
 | Key | How it is checked |
 |---|---|
 | `payload_kg`, `reach_m`, `arms` | minimums. The body must publish at least this much. |
+| `carries_kg` | a minimum too: what rides on the body's back or deck as it moves. It needs no hand, so a body with no manipulator can meet it, and one that publishes no such figure does not. |
 | `endurance_min` | a minimum, except on a mains-powered body (`tethered: true`), which has nothing to run down and passes. |
 | `work_height_m` | **not** a minimum: a height the hands must be able to reach, so it must fall inside the body's `workspace_height_m` band. Asking for 0.4 m fails a body that reaches 0.5 to 1.25 m, because that is below it. |
 | `manipulator`, `mobility` | must match the body's own word. `any` accepts any word but `none`, so it means some kind: a body that does not move fails `mobility: any`. `none` asks for nothing: a task that goes nowhere names `mobility: none`, and every body meets it, one with legs or wheels too. |

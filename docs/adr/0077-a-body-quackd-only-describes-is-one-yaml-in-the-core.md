@@ -1,6 +1,12 @@
 # ADR-0077: A body quackd only describes is one YAML in the core
 
-**Status:** accepted · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (a body is data) and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) (the described tier) · Extends [ADR-0032](0032-datasheets-and-the-verdict.md) (a body is figures with a confidence and a source) and [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md), whose demo bodies are described bodies in the passport's format · Implemented in 0.33.0 in `quackd/adapters/described.py` and `quackd/adapters/bodies/` · Documented in [docs/adapters/status.md](../adapters/status.md)
+**Status:** accepted, amended · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (a body is data) and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) (the described tier) · Extends [ADR-0032](0032-datasheets-and-the-verdict.md) (a body is figures with a confidence and a source) and [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md), whose demo bodies are described bodies in the passport's format · Implemented in 0.33.0 in `quackd/adapters/described.py` and `quackd/adapters/bodies/` · Documented in [docs/adapters/status.md](../adapters/status.md)
+
+**Amended 2026-11-09 by [ADR-0079](0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md):** the consequence
+below that a quadruped's load on its back is a note is no longer so. `carries_kg` is a figure
+of its own, allowed with no manipulator, and the Unitree B2's and the Go2 EDU's figures moved
+out of their notes into it on that date, read again from Unitree's pages. The consequence
+stands as what 0.33.0 shipped.
 
 ## Context
 

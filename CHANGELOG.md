@@ -96,6 +96,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   builds the transport and the adapter for one body, which is what the Microduck's `make` and Huebot's
   come to once each has refused what its body does not take.
 
+- **A body can say what rides on its back, and a task can ask for it.** The datasheet has a new
+  optional figure, `carries_kg`: what rides on a body's back or deck as it moves, with no hand
+  holding it, so it is allowed with `manipulator: none`
+  ([ADR-0079](docs/adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)).
+  `needs: {carries_kg: 10}` reads it as a minimum: a body that declares 8 is `carries_kg >= 10
+  (has 8)`, a body that says nothing is `(not published)` and refused by default, and a task
+  file's `datasheet:` block and a role's `needs` take the word too, though nothing can fill such
+  a role yet: only the auction reads roles, it is sim2d only and no simulated body publishes the
+  figure. A pilot sees it as `Load on its back or deck` where a body has one, and the prompt does
+  not list it as missing where a body has none. The Unitree B2 and the Go2 EDU move their figures
+  out of their notes into the field, read again on 2026-11-09 from Unitree's pages: 40 kg walking
+  on the B2, with 120 kg or more standing in the note, and 8 kg on the Go2 EDU, with 12 kg at most
+  in the note, and `docs/adapters/status.md`'s table has a Back load column. What changes for
+  you: a body that says nothing about its back serialises exactly as before, so its digest, its
+  flock bid and its `robot_list` row carry no new key, a task file that does not say it dumps as
+  it did, and a peer on an older release sees what it saw; the B2's and the Go2 EDU's digests
+  change, as any edit of a sheet changes one. A passport does not carry the figure and a
+  `robot.yaml` refuses it, until the passport specification names such a member. A task file or a
+  flock role that names `carries_kg` is refused by an older quackd, at load or as a TASK message
+  it cannot read.
+
 ### Changed
 
 - **quackd reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** quackd

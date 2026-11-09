@@ -11,13 +11,22 @@ import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from quackd.adapters.manifest import (
     Confidence,
     Manipulator,
     Terrain,
     datasheet_sentences,
+    without_unsaid_back_load,
 )
 from quackd.verbs.aliases import canonical
 from quackd.verdict import check_needs
@@ -217,6 +226,7 @@ class DatasheetOverride(BaseModel):
     height_m: FigureOverride | None = None
     dof: FigureOverride | None = None
     payload_kg: FigureOverride | None = None
+    carries_kg: FigureOverride | None = None
     reach_m: FigureOverride | None = None
     workspace_height_m: SpanOverride | None = None
     endurance_min: FigureOverride | None = None
@@ -229,7 +239,14 @@ class DatasheetOverride(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
     @field_validator(
-        "mass_kg", "height_m", "dof", "payload_kg", "reach_m", "endurance_min", mode="before"
+        "mass_kg",
+        "height_m",
+        "dof",
+        "payload_kg",
+        "carries_kg",
+        "reach_m",
+        "endurance_min",
+        mode="before",
     )
     @classmethod
     def _numbers(cls, value: Any) -> Any:
@@ -239,6 +256,11 @@ class DatasheetOverride(BaseModel):
     @classmethod
     def _prose(cls, values: list[str]) -> list[str]:
         return datasheet_sentences(values)
+
+    @model_serializer(mode="wrap")
+    def _leave_out_what_nobody_said(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """A task file with no `carries_kg` dumps no such key (`without_unsaid_back_load`)."""
+        return without_unsaid_back_load(handler(self))
 
 
 class PolicySection(BaseModel):
@@ -394,8 +416,8 @@ class FlockRole(BaseModel):
     needs: dict[str, float | str] = Field(
         default_factory=dict,
         description="v2: what the body must be, in the datasheet vocabulary (payload_kg, "
-        "reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody "
-        "published counts as not met.",
+        "carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure "
+        "nobody published counts as not met.",
     )
     count: Literal[1] = Field(default=1, description="Robots per role. Only 1 so far.")
 

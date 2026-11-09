@@ -232,4 +232,6 @@ wrote and the owner signs ([quackd.md](quackd.md#robotyaml-the-one-file)):
 
 When `robot.adapter` names a body quackd drives, its manifest supplies the body, the skills and
 the courtesies, as quackd has built passports from manifests since 0.23.0, and the file the rest. A
-body with no adapter, which only talks, offers no courtesy.
+body with no adapter, which only talks, offers no courtesy. A manifest's `carries_kg` stays out:
+`body` is what section 2.3 of the specification lists, and a back load is not one of its members
+yet ([ADR-0079](../adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)).

@@ -113,7 +113,9 @@ NEEDS_WORDS_TEXT = (
     "arm on a table is fine, and any means some kind. "
     f"manipulator is {_either(MANIPULATOR_WORDS)}, and none means the task touches nothing. "
     f"terrain is {_either(TERRAIN_ORDER)}, least demanding first, and a body that does not "
-    "move meets indoor_flat. work_height_m is a height the hands must reach, not a minimum."
+    "move meets indoor_flat. work_height_m is a height the hands must reach, not a minimum. "
+    "carries_kg is a load that rides on the body's back or deck, and payload_kg is what a "
+    "hand holds."
 )
 """The words `robot_assess_task` takes, spelled out in its description.
 
@@ -1122,9 +1124,10 @@ def build_fleet_server(
             "seen, or a limit listed as not published. Not having found the target yet is not "
             "by itself one of those. Ask the person you are chatting with, then answer again. "
             "Fill "
-            "in `needs` (payload_kg, reach_m, manipulator, mobility, ...) even when feasible, "
-            "because that is what names the robots that could, and name only what the task "
-            "turns on: leave a field out, or give 0 or none, when the task does not need it. "
+            "in `needs` (payload_kg, carries_kg, reach_m, manipulator, mobility, ...) even when "
+            "feasible, because that is what names the robots that could, and name only what "
+            "the task turns on: leave a field out, or give 0 or none, when the task does not "
+            "need it. "
             + NEEDS_WORDS_TEXT
             + " A feasible whose needs that robot's own datasheet does not meet is refused "
             "before it is recorded, and names the need."

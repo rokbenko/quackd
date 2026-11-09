@@ -314,7 +314,7 @@ robots:
 ### Roles by data
 
 A `duck: 2` role may also say what the body has to **be**, not only what it has to know. The
-words are the datasheet's own (`payload_kg`, `reach_m`, `manipulator`, `terrain` and the rest),
+words are the datasheet's own (`payload_kg`, `carries_kg`, `reach_m`, `manipulator`, `terrain` and the rest),
 and each one is checked its own way: the rule per key is one table in
 [reference/duck-spec.md](../reference/duck-spec.md#needs--the-datasheet-vocabulary-v2), and what the
 words mean is [reference/manifest-spec.md](../reference/manifest-spec.md).

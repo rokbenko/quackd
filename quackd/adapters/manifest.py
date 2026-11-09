@@ -16,7 +16,15 @@ import json
 import re
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from quackd.verbs.aliases import ALIASES
 from quackd.verbs.registry import SafetyClass, Verb
@@ -114,6 +122,18 @@ TASK_FILE = "the task file"
 _SENTENCE_MAX = 300
 
 
+def without_unsaid_back_load(dumped: dict[str, Any]) -> dict[str, Any]:
+    """A dump with no `carries_kg` key where nobody said one, as a dump had before the field came.
+
+    Every other figure nobody published dumps as null, and has since the digest first hashed the
+    dump, so one more null would have changed every body's digest and every bid (ADR-0079).
+    Shared with the `.duck` override, so a task file that does not say it dumps as it always
+    did: the contract `robot_load_duckfile` hands back and `run_start` records."""
+    if dumped.get("carries_kg") is None:
+        dumped.pop("carries_kg", None)
+    return dumped
+
+
 def datasheet_sentences(values: list[str]) -> list[str]:
     """Free text the prompt bullets: whitespace-normalised, non-empty, starting with a word.
 
@@ -200,6 +220,13 @@ class Datasheet(BaseModel):
         default=None,
         description="What one hand, the beak or the whole body can hold; the note says which.",
     )
+    carries_kg: Figure | None = Field(
+        default=None,
+        description="What rides on its back or deck as it moves, with no hand holding it; a "
+        "standing figure or a maximum goes in the note. Needs no manipulator, and is left "
+        "out of a dump where nobody said it, so a body that says nothing keeps its digest "
+        "(ADR-0079).",
+    )
     reach_m: Figure | None = Field(default=None, description="Arm base to fingertips.")
     workspace_height_m: Span | None = Field(
         default=None, description="The band of heights the hands can work at."
@@ -230,8 +257,9 @@ class Datasheet(BaseModel):
         default_factory=list, description="Worth reading before planning, one sentence each."
     )
 
-    #: (field, prompt label, unit), in the order the prompt lists them. `workspace_height_m` is
-    #: deliberately absent: it is an extra where known, never a gap where not.
+    #: (field, prompt label, unit), in the order the prompt lists them. `carries_kg` and
+    #: `workspace_height_m` are deliberately absent: each is an extra where known, never a gap
+    #: where not, and `known()` lists both.
     FIGURES: ClassVar[tuple[tuple[str, str, str], ...]] = (
         ("mass_kg", "Mass", "kg"),
         ("height_m", "Height", "m"),
@@ -259,13 +287,20 @@ class Datasheet(BaseModel):
             )
         return self
 
+    @model_serializer(mode="wrap")
+    def _leave_out_what_nobody_said(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """A sheet with no `carries_kg` dumps no such key (`without_unsaid_back_load`)."""
+        return without_unsaid_back_load(handler(self))
+
     def known(self) -> list[tuple[str, Figure | Span, str]]:
-        """(label, figure, unit) for every published figure, prompt order, workspace last."""
+        """(label, figure, unit) for every published figure, prompt order, the extras last."""
         out: list[tuple[str, Figure | Span, str]] = [
             (label, fig, unit)
             for field, label, unit in self.FIGURES
             if (fig := getattr(self, field)) is not None
         ]
+        if self.carries_kg is not None:
+            out.append(("Load on its back or deck", self.carries_kg, "kg"))
         if self.workspace_height_m is not None:
             out.append(("Working height", self.workspace_height_m, "m"))
         return out

@@ -43,7 +43,8 @@ def _cell(text: str) -> str:
 
 def _figure(fig: Figure | None, unit: str, *, absent: str = "not published") -> str:
     """`60 kg (official)`, with the note where the figure carries one; `not published` where the
-    maker did not say, which is what the prompt tells the pilot too."""
+    maker did not say, which is what the prompt tells the pilot too, for every figure the prompt
+    lists as a gap. A back load is the one it does not: there the words are the verdict gate's."""
     if fig is None:
         return absent
     amount = f"{fig.value:g} {unit}".rstrip()
@@ -78,9 +79,9 @@ def _what(manifest: RobotManifest) -> str:
 def rows() -> str:
     """One row per described body, in the catalogue's order."""
     lines = [
-        "| `--robot` | What it is | Mass | Height | Joints | Payload | Reach | Endurance "
-        "| Figures from |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| `--robot` | What it is | Mass | Height | Joints | Payload | Back load | Reach "
+        "| Endurance | Figures from |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name in DESCRIBED_BODIES:
         m = describe(name)
@@ -88,10 +89,12 @@ def rows() -> str:
         assert sheet is not None, name
         tethered = "mains powered" if sheet.tethered else "not published"
         held = "none to hold with" if sheet.manipulator == "none" else "not published"
+        rides = "it does not move" if m.mobility == "none" else "not published"
         lines.append(
             f"| `{DESCRIBED}:{name}` | {_what(m)} "
             f"| {_figure(sheet.mass_kg, 'kg')} | {_figure(sheet.height_m, 'm')} "
             f"| {_figure(sheet.dof, '')} | {_figure(sheet.payload_kg, 'kg', absent=held)} "
+            f"| {_figure(sheet.carries_kg, 'kg', absent=rides)} "
             f"| {_figure(sheet.reach_m, 'm', absent=held)} "
             f"| {_figure(sheet.endurance_min, 'min', absent=tethered)} | {_sources(m)} |"
         )

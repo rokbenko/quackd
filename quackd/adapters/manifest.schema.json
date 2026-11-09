@@ -52,6 +52,18 @@
           "default": null,
           "description": "What one hand, the beak or the whole body can hold; the note says which."
         },
+        "carries_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What rides on its back or deck as it moves, with no hand holding it; a standing figure or a maximum goes in the note. Needs no manipulator, and is left out of a dump where nobody said it, so a body that says nothing keeps its digest (ADR-0079)."
+        },
         "reach_m": {
           "anyOf": [
             {

@@ -66,8 +66,8 @@ ASSESS_TASK = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "The datasheet fields you read to decide (payload_kg, reach_m, mobility, "
-                    "...). Empty when the task needs none of them."
+                    "The datasheet fields you read to decide (payload_kg, carries_kg, reach_m, "
+                    "mobility, ...). Empty when the task needs none of them."
                 ),
             },
             "estimates": {
