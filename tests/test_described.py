@@ -75,7 +75,7 @@ def test_the_catalogue_lists_exactly_the_body_files() -> None:
     assert body_files() == DESCRIBED_BODIES
     assert tuple(sorted(DESCRIBED_BODIES)) == DESCRIBED_BODIES
     assert BY_NAME[DESCRIBED].backends == DESCRIBED_BODIES
-    assert len(DESCRIBED_BODIES) >= 11
+    assert len(DESCRIBED_BODIES) >= 12
 
 
 def test_the_tenth_row_is_no_adapter() -> None:
@@ -311,23 +311,23 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
         "each is a described body."
     ), hint
     # of the bodies quackd drives, the industrial arm's rehearsal carries 3 kg by its UR5e's
-    # figure, and six described bodies do by their makers': the first sentence names it, the
+    # figure, and seven described bodies do by their makers': the first sentence names it, the
     # last names three and counts, and each says which kind of body it names
     three = solo_hint({"payload_kg": 3.0}, None)
     assert three.startswith("By their datasheets, rosarm could (needs payload_kg=3)."), three
     assert three.endswith(
         f" By their makers' figures alone, {FRANKA}, {DESCRIBED}:kuka-lbr-iisy-3-r760, "
-        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 3 more could too, and quackd drives no part of "
+        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 4 more could too, and quackd drives no part of "
         "them: each is a described body."
     ), three
-    # nobody quackd drives carries 6 kg, and one described body does: the first sentence still
+    # nobody quackd drives carries 6 kg, and two described bodies do: the first sentence still
     # says no robot here could, with the most about bodies quackd drives
     nobody = solo_hint({"payload_kg": 6.0}, None)
     assert nobody.startswith("No robot installed here meets needs payload_kg=6"), nobody
     assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies quackd drives"
     assert nobody.endswith(
-        f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 could, and quackd "
-        "drives no part of it: each is a described body."
+        f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 and "
+        f"{DESCRIBED}:ur7e could, and quackd drives no part of them: each is a described body."
     ), nobody
     assert "described" not in solo_hint({"payload_kg": 500.0}, None)
     assert solo_hint({}, None) == ""

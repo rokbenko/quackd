@@ -107,9 +107,10 @@ An address, a camera, a token and a rest pose are refused, since there is no rob
 `quackd robot list --probe` says `described: nothing to reach`. Four of them, the UR5e, the two
 KUKA LBRs and the MotoMini, are also the arms `rosarm:mock` rehearses, from the same files:
 `described:ur5e` is still a body nothing moves.
-Every figure below was read from the page its source names, on the day it says. Every body had a
-second reader on 2026-11-09, who read each of those pages again and corrected what was wrong,
-so a figure dated that day is one the second read changed, added or found a new page for.
+Every figure below was read from the page its source names, on the day it says. Every body but
+the UR7e had a second reader on 2026-11-09, who read each of those pages again and corrected
+what was wrong, so a figure of theirs dated that day is one the second read changed, added or
+found a new page for. The UR7e was added that day, and its figures have had one reader.
 Nothing here has met quackd on hardware, and nothing here moves.
 
 <!-- generated: described-bodies, by scripts/bodies_docs.py from quackd/adapters/bodies/*.yaml. Change a body file and run the script, not this table. -->
@@ -126,6 +127,7 @@ Nothing here has met quackd on hardware, and nothing here moves.
 | `described:unitree-g1-edu` | a Unitree G1 EDU, a humanoid of 1.3 m with two arms, which walks on two legs | 35 kg (official) | 1.32 m (official) | 23 (official) | 3 kg (official, per arm) | not published | 120 min (official) | unitree.com/g1, G1 EDU column; unitree.com/g1 (read 2026-10-28, 2026-11-09) |
 | `described:unitree-go2-edu` | a Unitree Go2 EDU, a small quadruped the size of a medium dog, with a wide-angle camera and a LiDAR and nothing to grip with | 15 kg (official) | 0.4 m (official) | 12 (official) | none to hold with | none to hold with | 120 min (official) | unitree.com/go2 (read 2026-11-05) |
 | `described:ur5e` | a Universal Robots UR5e, a six-joint collaborative arm, bolted down any way up and run from its own control box | 20.6 kg (official) | not published | 6 (official) | 5 kg (official) | 0.85 m (official) | mains powered | UR5e datasheet, December 2024 (read 2026-11-05) |
+| `described:ur7e` | a Universal Robots UR7e, a six-joint collaborative arm, bolted down any way up and run from its own control box | 20.6 kg (official) | not published | 6 (official) | 7.5 kg (official) | 0.85 m (official) | mains powered | UR7e datasheet, October 2026, universal-robots.com/manuals/latest/en/datasheets/ur7e (read 2026-11-09) |
 | `described:yaskawa-motomini` | a Yaskawa MotoMini, a six-axis miniature industrial arm of 7 kg, bolted to a bench and run from its own controller, with no gripper of its own | 7 kg (official) | not published | 6 (official) | 0.5 kg (official) | 0.35 m (official) | mains powered | Yaskawa MotoMini flyer, July 2023 (read 2026-11-05) |
 
 <!-- end generated: described-bodies -->
