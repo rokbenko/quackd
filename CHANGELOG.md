@@ -251,6 +251,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **A key held down answers no question that drops an arm on a busy machine either.** A bare Enter
+  answered the question that opens the jaws or lets go of an arm once nothing more had been read for
+  0.45 s after it, and a key thread held up for longer than that, by another thread holding the GIL or
+  by a machine with no CPU to spare, reads nothing for that long whatever the terminal is holding. So
+  Enter held down answered yes when its first repeat came out of 2 s of quiet, as on a keyboard set to
+  wait that long before it repeats, and the key thread was held up just after reading it: the wait
+  looked in the meantime and took the clock for the repeat standing alone, or the key thread got going
+  first and stamped the next repeat, which had come in 33 ms behind, with the moment it read it. At a
+  console the key thread now says each time it looks and finds no key waiting, an Enter stands alone
+  only once a look has found nothing behind it 0.45 s after it was read, and the Enter after it counts
+  from the last look before it. Where quackd reads a stream rather than a console, a terminal whose
+  mode it could not change, it still goes by the clock. What changes for you: one press after 2 s of
+  quiet is a yes about half a second after it is read, as before, and on Windows no longer sometimes
+  nearly a second.
 
 ### Security
 

@@ -21,6 +21,7 @@ import textwrap
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,44 @@ def test_a_backspace_and_the_end_of_a_line_are_drawn() -> None:
     assert console.echoed == ["\r", "\n"]
 
 
+def test_a_look_that_finds_no_key_is_told_with_the_moment_before_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What a deliberate question's yes is measured by. A moment taken after the look could be after
+    a key had come in unseen, and a look that found a key says nothing of the kind. The clock here
+    moves on only as the console is looked at."""
+
+    class Clock:
+        now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+    clock = Clock()
+    monkeypatch.setattr(keys_module, "time", clock)
+
+    class Looked(FakeConsole):
+        def kbhit(self) -> bool:
+            clock.now += 1.0
+            assert clock.now < 50.0, "told of no look, so the key that is told of them never came"
+            return super().kbhit()
+
+    told: list[float] = []
+    assert WindowsKeys(Looked("q")).read(told.append) == "q"
+    assert told == [], "a key was waiting, so this look says nothing"
+
+    clock.now = 0.0
+    console = Looked()
+
+    def nothing_waiting(moment: float) -> None:
+        told.append(moment)
+        if len(told) == 3:
+            console.keys.append("\r")  # in after the third look
+
+    assert WindowsKeys(console).read(nothing_waiting) == "\r"
+    assert told == [0.0, 1.0, 2.0], "each look that found nothing, by the moment before it"
+
+
 # ── what is and is not a console ──
 
 
@@ -168,7 +207,8 @@ def test_a_regular_file_is_no_console(tmp_path: Path) -> None:
 
 class Pressed:
     """A console that hands over `keys` in order, then says there are no more. A float in them
-    is a pause, in seconds, before the next key."""
+    is a pause, in seconds, before the next key, through which it is looked at as a console is and
+    found empty. Keys with no pause between them were all in it at once."""
 
     def __init__(self, *keys: str | float) -> None:
         self.keys = deque(keys)
@@ -176,12 +216,15 @@ class Pressed:
         self.ended_lines = 0
         self.closed = False
 
-    def read(self) -> str:
+    def read(self, nothing_waiting: Callable[[float], None] = lambda _moment: None) -> str:
         while self.keys:
             key = self.keys.popleft()
             if isinstance(key, str):
                 return key
-            time.sleep(key)
+            until = time.monotonic() + key
+            while (now := time.monotonic()) < until:
+                nothing_waiting(now)
+                time.sleep(min(POLL_S, until - now))
         return ""
 
     def erase(self) -> None:
@@ -243,11 +286,11 @@ async def test_a_q_fires_before_the_next_key_is_read() -> None:
     gate = threading.Event()
 
     class Held(Pressed):
-        def read(self) -> str:
+        def read(self, *told: Any) -> str:
             if not self.keys:
                 gate.wait(2)
                 return ""
-            return super().read()
+            return super().read(*told)
 
     ks._keys = Held("q")
     reader = asyncio.ensure_future(asyncio.to_thread(ks._watch_keys))
@@ -430,6 +473,69 @@ async def test_a_key_typed_just_before_the_question_is_still_a_no(
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.8)
     answer, ks = await _asked_and_pressed("n", 1.2, "\r", 0.5, key_first=True)
     assert answer is False and ks.declined is True
+
+
+class Arriving(FakeConsole):
+    """`FakeConsole` whose keys come in at moments on the clock, as a terminal holds what is typed
+    whether anybody reads it or not, and whose reader is held up after its n-th key for as long as
+    `held_up_after` says, as a thread is by another holding the GIL or by a machine with no CPU to
+    spare."""
+
+    def __init__(self, arrivals: list[tuple[float, str]], held_up_after: dict[int, float]) -> None:
+        super().__init__()
+        self.arrivals = deque(sorted(arrivals))
+        self.held_up_after = dict(held_up_after)
+        self.taken = 0
+        self.held_up = 0
+
+    def kbhit(self) -> bool:
+        if (seconds := self.held_up_after.pop(self.taken, None)) is not None:
+            time.sleep(seconds)
+            self.held_up += 1
+        while self.arrivals and self.arrivals[0][0] <= time.monotonic():
+            self.keys.append(self.arrivals.popleft()[1])
+        return super().kbhit()
+
+    def getwch(self) -> str:
+        self.taken += 1
+        return super().getwch()
+
+
+async def test_a_key_thread_held_up_after_the_first_repeat_hears_no_yes_in_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows' reader and the real wait, and Enter held down from too soon after the question, its
+    first repeat out of a quiet. The key thread is held up just after it reads that repeat, for
+    longer than an Enter has to stand alone, while the repeats go on coming in. The wait used to
+    look meanwhile, find nothing read since, and take the clock for the repeat standing alone, or
+    the thread got going first and read the next repeat late and stamped it then: a yes either
+    way, to the question that drops an arm. Now nothing stands alone while the key is down whenever
+    any of this runs, since a look finds the console empty only once every repeat in it is read.
+    The wait lasts as long as the key thread takes to get through it all, on any machine."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.3)
+    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.5)
+    now = time.monotonic()
+    repeats = [(now + 0.65 + n * 0.03, "\r") for n in range(25)]
+    console = Arriving([(now + 0.05, "\r"), *repeats], held_up_after={2: 0.6})
+    ks = KillSwitch(asyncio.Event())
+    ks._loop = asyncio.get_running_loop()
+    ks._keys = WindowsKeys(console)
+    reading = asyncio.ensure_future(asyncio.to_thread(ks._watch_keys))
+    waiting = asyncio.ensure_future(
+        ks.wait_for_enter(timeout_s=120.0, until_abort=False, deliberate=True)
+    )
+    gives_up = time.monotonic() + 100.0
+    try:
+        while console.held_up == 0 or console.arrivals or console.keys:
+            assert not waiting.done(), "the first repeat of a key held down answered the question"
+            assert time.monotonic() < gives_up, "the key thread never got through it all"
+            await asyncio.sleep(0.01)
+    finally:
+        ks.uninstall()
+        await reading
+    ks.keys_ended.set()  # nothing more is coming, and the question is still open
+    assert await asyncio.wait_for(waiting, timeout=20.0) is False, "it was answered after all"
 
 
 async def test_a_line_with_something_on_it_is_still_that_line() -> None:
@@ -656,6 +762,49 @@ def test_a_terminal_hands_over_a_key_with_no_enter(pty_pair: Any) -> None:
     finally:
         keys.close()
     assert _settings(slave) == before, "and the terminal is put back as it was found"
+
+
+@posix_only
+def test_a_terminal_says_when_it_had_no_key(pty_pair: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A look that finds a key says nothing, and each that finds none is told by the moment taken
+    before it. The clock here moves on only as the terminal is looked at, twice a turn when it is
+    empty: once to see, and once to wait."""
+    import types
+
+    master, slave = pty_pair
+    keys = PosixKeys(slave)
+
+    class Clock:
+        now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+    clock = Clock()
+
+    def looking(*args: Any) -> Any:
+        clock.now += 1.0
+        return select.select(*args)
+
+    monkeypatch.setattr(keys_module, "time", clock)
+    monkeypatch.setattr(keys_module, "select", types.SimpleNamespace(select=looking))
+    told: list[float] = []
+
+    def nothing_waiting(moment: float) -> None:
+        told.append(moment)
+        if len(told) == 3:
+            os.write(master, b"x")
+
+    try:
+        os.write(master, b"q")
+        assert select.select([slave], [], [], 5)[0], "the terminal has it"
+        assert keys.read(told.append) == "q"
+        assert told == [], "a look that found a key"
+        clock.now = 0.0
+        assert keys.read(nothing_waiting) == "x"
+    finally:
+        keys.close()
+    assert told[:3] == [0.0, 2.0, 4.0], "each look that found nothing, by the moment before it"
 
 
 @posix_only
