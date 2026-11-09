@@ -463,6 +463,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The nightly drift job closes the repeat of an issue, and the issue of an upstream it no longer
+  reads.** With two open issues for one upstream it edited or closed whichever `gh` listed first and
+  left the other open, and an upstream renamed or removed kept its issue open for good, since
+  nothing the job reads was called that any more. The oldest of two is the one kept now: a night
+  that still finds something edits it and closes the other saying which one carries on, and a clean
+  night closes both. An issue the job wrote, titled for an upstream no adapter reads, is closed with
+  a comment saying why, but only after a walk of every adapter and on a night every upstream could
+  be checked, so an adapter that did not import, or a night something did not answer, closes none of
+  them. An issue a person opened is left alone, whatever its title.
+- **The nightly drift job lists a VERIFIED ref whose line names nothing of it.** Fourteen of the
+  rosbridge adapter's refs cited lines that held something else, and the job read them as the same,
+  since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin,
+  holds no word of its name or its note is a stray anchor, listed under its upstream in the run's
+  summary as a weak anchor is. It is a guess and fails nothing by itself: a line that leaves a
+  bracket open is read with the lines that close it, a decorator with what it decorates, a ref
+  named as a path to its own file names any line of it, and a line that shares any word with the
+  ref passes. Over the rosbridge refs as they were before eighteen of them were read again at their
+  lines, it lists ten of the sixteen of those that are VERIFIED. On 2026-11-09 it lists ten refs of
+  all the job reads, eight of them ToddlerBot's, left for whoever reads those upstreams again.
 - **The pages name the Microduck meshes' licence as CC BY-NC-SA 4.0.** The README, the assets page,
   the licences page's row for the simulator recording, CONTRIBUTING, the browser demo's README and a
   few comments still named CC BY-NC-SA with no version, or put the whole model under it, after the
