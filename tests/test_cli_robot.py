@@ -252,6 +252,22 @@ def test_rest_pose_refuses_a_body_with_joints_quackd_does_not_park(tmp_path: Pat
     assert Registry(tmp_path).robot("xarm").rest_pose is None
 
 
+def test_rest_pose_refuses_an_industrial_arm_in_its_own_words(tmp_path: Path) -> None:
+    """quackd parks no industrial arm, ever (ADR-0078): its controller and its brakes hold it where
+    it stops. So the refusal is the one its `go_to_rest()` answers with, and not the not yet that
+    a body quackd may park some day is told."""
+    from quackd_rosarm import NO_REST_POSE
+
+    registry = Registry(tmp_path)
+    registry.add_robot(RobotEntry(name="cell", spec="rosarm:mock", robot_type="yaskawa-motomini"))
+    result = runner.invoke(app, ["robot", "rest-pose", "cell", *_reg(tmp_path)])
+    assert result.exit_code == 1, result.output
+    flat = " ".join(result.output.split())
+    assert f"cell (rosarm:mock) has joints, and {NO_REST_POSE}" in flat, flat
+    assert "yet" not in flat and "only the LeRobot arm" not in flat, flat
+    assert Registry(tmp_path).robot("cell").rest_pose is None
+
+
 def test_rest_pose_clear_forgets_it_and_says_so_when_there_is_none(tmp_path: Path) -> None:
     _seed_arm(tmp_path, rest_pose={"shoulder_lift": FOLDED_LIFT})
     cleared = runner.invoke(app, ["robot", "rest-pose", "arm-01", "--clear", *_reg(tmp_path)])

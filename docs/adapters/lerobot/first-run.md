@@ -740,8 +740,9 @@ terminal to ask on it refuses, with `--yes` or without.
 
 > [!NOTE]
 > Only the LeRobot arm is parked today. Every other body refuses a rest pose rather than
-> accepting one and quietly ignoring it: a body with no joints says so, and a body with joints
-> that quackd does not drive home says that only the LeRobot arm does this today.
+> accepting one and quietly ignoring it: a body with no joints says so, a body with joints that
+> quackd does not drive home says that only the LeRobot arm does this today, and an industrial arm
+> on ROS 2 says that quackd never parks one.
 
 #### Or start from a pose you set by hand
 

@@ -12,9 +12,11 @@ Every key defaults from the body record, so `ws://cell.local:9090` is enough for
 
 At connect each check is a refusal that says what it found: the bridge must run each goal on a
 thread of its own, or a cancel would wait until the move had ended (`up.GOAL_THREAD_PARAM`); it
-must list the action; the first `/joint_states` must name every joint of the body; and the
-description must give every joint a travel and a speed, since a goal there is no travel to check
-against is one quackd does not send.
+must list the action; the action's own status, where the controller publishes one, must show no
+goal still running, another client's or one an earlier run left going (`up.ACTION_STATUS_TOPIC`);
+the first `/joint_states` must name every joint of the body; and the description must give every
+joint a travel and a speed, since a goal there is no travel to check against is one quackd does
+not send.
 
 It sends two operations and nothing else: `send_action_goal` with a FollowJointTrajectory goal,
 and `cancel_action_goal`. No service that powers an arm, turns its servos on, releases its
@@ -71,13 +73,22 @@ POLL_S = 0.05
 STATUS_WAIT_S = 0.2
 """How long the connect waits for the driver's first word about itself. A latched or a fast status
 answers inside it; one published only on change may say nothing at all, which is no fault."""
+ACTION_STATUS_WAIT_S = 1.0
+"""How long the connect listens on the action's own status before it takes the action to be
+running nothing. The server latches the last array it published, so a bridge hands it over on
+subscribing (`up.ACTION_STATUS_TOPIC`), and a controller that has had no goal since it started
+has published none, which is no fault (`up.ACTION_STATUS_HEARD`)."""
+RUNNING_STATUSES = {1: "accepted", 2: "executing", 3: "canceling"}
+"""`up.MSG_GOAL_STATUS`: the statuses of a goal that has not ended."""
 LIMIT_SLACK_RAD = math.radians(1e-5)
 """How far past the description's own radians a goal may lie and still be sent, held to the limit:
 the travel is read to a millionth of a degree before its tenth is published inward, so a goal at
 the published edge can lie a hair outside the radians. Anything further is refused."""
 CANCEL_WAIT_S = 2.0
 """How long `stop()` waits for the cancelled goal's result before it says the stop could not be
-delivered. On the stock controllers a cancel is answered as soon as the bridge reaches it."""
+delivered. On the stock controllers a cancel is answered as soon as the bridge reaches it, once
+the goal has started; before that the bridge holds the cancel until it has the goal in hand
+(`up.CANCEL_WHILE_RUNNING`), so `stop()` waits as long as the verb waits for the goal's start."""
 STALE_PERIODS = 5
 STALE_FLOOR_S = 0.5
 """A reading is stale once no new one has come for five of the stream's own periods, half a second
@@ -409,6 +420,7 @@ class RosArmWs:
         try:
             await self._check_bridge_threads()
             await self._check_action()
+            await self._check_nothing_running()
             await self._first_reading()
             await self._check_description()
             if self.endpoint.status and self.body.status is not None:
@@ -467,6 +479,46 @@ class RosArmWs:
             raise TransportError(
                 f"rosarm: the bridge lists no action server {self.endpoint.action}; it lists "
                 f"{shown}. Give the controller's with ?action= if it is another"
+            )
+
+    async def _check_nothing_running(self) -> None:
+        """No goal may be running on the action when quackd connects. One an earlier run left going
+        when it went quiet runs on to its end (`up.ONE_MOVE_WHEN_QUIET`), another client's for as
+        long as it was given, and a goal quackd sent over either would replace it on a controller
+        that takes one (`up.JTC_PREEMPTS`) or wait behind it on MotoROS2 (`up.MOTO_SINGLE_GOAL`).
+        Read off the action's own status array, which the controllers behind the UR5e, the iisy
+        and the iiwa publish whenever a goal changes state and latch
+        (`up.ACTION_SERVER_PUBLISHES_STATUS`). MotoROS2 is read to publish none
+        (`up.MOTO_NO_ACTION_STATUS`), so on the MotoMini this hears nothing and refuses nothing."""
+        topic = self.endpoint.action + up.ACTION_STATUS_TOPIC.name.removeprefix("<action>")
+        box: dict[str, Any] = {}
+
+        def on(message: dict[str, Any]) -> None:  # roslibpy's thread
+            with self._lock:
+                box["latest"] = dict(message)
+
+        built = self._built()
+        made = built.topic(built.ros, topic, up.MSG_GOAL_STATUS_ARRAY.name)
+        made.subscribe(on)
+        try:
+            await self._wait(lambda: bool(box), ACTION_STATUS_WAIT_S)
+        finally:
+            with contextlib.suppress(Exception):
+                made.unsubscribe()
+        with self._lock:
+            latest = dict(box.get("latest") or {})
+        running: list[str] = []
+        for entry in latest.get("status_list") or []:
+            code = _number(entry.get("status")) if isinstance(entry, Mapping) else None
+            if code is not None and int(code) in RUNNING_STATUSES:
+                running.append(RUNNING_STATUSES[int(code)])
+        if running:
+            goals = "a goal" if len(running) == 1 else f"{len(running)} goals"
+            raise TransportError(
+                f"rosarm: {self.endpoint.action} is still running {goals} sent before quackd "
+                f"connected ({', '.join(running)}): another client's, or one an earlier run left "
+                "going when it went quiet, so the arm may be moving. quackd sends no goal over a "
+                "running one: wait for it to end, or stop it on the pendant, then connect again"
             )
 
     async def _first_reading(self) -> None:
@@ -738,10 +790,16 @@ class RosArmWs:
         names = [up.STOCK_NAMES.name, up.BRIDGE_NODE_NAME.name, up.ONE_MOVE_WHEN_QUIET.name]
         if self.body.status is not None:
             names.append(up.STATUS_TYPES_LOADED.name)
+        if self.body.controller == "jtc":
+            names.append(up.ACTION_STATUS_HEARD.name)
         names += {
             "ur5e": [up.UR_PROTECTIVE_STOP.name],
             "kuka-lbr-iiwa-7-r800": [up.IIWA_STATUS.name, up.IIWA_READINGS.name],
-            "yaskawa-motomini": [up.MOTO_FIRST_POINT.name, up.MOTO_SINGLE_GOAL.name],
+            "yaskawa-motomini": [
+                up.MOTO_FIRST_POINT.name,
+                up.MOTO_SINGLE_GOAL.name,
+                up.MOTO_NO_ACTION_STATUS.name,
+            ],
         }.get(self.body.robot_type, [])
         return [*names, *self._extra_assumptions]
 
@@ -912,10 +970,14 @@ class RosArmWs:
             return
         with self._lock:
             goal.cancel_sent_at = self.clock.now()
-        if not await self._wait(lambda: not goal.running, CANCEL_WAIT_S):
+            started = goal.started
+        from quackd_rosarm.verbs import START_SLACK_S
+
+        wait = CANCEL_WAIT_S if started else max(CANCEL_WAIT_S, START_SLACK_S)
+        if not await self._wait(lambda: not goal.running, wait):
             self.stop_error = (
-                f"no answer to the cancel within {CANCEL_WAIT_S:g} s, so the arm may still be "
-                "going on to the end of its move"
+                f"no answer to the cancel within {wait:g} s, so the arm may still be going on "
+                "to the end of its move"
             )
 
     def _link_up(self) -> bool:

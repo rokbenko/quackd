@@ -120,10 +120,13 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             "https://github.com/gramaziokohler/roslibpy",
             "https://github.com/RobotWebTools/rosbridge_suite",
             "https://github.com/ros2/common_interfaces",
-            # the controller, the action and its statuses
+            # the controller, the action and its statuses, and where an action's server
+            # publishes them
             "https://github.com/ros-controls/ros2_controllers",
             "https://github.com/ros-controls/control_msgs",
             "https://github.com/ros2/rcl_interfaces",
+            "https://github.com/ros2/rcl/",
+            "https://github.com/ros2/rclcpp/",
             # the four drivers and the descriptions they read
             "https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver",
             "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description",
@@ -1020,6 +1023,8 @@ def test_the_industrial_arms_read_the_protocol_through_the_binding() -> None:
         "IIWA_READINGS",
         "MOTO_FIRST_POINT",
         "MOTO_SINGLE_GOAL",
+        "ACTION_STATUS_HEARD",
+        "MOTO_NO_ACTION_STATUS",
         "ONE_MOVE_WHEN_QUIET",
         "FAKE_FROM_READING",
     }
@@ -1044,3 +1049,5 @@ def test_the_arm_bodies_take_their_names_from_the_refs_that_read_them() -> None:
     assert (
         rosarm_api.MSG_FOLLOW_JOINT_TRAJECTORY.name == "control_msgs/action/FollowJointTrajectory"
     )
+    assert rosarm_api.ACTION_STATUS_TOPIC.name == "<action>/_action/status"
+    assert rosarm_api.MSG_GOAL_STATUS_ARRAY.name == "action_msgs/msg/GoalStatusArray"

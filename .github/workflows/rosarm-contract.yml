@@ -1,0 +1,64 @@
+name: rosarm contract
+
+# quackd's industrial arm transport against a real rosbridge and a real action server, in the
+# official ROS 2 images of Jazzy and Humble (tests/test_rosarm_contract.py).
+#
+# rosarm:mock rehearses every task against a fake bridge written from reading. This job holds the
+# transport to the real thing instead: rosbridge_server and rosapi as each distribution releases
+# them, roslibpy as uv.lock pins it, a robot_state_publisher, and a stand-in for the arm's driver
+# in rclpy (tests/rosarm_contract/arm.py) whose action server is ROS 2's own. What a
+# JointTrajectoryController or MotoROS2 does with a goal is the stand-in's, so a green run says
+# nothing of either, and nothing here has met an arm.
+#
+# Kept out of `ci`: it pulls a ROS image and installs ROS packages in it, minutes that no other
+# pull request needs. It runs when the arm's code, the binding under it, the lock that pins
+# roslibpy or this job changes, and on demand. The images are the distributions' moving tags on
+# purpose, since what it watches is what a cell installs today.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "adapters/rosarm/**"
+      - "adapters/rosbridge/**"
+      - "tests/test_rosarm_contract.py"
+      - "tests/rosarm_contract/**"
+      - "uv.lock"
+      - ".github/workflows/rosarm-contract.yml"
+  pull_request:
+    paths:
+      - "adapters/rosarm/**"
+      - "adapters/rosbridge/**"
+      - "tests/test_rosarm_contract.py"
+      - "tests/rosarm_contract/**"
+      - "uv.lock"
+      - ".github/workflows/rosarm-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rosarm-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: quackd ⇄ rosbridge ⇄ an arm in rclpy (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # one distribution failing says nothing of the other, so both always finish
+      fail-fast: false
+      matrix:
+        distro: [jazzy, humble]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Contract, in ros:${{ matrix.distro }}
+        # The checkout goes in read only: the script installs into the container and nowhere
+        # else, and the same line runs it on a laptop with Docker.
+        run: >-
+          docker run --rm -v "$GITHUB_WORKSPACE":/repo:ro -w /repo
+          ros:${{ matrix.distro }} bash tests/rosarm_contract/run.sh

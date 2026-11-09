@@ -169,7 +169,9 @@ A verb that needs a yes before it runs still asks for one. That is a verb of the
 class, or one a `.duck` lists under `confirm`:
 
 - at the keyboard, you are asked, in the words the record quotes;
-- `--yes` answers yes, by its standing rule;
+- `--yes` answers yes, by its standing rule, but for a verb its backend has declared
+  `no_standing_answer`, `move_joints` on `rosarm:ws`, which is refused: a person answers it at the
+  keyboard;
 - a pipe without `--yes` is answered no. Drive reads a pipe's lines as commands and never as
   answers, where `quackd run` takes a pipe's next line for one.
 

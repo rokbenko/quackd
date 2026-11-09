@@ -158,6 +158,24 @@ async def test_a_stop_that_raises_is_logged_and_still_raises() -> None:
     assert seen[0].data["reason"] == "ConnectionError: the socket is gone"
 
 
+async def test_a_stop_that_did_not_land_is_not_logged_as_accepted() -> None:
+    """A transport that knows its stop did not land says so in `stop_error` and raises nothing, and
+    the record said the stop had been accepted, over an arm that may have gone on moving."""
+
+    class Unanswered(MockTransport):
+        stop_error: str | None = None
+
+        async def stop(self) -> None:
+            await super().stop()
+            self.stop_error = "no answer to the cancel within 8 s"
+
+    event_log = EventLog()
+    seen = events(event_log)
+    await LoggedTransport(Unanswered(), event_log).stop()
+    assert seen[0].data["accepted"] is False
+    assert seen[0].data["reason"] == "no answer to the cancel within 8 s"
+
+
 def test_everything_else_is_delegated() -> None:
     """Verbs probe the transport for things only some bodies have. `stop_error` is what the
     `stop` verb reads to tell "stopped" from "could not deliver a stop"."""

@@ -328,8 +328,15 @@ class LoggedTransport:
             )
             raise
         self._count("stop")
+        # one the transport knows did not land raises nothing and says so here (`_stop_after`)
+        undelivered = getattr(self._inner, "stop_error", None)
         self._event_log.emit(
-            "intent", intent="stop", params={}, accepted=True, reason=None, **self._robot_t()
+            "intent",
+            intent="stop",
+            params={},
+            accepted=not undelivered,
+            reason=str(undelivered) if undelivered else None,
+            **self._robot_t(),
         )
 
 

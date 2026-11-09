@@ -305,15 +305,20 @@ def _confirm_question(matched: Matched, verb: Verb) -> str | None:
     return confirm_question(matched.verb, parsed.model_dump())
 
 
-def _denied(matched: Matched, answer: _Answer | None, error: Exception) -> str:
+def _denied(
+    matched: Matched, answer: _Answer | None, error: Exception, *, yes_counts: bool = True
+) -> str:
     """Why a call its confirm gate denied did not run. The gate's own words say a human
     declined, which nobody did where nobody was asked: a pipe, or a verb the call runs inside
-    itself, which drive cannot stop to ask about."""
+    itself, which drive cannot stop to ask about. `yes_counts` is false for a verb a standing
+    answer cannot clear (`Verb.no_standing_answer`), where naming `--yes` would send the person
+    somewhere it is refused."""
     if answer is not None and answer.person and not answer.yes:
         return f"{matched.label}: a person said no"
+    remedy = "--yes answers yes" if yes_counts else "a person has to answer it, at the keyboard"
     return (
         f"{matched.label}: nobody was asked for the yes it needs, so it was answered no "
-        "(a pipe, or a verb run inside another; --yes answers yes)"
+        f"(a pipe, or a verb run inside another; {remedy})"
     )
 
 
@@ -707,7 +712,9 @@ class DriveSession:
         except Preempted as e:
             ended = Ended("preempted", str(e))
         except ConfirmDenied as e:
-            ended = Ended("denied", _denied(matched, answer, e))
+            ended = Ended(
+                "denied", _denied(matched, answer, e, yes_counts=not verb.no_standing_answer)
+            )
         except (VerdictRequired, VerbNotAllowed) as e:
             ended = Ended("refused", str(e))
         except SafetyStop as e:

@@ -25,15 +25,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). Its verbs
   are `report_state`, `stop` and `move_joints`. A move is one goal to every joint, inside the travel
   the robot's own description gives and at most a tenth of each joint's rated speed at its fastest,
-  never sent over a running one, and every move asks a person first, on the mock as on `ws`, unless
-  the run or the MCP session was started with `--yes`, or a script answers on stdin, which answer it
-  as they answer every gate. It has arrived only when every joint reads within half a degree of its
-  goal on `/joint_states`, whatever the controller answered. No goal goes to an arm whose driver has
+  never sent over a running one, and every move asks a person first, on the mock as on `ws`. On the
+  mock `--yes` and a script on stdin answer it, as they answer any confirm. On `ws` a person answers
+  each move: a standing answer, `--yes`, a flock's or an MCP session's, is refused before the
+  question is put, in words that say to run it from a terminal and answer it, and a script answering
+  `quackd run` on stdin still does. It has arrived only when every joint reads within half a degree
+  of its goal on `/joint_states`, whatever the controller answered. A move is timed from its first
+  feedback, because a bridge that has just started holds its first goal back for seconds, and a goal
+  that shows no start within 8 s is cancelled as unanswered. No goal goes to an arm whose driver has
   said it cannot move, on the three arms whose drivers say so, and a driver that has said nothing is
   believed. At connect a bridge that runs action goals on the thread that reads its client is
   refused, since its cancel would land after the move, in words that name rosbridge_suite issue #909
-  and the flag that fixes it, and so is a description that gives a joint no finite travel or no
-  rated speed above zero. A move is refused too while another is still being watched, and while any
+  and the flag that fixes it, and so are a description that gives a joint no finite travel or no
+  rated speed above zero, and an action whose own status, which the controller latches on three of
+  the arms, says a goal sent before quackd connected still runs, another client's or one a run that
+  went quiet left going. A move is refused too while another is still being watched, and while any
   joint reads past its travel, and a socket that drops is let go of for good, since roslibpy would
   send what it held back once it reconnected by itself, by closing this client's socket and never
   the event loop every roslibpy client in the process shares. The transport keeps the ceiling too,
@@ -41,9 +47,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   never powers, enables, un-brakes or un-stops an arm, parks none and drives no tool, so `gripper`,
   `place`, `pick` and `manipulate` are withheld with why. CI's packaging job installs the wheel
   beside rosbridge's and lists its verbs. What changes for you: `quackd robot add cell-1 rosarm:mock
-  --robot-type ur5e` registers one, `quackd list-adapters --json` has eleven rows, the industrial
-  arm's before the described one, and the hint after an infeasible verdict names `rosarm` for a
-  payload up to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
+  --robot-type ur5e` registers one, `quackd robot rest-pose cell-1` refuses it, since quackd parks
+  an industrial arm nowhere, `quackd list-adapters --json` has eleven rows, the industrial arm's
+  before the described one, and the hint after an infeasible verdict names `rosarm` for a payload up
+  to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
 - **`quackd robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
   anything is written and in the words `make()` refuses it with, so no `robots.json` holds a robot
   that cannot run. `quackd robot add cell-2 rosarm:ws --robot-type ur5e --address
@@ -527,6 +534,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   upstreams with it, so a night with nothing else wrong exited 0. Such a night names who was not read
   at the top of its report, in `drift.json` under `unread`, and exits 2, as could not check. A run of
   one upstream with `--only` walks no adapter and is as it was.
+- **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop did
+  not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
+  `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and why
+  now, as the `stop` verb and the executor's own stop already did.
 
 ### Security
 
@@ -858,6 +869,37 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
   `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
   robot.
+- **The industrial arm has met a real rosbridge, and no controller and no arm.** A job of its own in
+  CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi as
+  Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver in
+  rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written from
+  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so what a
+  JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that runs:
+  the same job with a stock controller on ros2_control's mock hardware is what would, and it is
+  owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner and
+  a date for one. Each body's names, its action, joints, readings and status topics, are a
+  stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
+  joints, and the connect checks the action and the joints against what the bridge lists; a status
+  topic a cell names otherwise is never read, and then `can_move` believes the driver.
+- **quackd looks for a goal still running only at connect, and only in the action's own status.**
+  MotoROS2 is read to publish no status, so on the MotoMini nothing is checked, and quackd's first
+  goal there waits behind one still running, unanswered until that one ends. On the other three a
+  status the bridge has not handed over within a second reads as nothing running, and neither a
+  goal another client sends after the check nor a trajectory published on the controller's own
+  topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
+- **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
+  moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
+  near where each joint already reads passes it at once, and a controller that said it succeeded
+  without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
+  within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
+- **On rosbridge_server 2.7.1, which Jazzy ships, a parameter read can take rosapi down.** rosapi keeps
+  a client per node and stamps it with a time of the wrong clock until a read has used it. A read that
+  finds the node's parameter service not ready leaves it stamped that way, and rosapi's own cleanup
+  raises on it half a second later, so `rosapi_node` exits while the bridge goes on. `rosarm:ws` and
+  `rosbridge:ws` read parameters through rosapi at connect, so a connect that races a node still being
+  discovered can do this, and the next connect is refused naming the parameter it could not read.
+  Restart the bridge, or start it with `respawn:=true`, which brings rosapi back. Upstream fixed it in
+  rosbridge_suite #1308, which 2.7.1 does not carry. Humble's 2.0.8 keeps no such cache.
 
 ## [0.33.0] — 2026-11-07
 

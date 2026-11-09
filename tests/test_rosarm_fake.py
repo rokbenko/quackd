@@ -302,6 +302,25 @@ def test_the_same_cancel_on_a_threaded_bridge_stops_the_move() -> None:
     assert heard.status == GoalStatus.CANCELED
 
 
+def test_a_bridge_that_has_just_started_holds_its_first_goal_and_a_cancel_waits_for_it() -> None:
+    """The bridge makes an action client for each goal and waits for the server before it sends
+    the goal on (`up.NO_ACTION_SERVER`), which on a bridge that has just started also loads the
+    action's types. Its first goal reaches the arm late, and a cancel sent meanwhile waits for the
+    goal and lands with it (`up.CANCEL_WHILE_RUNNING`); its next goal goes on at once."""
+    bridge = FakeBridge(UR, first_goal_s=2.0)
+    actions, heard = _client(bridge)
+    goal_id = actions.send_goal(_goal(bridge.arm, 10.0, 3.0), *heard.args())
+    before = dict(bridge.arm.positions)
+    bridge.clock.advance(1.0)
+    assert bridge.arm.goal is None and heard.results == [], "still on its way"
+    actions.cancel_goal(goal_id)
+    bridge.clock.advance(1.5)
+    assert heard.status == GoalStatus.CANCELED and bridge.arm.positions == before
+    again = Heard()
+    actions.send_goal(_goal(bridge.arm, 10.0, 3.0), *again.args())
+    assert bridge.arm.goal is not None, "the next goal went on at once"
+
+
 def test_a_goal_the_glob_does_not_match_is_never_answered() -> None:
     bridge = FakeBridge(UR, actions_glob=("/some_other/*",))
     actions, heard = _client(bridge)
@@ -346,6 +365,40 @@ def test_the_status_topics_publish_as_each_driver_does() -> None:
             built.topic(built.ros, topic, kind).subscribe(heard.append)
         bridge.clock.advance(0.01)
         assert len(heard) == expect, body.robot_type
+
+
+def test_the_controllers_server_latches_its_goals_status_and_motoros2_publishes_none() -> None:
+    """`up.ACTION_SERVER_PUBLISHES_STATUS` and `up.ACTION_STATUS_TOPIC`: the controller behind the
+    UR5e, the iisy and the iiwa publishes every goal's status when one changes, and latches it, so a
+    client that subscribes late hears the running goal EXECUTING and, once it has ended, how it
+    ended. Before its first goal it has published nothing. MotoROS2 publishes none at all
+    (`up.MOTO_NO_ACTION_STATUS`), so nothing is heard of its goal, running or not."""
+    for body in (UR, IISY, IIWA, MOTO):
+        bridge = FakeBridge(body)
+        actions, heard = _client(bridge)
+        built = bridge.roslibpy()
+        topic = f"{body.action}/_action/status"
+        before: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(before.append)
+        bridge.clock.advance(0.5)
+        assert before == [], f"{body.robot_type}: nothing before the first goal"
+        actions.send_goal(_goal(bridge.arm, 10.0, 2.0), *heard.args())
+        bridge.clock.advance(0.5)
+        late: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(late.append)
+        if body.controller == "motoros2":
+            assert before == late == [], "MotoROS2 publishes no status"
+            continue
+        (running,) = late[0]["status_list"]
+        assert running["status"] == GoalStatus.EXECUTING, body.robot_type
+        assert set(running["goal_info"]) == {"goal_id", "stamp"}
+        assert [m["status_list"][0]["status"] for m in before] == [GoalStatus.EXECUTING]
+        bridge.clock.advance(2.0)
+        assert heard.status == GoalStatus.SUCCEEDED
+        assert late[-1]["status_list"][0]["status"] == GoalStatus.SUCCEEDED
+        again: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(again.append)
+        assert again == [late[-1]], "the last array, latched"
 
 
 # ── roslibpy's queue ─────────────────────────────────────────────────────────────────────────

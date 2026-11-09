@@ -14,12 +14,15 @@ each arm's own driver names by default.
 
 Read on 2026-11-08, at these pins: ros2_controllers on its jazzy branch (`PIN`), with what humble
 does differently written into the notes from its own pin, `PIN_HUMBLE`; control_msgs on jazzy;
-action_msgs in ros2/rcl_interfaces; the Universal Robots ROS 2 driver and description on jazzy;
+action_msgs in ros2/rcl_interfaces; where an action's server publishes its goals' statuses, in rcl
+and rclcpp on jazzy, read on 2026-11-09; the Universal Robots ROS 2 driver and description on jazzy;
 KUKA's RSI driver and the LBR iisy's description; the LBR-Stack for the iiwa; MotoROS2 0.2.1, the
 MotoMini's description, and industrial_msgs on the branch MotoROS2's client dependencies name.
-JointState and JointTrajectory are read at rosbridge's own pin of ros2/common_interfaces. Nothing
-here has been run against a bridge, a controller or an arm: the four bodies are described, and the
-`mock` that rehearses them is a fake written from these sources (`FAKE_FROM_READING`).
+JointState and JointTrajectory are read at rosbridge's own pin of ros2/common_interfaces. The
+transport has been run against a real bridge only in the contract job
+(tests/test_rosarm_contract.py), and nothing here against a controller or an arm: the four bodies
+are described, and the `mock` that rehearses them is a fake written from these sources
+(`FAKE_FROM_READING`).
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ from quackd_rosbridge.upstream_api import (
     RESULT_TRUE_WHATEVER_STATUS,
     SRV_ACTION_SERVERS,
     SRV_GET_PARAM,
+    SUBSCRIBER_QOS_FOLLOWS_PUBLISHERS,
     SVC_ACTION_SERVERS,
     SVC_GET_PARAM,
     msg,
@@ -68,6 +72,13 @@ REPO_CONTROL_MSGS = "https://github.com/ros-controls/control_msgs"
 PIN_CONTROL_MSGS = "ab911bf0746fb064b1a88a2c0d364d6b7abd477b"
 REPO_ACTION_MSGS = "https://github.com/ros2/rcl_interfaces"
 PIN_ACTION_MSGS = "56800da135660030bb816c72794afba15fe3a538"
+REPO_RCL = "https://github.com/ros2/rcl"
+PIN_RCL = "18d96c9c2b98e616324ae9a2c7701dd0b0886ff0"
+"""rcl on its jazzy branch: an action's status topic, its QoS and the server's defaults."""
+REPO_RCLCPP = "https://github.com/ros2/rclcpp"
+PIN_RCLCPP = "35b821a9fb1f937bfbd9c741b7e3353e101d9593"
+"""rclcpp on its jazzy branch: when rclcpp_action's server, the JointTrajectoryController's,
+publishes them."""
 REPO_UR = "https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver"
 PIN_UR = "44d40de0e3af064bfeba47d4b4a1f17e0c08407f"
 REPO_UR_DESCRIPTION = "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description"
@@ -95,6 +106,8 @@ BRANCHES = {
     "UniversalRobots/Universal_Robots_ROS2_Driver": "jazzy",
     "UniversalRobots/Universal_Robots_ROS2_Description": "jazzy",
     "ros-industrial/industrial_core": "ros2_msgs_only",
+    "ros2/rcl": "jazzy",
+    "ros2/rclcpp": "jazzy",
 }
 """The branch each pin sits on where it is not the repository's default, for the nightly
 (`scripts/upstream_drift.py`). The rest are on their defaults: KUKA's two on master, the
@@ -115,6 +128,14 @@ def control_msgs(path: str, line: int | None = None) -> str:
 
 def action_msgs(path: str, line: int | None = None) -> str:
     return _blob(REPO_ACTION_MSGS, PIN_ACTION_MSGS, path, line)
+
+
+def rcl(path: str, line: int | None = None) -> str:
+    return _blob(REPO_RCL, PIN_RCL, path, line)
+
+
+def rclcpp(path: str, line: int | None = None) -> str:
+    return _blob(REPO_RCLCPP, PIN_RCLCPP, path, line)
 
 
 def ur(path: str, line: int | None = None) -> str:
@@ -203,6 +224,36 @@ MSG_GOAL_STATUS = UpstreamRef(
     "0 UNKNOWN, 1 ACCEPTED, 2 EXECUTING, 3 CANCELING, 4 SUCCEEDED, 5 CANCELED and 6 ABORTED "
     "(lines 7 to 26)",
 )
+MSG_GOAL_STATUS_ARRAY = UpstreamRef(
+    "action_msgs/msg/GoalStatusArray",
+    "VERIFIED",
+    action_msgs("action_msgs/msg/GoalStatusArray.msg", 2),
+    "{status_list}, a GoalStatus for each goal the server keeps (line 2), each with its goal's id "
+    "and the time it was accepted (GoalInfo.msg lines 1 to 5)",
+)
+
+# ── an action's own word on its goals ───────────────────────────────────────────────────────
+
+ACTION_STATUS_TOPIC = UpstreamRef(
+    "<action>/_action/status",
+    "VERIFIED",
+    rcl("rcl_action/src/rcl_action/names.c", 144),
+    "where an action's server publishes its goals' statuses: the action's name and "
+    "/_action/status (lines 127 to 150), reliable and transient local with a depth of 1 "
+    "(rcl_action/include/rcl_action/default_qos.h lines 26 to 37), the server's default "
+    "(action_server.c line 311), so a client that subscribes late is handed the last array",
+)
+ACTION_SERVER_PUBLISHES_STATUS = UpstreamRef(
+    "publish status since a goal's state has changed",
+    "VERIFIED",
+    rclcpp("rclcpp_action/src/server.cpp", 608),
+    "rclcpp_action's server, which the JointTrajectoryController makes its action with, on the "
+    "default options (JTC_ACTION, lines 1088 to 1094 of the controller), publishes every goal's "
+    "status on accepting a goal (lines 608 to 609) or a cancel (lines 686 to 687), and when one "
+    "starts executing or ends (server.hpp lines 504 and 485 to 487). A goal that has not ended is "
+    "ACCEPTED, EXECUTING or CANCELING (MSG_GOAL_STATUS), and an ended one stays in the array for "
+    "the server's result_timeout, 10 s by default (rcl's action_server.c line 313)",
+)
 
 # ── the JointTrajectoryController, under the UR5e, the iisy and the iiwa ────────────────────
 
@@ -284,6 +335,16 @@ JTC_SUCCEEDS_AT_THE_END = UpstreamRef(
     jtc(_JTC, 501),
     "SUCCEEDED once the last point's time has passed with no goal tolerance violated (lines 495 "
     "to 512)",
+)
+GOAL_FEEDBACK = UpstreamRef(
+    "send feedback",
+    "VERIFIED",
+    jtc(_JTC, 458),
+    "the controller's update loop sends a running goal's feedback (lines 458 to 465); the same "
+    "on humble at 65db736 (line 346), in the UR's scaled controller at its jazzy pin (line 260 "
+    "of scaled_joint_trajectory_controller.cpp), and in MotoROS2's motion loop (ActionServer_FJT.c "
+    "line 404). The bridge passes it on, so a goal's first feedback is quackd's sign that the "
+    "controller has started it",
 )
 JTC_ZERO_TOLERANCE = UpstreamRef(
     "a tolerance of 0 is not checked",
@@ -548,8 +609,9 @@ MOTO_ECO_REENABLES = UpstreamRef(
     "VERIFIED",
     motoros2(_FJT, 183),
     "a goal that arrives while the energy saving function has turned the servos off makes "
-    "MotoROS2 call its own start_traj_mode, which turns them on (lines 181 to 199). quackd sends "
-    "no such call, and its goal can still cause this one",
+    "MotoROS2 call its own start_traj_mode, which turns them on (lines 181 to 199) and waits up "
+    "to MOTION_START_TIMEOUT, 5000 ms (MotionControl.h line 13), for the servos, so such a goal "
+    "starts that much later. quackd sends no such call, and its goal can still cause this one",
 )
 MOTO_INIT_TRAJ_CODES = UpstreamRef(
     "motoros2_interfaces/msg/InitTrajEnum",
@@ -621,8 +683,8 @@ BRIDGE_NODE_NAME = UpstreamRef(
     "UNVERIFIED",
     jtc(_JTC, 1091),
     "that the bridge's node is /rosbridge_websocket, un-namespaced, and that rosapi reaches its "
-    "parameters (BRIDGE_NODE_PARAMS); quackd refuses a bridge whose answer it cannot read, and "
-    "?bridge_node= names another",
+    "parameters (BRIDGE_NODE_PARAMS), which the contract job shows on Jazzy's and Humble's stock "
+    "launch; quackd refuses a bridge whose answer it cannot read, and ?bridge_node= names another",
 )
 STATUS_TYPES_LOADED = UpstreamRef(
     "STATUS_TYPES_LOADED",
@@ -670,6 +732,26 @@ MOTO_SINGLE_GOAL = UpstreamRef(
     motoros2(_FJT, 282),
     "that MotoROS2 answers no second goal while one runs, inferred from its single goal handle; "
     "quackd never sends a goal over a running one, on any body",
+)
+ACTION_STATUS_HEARD = UpstreamRef(
+    "ACTION_STATUS_HEARD",
+    "UNVERIFIED",
+    rcl("rcl_action/include/rcl_action/default_qos.h", 26),
+    "that the bridge hands quackd the array a controller last published within "
+    "ACTION_STATUS_WAIT_S of subscribing to it, as SUBSCRIBER_QOS_FOLLOWS_PUBLISHERS reads at the "
+    "bridge's pin, and as the contract job (tests/test_rosarm_contract.py) shows on Jazzy's and "
+    "Humble's released bridges against rclpy's action server. A controller that has had no goal "
+    "since it started has published none, so nothing heard is read as no goal running, and "
+    "quackd connects",
+)
+MOTO_NO_ACTION_STATUS = UpstreamRef(
+    "MOTO_NO_ACTION_STATUS",
+    "UNVERIFIED",
+    motoros2(_FJT, 76),
+    "that MotoROS2 publishes no goal status: its action server is rclc's (line 76), and neither "
+    "MotoROS2 nor rclc's executor under it (ros2/rclc humble at 10eadcc) calls "
+    "rcl_action_publish_status. On a MotoMini the check at connect hears nothing, and a goal left "
+    "running there meets MotoROS2's single goal handle instead (MOTO_SINGLE_GOAL)",
 )
 ONE_MOVE_WHEN_QUIET = UpstreamRef(
     "ONE_MOVE_WHEN_QUIET",
@@ -719,6 +801,7 @@ PROTOCOL_REFS: tuple[UpstreamRef, ...] = (
     ACTION_RESULT_HANDLER,
     QUEUED_UNTIL_READY,
     ONE_REACTOR,
+    SUBSCRIBER_QOS_FOLLOWS_PUBLISHERS,
 )
 """The binding's refs this family relies on, imported from `quackd_rosbridge.upstream_api` by name:
 the same objects, so a re-pin there moves them here, and the doc page lists them with the rest."""

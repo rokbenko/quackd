@@ -22,6 +22,7 @@ quackd goes quiet in the middle of one the arm finishes it and holds.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
@@ -47,7 +48,14 @@ from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
 from quackd_rosarm.bodies import BODIES, ROBOT_TYPE, ROBOT_TYPES, ArmBody, arm_body
-from quackd_rosarm.verbs import NOT_OFFERED, SPEED_SHARE, TOL_DEG, rosarm_conditions, rosarm_verbs
+from quackd_rosarm.verbs import (
+    NOT_OFFERED,
+    SPEED_SHARE,
+    STOP_VERB_TIMEOUT_S,
+    TOL_DEG,
+    rosarm_conditions,
+    rosarm_verbs,
+)
 
 __version__ = "0.33.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here rather
@@ -107,7 +115,7 @@ def rosarm_manifest(
     data = body_data(body.robot_type)
     verbs = [
         verb_spec(OWN["report_state"], core=True),
-        verb_spec(CORE["stop"], core=True),
+        verb_spec(CORE["stop"], core=True, timeout_s=STOP_VERB_TIMEOUT_S),
         verb_spec(OWN["move_joints"], core=False, safety_class="confirm"),
     ]
     extras: dict[str, Any] = {
@@ -163,6 +171,9 @@ class RosArmAdapter:
     """A cobot is hand guided on its own pendant, in a mode quackd neither enters nor watches."""
     supports_rest_pose = False
     """quackd parks none of these arms (`NO_REST_POSE`)."""
+    rest_pose_refusal = NO_REST_POSE
+    """Why `quackd robot rest-pose` records no pose for one, in the words `go_to_rest()` answers
+    with: never, where a body quackd does not park yet is told not yet."""
 
     def __init__(self, transport: Any, *, robot_id: str | None = None, bridge: Any = None) -> None:
         self.transport = transport
@@ -251,7 +262,15 @@ class RosArmAdapter:
         return rosarm_conditions()
 
     def implementations(self) -> dict[str, Verb]:
-        return dict(OWN)
+        if self.backend == "mock":
+            return dict(OWN)
+        # a person answers each move of a real arm, so a standing answer does not count there
+        # (`Verb.no_standing_answer`, ADR-0078); the mock's goes on answering, so a rehearsal
+        # can script
+        return {
+            **OWN,
+            "move_joints": dataclasses.replace(OWN["move_joints"], no_standing_answer=True),
+        }
 
     @property
     def mobility(self) -> str:

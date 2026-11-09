@@ -13,10 +13,17 @@ arm's own controller's: one trajectory goal, sent once, and watched until it end
   much, and a move that would need longer than `MOVE_MAX_S` is refused, so the pilot splits it.
 - Never a second goal over a running one: MotoROS2 has one goal handle and no replacing, and one
   rule for four arms is the simpler one.
+- A move is timed from its start, the first feedback its controller sends, and not from the goal
+  leaving quackd: a bridge makes an action client for each goal and finds the controller's server
+  before it sends the goal on, which the first goal through a bridge that has just started waits
+  seconds for. One that shows no start within `START_SLACK_S` is cancelled as one nobody answered.
 - Arrival is quackd's judgement and not the action's: after the result, every joint must read
   within `TOL_DEG` of its goal on `/joint_states`, or the verb fails naming the joint furthest off,
   as the SO-101's `shortfall` does. A SUCCEEDED proves little where the tolerances are left at 0
   (`up.JTC_ZERO_TOLERANCE`), and on the iiwa the readings are the commands (`up.IIWA_OPEN_LOOP`).
+  A joint within `TOL_DEG` of its goal is at it, so a goal that near every reading is arrived at
+  whether or not the arm moves: the check cannot tell a move that small from none, and the verb's
+  description says so.
 
 Every move asks the person first (`safety_class="confirm"`, on the mock as on `ws`, since a fake is
 never kinder): a seven to twenty-four kilogram arm is not moved on a pilot's word alone. And it
@@ -48,7 +55,9 @@ TICK_S = 0.1
 """How often a running move is looked at."""
 TOL_DEG = 0.5
 """Close enough, on an industrial arm. MotoROS2's own default goal tolerance is 0.01 rad, about
-0.57 degrees (`up.MOTO_GOAL_TOLERANCE`), and UR's 0.1 rad (`up.UR_TOLERANCES`)."""
+0.57 degrees (`up.MOTO_GOAL_TOLERANCE`), and UR's 0.1 rad (`up.UR_TOLERANCES`). A joint already
+this near its goal counts as at it, so a move smaller than this counts as arrived whether or not
+the arm moved."""
 SPEED_SHARE = 0.1
 """The share of each joint's rated speed a move may use at most: 18 degrees a second on a UR5e
 joint rated at 180. quackd's own ceiling, a courtesy and not a safeguard."""
@@ -67,10 +76,25 @@ SETTLE_S = 1.0
 controller said so."""
 RESULT_SLACK_S = 2.0
 """How long past the move's own end a result may take before quackd stops waiting, cancels it and
-says no answer came: a goal its bridge dropped never answers (`up.GOAL_DROPPED_BY_GLOB`)."""
-MOVE_JOINTS_TIMEOUT_S = 20.0
-"""The executor's timeout for `move_joints`, which the verb's own deadlines end inside: the longest
-move, the slack, the settle and a cancel's wait (`transport.CANCEL_WAIT_S`), with room."""
+says no answer came. The end is counted from the move's start, its first feedback."""
+START_SLACK_S = 8.0
+"""How long after a goal is sent quackd waits for its first feedback, the sign that the controller
+has started it (`up.GOAL_FEEDBACK`), before it cancels the goal as one nobody answered: a goal its
+bridge dropped never answers (`up.GOAL_DROPPED_BY_GLOB`). The bridge makes an action client for
+every goal and waits up to a second for the controller's server before it sends the goal on
+(`up.NO_ACTION_SERVER`), and the first goal through a bridge that has just started waits besides
+while that client loads the action's types, which took about two seconds for Jazzy's rosbridge
+2.7.1 in its official image; and a goal that wakes a MotoMini waits up to five seconds for its
+servos (`up.MOTO_ECO_REENABLES`)."""
+STOP_VERB_TIMEOUT_S = START_SLACK_S + 2.0
+"""The `stop` verb's own timeout on this body. The core verb gives up at 5 s, and `stop()` waits as
+long as `START_SLACK_S` on a goal that has not started, since the bridge holds its cancel until it
+has the goal (`transport.CANCEL_WAIT_S`): cut short, a stop that worked read as one that failed and
+the executor sent a second."""
+MOVE_JOINTS_TIMEOUT_S = 30.0
+"""The executor's timeout for `move_joints`, which the verb's own deadlines end inside: the wait
+for the start, the longest move, the slack, the settle and a cancel's wait
+(`transport.CANCEL_WAIT_S`), with room."""
 NOTHING_TO_MOVE_DEG = 0.05
 """A goal this near every reading is one the arm is already at: nothing is sent."""
 
@@ -292,26 +316,43 @@ async def _move(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     duration = max(p.duration_s, need)
     if (fail := await send_or_fail(ctx, Intent.joint(goal, duration))) is not None:
         return VerbResult.fail(f"move_joints: {fail.summary}", goal=goal)
-    started = ctx.transport.now()
-    deadline = started + duration + RESULT_SLACK_S
+    sent = ctx.transport.now()
+    began: float | None = None
     move: dict[str, Any] = {}
     while True:
         if (told := ctx.interrupted()) is not None:
             await ctx.transport.stop()
-            return VerbResult.fail(f"move_joints: {told}", goal=goal, **_ended(told))
+            said = f"move_joints: {told}"
+            if undelivered := getattr(ctx.transport, "stop_error", None):
+                # the arm may still be going on to the end of the move, which only this can say
+                said = f"{said}, and quackd could not cancel the goal: {undelivered}"
+            return VerbResult.fail(said, goal=goal, **_ended(told))
         state = await ctx.transport.get_state()
         move = dict(state.extras.get("move") or {})
         if move.get("status") != "running":
             break
-        if ctx.transport.now() >= deadline:
-            await ctx.transport.stop()
-            waited = f"move_joints: no result came within {duration + RESULT_SLACK_S:.1f} s"
-            if undelivered := getattr(ctx.transport, "stop_error", None):
-                said = f"{waited}, and quackd could not cancel the goal: {undelivered}"
-            else:
-                said = f"{waited}, so quackd cancelled the goal; the bridge may have dropped it"
-            return VerbResult.fail(said, goal=goal, joints=_joints_of(state))
-        await ctx.transport.sleep(TICK_S)
+        now = ctx.transport.now()
+        if began is None and move.get("started"):
+            began = now
+        if began is None and now >= sent + START_SLACK_S:
+            waited = f"move_joints: the goal showed no sign of starting within {START_SLACK_S:g} s"
+            dropped = "; the bridge may have dropped it"
+        elif began is not None and now >= began + duration + RESULT_SLACK_S:
+            waited = (
+                f"move_joints: no result came within {duration + RESULT_SLACK_S:.1f} s of the "
+                "move starting"
+            )
+            dropped = ""
+        else:
+            await ctx.transport.sleep(TICK_S)
+            continue
+        await ctx.transport.stop()
+        if undelivered := getattr(ctx.transport, "stop_error", None):
+            # a cancel nobody answers is how a goal the bridge dropped looks from here
+            said = f"{waited}, and quackd could not cancel the goal: {undelivered}{dropped}"
+        else:
+            said = f"{waited}, so quackd cancelled the goal"
+        return VerbResult.fail(said, goal=goal, joints=_joints_of(state))
     status = str(move.get("status"))
     said = str(move.get("error_string") or "")
     code = move.get("error_code")
@@ -377,7 +418,9 @@ def rosarm_verbs() -> dict[str, Verb]:
             "move_joints",
             "Move the arm's joints to goal angles in degrees over duration_s seconds, as one "
             "trajectory its own controller runs, and wait for it to arrive. Every joint not "
-            "named stays where it is. A person confirms every move first.",
+            f"named stays where it is. Arrived means every joint reads within {TOL_DEG:g} "
+            "degrees of its goal, so a goal that close to where the joints already read counts "
+            "as arrived whether or not the arm moved. A person confirms every move first.",
             move_joints,
             MoveJointsParams,
             timeout_s=MOVE_JOINTS_TIMEOUT_S,

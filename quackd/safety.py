@@ -46,6 +46,7 @@ from quackd.log import (
     a_person_was_asked,
     asked_on,
     counting,
+    who_answered,
 )
 from quackd.perception.base import Detector, detect_times
 from quackd.space.places import PlaceBook, PlaceStore
@@ -898,6 +899,19 @@ class Executor:
                     "is asked here (--yes, a flock's standing answer, the MCP server or a "
                     "pipe): run it from a terminal, without --yes, and answer its confirm "
                     "yourself"
+                )
+                self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
+                raise VerbNotAllowed(reason)
+            # A backend may decline a standing answer for one of its verbs: `--yes`, a flock's
+            # standing answer and the MCP server answer nobody, so the verb is refused before
+            # its confirm is put (`Verb.no_standing_answer`, ADR-0078). The CLI's own question on
+            # a pipe is left as it is, and so is what a person answers.
+            if verb.no_standing_answer and who_answered(self.confirm) not in (A_PERSON, A_PIPE):
+                reason = (
+                    f"{name} is answered by a person on this robot, each time, while nobody is "
+                    "asked here (--yes, a flock's standing answer or the MCP server): run it "
+                    "from a terminal, with quackd run or quackd drive and without --yes, and "
+                    "answer its confirm yourself"
                 )
                 self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
                 raise VerbNotAllowed(reason)
