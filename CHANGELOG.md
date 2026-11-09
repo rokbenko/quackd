@@ -178,6 +178,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   known. On the simulator the line names the joint the same way, with nothing to hold and no power
   to cut. What changes for you: the close's last line sends you to the joint that may still hold,
   and the arm's page lists that line.
+- **`lerobot:mock` refuses a read and a write on a closed port, as the arm's bus does.** The mock's
+  follower answered whether its port was open or not, so a hand-off over a mock nobody had connected
+  was let go of and read back, `torque is off at the rest pose`, rather than refused at its first
+  read, as the arm's is, and after a close a stop still wrote a hold. A rehearsal, or a test, that
+  dropped the connect before a hand-off could not fail on the mock. Now a read, a send or a
+  disconnect of the follower on a port that is not open is refused as ``SOFollower is not connected.
+  Run `.connect()` first.``, and a torque write or a register read on its bus as ``SerialMotorsBus
+  is not connected. Run `.connect()` first.``, in LeRobot's words, as `lerobot:real` and
+  `lerobot:mujoco` refuse them, and the bus's own close still passes over a shut port without a
+  word. So after its close a stop says `the hold did not reach the arm: DeviceNotConnectedError:
+  ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
+  changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
+  Code, or a test, that skipped the connect is refused.
 
 ### Fixed
 

@@ -4264,12 +4264,14 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     reasons and in the same words: a rehearsal that releases an arm the real one would not is
     a rehearsal that teaches the wrong thing."""
     bare = LeRobotMock()
+    await bare.connect()
     nowhere = await bare.let_go()
     assert nowhere.how == "refused" and not nowhere.ok
     assert "no rest pose is recorded for this arm" in nowhere.reason
     assert "quackd robot rest-pose NAME" in nowhere.reason, nowhere.reason
     assert bare.torque is True and bare.in_hand is False
     assert bare.sequence == ["let_go"], "a refusal is still an attempt, and it is recorded"
+    await bare.close()
 
     mock = LeRobotMock(rest_pose=dict(REST))
     adapter = LeRobotAdapter(mock)
@@ -4279,6 +4281,27 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     assert away.how == "refused" and "the arm is not at its rest pose" in away.reason
     assert "shoulder_pan is at 30 with a goal of 0" in away.reason, away.reason
     assert mock.torque is True and mock.in_hand is False
+
+
+async def test_a_hand_off_over_a_mock_nobody_connected_is_refused_as_the_arm_s_would_be() -> None:
+    """The mock's follower answered with its port closed, so a release over a mock nobody had
+    connected was let go of and read back, `torque is off at the rest pose`, rather than refused
+    at its first read, as the arm's is, and a rehearsal or a test that dropped the connect before
+    a hand-off could not fail on the mock. Its port refuses as LeRobot's does now
+    (`up.NOT_CONNECTED`), so the release is refused in the arm's words with nothing let go, and
+    the close lets go of nothing either, saying it could not read the arm."""
+    mock = LeRobotMock(rest_pose=dict(REST))
+    released = await mock.let_go()
+    assert released.how == "refused", released
+    assert released.reason == (
+        "the arm did not answer before the release, so nothing was released "
+        "(DeviceNotConnectedError: SOFollower is not connected. Run `.connect()` first.)"
+    ), released.reason
+    assert mock.torque is True and mock.in_hand is False
+    await mock.close()
+    note = mock.close_note or ""
+    assert note.startswith("quackd cannot tell whether the arm is holding itself up"), note
+    assert mock.torque is True, "the close of a mock nobody connected let go of it"
 
 
 async def test_a_mock_stop_over_an_arm_in_a_hand_takes_hold_before_it_stops() -> None:
@@ -4423,6 +4446,7 @@ async def test_a_refused_hold_is_kept_only_until_a_hold_takes_or_the_arm_is_rele
     assert arm.torque is True and transport.in_hand is False, "the new hand-off was not held"
 
     mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
     assert (await mock.let_go()).how == "released"
     mock.joints[joint] = MOCK_RANGES[joint][1] + PLACED_PAST_BY
     assert (await mock.take_hold()).how == "refused" and mock.hold_refusal is not None
@@ -4430,6 +4454,7 @@ async def test_a_refused_hold_is_kept_only_until_a_hold_takes_or_the_arm_is_rele
     assert (await mock.let_go()).how == "released"
     await mock.stop()
     assert mock.torque is True and mock.in_hand is False, "the new hand-off was not held"
+    await mock.close()
 
 
 # ── a take-hold refused, and the teardown after it, on the real backend through a run ───────
@@ -5339,6 +5364,7 @@ async def test_the_mock_names_a_joint_its_release_left_holding() -> None:
     the end-of-run offer ends on the line the arm would: its in-memory release used to take on
     every motor, so its close could only ever say nothing held the arm."""
     mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
     mock.release_holdouts = ("wrist_roll",)
     released = await mock.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on == ("wrist_roll",), released
@@ -5491,8 +5517,10 @@ async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks
     assert mock.close_note == LIMP_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), mock.close_note
 
     bare = LeRobotMock()
+    await bare.connect()
     assert (await bare.let_go()).how == "refused", "no pose, first door"
     assert (await bare.let_go(anywhere=True)).how == "released", "no pose, second door"
+    await bare.close()
 
 
 def _asked_arm(backend: str) -> tuple[Any, Any]:
@@ -5660,12 +5688,14 @@ async def test_the_clip_note_names_the_arm_as_the_torque_note_does(name: str | N
 
     ceiling = MOCK_RANGES["elbow_flex"][1]
     mock = LeRobotMock(rest_pose=dict(REST) | {"elbow_flex": ceiling + 11.0}, registered_name=name)
+    await mock.connect()
     rehearsed = await mock.go_to_rest()
     assert rehearsed.reached and rehearsed.note, rehearsed
 
     for note in (parked.note, rehearsed.note, adapter.rest_pose_note(pose) or ""):
         assert f"(quackd robot rest-pose {shown}) to make the fold reachable" in note, note
     await adapter.close()
+    await mock.close()
 
 
 # ── an arm that did not answer, and a release a Ctrl-C landed on ────────────────────────
@@ -6099,6 +6129,7 @@ async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_w
     end the way an arm whose read-back failed ends: its in-memory release always read back, so
     its close could only ever say the arm was limp or name a joint still on."""
     mock = LeRobotMock()
+    await mock.connect()
     mock.release_unread = "a reason made up for this test"
     released = await mock.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on is None, released
@@ -6109,6 +6140,7 @@ async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_w
     assert mock.close_note == UNREAD_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), mock.close_note
 
     read = LeRobotMock()
+    await read.connect()
     assert (await read.let_go(anywhere=True)).torque_on == ()
     await read.close()
     assert read.close_note == LIMP_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), read.close_note
