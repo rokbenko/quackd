@@ -261,6 +261,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   so since 0.26.0 a GR00T whose processors left it out ran whatever code that repository held on the
   day, past `--pin`. LeRobot's own saves always write it, so it took an edited file. Such a step is
   refused now, before a pin or a weight, and `tests/test_policy_pipeline.py` fails without this.
+- **A GR00T base pinned at a tag is fetched at the commit its `config.json` was read at.** The
+  policy server reads a GR00T's pinned base's `config.json` before any weight, and refuses a base
+  that names a backbone other than `nvidia/Cosmos-Reason2-2B`, which LeRobot would fetch at no
+  revision and load trusting its repository's code. Since 0.26.0 it then fetched the rest of the
+  base at the tag again, after the checkpoint's own weights, so a tag moved between the two reads
+  handed the build a `config.json` nobody had read, and LeRobot would have fetched whatever
+  backbone that one named. The rest of the base is fetched at the commit the first read found now,
+  and `/v1/policy` names that commit. A base pinned at a whole commit was never open to this. What
+  changes for you: nothing to do. `tests/test_policy_pipeline.py` moves a tag between the two
+  reads, and fails without this.
 
 ### Documentation
 

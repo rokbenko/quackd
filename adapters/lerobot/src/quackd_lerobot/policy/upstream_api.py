@@ -506,7 +506,9 @@ GROOT_BASE_MODEL = UpstreamRef(
     "base's config.json names `nvidia/Cosmos-Reason2-2B` as its `model_name`, or none, which "
     "means the same (line 85, and line 767): any other is fetched as an AutoConfig trusting its "
     "repository's code, at no revision (line 362), so the server reads the pinned base's "
-    "config.json before any weight and refuses another backbone",
+    "config.json before any weight and refuses another backbone. It fetches the rest of the "
+    "base at the commit that read found, since a tag asked again could name another commit by "
+    "then, whose config.json nobody read",
 )
 GROOT_BACKBONE = "nvidia/Cosmos-Reason2-2B"
 """The backbone GROOT_BASE_MODEL says LeRobot builds from a config of its own."""

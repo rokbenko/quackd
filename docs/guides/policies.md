@@ -583,10 +583,11 @@ accept NVIDIA's licence on the Hub, and serve with a token that has been granted
 that names no base is refused, since LeRobot would fill in its own at no revision. The base's
 own `config.json` is read before any weight, because LeRobot builds the backbone from a config
 it carries only while the base names Cosmos-Reason2-2B as its backbone, and fetches any other
-trusting its repository's code. LeRobot loads Cosmos's tokenizer with `trust_remote_code=True`,
-hard-wired, and the pin leaves it nothing of the repository's own to trust: no `.py` is
-fetched, and a directory whose configs map a class to code is refused
-(`GROOT_BASE_MODEL` and `GROOT_VLM_PROCESSOR` in
+trusting its repository's code. The rest of the base is fetched at the commit that read found,
+so a tag that moves in between cannot hand the build a `config.json` nobody read. LeRobot
+loads Cosmos's tokenizer with `trust_remote_code=True`, hard-wired, and the pin leaves it
+nothing of the repository's own to trust: no `.py` is fetched, and a directory whose configs
+map a class to code is refused (`GROOT_BASE_MODEL` and `GROOT_VLM_PROCESSOR` in
 [the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 
 **Joints, and nothing else.** A GR00T decodes its answer group by group, each unnormalised by

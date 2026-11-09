@@ -29,11 +29,12 @@ server imports it with none of them installed, and serves a scripted policy that
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
    pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
    either (`nested_patterns`), and refused if their directory holds any all the same, maps a
-   class to code or holds a PEFT adapter (`check_pinned`). The policy is built on the device
-   `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the file
-   holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never fetched
-   (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put where the
-   policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
+   class to code or holds a PEFT adapter (`check_pinned`). A GR00T's base is fetched at the
+   commit its `config.json` was read at, whatever its tag names by then (`check_groot_base`).
+   The policy is built on the device `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`),
+   with every weight the file holds loaded into it or none (`build_policy`). An ACT's ImageNet
+   backbone is never fetched (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device
+   steps are put where the policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
 
 Every repository fetched is recorded with its revision (`Checkpoint.loaded`), and the server
 says them in `/v1/policy`.
@@ -713,11 +714,15 @@ def _grouped_quantiles(
 
 def check_groot_base(
     hub: Hub, config: Mapping[str, Any], pins: Mapping[str, str], spec: str
-) -> None:
+) -> str:
     """A GR00T's pinned base, its `config.json` read before any weight: LeRobot builds the
     backbone from a config of its own only while the base names that backbone, and fetches any
     other as an AutoConfig trusting its repository's code, at no revision
-    (`upstream_api.GROOT_BASE_MODEL`)."""
+    (`upstream_api.GROOT_BASE_MODEL`). It answers the commit the file was read at, and the rest
+    of the base is fetched at that commit: a tag asked again could name another by then, one
+    whose `config.json` nobody read. The Hub's cache keeps a commit's files in a directory named
+    by the commit, so a tag's commit is the directory its `config.json` landed in, and a tag
+    whose file landed in no commit's directory is refused."""
     base = str(config.get("base_model_path"))
     revision = pins[base]
     path = hub.file(base, revision, up.CONFIG_FILE)
@@ -735,6 +740,14 @@ def check_groot_base(
             f"serve a GR00T whose base is built on {up.GROOT_BACKBONE}, whose config LeRobot "
             "carries (upstream_api.GROOT_BASE_MODEL)"
         )
+    commit = revision if COMMIT.match(revision) else path.parent.name
+    if not COMMIT.match(commit):
+        raise PipelineRefused(
+            f"{base}@{revision}'s {up.CONFIG_FILE} landed in no commit's directory, so quackd "
+            "cannot fetch the rest of the base at the commit it read, and the tag could name "
+            f"another by then: pin {base} at a whole commit you have read"
+        )
+    return commit
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────
@@ -1081,8 +1094,9 @@ def fetch_checkpoint(
             "--pin names",
             "pin a whole commit you have read, or a tag with the Hub in reach",
         )
+    at = dict(pinned)  # the revision each pinned model is fetched at
     if shape.policy_type == "groot":
-        check_groot_base(hub, config, pinned, spec)
+        at[str(config.get("base_model_path"))] = check_groot_base(hub, config, pinned, spec)
     rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub)
     # the code-free part is checked: now the weights, the processors' state and the models
     _required(hub, repo, revision, up.WEIGHTS_FILE, beside=directory)
@@ -1090,7 +1104,7 @@ def fetch_checkpoint(
         if step["state_file"] is not None:
             _required(hub, repo, revision, step["state_file"], beside=directory)
     patterns = nested_patterns(config, every)
-    fetched = {m: hub.snapshot(m, pinned[m], patterns[m]) for m in nested}
+    fetched = {m: hub.snapshot(m, at[m], patterns[m]) for m in nested}
     for m, where in fetched.items():
         check_pinned(where, f"{m}@{pinned[m]}")
     config_overrides: dict[str, Any] = {"device": device}

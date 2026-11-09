@@ -19,6 +19,7 @@ CPU and nothing else, and a random policy says nothing about what a trained one 
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import hashlib
 import importlib.util
 import json
@@ -1057,6 +1058,69 @@ def test_a_groot_whose_vlm_step_names_no_model_is_refused_before_its_weights(
         )
         assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
         assert not hub.snapshots
+
+
+class _TagMoves(FakeHub):
+    """The stand-in Hub with `repo`'s `TAG` naming the commit `first` until a file of it is read
+    at the tag, and `then` from that read on, as a push between two reads leaves a tag. A file
+    lands in a directory named by its commit, as in the Hub's cache, and a snapshot holds the
+    files of its commit that its patterns match."""
+
+    def __init__(self, hub: FakeHub, repo: str, *, first: str, then: str) -> None:
+        super().__init__(hub.root, hub.files)
+        self.repo, self.named, self.then = repo, first, then
+
+    def _commit_of(self, repo: str, revision: str) -> str:
+        return self.named if (repo, revision) == (self.repo, TAG) else revision
+
+    def file(
+        self, repo: str, revision: str, filename: str, *, dataset: bool = False
+    ) -> Path | None:
+        path = super().file(repo, self._commit_of(repo, revision), filename, dataset=dataset)
+        if (repo, revision) == (self.repo, TAG):
+            self.named = self.then
+        return path
+
+    def snapshot(self, repo: str, revision: str, patterns: Sequence[str]) -> Path:
+        self.snapshots.append((repo, revision, tuple(patterns)))
+        commit = self._commit_of(repo, revision)
+        path = self.root / "snapshots" / repo.replace("/", "--") / commit
+        path.mkdir(parents=True, exist_ok=True)
+        for name, content in self.files.get((repo, commit), {}).items():
+            if any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
+                (path / name).write_text(json.dumps(content), encoding="utf-8")
+        return path
+
+
+def test_a_groot_base_pinned_at_a_tag_is_fetched_at_the_commit_its_config_was_read_at(
+    tmp_path: Path,
+) -> None:
+    """A tag names one commit until somebody moves it. The base's `config.json` is read before
+    any weight, for the backbone it names, and the rest of the base is fetched after the
+    checkpoint's own weights, so the tag asked again then could name a commit whose
+    `config.json` nobody read, one naming a backbone LeRobot would fetch at no revision trusting
+    its repository's code (`upstream_api.GROOT_BASE_MODEL`). The rest is fetched at the commit
+    the read named, which the record says. A Hub that does not say which commit a tag's file
+    came from is refused, rather than asked again."""
+    moved = _commit("a push after the read")
+    hub = _groot(tmp_path)
+    hub.files[(GROOT_BASE, moved)] = {
+        up.CONFIG_FILE: {"model_type": "Gr00tN1d7", "model_name": "Other/Backbone"}
+    }
+    moving = _TagMoves(hub, GROOT_BASE, first=PINNED, then=moved)
+    pins = (f"{GROOT_BASE}@{TAG}", f"{COSMOS}@{PINNED}")
+    checkpoint = _fetch(moving, fps=float(FPS), pins=pins)
+    handed = Path(checkpoint.config_overrides["base_model_path"])
+    said = json.loads((handed / up.CONFIG_FILE).read_text(encoding="utf-8"))
+    assert said["model_name"] == COSMOS, "the build was handed a base nobody read"
+    assert (GROOT_BASE, PINNED, P.NESTED_FILES) in moving.snapshots
+    assert f"base_model_path {GROOT_BASE}@{TAG}, commit {PINNED[:12]}" in checkpoint.loaded
+    unsaid = _groot(tmp_path / "unsaid")
+    unsaid.files[(GROOT_BASE, TAG)] = unsaid.files[(GROOT_BASE, PINNED)]
+    with pytest.raises(P.PipelineRefused, match="landed in no commit's directory"):
+        _fetch(unsaid, fps=float(FPS), pins=pins)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in unsaid.asked]
+    assert not unsaid.snapshots
 
 
 def _step(hub: FakeHub, name: str) -> dict[str, Any]:
