@@ -415,3 +415,41 @@ def test_an_adapter_from_another_release_is_refused_before_it_is_described(
     factory.describe(factory.parse_robot_spec("lerobot:mock"))
     stranger = types.SimpleNamespace(__version__="9.9.9")
     factory._same_release("a-third-partys-arm", stranger)
+
+
+def test_an_adapter_built_on_another_is_refused_over_a_base_from_another_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Huebot's package is built on the Microduck's, and rosarm's on rosbridge's, so each runs the
+    other's code as its own. Its own version matching the core said nothing of the package under
+    it, which an install that upgraded one package alone leaves behind."""
+    import quackd
+    import quackd_microduck
+    from quackd.adapters import factory
+    from quackd.adapters.base import AdapterError
+
+    assert factory._built_on("huebot") == ("microduck",)
+    assert factory._built_on("rosarm") == ("rosbridge",)
+    assert factory._built_on("microduck") == ()
+    major, minor, *_ = quackd.__version__.split(".")
+    monkeypatch.setattr(quackd_microduck, "__version__", f"{major}.{int(minor) - 1}.0")
+    with pytest.raises(AdapterError, match=r"built on quackd-microduck .* reinstall them together"):
+        factory.describe(factory.parse_robot_spec("huebot:mock"))
+
+
+def test_a_workspace_moved_to_the_next_minor_is_one_release_whatever_its_metadata_says(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RELEASING.md moves every version with set_version.py and runs the gates before anything is
+    reinstalled, so an editable install's metadata still names the release before. The base was
+    read from that metadata, and Huebot and rosarm were refused in the release's own gates."""
+    import quackd
+    import quackd_huebot
+    import quackd_microduck
+    from quackd.adapters import factory
+
+    major, minor, *_ = quackd.__version__.split(".")
+    bumped = f"{major}.{int(minor) + 1}.0"
+    for module in (quackd, quackd_huebot, quackd_microduck):
+        monkeypatch.setattr(module, "__version__", bumped)
+    factory.describe(factory.parse_robot_spec("huebot:mock"))

@@ -64,6 +64,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   roslibpy's client and its topic, service and action clients for any transport over rosbridge, and
   `param_text` reads a parameter rosapi returns. The rosbridge base describes itself as it did,
   which `tests/test_rosbridge_adapter.py` pins by the digests of its manifests from before the move.
+- **`quackd robot list` shows the type a robot was registered with.** An SO-100 and an SO-101 are
+  both `lerobot:real`, and the four industrial arms are all `rosarm:ws`, so a list of specs alone read
+  them alike. A `type` column shows each robot's `--robot-type` when any robot has one, and a registry
+  where nobody gave one prints the table it did. `--json` carried the type already.
+- **`quackd ui` shows a robot's type and asks for one where the adapter drives several arms.** The
+  robots page could neither show which arm a registered robot is nor register one as an SO-100, since
+  `quackd robot add --robot-type` had no field there. The table has a `robot_type` column, and the
+  form offers the adapter's types, its default first, for the arm and the industrial arms alone.
 - **A Universal Robots UR7e, described beside the UR5e.** People own arms sold as UR5e and buy arms
   sold as UR7e, with different figures published for each, so `described:ur7e` is a body of its own,
   read on 2026-11-09 from UR's UR7e datasheet of October 2026: 20.6 kg with the cable, six rotating
@@ -179,6 +187,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
+- **`list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
+  where they said `"built-in"`.** The described row, in every core, said `"installed": false`
+  beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
+  went after a package that does not exist. A third party's adapter that names no extra said
+  `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
+  `built-in` as they did, and `quackd ui`'s setup page says to install such an adapter as its maker
+  says, where it would have said `uv pip install "None"`. What changes for you: a script that read `"built-in"` reads `null`.
 
 ### Fixed
 
@@ -264,6 +279,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **An Open Duck's link outlives a line quackd cannot read, as ToddlerBot's has since 0.32.0.** The
+  bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB, an
+  answer that was no JSON object, an id that was no number, an error that was no object, or a reset
+  socket raised out of it, and it died without a word. Every request after it waited out its timeout,
+  while the commands that feed the daemon's deadman, which are writes, went on: the duck walked on for
+  about two seconds, until a heartbeat gave up, and a stop sent then could reach the duck with nobody
+  to read its reply, and be reported as not delivered. Now a line over the limit, or one quackd cannot
+  read, is skipped with a warning, broken JSON and an answer that is no object are skipped as broken
+  JSON always was, an error that is no object answers its request, and the link goes on. A line may
+  be 1 MiB, and a link that fails tells whatever is waiting at once and refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
+  over HTTP. What changes for you: nothing to do. No duck has run it.
+- **A read that failed says when the stop sent after it held nothing.** A verb's gates begin by
+  reading the body, and when that read failed the executor sent a stop and said only that the read
+  had failed, on `stop` too, so a pilot or a chat heard `the arm did not answer: ` and nothing about
+  the stop. The arm's real backend reads before it writes its hold, so over an arm gone silent that
+  stop held nothing, and it says so in `stop_error` without raising, which nothing here read. The
+  read's error now ends `; the stop sent after it failed: ` and the stop's reason, as an abort's and a
+  timeout's now do, or `the same way` where the stop failed for the reason the read did, as on a
+  wedged bus, and keeps its class and its code. A composite whose nested read said so does not say
+  it again. Such a stop still does not reach the arm, as
+  0.31.3's Known limitations says, and the power switch is still what stops it; now the line says
+  so. What changes for you: the line a run ends on, and a chat's answer, can be longer.
+- **`quackd doctor` prints a camera's address and a long assumption whole.** A camera that names no
+  address of its own printed the one it was given, and `--camera-url` given twice arrives as a list,
+  so the row read `url ['opencv://0']`. It reads `opencv://0` now, or the addresses joined by commas.
+  And the assumptions table cut a long ref's name in its `what` column with an ellipsis at a hundred
+  columns or fewer, where its note column folded. Both columns fold now. What changes for you:
+  nothing to do.
+- **Huebot and rosarm are refused over a Microduck or rosbridge package from another release.**
+  quackd refuses one of its adapters that is from another release than the core, and Huebot's package
+  runs the Microduck's code as its own, as rosarm's runs rosbridge's, but only each adapter's own
+  version was asked. So an install that upgraded one package alone could run Huebot over an older
+  Microduck's transport. The package under each is held to the core's release now, by its module's
+  own version as the adapter's is, with the same words to reinstall them together. What changes for you: nothing,
+  on an install that keeps the packages together.
+- **The AlohaMini's setup names the commit quackd read, `ab4462b`.** `quackd ui`'s setup page, from
+  the catalogue, told an AlohaMini owner to install upstream on the robot and named no commit, while
+  upstream's newer main refuses the stop quackd sends, so a robot set up by that line was one quackd
+  could not stop. It names `ab4462b` now, as the AlohaMini page does, and a test holds it to the
+  adapter's pin. What changes for you: set the robot up at that commit, as the page says.
 - **The described bodies had a second reader, and every file but the KUKA LBR iiwa's needed
   mending.** One reader read every figure, on 2026-11-05, and the Unitree G1 EDU's on 2026-10-28. On
   2026-11-09 a second read again every page their sources and notes name: 27 lines were wrong,
@@ -405,6 +460,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The pages name the Microduck meshes' licence as CC BY-NC-SA 4.0.** The README, the assets page,
+  the licences page's row for the simulator recording, CONTRIBUTING, the browser demo's README and a
+  few comments still named CC BY-NC-SA with no version, or put the whole model under it, after the
+  re-read of `microduck_rl` above. They say CC BY-NC-SA 4.0 on the meshes now, as upstream's README has
+  since `7cc1961`, with `robot_walk.xml` under the Apache License 2.0. The recording is still labelled
+  under the meshes' terms, and whether a render of them is an adaptation is unchanged.
+- **Huebot's page says what the maker's code is.** It called walking-robot-kit the servo bus alone,
+  where NOTICE, from the maker's README, says it is the kit's electronics, firmware and control
+  software. The page and `quackd_huebot.upstream_api` say that now.
 
 ### Known limitations
 

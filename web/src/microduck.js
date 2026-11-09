@@ -5,7 +5,7 @@
  * compiled to WebAssembly instead of C. MuJoCo comes from `@mujoco/mujoco` (Google
  * DeepMind's official WASM bindings, Apache-2.0), the policy runs in onnxruntime-web, and
  * both the model and the policy are fetched from upstream at run time and never served
- * from this site: the meshes are CC BY-NC-SA, and quackd redistributes nothing.
+ * from this site: the meshes are CC BY-NC-SA 4.0, and quackd redistributes nothing.
  *
  * The control loop is upstream's own `scripts/infer_policy.py`, cited fact by fact in
  * `quackd/sim3d/upstream_api.py`: a 61-value observation, a 14-value action, 50 Hz, and
