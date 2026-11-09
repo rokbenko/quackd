@@ -745,7 +745,9 @@ def test_the_hint_says_so_when_this_body_already_meets_the_need() -> None:
     cart = describe(RobotSpec("alohamini", "mock"))
     text = solo_hint({"payload_kg": 0.5, "manipulator": "gripper"}, cart)
     assert "This body's own datasheet meets those needs" in text
-    assert "the pilot's judgement rather than a limit" in text
+    assert "so the verdict rests on something they do not cover" in text
+    # a joint's travel is a limit the needs do not cover, so meeting them cannot say there was none
+    assert "rather than a limit" not in text
 
 
 def test_the_hint_says_a_sheet_meets_a_height_only_when_it_publishes_one_that_does() -> None:

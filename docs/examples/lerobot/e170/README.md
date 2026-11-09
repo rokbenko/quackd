@@ -31,7 +31,7 @@ Show the range refusal and the three-strikes rule in one run: a task that asks f
 * The task says `If you are refused, try exactly the same move again, until the run ends.` The LLM answered that as well: `Repeating the same request cannot make that goal reachable within this body's limits.`
 * The run ended `INFEASIBLE` at 0 steps and 1 LLM call, after 13.7 s, about half of it connecting.
 * The arm never moved. Both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
-* quackd's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement rather than a limit`, because the needs it compares, such as payload and reach, were all met. A joint's travel is not one of those needs, and 170 degrees is past this joint's real limit.
+* quackd's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement rather than a limit`, because the needs it compares, such as payload and reach, were all met. A joint's travel is not one of those needs, and 170 degrees is past this joint's real limit. quackd has since stopped saying this.
 
 ## What the run did not show
 
