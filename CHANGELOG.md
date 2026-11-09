@@ -147,8 +147,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   calibrated one is, and the knobs that make a read fail now give its error's type,
   `(ConnectionError: ...)`, as a register on the arm does.
 - **The arm's extras take LeRobot 0.7, whose motor bus is new.** `quackd[lerobot]`,
-  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot from 0.7.0 and below 0.8, where they
-  stopped below 0.6.2. 0.7.0 replaced `feetech-servo-sdk`, the library under the SO-101's bus, with
+  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot 0.7.0, below 0.7.1, where they
+  stopped below 0.6.2, and the arm's extras hold rustypot below 1.14, since the arm's stop, release
+  and close lean on the bus as it reads at 0.7.0 and a patch may move it. 0.7.0 replaced `feetech-servo-sdk`, the library under the SO-101's bus, with
   rustypot, under one `SerialMotorsBus` for every Feetech and Dynamixel servo, so every LeRobot name
   the arm relies on was read again at the `v0.7.0` tag, and the bus below LeRobot's Python at
   rustypot's `v1.13.1`. What changes for you: `doctor`'s `lerobot (feetech bus)` row shows rustypot's
@@ -434,16 +435,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a fold and a hand-off are the servo arm's alone. The architecture page's row for Huebot no longer
   says its transport is a copy of the Microduck's, which 0.33.0 made one record over the Microduck's
   own.
-- **`uv.lock` takes LeRobot 0.7.0, rustypot 1.13.1 and one huggingface_hub, 1.33.0.**
+- **`uv.lock` takes LeRobot 0.7.0, rustypot 1.13.1, one huggingface_hub, 1.33.0, and torch 2.15.0.**
   `feetech-servo-sdk`, `deepdiff` and `orderly-set` leave it, `sentencepiece` 0.2.3 comes in with
   LeRobot's `[pi]`, and on Python 3.12 or later `transformers` is 5.22.2, as LeRobot 0.7.0's policy
   extras pin it, with the `tokenizers` 0.23.3 it asks for. LeRobot's floor of 1.31.0 split the hub
   between Python 3.11 and the rest, and `uv lock --upgrade-package huggingface-hub` put both on
-  1.33.0, the newest that `diffusers` 0.39.0 allows. `uv lock` keeps whatever still fits, so `torch`
-  2.11.0, `setuptools` 81.0.0 and, on Python 3.11, `transformers` 5.5.4 stay, and with them the five
-  Dependabot alerts dismissed in 0.31.3. LeRobot 0.7.0 allows a fixed torch, and torch from 2.13 no
-  longer caps setuptools below 82, so moving the three is a `uv lock --upgrade-package` away, left for
-  a person, since it moves torch four minors.
+  1.33.0, the newest that `diffusers` 0.39.0 allows. LeRobot 0.7.0 allows a fixed torch, and torch
+  from 2.13 no longer caps setuptools below 82, so the lock moves those as well: `torch` 2.15.0, with
+  `torchvision` 0.29.2, `triton` 3.9.0 and CUDA 13.2's libraries, `setuptools` 84.2.1, and
+  `transformers` 5.22.2 with `tokenizers` 0.23.3 on Python 3.11 too. That leaves the five Dependabot
+  alerts dismissed in 0.31.3 nothing to stand on: each was for torch below 2.13, setuptools below
+  84.1 or transformers below 5.10. CI's policy job already ran on torch 2.15, from the CPU index.
+  What changes for you: a checkout's `uv sync` installs torch 2.15 for the policy server's extra.
 - **Every LeRobot name the arm relies on is read again, at the `v0.7.0` tag.** `upstream_api.py`'s 113
   rows were read at 410c095, the commit the tag names, and the bus below LeRobot's Python at
   rustypot's `v1.13.1` and serialport-rs's `v4.9.0`: 104 VERIFIED and 9 UNVERIFIED, and each row
