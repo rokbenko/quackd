@@ -92,6 +92,7 @@ from quackd_lerobot.verbs import (
     MOVE_MIN_S,
     MOVE_SETTLE_S,
     NO_INSTRUCTION,
+    PICK_POLL_S,
     PICK_SETTLE_S,
     RAMP_DECIMALS,
     RAMP_RESOLUTION,
@@ -2019,6 +2020,94 @@ async def test_pick_looks_once_more_before_calling_a_finished_policy_a_failed_gr
     picked = await ex.run_verb("pick", {"target": "cup", "max_s": 10})
     assert picked.ok, picked.summary
     assert transport.looks >= 3, "pick decided without giving the grasp a settle"
+
+
+class RunsItsOwnSegment(MockTransport):
+    """A backend that runs no segment task of its own, whose policy has moved by the time its
+    `do` is acknowledged, which is the one `manipulate` watches by polling
+    (`verbs._manipulate_polled`). Its state names the segment running, by its policy and its
+    `segment` number, and `ended_by` ends it `ends_at` seconds of its clock after the `do`: a
+    stop, which leaves the arm idle, or the next `manipulate` told the same thing, which leaves
+    the same policy running under the next number. None runs it until its time is up."""
+
+    name = "mock"
+    policy_available = True
+
+    def __init__(self, ended_by: str | None = None, ends_at: float = 0.0) -> None:
+        super().__init__(states=[DuckState(policy="idle", posture="unknown")])
+        self.ended_by = ended_by
+        self.ends_at = ends_at
+        self.policy = "idle"
+        self.segment = 0
+        self.started: float | None = None
+        self.policy_stopped_by: str | None = None
+
+    async def send_intent(self, intent: Intent) -> Any:
+        ack = await super().send_intent(intent)
+        if intent.kind == "do":
+            self.policy = str(intent.params["skill"])
+            self.segment += 1
+            self.started = self.now()
+        return ack
+
+    async def get_state(self) -> Any:
+        state = await super().get_state()
+        ended = self.started is not None and self.now() - self.started >= self.ends_at
+        if self.ended_by is not None and ended:
+            if self.ended_by == "a stop":
+                self.policy, self.policy_stopped_by = "idle", "a stop was sent to the arm"
+            else:
+                self.segment += 1
+                self.policy_stopped_by = "another manipulate started"
+            self.ended_by = None
+        return state.model_copy(update={"policy": self.policy, "extras": {"segment": self.segment}})
+
+
+@pytest.mark.parametrize(
+    ("ended_by", "said"),
+    [
+        (None, None),
+        ("a stop", "a stop was sent to the arm"),
+        ("the next segment", "another manipulate started"),
+    ],
+    ids=["its time", "a stop", "the next segment told the same thing"],
+)
+async def test_manipulate_on_a_backend_with_no_segment_task_watches_it_until_its_time(
+    ended_by: str | None, said: str | None
+) -> None:
+    """`manipulate` on a backend that runs no segment task looks at the segment every
+    `PICK_POLL_S` of the backend's clock until its seconds are up, and is ok then, saying it ran
+    and never that the task is done. Something that ends it first is a failed `manipulate` naming
+    what did, `policy_stopped_by`, as on the arm, and that includes a later segment told the same
+    thing, which only its `segment` number tells apart. None of the arm's own backends reaches this
+    path, and the mock used to be the one that did; this stand-in is what keeps it tested."""
+    stops_at = 3 * PICK_POLL_S
+    transport = RunsItsOwnSegment(ended_by, stops_at)
+    adapter = LeRobotAdapter(transport)
+    manifest = await adapter.connect()
+    ex = Executor(registry_from_manifest(manifest, adapter), adapter, confirm=allow_all)
+    t0 = transport.now()
+    ran = await ex.run_verb("manipulate", {"instruction": "wave"})
+    assert transport.intents_of("do")[0].params == {
+        "skill": "policy:manipulate:wave",
+        "max_s": MANIPULATE_S,
+    }
+    if said is None:
+        assert ran.ok, ran.summary
+        assert ran.summary == (
+            f"manipulate 'wave' ran {MANIPULATE_S:g} s and ended because its {MANIPULATE_S:g} s "
+            "ran out. Nothing on the arm says whether it did the task: look at it before the next "
+            "step"
+        )
+        assert ran.data == {"instruction": "wave", "seconds": MANIPULATE_S, "ended": "time"}
+        assert transport.now() - t0 == pytest.approx(MANIPULATE_S)
+        assert max(transport.sleeps) <= PICK_POLL_S
+    else:
+        assert not ran.ok
+        assert ran.summary == f"manipulate 'wave' stopped: {said}", ran.summary
+        assert ran.data == {"instruction": "wave", "seconds": stops_at, "ended": "stopped"}
+        assert transport.now() - t0 == pytest.approx(stops_at)
+    await adapter.close()
 
 
 async def test_the_mock_scripts_manipulate_toward_its_object_and_ends_on_time() -> None:
