@@ -115,6 +115,7 @@ did not have, and the y/N question that followed is why nearly every run stopped
 
 NEEDS_NUMBERS: tuple[str, ...] = (
     "payload_kg",
+    "carries_kg",
     "reach_m",
     "endurance_min",
     "work_height_m",
@@ -124,7 +125,15 @@ NEEDS_NUMBERS: tuple[str, ...] = (
 height the hands must be able to reach, which is a point inside `workspace_height_m`."""
 
 _NUMBER_TEXT: dict[str, str] = {
-    "payload_kg": "The heaviest thing the task has the body hold or carry, in kg: a minimum.",
+    "payload_kg": (
+        "The heaviest thing the task has the body hold, in a hand, the beak or both arms, in "
+        "kg: a minimum. A load that rides on its back or deck is carries_kg."
+    ),
+    "carries_kg": (
+        "The heaviest load the task has ride on the body's back or deck as it moves, in kg: "
+        "a minimum. No hand holds it, so a body with no manipulator can meet it; a load a "
+        "hand holds is payload_kg."
+    ),
     "reach_m": "How far the task has the hands reach, in metres: a minimum.",
     "endurance_min": "How long the task keeps the body running, in minutes: a minimum.",
     "work_height_m": (

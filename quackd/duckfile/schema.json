@@ -82,6 +82,17 @@
           ],
           "default": null
         },
+        "carries_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "reach_m": {
           "anyOf": [
             {
@@ -307,7 +318,7 @@
               }
             ]
           },
-          "description": "v2: what the body must be, in the datasheet vocabulary (payload_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody published counts as not met.",
+          "description": "v2: what the body must be, in the datasheet vocabulary (payload_kg, carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody published counts as not met.",
           "title": "Needs",
           "type": "object"
         },

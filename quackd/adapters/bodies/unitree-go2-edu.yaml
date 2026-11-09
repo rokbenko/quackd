@@ -23,6 +23,11 @@ datasheet:
     value: 12
     confidence: official
     source: "unitree.com/go2: 12 joint motors, read 2026-11-05"
+  carries_kg:
+    value: 8
+    confidence: official
+    source: "unitree.com/go2: Payload about 8 kg on the EDU, read 2026-11-09"
+    note: "12 kg at most"
   endurance_min:
     value: 120
     confidence: official
@@ -35,7 +40,6 @@ datasheet:
   cannot:
     - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"
   notes:
-    - "Unitree rates the back for about 8 kg, 12 kg at most, on the EDU (unitree.com/go2); a back load is not a payload a hand holds, so it is a note here"
     - "speed 0 to 3.7 m/s, and about 5 m/s at most, on unitree.com/go2; quackd clamps nothing here because it drives nothing"
     - "what sport mode does when commands stop is not published; Unitree's table marks secondary development filled on the EDU, part filled on the X and empty on the Air and Pro"
     - "it carries a 4D LiDAR and a wide-angle camera, and on the EDU a depth camera and force sensors in its feet (unitree.com/go2); quackd reads none of them"

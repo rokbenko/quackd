@@ -23,6 +23,11 @@ datasheet:
     value: 12
     confidence: estimate
     source: "docs.mybotshop.de/b2.html, a dealer's B2 page: 12 degrees of freedom, 3 a leg; Unitree's own page does not count them, read 2026-11-09"
+  carries_kg:
+    value: 40
+    confidence: official
+    source: "unitree.com/b2: Load(Walking) over 40 kg, read 2026-11-09"
+    note: "while walking; 120 kg or more standing"
   endurance_min:
     value: 300
     confidence: official
@@ -35,7 +40,6 @@ datasheet:
   cannot:
     - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"
   notes:
-    - "Unitree rates the back for 120 kg standing and 40 kg walking (unitree.com/b2); a back load is not a payload a hand holds, so it is a note here"
     - "Unitree publishes no deadman and no link-loss behaviour for the B2, and its page names no hardware stop; its SDK stops a walk with StopMove and damps the joints with Damp (unitree_sdk2's B2 sport client)"
     - "a dealer's page gives L1 + A on the remote as the e-stop: damping mode, the robot settling to the ground (docs.mybotshop.de/b2.html)"
     - "it carries a 3D LiDAR, two depth cameras and two optical cameras (unitree.com/b2); quackd reads none of them"

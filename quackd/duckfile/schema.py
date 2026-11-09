@@ -217,6 +217,7 @@ class DatasheetOverride(BaseModel):
     height_m: FigureOverride | None = None
     dof: FigureOverride | None = None
     payload_kg: FigureOverride | None = None
+    carries_kg: FigureOverride | None = None
     reach_m: FigureOverride | None = None
     workspace_height_m: SpanOverride | None = None
     endurance_min: FigureOverride | None = None
@@ -229,7 +230,14 @@ class DatasheetOverride(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
     @field_validator(
-        "mass_kg", "height_m", "dof", "payload_kg", "reach_m", "endurance_min", mode="before"
+        "mass_kg",
+        "height_m",
+        "dof",
+        "payload_kg",
+        "carries_kg",
+        "reach_m",
+        "endurance_min",
+        mode="before",
     )
     @classmethod
     def _numbers(cls, value: Any) -> Any:
@@ -394,8 +402,8 @@ class FlockRole(BaseModel):
     needs: dict[str, float | str] = Field(
         default_factory=dict,
         description="v2: what the body must be, in the datasheet vocabulary (payload_kg, "
-        "reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody "
-        "published counts as not met.",
+        "carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure "
+        "nobody published counts as not met.",
     )
     count: Literal[1] = Field(default=1, description="Robots per role. Only 1 so far.")
 

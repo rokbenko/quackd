@@ -81,6 +81,7 @@ a `confidence` and a `source`, plus an optional `note` read with it.
 |---|---|
 | `mass_kg`, `height_m`, `dof` | what it weighs, how tall it stands, how many joints it actuates |
 | `payload_kg` | what one hand, the beak or the whole body can hold; the `note` says which |
+| `carries_kg` | what rides on its back or deck as it moves, with no hand holding it, so it needs no manipulator. Where a maker gives a walking and a standing figure it holds the walking one, where a nominal and a maximum the nominal, and the `note` says the other ([ADR-0079](../adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)). A key only where a body says it: a sheet without it serialises, and digests, as it did before the field existed |
 | `reach_m` | arm base to fingertips |
 | `workspace_height_m` | a `Span`: the band of heights the hands can work at, as `low` and `high` with a `confidence` and a `source` of their own |
 | `endurance_min` | minutes on a charge |
@@ -97,7 +98,9 @@ Three rules make it honest:
   where a task turns on one, to answer `uncertain` and name it rather than guess, and a
   `feasible` verdict that names it is refused. It is never rendered as a zero, and a figure
   that cannot apply (endurance on a mains-powered arm, payload on a body with no
-  manipulator) is not listed as missing either.
+  manipulator) is not listed as missing either. A load on the back is an extra, as a
+  working height is: shown where a body says it, never listed as missing, and still refused
+  by default when a task names it on a sheet that says nothing.
 - **Speeds are not in it.** `limits` is what quackd clamps to, which is a rule about what
   quackd sends rather than a fact about the body, and the prompt renders those separately as
   clamps.
@@ -105,7 +108,8 @@ Three rules make it honest:
 `manipulator` is the only field a sheet must carry, and three contradictions are refused
 when the manifest is built rather than left to a reader: arms on a body whose manipulator is
 `none`, a `gripper` or `arms` with no arm to put it on, and a payload or a reach on a body
-with nothing to hold with.
+with nothing to hold with. A load on the back needs no hand, so `carries_kg` is not one of
+them.
 
 The same datasheet describes a body on every backend, which is also what keeps its `digest()`
 equal across `sim2d`, `mock` and the real thing. `rosbridge` is the one exception, because it
