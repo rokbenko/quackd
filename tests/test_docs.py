@@ -640,6 +640,44 @@ def test_adapter_doc_lists_every_endpoint_upstream_ref() -> None:
     assert "quackd has never created a Hugging Face Endpoint" in section
 
 
+def test_the_rosarm_contract_job_runs_both_distributions_and_stays_out_of_ci() -> None:
+    """The industrial arm's transport meets a real rosbridge in one job, `rosarm contract`, which
+    runs `tests/test_rosarm_contract.py` in the official images of Jazzy and of Humble, the two
+    distributions whose launch files disagree on the goal thread. It runs when the arm's code, the
+    binding under it, the lock that pins roslibpy or the job itself changes, on a push to main and
+    on a pull request, and on demand. `ci` does not carry it: a ROS image is minutes that no other
+    pull request needs, and the main suite skips the module without the job's variable."""
+    import yaml
+
+    workflows = REPO / ".github" / "workflows"
+    job_file = yaml.safe_load((workflows / "rosarm-contract.yml").read_text(encoding="utf-8"))
+    on = job_file.get("on", job_file.get(True))  # YAML 1.1 reads a bare `on:` key as true
+    assert on["push"]["branches"] == ["main"] and "workflow_dispatch" in on
+    watched = {
+        "adapters/rosarm/**",
+        "adapters/rosbridge/**",
+        "tests/test_rosarm_contract.py",
+        "tests/rosarm_contract/**",
+        "uv.lock",
+        ".github/workflows/rosarm-contract.yml",
+    }
+    for event in ("push", "pull_request"):
+        assert set(on[event]["paths"]) == watched, event
+    (job,) = job_file["jobs"].values()
+    assert job["strategy"]["matrix"]["distro"] == ["jazzy", "humble"]
+    assert job["strategy"]["fail-fast"] is False
+    runs = " ".join(step.get("run", "") for step in job["steps"])
+    assert "ros:${{ matrix.distro }}" in runs and "/repo:ro" in runs, runs
+    assert "bash tests/rosarm_contract/run.sh" in runs, runs
+    script = (REPO / "tests" / "rosarm_contract" / "run.sh").read_text(encoding="utf-8")
+    assert "QUACKD_ROSARM_CONTRACT=1" in script and "tests/test_rosarm_contract.py" in script
+    assert "--extra rosarm" in script, "the job installs roslibpy as quackd's own extra does"
+    contract = (REPO / "tests" / "test_rosarm_contract.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("QUACKD_ROSARM_CONTRACT") != "1"' in contract
+    ci = (workflows / "ci.yml").read_text(encoding="utf-8")
+    assert "rosarm_contract" not in ci and "QUACKD_ROSARM_CONTRACT" not in ci
+
+
 def test_readme_promises() -> None:
     for needle in (
         "not affiliated with or endorsed by Pollen Robotics",

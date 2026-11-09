@@ -18,9 +18,11 @@ action_msgs in ros2/rcl_interfaces; where an action's server publishes its goals
 and rclcpp on jazzy, read on 2026-11-09; the Universal Robots ROS 2 driver and description on jazzy;
 KUKA's RSI driver and the LBR iisy's description; the LBR-Stack for the iiwa; MotoROS2 0.2.1, the
 MotoMini's description, and industrial_msgs on the branch MotoROS2's client dependencies name.
-JointState and JointTrajectory are read at rosbridge's own pin of ros2/common_interfaces. Nothing
-here has been run against a bridge, a controller or an arm: the four bodies are described, and the
-`mock` that rehearses them is a fake written from these sources (`FAKE_FROM_READING`).
+JointState and JointTrajectory are read at rosbridge's own pin of ros2/common_interfaces. The
+transport has been run against a real bridge only in the contract job
+(tests/test_rosarm_contract.py), and nothing here against a controller or an arm: the four bodies
+are described, and the `mock` that rehearses them is a fake written from these sources
+(`FAKE_FROM_READING`).
 """
 
 from __future__ import annotations
@@ -681,8 +683,8 @@ BRIDGE_NODE_NAME = UpstreamRef(
     "UNVERIFIED",
     jtc(_JTC, 1091),
     "that the bridge's node is /rosbridge_websocket, un-namespaced, and that rosapi reaches its "
-    "parameters (BRIDGE_NODE_PARAMS); quackd refuses a bridge whose answer it cannot read, and "
-    "?bridge_node= names another",
+    "parameters (BRIDGE_NODE_PARAMS), which the contract job shows on Jazzy's and Humble's stock "
+    "launch; quackd refuses a bridge whose answer it cannot read, and ?bridge_node= names another",
 )
 STATUS_TYPES_LOADED = UpstreamRef(
     "STATUS_TYPES_LOADED",
@@ -737,8 +739,10 @@ ACTION_STATUS_HEARD = UpstreamRef(
     rcl("rcl_action/include/rcl_action/default_qos.h", 26),
     "that the bridge hands quackd the array a controller last published within "
     "ACTION_STATUS_WAIT_S of subscribing to it, as SUBSCRIBER_QOS_FOLLOWS_PUBLISHERS reads at the "
-    "bridge's pin. A controller that has had no goal since it started has published none, so "
-    "nothing heard is read as no goal running, and quackd connects",
+    "bridge's pin, and as the contract job (tests/test_rosarm_contract.py) shows on Jazzy's and "
+    "Humble's released bridges against rclpy's action server. A controller that has had no goal "
+    "since it started has published none, so nothing heard is read as no goal running, and "
+    "quackd connects",
 )
 MOTO_NO_ACTION_STATUS = UpstreamRef(
     "MOTO_NO_ACTION_STATUS",

@@ -13,7 +13,8 @@ any: the other nine of the ten. The tenth happened, an SO-101 arm running
 [`docs/adapter-status.md`](docs/adapters/status.md), and the same arm ran again on 2026-09-23,
 registered as `arm-01`. Each of the nine ends the same way: flip that backend's row, and not
 before. The industrial arm's starts earlier, with an owner and a date for `rosarm:ws`, which
-only Rok can name, and a CI job against a real controller in a container, which can come first.
+only Rok can name, and a CI job against a real controller in a container, which can come first:
+the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in for the driver.
 
 - ⏸ **An Open Duck Mini v2**, the most reachable of the eight because you can build it. Run
   `open_duck:bridge` against a duck you built, work through

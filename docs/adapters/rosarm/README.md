@@ -2,7 +2,9 @@
 
 **Rehearsed only.** `rosarm:mock` runs whole tasks against a fake rosbridge and a fake arm, and
 `rosarm:ws`, the backend that would reach a real arm, refuses every arm until somebody names a
-date for that arm's first hardware run. Nothing here has met a bridge, a controller or an arm.
+date for that arm's first hardware run. Nothing here has met a controller or an arm, and the
+transport has met a real rosbridge only in CI, against a stand-in for the arm's driver
+([Status](#status)).
 
 > [!WARNING]
 > quackd is not a safety system. On an industrial arm the risk assessment, the guarding, the
@@ -414,14 +416,35 @@ move, and a run that ends with a move in flight, whose teardown cancels it and p
 kinder than a controller, and `tests/test_rosarm_transport.py` holds the refusals at connect,
 the goal's shape and the ways a result is read.
 
+`tests/test_rosarm_contract.py` holds the transport to the real thing instead, in a job of its own
+in CI, `rosarm contract` (`.github/workflows/rosarm-contract.yml`), in the official `ros:jazzy` and
+`ros:humble` images: rosbridge_server and rosapi as each distribution releases them, roslibpy as
+`uv.lock` pins it, a `robot_state_publisher` serving a description built from each arm's body
+record, and a stand-in for the arm's driver in rclpy (`tests/rosarm_contract/arm.py`), whose action
+server and its status are ROS 2's own. On both distributions, with each arm's names on the stand-in,
+it shows every check at connect passing, a confirmed move arriving and a stop answered CANCELED, the
+stock launch file's goal thread refused on Humble and taken on Jazzy, a cancel that lands only after
+the move on a bridge without it, a goal left running refusing the next connect until it ends,
+readings that stop failing the heartbeat, and a rejected goal read as refused. It is what found that
+a bridge that has just started holds its first goal back about two seconds, which a move is now
+timed around. It runs when the arm's code, the binding under it, `uv.lock` or the job itself
+changes, and on demand, and anywhere with Docker, from the repository's root:
+
+```bash
+docker run --rm -v "$PWD":/repo:ro -w /repo ros:jazzy bash tests/rosarm_contract/run.sh
+```
+
+In Git Bash on Windows, put `MSYS_NO_PATHCONV=1` in front of it.
+
+The stand-in is no controller, so what a JointTrajectoryController or MotoROS2 does with a goal is
+still the fake's reading of it.
+
 `rosarm:ws` is described: refused for every arm until somebody names a date for its first
 hardware run, which nobody has. Three things are owed, in this order:
 
-1. **A job in CI against a real controller.** `rosbridge_server`, ros2_control's mock hardware with
-   a stock `joint_trajectory_controller`, and `RosArmWs` against it over a real socket, in a
-   `ros:jazzy` container and a `ros:humble` one. That would run roslibpy, rosbridge and a real
-   controller with no robot, and would catch what the fake gets wrong. It is not part of this
-   work.
+1. **A job against a real controller.** The same job with a stock `joint_trajectory_controller` on
+   ros2_control's mock hardware in place of the stand-in, which would run what the fake says of
+   the controller itself and catch where that reading is wrong.
 2. **An owner and a date** for one arm, which makes that body bound and buys a hardware checklist
    for its first run.
 3. **That run**, at a cell, with the pendant in a person's hand.

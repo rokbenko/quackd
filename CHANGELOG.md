@@ -371,12 +371,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
   robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
   the lift on the newer host is not settled.
-- **The industrial arm has met nothing real.** The fake bridge and the fake arms are written from
-  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, and nothing
-  has compared them with a running controller. A job in CI against ros2_control's mock hardware and
-  a stock JointTrajectoryController, in a `ros:jazzy` and a `ros:humble` container, is what would,
-  and it is owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an
-  owner and a date for one. Each body's names, its action, joints, readings and status topics, are a
+- **The industrial arm has met a real rosbridge, and no controller and no arm.** A job of its own in
+  CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi as
+  Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver in
+  rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written from
+  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so what a
+  JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that runs:
+  the same job with a stock controller on ros2_control's mock hardware is what would, and it is
+  owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner and
+  a date for one. Each body's names, its action, joints, readings and status topics, are a
   stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
   joints, and the connect checks the action and the joints against what the bridge lists; a status
   topic a cell names otherwise is never read, and then `can_move` believes the driver.
