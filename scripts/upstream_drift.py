@@ -927,21 +927,26 @@ def section(report: Report) -> str:
     return "\n".join(out)
 
 
-def markdown(reports: Sequence[Report]) -> str:
+def markdown(reports: Sequence[Report], unread: Sequence[str] = ()) -> str:
     """The report a person reads: one section per upstream, its rows, its versions."""
     out = [
         f"# Upstream drift\n\n{headline(reports)} A line that moved within its file is not "
         "drift; a page that changed is not drift."
     ]
+    if unread:
+        out.append(
+            "\nNot read tonight, so none of this speaks for them: " + "; ".join(unread) + "."
+        )
     out.extend(f"\n{section(report)}" for report in reports)
     return "\n".join(out) + "\n"
 
 
-def as_json(reports: Sequence[Report]) -> dict[str, Any]:
+def as_json(reports: Sequence[Report], unread: Sequence[str] = ()) -> dict[str, Any]:
     return {
         "drifted": [r.name for r in reports if r.drift],
         "broken": [r.name for r in reports if r.broken],
         "unchecked": [r.name for r in reports if r.blocked],
+        "unread": list(unread),
         "upstreams": [
             {
                 "name": r.name,
@@ -1242,18 +1247,22 @@ def main(argv: Sequence[str]) -> int:
             return 2
     fetch: Fetch = offline_fetch(args.offline) if args.offline else web_fetch
     reports = run(rows, fetch)
-    text = markdown(reports)
+    # asked for one upstream by name, a run walks no adapter: what it read is what it was asked
+    unread = [] if args.only else unread_adapters()
+    text = markdown(reports, unread)
     if args.report:
         args.report.write_text(text, encoding="utf-8", newline="\n")
     if args.json:
-        args.json.write_text(json.dumps(as_json(reports), indent=2), encoding="utf-8", newline="\n")
+        args.json.write_text(
+            json.dumps(as_json(reports, unread), indent=2), encoding="utf-8", newline="\n"
+        )
     _say(text)
-    code = exit_code(reports)
+    # an adapter that did not import takes its upstreams out of the walk, so nothing here speaks
+    # for them, and a night with nothing else wrong would otherwise say it was clean
+    code = exit_code(reports) or (2 if unread else 0)
     if args.issues:
         # an issue for an upstream the walk does not know is closed only after a walk of every
-        # adapter, never on a run of one: an adapter that did not import here takes its
-        # upstreams out of the walk tonight, and their issues would read as nobody's
-        unread = [] if args.only else unread_adapters()
+        # adapter, never on a run of one: their issues would read as nobody's
         whole = not args.only and not unread
         try:
             lines = sync_issues(reports, args.issues, known=known if whole else None)

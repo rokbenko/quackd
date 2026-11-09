@@ -665,7 +665,10 @@ and a read that got the bus just before a write says nothing about what that wri
   leaves the pad's stop as the newest twist until the pilot sends its next walk. What ends a
   quackd walk outright is quackd's own `stop`, from Ctrl-C or `q` at the terminal, or the pad
   button that sits the duck, `sit_toggle` on A unless the robot's owner moved it, since quackd
-  sends no walk to a duck that is not standing. Nobody has tried any of this on a duck.
+  sends no walk to a duck that is not standing. On robotd daemon-v0.18.8 or later a stock pad's Y
+  and two bumpers end one too: each plays an emotion, robotd holds the twist at zero while one
+  plays, and the verb fails with `robotd has not taken robot.move`. Nobody has tried any of this
+  on a duck.
 - **robotd's deadman does not fire while quackd walks the duck.** It zeroes a twist older than
   0.5 s, and quackd re-sends its twist every 100 ms for as long as a verb walks, so the deadman
   stops the legs only once quackd's twists stop arriving: a tunnel pulled out, a laptop asleep,

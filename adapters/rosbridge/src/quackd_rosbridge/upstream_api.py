@@ -127,7 +127,7 @@ TOPIC_COMPRESSION = UpstreamRef(
 )
 MESSAGE = UpstreamRef("roslibpy.Message(values)", "VERIFIED", src(_CORE, 45), "a UserDict")
 WIRE_JSON = UpstreamRef(
-    "JSON text frames", "VERIFIED", src(_COMM, 44), "json.loads on every frame, keyed by op"
+    "JSON text frames", "VERIFIED", src(_COMM, 45), "json.loads on every frame, keyed by op"
 )
 
 # ── the rosbridge protocol, the server side ─────────────────────────────────────────────

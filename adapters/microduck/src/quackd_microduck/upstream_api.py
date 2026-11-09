@@ -203,9 +203,10 @@ ROBOT_HEAD = UpstreamRef(
     "writes too (robotd/src/main.rs:4767-4768), and robot.state.head reports that slot smoothed "
     "toward each new value a little every control tick (main.rs:3399-3400 and :4117). While the "
     "idle look-around runs it takes the head over: the slot's head is scaled down as the "
-    "look-around fades in, and its glances are added (main.rs:3444-3445). quackd sends it for "
-    "one thing, to hold a gaze: the head a robot.look answered with, sent again every "
-    "GAZE_HOLD_S (IDLE_HEAD).",
+    "look-around fades in, and its glances are added (main.rs:3444-3445). While an emotion "
+    "plays it has the head as it has the twist (main.rs:2632-2636, robotd/src/emotion.rs:77-80), "
+    "so robot.state.head shows the emotion's. quackd sends it for one thing, to hold a gaze: the "
+    "head a robot.look answered with, sent again every GAZE_HOLD_S (IDLE_HEAD).",
 )
 ROBOT_LOOK = UpstreamRef(
     "robot.look",
