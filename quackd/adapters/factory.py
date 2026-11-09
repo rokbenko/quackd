@@ -7,6 +7,7 @@ Adapter packages are imported lazily, so listing adapters never imports an SDK.
 from __future__ import annotations
 
 import contextlib
+import functools
 import importlib
 import importlib.metadata
 import importlib.util
@@ -174,8 +175,6 @@ ADAPTER_NAMES = tuple(i.name for i in ADAPTERS)
 """The ten adapters quackd publishes, which every count of adapters follows. The described
 row is not among them: it drives nothing (`DESCRIBED_BODIES` is its list)."""
 BACKENDS = {i.name: i.backends for i in ADAPTERS}
-ADAPTER_STATUS = {i.name: i.status for i in ADAPTERS}
-ADAPTER_EXTRAS = {i.name: i.extra for i in ADAPTERS if i.extra}
 
 
 def drives(name: str) -> bool:
@@ -340,13 +339,49 @@ def _same_release(adapter: str, module: Any) -> None:
     theirs = getattr(module, "__version__", None)
     if adapter not in BY_NAME or not isinstance(theirs, str):
         return
-    if _release_of(theirs) == _release_of(core):
-        return
     extra = BY_NAME[adapter].extra or f"quackd[{adapter}]"
-    raise AdapterError(
-        f"quackd-{adapter} {theirs} is from another release than quackd {core}, and the two are "
-        f'released together: reinstall them together: uv pip install -U "{extra}"'
-    )
+    if _release_of(theirs) != _release_of(core):
+        raise AdapterError(
+            f"quackd-{adapter} {theirs} is from another release than quackd {core}, and the two "
+            f'are released together: reinstall them together: uv pip install -U "{extra}"'
+        )
+    # and the package it is built on, whose code it runs as its own: its own version matching
+    # said nothing of the Microduck's under Huebot or rosbridge's under rosarm, which an install
+    # that upgraded one package alone leaves behind. Asked of the module's own `__version__`, as
+    # the adapter's is: an editable install keeps the metadata it was installed with, so a
+    # workspace that set_version.py has moved to the next minor read as a mix, and was refused
+    for base in _built_on(adapter):
+        try:
+            under = getattr(importlib.import_module(f"quackd_{base}"), "__version__", None)
+        except ImportError:
+            continue
+        if isinstance(under, str) and _release_of(under) != _release_of(core):
+            raise AdapterError(
+                f"quackd-{adapter} is built on quackd-{base} {under}, which is from another "
+                f"release than quackd {core}, and they are released together: reinstall them "
+                f'together: uv pip install -U "{extra}"'
+            )
+
+
+@functools.cache
+def _built_on(adapter: str) -> tuple[str, ...]:
+    """quackd's own adapters whose packages `adapter`'s package requires, read from its installed
+    metadata, so nothing is imported: the Microduck's under Huebot's, rosbridge's under rosarm's.
+    An extra's or a platform's requirement (`; extra == ...`) is never the package itself."""
+    try:
+        requires = importlib.metadata.requires(f"quackd-{adapter.replace('_', '-')}") or []
+    except importlib.metadata.PackageNotFoundError:
+        return ()
+    names = {name.replace("_", "-"): name for name in BY_NAME}
+    bases: list[str] = []
+    for line in requires:
+        if ";" in line:
+            continue
+        found = re.match(r"quackd-([a-z0-9_-]+)", line.strip().lower())
+        base = names.get(found.group(1).replace("_", "-")) if found else None
+        if base is not None and base != adapter and base not in bases:
+            bases.append(base)
+    return tuple(bases)
 
 
 def describe(
@@ -654,7 +689,11 @@ def list_adapters() -> list[dict[str, Any]]:
                 "name": name,
                 "backends": list(row.backends),
                 "status": row.status,
-                "extra": row.extra or "built-in",
+                # the package that installs it, or None for a row nothing installs: the
+                # described row, in every core, and a third party's adapter naming none.
+                # "built-in" beside `installed: false` sent a script that installs what is
+                # missing after a package that does not exist
+                "extra": row.extra,
                 "official": is_official(name),
                 # an adapter with no SDK to probe is usable as soon as it is here at all, and
                 # the described row, in every core, is no adapter to have: a script asking

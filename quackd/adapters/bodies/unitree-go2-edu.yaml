@@ -30,11 +30,13 @@ datasheet:
   not_rated:
     - "stairs with steps above 16 cm, by unitree.com/go2's step figure"
     - "slopes above 40 degrees, by unitree.com/go2's slope figure"
-    - "wet ground, gravel and soft ground: Unitree publishes no rating for them"
+    - "wet, icy or soft ground, gravel and dust, which Unitree's Go2 manual forbids (its copy on manualslib.com)"
+    - "rain, snow, fog and other bad weather, and humid air, which the same manual forbids"
   cannot:
     - "hold, carry in a hand or push anything with a limb: it has no manipulator; a load rides on its back"
   notes:
     - "Unitree rates the back for about 8 kg, 12 kg at most, on the EDU (unitree.com/go2); a back load is not a payload a hand holds, so it is a note here"
-    - "speed 0 to 3.7 m/s on unitree.com/go2; quackd clamps nothing here because it drives nothing"
-    - "what sport mode does when commands stop is not published; the SDK is the EDU's alone"
-    - "it carries a 4D LiDAR and a wide-angle camera (unitree.com/go2); quackd reads neither"
+    - "speed 0 to 3.7 m/s, and about 5 m/s at most, on unitree.com/go2; quackd clamps nothing here because it drives nothing"
+    - "what sport mode does when commands stop is not published; Unitree's table marks secondary development filled on the EDU, part filled on the X and empty on the Air and Pro"
+    - "it carries a 4D LiDAR and a wide-angle camera, and on the EDU a depth camera and force sensors in its feet (unitree.com/go2); quackd reads none of them"
+    - "Unitree's Go2 manual says \"Please walk the robot on flat terrain.\" and forbids complicated terrain, while unitree.com/go2 shows it moving \"across complex terrains like gravel and slopes\" in its Rage Mode"

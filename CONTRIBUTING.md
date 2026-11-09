@@ -453,7 +453,7 @@ which is the cheapest row in the catalogue and the honest one.
 - **Never commit an upstream asset.** No logos, meshes, CAD, MJCF, ONNX policies or videos,
   from Pollen Robotics or anyone else, in a commit, a test fixture or a docs asset. This got
   sharper in 0.8: a real `--robot microduck:mujoco` run puts upstream's `robot_walk.xml` and
-  38 CC BY-NC-SA meshes in `~/.quackd/cache`. quackd's whole licence position is that it
+  38 CC BY-NC-SA 4.0 meshes in `~/.quackd/cache`. quackd's whole licence position is that it
   redistributes none of them, and a public history does not forget. `.gitignore` now catches
   `.stl`, `robot_walk.xml` and the SO-101's `so101_*.xml` as well as `.onnx`, but do not rely
   on it.
