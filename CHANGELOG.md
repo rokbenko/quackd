@@ -64,6 +64,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   roslibpy's client and its topic, service and action clients for any transport over rosbridge, and
   `param_text` reads a parameter rosapi returns. The rosbridge base describes itself as it did,
   which `tests/test_rosbridge_adapter.py` pins by the digests of its manifests from before the move.
+- **`quackd robot list` shows the type a robot was registered with.** An SO-100 and an SO-101 are
+  both `lerobot:real`, and the four industrial arms are all `rosarm:ws`, so a list of specs alone read
+  them alike. A `type` column shows each robot's `--robot-type` when any robot has one, and a registry
+  where nobody gave one prints the table it did. `--json` carried the type already.
 
 ### Changed
 
