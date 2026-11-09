@@ -166,6 +166,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
+- **`list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
+  where they said `"built-in"`.** The described row, in every core, said `"installed": false`
+  beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
+  went after a package that does not exist. A third party's adapter that names no extra said
+  `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
+  `built-in` as they did. What changes for you: a script that read `"built-in"` reads `null`.
 
 ### Fixed
 

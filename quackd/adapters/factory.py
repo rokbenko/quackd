@@ -654,7 +654,11 @@ def list_adapters() -> list[dict[str, Any]]:
                 "name": name,
                 "backends": list(row.backends),
                 "status": row.status,
-                "extra": row.extra or "built-in",
+                # the package that installs it, or None for a row nothing installs: the
+                # described row, in every core, and a third party's adapter naming none.
+                # "built-in" beside `installed: false` sent a script that installs what is
+                # missing after a package that does not exist
+                "extra": row.extra,
                 "official": is_official(name),
                 # an adapter with no SDK to probe is usable as soon as it is here at all, and
                 # the described row, in every core, is no adapter to have: a script asking

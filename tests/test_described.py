@@ -270,7 +270,9 @@ def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_r
     assert rows[DESCRIBED]["installed"] is False and rows[DESCRIBED]["adapter_installed"] is False
     assert rows[DESCRIBED]["backends"] == list(DESCRIBED_BODIES)
     assert rows[DESCRIBED]["family"] == ["described"] and rows[DESCRIBED]["route"] == []
-    assert rows[DESCRIBED]["extra"] == "built-in"
+    # nothing installs it, so `--json` names no package a script would go and install
+    assert rows[DESCRIBED]["extra"] is None
+    assert all(row["extra"] == f"quackd[{name}]" for name, row in rows.items() if name != DESCRIBED)
     assert rows[DESCRIBED]["tiers"]["unitree-b2"] == {
         "tier": "described",
         "owner": None,
@@ -703,12 +705,12 @@ def test_the_table_prints_one_tier_to_a_line() -> None:
         "name": "acme",
         "backends": ["mock"],
         "status": "installed here",
-        "extra": "built-in",
+        "extra": None,
         "installed": True,
     }
     buf = io.StringIO()
     Console(file=buf, width=120).print(ui.adapters_table([row]))
-    assert "installed here" in buf.getvalue()
+    assert "installed here" in buf.getvalue() and "built-in" in buf.getvalue()
 
 
 def test_a_tier_reads_back_from_the_record_json_carries() -> None:
