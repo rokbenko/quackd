@@ -3734,6 +3734,10 @@ _BARE_REAL_RUNS_ON_PURPOSE = {
     "docs/examples/lerobot/run-sheet.md": (
         "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM5"
     ),
+    # E167's log: the line it ran, as it was typed and in its trace, and the same line to try
+    "docs/examples/lerobot/e167/README.md": (
+        "docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3"
+    ),
 }
 _BARE_REAL_RUN = re.compile(
     r'quackd (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
@@ -3744,8 +3748,8 @@ _BARE_REAL_RUN = re.compile(
 def test_no_living_page_runs_a_real_arm_by_its_spec() -> None:
     """A spec carries no name to keep a rest pose under, so `run` and `serve-mcp` refuse
     `--robot lerobot:real` (ADR-0058), and a page that tells a reader to type one hands them
-    that refusal. Every example runs the registered `arm-01` instead; the two lines kept on
-    purpose are named above, and a third of either, or a new one, fails here."""
+    that refusal. Every example runs the registered `arm-01` instead; the lines kept on purpose
+    are named above, and a third of either, or a new one, fails here."""
     for path in _living_docs():
         rel = path.relative_to(REPO).as_posix()
         for line in path.read_text(encoding="utf-8").splitlines():

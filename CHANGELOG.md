@@ -478,6 +478,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E167 has a log: a real arm named by its spec, refused before anything connected.** A log can now
+  be one command with no run folder from end to end. `scripts/example_log.py add --text` takes a GIF
+  already made with `--gif`, puts back together a line the terminal wrapped, and reads the robot off
+  the command, and the log names the LLM and the task file the command gave. Its Try it yourself
+  section prints the refused line, with `--dry-run`, in place of a run on the mock, and a log of a
+  dry run keeps that flag when it is tried on the mock.
 - **The Microduck page warns that every `/frame` quackd pulls is a photo in the robot's vet book.**
   From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
   record an owner can share, and quackd asks for two a second for as long as it is connected, so a

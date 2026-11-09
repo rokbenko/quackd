@@ -373,6 +373,17 @@ def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
         script.render_log(root, _experiment(root, "E001"))
 
 
+def test_a_dry_run_is_tried_dry_and_any_other_is_not(tmp_path: Path) -> None:
+    """Left off, the line under Try it yourself would send the moves the log says were skipped."""
+    root = _tree(tmp_path / "examples")
+    for number, extra in (("e001", ["--dry-run"]), ("e002", [])):
+        command = ["quackd", "run", "t.duck", "--robot", "arm-01", *extra]
+        _logged(root, number, {**GOOD, "command": command})
+        text = script.render_log(root, _experiment(root, number.upper()))
+        tried = "quackd run t.duck --robot lerobot:mock --llm openai:gpt-6-sol --no-memory"
+        assert f"{tried}{' --dry-run' if extra else ''}\n```" in text
+
+
 def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
     """The line took the command's third word for a task, which beside a goal is `--goal`, so it
     printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
@@ -586,6 +597,106 @@ def test_add_text_wants_its_video(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     root = _tree(tmp_path / "examples")
     with pytest.raises(script.LogError, match="no video at"):
         _add_text(root, _text_file(tmp_path, REST_POSE), tmp_path, video=tmp_path / "gone.mp4")
+
+
+def test_add_text_uses_a_gif_already_made(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An arm that was never reached gets the same still clip as one that did not move."""
+    _no_media(monkeypatch)
+
+    def no_new_gif(video: Path, gif: Path) -> None:
+        raise AssertionError("a GIF was made from the video")
+
+    monkeypatch.setattr(script, "make_gif", no_new_gif)
+    root = _tree(tmp_path / "examples")
+    text = _text_file(tmp_path, REST_POSE)
+    with pytest.raises(script.LogError, match="no GIF at"):
+        _add_text(root, text, tmp_path, video=None, gif=tmp_path / "gone.gif")
+    made = tmp_path / "still.gif"
+    made.write_bytes(b"GIF89a the still clip")
+    _add_text(root, text, tmp_path, video=None, gif=made)
+    assert (root / "e001" / "log" / "part-3" / "run.gif").read_bytes() == made.read_bytes()
+
+
+REFUSED = (
+    "(v) PS D:\\x> quackd run D:/co/docs/examples/lerobot/e016/wave.duck --robot lerobot:real"
+    " --address COM3 --llm openai:gpt-6-astra --max-steps 10 --no-memory\n"
+    "✗ error: lerobot:real names no registered arm, so it has no rest pose, and it\n"
+    "would be left holding itself up wherever it stopped\n"
+    "  quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME\n"
+    "(v) PS D:\\x>\n"
+)
+
+
+def _refused_log(root: Path, text: Path, tmp_path: Path) -> str:
+    """The README of an example that is one refused run, as `add --text` leaves it."""
+    _add_text(root, text, tmp_path, part=None)
+    (root / "e001" / "log" / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
+    return script.render_log(root, _experiment(root, "E001"))
+
+
+def test_add_text_joins_a_line_the_terminal_wrapped_and_stops_at_the_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    _add_text(root, _text_file(tmp_path, REFUSED), tmp_path, part=None)
+    record = json.loads((root / "e001" / "log" / "record.json").read_text(encoding="utf-8"))
+    assert record["outcome"] == "error"
+    assert record["reason"] == (
+        "error: lerobot:real names no registered arm, so it has no rest pose, and it "
+        "would be left holding itself up wherever it stopped"
+    )
+
+
+def test_a_refused_run_names_what_it_was_given_and_says_it_used_none_of_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
+    assert "| Robot | `lerobot:real` (real) |" in text
+    assert "| LLM | `openai:gpt-6-astra`, never asked |" in text
+    assert "| Task file | [`wave.duck`](../e016/wave.duck) |" in text
+    assert "| LLM calls | none |" in text
+    assert "| Tokens | none |" in text
+    assert "| Connecting | never connected |" in text
+    assert "| First motion | no verb moved the arm |" in text
+
+
+def test_a_refused_run_is_tried_as_the_same_line_and_dry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
+    line = (
+        "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3"
+        " --llm openai:gpt-6-astra --max-steps 10 --no-memory --dry-run"
+    )
+    assert f"```bash\n{line}\n```" in text
+    assert script.TRY_THE_REFUSAL in text
+    assert "--llm None" not in text
+    assert "lerobot:mock" not in text
+
+
+def test_a_refused_run_already_dry_is_not_made_dry_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    dry = REFUSED.replace("--no-memory\n", "--no-memory --dry-run\n")
+    text = _refused_log(root, _text_file(tmp_path, dry), tmp_path)
+    assert "--no-memory --dry-run\n```" in text
+    assert "--dry-run --dry-run" not in text
+
+
+def test_a_command_that_is_no_run_and_no_refusal_is_not_given_a_try_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    with pytest.raises(script.LogError, match="nothing says how to try it"):
+        _refused_log(root, _text_file(tmp_path, REST_POSE), tmp_path)
 
 
 def test_a_whole_log_and_parts_do_not_mix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -892,6 +1003,27 @@ def test_add_wants_exactly_one_video(tmp_path: Path, monkeypatch: pytest.MonkeyP
         script.add_run(root, run, 10.0)
 
 
+def test_a_gif_already_made_is_used_as_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The clip of an arm that did not move is the same every time, so it is never made again."""
+    _no_media(monkeypatch)
+
+    def no_new_gif(video: Path, gif: Path) -> None:
+        raise AssertionError("a GIF was made from the video")
+
+    monkeypatch.setattr(script, "make_gif", no_new_gif)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "still.mp4").write_bytes(b"video")
+    with pytest.raises(script.LogError, match="no GIF at"):
+        script.add_run(root, run, 5.0, gif=tmp_path / "gone.gif")
+    made = tmp_path / "still.gif"
+    made.write_bytes(b"GIF89a the still clip")
+    script.add_run(root, run, 5.0, gif=made)
+    assert (root / "e001" / "log" / "run.gif").read_bytes() == made.read_bytes()
+
+
 def test_a_video_kept_elsewhere_is_named_with_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1023,7 +1155,8 @@ def test_the_how_to_names_everything_a_log_asks_for() -> None:
         assert f"`{word}`" in section
     for verb in ("add", "write", "check"):
         assert f"example_log.py {verb}" in section
-    for flag in ("--speed", "--example", "--replace", "--video", "--after", "--part", "--text"):
+    flags = ("--speed", "--example", "--replace", "--video", "--gif", "--after", "--part", "--text")
+    for flag in flags:
         assert flag in section
 
 

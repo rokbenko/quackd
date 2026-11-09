@@ -202,6 +202,12 @@ questions yourself, as a person did on the arm. It shows a simulated arm and not
 a checkout of this repository with quackd's `lerobot-sim` extra, and `lerobot-vla` as well if the
 policy is a checkpoint. No LLM is asked, so it costs nothing."""
 
+TRY_THE_REFUSAL = """\
+This needs no arm and no key, and it costs nothing: quackd refuses the line before it connects to
+anything or asks any LLM, so it gets no further on your machine than it did here. The line carries
+`--dry-run`, which is refused the same way, so that it could not move an arm even if it got further.
+Run it from a checkout of this repository with quackd's `lerobot` extra."""
+
 
 class LogError(Exception):
     """Something a person has to put right, said in a sentence that tells them what."""
@@ -341,17 +347,49 @@ def _goal(summary: dict[str, Any]) -> str | None:
     return None
 
 
+def _flag(words: Sequence[str], name: str) -> str | None:
+    """What a command gave a flag, if it gave it anything."""
+    return next((str(after) for word, after in itertools.pairwise(words) if word == name), None)
+
+
 def _try_intro(summary: dict[str, Any]) -> str:
+    if summary.get("provider") is None:
+        return TRY_THE_REFUSAL
     said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
     return said.format(what="task file" if _goal(summary) is None else "goal")
 
 
+def _refused(summary: dict[str, Any]) -> bool:
+    """Whether this is a `quackd run` that quackd turned down, so that nothing ever started."""
+    return (
+        summary.get("provider") is None
+        and summary["command"][:2] == ["quackd", "run"]
+        and summary["outcome"] == "error"
+    )
+
+
+def _try_the_refusal(summary: dict[str, Any]) -> str:
+    """The line quackd refused, which gets no further on anybody else's machine."""
+    words = summary["command"]
+    if not _refused(summary):
+        raise LogError(f"`{' '.join(words)}` is no run and no refusal: nothing says how to try it")
+    path = _duck_path(summary)
+    line = [path if path and word.endswith(".duck") else word for word in words]
+    # the refusal covers a dry run as well, and a dry run moves no arm should the refusal ever go
+    dry = [] if "--dry-run" in line else ["--dry-run"]
+    return " ".join(f'"{word}"' if " " in word else word for word in [*line, *dry])
+
+
 def _try_it(summary: dict[str, Any], notes: dict[str, Any]) -> str:
+    if summary.get("provider") is None:
+        return _try_the_refusal(summary)
     goal = _goal(summary)
     words = summary["command"]
     task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
     if summary.get("provider") != VLA:
-        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory"
+        # without it, a log of a dry run would be tried as a run that sends its moves
+        dry = " --dry-run" if "--dry-run" in words else ""
+        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory{dry}"
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
     # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
     # are in no record, so its server's line is the one somebody typed, from the notes.
@@ -394,23 +432,27 @@ def _numbers(
     vla = summary.get("provider") == VLA
     waited = _seconds(summary.get("llm_latency_s")) if ran else "none"
     waiting = [] if vla else [("Waiting for the LLM", waited)]
-    if not ran:
-        first_motion = "not recorded"
-    elif moved is None:
+    refused = _refused(summary)
+    if moved is not None:
+        first_motion = f"{moved:.1f} s after the start"
+    elif ran or refused:
         first_motion = "no verb moved the arm"
     else:
-        first_motion = f"{moved:.1f} s after the start"
+        first_motion = "not recorded"
     tokens = f"{usage.get('input_tokens', 0):,} in, {usage.get('output_tokens', 0):,} out"
+    # a refused run can name an LLM and a task file on its command line, and use neither
+    named = _flag(summary["command"], "--llm")
+    llm = f"`{_pilot(summary)}`" if ran else f"`{named}`, never asked" if named else "none"
     rows: list[tuple[str, object]] = [
         ("quackd version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
         ("Robot", f"`{summary['robot']}` ({summary.get('transport')})"),
-        ("Pilot" if vla else "LLM", f"`{_pilot(summary)}`" if ran else "none"),
-        ("Task file", _task_file(summary, folder) if ran else "none"),
+        ("Pilot" if vla else "LLM", llm),
+        ("Task file", _task_file(summary, folder) if ran or _duck_path(summary) else "none"),
         ("Steps", summary.get("steps", "none")),
         ("Turns" if vla else "LLM calls", summary.get("llm_calls", "none")),
         ("Total time", _seconds(summary.get("wall_s"))),
-        ("Connecting", _seconds(summary.get("connect_s"))),
+        ("Connecting", "never connected" if refused else _seconds(summary.get("connect_s"))),
         *waiting,
         ("First motion", first_motion),
         ("Tokens", tokens if ran else "none"),
@@ -698,13 +740,16 @@ def add_run(
     after: Sequence[Path] = (),
     video: Path | None = None,
     part: int | None = None,
+    gif: Path | None = None,
 ) -> Path:
     """Make this run its example's log and leave notes for somebody to fill in.
 
     An example has one log. Adding the same run again, as a better video does, keeps what was
     written about it. A different run starts the notes over, because they described the old one, so
     it takes `replace`, and the old log stays in git's history. `after` is the saved terminal output
-    of the commands run once the run was over, in the order they ran."""
+    of the commands run once the run was over, in the order they ran. `gif` is a GIF already made,
+    used as it is in place of a video: the clip of an arm that did not move is the same every time,
+    and git keeps one copy of identical files."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
@@ -719,7 +764,10 @@ def add_run(
     for what, text in copied:
         if PRIVATE.search(text):
             raise LogError(f"{what} holds a key or a path into a home folder: not copying it")
-    if video is None:
+    if gif is not None:
+        if not gif.is_file():
+            raise LogError(f"no GIF at {gif}")
+    elif video is None:
         video = _video_in(run_dir)
     elif not video.is_file():
         raise LogError(f"no video at {video}")
@@ -735,10 +783,7 @@ def add_run(
         if logged != run_dir.name:
             shutil.rmtree(log)
     log.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as scratch:
-        made = Path(scratch) / "run.gif"
-        make_gif(video, made)
-        shutil.copyfile(made, log / "run.gif")
+    _place_gif(log, gif, video)
     frames = _keep_frames(run_dir, log)
     _write(log / "summary.json", summary)
     _write(log / "terminal.txt", trace)
@@ -747,6 +792,17 @@ def add_run(
     media = {"speed": speed, "frames": frames, "run_folder": run_dir.name}
     _write(log / "media.json", json.dumps(media, indent=2) + "\n")
     return _notes_for(root / name.lower() / "log", part)
+
+
+def _place_gif(log: Path, gif: Path | None, video: Path | None) -> None:
+    """A GIF already made goes in as it is, and a video is made into one."""
+    if gif is not None:
+        shutil.copyfile(gif, log / "run.gif")
+    elif video is not None:
+        with tempfile.TemporaryDirectory() as scratch:
+            made = Path(scratch) / "run.gif"
+            make_gif(video, made)
+            shutil.copyfile(made, log / "run.gif")
 
 
 def _log_of(home: Path, part: int | None) -> Path:
@@ -772,41 +828,52 @@ def add_text(
     example: str,
     version: str,
     started: str,
-    video: Path,
+    video: Path | None,
     part: int | None = None,
+    gif: Path | None = None,
 ) -> Path:
-    """Log what a command with no run folder printed, such as `quackd robot rest-pose`.
+    """Log what a command with no run folder printed: `quackd robot rest-pose`, a refused run.
 
-    Nothing recorded its version or when it ran, so somebody says, and what is not in its output
-    reads as not recorded. It ended as its last line marked `✓` or `✗` says."""
+    Nothing recorded its version or when it ran, so somebody says. What is not in its output reads
+    as not recorded, but for the robot, which the command names. It ended as its last line marked
+    `✓` or `✗` says, with whatever of that line the terminal wrapped onto the ones below it."""
     trace = _read(text_file).removeprefix("\ufeff")
     if PRIVATE.search(trace):
         raise LogError(f"{text_file.name} holds a key or a path into a home folder: not copying it")
-    if not video.is_file():
+    if gif is not None:
+        if not gif.is_file():
+            raise LogError(f"no GIF at {gif}")
+    elif video is None or not video.is_file():
         raise LogError(f"no video at {video}")
     if re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", started) is None:
         raise LogError(f"--started takes a UTC time like 2026-11-06T12:27:26Z, not {started}")
     typed = _typed(trace.split("\n", 1)[0], text_file.name)
-    marked = [line for line in trace.splitlines() if line[:2] in ("✓ ", "✗ ")]
+    lines = trace.splitlines()
+    marked = [n for n, line in enumerate(lines) if line[:2] in ("✓ ", "✗ ")]
     if not marked:
         raise LogError(f"{text_file.name} has no line marked with ✓ or ✗ to say how it ended")
+    last = lines[marked[-1]]
+    # the rest of a wrapped line is what follows it flush left, up to a hint or the next prompt
+    wrapped = itertools.takewhile(
+        lambda line: line[:1].strip() and not line.rstrip().endswith(">"),
+        lines[marked[-1] + 1 :],
+    )
     body = re.search(r"^(\S+) \(\w+:(\w+)\) is at", trace, flags=re.MULTILINE)
+    command = [word.strip("\"'") for word in shlex.split(typed, posix=False)]
+    named = _flag(command, "--robot") or "not recorded"
     record = {
-        "command": [word.strip("\"'") for word in shlex.split(typed, posix=False)],
+        "command": command,
         "version": version,
         "started_at": started,
-        "outcome": "success" if marked[-1].startswith("✓") else "error",
-        "reason": marked[-1][2:],
-        "robot": body.group(1) if body else "not recorded",
-        "transport": body.group(2) if body else "not recorded",
+        "outcome": "success" if last.startswith("✓") else "error",
+        "reason": " ".join([last[2:], *wrapped]),
+        "robot": body.group(1) if body else named,
+        "transport": body.group(2) if body else named.partition(":")[2] or "not recorded",
     }
     home = root / example.lower() / "log"
     log = _log_of(home, part)
     log.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as scratch:
-        made = Path(scratch) / "run.gif"
-        make_gif(video, made)
-        shutil.copyfile(made, log / "run.gif")
+    _place_gif(log, gif, video)
     _write(log / "terminal.txt", trace)
     _write(log / "record.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     media = {"speed": speed, "frames": 0, "run_folder": None}
@@ -829,6 +896,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     add.add_argument("--replace", action="store_true", help="log this run instead of the old one")
     add.add_argument("--video", type=Path, help="the video, where it is not in the run folder")
     add.add_argument(
+        "--gif", type=Path, help="a GIF already made, used as it is in place of a video"
+    )
+    add.add_argument(
         "--after",
         type=Path,
         action="append",
@@ -844,9 +914,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.verb == "add" and args.text is not None:
-            needs = (args.example, args.version, args.started, args.video)
-            if None in needs:
-                parser.error("--text needs --example, --version, --started and --video")
+            needs = (args.example, args.version, args.started)
+            if None in needs or (args.video is None) == (args.gif is None):
+                parser.error("--text needs --example, --version, --started, and --video or --gif")
             notes = add_text(
                 EXAMPLES,
                 args.text,
@@ -856,6 +926,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.started,
                 args.video,
                 args.part,
+                args.gif,
             )
             print(f"Copied. Fill in {notes}, then run: example_log.py write")
         elif args.verb == "add":
@@ -870,6 +941,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.after,
                 args.video,
                 args.part,
+                args.gif,
             )
             print(f"Copied. Fill in {notes}, then run: example_log.py write")
         elif args.verb == "write":

@@ -1,0 +1,112 @@
+{
+  "duck": "e121-the-human-says-no",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e121/the-human-says-no.duck",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "10",
+    "--no-memory"
+  ],
+  "version": "0.31.3",
+  "outcome": "aborted",
+  "reason": "the pilot was unsure (An unloaded extension may fit the 0.4 m reach, but holding it 'for as long as you can' depends on continuous static-hold duty and thermal limits, which are not published; mains power does not establish those limits. Can a human approve a bounded holding time and safe pose instead?) and a person said no",
+  "steps": 1,
+  "llm_calls": 2,
+  "elapsed_s": 27.39,
+  "started_at": "2026-11-06T17:25:55.276Z",
+  "ended_at": "2026-11-06T17:26:31.104Z",
+  "wall_s": 35.828,
+  "connect_s": 8.166,
+  "llm_latency_s": 12.841,
+  "llm_latency_p50_s": 5.919,
+  "llm_latency_p90_s": 6.922,
+  "llm_latency_max_s": 6.922,
+  "first_motion_s": null,
+  "first_motion_llm_calls": null,
+  "usage": {
+    "input_tokens": 7425,
+    "output_tokens": 208,
+    "reasoning_tokens": 31,
+    "cache_read_tokens": 3304,
+    "cache_write_tokens": 3869
+  },
+  "price": {
+    "input": 10.0,
+    "output": 50.0,
+    "cache_read": 1.0,
+    "cache_write": 12.5,
+    "unit": "USD per million tokens",
+    "source": "catalogue",
+    "checked": "2026-09-23"
+  },
+  "cost_usd": 0.064587,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2183971.7376937,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -5.2,
+        "shoulder_lift": -100.8,
+        "elbow_flex": 96.4,
+        "wrist_flex": 79.2,
+        "wrist_roll": 0.7,
+        "gripper": 2.5
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 28,
+        "shoulder_lift": 29,
+        "elbow_flex": 30,
+        "wrist_flex": 30,
+        "wrist_roll": 30,
+        "gripper": 30
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 34,
+          "p50_ms": 3.8,
+          "p99_ms": 61.5,
+          "max_ms": 61.5
+        }
+      },
+      "camera": {
+        "configured": true,
+        "url": "opencv://1?name=arm",
+        "ok": true,
+        "age_s": 20.87,
+        "size": "640x480",
+        "error": null
+      }
+    }
+  },
+  "log_dropped": 0
+}
