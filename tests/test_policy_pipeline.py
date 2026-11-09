@@ -19,12 +19,14 @@ CPU and nothing else, and a random policy says nothing about what a trained one 
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import hashlib
 import importlib.util
 import json
 import math
 import os
 import re
+import sys
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -451,6 +453,181 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
     (where / name).write_text(content)
     with pytest.raises(P.PipelineRefused, match=needle):
         _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "needle"),
+    [
+        (
+            "config.JSON",
+            json.dumps({"auto_map": {"AutoConfig": "Other/Repo--code.Config"}}),
+            "maps its classes to code",
+        ),
+        (
+            "tokenizer_config.Json",
+            json.dumps({"auto_map": {"AutoTokenizer": ["code.Tokenizer", None]}}),
+            "maps its classes to code",
+        ),
+        (
+            "Adapter_Config.JSON",
+            json.dumps({"peft_type": "LORA", "base_model_name_or_path": "Other/Base"}),
+            "holds a PEFT adapter",
+        ),
+    ],
+)
+def test_a_pinned_models_files_are_read_whatever_the_case_of_their_names(
+    tmp_path: Path, name: str, content: str, needle: str
+) -> None:
+    """NTFS finds `config.json` under any case, and transformers with it, so a cached
+    `config.JSON` is what a build reads. On Windows a pattern matches with its case folded, and
+    the suffix that says a file is JSON was read without, so such a file passed unread and a
+    config that maps a class to code passed with it, or a PEFT adapter under another spelling.
+    A name is read with its case folded on every system, and only the one misspelled file is
+    in the directory, since NTFS would keep a name already there."""
+    hub = _smolvla(tmp_path)
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    (where / name).write_text(content)
+    assert [p.name for p in where.iterdir()] == [name]
+    with pytest.raises(P.PipelineRefused, match=needle) as refused:
+        _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+    assert repr(name) in str(refused.value), "a file's name is quoted, as it may hold anything"
+
+
+def test_a_json_too_deep_to_read_is_refused(tmp_path: Path) -> None:
+    """`json.loads` raises a `RecursionError` on nesting deep enough, which nothing caught, so
+    one such file, the checkpoint's own or a pinned model's, stopped the server with a
+    traceback. It is refused as any file that is not JSON is."""
+    deep = "[" * 100_000 + "]" * 100_000
+    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
+        _fetch(_hub(tmp_path / "own", config=deep), fps=float(FPS))
+    hub = _smolvla(tmp_path / "pinned")
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    (where / "config.json").write_text(deep)
+    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
+        _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+
+
+def test_a_pinned_model_whose_config_names_a_kernel_on_the_hub_as_its_attention_is_refused(
+    tmp_path: Path,
+) -> None:
+    """transformers 5 builds a model with the attention its config names, and two kinds of name
+    reach a kernel it fetches from the Hub and runs once the `kernels` package is installed, at a
+    revision no pin fixes: a repository, `owner/name`, and a flash attention, which it swaps for
+    a kernels-community repository whenever flash_attn cannot run. SmolVLA's build passes no
+    attention of its own, so the pinned backbone's config decides. The name may be the config's
+    own, under any key whose name holds `attn_implementation`, the internal one LeRobot's GR00T
+    config takes as it comes among them, a mapping of sub-configs' names to names, or a
+    sub-config's, and each is refused before anything is built from the directory, as is any
+    name for experts, which transformers runs some of with kernels from the Hub. A name
+    transformers carries with no kernel behind it is served."""
+    hub = _smolvla(tmp_path)
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    pins = (f"SomeOrg/Some-VLM@{PINNED}",)
+    carried: tuple[dict[str, Any], ...] = (
+        {"attn_implementation": "sdpa"},
+        {"attn_implementation": "eager"},
+        {"attn_implementation": "paged|sdpa"},
+        {"attn_implementation": {"": "sdpa", "vision_config": "eager"}},
+        {"_attn_implementation_autoset": True},
+    )
+    for said in carried:
+        (where / "config.json").write_text(json.dumps(said))
+        assert _fetch(hub, fps=float(FPS), pins=pins).config_overrides["vlm_model_name"] == str(
+            where
+        )
+    repository, flash = "a repository of kernels on the Hub", "a flash attention"
+    for said, needle, kind in (
+        (
+            {"attn_implementation": "flash_attention_2"},
+            "as its attention ('attn_implementation')",
+            flash,
+        ),
+        (
+            {"_attn_implementation": "paged|flash_attention_3"},
+            "as its attention ('_attn_implementation')",
+            flash,
+        ),
+        (
+            {"attn_implementation": {"": "sdpa", "text_config": "flash_attention_4"}},
+            "as its attention ('attn_implementation')",
+            flash,
+        ),
+        (
+            {"_attn_implementation_internal": "Other/Kernels"},
+            "as its attention ('_attn_implementation_internal')",
+            repository,
+        ),
+        ({"experts_implementation": "sonicmoe"}, "as its experts ('experts_implementation')", ""),
+        (
+            {"_experts_implementation_internal": "deepgemm"},
+            "as its experts ('_experts_implementation_internal')",
+            "",
+        ),
+        (
+            {"attn_implementation": "kernels-community/flash-attn3"},
+            "as its attention ('attn_implementation')",
+            repository,
+        ),
+        (
+            {"_attn_implementation": "Other/Kernels@main:attention"},
+            "as its attention ('_attn_implementation')",
+            repository,
+        ),
+        (
+            {"attn_implementation": {"": "sdpa", "vision_config": "paged|Other/Kernels"}},
+            "as its attention ('attn_implementation')",
+            repository,
+        ),
+        (
+            {"text_config": {"model_type": "llama", "attn_implementation": "Other/Kernels"}},
+            "as its attention ('attn_implementation')",
+            repository,
+        ),
+    ):
+        (where / "config.json").write_text(json.dumps(said))
+        with pytest.raises(P.PipelineRefused, match=re.escape(needle)) as no:
+            _fetch(hub, fps=float(FPS), pins=pins)
+        assert kind in str(no.value), str(no.value)
+
+
+def test_a_groot_base_whose_config_sets_its_attention_past_transformers_is_refused(
+    tmp_path: Path,
+) -> None:
+    """transformers drops `_attn_implementation_internal` from a config of its own, but
+    LeRobot's GR00T config sets every key it is given, so a pinned base whose `config.json`
+    holds one sets the attention GR00T's own module is built with, and a repository there is a
+    kernel from the Hub, whatever its publisher. The base's directory is refused as the build
+    is handed it, though its backbone passes the read before the weights."""
+    hub = _groot(tmp_path)
+    base = hub.files[(GROOT_BASE, PINNED)]
+    said = {**base[up.CONFIG_FILE], "_attn_implementation_internal": "Other/Kernels"}
+    base[up.CONFIG_FILE] = said
+    where = hub.snapshot(GROOT_BASE, PINNED, P.NESTED_FILES)
+    (where / up.CONFIG_FILE).write_text(json.dumps(said))
+    needle = "as its attention ('_attn_implementation_internal'), a repository"
+    with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+
+
+def test_a_pinned_model_whose_config_carries_a_quantization_is_refused(tmp_path: Path) -> None:
+    """transformers 5 loads a model whose config carries a `quantization_config` through a
+    quantizer built from it, and some of its quantizers fetch their kernels from the Hub and run
+    them once the `kernels` package is installed (eetq's, mxfp4's and fine-grained fp8's among
+    them), at a revision no pin fixes. GR00T's base is always loaded that way, and SmolVLA's
+    backbone is when its weights are, so the key refuses the pinned model wherever it sits in
+    its JSON and whatever it holds, before anything is built from the directory."""
+    hub = _smolvla(tmp_path)
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    pins = (f"SomeOrg/Some-VLM@{PINNED}",)
+    for name, said in (
+        ("config.json", {"quantization_config": {"quant_method": "eetq"}}),
+        ("config.json", {"text_config": {"quantization_config": None}}),
+        ("generation_config.json", {"quantization_config": {}}),
+    ):
+        (where / "config.json").write_text("{}")
+        (where / name).write_text(json.dumps(said))
+        with pytest.raises(P.PipelineRefused, match=re.escape(f"{name!r} carries a quantization")):
+            _fetch(hub, fps=float(FPS), pins=pins)
 
 
 def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path) -> None:
@@ -981,6 +1158,7 @@ _N1_5_PACK = {"registry_name": up.GROOT_N1_5_STEP_NAMES[0], "config": {}}
         ({"cameras": ("front", "wrist")}, "looks for the cameras wrist"),
         ({"drop": ["base_model_path"]}, "names no base_model_path"),
         ({"backbone": "SomeOrg/Other-VLM"}, "'SomeOrg/Other-VLM' as its backbone"),
+        ({"use_flash_attention": True}, "asks for flash attention (use_flash_attention)"),
     ],
 )
 def test_a_groot_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
@@ -990,8 +1168,9 @@ def test_a_groot_that_would_not_answer_in_this_arms_joints_is_refused_before_its
     longer serves; LIBERO's gripper of -1 or 1; a group decoded as an end effector's pose; a
     decode with no statistics, whose actions would reach the arm still normalised; a pack step
     looking for a camera its config has no image for; a config naming no base, which LeRobot
-    would fill with its own at no revision; and a base whose backbone LeRobot would fetch
-    trusting its repository's code."""
+    would fill with its own at no revision; a base whose backbone LeRobot would fetch trusting
+    its repository's code; and a checkpoint that asks for flash attention, which transformers
+    swaps for a kernel from the Hub when flash_attn cannot run (`upstream_api.GROOT_BASE_MODEL`)."""
     hub = _groot(tmp_path, **kw)
     with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
         _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
@@ -1039,6 +1218,90 @@ def test_a_groot_that_could_not_answer_here_is_refused_before_its_weights(
     assert _fetch(hub, fps=float(FPS), pins=GROOT_PINS).shape.policy_type == "groot"
 
 
+def _kernels_on_the_path(
+    root: Path, monkeypatch: pytest.MonkeyPatch, *, version: str | None, namespace: bool = False
+) -> None:
+    """A `kernels` package on `sys.path` for one test: with the distribution's metadata at
+    `version`, as `pip install kernels` leaves one, or with none when `version` is None, a
+    folder that is merely named so, a namespace package when `namespace`. Importing it raises,
+    so a test fails if anything does."""
+    package = root / "kernels"
+    package.mkdir(parents=True)
+    if not namespace:
+        (package / "__init__.py").write_text("raise ImportError('a stand-in, never imported')\n")
+    if version is not None:
+        info = root / f"kernels-{version}.dist-info"
+        info.mkdir()
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: kernels\nVersion: {version}\n"
+        )
+    monkeypatch.syspath_prepend(str(root))
+    importlib.invalidate_caches()
+
+
+def _kernels_transformers_takes() -> tuple[str, str] | None:
+    """The bounds of the kernels versions transformers takes, where transformers imports."""
+    try:
+        from transformers.utils.import_utils import KERNELS_MAX_VERSION, KERNELS_MIN_VERSION
+    except ImportError:
+        return None
+    return KERNELS_MIN_VERSION, KERNELS_MAX_VERSION
+
+
+def test_nothing_is_loaded_where_transformers_would_run_kernels_from_the_hub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """transformers 5 fetches kernels from the Hub through the kernels package and runs them as
+    it builds a model, for an attention or experts a config names, a flash attention flash_attn
+    cannot run and some quantizers, at a revision no pin fixes, and without the package each of
+    those fails as the model is built. Nothing quackd serves needs it, so where it is installed
+    at a version transformers takes the server loads nothing, and asks the Hub for nothing first
+    (`pipeline.kernels_would_load`)."""
+    bounds = _kernels_transformers_takes()
+    _kernels_on_the_path(tmp_path / "site", monkeypatch, version=bounds[0] if bounds else "0.17.2")
+    for hub, pins in ((_hub(tmp_path / "act"), ()), (_groot(tmp_path / "groot"), GROOT_PINS)):
+        with pytest.raises(P.PipelineRefused, match="the kernels package is installed here") as no:
+            _fetch(hub, fps=float(FPS), pins=pins)
+        assert "uv pip uninstall kernels" in str(no.value)
+        assert not hub.asked and not hub.snapshots and not hub.tags_asked
+    assert "kernels" not in sys.modules
+
+
+def test_a_folder_named_kernels_is_not_the_kernels_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """transformers' own check asks for the kernels distribution's metadata, so a folder named
+    `kernels` on the path with none behind it, a package or a namespace, is no kernels to it,
+    and none to the server either: it loads as ever, and imports nothing of the folder to find
+    out."""
+    for n, namespace in enumerate((False, True)):
+        with monkeypatch.context() as patch:
+            _kernels_on_the_path(tmp_path / f"stray{n}", patch, version=None, namespace=namespace)
+            assert importlib.util.find_spec("kernels") is not None
+            assert _fetch(_hub(tmp_path / f"act{n}"), fps=float(FPS)).shape.policy_type == "act"
+    assert "kernels" not in sys.modules
+
+
+def test_kernels_count_at_the_versions_transformers_takes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bounds are transformers' own, read where it imports: a kernels it would not take
+    loads no kernel, so it does not stop the server, and where transformers does not import,
+    every installed version counts (`pipeline.kernels_would_load`)."""
+    bounds = _kernels_transformers_takes()
+    cases = (
+        [(bounds[0], True), ("0.1.0", False), (bounds[1], False)]
+        if bounds
+        else [("0.17.2", True), ("0.1.0", True)]
+    )
+    for n, (version, counts) in enumerate(cases):
+        with monkeypatch.context() as patch:
+            _kernels_on_the_path(tmp_path / f"v{n}", patch, version=version)
+            assert P.kernels_would_load() is counts, version
+    assert not P.kernels_would_load()
+    assert "kernels" not in sys.modules
+
+
 def test_a_groot_whose_vlm_step_names_no_model_is_refused_before_its_weights(
     tmp_path: Path,
 ) -> None:
@@ -1057,6 +1320,69 @@ def test_a_groot_whose_vlm_step_names_no_model_is_refused_before_its_weights(
         )
         assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
         assert not hub.snapshots
+
+
+class _TagMoves(FakeHub):
+    """The stand-in Hub with `repo`'s `TAG` naming the commit `first` until a file of it is read
+    at the tag, and `then` from that read on, as a push between two reads leaves a tag. A file
+    lands in a directory named by its commit, as in the Hub's cache, and a snapshot holds the
+    files of its commit that its patterns match."""
+
+    def __init__(self, hub: FakeHub, repo: str, *, first: str, then: str) -> None:
+        super().__init__(hub.root, hub.files)
+        self.repo, self.named, self.then = repo, first, then
+
+    def _commit_of(self, repo: str, revision: str) -> str:
+        return self.named if (repo, revision) == (self.repo, TAG) else revision
+
+    def file(
+        self, repo: str, revision: str, filename: str, *, dataset: bool = False
+    ) -> Path | None:
+        path = super().file(repo, self._commit_of(repo, revision), filename, dataset=dataset)
+        if (repo, revision) == (self.repo, TAG):
+            self.named = self.then
+        return path
+
+    def snapshot(self, repo: str, revision: str, patterns: Sequence[str]) -> Path:
+        self.snapshots.append((repo, revision, tuple(patterns)))
+        commit = self._commit_of(repo, revision)
+        path = self.root / "snapshots" / repo.replace("/", "--") / commit
+        path.mkdir(parents=True, exist_ok=True)
+        for name, content in self.files.get((repo, commit), {}).items():
+            if any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
+                (path / name).write_text(json.dumps(content), encoding="utf-8")
+        return path
+
+
+def test_a_groot_base_pinned_at_a_tag_is_fetched_at_the_commit_its_config_was_read_at(
+    tmp_path: Path,
+) -> None:
+    """A tag names one commit until somebody moves it. The base's `config.json` is read before
+    any weight, for the backbone it names, and the rest of the base is fetched after the
+    checkpoint's own weights, so the tag asked again then could name a commit whose
+    `config.json` nobody read, one naming a backbone LeRobot would fetch at no revision trusting
+    its repository's code (`upstream_api.GROOT_BASE_MODEL`). The rest is fetched at the commit
+    the read named, which the record says. A Hub that does not say which commit a tag's file
+    came from is refused, rather than asked again."""
+    moved = _commit("a push after the read")
+    hub = _groot(tmp_path)
+    hub.files[(GROOT_BASE, moved)] = {
+        up.CONFIG_FILE: {"model_type": "Gr00tN1d7", "model_name": "Other/Backbone"}
+    }
+    moving = _TagMoves(hub, GROOT_BASE, first=PINNED, then=moved)
+    pins = (f"{GROOT_BASE}@{TAG}", f"{COSMOS}@{PINNED}")
+    checkpoint = _fetch(moving, fps=float(FPS), pins=pins)
+    handed = Path(checkpoint.config_overrides["base_model_path"])
+    said = json.loads((handed / up.CONFIG_FILE).read_text(encoding="utf-8"))
+    assert said["model_name"] == COSMOS, "the build was handed a base nobody read"
+    assert (GROOT_BASE, PINNED, P.NESTED_FILES) in moving.snapshots
+    assert f"base_model_path {GROOT_BASE}@{TAG}, commit {PINNED[:12]}" in checkpoint.loaded
+    unsaid = _groot(tmp_path / "unsaid")
+    unsaid.files[(GROOT_BASE, TAG)] = unsaid.files[(GROOT_BASE, PINNED)]
+    with pytest.raises(P.PipelineRefused, match="landed in no commit's directory"):
+        _fetch(unsaid, fps=float(FPS), pins=pins)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in unsaid.asked]
+    assert not unsaid.snapshots
 
 
 def _step(hub: FakeHub, name: str) -> dict[str, Any]:
@@ -1234,6 +1560,36 @@ def test_closing_a_checkpoint_waits_on_no_step_still_inferring(tmp_path: Path) -
     with pytest.raises(RuntimeError, match="closed"):
         runner.begin(JOINTS, {})
     assert runner._features is None, "a begin after the close undid it"
+
+
+class _TrainConfigOfAnotherCommit(FakeHub):
+    """The stand-in Hub with a checkpoint's `train_config.json` landing in another directory
+    than the rest of it, as a tag moved between two reads leaves it."""
+
+    def file(
+        self, repo: str, revision: str, filename: str, *, dataset: bool = False
+    ) -> Path | None:
+        path = super().file(repo, revision, filename, dataset=dataset)
+        if path is None or filename != up.TRAIN_CONFIG_FILE:
+            return path
+        moved = path.parent.with_name("another-commit") / filename
+        moved.parent.mkdir(parents=True, exist_ok=True)
+        moved.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        return moved
+
+
+def test_the_training_runs_file_is_read_beside_the_checkpoint_it_describes(tmp_path: Path) -> None:
+    """Every other file of a checkpoint is refused unless it landed beside its `config.json`,
+    so the files are one commit's. `train_config.json` says what data the checkpoint learned
+    from, and a tag that moved would answer with another commit's run, so its rate too is refused
+    with a sentence saying to give `--fps`, before the weights are fetched."""
+    hub = _hub(tmp_path)
+    elsewhere = _TrainConfigOfAnotherCommit(hub.root, hub.files)
+    with pytest.raises(P.PipelineRefused, match="did not land beside") as refused:
+        _fetch(elsewhere)
+    assert "--fps" in str(refused.value)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in elsewhere.asked]
+    assert _fetch(elsewhere, fps=float(FPS)).rate_source == "--fps", "--fps needs no such file"
 
 
 def test_the_rate_is_fps_or_the_training_datasets_at_the_revision_it_names(tmp_path: Path) -> None:
