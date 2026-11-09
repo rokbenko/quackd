@@ -29,6 +29,7 @@ from quackd.adapters.base import (
     RestResult,
     adapter_name,
     backend_name,
+    close_gripper_if_any,
     go_to_rest_if_any,
     let_go_if_any,
     take_hold_if_any,
@@ -88,8 +89,10 @@ from quackd.memory import RobotMemory
 from quackd.perception import detector_for, lens_of
 from quackd.perception.base import Detection, Detector, detect_off_loop, detect_times
 from quackd.release import (
+    CLOSING_THE_GRIPPER,
     FOLD_STOPPED,
     FOLDING_IN,
+    GRIPPER_STOPPED,
     HANDS_AWAY_S,
     FoldStopped,
     cancel_and_wait,
@@ -741,6 +744,9 @@ class AgentLoop:
         self._fold_watch: Callable[[], Awaitable[Any]] | None = None
         """What hears a fresh press from the hand-back to the end of the fold, once somebody has
         been asked about the gripper (`_watch_for_a_press`)."""
+        self._gripper_opened = False
+        """The hand-back opened the gripper, and a fold leaves it that way, so the fold that puts
+        the arm down closes it again (`_close_what_the_hand_back_opened`)."""
         self._no_fold = False
         """The hand-back left the arm where it is: a press, or a gripper that would not open."""
         self._handed_over = False
@@ -1330,10 +1336,18 @@ class AgentLoop:
             watch = self._fold_watch
             if watch is None:
                 if self.executor.abort.is_set() or self.cfg.dry_run:
-                    return await self._rest()
+                    parked = await self._rest()
+                    await self._close_what_the_hand_back_opened(parked, None)
+                    return parked
                 watch = self._pressed_during_the_fold
             try:
-                return await fold_unless_stopped(functools.partial(self._rest, pause=False), watch)
+                parked = await fold_unless_stopped(
+                    functools.partial(self._rest, pause=False), watch
+                )
+                # under the same watch, which the `finally` below ends: a press made as the fold
+                # arrived is one the gripper hears
+                await self._close_what_the_hand_back_opened(parked, watch)
+                return parked
             except FoldStopped:
                 pass
             except (asyncio.CancelledError, KeyboardInterrupt):
@@ -1407,8 +1421,8 @@ class AgentLoop:
     HAND_IT_BACK = (
         "the run is over and the arm is holding where it ended. Take hold of whatever is in "
         "the gripper and press Enter: the gripper opens all the way, and "
-        f"{HANDS_AWAY_S:.0f} s later the arm folds up, so take your hands away as soon as it is "
-        "open. Leave it and the arm folds up with the gripper shut"
+        f"{HANDS_AWAY_S:.0f} s later the arm folds up and the gripper closes again, so take your "
+        "hands away as soon as it is open. Leave it and the arm folds up with the gripper shut"
     )
     """Asked before the gripper opens, not after. An arm folding to its rest pose with a
     pencil still in the jaws can drive that pencil into the bench, and the person who put it
@@ -1788,6 +1802,7 @@ class AgentLoop:
             await self._hold_the_arm(hand, "a press stopped the gripper opening")
             return
         if why is None:
+            self._gripper_opened = True
             self._emit("hand_off", stage="unloaded", reason="the gripper is open")
             return
         # Somebody is standing there with their hand out: a gripper that did not open has to be
@@ -1845,6 +1860,59 @@ class AgentLoop:
         except Exception as e:
             return f"{type(e).__name__}: {e}"
         return None if result.ok else result.summary.removeprefix("gripper did not open: ")
+
+    async def _close_what_the_hand_back_opened(
+        self, parked: RestResult | None, stopped: Callable[[], Awaitable[Any]] | None
+    ) -> None:
+        """Close the gripper the hand-back opened, now that a fold has put the arm down.
+
+        The hand-back opens the jaws all the way and the rest move leaves them there
+        (`verbs.rest_goal`), so every `--by-hand` run that ended on Enter put the arm away with its
+        jaws wide open. Only a gripper this run opened, which is empty because somebody has just
+        taken what was in it: one nobody opened stays as it is, as the question says it does. And
+        only over an arm a fold put down, by when the hands told to come away have had the whole
+        of that fold, and the count before a first one, where an arm that did not get there is
+        somebody being asked to clear its way. They are told as it starts, since a second fold
+        has no count and nothing has said this since they cleared its way. The close lets go at
+        the pose whatever comes of this, so a gripper that stops short is said and changes nothing
+        about that.
+
+        Nothing here raises for a press, for `_hand_back`'s reason: `stopped` is the watch the fold
+        ran under, and a press stops the gripper as it stops the fold."""
+        if not self._gripper_opened or parked is None or not parked.reached:
+            return
+        self._gripper_opened = False
+        transport = self.cfg.transport
+        if not callable(getattr(transport, "close_gripper", None)):
+            return
+        hand = self.cfg.hand_off
+        if hand is not None:
+            with contextlib.suppress(Exception):
+                hand.say(CLOSING_THE_GRIPPER)
+        self._note(CLOSING_THE_GRIPPER)
+        try:
+            shut = await fold_unless_stopped(
+                functools.partial(close_gripper_if_any, transport), stopped
+            )
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                await self._unbroken(self.executor.logged_transport().stop())
+            if hand is not None:
+                with contextlib.suppress(Exception):
+                    hand.say(GRIPPER_STOPPED)
+            self._emit("hand_off", stage="kept", reason="a press stopped the gripper closing")
+            self._note(GRIPPER_STOPPED)
+            return
+        if shut.short:
+            # to them first: a record that cannot be written is no reason not to tell them
+            if hand is not None:
+                with contextlib.suppress(Exception):
+                    hand.say(shut.reason)
+            self._emit("hand_off", stage="stuck", reason=shut.reason)
+            self._note(shut.reason)
+            return
+        if shut.how != "none":
+            self._emit("hand_off", stage="closed", reason=shut.reason, position=shut.position)
 
     async def _hands_away(self, hand: HandOff) -> None:
         """The count between the hand-back and the fold, on every way the question can end.
@@ -1926,24 +1994,32 @@ class AgentLoop:
             return
         if getattr(self.cfg.transport, "is_simulator", False) is True:
             return
-        settled = await settle_missed_fold(
-            self.cfg.transport,
-            person,
-            parked,
-            # the teardown's own narrated rest move, and its own stop, so the second fold and a
-            # stop of it reach the record as every other move does
-            fold=functools.partial(self._rest, pause=False),
-            stop=self.executor.logged_transport().stop,
-            event=lambda **data: self._emit("release", **data),
-            note=self._note,
-            asked=lambda question, agreed: self._ask_recorded("release", question, agreed, person),
-        )
-        # Said to the person rather than only logged: they are at the arm and act on this line,
-        # and a run with its log off prints no note at all. The close's own line follows in the
-        # log where there is one.
-        if settled.said is not None:
-            with contextlib.suppress(Exception):
-                person.say(settled.said)
+        with contextlib.suppress(*self._what_a_press_cannot_end()):
+            # from before the questions: a press made as the second fold arrives is counted by
+            # no watch of the fold's own, and is one the gripper has to hear
+            async with one_watch(person) as stopped:
+                settled = await settle_missed_fold(
+                    self.cfg.transport,
+                    person,
+                    parked,
+                    # the teardown's own narrated rest move, and its own stop, so the second fold
+                    # and a stop of it reach the record as every other move does
+                    fold=functools.partial(self._rest, pause=False),
+                    stop=self.executor.logged_transport().stop,
+                    event=lambda **data: self._emit("release", **data),
+                    note=self._note,
+                    asked=lambda question, agreed: self._ask_recorded(
+                        "release", question, agreed, person
+                    ),
+                )
+                # Said to the person rather than only logged: they are at the arm and act on
+                # this line, and a run with its log off prints no note at all. The close's own
+                # line follows in the log where there is one.
+                if settled.said is not None:
+                    with contextlib.suppress(Exception):
+                        person.say(settled.said)
+                if settled.how == "folded":
+                    await self._close_what_the_hand_back_opened(settled.fold, stopped)
 
     async def _observe(
         self,

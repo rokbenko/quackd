@@ -536,12 +536,13 @@ The second is for an arm left holding itself up, and it puts the arm down before
 it, because an SO-101 has no brake and an arm let go of where it stands drops
 ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)).
 `quackd robot release NAME` says that connecting takes torque off every motor for a moment and
-that the arm then folds to its rest pose and is let go of there, so you support it while it
-connects and take your hands away when it says so: it waits 3 seconds for them before the fold,
+that the arm then folds to its rest pose, closes its gripper and is let go of there, so you
+support it while it connects and take your hands away when it says so: it waits 3 seconds for
+them before the fold,
 and a Ctrl-C or `q` in those seconds stops it with nothing moved. It asks, and only then connects, folds the
-arm to its rest pose, lets go of it there, reads torque back off every motor and says what it
-read. Where that fold misses, it puts the two questions a run puts at its terminal when its rest
-move missed (under "Kill switch" above): clear the arm's way and press Enter, and it folds once
+arm to its rest pose, closes its gripper, lets go of it there, reads torque back off every motor
+and says what it read. Where that fold misses, it puts the two questions a run puts at its
+terminal when its rest move missed (under "Kill switch" above): clear the arm's way and press Enter, and it folds once
 more, and only if that fold misses too, Enter to take torque off where the arm stands, which
 drops it into your hands. Anything but Enter at either question, a wait that runs out after 60
 seconds, a Ctrl-C, a `q` or a terminal with nothing to read, leaves torque on as it always did.

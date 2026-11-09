@@ -68,7 +68,14 @@ from urllib.parse import parse_qs, urlsplit
 import numpy as np
 from PIL import Image
 
-from quackd.adapters.base import AdapterError, AdapterNotInstalled, HandResult, RestResult
+from quackd.adapters.base import (
+    AdapterError,
+    AdapterNotInstalled,
+    GripperHow,
+    GripperResult,
+    HandResult,
+    RestResult,
+)
 from quackd.adapters.threads import DaemonThreads
 from quackd.transport.base import (
     Ack,
@@ -119,6 +126,7 @@ from quackd_lerobot.verbs import (
     SegmentHow,
     at_rest,
     checked_segment_s,
+    gripper_budget_s,
     held_in_part,
     past_reach,
     placed_past_travel,
@@ -3727,6 +3735,80 @@ class LeRobotReal:
             return ()
         return tuple(
             j for j in JOINTS if j != "gripper" and j in self._joints and j not in self._torque_on
+        )
+
+    async def close_gripper(self) -> GripperResult:
+        """Drive the gripper all the way shut, and say where it stopped. Never raises an
+        `Exception`, for `go_to_rest`'s reason, and a cancellation goes on up: that is a press
+        stopping it (`quackd.release.fold_unless_stopped`).
+
+        `quackd robot release` asks for this once the arm has reached its rest pose, and so does
+        a `--by-hand` run whose hand-back opened the jaws, because an arm put away should not be
+        left with them open. It is a move of its own and never part of the rest move, which leaves
+        the gripper alone for `verbs.rest_goal`'s reason: what the jaws hold at the end of a run is
+        somebody's, and these two know they are empty or have been asked to put the arm away.
+
+        It ends further along than the `gripper` verb does. That one has arrived within
+        `verbs.GRIPPER_TOL` of its goal, which can leave the jaws that many units open, and this
+        goes on sending until the reading is at the end of its range or has stopped moving.
+        Stopped at or below `HOLD_MIN` it is closed, the line `_holding` draws under a gripper
+        with something in it, which is where jaws that have met each other stop on a controller
+        with no integral term. Stopped further out it has met something, which is said with where
+        it stopped.
+
+        An arm in somebody's hands is read and sent nothing, for the reason the rest move is."""
+        if self._closed:
+            return GripperResult("refused", "the arm's transport is closed")
+        try:
+            await self._cancel_policy("the gripper was closed")
+            # the verbs' cap, whatever a policy segment left, before the move sends anything
+            await self._verb_cap()
+            await self._probe()
+            position = self._joints.get("gripper")
+            if position is None:
+                return GripperResult.none("this arm reports no gripper")
+            if self._in_hand:
+                return GripperResult("refused", IN_HAND_NOT_MOVED, position)
+            if position <= GRIPPER_CLOSED:
+                return GripperResult("already", "the gripper is already closed", position)
+            return await self._drive_gripper_shut(position)
+        except Exception as e:
+            return GripperResult(
+                "refused",
+                f"the gripper did not close ({self._quoted(e)})",
+                self._joints.get("gripper"),
+            )
+
+    async def _drive_gripper_shut(self, position: float) -> GripperResult:
+        """Re-send the shut goal until the gripper is at the end of its range, stops moving, or
+        the time is up. One send moves it a step at most, as it moves any joint, and the time is
+        the `gripper` verb's own (`verbs.gripper_budget_s`), so a lowered cap gets what it needs."""
+        budget_s = gripper_budget_s(self.max_step_deg)
+        stall = min(STALL_DEG, self.max_step_deg / 2) if self.max_step_deg > 0 else STALL_DEG
+        started = self.now()
+        still = 0
+        how: GripperHow = "timeout"
+        while position > GRIPPER_CLOSED and self.now() - started < budget_s:
+            await self._send({"gripper": GRIPPER_CLOSED})
+            await self.clock.sleep(TICK_S)
+            await self._probe()
+            previous, position = position, self._joints.get("gripper", position)
+            still = still + 1 if abs(position - previous) <= stall else 0
+            if still >= STALL_TICKS:
+                how = "stalled"
+                break
+        if position <= GRIPPER_CLOSED + HOLD_MIN:
+            return GripperResult("closed", "the gripper is closed", position)
+        if how == "stalled":
+            why = "something may be in its jaws"
+            return GripperResult(
+                how, f"the gripper stopped at {position:.0f}/100, short of closed: {why}", position
+            )
+        return GripperResult(
+            how,
+            f"the gripper was at {position:.0f}/100, short of closed, when the time ran out "
+            f"({budget_s:.0f} s)",
+            position,
         )
 
     def now(self) -> float:

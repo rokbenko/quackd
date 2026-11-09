@@ -449,7 +449,7 @@ quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --cam
 |---|---|
 | `quackd run docs/examples/lerobot/e001/circle.duck` | The task file: the prompt, what the arm may do, and the budgets in steps, minutes and LLM calls. Its name goes into the run folder, `runs/<stamp>-e001-circle`, under the folder you ran it from, so you always know which experiment a folder was. The stamp is UTC |
 | `--robot arm-01` | The registered name brings the port and the rest pose. A real arm named by its spec has no rest pose, so it is refused before anything connects |
-| `--by-hand` | You place the arm and whatever it holds before the LLM starts. The run folds, goes limp, waits for your Enter, then holds your pose and prints the angles you set. Keep a hand on a link, fingers off the jaws and the joints, until it prints `you can let go`: torque comes back on under your hand, and if a joint is refused the arm stays limp. At the end it asks about the gripper while the arm holds still. Take hold of what the jaws hold and press Enter once, with nothing typed: they open all the way, it says it is about to fold, and 3 s later it folds, so clear your hands in that time. Press it twice, or within 2 s of the last one, and it answers nothing and says so. A Ctrl-C or `q` in the opening, those seconds or the fold holds the arm where it is. No press quits such a run, and closing the window is what kills it. Left alone, it counts and folds after two minutes with the jaws shut. [Placing it by hand](#placing-it-by-hand) has the rest |
+| `--by-hand` | You place the arm and whatever it holds before the LLM starts. The run folds, goes limp, waits for your Enter, then holds your pose and prints the angles you set. Keep a hand on a link, fingers off the jaws and the joints, until it prints `you can let go`: torque comes back on under your hand, and if a joint is refused the arm stays limp. At the end it asks about the gripper while the arm holds still. Take hold of what the jaws hold and press Enter once, with nothing typed: they open all the way, it says it is about to fold, and 3 s later it folds and they close again, so clear your hands in that time. Press it twice, or within 2 s of the last one, and it answers nothing and says so. A Ctrl-C or `q` in the opening, those seconds or the fold holds the arm where it is. No press quits such a run, and closing the window is what kills it. Left alone, it counts and folds after two minutes with the jaws shut. [Placing it by hand](#placing-it-by-hand) has the rest |
 | `--camera-url` once, twice or not at all | One, the front view, on most lines. Both on the drawings, on most by-hand lines and where a run has to find something on the desk. None where no camera is the test or the line has no use for one |
 | `--image docs/examples/lerobot/e034/bad-code.png` | A task picture: sent once, on the first turn, and kept for the whole run. Used where the pilot LLM must read something exactly, rather than off a 640×480 frame |
 | `--llm openai:gpt-6-sol` | The pilot. Lines that compare LLMs name theirs |
@@ -461,7 +461,7 @@ quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --cam
 | `--effort low` | Only where it is the test. How hard the pilot's LLM reasons before each answer, for a vendor and LLM that take it |
 | `--run-name trial-01` | Only where one task file runs more than once, so those folders differ too: `runs/<stamp>-e149-wave-trial-01`. `quackd log e149-wave-trial-01` replays it |
 | A second terminal | Activate the environment there first, or it has no `quackd` |
-| `quackd robot release arm-01` | Puts down an arm left holding itself up: it folds to the rest pose and lets go there. If the fold misses it asks twice before anything drops, and anything but Enter keeps torque on. Support the arm while it connects, and take your hands away when it says so |
+| `quackd robot release arm-01` | Puts down an arm left holding itself up: it folds to the rest pose, closes the gripper and lets go there. If the fold misses it asks twice before anything drops, and anything but Enter keeps torque on. Support the arm while it connects, and take your hands away when it says so |
 | `quackd drive --robot arm-01` | One command at a time, with the arm held between them. A verb by name runs with no LLM (`report_state`, `gripper true`), any other line is a goal for the pilot, and an empty Enter brakes at once. A move with your own numbers is written out: `move_joints(positions={"shoulder_pan": 20}, duration_s=2)` |
 
 > [!NOTE]
@@ -2541,7 +2541,11 @@ The order below is the whole of the feature, and none of it is a step you can sk
    reach in. Then, however the question ended, quackd says it is about to fold and gives your
    hands 3 seconds. A Ctrl-C or `q` during the opening, those seconds or the fold holds the arm
    where it is, with nothing released. Otherwise the rest move folds the arm and torque drops at
-   the fold exactly as it would have without the flag.
+   the fold exactly as it would have without the flag, after one more thing: a gripper this step
+   opened closes again once the fold has arrived, so the arm is not put away with its jaws wide
+   open. A gripper nobody opened, because the question ended without an Enter, stays as it was,
+   on whatever it holds. Jaws that stop short of shut are said and the arm is let go of all the
+   same, and a Ctrl-C or `q` while they close stops them where they are.
 
 What the person at the arm is told, in order, captured from a `--by-hand` run on `lerobot:mock`
 in which the arm was placed at `shoulder_lift` -20, `elbow_flex` 40, `wrist_flex` 15 with the
@@ -2554,11 +2558,12 @@ press Enter
 holding the pose you set, you can let go. It is at elbow_flex 40, gripper 35,
 shoulder_lift -20, shoulder_pan 0, wrist_flex 15, wrist_roll 0
 the run is over and the arm is holding where it ended. Take hold of whatever is in the
-gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
-so take your hands away as soon as it is open. Leave it and the arm folds up with the
-gripper shut
+gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up
+and the gripper closes again, so take your hands away as soon as it is open. Leave it
+and the arm folds up with the gripper shut
 folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q
 stops it before it moves
+closing the gripper: keep your hands out of its jaws
 ```
 
 The second line reads the arm back rather than repeating what it was told to hold, which is how
@@ -2579,6 +2584,8 @@ verdict, the declaration and the `asked` record of each question left out:
 ·  note    folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
 ·  note    moving to the rest pose
 ·  note    at the rest pose
+·  note    closing the gripper: keep your hands out of its jaws
+·  hand    closed: the gripper is closed
 ```
 
 **The pilot is told where it is starting from**, in a `## Where this run starts` section of the
@@ -2892,16 +2899,16 @@ it connects. Then the arm folds to its recorded rest pose, so you take your hand
 moves. Then it asks, and only then connects, with no camera and with the registered rest pose. It
 prints the joints and says it folds in 3 seconds (`quackd.release.HANDS_AWAY_S`), which is when
 you take your hands away, and a Ctrl-C or `q` in those seconds stops it with nothing moved. Then
-it folds the arm to its rest pose as a run's teardown does, lets go of it there through the first
-door, reads `Torque_Enable` back off every motor, and says what it read.
+it folds the arm to its rest pose as a run's teardown does, closes its gripper, lets go of it
+there through the first door, reads `Torque_Enable` back off every motor, and says what it read.
 Captured on `lerobot:mock` registered as `arm-01` with its pose's `shoulder_pan` at 30, the mock
 standing at 0, with `y` typed at the question:
 
 ```
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it
-off, and the arm then folds to its rest pose and is let go of there: support it while it connects,
-then take your hands away when it says so, before it folds
-fold arm-01 to its rest pose and release torque there? [y/N]: y
+off, and the arm then folds to its rest pose, closes its gripper and is let go of there: support it
+while it connects, then take your hands away when it says so, before it folds
+fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]: y
 arm-01 (lerobot:mock) is at
 shoulder_pan   0.0
 shoulder_lift  -90.0
@@ -2911,10 +2918,26 @@ wrist_roll     0.0
 gripper        100.0
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 ✓ torque reads off on every joint of arm-01
   the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and
 where it still reads: it rests there with no torque, as it does at the end of every run
+```
+
+The gripper closes last, while there is torque to close it with, and only over an arm its fold
+put down. A run's fold and `quackd doctor`'s leave the jaws as they are, because what is in them
+at the end of a run is somebody's, and this command is you putting the arm away. The one run that
+closes them is a [`--by-hand`](#placing-it-by-hand) run, and only after its own hand-back opened
+them. It is sent shut
+until it reads the end of its range or stops moving, at the step cap. Stopped within 8 of shut, on
+its 0 to 100 range, which is what the arm calls empty, it is closed. Stopped further out it has met
+something, and the command says so, lets go of the arm all the same and exits 0, because the arm
+is down. After a second fold, which no line about the gripper came before, it first says
+`closing the gripper: keep your hands out of its jaws`. Captured with the mock's gripper scripted
+to stop at 30:
+
+```
+⚠ the gripper stopped at 30/100, short of closed: something may be in its jaws
 ```
 
 `--yes` skips that question and nothing else. With no terminal and no `--yes` it refuses before
@@ -2923,6 +2946,9 @@ there`), and answering `n` connects nothing. Ctrl-C or `q` during the fold stops
 a step cap at most past where you pressed (5 degrees by default, the goal already sent), holds
 it there with nothing released, and exits 1:
 `the fold was stopped where it was, and nothing was released: torque is as the fold left it`.
+During the gripper they stop it the same way, and it exits 1 on `the gripper was stopped where it
+was. The close still lets go of the arm where it reads at its rest pose, so expect it to go limp
+there`, which is where the arm is, since the gripper moves only once it is down.
 
 **When the fold misses.** A fold that stalls against something in its way, or runs out of time,
 leaves the arm holding itself up where it stopped, and the command asks you, in this order, the
@@ -2934,7 +2960,7 @@ second left to fold as the mock does, which is what clearing the way looks like:
 ```
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 the arm did not reach its rest pose (shoulder_pan stopped 30 deg short), so it is holding itself up
 where it stopped. Clear whatever is in its way and keep your hands out of its path, then press
 Enter and it tries the fold once more. Leave it, and after 60 s it stays that way
@@ -2945,8 +2971,8 @@ where it still reads: it rests there with no torque, as it does at the end of ev
 
 Only when that fold misses too comes the second question, and it says before anything else you
 could act on that Enter now takes torque off where the arm stands and that it will drop, so you
-hold it first. Enter releases it through the second door, into your hands. The same capture with
-both folds scripted to miss, and Enter at both questions:
+hold it first. Enter releases it through the second door, into your hands, with its gripper as
+it was. The same capture with both folds scripted to miss, and Enter at both questions:
 
 ```
 the arm did not reach its rest pose the second time either (shoulder_pan stopped 30 deg short), so

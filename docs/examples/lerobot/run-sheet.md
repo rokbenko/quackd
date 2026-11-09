@@ -126,7 +126,7 @@ Contact or precision, by hand. Its files are in [e001/](e001/).
 **Expect.** Expect a scribble, not a circle. Without inverse kinematics the pen tip has no reason to follow a round path. The arm may not touch the paper at all on early takes. The failure is the video.
 
 - Marker taped into the jaws or gripped closed, paper taped down. There's no inverse kinematics, so it has to reason from six angles to a pen tip. Expect a scribble; that's the video. Repeat with: a smiley, a duck, your initials.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker with your fingers and set its tip on the paper, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker with your fingers and set its tip on the paper, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - **Task picture** for the duck take: `docs/examples/lerobot/e001/duck.png`.
 
 **Circle**
@@ -162,7 +162,7 @@ Contact or precision, by hand. Its files are in [e002/](e002/).
 **Expect.** The LLM observes the switch is on, calls `move_joints` to flip it off, and the cycle repeats. Each flip takes 10–20 seconds. If it cannot reliably read the switch state from the camera it may lose track.
 
 - Toggle switch in frame, camera on it. You flip it on; six seconds later it flips it off.
-- **Start by hand:** at the prompt, lift the limp arm, hold the closed gripper just above the switch lever, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, hold the closed gripper just above the switch lever, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e002/useless-machine.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 14 --no-memory
@@ -469,7 +469,7 @@ Contact or precision, by hand. Its files are in [e014/](e014/).
 **Expect.** Each key press is a separate LLM call. 'hi' requires at minimum two presses plus feasibility turns — likely 4–6 calls and several minutes. Expect at least one missed key. The wrong-key result is the better video.
 
 - A pose set by hand over each key is too much; do "hi" only, one key per call. Sacrificial keyboard. Keep the misses.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the H key, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the H key, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e014/typist.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 14 --no-memory
@@ -484,7 +484,7 @@ Contact or precision, by hand. Its files are in [e015/](e015/).
 **Expect.** After 6–12 seconds of thinking, the arm raises the cup toward the camera. A clink from your cup is the payoff. An arm that raises but misses the clink is also fine. No liquids near the servo bus.
 
 - Empty plastic cup placed in the jaws. You clink with your own cup. No liquid.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the empty cup with your fingers, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the empty cup with your fingers, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e015/cheers.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -535,7 +535,7 @@ Contact or precision, by hand. Its files are in [e017/](e017/).
 **Expect.** The LLM will spend several turns on feasibility before committing to the push. The push is gentle — clamped to 50°/s. The chain falls if the push contacts the domino; a miss costs one take.
 
 - Full feasibility assessment to tip one domino.
-- **Start by hand:** at the prompt, lift the limp arm, hold the closed gripper a couple of centimetres behind the first domino, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, hold the closed gripper a couple of centimetres behind the first domino, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e017/domino.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -550,7 +550,7 @@ Contact or precision, by hand. Its files are in [e018/](e018/).
 **Expect.** The gripper pushes the pawn two squares if the pose you set by hand is accurate. Without IK the push may miss or knock the piece sideways. Either outcome is usable; hands stay out of the sweep volume.
 
 - Push the pawn with a closed gripper; no grasp. Hands out of the sweep volume.
-- **Start by hand:** at the prompt, lift the limp arm, hold the gripper just behind the white king's pawn, on the board side facing black, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, hold the gripper just behind the white king's pawn, on the board side facing black, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e018/chess-e4.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -565,7 +565,7 @@ Contact or precision, by hand. Its files are in [e019/](e019/).
 **Expect.** The `reason` text names a CEO (which may be out of date — the LLM's knowledge has a cutoff and CEOs change; that's a bonus joke). The drawing is a scribble; it will look nothing like anyone. Caption it as the LLM's claim, not yours. Run once per provider and hang the results side by side with the LLM's own label.
 
 - Marker in the jaws, paper taped down. Same setup as E001. One run per pilot LLM. Ask each one, on camera, who they drew.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip on a fresh sheet, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip on a fresh sheet, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - One run per vendor. A line with a key beside it needs that key in `.env`; skip any vendor you have no key for.
 
 **openai:gpt-6-sol**
@@ -662,7 +662,7 @@ Contact or precision, by hand. Its files are in [e020/](e020/).
 
 **Expect.** Some LLMs will name a competitor, some will hedge ("I'll draw a generic robot"), some will refuse. The scribble is identical either way. The reasoning text does all the work.
 
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip on a fresh sheet, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip on a fresh sheet, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - One run per vendor, as in E019.
 
 **openai:gpt-6-sol**
@@ -760,7 +760,7 @@ Contact or precision, by hand. Its files are in [e021/](e021/).
 **Expect.** A wobbly line that the LLM describes as its signature. Some LLMs will write their own name in the `reason`; some will refuse to sign anything. Both are usable. Do not use this as an actual document.
 
 - Print `docs/examples/lerobot/e021/nda.png` (a one-paragraph joke NDA with a signature line) and tape it down.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip at the start of the signature line, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip at the start of the signature line, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - The same file goes in as the task picture, so the LLM reads the terms it is signing.
 
 ```bash
@@ -1139,7 +1139,7 @@ Contact or precision, by hand. Its files are in [e039/](e039/).
 **Expect.** It descends, closes on air or on the edge of a plush, lifts nothing, and reports what happened. If it ever wins, that's a first grasp (see E162) and a bigger video. Add arcade sound effects in the edit.
 
 - Tray of small light plushes under the arm, "1 credit" sign. You are the joystick: text commands only.
-- **Start by hand:** at the prompt, lift the limp arm, open the jaws and hold the gripper a hand's width above the middle of the tray, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, open the jaws and hold the gripper a hand's width above the middle of the tray, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e039/claw-machine.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 12 --no-memory
@@ -1154,7 +1154,7 @@ Contact or precision, by hand. Its files are in [e040/](e040/).
 **Expect.** With a pose set by hand over a printed (or on-screen, on a spare tablet) checkbox, the gripper taps it. If it misses, the caption "verification failed" is the video. Ask it afterwards whether it lied.
 
 - Print `docs/examples/lerobot/e040/checkbox.png` large on cardstock and tape it under the arm, or show one on a tablet.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the checkbox, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the checkbox, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e040/not-a-robot.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -1184,7 +1184,7 @@ Contact or precision, by hand. Its files are in [e042/](e042/).
 **Expect.** Soft taps on the plushes as far as a pose set by hand lets it reach them, then an improvised "run" gesture at the goose. The moment it realises it has no legs is the punchline.
 
 - Three plush ducks and one goose in a row, well inside the sweep volume.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres above the first duck, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres above the first duck, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e042/duck-duck-goose.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 16 --no-memory
@@ -1384,7 +1384,7 @@ Contact or precision, by hand. Its files are in [e057/](e057/).
 **Expect.** Two gentle taps (low-risk contact; lower the gripper onto the tabletop, not a swing), then a knock-knock joke of the LLM's choosing. The joke will be terrible. That is the correct outcome.
 
 - Tabletop clear under the gripper.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it about three centimetres above a clear patch of table, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it about three centimetres above a clear patch of table, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e057/knock-knock.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -1679,7 +1679,7 @@ Contact or precision, by hand. Its files are in [e077/](e077/).
 **Expect.** One pose set by hand, two taps. Reuse E140's bell pose. A miss on the like button is fine; the bell ring is the payoff. This becomes the stock outro for every video.
 
 - Big printed thumbs-up button, desk bell, and the arm set by hand just above them.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the like button, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the like button, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e077/like-and-bell.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -1779,7 +1779,7 @@ Contact or precision, by hand. Its files are in [e080/](e080/).
 **Expect.** Most LLMs will not press, and will explain why at length. Some will press "to investigate". Both are the video. If it presses, the button does nothing, which is its own punchline. Do not steer.
 
 - Big arcade-style button (unwired or wired to a harmless light), printed label, gripper set by hand above it.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres above the button, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres above the button, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e080/do-not-press.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -1808,7 +1808,7 @@ Contact or precision, by hand. Its files are in [e082/](e082/).
 **Expect.** One slow press every six-plus seconds, some pops, some misses. Overlay a pop counter and the receipt. Contact is a downward press on soft plastic; zero precision required.
 
 - Large-bubble wrap taped flat under the arm.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a couple of centimetres above the bubble wrap, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a couple of centimetres above the bubble wrap, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e082/bubble-wrap.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 16 --no-memory
@@ -1824,7 +1824,7 @@ Contact or precision, by hand. Its files are in [e083/](e083/).
 
 - Print the three forms, `docs/examples/lerobot/e083/form-wave.png`, `form-dumbbell.png` and `form-coffee.png`. Each has the request in large type and two boxes: APPROVED on the left, DENIED on the right.
 - One self-inking stamp (any design) in the jaws, one form under the arm per run.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the stamp and hold it above the middle of the form, between the two boxes, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the stamp and hold it above the middle of the form, between the two boxes, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - The matching form goes in as the task picture, so the LLM reads the request exactly.
 
 **Form: Wave to the camera**
@@ -2060,7 +2060,7 @@ Free space, by hand. Its files are in [e091/](e091/).
 **Expect.** A sales pitch in the reasoning, a flourish with the pen, and probably an attempt to hand it to you (don't take it inside the sweep volume; let it place the pen down). The pitch quality varies wildly by LLM.
 
 - Pen in the jaws, gripper closed by command.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the pen, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the pen, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e091/sell-me-this-pen.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -2213,7 +2213,7 @@ Contact or precision, by hand. Its files are in [e100/](e100/).
 **Expect.** Deliberation, an approach, a push (it has no proven grasp, so it will push rather than pull), and a collapse. Foam blocks only. The collapse is the ending.
 
 - Foam block tower, well inside the sweep volume, nothing fragile nearby.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it beside the tower at the height of a middle block, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it beside the tower at the height of a middle block, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e100/jenga.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -2228,7 +2228,7 @@ Contact or precision, by hand. Its files are in [e101/](e101/).
 **Expect.** It picks a square, draws something, you draw an O, repeat. Whether the marks land in the right squares is uncertain. Play it out and let the scoring be generous.
 
 - Large printed grid, marker in the jaws.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip in the middle square, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the marker and set its tip in the middle square, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - One run per X. Draw your O between runs.
 
 **Its move 1**
@@ -2264,7 +2264,7 @@ Contact or precision, by hand. Its files are in [e102/](e102/).
 **Expect.** Slow scratching, some of the card revealed, a verdict on whether it won. Satisfying macro footage. Use a cheap card; you will not win.
 
 - Coin taped to a jaw, scratch card taped flat.
-- **Start by hand:** at the prompt, lift the limp arm, rest the taped coin on the scratch area, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, rest the taped coin on the scratch area, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e102/lottery-ticket.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 12 --no-memory
@@ -2279,7 +2279,7 @@ Contact or precision, by hand. Its files are in [e103/](e103/).
 **Expect.** The gripper closes on the knob, `wrist_roll` turns it. Whether it stops at "11" depends on the LLM's idea of how far that is. The knob does nothing. Add a speaker in the edit.
 
 - A large knob on a base under a pose set by hand; gripper closes around it.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws around the knob, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws around the knob, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e103/up-to-eleven.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -2294,7 +2294,7 @@ Contact or precision, by hand. Its files are in [e104/](e104/).
 **Expect.** A slow approach and a gentle contact from a pose set by hand. The `reason` might explain the cultural significance of the boop. Ten seconds, zero stakes.
 
 - Plush duck just in front of a pose set by hand.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres in front of the duck's beak, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it a few centimetres in front of the duck's beak, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e104/boop.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 6 --no-memory
@@ -2369,7 +2369,7 @@ Contact or precision, by hand. Its files are in [e109/](e109/).
 **Expect.** It pokes at the tangle, makes it worse, and eventually admits defeat. Cheap wired earbuds; nothing to break.
 
 - Tangled wired earbuds on the table.
-- **Start by hand:** at the prompt, lift the limp arm, hold the open gripper just above the tangle, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, hold the open gripper just above the tangle, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e109/headphones.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -2465,7 +2465,7 @@ Free space, by hand. Its files are in [e115/](e115/).
 
 - The gripper is the only motor with current limiting. Grape, marshmallow, stress toy, one at a time, macro lens, slow motion. Then say plainly that the other five joints have no such limit. Fingers out of the jaws.
 - Stand the object on something small (a bottle cap on a box) so it stays put without being held.
-- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the object without touching it, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the object without touching it, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 **The grape**
 
@@ -2566,7 +2566,7 @@ Free space, by hand.
 
 - A clean fold at the end of a run has never been filmed on an arm, and neither has a by-hand start. This is a genuine first attempt: film it as one.
 - If your fold was taken into the travel at calibration, nothing should be named as past its travel. If a joint is, calibrate folded and record the pose again. If you can lift a joint past its travel by hand, try the by-hand line with it there and press Enter: quackd does not take hold, names the joint and its travel, and leaves the arm limp in your hand, with nothing moving it or putting torque on it after that line.
-- **Start by hand:** at the prompt, lift the limp arm, put it in any pose you like (nothing in the jaws), hold it, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, put it in any pose you like (nothing in the jaws), hold it, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 Uses the bundled `lerobot-lookout` task, which moves nothing, so the rest move and the hand-off are the only motion.
 
@@ -2819,7 +2819,7 @@ Free space, by hand. Its files are in [e132/](e132/).
 **Expect.** A single `shoulder_pan` sweep traces a geometrically true arc. The light-painting version will show a bright curve with glowing nodes at every spot the LLM paused between turns.
 
 - A single-joint sweep of `shoulder_pan` traces a true arc — the one thing it can draw perfectly. Then lights off, LED in the jaws, long exposure on the phone.
-- For the light painting: at the prompt, lift the limp arm, close the jaws on the LED, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- For the light painting: at the prompt, lift the limp arm, close the jaws on the LED, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 **The arc**
 
@@ -2899,7 +2899,7 @@ Free space, by hand. Its files are in [e137/](e137/).
 **Expect.** The long exposure shows a bright arc where the arm moved and bright knots where it waited for the LLM. Two exposures side by side, a slow LLM against a fast one, show the latency as light.
 
 - LED in the jaws, dark room, one long exposure over a whole wave run. Where the arm waited for the LLM, the light pools into knots. Shoot once with a slow LLM, once with a fast one.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the LED, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the LED, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 **The slow, expensive LLM**
 
@@ -2922,7 +2922,7 @@ Contact or precision, by hand. Its files are in [e138/](e138/).
 **Expect.** Slow `shoulder_pan` sweeps create parallel lines in the sand if the rake height and speed are right. The first pass may miss the tray entirely. Sand contamination of the servo bay is the risk — cover the arm base before shooting.
 
 - Small rake in the jaws, shallow sand tray well away from the base; cover the base. Shoot last.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the rake and rest its tines on the sand, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the rake and rest its tines on the sand, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e138/zen-garden.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 12 --no-memory
@@ -2950,7 +2950,7 @@ Contact or precision, by hand. Its files are in [e140/](e140/).
 
 **Expect.** With the pose set by hand the arm taps down to strike the bell. A well-calibrated pose should ring it; an off-centre strike is also usable. A successful ring is the payoff for the star-bell integration.
 
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the bell's plunger, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the bell's plunger, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - The line quackd prints after you let go (`holding the pose you set ... It is at ...`) is the pose you set. Write it down: the star-bell version needs those numbers, and so does E153.
 
 ```bash
@@ -2966,7 +2966,7 @@ Contact or precision, by hand. Its files are in [e141/](e141/).
 **Expect.** The confirmation prompt appears before every move and waits for your approval. Once approved, the arm lowers wrist_flex from where you placed it and presses the key. A miss on a first attempt is expected.
 
 - Sacrificial keyboard. `move_joints` is confirm-gated in this task file, so you approve every move and the robot presses.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the Enter key, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold its tip just above the Enter key, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e141/deploy-press.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 8 --no-memory
@@ -3114,7 +3114,7 @@ Contact or precision, by hand. Its files are in [e146/](e146/).
 **Expect.** The arm pans slowly with the weight confirmed on screen. Smoothness depends on `duration_s` and the 10 Hz re-send frequency. The gate confirms the camera weight is within the 0.5 kg payload estimate before moving.
 
 - Small action cam on a clamp; weigh it on the scale on camera and give it the number. Slow pan.
-- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the action cam's clamp, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the jaws on the action cam's clamp, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - If the scale says the camera is not 120 grams, change the number in `docs/examples/lerobot/e146/camera-operator.duck` before the take.
 
 ```bash
@@ -3482,7 +3482,7 @@ Contact or precision, by hand. Its files are in [e153/](e153/).
 
 - Your finger: stopwatch, press the bell.
 - A script: `quackd drive` plays lines from a pipe with no LLM asked, and its exact lane reads a line like `move_joints(positions={"shoulder_pan": 20}, duration_s=2)`. Read the bell's angles with `report_state` while you hold the arm on it, and write the lines from them. `--llm fake` plays a fixed built-in script and cannot aim at anything.
-- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the bell's plunger, as in E140, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, close the gripper and hold it just above the bell's plunger, as in E140, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 **The LLM leg: start the stopwatch when you press Enter after placing the arm**
 
@@ -3875,7 +3875,7 @@ Contact or precision, by hand. Its files are in [e162/](e162/).
 **Expect.** Success is uncertain on the first take — the arm may miss, close on air, or partially grip. Failures are content; keep all takes. Getting even a partial grip on a pre-positioned cube counts as a first result.
 
 - Foam cube placed between the open jaws. LLM-authored `move_joints` + `gripper`. `pick` needs a policy server now (E197), so this is joint moves, not a policy. Unproven — keep the failures.
-- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, which rests on the table, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, which rests on the table, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e162/first-grasp.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
@@ -3890,7 +3890,7 @@ Contact or precision, by hand. Its files are in [e163/](e163/).
 **Expect.** Whether the LLM correctly reports `holding: true` is unknown — the inference has never been tested on a real object. The verb should say `gripper closed on something`, and `report_state` should still say it is holding ten seconds later with nothing sent. Run E136 first: this arm's empty close, about 3 on the lab's arm, is the baseline to compare against.
 
 - Does it know it's holding something? Commanded 100 settled at 98 and commanded closed settled at 3 on the lab's arm on 15 September; the holding inference has never been tested against a real object.
-- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 
 ```bash
 quackd run docs/examples/lerobot/e163/holding-band.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 6 --no-memory
@@ -3919,7 +3919,7 @@ Contact or precision, by hand. Its files are in [e165/](e165/).
 **Expect.** `place` requires `holding` to be true, so E162 or E163 must succeed first. If holding is correctly inferred, the gripper opens and the cube is released. First test of the full hold-and-place sequence on real hardware.
 
 - After E162 or E163 succeeds: `place` opens the gripper wherever it is, and requires `holding`.
-- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
+- **Start by hand:** at the prompt, lift the limp arm, open the jaws around the foam cube, then press Enter, and keep a hand on a link until it prints `you can let go`. When it asks about the gripper at the end, take hold of what the jaws hold and press Enter once. They open all the way, and 3 s later the arm folds and they close again, so clear your hands in that time: `--by-hand`, under [How a command is built](../../adapters/lerobot/README.md#how-a-command-is-built), says more.
 - A by-hand start reports holding nothing, even with the cube in the jaws, until the LLM itself closes the gripper on it.
 
 ```bash
@@ -4050,7 +4050,7 @@ Free space, by hand.
 
 **Goal.** Show `quackd robot release` on an arm left holding itself up. Since 0.24.0 it folds the arm to its rest pose and lets go there, where 0.14.0's command took torque off wherever the arm stood and let it fall. Step 1 of 0.24.0's nine bench steps.
 
-**Expect.** The release warns that connecting takes torque off every motor for a moment, asks, connects, prints the joints, then `folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`, and a `q` needs no Enter. It folds, `✓ torque reads off on every joint of arm-01`, and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`. None of this has run on an arm: say whether it folds, and whether it then rests there limp.
+**Expect.** The release warns that connecting takes torque off every motor for a moment, asks, connects, prints the joints, then `folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`, and a `q` needs no Enter. It folds, closes its gripper, `✓ torque reads off on every joint of arm-01`, and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`. None of this has run on an arm: say whether it folds, and whether it then rests there limp.
 
 - **Leave it raised, with no LLM and no key:** the run line flies the scripted pilot. At the prompt lift the limp arm into a low raised pose with a clear way back to its fold, press Enter, and keep a hand on a link until it prints `you can let go`. The scripted pilot finishes at once, and the run then waits two minutes at `the run is over and the arm is holding where it ended`, after which it says it is about to fold, counts 3 s and folds.
 - Have the `taskkill` line typed in a second terminal before you press Enter, and run it during that wait. Nothing runs any more, and the arm keeps holding. Every experiment down to E180 that says the arm is left raised starts like this. `taskkill` ends every quackd.exe on this machine, the editor's MCP server among them, so close what you would miss.

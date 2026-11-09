@@ -640,15 +640,16 @@ stopped
 
     ```
     the run is over and the arm is holding where it ended. Take hold of whatever is in the
-    gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
-    so take your hands away as soon as it is open. Leave it and the arm folds up with the
-    gripper shut
+    gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up
+    and the gripper closes again, so take your hands away as soon as it is open. Leave it
+    and the arm folds up with the gripper shut
     ```
 
     Take hold of what is in the jaws first and then press Enter once, with nothing typed on the
     line: the gripper opens all the way while you have it, a few seconds from shut at the default step
     cap, and a line then says the arm folds in 3 seconds. Take your hands away in those seconds, and a Ctrl-C or `q` in them
-    or in the fold holds the arm where it is. A gripper that cannot open is said out loud, and the
+    or in the fold holds the arm where it is. Once the fold has arrived the gripper closes again, and
+    a press stops it where it is. A gripper that cannot open is said out loud, and the
     arm stays where it is, since you are being told to reach in. If you press Enter twice, or
     within 2 seconds of the last one, it answers nothing and says so: take your finger off it, wait
     and press it once. That question stands for two

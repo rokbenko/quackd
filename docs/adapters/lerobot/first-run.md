@@ -633,15 +633,15 @@ quackd robot release arm-01
 ```
 
 It says what is about to happen before it touches anything, asks, and only then connects, prints
-the joints, folds the arm to its rest pose and lets go of it there. Captured on the mock arm
-registered as `arm-01`, with `shoulder_pan` at 30 in its pose and the mock standing at 0, so the
-fold had somewhere to go, and with `y` typed at the question:
+the joints, folds the arm to its rest pose, closes its gripper and lets go of it there. Captured
+on the mock arm registered as `arm-01`, with `shoulder_pan` at 30 in its pose and the mock standing
+at 0, so the fold had somewhere to go, and with `y` typed at the question:
 
 ```
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it
-off, and the arm then folds to its rest pose and is let go of there: support it while it connects,
-then take your hands away when it says so, before it folds
-fold arm-01 to its rest pose and release torque there? [y/N]: y
+off, and the arm then folds to its rest pose, closes its gripper and is let go of there: support it
+while it connects, then take your hands away when it says so, before it folds
+fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]: y
 arm-01 (lerobot:mock) is at
 shoulder_pan   0.0
 shoulder_lift  -90.0
@@ -651,7 +651,7 @@ wrist_roll     0.0
 gripper        100.0
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 ✓ torque reads off on every joint of arm-01
   the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and
 where it still reads: it rests there with no torque, as it does at the end of every run
@@ -810,11 +810,12 @@ press Enter
 holding the pose you set, you can let go. It is at elbow_flex 40, gripper 35,
 shoulder_lift -20, shoulder_pan 0, wrist_flex 15, wrist_roll 0
 the run is over and the arm is holding where it ended. Take hold of whatever is in the
-gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
-so take your hands away as soon as it is open. Leave it and the arm folds up with the
-gripper shut
+gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up
+and the gripper closes again, so take your hands away as soon as it is open. Leave it
+and the arm folds up with the gripper shut
 folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q
 stops it before it moves
+closing the gripper: keep your hands out of its jaws
 ```
 
 [Section 08](#08-the-first-task) puts a whole run's log around those lines.
@@ -957,9 +958,9 @@ shoulder_lift -20, shoulder_pan 0, wrist_flex 15, wrist_roll 0
 ▶  verb    report_state()
 ✓  result  report_state ok: shoulder_pan 0, shoulder_lift -20, elbow_flex 40, wrist_flex 15, wrist_roll 0, gripper 35; torque on; hottest shoulder_pan 30°C; holding nothing (0.0 s, 0 intents)
 the run is over and the arm is holding where it ended. Take hold of whatever is in the
-gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up,
-so take your hands away as soon as it is open. Leave it and the arm folds up with the
-gripper shut
+gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up
+and the gripper closes again, so take your hands away as soon as it is open. Leave it
+and the arm folds up with the gripper shut
 →  send    stop
 →  send    gripper x12 over 1.1 s (open true)
 ·  hand    unloaded: the gripper is open
@@ -968,6 +969,9 @@ folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-
 stops it before it moves
 ·  note    moving to the rest pose
 ·  note    at the rest pose
+closing the gripper: keep your hands out of its jaws
+·  note    closing the gripper: keep your hands out of its jaws
+·  hand    closed: the gripper is closed
 ```
 
 Two lines there are worth checking against the arm in front of you. `report_state` reads back

@@ -20,7 +20,9 @@ from quackd import __version__
 from quackd import cli as cli_mod
 from quackd.agent.providers.factory import CLOUD_NAMES, default_llm_for, llm_ids
 from quackd.cli import EXIT_INFEASIBLE, app
+from quackd.release import CLOSING_THE_GRIPPER
 from quackd.safety import AfterTheClose
+from quackd_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
 from quackd_lerobot.verbs import JOINTS as JOINT_NAMES
 
 from .conftest import DUCKS
@@ -1738,7 +1740,7 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
 
     events = Transcript.read(next(runs.rglob("transcript.jsonl")))
     stages = [e["stage"] for e in events if e["kind"] == "hand_off"]
-    assert stages == ["released", "held", "unloaded"], stages
+    assert stages == ["released", "held", "unloaded", "closed"], stages
     # the Enter faked above answers every wait, and the end-of-run offer is one: it must not
     # have been put at all, because this arm folded up and was let go of at its pose
     assert not [e for e in events if e["kind"] == "release"], "an offer nobody needed was made"
@@ -1888,10 +1890,10 @@ def test_release_warns_asks_connects_folds_and_lets_go_at_the_rest_pose(
     order = [
         flat.index("connecting takes torque off every motor for a moment"),
         flat.index("support it while it connects, then take your hands away when it says so"),
-        flat.index(f"fold {name} to its rest pose and release torque there? [y/N]"),
+        flat.index(f"fold {name} to its rest pose, close its gripper and release torque there?"),
         flat.index(f"{name} (lerobot:mock) is at"),
         flat.index("take your hands away from it now. Ctrl-C or q stops it before it moves"),
-        flat.index(f"folding {name} to its rest pose: keep your hands out of its way"),
+        flat.index(f"folding {name} to its rest pose and closing its gripper: keep your hands"),
         flat.index(f"torque reads off on every joint of {name}"),
         flat.index("the arm is limp at its rest pose, where it was folded and let go of because"),
     ]
@@ -1942,6 +1944,345 @@ def test_release_folds_an_arm_away_from_its_rest_pose_and_lets_go_there(
     assert "torque reads off on every joint of arm-02" in flat, flat
     assert "the arm is limp at its rest pose" in flat
     assert "where it stood" not in flat and "the arm is not at its rest pose" not in flat, flat
+
+
+def _gripper_when_let_go(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Where the mock arm's gripper read as each release it was asked for went out."""
+    from quackd_lerobot.mock import LeRobotMock
+
+    readings: list[float] = []
+    release = LeRobotMock.let_go
+
+    async def let_go(self: LeRobotMock, *, anywhere: bool = False, asked: bool = False) -> Any:
+        readings.append(self.joints["gripper"])
+        return await release(self, anywhere=anywhere, asked=asked)
+
+    monkeypatch.setattr(LeRobotMock, "let_go", let_go)
+    return readings
+
+
+def _gripper_closes(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """What the mock arm had already been asked for each time its gripper was told to close."""
+    from quackd_lerobot.mock import LeRobotMock
+
+    closes: list[list[str]] = []
+    close = LeRobotMock.close_gripper
+
+    async def close_gripper(self: LeRobotMock) -> Any:
+        closes.append(list(self.sequence))
+        return await close(self)
+
+    monkeypatch.setattr(LeRobotMock, "close_gripper", close_gripper)
+    return closes
+
+
+def test_release_closes_the_gripper_once_the_arm_is_down_and_then_lets_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On the bench the arm came back to its rest pose with its jaws left open, because a fold
+    never touches the gripper. A person who types this command is putting the arm away, so the
+    jaws close too: after the fold, over an arm that is down, and before the release, while
+    there is still torque to close them with."""
+    from quackd.registry import Registry
+    from quackd_lerobot.mock import REST
+
+    reg = _registered_arm(tmp_path, "arm-03")
+    Registry(reg).update_robot("arm-03", {"rest_pose": dict(REST) | {"shoulder_pan": 35.0}})
+    gripper = _gripper_when_let_go(monkeypatch)
+    closes = _gripper_closes(monkeypatch)
+    released = _let_gos(monkeypatch)
+    result = _release(reg, "arm-03", "--yes")
+    assert result.exit_code == 0, result.output
+    assert gripper == [GRIPPER_CLOSED], "the arm was let go of with its gripper open"
+    assert closes == [["rest"]], "the gripper closes after the fold and before the release"
+    assert released == [{"anywhere": False, "asked": True}], released
+    flat = " ".join(result.output.split())
+    assert flat.index("closes its gripper and is let go of there") < flat.index("is at")
+    order = [
+        flat.index("folding arm-03 to its rest pose and closing its gripper: keep your hands out"),
+        flat.index("torque reads off on every joint of arm-03"),
+    ]
+    assert order == sorted(order), flat
+
+
+def test_release_tells_of_a_gripper_that_stopped_short_and_still_lets_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gripper that stops on something in its jaws leaves an arm that is down all the same, so
+    it is no reason to keep the arm powered: the release goes out and the command succeeds. The
+    person is told where the jaws stopped, since they asked for them shut."""
+    from quackd.adapters.base import GripperResult
+    from quackd_lerobot.mock import LeRobotMock
+
+    short = "the gripper stopped at 22/100, short of closed: something may be in its jaws"
+
+    async def close_gripper(self: LeRobotMock) -> GripperResult:
+        return GripperResult("stalled", short, 22.0)
+
+    monkeypatch.setattr(LeRobotMock, "close_gripper", close_gripper)
+    reg = _registered_arm(tmp_path, "arm-04")
+    released = _let_gos(monkeypatch)
+    result = _release(reg, "arm-04", "--yes")
+    assert result.exit_code == 0, result.output
+    assert released == [{"anywhere": False, "asked": True}], released
+    flat = " ".join(result.output.split())
+    assert flat.index(short) < flat.index("torque reads off on every joint of arm-04"), flat
+
+
+def test_release_of_a_body_with_no_gripper_to_close_says_nothing_of_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only an arm with a gripper has one closed, and a person is told only of one that will
+    be: not before the connect, not in the question and not as the fold starts."""
+    from quackd_lerobot import LeRobotAdapter
+
+    monkeypatch.delattr(LeRobotAdapter, "close_gripper")
+    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    reg = _registered_arm(tmp_path, "arm-08")
+    released = _let_gos(monkeypatch)
+    result = _release(reg, "arm-08", answer="y\n")
+    assert result.exit_code == 0, result.output
+    assert released == [{"anywhere": False, "asked": True}], released
+    flat = " ".join(result.output.split())
+    assert "fold arm-08 to its rest pose and release torque there?" in flat, flat
+    assert "folding arm-08 to its rest pose: keep your hands out of its way" in flat, flat
+    assert "gripper" not in flat.replace("gripper 100.0", ""), flat
+
+
+def test_release_of_an_arm_that_turns_out_to_report_no_gripper_still_lets_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An arm whose reads name no gripper is sent nothing for one, and is let go of at its pose
+    as before, with no line saying a gripper it does not have fell short."""
+    from quackd.adapters.base import GripperResult
+    from quackd_lerobot.mock import LeRobotMock
+
+    async def close_gripper(self: LeRobotMock) -> GripperResult:
+        return GripperResult.none("this arm reports no gripper")
+
+    monkeypatch.setattr(LeRobotMock, "close_gripper", close_gripper)
+    reg = _registered_arm(tmp_path, "arm-09")
+    released = _let_gos(monkeypatch)
+    result = _release(reg, "arm-09", "--yes")
+    assert result.exit_code == 0, result.output
+    assert released == [{"anywhere": False, "asked": True}], released
+    assert "reports no gripper" not in " ".join(result.output.split()), result.output
+
+
+def test_a_press_while_the_gripper_closes_stops_it_and_releases_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gripper closing is the last thing this command moves, and a press stops it as it stops
+    the fold: cancelled where it is and waited for, with no release asked for after it. The
+    closing here never ends on its own, so one left running behind the press would hang the
+    test. What the close then does is the close's: the arm reads at its rest pose."""
+    from quackd.adapters.base import GripperResult
+    from quackd_lerobot.mock import LeRobotMock
+
+    reg = _registered_arm(tmp_path, "arm-16")
+    released = _let_gos(monkeypatch)
+    moving: dict[str, asyncio.Event] = {}
+    ended: list[str] = []
+    stops: list[str] = []
+    stop = LeRobotMock.stop
+
+    async def stopping(self: LeRobotMock) -> None:
+        stops.append("stop")
+        await stop(self)
+
+    monkeypatch.setattr(LeRobotMock, "stop", stopping)
+
+    def moves() -> asyncio.Event:
+        # made inside the command's own event loop, by whichever side asks for it first
+        return moving.setdefault("gripper", asyncio.Event())
+
+    async def endless(self: LeRobotMock) -> GripperResult:
+        moves().set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.append("the gripper task finished")
+        raise AssertionError("the gripper ran on past its stop")
+
+    def stopped(self: Any) -> Any:
+        async def press_once_it_moves() -> None:
+            await moves().wait()  # the count and the fold go by unpressed
+
+        return press_once_it_moves()
+
+    monkeypatch.setattr(LeRobotMock, "close_gripper", endless)
+    monkeypatch.setattr("quackd.cli._TerminalHandOff.stopped", stopped)
+    result = _release(reg, "arm-16", "--yes")
+    assert result.exit_code == 1, result.output
+    assert ended == ["the gripper task finished"], "the closing was not cancelled and waited for"
+    assert released == [], "a stopped gripper went on to a release"
+    assert stops == ["stop"], "the arm was not held where the press found it"
+    flat = " ".join(result.output.split())
+    assert "the gripper was stopped where it was" in flat, flat
+    assert "so expect it to go limp there" in flat, flat
+    assert "torque reads off" not in flat, flat
+
+
+def test_a_press_after_the_fold_stops_the_gripper_before_it_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One watch runs across the count, the fold and the gripper, so a press made as the fold
+    ended is one the gripper hears and does not close under. Each counting presses from where it
+    began would lose it, as a count and a fold once did."""
+    from quackd.adapters.base import RestResult
+    from quackd.safety import KillSwitch
+    from quackd_lerobot.real import LeRobotReal
+    from tests.test_lerobot_adapter import FakeArm
+
+    switches: list[KillSwitch] = []
+    install = KillSwitch.install
+    fold = LeRobotReal.go_to_rest
+
+    def installing(self: KillSwitch, *, keys: bool = True) -> None:
+        switches.append(self)
+        install(self, keys=False)
+
+    async def pressed_as_it_arrives(self: LeRobotReal) -> RestResult:
+        result = await fold(self)
+        switches[0]._fire("test")
+        return result
+
+    monkeypatch.setattr(KillSwitch, "install", installing)
+    monkeypatch.setattr(LeRobotReal, "go_to_rest", pressed_as_it_arrives)
+    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm(step=5.0)
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-g", off=0.0)
+    result = _release(reg, "arm-g", "--yes")
+    said = " ".join(result.output.split())
+    assert "the gripper was stopped where it was" in said, result.output
+    assert arm.positions["gripper"] == GRIPPER_OPEN, "the gripper closed after the press"
+    assert not [a for a in arm.actions if "gripper.pos" in a], arm.actions
+
+
+def _press_on(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every kill switch the command installs, with no key thread, for a test to fire by hand."""
+    from quackd.safety import KillSwitch
+
+    switches: list[KillSwitch] = []
+    install = KillSwitch.install
+
+    def installing(self: KillSwitch, *, keys: bool = True) -> None:
+        switches.append(self)
+        install(self, keys=False)
+
+    monkeypatch.setattr(KillSwitch, "install", installing)
+    return switches
+
+
+def test_a_press_as_the_second_fold_arrives_stops_the_gripper_before_it_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second fold is watched by a watch of its own, gone once it has arrived, and the hand
+    that pressed may be the one that just cleared the arm's way. The watch that spans the two
+    questions hears it, and the jaws do not start."""
+    from quackd import release as release_module
+
+    reg = _registered_arm(tmp_path, "arm-21")
+    switches = _press_on(monkeypatch)
+    _enter(monkeypatch, True)
+    _folds(monkeypatch, misses=1)
+    settle = release_module.settle_missed_fold
+
+    async def pressed_once_it_has_arrived(*args: Any, **kwargs: Any) -> Any:
+        settled = await settle(*args, **kwargs)
+        assert settled.how == "folded", settled
+        switches[0]._fire("test")  # its own watch is gone by now
+        for _ in range(4):
+            await asyncio.sleep(0)
+        return settled
+
+    monkeypatch.setattr(release_module, "settle_missed_fold", pressed_once_it_has_arrived)
+    closes = _gripper_closes(monkeypatch)
+    released = _let_gos(monkeypatch)
+    result = _release(reg, "arm-21", "--yes")
+    assert result.exit_code == 1, result.output
+    assert closes == [], "the jaws closed under the hand that pressed"
+    assert released == [], "a stopped gripper went on to a release"
+    assert "the gripper was stopped where it was" in " ".join(result.output.split())
+
+
+def test_a_press_while_the_gripper_closes_after_a_second_fold_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second fold has a watch for its gripper too, and the jaws are told of first: nothing has
+    said they will close since the person was asked to clear the arm's way."""
+    from quackd.adapters.base import GripperResult
+    from quackd_lerobot.mock import LeRobotMock
+
+    reg = _registered_arm(tmp_path, "arm-22")
+    switches = _press_on(monkeypatch)
+    _enter(monkeypatch, True)
+    _folds(monkeypatch, misses=1)
+    released = _let_gos(monkeypatch)
+    ended: list[str] = []
+
+    async def endless(self: LeRobotMock) -> GripperResult:
+        switches[0]._fire("test")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.append("the gripper task finished")
+        raise AssertionError("the gripper ran on past its stop")
+
+    monkeypatch.setattr(LeRobotMock, "close_gripper", endless)
+    result = _release(reg, "arm-22", "--yes")
+    assert result.exit_code == 1, result.output
+    assert ended == ["the gripper task finished"], "the closing was not cancelled and waited for"
+    assert released == [], "a stopped gripper went on to a release"
+    flat = " ".join(result.output.split())
+    assert flat.index(CLOSING_THE_GRIPPER) < flat.index("the gripper was stopped where it was")
+
+
+def test_release_closes_the_gripper_only_once_a_fold_has_arrived(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fold that missed leaves an arm holding itself up, and asks a person to clear its way, so
+    nothing else moves until a fold arrives. The second one does, and then the jaws close."""
+    reg = _registered_arm(tmp_path, "arm-18")
+    given = _enter(monkeypatch, True)
+    folds = _folds(monkeypatch, misses=1)
+    closes = _gripper_closes(monkeypatch)
+    gripper = _gripper_when_let_go(monkeypatch)
+    result = _release(reg, "arm-18", "--yes")
+    assert result.exit_code == 0, result.output
+    assert folds == ["fold", "fold"] and given == [True], (folds, given)
+    assert closes == [["rest", "rest"]], "the gripper closed over a fold that missed"
+    assert gripper == [GRIPPER_CLOSED], gripper
+
+
+@pytest.mark.parametrize(
+    ("posed", "misses", "enter", "exits"),
+    [(True, 2, True, 0), (True, 1, False, 1), (False, 0, True, 0)],
+    ids=["dropped after two folds", "fold missed and left", "no rest pose"],
+)
+def test_release_leaves_the_gripper_alone_over_an_arm_that_is_not_down(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    posed: bool,
+    misses: int,
+    enter: bool,
+    exits: int,
+) -> None:
+    """The jaws close only over an arm its fold put down. An arm released where it stands is in
+    the hands of the person who pressed Enter, and one whose fold missed is holding itself up,
+    so neither has anything moved that nobody asked to move."""
+    reg = _registered_arm(tmp_path, "arm-19", rest_pose=posed)
+    _enter(monkeypatch, enter)
+    _folds(monkeypatch, misses=misses)
+    closes = _gripper_closes(monkeypatch)
+    gripper = _gripper_when_let_go(monkeypatch)
+    result = _release(reg, "arm-19", "--yes")
+    assert result.exit_code == exits, result.output
+    assert closes == [], "the gripper closed over an arm that is not down"
+    assert gripper in ([], [GRIPPER_OPEN]), gripper
+    if not posed:
+        assert "closing its gripper" not in " ".join(result.output.split()), result.output
 
 
 def test_release_with_no_terminal_and_no_yes_refuses_before_anything_connects(
@@ -2708,6 +3049,15 @@ def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
     assert cli._release_warning() == (
         f"{real}, and the arm then folds to its rest pose and is let go of there: support it "
         "while it connects, then take your hands away when it says so, before it folds"
+    )
+    assert cli._release_warning(closes_gripper=True) == (
+        f"{real}, and the arm then folds to its rest pose, closes its gripper and is let go of "
+        "there: support it while it connects, then take your hands away when it says so, before "
+        "it folds"
+    )
+    assert cli._release_warning(simulator=True, closes_gripper=True).endswith(
+        "and the simulated arm then folds to its rest pose, closes its gripper and is let go of "
+        "there, with no arm to hold"
     )
     assert cli._release_warning(folds=False) == (
         f"{real}, and with no rest pose recorded there is nothing to fold it to: you are asked "

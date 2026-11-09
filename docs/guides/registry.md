@@ -311,17 +311,17 @@ is calibrated again.
 An arm that could not get back to its rest pose keeps its torque at the end of a run, holding
 itself up rather than falling, and the line the run ends on says so. `quackd robot release` is
 how you put that arm down without reaching for the power switch: it folds the arm to its
-recorded rest pose and takes torque off there, because an SO-101 has no brake and an arm let go
-of where it stands drops. Captured on `lerobot:mock` registered as `arm-01`, whose rest pose has
-`shoulder_pan` at 30 while the mock stands at 0, so the fold has somewhere to go, with `y` typed
-at the question:
+recorded rest pose, closes its gripper and takes torque off there, because an SO-101 has no brake
+and an arm let go of where it stands drops. Captured on `lerobot:mock` registered as `arm-01`,
+whose rest pose has `shoulder_pan` at 30 while the mock stands at 0, so the fold has somewhere to
+go, with `y` typed at the question:
 
 ```
 $ quackd robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it
-off, and the arm then folds to its rest pose and is let go of there: support it while it connects,
-then take your hands away when it says so, before it folds
-fold arm-01 to its rest pose and release torque there? [y/N]: y
+off, and the arm then folds to its rest pose, closes its gripper and is let go of there: support it
+while it connects, then take your hands away when it says so, before it folds
+fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]: y
 arm-01 (lerobot:mock) is at
 shoulder_pan   0.0
 shoulder_lift  -90.0
@@ -331,7 +331,7 @@ wrist_roll     0.0
 gripper        100.0
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 ✓ torque reads off on every joint of arm-01
   the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and
 where it still reads: it rests there with no torque, as it does at the end of every run
@@ -376,7 +376,7 @@ questions:
 ```
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 the arm did not reach its rest pose (shoulder_pan stopped 30 deg short), so it is holding itself up
 where it stopped. Clear whatever is in its way and keep your hands out of its path, then press
 Enter and it tries the fold once more. Leave it, and after 60 s it stays that way
@@ -406,7 +406,7 @@ same arm, run with `--yes` and no terminal, its fold scripted to miss:
 ```
 folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it
 before it moves
-folding arm-01 to its rest pose: keep your hands out of its way
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
 ✗ error: the arm did not reach its rest pose (shoulder_pan stopped 30 deg short), so torque stays
 on, and with no terminal to ask on nothing more is tried
 ```

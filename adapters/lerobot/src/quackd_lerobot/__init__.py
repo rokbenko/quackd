@@ -19,10 +19,12 @@ from PIL import Image
 
 from quackd.adapters.base import (
     AdapterError,
+    GripperResult,
     HandResult,
     PolicyChoice,
     RestResult,
     camera_urls,
+    close_gripper_if_any,
     go_to_rest_if_any,
     let_go_if_any,
     one_camera_url,
@@ -278,6 +280,9 @@ class LeRobotAdapter:
 
     async def go_to_rest(self) -> RestResult:
         return await go_to_rest_if_any(self.transport)
+
+    async def close_gripper(self) -> GripperResult:
+        return await close_gripper_if_any(self.transport)
 
     def rests_where_it_reads(self) -> None:
         """The arm's own (`LeRobotReal.rests_where_it_reads`), where it has one: `rest-pose` reads

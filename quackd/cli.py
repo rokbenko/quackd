@@ -3989,7 +3989,8 @@ _BY_HAND = typer.Option(
     help="Start from a pose you set yourself instead of the recorded rest pose. The arm goes "
     "to its rest pose, quackd takes torque off there, you lift it, load the gripper and press "
     "Enter, and it holds what you left while the LLM works. At the end it asks before the "
-    "gripper opens. Needs a LeRobot arm with a rest pose recorded, and a terminal to ask on.",
+    "gripper opens, and closes it again once the arm has folded. Needs a LeRobot arm with a rest "
+    "pose recorded, and a terminal to ask on.",
     rich_help_panel="Robot",
 )
 _POLICY_URL = typer.Option(
@@ -7626,22 +7627,28 @@ def _connect_warning(*, simulator: bool = False) -> str:
     return f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
 
 
-def _release_warning(*, simulator: bool = False, folds: bool = True) -> str:
+def _release_warning(
+    *, simulator: bool = False, folds: bool = True, closes_gripper: bool = False
+) -> str:
     """Said before anything connects, and before the question, because the connect happens to
     an arm a person has to be supporting already. That half is upstream's (`configure()` runs
     inside `torque_disabled()`), and it is the reason this cannot wait until after the
     connect: by then the arm has already been limp once.
 
     The other half is what comes after the connect. An arm with a rest pose (`folds`) is folded
-    to it and let go of there, so the person is told to take their hands away before it moves:
-    a hand still under it is in the fold's path, and the fold is the part that moves. One with
-    none has nothing to fold to, and its own question, which says it drops, comes before the
-    connect. On a simulator the simulated arm folds, or falls, and nobody holds it."""
+    to it, has its gripper closed where it has one (`closes_gripper`), and is let go of there, so
+    the person is told to take their hands away before it moves: a hand still under it is in the
+    fold's path, and the fold is the part that moves. One with none has nothing to fold to, and
+    its own question, which says it drops, comes before the connect. On a simulator the simulated
+    arm folds, or falls, and nobody holds it."""
+    then = "folds to its rest pose and"
+    if closes_gripper:
+        then = "folds to its rest pose, closes its gripper and"
     if simulator:
         if folds:
             return (
-                f"{_connect_warning(simulator=True)}, and the simulated arm then folds to its "
-                "rest pose and is let go of there, with no arm to hold"
+                f"{_connect_warning(simulator=True)}, and the simulated arm then {then} is "
+                "let go of there, with no arm to hold"
             )
         return (
             f"{_connect_warning(simulator=True)}, and the release then lets the simulated arm "
@@ -7649,9 +7656,8 @@ def _release_warning(*, simulator: bool = False, folds: bool = True) -> str:
         )
     if folds:
         return (
-            f"{_connect_warning()}, and the arm then folds to its rest pose and is let go of "
-            "there: support it while it connects, then take your hands away when it says so, "
-            "before it folds"
+            f"{_connect_warning()}, and the arm then {then} is let go of there: support it "
+            "while it connects, then take your hands away when it says so, before it folds"
         )
     return (
         f"{_connect_warning()}, and with no rest pose recorded there is nothing to fold it to: "
@@ -7858,30 +7864,38 @@ def robot_release(
     address: str | None = _ADDR,
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
-    """Fold this arm to its rest pose and take torque off there.
+    """Fold this arm to its rest pose, close its gripper and take torque off there.
 
     For an arm left holding itself up, which is what a run does when it cannot get the arm back
     to its rest pose, and for any arm you want limp without cutting its power. It says what
     connecting does to the arm, asks, and only then connects, prints the joints, folds the arm
-    to its recorded rest pose and lets go of it there, reading torque back. Where the fold
-    misses, it asks you to clear the arm's way and folds once more, and only if that misses too
-    does it offer to take torque off where the arm stands, which drops it, so you hold it first.
+    to its recorded rest pose, closes its gripper and lets go of it there, reading torque back.
+    Where the fold misses, it asks you to clear the arm's way and folds once more, and only if
+    that misses too does it offer to take torque off where the arm stands, which drops it, so
+    you hold it first, with its gripper left as it is.
     An arm with no rest pose recorded has nothing to fold to, and is asked about before anything
-    connects. Ctrl-C or q stops a fold. No verb and no MCP tool can do this: it is a command a
-    person types.
+    connects. Ctrl-C or q stops a fold, or the gripper. No verb and no MCP tool can do this: it
+    is a command a person types.
     """
     import asyncio
 
-    from quackd.adapters.base import AdapterError, go_to_rest_if_any, let_go_if_any
+    from quackd.adapters.base import (
+        AdapterError,
+        close_gripper_if_any,
+        go_to_rest_if_any,
+        let_go_if_any,
+    )
     from quackd.adapters.factory import make_adapter
     from quackd.registry import RegistryError
     from quackd.release import (
+        CLOSING_THE_GRIPPER,
         DROP_UNFOLDED,
         ENTER,
         ENTER_DROPS_S,
         FOLD_INTERRUPTED,
         FOLD_STOPPED,
         FOLDING_IN,
+        GRIPPER_STOPPED,
         HANDS_AWAY_S,
         LIMP_AFTER_A_MISS,
         TORQUE_READS_OFF,
@@ -7948,12 +7962,21 @@ def robot_release(
         return
     # Before anything connects: connecting is the first thing that takes torque off, so a
     # warning printed after it would arrive after the arm had already been limp once.
-    ui.console.print(_warn_line(_release_warning(simulator=simulated, folds=rest is not None)))
+    # a body that can close a gripper carries the method, which is known before anything connects
+    closes_gripper = callable(getattr(adapter, "close_gripper", None))
+    ui.console.print(
+        _warn_line(
+            _release_warning(
+                simulator=simulated, folds=rest is not None, closes_gripper=closes_gripper
+            )
+        )
+    )
     if not yes and (rest is not None or simulated):
         # Asked before the key thread exists, so nothing races `input()` for the keystroke. An
         # arm with no rest pose has its own question, inside, and it is the one that matters.
+        close_it = ", close its gripper" if closes_gripper else ""
         question = (
-            f"fold {name} to its rest pose and release torque there?"
+            f"fold {name} to its rest pose{close_it} and release torque there?"
             if rest is not None
             else f"release torque on {name}?"
         )
@@ -7972,12 +7995,42 @@ def robot_release(
     def fold() -> Any:
         return go_to_rest_if_any(adapter)
 
+    def shut_gripper() -> Any:
+        return close_gripper_if_any(adapter)
+
     async def hands_away() -> None:
         await asyncio.sleep(HANDS_AWAY_S)
 
     at_rest: list[bool] = []
     """Whether the release was the one asked for at the rest pose, which the close then says the arm
     rests limp after, rather than one where the arm stood, which leaves it in a person's hands."""
+
+    async def put_down(
+        stopped: Callable[[], Awaitable[Any]] | None, folded: RestResult | None = None
+    ) -> Settled:
+        """Over an arm its fold has just put down: close its gripper, then let go of it there.
+
+        In that order because closing the gripper takes torque, and only here because the arm is
+        down: an arm whose fold missed is holding itself up and asking a person to clear its way,
+        and an arm let go of where it stands is in that person's hands. A gripper that does not
+        get there is said and is no reason to keep the arm powered in its fold. A press stops it
+        as it stops a fold, and nothing is released after one. `folded` is a second fold, which
+        no line about the gripper came before."""
+        if folded is not None and closes_gripper:
+            ui.console.print(Text(CLOSING_THE_GRIPPER, style=muted))
+        try:
+            shut = await fold_unless_stopped(shut_gripper, stopped)
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                # as after a stopped fold, and the gripper's last goal is a step cap on at most
+                await adapter.stop()
+            return Settled("kept", "the gripper was stopped", said=GRIPPER_STOPPED)
+        if shut.short:
+            ui.console.print(_warn_line(shut.reason))
+        # the first door, which lets go nowhere but this pose, so it can never drop the arm
+        released = await let_go_if_any(adapter, asked=True)
+        at_rest.append(True)
+        return Settled("released", released.reason, released=released, fold=folded)
 
     async def settle(person: _TerminalHandOff, presses: Callable[[], int]) -> Settled:
         """Everything between the connect and the close, as one `Settled`."""
@@ -8026,9 +8079,10 @@ def robot_release(
                     await fold_unless_stopped(hands_away, stopped)
                 except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
                     return Settled("kept", "stopped before the fold", said=stopped_before)
+            and_close = " and closing its gripper" if closes_gripper else ""
             ui.console.print(
                 Text(
-                    f"folding {name} to its rest pose: keep your hands out of its way",
+                    f"folding {name} to its rest pose{and_close}: keep your hands out of its way",
                     style=muted,
                 )
             )
@@ -8040,14 +8094,12 @@ def robot_release(
                     # second press landing here is caught too, so the close still comes
                     await adapter.stop()
                 return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
-        if first is not None and first.note:
-            # what the body has to say about the pose it parked in, once, as a run says it
-            ui.console.print(Text(first.note, style=muted))
-        if first is not None and first.reached:
-            # the first door, which lets go nowhere but this pose, so it can never drop the arm
-            released = await let_go_if_any(adapter, asked=True)
-            at_rest.append(True)
-            return Settled("released", released.reason, released=released)
+            if first is not None and first.note:
+                # what the body has to say about the pose it parked in, once, as a run says it
+                ui.console.print(Text(first.note, style=muted))
+            if first is not None and first.reached:
+                # inside the watch: a press made as the fold ended is one the gripper hears
+                return await put_down(stopped)
         why = first.reason if first is not None else "the arm has no rest move"
         if first is None or not first.answered:
             return Settled(
@@ -8079,11 +8131,12 @@ def robot_release(
                     )
                 ),
             )
-        settled = await settle_missed_fold(adapter, person, first, fold=fold, stop=adapter.stop)
-        if settled.how == "folded":
-            released = await let_go_if_any(adapter, asked=True)
-            at_rest.append(True)
-            return Settled("released", released.reason, released=released, fold=settled.fold)
+        # from before the questions: a press made as the second fold arrives is counted by no
+        # watch of the fold's own, and is one the gripper has to hear
+        async with one_watch(person) as stopped:
+            settled = await settle_missed_fold(adapter, person, first, fold=fold, stop=adapter.stop)
+            if settled.how == "folded":
+                return await put_down(stopped, settled.fold)
         return settled
 
     async def release() -> tuple[Settled | None, str | None]:
