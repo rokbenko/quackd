@@ -603,20 +603,19 @@ class MossMock:
         elif m.state == "STOPPING" and self._t - m.since >= MISSION_SETTLE_S:
             m.state, m.since = "APPROACHING", self._t
             self.goal, self.goal_reached, self._goal_at = m.target, None, self._t
-        elif m.state == "APPROACHING":
+        elif m.state == "APPROACHING" and (self.goal_reached or self.goal is None):
             # the soft stop cancels the goal, and the mission takes no notice: with no verdict
             # it goes on from wherever the rover stopped, as the real one does after its timeout
-            if self.goal_reached or self.goal is None:
-                m.state, m.since = "PICKING", self._t
-                self._jobs += 1
-                self.job = _Job(
-                    f"mission-{self._jobs}",
-                    "starting",
-                    self._t,
-                    CYCLE_S,
-                    owner="mission",
-                    startup_s=PICK_STARTUP_S,
-                )
+            m.state, m.since = "PICKING", self._t
+            self._jobs += 1
+            self.job = _Job(
+                f"mission-{self._jobs}",
+                "starting",
+                self._t,
+                CYCLE_S,
+                owner="mission",
+                startup_s=PICK_STARTUP_S,
+            )
 
     def _heartbeat_step(self) -> None:
         """The loop's own heartbeat: while the mock's time goes by through its sleep the loop
