@@ -5884,6 +5884,150 @@ async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> 
     await transport.close()
 
 
+async def test_a_rest_move_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
+    """The rest move quoted `stop_error` over the error that ended it, as the hand-off did, so a
+    fold whose goal LeRobot could not write named an earlier stop's failure, and the close, whose
+    last line quotes a fold that missed, said it again. Both quote LeRobot's own words now, and
+    `stop_error` only for a call that ran out of time or met a wedged bus (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    transport.stop_error = earlier
+    arm.send_fails = True
+    rested = await transport.go_to_rest()
+    assert rested.how == "refused" and rested.answered, rested
+    assert rested.reason == "ConnectionError: Failed to sync write 'Goal_Position'", rested.reason
+    await transport.close()
+    note = transport.close_note or ""
+    assert rested.reason in note and earlier not in note, note
+
+
+async def test_a_policy_start_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
+    """A policy segment's start reads the arm before it sends anything, and a read LeRobot refused
+    there was quoted as `stop_error` whenever an earlier stop had left one, so the `do` named that
+    stop's failure and not the read's. It quotes LeRobot's own words now (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = FakeArm(camera=False)
+    transport = LeRobotReal("COM5", robot=arm, policy=FakePolicy())
+    await transport.connect()
+    transport.stop_error = earlier
+    arm.dead = True
+    refused = await transport.send_intent(Intent.do("policy:pick:cup"))
+    assert not refused.accepted
+    assert refused.reason == (
+        "the policy was not started: the arm did not answer a read "
+        "(ConnectionError: Failed to sync read 'Present_Position')"
+    ), refused.reason
+    assert arm.actions == [], "a segment refused at its start sent something"
+    arm.dead = False
+    await transport.close()
+
+
+@pytest.mark.parametrize("where", ["the release", "the fold"])
+async def test_a_call_that_waited_behind_another_quotes_its_own_words_not_an_earlier_stop(
+    where: str,
+) -> None:
+    """Not every timeout is a wedge. A call queued behind another whose budget runs out before
+    the bus is free never goes out and writes no `stop_error`, and the hand-off, the rest move
+    and a policy's start quoted the one an earlier stop had left there, as they did for any
+    timeout. They quote `stop_error` only for the error `_call` raised over a wedge now, a call
+    that wedged the bus or met it wedged, and this one's own words otherwise (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    transport = _handover_arm()[1]
+    await transport.connect()
+    transport.stop_error = earlier
+    transport.timeout_s = 0.2
+    free = threading.Event()
+
+    def sync_read() -> None:
+        free.wait(5.0)
+
+    ahead = asyncio.create_task(transport._call(sync_read, deadline_s=5.0))
+    await asyncio.sleep(0.05)  # it has the bus
+    try:
+        if where == "the release":
+            ended: Any = await transport.let_go(anywhere=True)
+        else:
+            ended = await transport.go_to_rest()
+    finally:
+        free.set()
+        await ahead
+    assert ended.how == "refused", ended
+    queued = "TimeoutError: a LeRobot call (_read_all) waited 0.2 s for the bus and never went out"
+    assert queued in ended.reason and earlier not in ended.reason, ended.reason
+    assert transport.stop_error == earlier, "the queued call wrote a stop_error of its own"
+    await transport.close()
+
+
+@pytest.mark.parametrize("fails", ["a read", "three sends"])
+async def test_a_running_segment_quotes_lerobots_words_and_not_an_earlier_failure(
+    fails: str,
+) -> None:
+    """A segment that a failed read, or `FAILED_SENDS` failed sends in a row, ends mid run
+    quoted `stop_error` over LeRobot's words whenever an earlier stop had left one, as its start
+    did, so the pick named that stop's failure and not the read or the send that ended it. Both
+    quote the error's own words now (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = _segment_arm()
+
+    def script(n: int) -> dict[str, float]:
+        if n >= 3:
+            if fails == "a read":
+                arm.dead = True
+            else:
+                arm.send_fails = True
+        return {"shoulder_pan": 1.0}
+
+    _, transport, adapter, ex = await _segment(Scripted(script), arm)
+    transport.stop_error = earlier
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": 30})
+    assert not picked.ok and earlier not in picked.summary, picked.summary
+    said = (
+        "the arm did not answer a read (ConnectionError: Failed to sync read 'Present_Position')"
+        if fails == "a read"
+        else f"{FAILED_SENDS} sends in a row did not reach the arm, the last with "
+        "ConnectionError: Failed to sync write 'Goal_Position'"
+    )
+    assert said in picked.summary, picked.summary
+    arm.dead = arm.send_fails = False
+    await adapter.close()
+
+
+@pytest.mark.parametrize("where", ["the fold", "the policy start"])
+async def test_a_fold_or_a_policy_start_over_a_wedged_bus_quotes_the_wedge(where: str) -> None:
+    """The other side of `_quoted`: a call refused on a bus that a call still out has wedged met
+    the wedge, and the wedge's own reason is what the fold and a policy's start quote, as the
+    hand-off does, and not the refusal's type and words."""
+    release = threading.Event()
+    arm = FakeArm(camera=False)
+    rest = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, policy=FakePolicy(), rest_pose=rest, timeout_s=0.2)
+    await transport.connect()
+
+    def sync_read() -> None:
+        release.wait(5.0)
+
+    try:
+        with pytest.raises(TimeoutError):
+            await transport._call(sync_read)
+        wedge = transport.stop_error
+        assert wedge is not None and "(sync_read) has not come back" in wedge, wedge
+        if where == "the fold":
+            rested = await transport.go_to_rest()
+            assert rested.how == "refused" and rested.reason == wedge, rested
+        else:
+            refused = await transport.send_intent(Intent.do("policy:pick:cup"))
+            assert not refused.accepted
+            assert refused.reason == (
+                f"the policy was not started: the arm did not answer a read ({wedge})"
+            ), refused.reason
+    finally:
+        release.set()
+    await _until(lambda: transport._wedged is None or transport._wedged.done())
+    await transport.close()
+
+
 async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_words() -> None:
     """The mock's twin, so a rehearsal of `quackd robot release` or of the end-of-run offer can
     end the way an arm whose read-back failed ends: its in-memory release always read back, so

@@ -1084,6 +1084,11 @@ class LeRobotReal:
         whether it is still inside its time however late the loop looks, and once its worker is
         back its closed stamp says it is on no wire (`_cancelled_call`). The longest anything
         waits for a cancelled call still on the wire."""
+        self._wedge_raised: BaseException | None = None
+        """The error `_call` raised last over a wedge: the timeout of a call that wedged the bus,
+        or the refusal of one that met it wedged. Its reason is `stop_error`, which no other
+        failure writes, so it is the one error a hand-off, the rest move and a policy's start
+        quote `stop_error` for (`_quoted`)."""
         self._policy_task: asyncio.Task[SegmentEnd] | None = None
         self._policy_name = "idle"
         self._policy_error: str | None = None
@@ -1497,7 +1502,11 @@ class LeRobotReal:
                     "serial bus has one owner, so quackd refuses every call until it does"
                 )
             if spent and isinstance(e, TimeoutError):
-                raise TimeoutError(_late(fn, budget, pending)) from None
+                late = TimeoutError(_late(fn, budget, pending))
+                if pending is not None and not pending.done():
+                    # this call wedged the bus, and `stop_error` is its reason (`_quoted`)
+                    self._wedge_raised = late
+                raise late from None
             # a call that raised in time, a TimeoutError of its own among them, raises what
             # it raised
             raise
@@ -1524,7 +1533,10 @@ class LeRobotReal:
         if self._wedged is None:
             return
         if not self._wedged.done():
-            raise TransportError(self.stop_error or "a LeRobot call has not come back")
+            refused = TransportError(self.stop_error or "a LeRobot call has not come back")
+            # met the bus wedged, and `stop_error` is the wedge's reason (`_quoted`)
+            self._wedge_raised = refused
+            raise refused
         self._wedged = None
         self.stop_error = None
 
@@ -2947,7 +2959,7 @@ class LeRobotReal:
             try:
                 await self._probe()
             except Exception as e:
-                said = self.stop_error or f"{type(e).__name__}: {e}"
+                said = self._quoted(e)
                 return SegmentEnd(
                     "refused",
                     f"the policy was not started: the arm did not answer a read ({said})",
@@ -3418,13 +3430,19 @@ class LeRobotReal:
         )
 
     def _quoted(self, error: BaseException) -> str:
-        """What a hand-off quotes of the failure that ended it: the wedge's own reason
-        (`stop_error`) where the call ran out of time or met a bus still wedged, which is what
-        set it, and the error's own words otherwise. `stop_error` outlives the failure that set
-        it, a stop whose hold did not reach the arm among them, so quoting it over a LeRobot
-        error put an earlier failure where LeRobot's words belong, the joint a torque call
-        names among them."""
-        if isinstance(error, (TimeoutError, TransportError)) and self.stop_error:
+        """What a hand-off, the rest move and a policy segment's start quote of the failure that
+        ended them: the wedge's own reason (`stop_error`) for the error `_call` raised over a
+        wedge, the timeout of a call that wedged the bus or the refusal of one that met it wedged
+        (`_wedge_raised`), and the error's own words for anything else.
+
+        `stop_error` outlives the failure that set it, a stop whose hold did not reach the arm
+        among them, and not every timeout is a wedge: a call that waited behind another and never
+        went out, one that came back after its budget was spent, and a TimeoutError a call raised
+        itself write no `stop_error`. Quoting it over any of those, as over a LeRobot error, put
+        an earlier failure where this one's words belong, the joint a torque call names among
+        them, and a rest move that missed then carried that earlier failure into the close's
+        last line."""
+        if error is self._wedge_raised and self.stop_error:
             return self.stop_error
         return f"{type(error).__name__}: {error}"
 
@@ -3718,7 +3736,7 @@ class LeRobotReal:
             # either way, and the wedge it leaves is read just below.
             result = RestResult(
                 "refused",
-                self.stop_error or f"{type(e).__name__}: {e}",
+                self._quoted(e),
                 answered=self._answered and not isinstance(e, TimeoutError),
             )
         if self._wedged is not None and result.answered:

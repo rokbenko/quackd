@@ -264,6 +264,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   meets one is not tried again: it closes the port and says so, since every attempt switches every
   motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
   say what they say of any failed call, and the close runs to its end.
+- **A fold to the rest pose and a policy segment quote what failed, not an earlier stop.** A stop
+  whose hold did not reach the arm leaves its reason in `stop_error` until a hold does. The rest
+  move, and a `pick` or a `manipulate` segment's reads and sends, each quoted that reason over the
+  error that ended them. So a fold whose goal LeRobot could not write named the earlier stop's
+  failure, and so did the close, whose last line quotes a fold that missed, and a segment whose
+  first read failed, or whose read or third send in a row failed mid run, named the stop and not the
+  read or the send. Each quotes the error's own words now, as the release and the take-hold do, and
+  `stop_error` only for the call that wedged the bus, or met it wedged, whose reason it is. Not
+  every timeout is a wedge: a call that waited behind another and never went out, one that came back
+  after its budget was spent, and one that raised a TimeoutError of its own write no `stop_error`,
+  so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
+  `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
+  failed this time.
 
 ### Security
 
