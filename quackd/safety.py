@@ -1048,11 +1048,20 @@ class Executor:
             # the one in-verb transport failure that used to send no stop. A link that
             # cannot report state cannot be trusted to be holding a zero twist either.
             unstopped = await self._stop_after()
-            if unstopped is not None and isinstance(e, TransportError) and len(e.args) == 1:
+            said = str(e)
+            if (
+                unstopped is not None
+                and isinstance(e, TransportError)
+                and len(e.args) == 1
+                # once: an error a link raises again for every read would gain a clause each time
+                and "the stop sent after it failed" not in said
+            ):
                 # and a stop that did not land is said beside the read, which is all a pilot or
                 # a chat is told: the arm reads before it writes its hold, so over one gone
-                # silent the stop held nothing. The error itself is kept, its class and code
-                e.args = (f"{e}; the stop sent after it failed: {unstopped}",)
+                # silent the stop held nothing. The error itself is kept, its class and code. A
+                # wedged bus answers the read and the stop with one sentence, said once
+                why = " the same way" if unstopped in said else f": {unstopped}"
+                e.args = (f"{said}; the stop sent after it failed{why}",)
             raise
         # Read again after the last await before the verb is tracked as moving. A pause
         # granted while this verb waited on that state read, or on a person's confirm before
@@ -1145,7 +1154,11 @@ class Executor:
             stopped = (
                 "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
             )
-            result = VerbResult.fail(f"{name} raised {type(e).__name__}: {e}; {stopped}")
+            said = f"{name} raised {type(e).__name__}: {e}"
+            # a nested verb's failed read has said already that its stop did not land, and a
+            # verb and its stop that raised alike are still two failures, each said
+            once = unstopped is not None and "the stop sent after it failed" in said
+            result = VerbResult.fail(said if once else f"{said}; {stopped}")
         finally:
             # Charged however the call ends. A call cancelled from outside, an MCP client that
             # went, or one aborted mid-segment leaves with no result, and its segment ran all

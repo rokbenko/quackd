@@ -296,6 +296,24 @@ async def test_a_link_that_fails_tells_whoever_is_waiting_at_once() -> None:
         await t.notify(COMMAND, {"vx": 0.0})
 
 
+async def test_any_other_error_from_the_reader_ends_the_link_as_a_reset_does() -> None:
+    """Nothing but a socket's errors and an over-long line is expected of the reader, and
+    anything else left the pump dead with the link looking open."""
+
+    class Odd:
+        async def readline(self) -> bytes:
+            raise RuntimeError("the reader broke")
+
+    t = OpenDuckBridge("tcp://127.0.0.1:1")
+    t._reader = Odd()  # type: ignore[assignment]
+    answer = asyncio.get_running_loop().create_future()
+    t._pending[7] = answer
+    await asyncio.wait_for(t._read_loop(), 2.0)
+    with pytest.raises(TransportError, match="RuntimeError: the reader broke"):
+        await asyncio.wait_for(answer, 2.0)
+    assert t._closed
+
+
 # ── the intents ─────────────────────────────────────────────────────────────────────────
 
 

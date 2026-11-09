@@ -282,6 +282,9 @@ class OpenDuckBridge:
             except OSError as e:
                 self._fail_pending(f"the link to the bridge failed: {e}")
                 return
+            except Exception as e:  # nothing else is expected of a socket's reader: end the link
+                self._fail_pending(f"the link to the bridge failed: {type(e).__name__}: {e}")
+                return
             if not line:
                 self._fail_pending("the bridge closed the connection")
                 return

@@ -347,13 +347,15 @@ def _same_release(adapter: str, module: Any) -> None:
         )
     # and the package it is built on, whose code it runs as its own: its own version matching
     # said nothing of the Microduck's under Huebot or rosbridge's under rosarm, which an install
-    # that upgraded one package alone leaves behind
+    # that upgraded one package alone leaves behind. Asked of the module's own `__version__`, as
+    # the adapter's is: an editable install keeps the metadata it was installed with, so a
+    # workspace that set_version.py has moved to the next minor read as a mix, and was refused
     for base in _built_on(adapter):
         try:
-            under = importlib.metadata.version(f"quackd-{base.replace('_', '-')}")
-        except importlib.metadata.PackageNotFoundError:
+            under = getattr(importlib.import_module(f"quackd_{base}"), "__version__", None)
+        except ImportError:
             continue
-        if _release_of(under) != _release_of(core):
+        if isinstance(under, str) and _release_of(under) != _release_of(core):
             raise AdapterError(
                 f"quackd-{adapter} is built on quackd-{base} {under}, which is from another "
                 f"release than quackd {core}, and they are released together: reinstall them "

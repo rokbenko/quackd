@@ -179,7 +179,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
   went after a package that does not exist. A third party's adapter that names no extra said
   `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
-  `built-in` as they did. What changes for you: a script that read `"built-in"` reads `null`.
+  `built-in` as they did, and `quackd ui`'s setup page says to install such an adapter as its maker
+  says, where it would have said `uv pip install "None"`. What changes for you: a script that read `"built-in"` reads `null`.
 
 ### Fixed
 
@@ -271,9 +272,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   socket raised out of it, and it died without a word. Every request after it waited out its timeout,
   while the commands that feed the daemon's deadman, which are writes, went on: the duck walked on for
   about two seconds, until a heartbeat gave up, and a stop sent then could reach the duck with nobody
-  to read its reply, and be reported as not delivered. Now such a line is skipped with a warning and
-  the link goes on, a line may be 1 MiB, and a link that fails tells whatever is waiting at once and
-  refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
+  to read its reply, and be reported as not delivered. Now a line over the limit, or one quackd cannot
+  read, is skipped with a warning, broken JSON and an answer that is no object are skipped as broken
+  JSON always was, an error that is no object answers its request, and the link goes on. A line may
+  be 1 MiB, and a link that fails tells whatever is waiting at once and refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
   over HTTP. What changes for you: nothing to do. No duck has run it.
 - **A read that failed says when the stop sent after it held nothing.** A verb's gates begin by
   reading the body, and when that read failed the executor sent a stop and said only that the read
@@ -281,7 +283,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the stop. The arm's real backend reads before it writes its hold, so over an arm gone silent that
   stop held nothing, and it says so in `stop_error` without raising, which nothing here read. The
   read's error now ends `; the stop sent after it failed: ` and the stop's reason, as an abort's and a
-  timeout's now do, and keeps its class and its code. Such a stop still does not reach the arm, as
+  timeout's now do, or `the same way` where the stop failed for the reason the read did, as on a
+  wedged bus, and keeps its class and its code. A composite whose nested read said so does not say
+  it again. Such a stop still does not reach the arm, as
   0.31.3's Known limitations says, and the power switch is still what stops it; now the line says
   so. What changes for you: the line a run ends on, and a chat's answer, can be longer.
 - **`quackd doctor` prints a camera's address and a long assumption whole.** A camera that names no
@@ -294,8 +298,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   quackd refuses one of its adapters that is from another release than the core, and Huebot's package
   runs the Microduck's code as its own, as rosarm's runs rosbridge's, but only each adapter's own
   version was asked. So an install that upgraded one package alone could run Huebot over an older
-  Microduck's transport. The package under each is held to the core's release now, read from the
-  installed metadata, with the same words to reinstall them together. What changes for you: nothing,
+  Microduck's transport. The package under each is held to the core's release now, by its module's
+  own version as the adapter's is, with the same words to reinstall them together. What changes for you: nothing,
   on an install that keeps the packages together.
 - **The AlohaMini's setup names the commit quackd read, `ab4462b`.** `quackd ui`'s setup page, from
   the catalogue, told an AlohaMini owner to install upstream on the robot and named no commit, while
