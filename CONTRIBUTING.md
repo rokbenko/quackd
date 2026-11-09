@@ -116,8 +116,9 @@ for a second repository; one pinned at a release names it in `TAG`, `RELEASE` or
 a module `quackd doctor` does not list in its adapter's `UPSTREAMS` is one the job never reads,
 which `tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream
 by hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network:
-exit 1 is drift or a broken ref, and exit 2 is that something did not answer as it should. The
-tests run the script on fixtures and reach nothing. The job compares a line with itself over
+exit 1 is drift or a broken ref, and exit 2 is that something did not answer as it should or an
+adapter could not be read. `--offline DIR` reads fixtures from a directory instead and reaches
+nothing, and the tests run the script on fixtures too. The job compares a line with itself over
 time, so a line that never said what its ref claims reads the same every night. It lists a
 VERIFIED ref whose line holds no word of its name or its note as a stray anchor, which catches a
 ref cited a line or a function away from what it read, but any line that shares a word with the
@@ -442,6 +443,30 @@ described body, one YAML under `quackd/adapters/bodies/` with its maker's figure
 for each ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)),
 which is the cheapest row in the catalogue and the honest one.
 [Add a described body](#add-a-described-body) is the recipe.
+
+### Tiers and the owner rule
+
+Every backend carries one tier, as data in its row of `quackd/adapters/catalogue.py`, and
+`quackd list-adapters` and [the status page](docs/adapters/status.md) print it:
+
+- **verified** 🤖: the real robot has moved under quackd, and the row names who ran it and the
+  first day it did.
+- **bound** 🧪: code that reaches a real robot and has never met one. The row names who answers
+  for its first hardware run, and a date.
+- **rehearsed** ✅: runs whole tasks with no robot, in a simulator or against a scripted mock.
+- **described** 📄: a body quackd lists and reasons about and drives no part of.
+
+The rule, since 2026-11-05: bound code enters this repository only with a named owner and a date
+for its first hardware run, and everything else enters as a described body or lives out of
+tree ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)). The
+eight bound backends already here that day are grandfathered: their rows say
+`grandfathered 0.33.0` where an owner would be and the day the rule was adopted where a date
+would, since nobody has promised a run for any of them. A new backend gets no such clause. Bound
+code may also enter with no owner, as `described`, if its `make()` refuses it in the rule's words
+until somebody names a date, which is how `rosarm:ws` entered
+([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)).
+`test_every_backend_has_a_tier_and_bound_code_names_its_owner` in `tests/test_described.py` holds
+every row to all of this.
 
 ## Working agreements
 

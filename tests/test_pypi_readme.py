@@ -33,6 +33,16 @@ def test_the_built_long_description_has_no_relative_links() -> None:
     assert not left, f"these would 404 on the PyPI project page: {left}"
 
 
+def test_the_built_long_description_keeps_the_layer_picture() -> None:
+    """PyPI's renderer drops `<picture>` and keeps the `<img>` inside it, so the built description
+    has to name the light file by an address PyPI can reach, inside the Architecture section."""
+    built = pypi_readme(REPO)
+    section = built[built.index("## Architecture") :]
+    assert re.search(r'<img src="https://[^"]+/docs/assets/architecture-light\.svg"', section), (
+        "the layer picture is not in what PyPI renders"
+    )
+
+
 def test_both_link_syntaxes_are_covered() -> None:
     """Markdown and raw HTML, because this README uses both and only one was handled."""
     readme = (REPO / "README.md").read_text(encoding="utf-8")

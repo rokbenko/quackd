@@ -77,6 +77,14 @@ async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> No
         assert "camera_fov_deg" not in (await MicroduckAdapter(garbled).connect()).limits, odd
 
 
+def test_huebot_is_a_robot_adapter_though_it_is_one_record_over_the_microducks() -> None:
+    """Its adapter subclasses the Microduck's and fixes the body, and `RobotAdapter` is a protocol
+    read at run time, so nothing else would notice a member lost in the subclass."""
+    from quackd.adapters.factory import make_adapter
+
+    assert isinstance(make_adapter("huebot:mock"), RobotAdapter)
+
+
 async def test_connect_returns_the_manifest_and_the_registry_matches_the_default() -> None:
     adapter = MicroduckAdapter(MockTransport())
     assert isinstance(adapter, RobotAdapter)
