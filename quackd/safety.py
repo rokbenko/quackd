@@ -2016,7 +2016,8 @@ class KillSwitch:
             if not deliberate:
                 return self.entered.is_set()
             # the keys ending takes nothing back from a yes a look has just made sure of
-            sure = self._alone.is_set() and self.keys_ended.is_set()
+            aborted = until_abort and self.abort.is_set()
+            sure = self._alone.is_set() and self.keys_ended.is_set() and not aborted
             if ended and not self.entered.is_set() and not sure:
                 return False
             # An Enter was read, one has stood alone, or the time came to look again. Whether one

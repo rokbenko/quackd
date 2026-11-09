@@ -516,11 +516,13 @@ async def test_a_yes_a_look_has_made_sure_of_stands_though_the_keys_end_with_it(
     assert await asyncio.wait_for(waiting, timeout=20.0) is True
 
 
+@pytest.mark.parametrize("keys_end_too", [False, True], ids=["alone", "with-the-keys-ending"])
 async def test_an_abort_with_a_look_at_its_side_takes_no_yes(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, keys_end_too: bool
 ) -> None:
     """Only the keys ending leaves a yes a look has just made sure of standing. An abort ends a wait
-    that watches it, as it always did, whatever a look said at the same moment."""
+    that watches it, as it always did, whatever a look said at the same moment and whether or not
+    the keys ended with it."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
     monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
     clock = _Clock()
@@ -538,6 +540,8 @@ async def test_an_abort_with_a_look_at_its_side_takes_no_yes(
     clock.now += 32.0
     ks._nothing_waiting(clock.now)  # sure of it, and an abort in the same moment
     ks.abort.set()
+    if keys_end_too:
+        ks.keys_ended.set()
     assert await asyncio.wait_for(waiting, timeout=20.0) is False
 
 
