@@ -362,15 +362,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   be checked, so an adapter that did not import, or a night something did not answer, closes none of
   them. An issue a person opened is left alone, whatever its title.
 - **The nightly drift job lists a VERIFIED ref whose line names nothing of it.** Fourteen of the
-  rosbridge adapter's refs cited lines that held something else, and the job read them as the same
-  every night, since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin,
+  rosbridge adapter's refs cited lines that held something else, and the job read them as the same,
+  since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin,
   holds no word of its name or its note is a stray anchor, listed under its upstream in the run's
   summary as a weak anchor is. It is a guess and fails nothing by itself: a line that leaves a
   bracket open is read with the lines that close it, a decorator with what it decorates, a ref
   named as a path to its own file names any line of it, and a line that shares any word with the
-  ref passes. Over the rosbridge refs as they were before those fourteen and three of urdfdom's were
-  read again, it lists ten of the sixteen VERIFIED ones. On 2026-11-09 it lists ten refs of all the
-  job reads, eight of them ToddlerBot's, left for whoever reads those upstreams again.
+  ref passes. Over the rosbridge refs as they were before eighteen of them were read again at their
+  lines, it lists ten of the sixteen of those that are VERIFIED. On 2026-11-09 it lists ten refs of
+  all the job reads, eight of them ToddlerBot's, left for whoever reads those upstreams again.
 
 ### Known limitations
 

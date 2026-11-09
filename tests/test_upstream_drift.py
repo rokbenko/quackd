@@ -380,9 +380,9 @@ def _cite(name: str, path: str, line: int, note: str, status: Status = "VERIFIED
 
 def test_a_verified_ref_whose_line_names_nothing_of_it_is_a_stray_anchor() -> None:
     """Fourteen of the rosbridge refs cited lines that held something else, a line or a function
-    away from what each said it read, and read as the same every night, since those lines had
-    not moved. A VERIFIED ref whose line holds no word of its name or its note is listed under
-    its upstream, as a weak anchor is, and fails nothing by itself."""
+    away from what each said it read, and read as the same, since those lines had not moved. A
+    VERIFIED ref whose line holds no word of its name or its note is listed under its upstream,
+    as a weak anchor is, and fails nothing by itself."""
     script = _script()
     module = _module(
         [
@@ -456,6 +456,37 @@ def test_a_line_is_read_with_what_it_opens_and_a_path_named_ref_names_its_file()
     assert script._read_on(lines, 0) == "@dataclass\nclass Obs:"
     assert script._read_on(lines, 2).endswith("    ):")
     assert script._read_on(lines, 5) == "        self.K = port"
+
+
+def test_a_decorator_over_several_lines_is_read_through_to_what_it_decorates() -> None:
+    """A decorator's own brackets used to end the read at its second line, so the function under
+    it, the thing a ref on the decorator names, was never read."""
+    script = _script()
+    route = (
+        b"@router.get(\n"
+        b'    "/state",\n'
+        b"    response_model=State,\n"
+        b")\n"
+        b"@cached\n"
+        b"async def read_joints(request):\n"
+        b"    return state\n"
+    )
+    module = _module([_ref("read_joints", "src/api.py", 1), _ref("Bus", "src/api.py", 1)])
+    report = _one(script, module, Store(_github(script, {"src/api.py": (route, route)})))
+    assert [row.ref for row in report.stray] == ["Bus"]
+    lines = route.decode().split("\n")
+    assert script._read_on(lines, 0).endswith("async def read_joints(request):")
+
+
+def test_a_word_that_names_nothing_keeps_its_s() -> None:
+    """Without its s, `this` read as `thi`, a word no list of common ones holds, so a note saying
+    what `this` does named every C++ line that calls a method on `this`."""
+    script = _script()
+    assert not script.words("this does") & {"thi", "doe"}
+    module = _module([_cite("Port", "src/bus.cpp", 1, "this is what it does")])
+    pinned = b"this->bus_->close();\n"
+    report = _one(script, module, Store(_github(script, {"src/bus.cpp": (pinned, pinned)})))
+    assert [row.ref for row in report.stray] == ["Port"]
 
 
 # ── which baseline ──────────────────────────────────────────────────────────────────────

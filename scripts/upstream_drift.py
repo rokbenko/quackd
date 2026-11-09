@@ -531,8 +531,8 @@ _SPAN = re.compile(r"`([^`]+)`")
 def words(text: str) -> set[str]:
     """What a text names: each identifier and number in it, whole and lowercased, and each part
     an identifier is written in (`get_param` is `get` and `param`, `RobotState` is `robot` and
-    `state`) without a plural `s`. A number loses a trailing `.0`, and a part of one character
-    is no part."""
+    `state`) without a plural `s`, which a word that names nothing keeps, so `this` never reads
+    as `thi`. A number loses a trailing `.0`, and a part of one character is no part."""
     found: set[str] = set()
     for token in _WORD.findall(text):
         if token[0].isdigit():
@@ -542,7 +542,12 @@ def words(text: str) -> set[str]:
         for piece in token.split("_"):
             for part in _PART.findall(piece):
                 part = part.lower()
-                if len(part) > 3 and part.endswith("s") and not part.endswith("ss"):
+                if (
+                    len(part) > 3
+                    and part.endswith("s")
+                    and not part.endswith("ss")
+                    and part not in COMMON
+                ):
                     part = part[:-1]
                 if len(part) > 1:
                     found.add(part)
@@ -556,7 +561,8 @@ def _depth(line: str) -> int:
 
 def _read_on(lines: Sequence[str], index: int) -> str:
     """The cited line, with the lines after it while it leaves a bracket open or decorates what
-    follows, up to `CONTINUED` of them."""
+    follows, up to `CONTINUED` of them: a decorator's own brackets are closed first, so one
+    written over several lines is read through to what it decorates."""
     taken = [lines[index]]
     depth = _depth(lines[index])
     decorating = lines[index].lstrip().startswith("@")
@@ -564,11 +570,9 @@ def _read_on(lines: Sequence[str], index: int) -> str:
         if depth <= 0 and not decorating:
             break
         taken.append(line)
-        if decorating and not line.lstrip().startswith("@"):
+        if depth <= 0 and not line.lstrip().startswith("@"):
             decorating = False
-            depth = _depth(line)
-        else:
-            depth += _depth(line)
+        depth += _depth(line)
     return "\n".join(taken)
 
 
