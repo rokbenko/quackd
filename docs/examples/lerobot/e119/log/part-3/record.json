@@ -1,0 +1,14 @@
+{
+  "command": [
+    "quackd",
+    "robot",
+    "rest-pose",
+    "arm-01"
+  ],
+  "version": "0.31.3",
+  "started_at": "2026-11-06T12:27:26Z",
+  "outcome": "success",
+  "reason": "recorded arm-01's rest pose (6 joints)",
+  "robot": "arm-01",
+  "transport": "real"
+}
