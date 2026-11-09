@@ -348,6 +348,40 @@ def test_the_status_topics_publish_as_each_driver_does() -> None:
         assert len(heard) == expect, body.robot_type
 
 
+def test_the_controllers_server_latches_its_goals_status_and_motoros2_publishes_none() -> None:
+    """`up.ACTION_SERVER_PUBLISHES_STATUS` and `up.ACTION_STATUS_TOPIC`: the controller behind the
+    UR5e, the iisy and the iiwa publishes every goal's status when one changes, and latches it, so a
+    client that subscribes late hears the running goal EXECUTING and, once it has ended, how it
+    ended. Before its first goal it has published nothing. MotoROS2 publishes none at all
+    (`up.MOTO_NO_ACTION_STATUS`), so nothing is heard of its goal, running or not."""
+    for body in (UR, IISY, IIWA, MOTO):
+        bridge = FakeBridge(body)
+        actions, heard = _client(bridge)
+        built = bridge.roslibpy()
+        topic = f"{body.action}/_action/status"
+        before: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(before.append)
+        bridge.clock.advance(0.5)
+        assert before == [], f"{body.robot_type}: nothing before the first goal"
+        actions.send_goal(_goal(bridge.arm, 10.0, 2.0), *heard.args())
+        bridge.clock.advance(0.5)
+        late: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(late.append)
+        if body.controller == "motoros2":
+            assert before == late == [], "MotoROS2 publishes no status"
+            continue
+        (running,) = late[0]["status_list"]
+        assert running["status"] == GoalStatus.EXECUTING, body.robot_type
+        assert set(running["goal_info"]) == {"goal_id", "stamp"}
+        assert [m["status_list"][0]["status"] for m in before] == [GoalStatus.EXECUTING]
+        bridge.clock.advance(2.0)
+        assert heard.status == GoalStatus.SUCCEEDED
+        assert late[-1]["status_list"][0]["status"] == GoalStatus.SUCCEEDED
+        again: list[Any] = []
+        built.topic(built.ros, topic, "action_msgs/msg/GoalStatusArray").subscribe(again.append)
+        assert again == [late[-1]], "the last array, latched"
+
+
 # ── roslibpy's queue ─────────────────────────────────────────────────────────────────────────
 
 

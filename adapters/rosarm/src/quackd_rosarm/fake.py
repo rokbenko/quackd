@@ -6,10 +6,11 @@ roslibpy would make runs as it would against a bridge, and in CI it runs in fake
 does is what the sources in `upstream_api.py` say a bridge and each arm's driver do, and never
 kinder: a bridge that runs each goal on the thread that reads its client, one that drops a goal its
 glob does not match, one with no action server; a JointTrajectoryController with a Humble and a
-Jazzy switch for the UR5e, the iisy and the iiwa, and MotoROS2's own server for the MotoMini; and
-the faults a run meets: readings that stop, a socket that drops, a driver that stops the arm
-itself, and quackd going quiet in the middle of a move, which leaves the arm finishing it
-(`up.ONE_MOVE_WHEN_QUIET`). It has met no bridge, no controller and no arm (`up.FAKE_FROM_READING`).
+Jazzy switch for the UR5e, the iisy and the iiwa, whose action server latches the status of its
+goals, and MotoROS2's own server for the MotoMini, which publishes none; and the faults a run
+meets: readings that stop, a socket that drops, a driver that stops the arm itself, and quackd
+going quiet in the middle of a move, which leaves the arm finishing it (`up.ONE_MOVE_WHEN_QUIET`).
+It has met no bridge, no controller and no arm (`up.FAKE_FROM_READING`).
 
 Everything here runs on the event loop's thread: a callback roslibpy would hand over on its own
 thread is called from inside `FakeClock.sleep`, which is where fake time passes. Nothing passes
@@ -19,10 +20,12 @@ while nothing sleeps, so a pilot thinking costs the arm no time at all.
 from __future__ import annotations
 
 import asyncio
+import base64
 import fnmatch
 import itertools
 import json
 import math
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -648,6 +651,10 @@ class FakeBridge:
         self._status_heard: dict[str, dict[str, Any]] = {}
         self._held: list[tuple[str, str]] = []
         """Cancels a blocking bridge has not reached yet: they wait for the running goal."""
+        self._accepted: dict[str, float] = {}
+        """Every goal the arm's server took, and when, for the status it publishes."""
+        self._goal_statuses: dict[str, Any] | None = None
+        """The status array the server last published, which it latches."""
         self._pending: list[tuple[float, Callback, Any]] = []
         self._ids = itertools.count(1)
         self._since_reading = math.inf
@@ -771,11 +778,20 @@ class FakeBridge:
         if self.connected:
             callback(payload)
 
+    @property
+    def goal_status_topic(self) -> str:
+        """Where the arm's action server publishes its goals' statuses
+        (`up.ACTION_STATUS_TOPIC`)."""
+        return self.body.action + up.ACTION_STATUS_TOPIC.name.removeprefix("<action>")
+
     def _latched(self, topic: str, callback: Callback) -> None:
         """A transient-local publisher's last message, to a subscription made after it: the
-        description, and the UR's status (`up.UR_STATUS`)."""
+        description, the UR's status (`up.UR_STATUS`), and the goals' statuses an action server
+        last published (`up.ACTION_STATUS_TOPIC`)."""
         if self.description == "topic" and topic == self.body.description_topic:
             self._deliver(callback, {"data": self.urdf})
+        if topic == self.goal_status_topic and self._goal_statuses is not None:
+            self._deliver(callback, json.loads(json.dumps(self._goal_statuses)))
         if self.body.status is not None and self.body.status.reader == "ur":
             heard = self._status_heard.get(topic)
             if heard is not None:
@@ -831,6 +847,9 @@ class FakeBridge:
         )
         if why is not None:
             self._deliver(errback, {"status": GoalStatus.UNKNOWN, "values": up.GOAL_REJECTED.name})
+            return
+        self._accepted.setdefault(goal_id, self.clock.now())
+        self._publish_goal_statuses()
 
     def _cancel(self, action: str, goal_id: str) -> None:
         running = self.arm.goal is not None and self.arm.goal.id == goal_id
@@ -840,6 +859,46 @@ class FakeBridge:
             self._held.append((action, goal_id))
             return
         self.arm.cancel(goal_id)
+        self._publish_goal_statuses()
+
+    def _publish_goal_statuses(self) -> None:
+        """The status of every goal the arm's server keeps, published whenever one changes and
+        latched, as the JointTrajectoryController's server does: the running goal EXECUTING, and
+        each ended one as it ended (`up.ACTION_SERVER_PUBLISHES_STATUS`). A server that has taken
+        no goal has published nothing, and MotoROS2 publishes none (`up.MOTO_NO_ACTION_STATUS`).
+        A cancel ends a goal CANCELED at once here, where the controller shows it CANCELING
+        until its next look at the goal, up to a twentieth of a second at its stock
+        action_monitor_rate."""
+        if self.body.controller != "jtc" or not self._accepted:
+            return
+        ended = {goal_id: status for goal_id, status, _code, _why in self.arm.results}
+        running = self.arm.goal.id if self.arm.goal is not None else None
+        statuses = []
+        for goal_id, accepted_at in self._accepted.items():
+            status = int(GoalStatus.EXECUTING) if goal_id == running else ended.get(goal_id)
+            if status is None:
+                continue
+            uuid_bytes = uuid.uuid5(uuid.NAMESPACE_URL, goal_id).bytes
+            statuses.append(
+                {
+                    "goal_info": {
+                        # a uint8[16], which rosbridge hands over in base64 (BINARY_BASE64 in
+                        # the binding's refs)
+                        "goal_id": {"uuid": base64.b64encode(uuid_bytes).decode("ascii")},
+                        "stamp": {
+                            "sec": int(accepted_at),
+                            "nanosec": int((accepted_at % 1.0) * 1e9),
+                        },
+                    },
+                    "status": status,
+                }
+            )
+        message = {"status_list": statuses}
+        if message == self._goal_statuses:
+            return
+        self._goal_statuses = message
+        for callback in list(self._subscribers.get(self.goal_status_topic, [])):
+            self._deliver(callback, json.loads(json.dumps(message)))
 
     def _later(self, seconds: float, callback: Callback, payload: Any) -> None:
         self._pending.append((self.clock.now() + seconds, callback, payload))
@@ -850,6 +909,7 @@ class FakeBridge:
             held, self._held = self._held, []
             for _action, goal_id in held:
                 self.arm.cancel(goal_id)  # the goal has ended: there is nothing left to cancel
+        self._publish_goal_statuses()
         due = [entry for entry in self._pending if entry[0] <= now]
         self._pending = [entry for entry in self._pending if entry[0] > now]
         for _at, callback, payload in due:

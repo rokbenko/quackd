@@ -32,8 +32,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   said it cannot move, on the three arms whose drivers say so, and a driver that has said nothing is
   believed. At connect a bridge that runs action goals on the thread that reads its client is
   refused, since its cancel would land after the move, in words that name rosbridge_suite issue #909
-  and the flag that fixes it, and so is a description that gives a joint no finite travel or no
-  rated speed above zero. A move is refused too while another is still being watched, and while any
+  and the flag that fixes it, and so are a description that gives a joint no finite travel or no
+  rated speed above zero, and an action whose own status, which the controller latches on three of
+  the arms, says a goal sent before quackd connected still runs, another client's or one a run that
+  went quiet left going. A move is refused too while another is still being watched, and while any
   joint reads past its travel, and a socket that drops is let go of for good, since roslibpy would
   send what it held back once it reconnected by itself, by closing this client's socket and never
   the event loop every roslibpy client in the process shares. The transport keeps the ceiling too,
@@ -380,6 +382,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and MotoROS2 is read to watch only its own agent, so the bound is one move, at most 12 s at the
   speed asked, after which the arm holds. The heartbeat cancels what it can reach while quackd runs,
   and the pendant's stop is the brake.
+- **quackd looks for a goal still running only at connect, and only in the action's own status.**
+  MotoROS2 is read to publish no status, so on the MotoMini nothing is checked, and quackd's first
+  goal there waits behind one still running, unanswered until that one ends. On the other three a
+  status the bridge has not handed over within a second reads as nothing running, and neither a
+  goal another client sends after the check nor a trajectory published on the controller's own
+  topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
 - **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
   reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
   hold the instant between. A socket that is already down is never handed one.

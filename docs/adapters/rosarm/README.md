@@ -139,8 +139,24 @@ reads nothing of the driver. A key quackd does not read is refused, since a typo
 would put a stock default in front of an arm somebody configured otherwise.
 
 At connect each check is a refusal that says what it found: the thread parameter, the action among
-`/rosapi/action_servers`, the first `/joint_states` naming every joint, read by name and never by
-place, and the description's limits.
+`/rosapi/action_servers`, no goal still running on that action, the first `/joint_states` naming
+every joint, read by name and never by place, and the description's limits. A goal still running
+then was sent before quackd connected, by another client or by an earlier run that went quiet in
+the middle of a move, and quackd reads it off the action's own status, which the controller behind
+the UR5e, the iisy and the iiwa publishes whenever a goal changes and latches:
+
+```text
+rosarm: /scaled_joint_trajectory_controller/follow_joint_trajectory is still running a goal sent
+before quackd connected (executing): another client's, or one an earlier run left going when it went
+quiet, so the arm may be moving. quackd sends no goal over a running one: wait for it to end, or
+stop it on the pendant, then connect again
+```
+
+MotoROS2 is read to publish no such status, so on the MotoMini nothing is heard and nothing is
+refused, and quackd's first goal there waits behind one still running, unanswered until that one
+ends. Nor is a goal another client sends after the check looked for, or a trajectory published on
+a JointTrajectoryController's own topic, which has no goal and so no status: quackd's next goal
+would replace either.
 
 ## The manifest
 
@@ -213,7 +229,8 @@ How `move_joints` works underneath:
   off by default and counts from the end of a trajectory, and MotoROS2 is read to watch only its
   own agent.
   So the bound is one move: at most 12 s, at the speed asked. The manifest says it rather than
-  implying a deadman, and the suite shows it on all four fake arms.
+  implying a deadman, and the suite shows it on all four fake arms. A run that connects while that
+  move runs is refused until it has ended, on the three arms whose controller says so.
 - **A goal can still wake a MotoMini.** quackd never calls `start_traj_mode`, and a goal that
   arrives while MotoROS2's energy saving function has turned the servos off makes MotoROS2 call it
   itself and turn them on. A person confirms every move first for this reason among others.
@@ -247,7 +264,8 @@ differently at `65db736` in the notes; control_msgs on jazzy at `ab911bf`; actio
 jazzy; KUKA's drivers at `15fbb69` and descriptions at `5ddbc41`; the LBR-Stack at `d37b751`;
 MotoROS2 0.2.1 at `41ac074`, its interfaces at `b91a194`, the MotoMini's description at
 `a77f186`; industrial_msgs at `d547cdc`. JointState and JointTrajectory are read at rosbridge's
-own pin of ros2/common_interfaces. Every ref is in
+own pin of ros2/common_interfaces. On 2026-11-09, where an action's server publishes its goals'
+statuses: rcl at `18d96c9` and rclcpp at `35b821a`, both on jazzy. Every ref is in
 [`adapters/rosarm/src/quackd_rosarm/upstream_api.py`](../../../adapters/rosarm/src/quackd_rosarm/upstream_api.py),
 with its line. Nothing has been run against a controller.
 
@@ -289,6 +307,7 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `resultback({status, values}) and errback({status, values})` | how a result and a refusal arrive |
 | `self.once("ready", callback)` | a goal handed over while the socket is down would go out when roslibpy reconnects by itself, so no goal is sent on a dropped socket, and the heartbeat lets go of the client for good |
 | `reactor.callFromThread(reactor.stop)` | why the transport closes its own socket and never calls `terminate()`, which would end every roslibpy client's socket in the process, another robot's in a flock among them |
+| `a subscription is transient_local when every publisher on the topic is` | how the status a controller latched reaches quackd at connect |
 
 ### VERIFIED (read from source at the pins)
 
@@ -299,6 +318,9 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `trajectory_msgs/msg/JointTrajectoryPoint` | positions in radians, velocities, accelerations, effort, `time_from_start` |
 | `sensor_msgs/msg/JointState` | each joint known by its name, a revolute joint's position in radians |
 | `action_msgs/msg/GoalStatus` | 0 UNKNOWN to 6 ABORTED |
+| `action_msgs/msg/GoalStatusArray` | a status for each goal the server keeps, with when it was accepted |
+| `<action>/_action/status` | where an action's server publishes its goals' statuses, reliable and transient local, so a late subscriber is handed the last array |
+| `publish status since a goal's state has changed` | rclcpp_action's server, the controller's, publishes on every change; a goal ACCEPTED, EXECUTING or CANCELING has not ended |
 | `<controller>/follow_joint_trajectory` | the controller's action |
 | `Can't accept new action goals. Controller is not running.` | an inactive controller rejects every goal |
 | `allow_partial_joints_goal` | false by default: a goal names every joint |
@@ -365,6 +387,8 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `IIWA_READINGS` | that the iiwa runs the stock `open_loop: true`; `report_state` says its readings are the commands |
 | `MOTO_FIRST_POINT` | that a MotoMini at rest reads close enough to its command for a first point taken from the reading; one that does not is aborted with its reason |
 | `MOTO_SINGLE_GOAL` | that MotoROS2 answers no second goal while one runs; quackd never sends one |
+| `ACTION_STATUS_HEARD` | that the bridge hands quackd the status a controller latched within a second of subscribing; nothing heard is read as no goal running, since a controller that has had no goal publishes none |
+| `MOTO_NO_ACTION_STATUS` | that MotoROS2 publishes no goal status, as rclc under it publishes none; on a MotoMini the connect hears nothing and refuses nothing |
 | `ONE_MOVE_WHEN_QUIET` | that an arm whose client goes quiet finishes its move and holds; every move fits in 12 s, and the manifest claims no deadman |
 | `FAKE_FROM_READING` | that the fake behaves as these sources read; it has met no bridge, no controller and no arm |
 

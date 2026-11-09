@@ -12,6 +12,7 @@ them powers, enables, un-brakes or un-stops an arm.
 from __future__ import annotations
 
 import math
+import re
 import sys
 from typing import Any
 
@@ -170,6 +171,97 @@ async def test_a_limit_that_is_no_number_or_no_speed_is_refused(limit: str, valu
     with pytest.raises(TransportError, match="shoulder_pan_joint has lower"):
         await _over(fake).connect()
     assert "send_action_goal" not in fake.operations()
+
+
+@pytest.mark.parametrize(
+    "robot_type", ["ur5e", "kuka-lbr-iisy-3-r760", "kuka-lbr-iiwa-7-r800"], ids=str
+)
+async def test_a_goal_an_earlier_run_left_running_refuses_the_connect_until_it_ends(
+    robot_type: str,
+) -> None:
+    """A run that went quiet in the middle of a move leaves the arm finishing it
+    (`up.ONE_MOVE_WHEN_QUIET`), and the next run's connect is the first to meet it. The action's
+    own status, which the controller latches, says a goal is still executing, so the connect is
+    refused and nothing is sent over it; once that move has ended, the same arm connects."""
+    body = arm_body(robot_type)
+    fake = FakeBridge(body)
+    earlier = _over(fake)
+    await earlier.connect()
+    goal = dict((await earlier.get_state()).extras["joints"])
+    goal[body.joints[0]] += 20.0
+    assert (await earlier.send_intent(Intent.joint(goal, 6.0))).accepted
+    await earlier.sleep(1.0)
+    fake.client_gone()  # no cancel, no close: the earlier run is simply gone
+    with pytest.raises(TransportError) as refused:
+        await _over(fake).connect()
+    said = str(refused.value)
+    assert f"{body.action} is still running a goal sent before quackd connected (executing)" in (
+        said
+    )
+    assert "stop it on the pendant, then connect again" in said
+    asked = [op for op in fake.sent if op["op"] == "subscribe" and "_action" in op["topic"]]
+    assert asked[-1] == {
+        "op": "subscribe",
+        "topic": f"{body.action}/_action/status",
+        "type": "action_msgs/msg/GoalStatusArray",
+    }
+    assert fake.arm.goal is not None, "nothing ended it: the arm goes on with its move"
+    ended = [op for op in fake.sent if op["op"] == "unsubscribe" and "_action" in op["topic"]]
+    assert ended and ended[-1]["topic"] == f"{body.action}/_action/status", "it let go of it"
+    fake.clock.advance(6.0)
+    assert fake.arm.goal is None
+    later = _over(fake)
+    await later.connect()
+    assert (await later.get_state()).extras["move"] is None
+
+
+@pytest.mark.parametrize(
+    ("statuses", "said"),
+    [
+        ([1], "a goal sent before quackd connected (accepted)"),
+        ([2], "a goal sent before quackd connected (executing)"),
+        ([3], "a goal sent before quackd connected (canceling)"),
+        ([4, 2, 3], "2 goals sent before quackd connected (executing, canceling)"),
+        ([4, 5, 6], None),
+        ([], None),
+    ],
+)
+async def test_only_a_goal_that_has_not_ended_refuses_the_connect(
+    statuses: list[int], said: str | None
+) -> None:
+    """`up.MSG_GOAL_STATUS`: ACCEPTED, EXECUTING and CANCELING are a goal that has not ended, and
+    each refuses the connect, named; SUCCEEDED, CANCELED and ABORTED are goals the server keeps
+    after they ended, and an empty array is a server whose goals have all expired."""
+    fake = FakeBridge(UR)
+    fake._goal_statuses = {
+        "status_list": [
+            {"goal_info": {"goal_id": {"uuid": ""}, "stamp": {"sec": 0, "nanosec": 0}}, "status": s}
+            for s in statuses
+        ]
+    }
+    transport = _over(fake)
+    if said is None:
+        await transport.connect()
+        return
+    with pytest.raises(TransportError, match=f"is still running {re.escape(said)}"):
+        await transport.connect()
+
+
+async def test_a_goal_left_running_on_a_motomini_is_not_seen_at_connect() -> None:
+    """`up.MOTO_NO_ACTION_STATUS`: MotoROS2 publishes no goal status, so at connect nothing is
+    heard of a goal still running and nothing is refused, as the page and Known limitations say."""
+    fake = FakeBridge(MOTO)
+    earlier = _over(fake)
+    await earlier.connect()
+    goal = dict((await earlier.get_state()).extras["joints"])
+    goal["joint_1"] += 20.0
+    assert (await earlier.send_intent(Intent.joint(goal, 6.0))).accepted
+    await earlier.sleep(1.0)
+    fake.client_gone()
+    later = _over(fake)
+    await later.connect()
+    assert fake.arm.goal is not None, "the earlier goal still runs"
+    await later.close()
 
 
 async def test_the_description_is_read_off_the_latched_topic_when_no_parameter_has_it() -> None:
