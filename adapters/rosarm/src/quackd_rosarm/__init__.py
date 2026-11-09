@@ -48,7 +48,14 @@ from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
 from quackd_rosarm.bodies import BODIES, ROBOT_TYPE, ROBOT_TYPES, ArmBody, arm_body
-from quackd_rosarm.verbs import NOT_OFFERED, SPEED_SHARE, TOL_DEG, rosarm_conditions, rosarm_verbs
+from quackd_rosarm.verbs import (
+    NOT_OFFERED,
+    SPEED_SHARE,
+    STOP_VERB_TIMEOUT_S,
+    TOL_DEG,
+    rosarm_conditions,
+    rosarm_verbs,
+)
 
 __version__ = "0.33.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here rather
@@ -108,7 +115,7 @@ def rosarm_manifest(
     data = body_data(body.robot_type)
     verbs = [
         verb_spec(OWN["report_state"], core=True),
-        verb_spec(CORE["stop"], core=True),
+        verb_spec(CORE["stop"], core=True, timeout_s=STOP_VERB_TIMEOUT_S),
         verb_spec(OWN["move_joints"], core=False, safety_class="confirm"),
     ]
     extras: dict[str, Any] = {

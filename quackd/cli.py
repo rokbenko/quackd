@@ -3911,7 +3911,10 @@ _YES = typer.Option(
     False,
     "--yes",
     "-y",
-    help="Auto-confirm gated verbs (careful on hardware).",
+    help=(
+        "Auto-confirm gated verbs, but for one its backend keeps for a person (careful on "
+        "hardware)."
+    ),
     rich_help_panel="Task",
 )
 _LIVE = typer.Option(
@@ -5546,7 +5549,13 @@ def serve_mcp(
     map_address: str | None = _MAP_ADDR,
     dry_run: bool = _DRY,
     yes: bool = typer.Option(
-        False, "--yes", "-y", help="Allow confirm-gated verbs (there is no terminal to ask)."
+        False,
+        "--yes",
+        "-y",
+        help=(
+            "Allow confirm-gated verbs, but for one its backend keeps for a person (there is no "
+            "terminal to ask)."
+        ),
     ),
     memory: bool = _MEMORY,
     memory_dir: str | None = _MEMORY_DIR,

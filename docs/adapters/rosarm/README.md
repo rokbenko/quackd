@@ -141,7 +141,8 @@ ws://HOST:9090?action=/scaled_joint_trajectory_controller/follow_joint_trajector
 Every key defaults from the body record, so `ws://cell.local:9090` is enough for a stock bringup.
 `prefix` goes before each joint's name (UR's `tf_prefix`), `urdf_param` and `urdf_topic` take
 `off`, `bridge_node` names a bridge started under another name or a namespace, and `status=off`
-reads nothing of the driver. A key quackd does not read is refused, since a typo read as nothing
+reads no status topic of the driver's. A key quackd does not read is refused, since a typo read
+as nothing
 would put a stock default in front of an arm somebody configured otherwise.
 
 At connect each check is a refusal that says what it found: the thread parameter, the action among

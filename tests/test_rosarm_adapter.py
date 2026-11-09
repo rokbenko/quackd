@@ -23,10 +23,12 @@ from quackd.adapters.factory import RobotSpec, make_adapter, refusal
 from quackd.adapters.factory import describe as describe_spec
 from quackd.agent.prompts import DESCRIBED_LINE, body_lines
 from quackd.drive.session import _ANSWER, Answered, DriveSession, _Answer
+from quackd.duckfile.schema import Budgets
 from quackd.log import EventLog
 from quackd.mcp_server import RobotSession
 from quackd.registry import Registry, RegistryError, RobotEntry
 from quackd.safety import (
+    Budget,
     ConfirmDenied,
     Executor,
     Heartbeat,
@@ -46,13 +48,15 @@ from quackd_rosarm import (
 )
 from quackd_rosarm.bodies import BODIES, ws_tier
 from quackd_rosarm.fake import FakeBridge
-from quackd_rosarm.transport import RosArmWs
+from quackd_rosarm.transport import CANCEL_WAIT_S, RosArmWs
 from quackd_rosarm.verbs import (
     MOVE_MAX_S,
     NOT_OFFERED,
     NOTHING_TO_MOVE_DEG,
     PEAK_OVER_MEAN,
     SPEED_SHARE,
+    START_SLACK_S,
+    STOP_VERB_TIMEOUT_S,
     TOL_DEG,
 )
 
@@ -553,6 +557,44 @@ async def test_a_move_no_result_answers_says_whether_its_cancel_went() -> None:
     )
     assert not gone.ok and "is not connected, so no goal is sent" in gone.summary, gone.summary
     await adapter.close()
+
+
+async def test_a_move_the_run_ended_says_its_cancel_went_unanswered() -> None:
+    """A run's own end, its minutes among them, cancels a move on the way out of the verb. A cancel
+    nobody answered was left out of what the verb said, and the arm may go on to the end of its
+    move with nothing else to say so."""
+    bridge = FakeBridge(BODIES["ur5e"], actions_glob=("/nothing/*",))
+    transport = RosArmWs(
+        None, body=bridge.body, roslibpy=bridge.roslibpy(), clock=bridge.clock, name="mock"
+    )
+    adapter = RosArmAdapter(transport, bridge=bridge)
+    manifest = await adapter.connect()
+    budget = Budget(Budgets(max_minutes=0.02), now=adapter.now)
+    budget.start()
+    executor = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=None,
+        confirm=allow_all,
+        budget=budget,
+    )
+    ended = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
+    )
+    assert not ended.ok and "max_minutes" in ended.summary, ended.summary
+    assert "quackd could not cancel the goal: no answer to the cancel" in ended.summary, (
+        ended.summary
+    )
+    await adapter.close()
+
+
+def test_the_stop_verbs_own_timeout_covers_the_wait_for_a_goal_not_started() -> None:
+    """The core stop verb gives up at 5 s, and a goal that has not started is waited on for longer.
+    Cut short there, a stop that worked read as one that failed, and the executor sent a second."""
+    spec = next(v for v in describe("ws").verbs if v.name == "stop")
+    assert spec.timeout_s is not None
+    assert max(CANCEL_WAIT_S, START_SLACK_S) + 1.0 < spec.timeout_s <= 600
+    assert spec.timeout_s == STOP_VERB_TIMEOUT_S
 
 
 async def test_a_goal_the_bridge_starts_late_is_timed_from_its_start() -> None:

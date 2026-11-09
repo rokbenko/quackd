@@ -481,6 +481,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   close does. No quackd command prints a second close's line: a flock member whose run raised can be
   closed a second time, and code of your own may close the transport twice. What changes for you:
   `close_note` after a second close is the first close's.
+- **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop did
+  not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
+  `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and why
+  now, as the `stop` verb and the executor's own stop already did.
 
 ### Security
 

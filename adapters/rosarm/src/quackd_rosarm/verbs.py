@@ -86,6 +86,11 @@ every goal and waits up to a second for the controller's server before it sends 
 while that client loads the action's types, which took about two seconds for Jazzy's rosbridge
 2.7.1 in its official image; and a goal that wakes a MotoMini waits up to five seconds for its
 servos (`up.MOTO_ECO_REENABLES`)."""
+STOP_VERB_TIMEOUT_S = START_SLACK_S + 2.0
+"""The `stop` verb's own timeout on this body. The core verb gives up at 5 s, and `stop()` waits as
+long as `START_SLACK_S` on a goal that has not started, since the bridge holds its cancel until it
+has the goal (`transport.CANCEL_WAIT_S`): cut short, a stop that worked read as one that failed and
+the executor sent a second."""
 MOVE_JOINTS_TIMEOUT_S = 30.0
 """The executor's timeout for `move_joints`, which the verb's own deadlines end inside: the wait
 for the start, the longest move, the slack, the settle and a cancel's wait
@@ -317,7 +322,11 @@ async def _move(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     while True:
         if (told := ctx.interrupted()) is not None:
             await ctx.transport.stop()
-            return VerbResult.fail(f"move_joints: {told}", goal=goal, **_ended(told))
+            said = f"move_joints: {told}"
+            if undelivered := getattr(ctx.transport, "stop_error", None):
+                # the arm may still be going on to the end of the move, which only this can say
+                said = f"{said}, and quackd could not cancel the goal: {undelivered}"
+            return VerbResult.fail(said, goal=goal, **_ended(told))
         state = await ctx.transport.get_state()
         move = dict(state.extras.get("move") or {})
         if move.get("status") != "running":
