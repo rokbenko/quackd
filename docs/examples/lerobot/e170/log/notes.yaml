@@ -37,7 +37,8 @@ showed:
   - >
     quackd's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement
     rather than a limit`, because the needs it compares, such as payload and reach, were all met. A
-    joint's travel is not one of those needs, and 170 degrees is past this joint's real limit.
+    joint's travel is not one of those needs, and 170 degrees is past this joint's real limit. quackd
+    has since stopped saying this.
 did_not_show:
   - >
     It does not show the range refusal. No `move_joints` was ever asked for, so quackd's `outside this

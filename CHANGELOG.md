@@ -283,6 +283,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **An infeasible verdict no longer says that no limit was involved.** When a pilot answered
+  `infeasible` and its own datasheet met every need it named, the reason ended `so the verdict is
+  the pilot's judgement rather than a limit`. Those needs cover payload, reach, endurance, working
+  height, arms, the manipulator, mobility and terrain, and a joint's travel is none of them, so when
+  E170's LLM refused 170 degrees on a joint that stops at 119.6, quackd's closing line said no limit
+  was involved. The reason now ends `so the verdict rests on something they do not cover`.
 - **After an abort or a timeout, the executor's own stop says when it did not land.** A verb the
   executor ends, by an abort, a timeout, a verb that raised, a preemption or a pause, is followed by a
   stop, and the executor said a stop was sent unless that call raised. A transport that knows its stop
@@ -629,6 +635,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **The run sheet's cards say what the runs and the code say.** E169's no longer says the LLM
+  thinks it is driving: a dry run tells it each move was not sent, and on the arm it stopped after
+  one. E170's no longer calls quackd's refusal the only thing between a number and the servo, which
+  clamps a goal past its travel silently. E120 says `--no-memory`, as it was run, so E110 asks for
+  the failed take before it to run with `--memory`.
 - **E167 has a log: a real arm named by its spec, refused before anything connected.** A log can now
   be one command with no run folder from end to end. `scripts/example_log.py add --text` takes a GIF
   already made with `--gif`, puts back together a line the terminal wrapped, and reads the robot off

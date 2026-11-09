@@ -1,6 +1,6 @@
 # SO-101 run sheet. E120: Out of steps.
 # Run from the root of this checkout, against the arm registered as arm-01:
-#   quackd run docs/examples/lerobot/e120/out-of-steps.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 3 --memory
+#   quackd run docs/examples/lerobot/e120/out-of-steps.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 3 --no-memory
 ---
 duck: 1
 name: e120-out-of-steps

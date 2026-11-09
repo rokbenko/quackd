@@ -493,7 +493,11 @@ def solo_hint(needs: Mapping[str, Any], here: RobotManifest | None) -> str:
     a body that is installed here, and said the sheet met a height several times the body's own
     when the sheet had only never published a band. So "meets" is kept for a sheet the strict
     reading passes too, and a sheet the lenient reading alone passes is said to publish no band,
-    which leaves whether the body reaches that height to the pilot, as the gate does."""
+    which leaves whether the body reaches that height to the pilot, as the gate does.
+
+    Where the sheet meets them, the sentence says only that the verdict rests on something else.
+    It called that "the pilot's judgement rather than a limit", of an LLM that refused 170 degrees
+    on a joint that stops at 119.6: a joint's travel is a limit, and the needs do not cover it."""
     if not needs:
         return ""
     from quackd.adapters.factory import bodies_that_could
@@ -511,8 +515,8 @@ def solo_hint(needs: Mapping[str, Any], here: RobotManifest | None) -> str:
     if here is not None and not missing_needs(needs, here, own_sheet=True):
         if not missing_needs(needs, here):
             sentence += (
-                " This body's own datasheet meets those needs, so the verdict is the pilot's "
-                "judgement rather than a limit."
+                " This body's own datasheet meets those needs, so the verdict rests on something "
+                "they do not cover."
             )
         else:
             sentence += (

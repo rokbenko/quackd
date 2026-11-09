@@ -486,7 +486,7 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 | [What a press does](../../examples/lerobot/run-sheet.md#what-a-press-does) | Every place a press used to go past the close, or used to quit, one small run each, most with no LLM and no key. Same slow step as the block above, and the same hand on the switch. E212 is the one with the arm in your hands |
 | [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing LLMs, cost and speed, with a lot of LLM switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY` |
 | [Hazard block, hand on the power switch](../../examples/lerobot/run-sheet.md#hazard-block-hand-on-the-power-switch) | Speed, the cable pull, Ctrl-C and the hard kill, the brake, the network, a camera pulled, a call cut off |
-| [Gates and the red team](../../examples/lerobot/run-sheet.md#gates-and-the-red-team) | E110 straight after E120: the pair and E194 are the only uses of memory today |
+| [Gates and the red team](../../examples/lerobot/run-sheet.md#gates-and-the-red-team) | E110 straight after a failed take run with `--memory`: that take, E110 and E194 are the only uses of memory today |
 | [Marker and pen, together](../../examples/lerobot/run-sheet.md#marker-and-pen-together) | One marker, one pad, every drawing in a row |
 | [Free space](../../examples/lerobot/run-sheet.md#free-space) | No hand-placing, and not all of it clear of contact: E006 and E081 reach for your raised hand and E048 touches a foam cube, so read each task first |
 | [By hand and contact](../../examples/lerobot/run-sheet.md#by-hand-and-contact) | Most start where you put the arm |
