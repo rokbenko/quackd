@@ -813,6 +813,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
   `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
   robot.
+- **On rosbridge_server 2.7.1, which Jazzy ships, a parameter read can take rosapi down.** rosapi keeps
+  a client per node and stamps it with a time of the wrong clock until a read has used it. A read that
+  finds the node's parameter service not ready leaves it stamped that way, and rosapi's own cleanup
+  raises on it half a second later, so `rosapi_node` exits while the bridge goes on. `rosarm:ws` and
+  `rosbridge:ws` read parameters through rosapi at connect, so a connect that races a node still being
+  discovered can do this, and the next connect is refused naming the parameter it could not read.
+  Restart the bridge, or start it with `respawn:=true`, which brings rosapi back. Upstream fixed it in
+  rosbridge_suite #1308, which 2.7.1 does not carry. Humble's 2.0.8 keeps no such cache.
 
 ## [0.33.0] — 2026-11-07
 

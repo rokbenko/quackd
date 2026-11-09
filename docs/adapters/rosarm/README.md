@@ -124,7 +124,10 @@ as the SO-101's `not_hot` believes a backend with no thermometer.
   ```
 
 - **rosapi**, which the stock launch starts, for the parameter, the action servers and the robot's
-  description.
+  description. On rosbridge_server 2.7.1, which Jazzy ships, a read of a parameter whose node rosapi
+  cannot see yet ends `rosapi_node` half a second later while the bridge goes on (upstream's #1308 is
+  not in it), and the next connect is refused naming that parameter, so start the bridge with
+  `respawn:=true`, which brings rosapi back.
 - **The robot's description** on `robot_state_publisher`'s parameter or its latched topic, with a
   lower, an upper and a velocity on every joint: a goal with no travel to check it against is one
   quackd will not send.

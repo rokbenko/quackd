@@ -41,7 +41,8 @@ from quackd.verbs.registry import registry_from_manifest
 from quackd_rosarm import RosArmAdapter
 from quackd_rosarm.bodies import BODIES, ArmBody, arm_body
 from quackd_rosarm.fake import description_urdf
-from quackd_rosarm.transport import RosArmWs, trajectory_goal
+from quackd_rosarm.transport import DEFAULT_BRIDGE_NODE, RosArmWs, trajectory_goal
+from quackd_rosarm.upstream_api import GOAL_THREAD_PARAM
 from quackd_rosarm.verbs import TOL_DEG
 
 pytestmark = pytest.mark.skipif(
@@ -138,6 +139,7 @@ class Cell:
         self, body: ArmBody, logs: Path, *, new_thread: bool | None = True, active: bool = True
     ) -> None:
         self.body = body
+        self.new_thread = new_thread
         self.port = _free_port()
         self.address = f"ws://127.0.0.1:{self.port}"
         env = _ros_env(next(DOMAINS))
@@ -196,6 +198,11 @@ class Cell:
             "rosbridge_server",
             "rosbridge_websocket_launch.xml",
             f"port:={self.port}",
+            # a read of a parameter whose node rosapi cannot see yet ends rosapi on rosbridge 2.7.1
+            # (upstream's #1308 is in no release of it), which a runner slower than a laptop reaches
+            # below, while it waits for that node. Humble's launch file has no such argument, and
+            # ignores it, as its rosapi keeps no cache to crash on
+            "respawn:=true",
         ]
         if new_thread is not None:
             bridge.append(f"send_action_goals_in_new_thread:={str(new_thread).lower()}")
@@ -205,8 +212,18 @@ class Cell:
     def arm(self) -> _Process:
         return self.processes[1]
 
+    def _parameters_read(self) -> bool:
+        """rosapi answers for each parameter a connect reads. It has found the nodes they are on by
+        then, and asking again costs it nothing, where a connect that finds one not yet discovered
+        fails on it, and reads a description published before the bridge could hear it as none."""
+        names = [self.body.description_param]
+        if self.new_thread is not None:
+            names.append(f"{DEFAULT_BRIDGE_NODE}:{GOAL_THREAD_PARAM.name}")
+        return all(_parameter(self.port, name) for name in names)
+
     def wait_ready(self) -> None:
-        """The bridge's port answers and rosapi lists the arm's action: what a connect needs."""
+        """The bridge's port answers, rosapi lists the arm's action and reads what a connect reads
+        through it."""
         deadline = time.monotonic() + READY_S
         while True:
             for process in self.processes:
@@ -214,7 +231,7 @@ class Cell:
             try:
                 with socket.create_connection(("127.0.0.1", self.port), timeout=1.0):
                     pass
-                if self.body.action in _action_servers(self.port):
+                if self.body.action in _action_servers(self.port) and self._parameters_read():
                     return
             except Exception:  # not up yet, and the deadline below says when that is a failure
                 pass
@@ -238,6 +255,20 @@ def _raw_client(port: int) -> Any:
     ros = roslibpy.Ros("127.0.0.1", port)
     ros.run(10)
     return ros
+
+
+def _parameter(port: int, name: str) -> str:
+    """What rosapi answers for `node:parameter`, as a connect asks it, or "" while it has none."""
+    import roslibpy
+
+    ros = _raw_client(port)
+    try:
+        service = roslibpy.Service(ros, "/rosapi/get_param", "rosapi_msgs/srv/GetParam")
+        request = roslibpy.ServiceRequest({"name": name, "default_value": ""})
+        answer = service.call(request, timeout=5)
+        return str(answer.get("value") or "") if answer.get("successful", True) else ""
+    finally:
+        ros.close()
 
 
 def _action_servers(port: int) -> list[str]:
