@@ -320,15 +320,14 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
         f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 3 more could too, and quackd drives no part of "
         "them: each is a described body."
     ), three
-    # nobody quackd drives carries 6 kg, and two described bodies do: the first sentence still
+    # nobody quackd drives carries 6 kg, and one described body does: the first sentence still
     # says no robot here could, with the most about bodies quackd drives
     nobody = solo_hint({"payload_kg": 6.0}, None)
     assert nobody.startswith("No robot installed here meets needs payload_kg=6"), nobody
     assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies quackd drives"
     assert nobody.endswith(
-        f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 and "
-        f"{DESCRIBED}:menlo-asimov-1 could, and quackd drives no part of them: each is a described "
-        "body."
+        f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 could, and quackd "
+        "drives no part of it: each is a described body."
     ), nobody
     assert "described" not in solo_hint({"payload_kg": 500.0}, None)
     assert solo_hint({}, None) == ""

@@ -1,4 +1,4 @@
-# Noetix Bumi (Boomy abroad): a small humanoid. quackd describes it from Noetix's documentation
+# Noetix Bumi: a small humanoid. quackd describes it from Noetix's documentation
 # and drives no part of it (ADR-0077). A later binding would speak its DDS SDK.
 vendor: noetix
 model: bumi
@@ -30,8 +30,9 @@ datasheet:
     - "rain, by Noetix's prohibitions"
     - "stairs, by Noetix's prohibitions"
     - "slopes above 20 degrees, by Noetix's prohibitions"
+    - "potholed, soft or slippery ground, by Noetix's prohibitions"
   notes:
     - "Noetix publishes no payload and nothing on what its arms can hold, so no manipulator is listed here"
-    - "its SDK has no stop verb; fall protection disables every joint, which drops the body (web.noetixrobotics.com/docs)"
-    - "walking speed 1 m/s by its specifications; quackd clamps nothing here because it drives nothing"
-    - "sold as Boomy outside China; Bumi is its shipping name"
+    - "its SDK lists no stop command: START, sent in any mode but the disabled one, disables every joint at once, as fall protection does, and either drops the body (web.noetixrobotics.com/docs)"
+    - "no walking speed for the Bumi is on the pages read; the 1 m/s on Noetix's Boomy page is that robot's (boomy.noetixrobotics.com)"
+    - "Noetix also shows a Boomy, coming to Kickstarter with the same 21-joint layout (boomy.noetixrobotics.com) and an SDK of its own (github.com/Noetix-Robotics); no Noetix page read says the two are one robot"

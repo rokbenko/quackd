@@ -24,5 +24,6 @@ datasheet:
     - "hold, carry or push anything: the arms end in no hand"
   notes:
     - "mass, payload and endurance are not published in the repository read"
-    - "its own software caps a walk at 0.7 m/s ahead, 0.5 m/s back, 0.3 m/s to the side and 3 rad/s in a turn (src/constants.py); quackd clamps nothing here because it drives nothing"
-    - "the only stop its software has is torque off, which drops the body where it stands"
+    - "its own software caps a walk at 0.7 m/s ahead, 0.5 m/s back and 0.3 m/s to the side, and a turn at 3 rad/s in place and 1.5 rad/s on the move (src/constants.py); quackd clamps nothing here because it drives nothing"
+    - "its software stops a walk by zeroing the velocity, on the x key or when a gamepad disconnects, with torque on and the pose held (docs/usage.md, docs/gamepad.md)"
+    - "quitting its control loop, by q, the gamepad's B or make stop, or on a fault, turns torque off on every motor, which drops the body where it stands (docs/usage.md, src/scheduler.py)"
