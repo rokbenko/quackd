@@ -61,7 +61,7 @@ requires-python = ">=3.11"
 dependencies = ["quackd>=0.33.0,<0.34"]
 
 [project.optional-dependencies]
-sdk = ["lerobot[feetech]>=0.7,<0.8; python_version >= '3.12'"]
+sdk = ["lerobot[feetech]>=0.7,<0.7.1; python_version >= '3.12'"]
 
 [project.entry-points."quackd.adapters"]
 lerobot = "quackd_lerobot"
