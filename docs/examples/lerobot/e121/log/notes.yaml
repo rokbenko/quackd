@@ -25,8 +25,8 @@ showed:
     answered `n`.
   - >
     The run ended `ABORTED`, saying `the pilot was unsure (...) and a person said no`. The arm never
-    moved: both ends of the run said `already at the rest pose`, and the only thing sent to it was a
-    `stop`.
+    moved: both ends of the run said `already at the rest pose`, and the only command the run logged
+    was a `stop`.
   - >
     The LLM offered a way forward in its own question: `Can a human approve a bounded holding time and
     safe pose instead?`

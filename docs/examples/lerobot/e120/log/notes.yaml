@@ -25,8 +25,8 @@ showed:
     steps, 4 minutes, 10 LLM calls`. It called this `an action-budget limitation, not a physical
     inability to wave`.
   - >
-    The arm never moved. Both ends of the run said `already at the rest pose`, and the only thing sent
-    to it was a `stop`.
+    The arm never moved. Both ends of the run said `already at the rest pose`, and the only command
+    the run logged was a `stop`.
 did_not_show:
   - >
     It does not show the budget stopping anything. The run ended on the LLM's own decision with two of

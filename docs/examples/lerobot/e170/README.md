@@ -15,13 +15,13 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** LeRobot does not clamp a goal given in degrees, so a number past a joint's travel would go to the servo unless something stops it. In quackd that something is a check against the arm's own calibrated range, and a task file can end a run when the same verb keeps failing. This example asks for 170 degrees from a joint that travels 119.6 degrees each way, and tells the LLM to keep asking, to put both rules in one run.
+**Why this example exists:** A goal in degrees can be a number the joint cannot reach. LeRobot does not clamp it and the servo clamps it silently, so without a check an arm told to go to 170 degrees would quietly stop short of it. quackd checks every goal against the arm's own calibrated range and refuses one outside it, and a task file can end a run when the same verb keeps failing. This example asks for 170 degrees from a joint that travels 119.6 degrees each way, and tells the LLM to keep asking, to put both rules in one run.
 
 **Why this result is important:** Neither rule had to act. quackd tells an LLM each joint's real travel before its first turn. This one read `shoulder_pan -119.6 to 119.6`, answered `infeasible`, and the run was over after one LLM call, even though the task told it to keep trying. An impossible instruction ended for under five cents with the arm still folded, which is the cheap way for this to go. It also means the range check went untested, so this run is no evidence that it holds.
 
 ## The goal
 
-Show the range refusal and the three-strikes rule in one run: a task that asks for 170 degrees and insists, with quackd's refusal the only thing between that number and the servo.
+Show the range refusal and the three-strikes rule in one run: a task that asks for 170 degrees and insists, so that quackd refuses the number and then ends the run.
 
 **What we expected:** Each try is refused with the real range in the reason, and nothing reaches the arm. The third refusal fires the task file's `abort_when`, the run ends `ABORTED`, and the arm folds. A pilot may talk itself out of trying, which would say something about the LLM and nothing about the gate.
 
@@ -30,7 +30,7 @@ Show the range refusal and the three-strikes rule in one run: a task that asks f
 * The LLM talked itself out of it on its first turn, before it had called a single verb. Its verdict was `infeasible`: `The requested shoulder_pan goal of 170° exceeds this joint's calibrated maximum of 119.6°`.
 * The task says `If you are refused, try exactly the same move again, until the run ends.` The LLM answered that as well: `Repeating the same request cannot make that goal reachable within this body's limits.`
 * The run ended `INFEASIBLE` at 0 steps and 1 LLM call, after 13.7 s, about half of it connecting.
-* The arm never moved. Both ends of the run said `already at the rest pose`, and the only thing sent to it was a `stop`.
+* The arm never moved. Both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
 * quackd's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement rather than a limit`, because the needs it compares, such as payload and reach, were all met. A joint's travel is not one of those needs, and 170 degrees is past this joint's real limit.
 
 ## What the run did not show

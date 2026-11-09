@@ -5,7 +5,7 @@ why_example: >
   is there to show what an LLM would send before any of it reaches the motors. This example puts the
   most alarming task on the sheet, E114's as-fast-as-you-can swing, through it.
 why_result: >
-  Nothing reached the motors, and what would have gone out was printed first, joint and duration, which
+  No move reached the motors, and what would have gone out was printed first, joint and duration, which
   makes the rehearsal worth having on its own. quackd told the LLM the truth about its move, `not sent`,
   and the LLM would not claim a swing that never happened. That honesty is what you want from an LLM
   beside a robot. It also marks the limit of a dry run: a careful LLM can stop at its first move, and
@@ -31,12 +31,13 @@ showed:
     It took that at its word and declared failure: `I therefore cannot perform or verify a real
     end-to-end swing, and will not claim one occurred.` The run used 2 of its 10 steps and 4 LLM calls.
   - >
-    The arm never moved. All 4 of the observations in the run read the same joints, the only thing sent
-    to the arm was a `stop`, and neither end of the run made a rest move.
+    The arm never moved. All 4 of the observations in the run read the same joints, the only command
+    the run logged was a `stop`, and neither end of the run made a rest move.
 did_not_show:
   - >
     It does not show the swing. The LLM stopped after its one preparatory move, so the fast move this
-    example is about was never asked for, and the speed it would have asked for is unknown.
+    example is about was never asked for. All it said of the speed was `I can request the shortest
+    allowed duration`.
   - >
     It does not show an LLM carrying on through a whole dry run. This one stopped as soon as it was told
     its move was not sent, and another LLM might not.

@@ -373,6 +373,17 @@ def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
         script.render_log(root, _experiment(root, "E001"))
 
 
+def test_a_dry_run_is_tried_dry_and_any_other_is_not(tmp_path: Path) -> None:
+    """Left off, the line under Try it yourself would send the moves the log says were skipped."""
+    root = _tree(tmp_path / "examples")
+    for number, extra in (("e001", ["--dry-run"]), ("e002", [])):
+        command = ["quackd", "run", "t.duck", "--robot", "arm-01", *extra]
+        _logged(root, number, {**GOOD, "command": command})
+        text = script.render_log(root, _experiment(root, number.upper()))
+        tried = "quackd run t.duck --robot lerobot:mock --llm openai:gpt-6-sol --no-memory"
+        assert f"{tried}{' --dry-run' if extra else ''}\n```" in text
+
+
 def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
     """The line took the command's third word for a task, which beside a goal is `--goal`, so it
     printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
@@ -648,6 +659,8 @@ def test_a_refused_run_names_what_it_was_given_and_says_it_used_none_of_it(
     assert "| Task file | [`wave.duck`](../e016/wave.duck) |" in text
     assert "| LLM calls | none |" in text
     assert "| Tokens | none |" in text
+    assert "| Connecting | never connected |" in text
+    assert "| First motion | no verb moved the arm |" in text
 
 
 def test_a_refused_run_is_tried_as_the_same_line_and_dry(

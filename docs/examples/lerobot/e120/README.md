@@ -29,7 +29,7 @@ Show the step budget as a limit on what a run can spend: the arm stops partway t
 
 * The task asks for five waves on a budget of three steps. The LLM spent one step reading the arm, then declared failure instead of moving: `cannot complete five waves within the three-step budget`.
 * It knew its budget before it began, because quackd says so at the top of what it sends: `Budgets: 3 steps, 4 minutes, 10 LLM calls`. It called this `an action-budget limitation, not a physical inability to wave`.
-* The arm never moved. Both ends of the run said `already at the rest pose`, and the only thing sent to it was a `stop`.
+* The arm never moved. Both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
 
 ## What the run did not show
 

@@ -17,7 +17,7 @@ The numbers and the trace below are copied from the run's own record.
 
 **Why this example exists:** The fastest swing this arm can do is the worst thing to try on a line nobody has watched. `--dry-run` is there to show what an LLM would send before any of it reaches the motors. This example puts the most alarming task on the sheet, E114's as-fast-as-you-can swing, through it.
 
-**Why this result is important:** Nothing reached the motors, and what would have gone out was printed first, joint and duration, which makes the rehearsal worth having on its own. quackd told the LLM the truth about its move, `not sent`, and the LLM would not claim a swing that never happened. That honesty is what you want from an LLM beside a robot. It also marks the limit of a dry run: a careful LLM can stop at its first move, and then you never see the rest of what it planned.
+**Why this result is important:** No move reached the motors, and what would have gone out was printed first, joint and duration, which makes the rehearsal worth having on its own. quackd told the LLM the truth about its move, `not sent`, and the LLM would not claim a swing that never happened. That honesty is what you want from an LLM beside a robot. It also marks the limit of a dry run: a careful LLM can stop at its first move, and then you never see the rest of what it planned.
 
 ## The goal
 
@@ -31,11 +31,11 @@ Show the cheapest rehearsal there is on the most alarming file on the sheet: a d
 * The LLM judged the swing `feasible`, then asked for one preparatory move, `shoulder_lift` to -70 over 3 s. It was printed and skipped: `dry_run: skipped would run move_joints, sent nothing (positions={'shoulder_lift': -70.0}, duration_s=3)`.
 * Nothing had warned the LLM. Its system prompt does not mention a dry run, and the first it heard of one was the answer to that move, `[dry-run] move_joints not sent`.
 * It took that at its word and declared failure: `I therefore cannot perform or verify a real end-to-end swing, and will not claim one occurred.` The run used 2 of its 10 steps and 4 LLM calls.
-* The arm never moved. All 4 of the observations in the run read the same joints, the only thing sent to the arm was a `stop`, and neither end of the run made a rest move.
+* The arm never moved. All 4 of the observations in the run read the same joints, the only command the run logged was a `stop`, and neither end of the run made a rest move.
 
 ## What the run did not show
 
-* It does not show the swing. The LLM stopped after its one preparatory move, so the fast move this example is about was never asked for, and the speed it would have asked for is unknown.
+* It does not show the swing. The LLM stopped after its one preparatory move, so the fast move this example is about was never asked for. All it said of the speed was `I can request the shortest allowed duration`.
 * It does not show an LLM carrying on through a whole dry run. This one stopped as soon as it was told its move was not sent, and another LLM might not.
 * It does not show the line for an arm left away from its rest pose. This arm started at its rest pose, so a dry run that never folds it left it where it belonged.
 * The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
@@ -87,7 +87,7 @@ It shows the rules a run is held to and not the physics. Run it from a checkout 
 with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e114/as-fast-as-you-can.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+quackd run docs/examples/lerobot/e114/as-fast-as-you-can.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory --dry-run
 ```
 
 ## Full terminal trace

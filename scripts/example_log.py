@@ -359,10 +359,19 @@ def _try_intro(summary: dict[str, Any]) -> str:
     return said.format(what="task file" if _goal(summary) is None else "goal")
 
 
+def _refused(summary: dict[str, Any]) -> bool:
+    """Whether this is a `quackd run` that quackd turned down, so that nothing ever started."""
+    return (
+        summary.get("provider") is None
+        and summary["command"][:2] == ["quackd", "run"]
+        and summary["outcome"] == "error"
+    )
+
+
 def _try_the_refusal(summary: dict[str, Any]) -> str:
     """The line quackd refused, which gets no further on anybody else's machine."""
     words = summary["command"]
-    if words[:2] != ["quackd", "run"] or summary["outcome"] != "error":
+    if not _refused(summary):
         raise LogError(f"`{' '.join(words)}` is no run and no refusal: nothing says how to try it")
     path = _duck_path(summary)
     line = [path if path and word.endswith(".duck") else word for word in words]
@@ -378,7 +387,9 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any]) -> str:
     words = summary["command"]
     task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
     if summary.get("provider") != VLA:
-        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory"
+        # without it, a log of a dry run would be tried as a run that sends its moves
+        dry = " --dry-run" if "--dry-run" in words else ""
+        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory{dry}"
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
     # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
     # are in no record, so its server's line is the one somebody typed, from the notes.
@@ -421,12 +432,13 @@ def _numbers(
     vla = summary.get("provider") == VLA
     waited = _seconds(summary.get("llm_latency_s")) if ran else "none"
     waiting = [] if vla else [("Waiting for the LLM", waited)]
-    if not ran:
-        first_motion = "not recorded"
-    elif moved is None:
+    refused = _refused(summary)
+    if moved is not None:
+        first_motion = f"{moved:.1f} s after the start"
+    elif ran or refused:
         first_motion = "no verb moved the arm"
     else:
-        first_motion = f"{moved:.1f} s after the start"
+        first_motion = "not recorded"
     tokens = f"{usage.get('input_tokens', 0):,} in, {usage.get('output_tokens', 0):,} out"
     # a refused run can name an LLM and a task file on its command line, and use neither
     named = _flag(summary["command"], "--llm")
@@ -440,7 +452,7 @@ def _numbers(
         ("Steps", summary.get("steps", "none")),
         ("Turns" if vla else "LLM calls", summary.get("llm_calls", "none")),
         ("Total time", _seconds(summary.get("wall_s"))),
-        ("Connecting", _seconds(summary.get("connect_s"))),
+        ("Connecting", "never connected" if refused else _seconds(summary.get("connect_s"))),
         *waiting,
         ("First motion", first_motion),
         ("Tokens", tokens if ran else "none"),

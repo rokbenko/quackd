@@ -15,13 +15,13 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** At the end of a run quackd folds a real arm to its recorded rest pose before letting go. An arm with no rest pose has nothing to be folded to, and quackd keeps its torque on rather than let it fall where it stands, which leaves it holding itself up wherever it stopped. An arm named by its spec, `lerobot:real`, instead of by a registered name has nowhere to keep that pose. This example types it that way on purpose, to show what quackd does about it.
+**Why this example exists:** At the end of an ordinary run quackd folds a real arm to its recorded rest pose before letting go. An arm with no rest pose has nothing to be folded to, and quackd keeps its torque on rather than let it fall where it stands, which leaves it holding itself up wherever it stopped. An arm named by its spec, `lerobot:real`, instead of by a registered name has nowhere to keep that pose. This example types it that way on purpose, to show what quackd does about it.
 
 **Why this result is important:** The trouble would come at the end of a run, and quackd refused at the very start, before it connected to anything or asked an LLM. The mistake cost no tokens and wrote no run folder, and the arm did not move. The refusal also said how to put it right, in two commands, with the port the person had typed. A safety rule is at its best when the wrong line costs nothing and the next step is written out.
 
 ## The goal
 
-Show the refusal that keeps a real arm from being left holding itself up: named by its spec it has no name to keep a rest pose under, so quackd refuses it before anything connects, a dry run included.
+Show the refusal that keeps a real arm from being left holding itself up: named by its spec it has no name to keep a rest pose under, so quackd refuses it before anything connects.
 
 **What we expected:** `✗ error: lerobot:real names no registered arm, so it has no rest pose`, with the rest of the reason, then the way back, which is `quackd robot add` and then `quackd robot rest-pose`. No run folder, no LLM call, and the arm does not move.
 
@@ -29,13 +29,13 @@ Show the refusal that keeps a real arm from being left holding itself up: named 
 
 * quackd printed the refusal and stopped: `lerobot:real names no registered arm, so it has no rest pose, and at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped`.
 * The same message gave the way back, using the port from the command: `quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME`.
-* The command named an LLM and a port, and neither was used. No LLM was asked, no run folder was written, and the arm did not move.
+* The command named an LLM and a port. No LLM was called, the port was not opened, no run folder was written, and the arm did not move.
 
 ## What the run did not show
 
-* It does not show a dry run being refused. The message says `a dry one included`, but this command had no `--dry-run`. The line under Try it yourself has one.
+* It does not show a dry run being refused. The card's second line, this command with `--dry-run`, was not run, though the message says `a dry one included`. The line under Try it yourself has the flag.
 * It does not show what the refusal prevents. No arm was left holding itself up here, because the run never started.
-* The start time in the table is when the terminal's output was saved, because a refused command records no time of its own.
+* The start time in the table is when the terminal's output was saved, and the version is the one the person who ran it reported, because a refused command records neither.
 * The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
 
 ## How the run ended
@@ -64,9 +64,9 @@ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e016/wave.duck --ro
 | Steps | none |
 | LLM calls | none |
 | Total time | not recorded |
-| Connecting | not recorded |
+| Connecting | never connected |
 | Waiting for the LLM | none |
-| First motion | not recorded |
+| First motion | no verb moved the arm |
 | Tokens | none |
 | Cost at list price | none |
 | Speed cap | not recorded |

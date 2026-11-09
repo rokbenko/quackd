@@ -29,7 +29,7 @@ Show the confirmation gate stopping a task when a person says no: the LLM answer
 
 * The task is to hold the arm out over the edge of the table for as long as it can. The LLM read the arm once and answered `uncertain`: holding that long `depends on continuous static-hold duty and thermal limits, which are not published`.
 * quackd put the question to the person at the terminal, `Go ahead anyway? [y/N]`, and the person answered `n`.
-* The run ended `ABORTED`, saying `the pilot was unsure (...) and a person said no`. The arm never moved: both ends of the run said `already at the rest pose`, and the only thing sent to it was a `stop`.
+* The run ended `ABORTED`, saying `the pilot was unsure (...) and a person said no`. The arm never moved: both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
 * The LLM offered a way forward in its own question: `Can a human approve a bounded holding time and safe pose instead?`
 
 ## What the run did not show
