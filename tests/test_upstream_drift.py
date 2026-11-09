@@ -1315,17 +1315,19 @@ def test_an_issue_for_an_upstream_no_adapter_reads_is_closed_saying_why() -> Non
     """An upstream renamed or removed used to leave its issue open for ever: nothing the walk
     reads is called that, so nothing updated it or closed it."""
     script = _script()
+    wrote = f"a table\n\n{script.OPENED_BY} For a ref that changed, read it again."
     listed = [
-        {"number": 5, "title": "upstream drift: gadget", "body": ""},
+        {"number": 5, "title": "upstream drift: gadget", "body": wrote},
         {"number": 6, "title": "upstream drift is noisy", "body": ""},
-        {"number": 8, "title": "upstream drift: widget", "body": ""},
+        {"number": 7, "title": "upstream drift: lerobot moved its bus, read it again", "body": ""},
+        {"number": 8, "title": "upstream drift: widget", "body": wrote},
     ]
     gh = FakeGh(listed)
     done = script.sync_issues(
         [_clean_report(script)], "rokbenko/quackd", gh, known=["widget", "lerobot"]
     )
     closed = [call for call in gh.calls if call[:2] == ["issue", "close"]]
-    assert [call[2] for call in closed] == ["8", "5"], "a title the script never writes is left"
+    assert [call[2] for call in closed] == ["8", "5"], "an issue a person opened is left"
     assert "gadget" in _comment(closed[1]) and "any more" in _comment(closed[1])
     assert done == [
         "widget: issue #8 closed",
@@ -1367,10 +1369,10 @@ def test_the_command_says_which_upstreams_it_knows_only_after_a_walk_of_every_ad
     assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 0
     assert asked == [["widget", "other"]]
 
-    monkeypatch.setattr(script, "unread_adapters", lambda: ["toddlerbot did not import: boom"])
-    assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 0
+    monkeypatch.setattr(script, "unread_adapters", lambda: ["toddlerbot could not be read: boom"])
+    script.main(["--report", str(report), "--issues", "rokbenko/quackd"])
     assert asked[-1] is None
-    assert "since toddlerbot did not import: boom" in report.read_text(encoding="utf-8")
+    assert "since toddlerbot could not be read: boom" in report.read_text(encoding="utf-8")
 
     def unasked() -> list[str]:
         raise AssertionError("a run of one upstream walks no adapter for the issues")
@@ -1388,17 +1390,49 @@ def test_an_adapter_that_does_not_import_is_one_the_walk_could_not_read(
     script = _script()
     real = factory._module
 
+    class Rows:
+        """An `UPSTREAMS` that raises when it is read, which doctor's walk also passes over."""
+
+        def __iter__(self) -> Any:
+            raise RuntimeError("no rows tonight")
+
     def module(name: str) -> Any:
         if name == "toddlerbot":
             raise ImportError("no module named toddlerbot_sdk")
+        if name == "xlerobot":
+            return types.SimpleNamespace(UPSTREAMS=Rows())
         return real(name)
 
     monkeypatch.setattr(factory, "_module", module)
     monkeypatch.setattr(factory, "is_installed", lambda name: name != "moss")
     unread = script.unread_adapters()
-    assert "toddlerbot did not import: no module named toddlerbot_sdk" in unread
+    assert "toddlerbot could not be read: no module named toddlerbot_sdk" in unread
+    assert "xlerobot could not be read: no rows tonight" in unread
     assert "moss is not installed" in unread
-    assert len(unread) == 2, unread
+    assert len(unread) == 3, unread
+
+
+def test_what_was_done_before_a_refusal_stays_in_the_summary() -> None:
+    """One upstream's issues take several calls now. A refusal on the last of them used to be
+    the only line, as though nothing before it had been done."""
+    script = _script()
+    report = _drifted_report(script)
+    body = script.section(report)
+    two = [
+        {"number": 12, "title": "upstream drift: widget", "body": body},
+        {"number": 7, "title": "upstream drift: widget", "body": body},
+    ]
+
+    class Refuses(FakeGh):
+        def __call__(self, args: Any) -> str:
+            if list(args[:3]) == ["issue", "close", "12"]:
+                raise script.Unreachable("gh issue: HTTP 403")
+            return super().__call__(args)
+
+    done = script.sync_issues([report], "rokbenko/quackd", Refuses(two))
+    assert done == ["widget: issue #7 updated", "widget: issue not synced: gh issue: HTTP 403"]
+    done = script.sync_issues([_clean_report(script)], "rokbenko/quackd", Refuses(two))
+    assert done == ["widget: issue #7 closed", "widget: issue not synced: gh issue: HTTP 403"]
 
 
 # ── the real modules, and the workflow ──────────────────────────────────────────────────

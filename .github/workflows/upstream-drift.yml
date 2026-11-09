@@ -18,7 +18,7 @@ name: upstream drift
 # The script also keeps one issue open per upstream that needs somebody, labelled
 # `upstream-drift`, edits it in place while that lasts and closes it the night every ref reads
 # as it was read, so the finding outlives the run's logs. A second open issue with the same
-# title is closed in favour of the oldest, and one titled for an upstream no adapter reads any
+# title is closed in favour of the oldest, and one it wrote for an upstream no adapter reads any
 # more is closed saying why. A night that could not check an upstream closes none of its
 # issues, and a night that could not check them all closes none for an upstream gone from the
 # walk. That is the one write this workflow makes, and only in this repository.

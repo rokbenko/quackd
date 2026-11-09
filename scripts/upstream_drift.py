@@ -976,6 +976,8 @@ def exit_code(reports: Sequence[Report]) -> int:
 LABEL = "upstream-drift"
 TITLE = "upstream drift: "
 """Every issue the script keeps is titled this and the upstream's name."""
+OPENED_BY = "Opened by `.github/workflows/upstream-drift.yml`."
+"""What the body of every issue the script writes says, which tells it from a person's own."""
 ISSUES_LISTED = 200
 """How many open `upstream-drift` issues are listed: one per upstream and the odd repeat, so this
 is room to spare."""
@@ -1014,9 +1016,10 @@ def sync_issues(
     a night that still finds something edits it and closes the others saying it carries on, a
     clean night closes them all, and a night that could not check the upstream leaves them all.
     `known` is every upstream the walk read, given only when it read every adapter there is: an
-    open issue titled for an upstream not among them, renamed or removed since, would never be
-    updated or closed again, so it is closed saying why, and only on a night every upstream
-    could be checked. Returns what was done, one line per issue."""
+    open issue the script wrote, titled for an upstream not among them, renamed or removed since,
+    would never be updated or closed again, so it is closed saying why, and only on a night every
+    upstream could be checked. Returns what was done, a line at a time, and what was done before
+    a refusal stays in it."""
     done: list[str] = []
     gh(
         [
@@ -1054,7 +1057,7 @@ def sync_issues(
     for report in reports:
         issues = titled.pop(f"{TITLE}{report.name}", [])
         try:
-            done.extend(_sync_one(report, repo, gh, issues))
+            _sync_one(report, repo, gh, issues, done)
         except Unreachable as e:
             done.append(f"{report.name}: issue not synced: {e}")
     if known is not None and not any(report.blocked for report in reports):
@@ -1062,12 +1065,15 @@ def sync_issues(
     return done
 
 
-def _sync_one(report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]]) -> list[str]:
-    """One upstream's open issues, oldest first, and what was done about them."""
+def _sync_one(
+    report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]], done: list[str]
+) -> None:
+    """One upstream's open issues, oldest first, each thing done added to `done` as it is done."""
     title = f"{TITLE}{report.name}"
     number = str(issues[0]["number"]) if issues else ""
     if report.blocked and issues:
-        return [f"{report.name}: not all of it could be checked, issue #{number} left"]
+        done.append(f"{report.name}: not all of it could be checked, issue #{number} left")
+        return
     if not report.needs_somebody:
         for issue in issues:
             gh(
@@ -1081,19 +1087,22 @@ def _sync_one(report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]
                     "Every ref reads as it was read tonight, or has moved within its file.",
                 ]
             )
-        return [f"{report.name}: issue #{issue['number']} closed" for issue in issues]
+            done.append(f"{report.name}: issue #{issue['number']} closed")
+        return
     body = (
-        f"{section(report)}\n\nOpened by `.github/workflows/upstream-drift.yml`. For a ref "
-        "that changed, re-read it at the new baseline and move the pin and `READ_ON` in "
+        f"{section(report)}\n\n{OPENED_BY} For a ref that changed, re-read it at the new "
+        "baseline and move the pin and `READ_ON` in "
         f"`{report.module}`. For one that cannot be followed, anchor it on the line that "
         "names what it cites. The issue closes itself the night after."
     )
     if not issues:
         create = ["issue", "create", "--repo", repo, "--title", title, "--label", LABEL]
         created = gh([*create, "--body", body])
-        return [f"{report.name}: issue opened ({created.strip().split()[-1]})"]
+        done.append(f"{report.name}: issue opened ({created.strip().split()[-1]})")
+        return
     before = _needing(str(issues[0].get("body", "")))
     gh(["issue", "edit", number, "--repo", repo, "--body", body])
+    done.append(f"{report.name}: issue #{number} updated")
     if before != _needing(body):
         gh(
             [
@@ -1106,7 +1115,6 @@ def _sync_one(report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]
                 "What needs somebody changed tonight; the body above is current.",
             ]
         )
-    done = [f"{report.name}: issue #{number} updated"]
     for repeat in issues[1:]:
         gh(
             [
@@ -1121,20 +1129,22 @@ def _sync_one(report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]
             ]
         )
         done.append(f"{report.name}: issue #{repeat['number']} closed as a repeat of #{number}")
-    return done
 
 
 def _close_unknown(
     titled: dict[str, list[dict[str, Any]]], known: set[str], repo: str, gh: Gh
 ) -> list[str]:
-    """Close each open issue titled for an upstream the walk does not know, and say so. An issue
-    whose title is not one the script writes is somebody's own, and is left alone."""
+    """Close each open issue the script wrote that is titled for an upstream the walk does not
+    know, and say so. One whose body does not say the workflow opened it is somebody's own,
+    whatever its title, and is left alone."""
     done: list[str] = []
     for title, issues in titled.items():
         name = title[len(TITLE) :]
         if not title.startswith(TITLE) or name in known:
             continue
         for issue in issues:
+            if OPENED_BY not in str(issue.get("body", "")):
+                continue
             number = str(issue["number"])
             try:
                 gh(
@@ -1159,9 +1169,9 @@ def _close_unknown(
 
 def unread_adapters() -> list[str]:
     """Each adapter quackd knows that the walk could not read here, and why: one not installed,
-    or one that fails to import, which `quackd doctor`'s walk passes over in silence, and its
-    upstreams with it. A night with one closes no issue for an upstream the walk does not know,
-    since that upstream may be one of its."""
+    or one whose module or `UPSTREAMS` raises, which `quackd doctor`'s walk passes over in
+    silence, and its upstreams with it. A night with one closes no issue for an upstream the walk
+    does not know, since that upstream may be one of its."""
     from quackd.adapters.factory import _module, adapter_names, is_installed
 
     unread: list[str] = []
@@ -1170,9 +1180,10 @@ def unread_adapters() -> list[str]:
             unread.append(f"{name} is not installed")
             continue
         try:
-            _module(name)
+            for row in getattr(_module(name), "UPSTREAMS", ()):
+                tuple(row)
         except Exception as e:
-            unread.append(f"{name} did not import: {e}")
+            unread.append(f"{name} could not be read: {e}")
     return unread
 
 

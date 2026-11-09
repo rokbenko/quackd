@@ -357,9 +357,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   left the other open, and an upstream renamed or removed kept its issue open for good, since
   nothing the job reads was called that any more. The oldest of two is the one kept now: a night
   that still finds something edits it and closes the other saying which one carries on, and a clean
-  night closes both. An issue titled for an upstream no adapter reads is closed with a comment
-  saying why, but only after a walk of every adapter and on a night every upstream could be
-  checked, so an adapter that did not import, or a night something did not answer, closes nothing.
+  night closes both. An issue the job wrote, titled for an upstream no adapter reads, is closed with
+  a comment saying why, but only after a walk of every adapter and on a night every upstream could
+  be checked, so an adapter that did not import, or a night something did not answer, closes none of
+  them. An issue a person opened is left alone, whatever its title.
 - **The nightly drift job lists a VERIFIED ref whose line names nothing of it.** Fourteen of the
   rosbridge adapter's refs cited lines that held something else, and the job read them as the same
   every night, since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin,
