@@ -1490,7 +1490,8 @@ class _Enter(NamedTuple):
     at: float
     """When it was read, which may be well after it came in (`waited`)."""
     quiet: float
-    """How long since the Enter before it, whatever became of that one."""
+    """How long since the Enter before it, whatever became of that one: the least it can have
+    been, counted from the earliest this one can have come in."""
     text: str
     """What was typed on its line."""
     answers: bool
@@ -1636,11 +1637,17 @@ class KillSwitch:
     def _heard_enter(self, text: str, *, answers: bool = True) -> None:
         """An Enter the key thread read, recorded with what was typed on its line and when, and
         only then announced, so a wait woken by it finds the line it answers already there. One
-        that answers nothing is recorded too, since it is still the Enter before the next."""
+        that answers nothing is recorded too, since it is still the Enter before the next.
+
+        Its quiet counts from the earliest it can have come in. Read late, the one repeat of a
+        press held a moment too long looked like a press of its own after a quiet, and with nothing
+        behind it, it said yes."""
         now = time.monotonic()
         with self._enters_lock:
             waited = 0.0 if self._looked is None else now - self._looked
-            self._enters.append(_Enter(now, now - self._last_enter, text, answers, waited))
+            came = now - waited
+            quiet = math.inf if self._last_enter == -math.inf else came - self._last_enter
+            self._enters.append(_Enter(now, quiet, text, answers, waited))
             self._last_enter = now
             self._alone_said = False
         if answers:
@@ -1666,25 +1673,30 @@ class KillSwitch:
             self._announce(self._alone)
 
     def _line_since(self, since: float) -> str | None:
-        """What was typed on the first line read at `since` or later that says anything: one with
-        something on it, a no, as soon as it is read, or a bare one that comes after quiet
-        (`ENTER_QUIET_S`) and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None
-        where neither has been read yet. Enter held down from before a question answered it the
-        moment the question's half second was up, and a no that had to stand alone could be lost,
-        to the next bare Enter's yes.
+        """What was typed on the first line from `since` on that says anything: one with something
+        on it, a no, as soon as it is read, or a bare one that comes after quiet (`ENTER_QUIET_S`)
+        and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has
+        been read yet. Enter held down from before a question answered it the moment the question's
+        half second was up, and a no that had to stand alone could be lost, to the next bare
+        Enter's yes.
 
         Alone is what the key thread has seen, never the clock alone. Held up just after it read
         the first repeat of a key held down, it had read nothing more by the time the wait looked,
         or it read the next repeat late and stamped it then, and either way that repeat stood
         alone and said yes to the question that drops an arm. So at a console an Enter has stood
         alone once the key thread has looked and found nothing behind it `ENTER_ALONE_S` after it
-        was read, and the Enter after it is measured from the earliest it can have come in."""
+        was read, and the Enter after it is measured from the earliest it can have come in. So is
+        `since` for a bare one: typed too soon and read late, past the question's half second, it
+        was taken for one read in good time. A line with something on it goes by when it was read,
+        since a no needs none of this care: passed by for having perhaps come too soon, it was lost
+        and said nothing, and the next bare Enter was a yes to what they had just refused."""
         now = time.monotonic()
         with self._enters_lock:
             enters = list(self._enters)
             looked = now if self._looked is None else self._looked
         for n, enter in enumerate(enters):
-            if not enter.answers or enter.at < since:
+            came = enter.at if enter.text else enter.earliest
+            if not enter.answers or came < since:
                 continue
             after = enters[n + 1].earliest if n + 1 < len(enters) else looked
             alone = enter.quiet >= ENTER_QUIET_S and after - enter.at >= ENTER_ALONE_S
@@ -1701,7 +1713,7 @@ class KillSwitch:
         for enter in enters:
             if not enter.answers or enter.text or enter.at < asked_at:
                 continue
-            if enter.at < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
+            if enter.earliest < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
                 return True
         return False
 
@@ -1812,10 +1824,14 @@ class KillSwitch:
                     continue
                 typed.clear()
                 if ch in ("\r", "\n"):
-                    behind_a_q = keys is not None and time.monotonic() - q_at < ENTER_BEHIND_Q_S
                     with self._enters_lock:
                         text = "".join(line)
                         line.clear()
+                        # behind the `q` unless it cannot have come in that soon after it: read
+                        # late, the habit went to the question the `q` had brought on. A line with
+                        # something on it goes by when it was read, as it does at the question
+                        came = time.monotonic() if text or self._looked is None else self._looked
+                    behind_a_q = keys is not None and came - q_at < ENTER_BEHIND_Q_S
                     if not (ch == "\n" and previous == "\r"):
                         self._heard_enter(text, answers=not behind_a_q)
                     previous = ch

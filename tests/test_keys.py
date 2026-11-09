@@ -208,7 +208,7 @@ def test_a_regular_file_is_no_console(tmp_path: Path) -> None:
 class Pressed:
     """A console that hands over `keys` in order, then says there are no more. A float in them
     is a pause, in seconds, before the next key, through which it is looked at as a console is and
-    found empty. Keys with no pause between them were all in it at once."""
+    found empty, up to its end. Keys with no pause between them were all in it at once."""
 
     def __init__(self, *keys: str | float) -> None:
         self.keys = deque(keys)
@@ -225,6 +225,7 @@ class Pressed:
             while (now := time.monotonic()) < until:
                 nothing_waiting(now)
                 time.sleep(min(POLL_S, until - now))
+            nothing_waiting(until)
         return ""
 
     def erase(self) -> None:
@@ -348,7 +349,7 @@ async def test_an_enter_passed_by_behind_a_q_is_still_the_enter_before_the_next(
     ks, _, _ = await press("q", "\r", 0.1, "\r")
     first, second = ks._enters
     assert not first.answers and second.answers, "the first passed by, the second to a wait"
-    assert second.quiet == second.at - first.at, "and it is counted from the first"
+    assert second.quiet == second.earliest - first.at, "and it is counted from the first"
 
 
 async def _asked_and_pressed(

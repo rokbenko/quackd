@@ -24,7 +24,13 @@ from typing import Any
 
 import pytest
 
-from quackd.safety import ENTER_TOO_SOON, TYPED_AHEAD_S, AfterTheClose, KillSwitch
+from quackd.safety import (
+    ENTER_QUIET_S,
+    ENTER_TOO_SOON,
+    TYPED_AHEAD_S,
+    AfterTheClose,
+    KillSwitch,
+)
 
 
 def switch() -> tuple[KillSwitch, list[str]]:
@@ -556,6 +562,141 @@ async def test_a_look_is_nothing_to_a_wait_that_any_enter_answers(
     assert not waiting.done(), "a look ended a wait for an Enter"
     ks._heard_enter("")
     assert await asyncio.wait_for(waiting, timeout=20.0) is True
+
+
+def _read_late(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[_Clock, KillSwitch, list[str | None], Callable[[], None]]:
+    """A switch on a still clock with production's own constants, and a wait that looks at a
+    question put at the clock's start, keeping each answer it gets."""
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks = KillSwitch(asyncio.Event())
+    asked = clock.now
+    answers: list[str | None] = []
+
+    def wait_looks() -> None:
+        answers.append(ks._line_since(asked + TYPED_AHEAD_S))
+
+    return clock, ks, answers, wait_looks
+
+
+def test_an_enter_typed_too_soon_and_read_late_is_still_too_soon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enter pressed a moment after a question went up, too soon to have read it, with the key
+    thread held up from before it came in until past the question's half second. It was taken for
+    one read in good time, and with nothing after it, it said yes to dropping an arm. It came in
+    after the last look before it, which was before the half second, and that is what counts."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [NOTHING, wait_looks]
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up; it came in at 0.1 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "an Enter typed too soon answered the question"
+    assert ks._passed_by(asked), "and it is passed by as too soon, which the person is told"
+
+
+def test_an_enter_in_the_console_before_the_key_thread_first_looks_is_typed_ahead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The key thread reads whatever is in the console as it starts, and one slow to get going, on
+    a busy machine, read an Enter typed while the command was starting only past the question's
+    half second, and took it for an answer. Nothing read before the thread has once looked and
+    found the console empty is known to have come in after anything."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [0.6, "\r", wait_looks]  # in the console before the thread ever looked
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "an Enter from before the thread looked answered the question"
+    assert ks._passed_by(asked), "and it is passed by as too soon"
+
+
+def test_a_no_read_late_is_still_a_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`n` and Enter, with the key thread held up from before the question's half second until they
+    came in. A no goes by when it was read, needing none of the care a yes does. Passed by as
+    perhaps too soon, it was lost with no word said, and the next bare Enter was a yes to what
+    they had just refused."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, wait_looks]
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up
+    steps += ["n", "\r", wait_looks]
+    _ran(ks, clock, steps)
+    assert answers[-1] == "n", "a no read late was lost"
+
+
+def test_an_enter_read_late_stands_alone_from_when_it_was_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The earliest an Enter can have come in says nothing of when it did, and the latest is when
+    it was read. Counted from the earliest, one read late would be sure of at once, with a repeat
+    right behind it still in the console."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, 3.0, NOTHING, 1.0, "\r"]  # in good time, and read a second late
+    steps += _looked_at(0.4, then=wait_looks)
+    steps += _looked_at(0.1, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert answers[:20] == [None] * 20, "sure of before it had stood alone since it was read"
+    assert answers[-1] == "", "and it answers once it has"
+
+
+def test_a_repeat_read_late_is_still_close_behind_the_press(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enter pressed too soon and held just past a half second repeat delay, so it repeated once,
+    with the key thread held up from just before the repeat came in. Read 2.3 s after the press,
+    the repeat looked like a press after a quiet, and with nothing after it, it said yes. It came
+    in after the last look before it, under half a second after the press, so it is close behind
+    the press however late it was read."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [NOTHING, wait_looks, 0.1, "\r", wait_looks]
+    steps += _looked_at(0.48, then=wait_looks)
+    steps += [step for _ in range(18) for step in (0.1, wait_looks)]  # held up; it came in at 0.6 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "the repeat of a press too soon answered the question"
+    repeat = ks._enters[-1]
+    assert repeat.earliest >= asked + TYPED_AHEAD_S, "it is no Enter typed ahead"
+    assert repeat.quiet < ENTER_QUIET_S, "it is close behind the press"
+
+
+def test_the_habit_of_enter_behind_a_q_read_late_is_still_behind_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`q`, and the old habit of an Enter behind it, slowly, 1.5 s on, with the key thread held up
+    as it came in. Read more than 2 s after the `q`, it went to the question the `q` brought on,
+    and with nothing after it, it said yes. It came in after the last look before it, under 2 s
+    after the `q`, so it is the habit however late it was read."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, "q"]  # and the question goes up as it is read
+    steps += _looked_at(1.46, then=wait_looks)
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up; it came in at 1.5 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert ks.presses == 1
+    assert [enter.answers for enter in ks._enters] == [False], "the habit, which answers nothing"
+    assert set(answers) == {None}, "the Enter behind a `q` answered the question"
+
+
+def test_a_no_read_late_behind_a_q_is_still_a_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`n` and Enter behind a `q`, read more than 2 s after it by a key thread held up as they came
+    in. A bare Enter there may be the habit, and a line with something on it goes by when it was
+    read, as it does at the question. Taken for the habit, it was lost with no word said, and the
+    next bare Enter was a yes to what they had just refused."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, "q"]  # and the question goes up as it is read
+    steps += _looked_at(1.46, then=wait_looks)
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up
+    steps += ["n", "\r", wait_looks]
+    _ran(ks, clock, steps)
+    assert [enter.answers for enter in ks._enters] == [True], "it goes to the question"
+    assert answers[-1] == "n", "a no read late behind a `q` was lost"
 
 
 async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_stopping(

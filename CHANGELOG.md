@@ -265,6 +265,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   mode it could not change, it still goes by the clock. What changes for you: one press after 2 s of
   quiet is a yes about half a second after it is read, as before, and on Windows no longer sometimes
   nearly a second.
+- **An Enter read late is judged by when it can have come in.** A bare Enter answers a question that
+  drops an arm only if it came in half a second after the question and 2 s after the Enter before it,
+  and at a console 2 s after a `q`, and all three were measured from when the key thread read it,
+  which a thread held up does long after. So an Enter pressed a moment after the question and read
+  past its half second said yes, as did the one repeat of a press held a moment too long, read 2 s
+  after the press, and the old habit of an Enter behind a `q`, read 2 s after the `q`. Each is measured
+  now from the earliest it can have come in, the last time the key thread looked and found the console
+  empty before it read it, and what the thread reads before it has once looked is taken for typed
+  ahead. A line with something typed on it is still judged by when it was read, and a stream is
+  measured as before. What changes for you: on a machine too busy to read your keys as you press them,
+  a bare Enter it read late can be passed by as too soon, saying so, where it used to answer. Press it
+  once more.
 
 ### Security
 
