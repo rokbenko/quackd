@@ -402,9 +402,11 @@ Also in scope:
   repository's own code not to, and refuses a model the checkpoint names inside itself unless
   `--pin REPO@REVISION` fixes its revision at a whole commit or a tag, fetching it with no `.py`
   and no pickle, and refusing it if its directory in the Hub's cache holds anything but configs,
-  tokenizer files and safetensors all the same, maps a class to code (`auto_map`), or names a
-  kernel on the Hub as its attention (`attn_implementation`), code that transformers would run
-  once the `kernels` package is installed, which the server's extra does not bring. A SmolVLA
+  tokenizer files and safetensors all the same, maps a class to code (`auto_map`), names a
+  repository or a flash attention as its attention (`attn_implementation`), names experts or
+  carries a `quantization_config`, each a way to a kernel on the Hub that transformers would run
+  once the `kernels` package is installed. It loads nothing where that package is installed at
+  a version transformers takes, and refuses a GR00T that asks for flash attention too. A SmolVLA
   that names no backbone is refused, since LeRobot would load a default of its own, and so is a
   GR00T whose VLM step names no backbone, whose default LeRobot loads trusting its repository's
   code, and a step that keeps what it loads, a tokenizer say, in a directory inside the

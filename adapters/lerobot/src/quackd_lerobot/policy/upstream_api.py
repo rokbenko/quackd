@@ -243,10 +243,12 @@ TOKENIZER_TRUSTS_REMOTE_CODE = UpstreamRef(
     "`vlm_model_name` out gets that default filled in, so it is refused. SmolVLA's build asks "
     "transformers for its backbone without saying trust_remote_code either way, or which "
     f"attention to build it with ({src(_SMOLVLM, 92)}, to line 101), so a pinned model whose "
-    "files map a class to code (`auto_map`), or name a repository as their attention "
-    "(`attn_implementation`), a kernel on the Hub that transformers 5 would run once the kernels "
-    "package is installed, or whose directory in the Hub's cache holds anything but configs, "
-    "tokenizer files and safetensors, is refused",
+    "files map a class to code (`auto_map`), name a repository or a flash attention as their "
+    "attention (`attn_implementation`), name experts or carry a `quantization_config`, each a "
+    "way to a kernel on the Hub that transformers 5 would run once the kernels package is "
+    "installed, or whose directory in the Hub's cache holds anything but configs, tokenizer "
+    "files and safetensors, is refused. A server with the kernels package installed at a "
+    "version transformers takes loads no checkpoint at all",
 )
 PROCESSOR_ARTIFACTS = UpstreamRef(
     "a processor step's artifacts: directories inside the checkpoint that LeRobot loads in "
@@ -512,7 +514,12 @@ GROOT_BASE_MODEL = UpstreamRef(
     "repository's code, at no revision (line 362), so the server reads the pinned base's "
     "config.json before any weight and refuses another backbone. It fetches the rest of the "
     "base at the commit that read found, since a tag asked again could name another commit by "
-    "then, whose config.json nobody read",
+    "then, whose config.json nobody read. It refuses a checkpoint whose `use_flash_attention` "
+    "is true, since transformers swaps a flash attention for a kernel it fetches from the Hub "
+    "when flash_attn cannot run and the kernels package is installed. `GR00TN17Config` sets "
+    "every key the base's config.json holds as it comes (lines 169 to 174), "
+    "`_attn_implementation_internal` among them, which transformers drops from a config of its "
+    "own, so every key of it whose name holds `attn_implementation` is read for a kernel",
 )
 GROOT_BACKBONE = "nvidia/Cosmos-Reason2-2B"
 """The backbone GROOT_BASE_MODEL says LeRobot builds from a config of its own."""

@@ -280,12 +280,35 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   transformers checks the one a pinned GR00T base's names as it builds GR00T's own module, though
   LeRobot builds GR00T's backbone from a config of its own, and the server checked a pinned
   model's configs for `auto_map` alone. The server's extra does not install `kernels`, and
-  without it transformers fails the build instead.
-  A name with a `/` in it, under `attn_implementation` or `_attn_implementation` anywhere in a
-  pinned model's JSON, is refused now, before anything is built from it. What changes for you:
-  nothing to do, unless a pinned model's config names such a kernel, which is refused with a
-  sentence saying to pin a revision whose config names an attention transformers carries, such
-  as `sdpa`. `tests/test_policy_pipeline.py` fails without this.
+  without it transformers fails the build instead. A name with a `/` in it, under
+  `attn_implementation` or `_attn_implementation` anywhere in a pinned model's JSON, is refused
+  now, before anything is built from it. What changes for you: nothing to do, unless a pinned
+  model's config names such a kernel, which is refused with a sentence saying to pin a revision
+  whose config names `sdpa` or `eager` as its attention, or none. `tests/test_policy_pipeline.py`
+  fails without this.
+- **The policy server loads nothing where transformers would run kernels from the Hub, and
+  refuses the other ways a config reaches one.** The refusal above looks for a repository named
+  under `attn_implementation` or `_attn_implementation`, and transformers 5 reaches a kernel on
+  the Hub in other ways too. It swaps a flash attention, `flash_attention_2` and its kin, for a
+  kernels-community repository whenever flash_attn cannot run. It runs some experts and some
+  quantizers with kernels of their own, eetq's, mxfp4's and fine-grained fp8's among the
+  quantizers. A GR00T base can set its attention under `_attn_implementation_internal`, a key
+  transformers drops from its own configs and LeRobot's GR00T config takes as it comes. And a
+  GR00T checkpoint whose own `use_flash_attention` is true asks for `flash_attention_2` whenever
+  flash_attn imports. Each goes through the `kernels` package, at a revision no `--pin` fixes,
+  and without that package each fails as the model is built. The server's extra does not
+  install it, so none was open on a server installed as the docs say. Now the server refuses to
+  load any checkpoint where `kernels` is installed at a version transformers takes, decided by
+  the installed distribution as transformers decides it, before it asks the Hub for anything,
+  so a folder that is merely named `kernels` stops nothing. It refuses a pinned model whose
+  JSON names a repository or a flash attention under any key whose name holds
+  `attn_implementation`, names experts or carries a `quantization_config`, and a GR00T whose
+  `use_flash_attention` is true. What changes for you: uninstall `kernels` from the server's
+  environment if it is there, `uv pip uninstall kernels`, since nothing quackd serves needs it.
+  A pinned backbone or base whose config names `flash_attention_2`, or that was saved quantized,
+  is refused, so pin a revision that names `sdpa` or `eager`, or none. A GR00T fine-tune saved
+  with `use_flash_attention: true` is refused until a copy of it says false.
+  `tests/test_policy_pipeline.py` fails without this.
 
 ### Documentation
 

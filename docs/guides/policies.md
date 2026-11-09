@@ -584,10 +584,13 @@ that names no base is refused, since LeRobot would fill in its own at no revisio
 own `config.json` is read before any weight, because LeRobot builds the backbone from a config
 it carries only while the base names Cosmos-Reason2-2B as its backbone, and fetches any other
 trusting its repository's code. The rest of the base is fetched at the commit that read found,
-so a tag that moves in between cannot hand the build a `config.json` nobody read. LeRobot
-loads Cosmos's tokenizer with `trust_remote_code=True`, hard-wired, and the pin leaves it
-nothing of the repository's own to trust: no `.py` is fetched, and a directory whose configs
-map a class to code is refused (`GROOT_BASE_MODEL` and `GROOT_VLM_PROCESSOR` in
+so a tag that moves in between cannot hand the build a `config.json` nobody read. A checkpoint
+whose own `config.json` says `use_flash_attention: true` is refused, since LeRobot then builds
+the backbone with flash attention whenever flash_attn imports, which transformers swaps for a
+kernel from the Hub when flash_attn cannot run: serve a copy that says false. LeRobot loads
+Cosmos's tokenizer with `trust_remote_code=True`, hard-wired, and the pin leaves it nothing of
+the repository's own to trust: no `.py` is fetched, and a directory whose configs map a class to
+code is refused (`GROOT_BASE_MODEL` and `GROOT_VLM_PROCESSOR` in
 [the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 
 **Joints, and nothing else.** A GR00T decodes its answer group by group, each unnormalised by
@@ -743,7 +746,12 @@ server reads before it builds:
   file, or a config that maps a class to code, with a sentence saying to point `HF_HUB_CACHE` at
   a fresh cache. One that holds a PEFT adapter is refused too, since with peft installed,
   which LeRobot's own `[peft]` and `[groot]` extras bring, transformers would load the
-  adapter onto the model.
+  adapter onto the model. So is one whose configs name a repository or a flash attention as
+  their attention, name experts or carry a `quantization_config`: each is a way to a kernel that
+  transformers fetches from the Hub and runs.
+- Nothing is loaded at all on a machine where the `kernels` package, which transformers fetches
+  and runs those kernels through, is installed at a version transformers takes. Nothing quackd
+  serves needs it, so the refusal says to uninstall it.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
   run's record.
