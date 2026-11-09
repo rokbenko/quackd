@@ -638,8 +638,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The run sheet's cards say what the runs and the code say.** E169's no longer says the LLM
   thinks it is driving: a dry run tells it each move was not sent, and on the arm it stopped after
   one. E170's no longer calls quackd's refusal the only thing between a number and the servo, which
-  clamps a goal past its travel silently. E120 says `--no-memory`, as it was run, so E110 asks for
-  the failed take before it to run with `--memory`.
+  clamps a goal past its travel silently. E187's no longer says a running move can overshoot the time
+  budget: `move_joints` ends at its next tick once the minutes are spent. E120 says `--no-memory`,
+  as it was run, so E110 asks for the failed take before it to run with `--memory`.
 - **E167 has a log: a real arm named by its spec, refused before anything connected.** A log can now
   be one command with no run folder from end to end. `scripts/example_log.py add --text` takes a GIF
   already made with `--gif`, puts back together a line the terminal wrapped, and reads the robot off
