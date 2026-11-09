@@ -162,8 +162,11 @@ property. A name with a `/` in it is a repository of kernels on the Hub, whose c
 fetches and runs through the `kernels` package as it builds the model, at a revision no `--pin`
 fixes, once that package is installed at a version transformers takes, which the server's extra
 does not bring, and trusts the repository's publisher or finds the kernel in its cache offline.
-SmolVLA's build of its backbone and GR00T's of its base pass no attention of their own, so the
-pinned model's config says which (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+SmolVLA's build of its backbone passes no attention of its own, so the pinned backbone's config
+says which (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). A pinned GR00T base's config says only
+which one transformers checks as it builds GR00T's own module: LeRobot builds the backbone from
+a config it carries, with the attention the checkpoint's own `use_flash_attention` asks for
+(`upstream_api.GROOT_BASE_MODEL`)."""
 ADAPTER_CONFIG = "adapter_config.json"
 """The file that makes a directory a PEFT adapter. With peft installed, which the server's
 extra does not bring and LeRobot's own `[peft]` and `[groot]` do, transformers building a model

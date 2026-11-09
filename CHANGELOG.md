@@ -276,9 +276,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   repository, `owner/name`, is a kernel on the Hub, whose code transformers fetches and runs
   through the `kernels` package once that is installed, when that package trusts the
   repository's publisher or finds the kernel in its cache offline, at a revision no `--pin`
-  fixes. LeRobot builds SmolVLA's backbone and GR00T's base with the attention their pinned
-  `config.json` names, and the server checked a pinned model's configs for `auto_map` alone. The
-  server's extra does not install `kernels`, and without it transformers fails the build instead.
+  fixes. LeRobot builds SmolVLA's backbone with the attention its pinned `config.json` names,
+  transformers checks the one a pinned GR00T base's names as it builds GR00T's own module, though
+  LeRobot builds GR00T's backbone from a config of its own, and the server checked a pinned
+  model's configs for `auto_map` alone. The server's extra does not install `kernels`, and
+  without it transformers fails the build instead.
   A name with a `/` in it, under `attn_implementation` or `_attn_implementation` anywhere in a
   pinned model's JSON, is refused now, before anything is built from it. What changes for you:
   nothing to do, unless a pinned model's config names such a kernel, which is refused with a
