@@ -474,6 +474,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   close does. No quackd command prints a second close's line: a flock member whose run raised can be
   closed a second time, and code of your own may close the transport twice. What changes for you:
   `close_note` after a second close is the first close's.
+- **A run on Python 3.11 ends though its heartbeat's cancel was lost.** Python 3.11's `asyncio.wait_for`
+  loses a cancel that lands as its call returns, and a transport's heartbeat waits for its answer
+  through one. The heartbeat then beat on for good and its stop, the first line of a run's teardown,
+  waited on it, so a run could hang at its end with its stop and its record still to come. The loop
+  reads the cancel that is still asked for now and ends at its next turn. Python 3.12 loses none.
+  What changes for you: a run on 3.11 that hung this way ends.
 
 ### Security
 

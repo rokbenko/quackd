@@ -1421,6 +1421,7 @@ class Heartbeat:
         self._task: asyncio.Task[None] | None = None
 
     async def _run(self) -> None:
+        me = asyncio.current_task()
         while not self.abort.is_set():
             try:
                 await self.transport.heartbeat()
@@ -1449,6 +1450,12 @@ class Heartbeat:
                 finally:
                     self.abort.set()
                 return
+            if me is not None and me.cancelling():
+                # Python 3.11's wait_for, which a transport's wait for its answer goes through,
+                # loses a cancel that lands as its call returns, and the cancel is still asked for.
+                # Nothing else ends this loop, so it beat on for good and `stop`, the first line
+                # of the run's teardown, waited on it
+                raise asyncio.CancelledError
             await asyncio.sleep(self.period_s)
 
     def start(self) -> None:
