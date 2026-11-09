@@ -13,7 +13,7 @@ own (`quackd_microduck.body`), and a package that hands it to `manifest_for`, `M
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Collection, Sequence
-from typing import Any
+from typing import Any, TypeVar
 
 from PIL import Image
 
@@ -598,6 +598,44 @@ def conditions() -> dict[str, Precondition]:
     return microduck_conditions()
 
 
+AdapterT = TypeVar("AdapterT", bound=MicroduckAdapter)
+
+
+def make_for(
+    body: Body,
+    backend: str,
+    adapter: type[AdapterT],
+    *,
+    robot_id: str | None = None,
+    seed: int | None = None,
+    address: str | None = None,
+    live: bool = False,
+    camera_url: str | Sequence[str] | None = None,
+    room: str | None = None,
+    map_address: str | None = None,
+) -> AdapterT:
+    """A transport for `body` on `backend` and the adapter over it, which is what every `make` built
+    on this package comes to once it has refused what its own body does not take. What a body has
+    no use for it leaves out, as Huebot leaves out a seed, a room and a map."""
+    url = one_camera_url(camera_url, spec=f"{body.name}:{backend}")
+    from quackd_microduck.transports.factory import make_transport
+
+    try:
+        transport = make_transport(
+            backend,
+            body=body,
+            seed=seed,
+            address=address,
+            live=live,
+            camera_url=url,
+            room=room,
+            map_address=map_address,
+        )
+    except RoomError as e:
+        raise AdapterError(str(e)) from None
+    return adapter(transport, robot_id=robot_id)
+
+
 def make(
     backend: str,
     *,
@@ -614,27 +652,23 @@ def make(
     refuse_rest_pose("microduck", rest_pose)
     _refuse_room(backend, room)
     _refuse_map_address(backend, map_address)
-    url = one_camera_url(camera_url, spec=f"microduck:{backend}")
     # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
     # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
     # socket has no auth at all — access is filesystem permissions on /run/robotd.sock — and
     # mediad's own note is that a pairing PIN which is 000000 on every robot "authenticates
     # nobody". Reach both over ssh rather than trusting the network.
-    from quackd_microduck.transports.factory import make_transport
-
-    try:
-        transport = make_transport(
-            backend,
-            seed=seed,
-            address=address,
-            live=live,
-            camera_url=url,
-            room=room,
-            map_address=map_address,
-        )
-    except RoomError as e:
-        raise AdapterError(str(e)) from None
-    return MicroduckAdapter(transport, robot_id=robot_id)
+    return make_for(
+        MICRODUCK,
+        backend,
+        MicroduckAdapter,
+        robot_id=robot_id,
+        seed=seed,
+        address=address,
+        live=live,
+        camera_url=camera_url,
+        room=room,
+        map_address=map_address,
+    )
 
 
 __all__ = [
@@ -650,6 +684,7 @@ __all__ = [
     "describe",
     "implementations",
     "make",
+    "make_for",
     "manifest_for",
     "microduck_conditions",
     "microduck_manifest",
