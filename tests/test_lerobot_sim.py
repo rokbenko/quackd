@@ -2284,11 +2284,18 @@ async def test_manipulates_timeout_covers_the_thinking_the_simulators_clock_wait
     which runs on the wall's clock. Asked every tick and taking a tick of wall time to answer, as
     it declares, it thinks for as long as the segment runs, so with the headroom taken away a
     timeout sized for the segment alone would end the verb early. The narrowed timeout adds what
-    the backend says its clock stands still for, from the latency the policy declares, and the
-    segment runs out on its own time. Each answer takes what is left of a tick for every answer
-    so far, counted as the loop counts its thinking, so a busy machine that wakes one late has
-    it made up by the next, as the pacer makes up a late tick, and never adds up to a policy
-    slower than it declares, while the answers together still take the segment's length."""
+    the backend says its clock stands still for, from the latency the policy declares, and that
+    covers every second the clock stood still while the policy thought. Each answer takes what is
+    left of a tick for every answer so far, counted as the loop counts its thinking, so a busy
+    machine that wakes one late has it made up by the next, as the pacer makes up a late tick,
+    and never adds up to a policy slower than it declares, while the answers together still take
+    the segment's length.
+
+    Held on the thinking the loop measured, once the segment has run out on its own time under
+    the headroom every segment gets. The run itself used to go with the headroom taken away,
+    which gave the segment's own seconds just as many seconds of the wall's, and on a machine
+    busy with other work, the physics took longer than that to step through them, so the verb
+    timed out with every second of the thinking covered."""
     import time as wall
 
     from quackd.duckfile import narrow
@@ -2321,19 +2328,27 @@ async def test_manipulates_timeout_covers_the_thinking_the_simulators_clock_wait
                 "policy": {"segment_s": segment_s, "total_s": segment_s},
             }
         )
-        monkeypatch.setattr(narrow, "SEGMENT_HEADROOM_S", 0.0)
         assert adapter.manifest is not None
         ex = _executor(adapter, adapter.manifest, confirm=allow_all)
-        narrowed = narrow.narrow_policy_verb(ex.registry, contract, adapter)
         frozen = transport.frozen_inference_s(segment_s)
         assert frozen >= segment_s, "a tick of thinking every tick is the segment's length"
-        assert narrowed is not None and narrowed.timeout_s == pytest.approx(segment_s + frozen)
-        started = wall.perf_counter()
+        with monkeypatch.context() as bare:
+            bare.setattr(narrow, "SEGMENT_HEADROOM_S", 0.0)
+            narrowed = narrow.narrow_policy_verb(ex.registry, contract, adapter)
+            assert narrowed is not None and narrowed.timeout_s == pytest.approx(segment_s + frozen)
+        # the run's own narrowing, with SEGMENT_HEADROOM_S: the time past the segment's own
+        # seconds that its start, a guard's hold and the verb's stop land in
+        narrowed = narrow.narrow_policy_verb(ex.registry, contract, adapter)
+        assert narrowed is not None
+        assert narrowed.timeout_s == pytest.approx(segment_s + narrow.SEGMENT_HEADROOM_S + frozen)
         ran = await asyncio.wait_for(ex.run_verb("manipulate", {"instruction": "wave"}), WALL_S)
-        took = wall.perf_counter() - started
         assert ran.ok and ran.data["ended"] == "time", ran.summary
         assert ran.data["seconds"] == pytest.approx(segment_s, abs=TICK_S)
+        loop = transport._policy_loop
+        assert loop is not None
+        took = loop.thinking_s
         assert took > segment_s, "the thinking never outlasted the segment, so this proves nothing"
+        assert took <= frozen, f"{took:.3f} s of thinking, past the {frozen:.3f} s covered"
         assert adapter.slow_policy() is None, "a policy as fast as it declares is no reason"
     finally:
         await adapter.close()
