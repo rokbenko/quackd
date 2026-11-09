@@ -7,6 +7,10 @@ is refused by name. Switches make it a robotd of another release: another API ve
 does not have, a `robot.move` it does not take, no pick-up detector, no `frames`. So this proves
 our framing, handshake, deadman feeding and error handling against what upstream's source says,
 not that a real duck agrees.
+
+The tests that take `member` run on both bodies of the family, the Microduck and Huebot, over the
+fake of each in `tests/fake_robotd.py`, and hold each to its own words. What only one body does
+stays in `tests/test_huebot.py` or here.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ import sys
 import threading
 import time
 import urllib.error
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +50,7 @@ from quackd.transport.base import (
 )
 from quackd.transport.mock import MockTransport
 from quackd.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
-from quackd.verbs.registry import STOP_ENDED, VerbRegistry
+from quackd.verbs.registry import STOP_ENDED, VerbRegistry, registry_from_manifest
 from quackd_microduck import MicroduckAdapter
 from quackd_microduck import upstream_api as up
 from quackd_microduck.transports import jsonrpc_unix
@@ -67,6 +71,22 @@ from quackd_microduck.transports.jsonrpc_unix import (
     state_stale_after_s,
 )
 from quackd_microduck.webrtc import WebRtcCamera
+from tests.fake_robotd import (
+    CURRENT_API,
+    DOWN_ON_THE_FLOOR,
+    FLOOR,
+    HEAD,
+    MEMBERS,
+    NO_HEAD,
+    NO_VERSION,
+    PARAMS,
+    STOCK_POLICIES,
+    STOCK_SKILLS,
+    UPRIGHT,
+    FakeRobotd,
+    Member,
+    on_its_own_loop,
+)
 
 DUCK = parse_duck_text(
     "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
@@ -78,430 +98,6 @@ MOVERS = parse_duck_text(
     "  allow: [walk, go_to, search_scan, kick, gaze, sit, stand, stand_up]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
-#: The skills a stock robot answers `robot.subscribe` with.
-STOCK_SKILLS = ["roulade", "kick_left", "kick_right"]
-#: What else a stock robot at the pin answers `robot.subscribe` with: the walk it loads
-#: (`up.VELSTAND`) and no standing network, then the sit-stand and ground-pick files that
-#: robotd-params names for the walk mode.
-STOCK_POLICIES = {
-    "walk": up.VELSTAND.name,
-    "sitstand": "alpha_sitstand.onnx",
-    "ground_pick": "alpha_ground_pick.onnx",
-}
-#: The order `robot.state.joints` is indexed in, `JOINT_NAMES` in duck-ipc-proto.
-JOINTS = (
-    "left_hip_yaw",
-    "left_hip_roll",
-    "left_hip_pitch",
-    "left_knee",
-    "left_ankle",
-    "neck_pitch",
-    "head_pitch",
-    "head_yaw",
-    "head_roll",
-    "mouth",
-    "right_hip_yaw",
-    "right_hip_roll",
-    "right_hip_pitch",
-    "right_knee",
-    "right_ankle",
-)
-#: `HeadParams` and `LookResult.head`, in the order `robot.state.head` carries them.
-HEAD = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
-#: Each call quackd makes that takes params, with every member its params type declares at the
-#: pin and the ones that have no default. Every one of those types denies unknown fields, so a
-#: member robotd does not know is INVALID_PARAMS naming it (the doc above `API_VERSION` in
-#: lib.rs says why).
-PARAMS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "hello": (frozenset({"api_version"}), frozenset({"api_version"})),
-    "robot.move": (frozenset({"vx", "vy", "vyaw"}), frozenset()),
-    "robot.head": (frozenset(HEAD), frozenset()),
-    "robot.look": (frozenset({"x", "y", "z", "neck_pitch"}), frozenset()),
-    "robot.enable": (frozenset({"on", "toggle"}), frozenset({"on"})),
-    "robot.do": (frozenset({"skill"}), frozenset({"skill"})),
-    "robot.pose": (frozenset({"z", "roll", "pitch", "active"}), frozenset()),
-    "robot.sound": (frozenset({"tag", "hold"}), frozenset({"tag"})),
-    "robot.subscribe": (frozenset({"hz"}), frozenset()),
-}
-#: The calls quackd makes that take no params, which robotd answers whatever arrives with them.
-NO_PARAMS = frozenset({"robot.stop", "robot.health"})
-
-
-CURRENT_API = int(up.API_VERSION.name)
-FLOOR = int(up.API_FLOOR.name)
-NO_VERSION = object()
-"""A hello answer with no `api_version` at all, for `FakeRobotd(api_version=...)`."""
-NO_HEAD = object()
-"""A `robot.look` answer with no `head` at all, for `FakeRobotd.look_head`."""
-
-
-Quat = tuple[float, float, float, float]
-"""A rotation as a scalar-first quaternion, `[w, x, y, z]`, the way `RobotState.frames` has it."""
-
-#: `frames.camera` looking straight ahead. The camera frame is OpenCV's (+x right, +y down, +z
-#: along the optical axis) and the pose is in the trunk frame (x forward, y left, z up), so the
-#: optical axis is the trunk's +x, the camera's +x is the trunk's -y and its +y the trunk's -z.
-AHEAD: Quat = (0.5, -0.5, 0.5, -0.5)
-
-
-def _turned(axis: tuple[float, float, float], angle: float) -> Quat:
-    """A turn of `angle` radians about the unit `axis`, right-handed."""
-    s = math.sin(angle / 2)
-    return (math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s)
-
-
-def _then(a: Quat, b: Quat) -> Quat:
-    """`b`, then `a`: the Hamilton product `a * b`."""
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b
-    return (
-        aw * bw - ax * bx - ay * by - az * bz,
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-    )
-
-
-def camera_pose(yaw: float, pitch: float = 0.0) -> dict[str, list[float]]:
-    """`frames.camera` for a camera turned `yaw` radians to the left of straight ahead and tilted
-    `pitch` radians up: `AHEAD`, tilted up about the trunk's +y, which takes a negative angle,
-    then turned about the trunk's +z. Built from the turns rather than from the angles quackd
-    reads back, so that reading them back is something the test checks."""
-    quat = _then(_turned((0.0, 0.0, 1.0), yaw), _then(_turned((0.0, 1.0, 0.0), -pitch), AHEAD))
-    return {"pos": [0.05, 0.0, 0.1], "quat": list(quat)}
-
-
-class FakeRobotd:
-    def __init__(
-        self,
-        *,
-        api_version: object = CURRENT_API,
-        healthy: bool = True,
-        fallen: bool = False,
-        policy: str | None = "walk",
-        limp: bool = False,
-        picked_up: bool | None = False,
-        skills: list[str] | None = STOCK_SKILLS,
-        missing: frozenset[str] = frozenset(),
-        drop_moves: bool = False,
-        reports_frames: bool = True,
-    ) -> None:
-        self.api_version = api_version
-        """What `hello` answers in `api_version`, NO_VERSION to leave it out."""
-        self.daemon_version: Any = up.RELEASE.removeprefix("daemon-v")
-        """What `hello` answers in `daemon_version`: the release quackd read, as robotd names
-        it, by default."""
-        self.healthy = healthy
-        # The duck as the next state frame will describe it. Each frame is built from these when
-        # it is sent, so a test can pick the duck up, lay it down or start a skill mid-verb.
-        self.fallen = fallen
-        self.policy = policy
-        self.limp = limp
-        self.picked_up = picked_up
-        """None leaves `safety.picked_up` out, as a robotd from before the pick-up detector,
-        daemon-v0.15.2, does. One at the pin writes it on every frame, held or not."""
-        self.skills = skills
-        """What `robot.subscribe` answers in `skills`; None leaves the key out, as a robotd whose
-        skills are not config yet does."""
-        self.missing = missing
-        """Calls this robotd answers METHOD_NOT_FOUND, as one from before they existed would."""
-        self.params = dict(PARAMS)
-        """The members each call's params take, this robotd's own copy, so a test can give one
-        call the shape a newer robotd might."""
-        self.drop_moves = drop_moves
-        """Take no `robot.move` at all, as a robotd that cannot parse one does: it says nothing
-        back, and `move.requested` goes on reporting what it was asked for before."""
-        self.reports_frames = reports_frames
-        """False leaves `frames` out of the state, as a robotd from before API 24 does."""
-        self.reports_odom = True
-        """False leaves `odom` out of the state, as a robotd from before the estimator does."""
-        self.odom: dict[str, Any] = {"position": [0.0, 0.0, 0.0], "yaw": 0.0}
-        """What every state frame reports as `odom`: where contact odometry puts the duck."""
-        self.extra_state: dict[str, Any] = {}
-        """Members added to every state frame, to make one as long as a test needs."""
-        self.frames_sent = 0
-        self.battery: Any = {"volts": 7.4, "percent": 66.0}
-        """What `robot.health` answers in `battery`."""
-        self.twist = [0.0, 0.0, 0.0]
-        """The twist robotd was last asked for, `[vx, vy, vyaw]`, which every state frame reports
-        as `move.requested` (`up.MOVE_ECHO`). A stop zeroes it; the deadman does not."""
-        self.emotion: str | None = None
-        """The emotion robotd is playing, or None. While one plays every frame reports a zero
-        twist in place of `twist`, which is kept as it was asked for, and nothing else in the
-        frame says so, as robotd puts the emotion's zero in place of what its clients asked for
-        on every tick of it (`up.MOVE_ECHO`)."""
-        self.head = [0.0, 0.0, 0.0, 0.0]
-        """The head slot, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
-        `robot.look` or `robot.head` asked for, from anyone."""
-        self.head_alpha = 1.0
-        """How far each state frame's `head` moves toward the slot, the smoothing robotd applies
-        every control tick. 1 reports the slot as it is."""
-        self.shown = [0.0, 0.0, 0.0, 0.0]
-        """The `head` the last state frame reported, which the joints and the camera follow."""
-        self.steering: list[float] | None = None
-        """Another client's head, written over the slot before every frame, the way a gamepad
-        posing the head sends one at least ten times a second; None while nobody else does."""
-        self.glance: list[float] = []
-        """Yaw to add to the `head` the next frames report, one a frame, the way robotd adds an
-        idle glance to the head slot while it fades one out."""
-        self.look_head: Any = None
-        """What `robot.look` answers in `head` instead of the head it turned to, when set, and
-        NO_HEAD to leave `head` out."""
-        self.looked_at: list[int] = []
-        """How many notifications had arrived when each `robot.look` did."""
-        self.arrived: list[tuple[float, str]] = []
-        """When each call arrived, on this machine's monotonic clock, and which it was."""
-        self.recover_on_enable = False
-        """Stand a fallen duck up when `robot.enable` arrives, as the policy taking over would."""
-        self.on_enable: dict[str, Any] = {}
-        """What the duck is, attribute by attribute, in the frames after `robot.enable` arrives,
-        as what robotd did meanwhile would leave it: a fall it caught, or a duck it handed back."""
-        self.notifications: list[dict[str, Any]] = []
-        self.requests: list[dict[str, Any]] = []
-        self.rejected: list[tuple[str, str]] = []
-        """Every call robotd would have refused, with why. A notification gets no answer, so this
-        is the only place a refused `robot.move` shows up at all."""
-        self.link = asyncio.Event()
-        self.link.set()
-        """Cleared, the link holds quackd's lines back, as one lost segment on an ssh tunnel does
-        until it is sent again: the fake reads nothing more, while its state stream goes on, and
-        once it is set again takes every line it was sent, in the order sent."""
-        self.junk: list[str] = []
-        """Lines written, in order, just before the next answer, each once."""
-        self.answers: dict[str, Any] = {}
-        """What a call is answered with instead of what robotd answers it with, by method, for
-        an answer whose shape moved."""
-        self.unanswered: set[str] = set()
-        """Calls the fake carries out and then never answers, by method, as a robotd whose
-        answer a link lost after it had read the call would look from quackd's end."""
-        self.writers: list[asyncio.StreamWriter] = []
-        self.server: asyncio.AbstractServer | None = None
-        self.port = 0
-        self._arrived = asyncio.Event()
-        self._stream: asyncio.Task[None] | None = None
-        self._t0 = time.monotonic()
-
-    async def start(self) -> None:
-        self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
-        self.port = self.server.sockets[0].getsockname()[1]
-
-    async def stop(self) -> None:
-        assert self.server is not None
-        if self._stream is not None:
-            self._stream.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._stream
-            self._stream = None
-        # From Python 3.12.1 `wait_closed` also waits for every connection the server took to
-        # close, and a test that fails before it closes its transport leaves quackd's open, so
-        # teardown waited until CI's job limit cancelled it, and the failure was never printed.
-        # Hanging up first is what a robotd that exits does, and the bound is the backstop for a
-        # connection that does not close when told, as `_DelayingLink.stop` has.
-        self.hang_up()
-        self.server.close()
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(self.server.wait_closed(), 2.0)
-
-    def hang_up(self) -> None:
-        """Close every connection from this end, as a robotd that exits does."""
-        for writer in self.writers:
-            writer.close()
-
-    async def wait_notifications(self, n: int, wait_s: float = 2.0) -> list[dict[str, Any]]:
-        """Notifications have no reply, so the test must wait for the server to read them."""
-        async with asyncio.timeout(wait_s):
-            while len(self.notifications) < n:
-                self._arrived.clear()
-                await self._arrived.wait()
-        return self.notifications
-
-    def frame(self) -> dict[str, Any]:
-        """The `robot.state` notification for this tick, from the attributes as they are now."""
-        safety: dict[str, Any] = {
-            "fallen": self.fallen,
-            "limp": self.limp,
-            "gravity": [0.0, 0.0, -1.0],
-            "gain": 200,
-        }
-        if self.picked_up is not None:
-            safety["picked_up"] = self.picked_up
-        if self.steering is not None:
-            self.head = list(self.steering)
-        shown = zip(self.shown, self.head, strict=True)
-        self.shown = [s + self.head_alpha * (h - s) for s, h in shown]
-        joints = [0.0] * len(JOINTS)
-        for name, angle in zip(HEAD, self.shown, strict=True):
-            joints[JOINTS.index(name)] = angle
-        reported = list(self.shown)
-        reported[HEAD.index("head_yaw")] += self.glance.pop(0) if self.glance else 0.0
-        t = time.monotonic() - self._t0
-        twist = list(self.twist) if self.emotion is None else [0.0, 0.0, 0.0]
-        params: dict[str, Any] = {
-            "t": t,
-            "move": {"requested": twist, "applied": list(twist)},
-            "head": reported,
-            "policy": self.policy,
-            "safety": safety,
-            "loop": {"hz": 50.0, "missed": 0},
-            "joints": joints,
-            "targets": joints,
-            "t_ns": int(time.monotonic_ns()),
-        }
-        if self.reports_odom:
-            params["odom"] = {"position": list(self.odom["position"]), "yaw": self.odom["yaw"]}
-        if self.reports_frames:
-            # the fake's own head: yaw turns the camera, and a positive head_pitch tilts it down,
-            # the sign upstream's FK test pins (`up.HEAD_YAW_SIGN`)
-            params["frames"] = {
-                "camera": camera_pose(self.shown[2], -self.shown[1]),
-                "tof": {"pos": [0.05, 0.0, 0.1], "quat": [1.0, 0.0, 0.0, 0.0]},
-            }
-        return {"jsonrpc": "2.0", "method": "robot.state", "params": params | self.extra_state}
-
-    async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
-        """Stream `robot.state` the way a real robotd does, until the connection goes away."""
-        while not writer.is_closing():
-            try:
-                writer.write((json.dumps(self.frame()) + "\n").encode())
-                await writer.drain()
-            except (ConnectionError, OSError):
-                return
-            self.frames_sent += 1
-            await asyncio.sleep(1.0 / max(1, hz))
-
-    def _take(self, method: str, params: dict[str, Any]) -> None:
-        """A continuous intent robotd parsed, however it was framed (`apply_intent`)."""
-        if method == "robot.head":
-            self.head = [float(params.get(k, 0.0)) for k in HEAD]
-        elif method == "robot.move" and not self.drop_moves:
-            self.twist = [float(params.get(k, 0.0)) for k in ("vx", "vy", "vyaw")]
-
-    def refusal(self, method: str, params: Any) -> tuple[int, str] | None:
-        """The error robotd answers this call with, or None when it would take it.
-
-        In robotd's order (`Call::parse`): a method it does not have is METHOD_NOT_FOUND, then
-        params are decoded, and a member the params type does not declare, one it requires and
-        did not get, or a sound tag that is not one of the seven, is INVALID_PARAMS naming it, in
-        serde's words."""
-        if method in self.missing or method not in self.params.keys() | NO_PARAMS:
-            return up.ERR_METHOD_NOT_FOUND, f"unknown method {json.dumps(method)}"
-        if method in NO_PARAMS:
-            return None
-        known, required = self.params[method]
-        if not isinstance(params, dict):
-            return up.ERR_INVALID_PARAMS, f"invalid type: {json.dumps(params)}, expected a map"
-        for member in params:
-            if member not in known:
-                expected = ", ".join(f"`{name}`" for name in sorted(known))
-                return (
-                    up.ERR_INVALID_PARAMS,
-                    f"unknown field `{member}`, expected one of {expected}",
-                )
-        for member in sorted(required - params.keys()):
-            return up.ERR_INVALID_PARAMS, f"missing field `{member}`"
-        if method == "robot.sound" and params["tag"] not in up.SOUND_TAG_LIST:
-            return up.ERR_INVALID_PARAMS, f"unknown variant `{params['tag']}`"
-        return None
-
-    def _answer(self, writer: asyncio.StreamWriter, answer: dict[str, Any]) -> None:
-        for junk in self.junk:
-            writer.write((junk + "\n").encode())
-        self.junk = []
-        writer.write((json.dumps(answer) + "\n").encode())
-
-    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self.writers.append(writer)
-        while line := await reader.readline():
-            await self.link.wait()
-            msg = json.loads(line)
-            method, params = msg["method"], msg.get("params") or {}
-            self.arrived.append((time.monotonic(), method))
-            if "id" not in msg:
-                self.notifications.append(msg)
-                if (refused := self.refusal(method, params)) is not None:
-                    # robotd drops a notification it cannot parse and says nothing back
-                    self.rejected.append((method, refused[1]))
-                else:
-                    self._take(method, params)
-                self._arrived.set()
-                continue
-            self.requests.append(msg)
-            if method == "robot.neverAnswered":
-                # A robotd that accepts a call and never replies, which is what a wedged
-                # daemon looks like from here. Also feeds a junk line, to prove the pump
-                # skips what it cannot parse instead of dying on it.
-                writer.write(b"{not json at all\n")
-                await writer.drain()
-                continue
-            if (refused := self.refusal(method, params)) is not None:
-                self.rejected.append((method, refused[1]))
-                code, message = refused
-                error = {"code": code, "message": message}
-                self._answer(writer, {"jsonrpc": "2.0", "id": msg["id"], "error": error})
-                await writer.drain()
-                continue
-            result: Any
-            if method == "hello":
-                result = {"daemon_version": self.daemon_version, "revision": up.PIN[:7]}
-                if self.api_version is not NO_VERSION:
-                    result["api_version"] = self.api_version
-            elif method == "robot.health":
-                result = {"healthy": self.healthy, "battery": self.battery}
-                if not self.healthy:
-                    result["reason"] = "control loop at 43.9 Hz"
-            elif method in ("robot.stop", "robot.enable"):
-                result = {"accepted": True}
-                if method == "robot.stop":
-                    self.twist = [0.0, 0.0, 0.0]  # robotd's stop zeroes the twist it was asked for
-                if method == "robot.enable" and self.recover_on_enable:
-                    self.fallen, self.policy = False, "stand"
-                if method == "robot.enable":
-                    for name, value in self.on_enable.items():
-                        setattr(self, name, value)
-            elif method == "robot.do":
-                ok = params.get("skill") in (
-                    "ground_pick",
-                    "kick_left",
-                    "kick_right",
-                    "sit_toggle",
-                    "roulade",
-                )
-                result = {"accepted": ok, "reason": None if ok else "unknown skill"}
-            elif method == "robot.look":
-                # Turned toward the point, which is the fake's own head and not robotd's IK: a
-                # client never has to know which way a positive head_yaw turns, upstream says.
-                self.looked_at.append(len(self.notifications))
-                x, y = float(params.get("x", 1.0)), float(params.get("y", 0.0))
-                up_by = math.atan2(float(params.get("z", 0.0)), math.hypot(x, y))
-                self.head = [float(params.get("neck_pitch", 0.0)), -up_by, math.atan2(y, x), 0.0]
-                result = {"head": dict(zip(HEAD, self.head, strict=True)), "clamped": False}
-                if self.look_head is NO_HEAD:
-                    del result["head"]
-                elif self.look_head is not None:
-                    result["head"] = self.look_head
-            elif method == "robot.sound":
-                result = {"accepted": True}
-            elif method == "robot.subscribe":
-                result = {"accepted": True, **STOCK_POLICIES}
-                if self.skills:
-                    result["skills"] = self.skills
-                # A real robotd streams until the connection ends. Sending one frame and
-                # stopping made every posture assertion race the staleness window, which is
-                # a flake on a loaded CI box and, worse, meant nothing ever exercised the
-                # steady state — only the first 300 ms after connecting.
-                self._stream = asyncio.create_task(self._publish(writer, params.get("hz") or 10))
-            else:
-                # A continuous intent sent with an id, which quackd never does. robotd takes it
-                # the same as the notification and answers it, rather than ignoring a call for
-                # its framing (`apply_intent` in robotd/src/main.rs).
-                self._take(method, params)
-                result = {"accepted": True}
-            if method in self.unanswered:
-                continue
-            result = self.answers.get(method, result)
-            self._answer(writer, {"jsonrpc": "2.0", "id": msg["id"], "result": result})
-            await writer.drain()
-        writer.close()
 
 
 @pytest.fixture
@@ -510,6 +106,37 @@ async def robotd():
     await fake.start()
     yield fake
     await fake.stop()
+
+
+@pytest.fixture(params=MEMBERS, ids=lambda member: member.body.name)
+def member(request: pytest.FixtureRequest) -> Member:
+    """Each body of the family in turn, with the fake that answers for it, for the tests of what
+    the family's transport does on a Microduck and on a Huebot alike."""
+    return request.param
+
+
+@pytest.fixture
+async def robot(member: Member):
+    """A started fake of this body of the family, the way `robotd` is a Microduck's."""
+    fake = member.fake()
+    await fake.start()
+    yield fake
+    await fake.stop()
+
+
+def _transport(adapter: MicroduckAdapter) -> JsonRpcUnixTransport:
+    assert isinstance(adapter.transport, JsonRpcUnixTransport)
+    return adapter.transport
+
+
+def _executor(adapter: MicroduckAdapter, **kwargs: Any) -> Executor:
+    """The verbs a connected body offers, through an executor that allows every one that moves
+    it, as a run's is."""
+    assert adapter.manifest is not None
+    registry = registry_from_manifest(adapter.manifest, adapter)
+    return Executor(
+        registry, adapter, contract=MOVERS.frontmatter, manifest=adapter.manifest, **kwargs
+    )
 
 
 async def _until(t: JsonRpcUnixTransport, check: Callable[[dict[str, Any]], bool]) -> None:
@@ -535,6 +162,11 @@ async def _landed(t: JsonRpcUnixTransport) -> None:
 
 def _moves(fake: FakeRobotd) -> int:
     return sum(1 for n in fake.notifications if n["method"] == up.ROBOT_MOVE.name)
+
+
+def _move_calls(fake: FakeRobotd) -> int:
+    """Every `robot.move` that reached the fake, however it was framed."""
+    return fake.methods().count(up.ROBOT_MOVE.name)
 
 
 def _heads(fake: FakeRobotd) -> int:
@@ -635,8 +267,11 @@ async def test_a_robotd_newer_than_the_read_is_served_and_says_so(
         await fake.stop()
 
 
-async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships() -> None:
-    """A robotd older than the oldest contract quackd has read is refused, not guessed at.
+async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
+    member: Member,
+) -> None:
+    """A robot older than the oldest contract quackd has read is refused, not guessed at, whether
+    a robotd or a shim answers `hello`.
 
     `API_VERSION` was 16 for a week after upstream had moved to 23, and nothing here noticed
     because the fake was pinned to the same stale number. It was then 23 while every robotd
@@ -651,14 +286,14 @@ async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
     assert CURRENT_API == 50, "re-read duck-ipc-proto at a new pin before changing this"
     assert FLOOR == 23, "the floor is the oldest contract quackd has read end to end"
     for below in (16, FLOOR - 1):
-        fake = FakeRobotd(api_version=below)
+        fake = member.fake(api_version=below)
         await fake.start()
         try:
-            t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+            t = JsonRpcUnixTransport(fake.address, body=member.body)
             with pytest.raises(TransportError) as refused:
                 await t.connect()
             said = str(refused.value)
-            assert f"API v{below}," in said and f"older than API v{FLOOR}" in said, said
+            assert f"API v{below}, older than API v{FLOOR}" in said, said
             assert t._pump is None and t._writer is None  # and nothing is left open
         finally:
             await fake.stop()
@@ -697,14 +332,14 @@ async def test_the_version_read_connects_without_a_warning(robotd: FakeRobotd) -
     [NO_VERSION, None, str(CURRENT_API), float(CURRENT_API), True],
     ids=["missing", "null", "string", "float", "bool"],
 )
-async def test_a_hello_that_names_no_version_is_refused(answered: object) -> None:
-    """Whatever answered `hello` without an integer `api_version` is not a robotd quackd can
-    check against anything. It used to be served, because the old gate compared only a version
-    that was there, and `True` passed as the number 1 would have."""
-    fake = FakeRobotd(api_version=answered)
+async def test_a_hello_that_names_no_version_is_refused(member: Member, answered: object) -> None:
+    """Whatever answered `hello` without an integer `api_version` is not a robot quackd can
+    check against anything, a robotd or a shim alike. It used to be served, because the old gate
+    compared only a version that was there, and `True` passed as the number 1 would have."""
+    fake = member.fake(api_version=answered)
     await fake.start()
     try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        t = JsonRpcUnixTransport(fake.address, body=member.body)
         with pytest.raises(TransportError, match="not a version number"):
             await t.connect()
     finally:
@@ -727,17 +362,17 @@ async def test_a_socket_with_no_hello_is_not_robotd() -> None:
         await fake.stop()
 
 
-async def test_unhealthy_robot_fails_heartbeat() -> None:
-    fake = FakeRobotd(healthy=False)
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        with pytest.raises(HeartbeatError, match=r"43\.9"):
-            await t.heartbeat()
-        await t.close()
-    finally:
-        await fake.stop()
+async def test_an_unhealthy_robot_fails_the_heartbeat(member: Member, robot: FakeRobotd) -> None:
+    """The heartbeat is a run's watchdog, and `robot.health` is what it asks: a robot that says it
+    is not healthy fails it with the reason it gave, on the transport and through the adapter's
+    `health()`, whichever body it is."""
+    robot.healthy = False
+    adapter = await member.connected(robot)
+    with pytest.raises(HeartbeatError, match=re.escape(robot.unhealthy_reason)):
+        await _transport(adapter).heartbeat()
+    health = await adapter.health()
+    assert not health.ok and robot.unhealthy_reason in (health.reason or "")
+    await adapter.disconnect()
 
 
 async def test_connection_refused_is_clean() -> None:
@@ -765,10 +400,20 @@ def test_the_default_address_is_robotds_own_socket_whatever_duck_runtime_dir_say
     assert JsonRpcUnixTransport().address == default_address()
 
 
+#: The address a test hands each body on Windows, and the words that name the forward it needs.
+FORWARDS = {
+    "microduck": ("unix:///run/robotd.sock", "ssh -L"),
+    "huebot": ("unix:///run/huebot.sock", "ssh -L 9870:<socket> <huebot>"),
+}
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="the Windows hint only fires on Windows")
-async def test_unix_socket_on_windows_explains_ssh_forward() -> None:
-    with pytest.raises(TransportError, match="ssh -L"):
-        await JsonRpcUnixTransport("unix:///run/robotd.sock").connect()
+async def test_a_unix_socket_on_windows_names_the_forward(member: Member) -> None:
+    """Windows has no unix sockets to dial, so an address that names one is refused with the ssh
+    forward that reaches it, in the words of the body it was for."""
+    address, forward = FORWARDS[member.body.name]
+    with pytest.raises(TransportError, match=re.escape(forward)):
+        await JsonRpcUnixTransport(address, body=member.body).connect()
 
 
 async def test_connect_subscribes_so_state_arrives_without_anyone_iterating(
@@ -806,14 +451,30 @@ async def test_a_duck_nobody_is_watching_reads_as_unknown_never_as_standing(
     await t.close()
 
 
-async def test_a_frame_with_no_safety_block_is_not_a_verdict_either(robotd: FakeRobotd) -> None:
-    """Frames arriving is not the same as frames that say anything about falling."""
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
-    await t.connect()
-    t._last_state = {"t": 2.0, "policy": "walk"}  # a state frame carrying no safety block
-    state = await t.get_state()
+async def test_silence_and_a_frame_with_no_safety_block_are_not_a_standing_robot(
+    member: Member, robot: FakeRobotd
+) -> None:
+    """Frames arriving is not the same as frames that say anything about falling. A frame with no
+    `safety` block is no verdict, whatever its label says, and a robot reads standing again only
+    once a frame carries one. Once the link is gone no frame is believed at all, and the reason
+    says so in the words of the body that went silent."""
+    robot.drop_state = {"safety"}
+    adapter = await member.connected(robot)
+    state = await adapter.get_state()
     assert state.posture == "unknown" and state.extras["fall_detection"] is False
-    await t.close()
+    assert "carries no safety block" in state.extras["posture_reason"]
+    robot.drop_state = set()
+    await _until(_transport(adapter), lambda s: "safety" in s)
+    assert (await adapter.get_state()).posture == "standing"
+    robot.hang_up()
+    await asyncio.sleep(0.2)
+    state = await adapter.get_state()
+    gone = {
+        "microduck": "the link to robotd is gone",
+        "huebot": "the link to the shim is gone",
+    }[member.body.name]
+    assert state.posture == "unknown" and gone in state.extras["posture_reason"]
+    await adapter.disconnect()
 
 
 async def test_stale_state_stops_being_believed(robotd: FakeRobotd) -> None:
@@ -851,25 +512,6 @@ async def test_a_blind_duck_refuses_to_walk(registry: VerbRegistry, robotd: Fake
     result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
     assert not result.ok and "cannot tell" in result.summary
     assert not [r for r in robotd.notifications if r["method"] == "robot.move"]
-    await t.close()
-
-
-async def test_a_broken_camera_does_not_end_the_run(robotd: FakeRobotd) -> None:
-    """`get_frame` used to raise, under a comment promising it would not.
-
-    `AgentLoop._observe` calls it every step and catches nothing, and the loop's own handlers
-    only cover SafetyStop, so one refused HTTP response ended the session at the CLI.
-    """
-    t = JsonRpcUnixTransport(
-        f"tcp://127.0.0.1:{robotd.port}", camera_url="http://127.0.0.1:1/snapshot.jpg"
-    )
-    await t.connect()
-    assert await t.get_frame() is None  # no frame, but no exception either
-    # load-bearing: a *working* camera also returns a frame here, so the useful assertion is
-    # that connect knew it had failed and said why.
-    assert t.camera_working is False
-    health = t.camera_health()
-    assert health["configured"] is True and health["ok"] is False and health["error"]
     await t.close()
 
 
@@ -1518,40 +1160,91 @@ async def test_stand_up_asks_nothing_of_a_duck_whose_robot_cannot_say_it_is_held
         await fake.stop()
 
 
+#: What a test leaves out of a `safety` block, as against a value it writes there.
+_ABSENT = object()
+
+
+def _block(base: dict[str, Any], key: str, value: object) -> dict[str, Any]:
+    block = dict(base)
+    if value is _ABSENT:
+        del block[key]
+    else:
+        block[key] = value
+    return block
+
+
+async def _what_quackd_makes_of(member: Member, safety: dict[str, Any]) -> dict[str, Any]:
+    """What quackd makes of a robot whose every frame carries `safety`: the state it reads,
+    whether a twist a verb sends is accepted, whether a walk, a `stand_up` and, on a body that
+    turns its head, a `gaze` run, and which calls went out for them. `walked` is the walk verb's
+    own `robot.move`, told apart from the bare twist sent before it, and `moved` any `robot.move`
+    at all. The robot stands up a moment after it is asked to, so a `stand_up` that asks ends
+    quickly."""
+    fake = member.fake()
+    fake.safety_block = safety
+    fake.stand_after_s = 0.3
+    await fake.start()
+    try:
+        adapter = await member.connected(fake)
+        t = _transport(adapter)
+        state = await adapter.get_state()
+        verb = _Verb(t)
+        twist = await verb.send(Intent.move(0.1, 0.0, 0.0))
+        await verb.end()
+        await _landed(t)  # the bare twist has reached the fake, so the walk's are told from it
+        before_the_walk = len(fake.methods())
+        ex = _executor(adapter)
+        walked = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
+        stood = await ex.run_verb("stand_up", {})
+        looked = await ex.run_verb("gaze", {"direction": "left"}) if member.body.looks else None
+        await _landed(t)
+        sent = fake.methods()
+        await adapter.disconnect()
+    finally:
+        await fake.stop()
+    return {
+        "posture": state.posture,
+        "reason": state.extras["posture_reason"],
+        "fall_detection": state.extras["fall_detection"],
+        "pickup_detection": state.extras["pickup_detection"],
+        "picked_up": state.extras["picked_up"],
+        "twist_accepted": twist.accepted,
+        "walk_ok": walked.ok,
+        "stand_up_ok": stood.ok,
+        "stand_up_said": stood.summary,
+        "gaze_ok": None if looked is None else looked.ok,
+        "moved": "robot.move" in sent,
+        "walked": "robot.move" in sent[before_the_walk:],
+        "enabled": "robot.enable" in sent,
+        "head_moved": bool({"robot.look", "robot.head"} & set(sent)),
+    }
+
+
 @pytest.mark.parametrize(
     "value", [1, "true", {"held": True}, [True]], ids=["1", "string", "object", "list"]
 )
 @pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
-async def test_a_safety_flag_that_is_no_boolean_moves_nothing(
-    registry: VerbRegistry, key: str, value: object
+async def test_a_safety_flag_quackd_cannot_read_moves_nothing(
+    member: Member, key: str, value: object
 ) -> None:
-    """`picked_up: 1` beside `policy: walk` read as held, and `picked_up: "false"` read as held too,
-    being a word that is not empty. `fallen: "false"` read as a duck on the floor. A flag in a
-    shape quackd cannot read is a robot it cannot vouch for: posture reads `unknown`, the reason
-    quotes the value, and neither a walk nor `stand_up` goes out."""
-    fake = FakeRobotd()
-    setattr(fake, key, value)
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        state = await t.get_state()
-        assert state.posture == "unknown", state
-        assert f"safety.{key} is {json.dumps(value)}" in state.extras["posture_reason"]
-        walk = _Verb(t)
-        assert not (await walk.send(Intent.move(0.1, 0.0, 0.0))).accepted
-        await walk.end()
-        ex = Executor(registry, t, contract=MOVERS.frontmatter)
-        result = await ex.run_verb("stand_up", {})
-        assert not result.ok, result.summary
-        # the head too: a flag nobody can read may be the one that says somebody holds the duck
-        result = await ex.run_verb("gaze", {"direction": "left"})
-        assert not result.ok, result.summary
-        spoken = {r["method"] for r in fake.requests} | {n["method"] for n in fake.notifications}
-        assert not spoken & {"robot.move", "robot.enable", "robot.look", "robot.head"}, spoken
-        await t.close()
-    finally:
-        await fake.stop()
+    """Null is a flag not reported, but a `1`, a `"true"`, an object or a list is a flag sent in a
+    shape quackd cannot read, and a robot quackd cannot vouch for. Reading it as absent let a walk
+    out: `picked_up: 1` beside `policy: walk` read as standing and sent three robot.move, and so
+    did `limp: "true"`, while `picked_up: "false"` read as held for being a word that is not
+    empty, and `fallen: "false"` read as a robot on the floor. It reads as `unknown` now, the
+    reason quotes the value, and nothing that moves it goes out, on its feet or on the floor: a
+    twist a verb sends, a walk, `stand_up`, and the head too, since the flag may be the one that
+    says somebody holds it."""
+    for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
+        made = await _what_quackd_makes_of(member, _block(base, key, value))
+        assert made["posture"] == "unknown", (base, made)
+        assert f"safety.{key} is {json.dumps(value)}" in made["reason"], made["reason"]
+        assert not made["twist_accepted"], (base, made)
+        assert not made["walk_ok"] and not made["stand_up_ok"], (base, made)
+        if member.body.looks:
+            assert made["gaze_ok"] is False, (base, made)
+        assert not made["moved"] and not made["enabled"], (base, made)
+        assert not made["head_moved"], (base, made)
 
 
 async def test_a_microduck_sends_the_skills_robotd_keeps_back_from_its_list() -> None:
@@ -1575,79 +1268,95 @@ async def test_a_microduck_sends_the_skills_robotd_keeps_back_from_its_list() ->
         await fake.stop()
 
 
-async def test_a_null_fall_flag_is_nothing_reporting_falls(registry: VerbRegistry) -> None:
-    """A null `fallen` used to read as the fall detector saying all clear, since a frame with the
-    key in it counted as a frame that said. It reads as the key being absent now."""
-    fake = FakeRobotd(fallen=None)  # type: ignore[arg-type]
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        state = await t.get_state()
-        assert state.posture == "unknown" and state.extras["fall_detection"] is False
-        assert "safety.fallen is null" in state.extras["posture_reason"]
-        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
-        assert not result.ok and "nothing is reporting" in result.summary
-        assert "robot.enable" not in [r["method"] for r in fake.requests]
-        await t.close()
-    finally:
-        await fake.stop()
+@pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
+async def test_a_null_safety_flag_reads_as_the_key_being_absent(member: Member, key: str) -> None:
+    """`fallen`, `picked_up` and `limp` count only as JSON booleans. A null `fallen` used to read
+    as a fall detector saying all clear, and a null `picked_up` as a pick-up detector saying
+    nobody holds the robot, so walks went out and `stand_up` asked legs nobody could vouch for to
+    drive. Null now reads exactly as the key being absent, as not reported, on a robot on its
+    feet and on one on the floor."""
+    for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
+        given = await _what_quackd_makes_of(member, _block(base, key, None))
+        absent = await _what_quackd_makes_of(member, _block(base, key, _ABSENT))
+        # the reason and what `stand_up` said may say which of the two it read, and nothing else
+        # may differ
+        reason = given.pop("reason")
+        absent.pop("reason")
+        given.pop("stand_up_said")
+        absent.pop("stand_up_said")
+        assert key != "fallen" or "safety.fallen is null" in reason, reason
+        assert given == absent, (base, given, absent)
 
 
-async def test_a_reason_quotes_no_more_than_a_short_piece_of_a_label() -> None:
-    """`posture_reason` goes into every refusal that quotes it and into the log, and a peer decides
-    how long a label is: a `policy` of a megabyte was quoted whole."""
-    fake = FakeRobotd(policy="p" * 5000)
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        reason = (await t.get_state()).extras["posture_reason"]
-        assert len(reason) < 200 and reason.count("p") < 100, reason
-        await t.close()
-    finally:
-        await fake.stop()
+async def test_a_null_fall_or_pick_up_flag_sends_nothing_its_absence_would_not(
+    member: Member,
+) -> None:
+    """The two that move a robot nobody can vouch for, said outright. A frame with `fallen` in it
+    used to count as a frame that said, so a null read as the fall detector saying all clear. With
+    `fallen` null nothing reports falls, so no walk goes out and `stand_up` refuses, saying
+    nothing is reporting. With `picked_up` null nothing reports whether somebody holds the robot,
+    so `stand_up` refuses a robot on the floor rather than ask its legs to drive. `limp` null is
+    not limp."""
+    blind = await _what_quackd_makes_of(member, _block(UPRIGHT, "fallen", None))
+    assert blind["fall_detection"] is False and blind["posture"] == "unknown"
+    assert "safety.fallen is null" in blind["reason"], blind["reason"]
+    assert not blind["moved"] and not blind["enabled"]
+    assert not blind["stand_up_ok"] and "nothing is reporting" in blind["stand_up_said"]
+    unheld = await _what_quackd_makes_of(member, _block(DOWN_ON_THE_FLOOR, "picked_up", None))
+    assert unheld["pickup_detection"] is False and unheld["picked_up"] is None
+    assert not unheld["enabled"]
+    loose = await _what_quackd_makes_of(member, _block(UPRIGHT, "limp", None))
+    assert loose["posture"] == "standing" and loose["walk_ok"] and loose["walked"]
 
 
 @pytest.mark.parametrize(
-    ("battery", "percent"),
-    [(80, None), ("80%", None), ({"percent": "80%"}, None), ({"percent": 55}, 55.0)],
-    ids=["number", "string", "string-percent", "object"],
+    ("safety", "policy"),
+    [({"fallen": "x" * 5000, "picked_up": False}, "walk"), (None, "p" * 5000)],
+    ids=["fallen", "policy"],
+)
+async def test_a_reason_quotes_no_more_than_a_short_piece_of_what_the_robot_sent(
+    member: Member, robot: FakeRobotd, safety: dict[str, Any] | None, policy: str
+) -> None:
+    """`posture_reason` goes into every refusal that quotes it and into the log, and a peer
+    decides how long a value is: a `policy` or a `safety.fallen` of a megabyte was quoted whole."""
+    robot.policy = policy
+    robot.safety_block = safety
+    adapter = await member.connected(robot)
+    state = await adapter.get_state()
+    reason = state.extras["posture_reason"]
+    assert state.posture == "unknown" and len(reason) < 200, reason
+    assert reason.count("x") + reason.count("p") < 100, reason
+    await adapter.disconnect()
+
+
+@pytest.mark.parametrize(
+    ("answer", "percent"),
+    [
+        ({"healthy": True, "battery": 80}, None),
+        ({"healthy": True, "battery": "80%"}, None),
+        ({"healthy": True, "battery": [80]}, None),
+        ({"healthy": True, "battery": {"percent": "80%"}}, None),
+        ({"healthy": True, "battery": {"percent": None}}, None),
+        ([80], None),
+        ({"healthy": True, "battery": {"percent": 55}}, 55.0),
+    ],
+    ids=["number", "string", "list", "string-percent", "null-percent", "answer-a-list", "object"],
 )
 async def test_a_battery_that_is_not_an_object_reads_as_no_battery(
-    battery: object, percent: float | None
+    member: Member, robot: FakeRobotd, answer: object, percent: float | None
 ) -> None:
-    """A `battery` of `80` raised out of every state read, and the executor reads the robot before
-    every verb, so no verb could run on a robotd that answered so."""
-    fake = FakeRobotd()
-    fake.battery = battery
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        assert (await t.get_state()).battery_percent == percent
-        await t.close()
-    finally:
-        await fake.stop()
-
-
-async def test_a_camera_that_streams_is_named_at_connect_and_offers_no_verb_that_needs_a_picture(
-    robotd: FakeRobotd,
-) -> None:
-    """An MJPEG camera answers each request with a body that never ends, and a whole-body read
-    read it for as long as it ran, in a thread nothing could stop: the connect waited out its time
-    and said only that no frame came. It says what the camera is now, and the close lets go."""
-    from tests.test_huebot import _camera
-
-    with _camera("mjpeg") as (url, dropped):
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url=url)
-        adapter = MicroduckAdapter(t)
-        manifest = await adapter.connect()
-        assert t.camera_working is False
-        assert "multipart/x-mixed-replace stream" in (adapter.camera_error or "")
-        assert not {"observe", "go_to", "search_scan", "approach_and"} & set(manifest.verb_names())
-        await adapter.disconnect()
-        assert await asyncio.to_thread(dropped.wait, 5.0), "the stream is still being read"
+    """`robot.health`'s `battery` is an object whose `percent` is a number. Anything else is no
+    battery, and every state read goes on: a `battery` of `80` used to raise out of each one, and
+    the executor reads the robot before every verb, so no verb could run on one that answered so."""
+    robot.answers["robot.health"] = answer
+    adapter = await member.connected(robot)
+    state = await adapter.get_state()
+    assert state.battery_percent == percent
+    health = await adapter.health()
+    assert health.ok and health.battery_percent == percent
+    assert (await _executor(adapter).run_verb("walk", {"vx": 0.1, "duration_s": 0.3})).ok
+    assert "robot.move" in robot.methods()
+    await adapter.disconnect()
 
 
 class _Verb:
@@ -1687,28 +1396,35 @@ class _Verb:
         await self.task
 
 
-async def test_a_move_held_back_holds_every_move_until_its_verb_ends(robotd: FakeRobotd) -> None:
-    """The duck reading standing again is not enough: the verb that was walking when it stopped
+async def test_a_move_held_back_holds_every_move_until_its_verb_ends(
+    member: Member, robot: FakeRobotd
+) -> None:
+    """The robot reading standing again is not enough: the verb that was walking when it stopped
     standing is still sending, and what it sends is the walk it was doing before. While it is
     held back the state reads `unknown` and says why, where `report_state` said `standing` of a
-    duck whose walk quackd was holding back, with nothing saying so.
+    robot whose walk quackd was holding back, with nothing saying so.
 
     Nor is the verb's own stop. It used to lift the hold, which was right for a verb whose stop
     is its last act, and wrong for `search_scan`, which stops after every turn and turns again:
-    a scan held back for a duck picked up between two turns sent the next turn once the duck was
-    put down. The hold lasts until the verb ends, through its own stops and through a stop sent
-    as an intent, and the next verb, a task of its own, starts without it."""
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    a scan held back for a robot picked up between two turns sent the next turn once the robot
+    was put down. The hold lasts until the verb ends, through its own stops and through a stop
+    sent as an intent, and the next verb, a task of its own, starts without it, on either body
+    and in that body's words."""
+    holding = {
+        "microduck": "somebody is holding the duck",
+        "huebot": "somebody is holding Huebot",
+    }[member.body.name]
+    t = JsonRpcUnixTransport(robot.address, body=member.body)
     await t.connect()
     walk = _Verb(t)
     assert (await walk.send(Intent.move(0.1, 0.0, 0.0))).accepted
 
-    robotd.picked_up, robotd.policy = True, "held"
+    robot.picked_up, robot.policy = True, "held"
     await _until(t, lambda s: s["safety"].get("picked_up") is True)
     ack = await walk.send(Intent.move(0.1, 0.0, 0.0))
-    assert not ack.accepted and "holding" in (ack.reason or "")
+    assert not ack.accepted and holding in (ack.reason or "")
 
-    robotd.picked_up, robotd.policy = False, "walk"
+    robot.picked_up, robot.policy = False, "walk"
     await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
     state = await t.get_state()
     assert state.posture == "unknown" and "holding" in state.extras["move_hold"]
@@ -1722,7 +1438,7 @@ async def test_a_move_held_back_holds_every_move_until_its_verb_ends(robotd: Fak
     assert not ack.accepted and "holding" in (ack.reason or ""), "its own stop lifted the hold"
     assert (await t.get_state()).posture == "unknown"
     await _landed(t)
-    assert _moves(robotd) == 1, "only the move from before the duck was picked up went out"
+    assert _move_calls(robot) == 1, "only the move from before the robot was picked up went out"
 
     await walk.end()
     state = await t.get_state()
@@ -1730,13 +1446,13 @@ async def test_a_move_held_back_holds_every_move_until_its_verb_ends(robotd: Fak
     nxt = _Verb(t)  # the next verb starts without the hold
     assert (await nxt.send(Intent.move(0.1, 0.0, 0.0))).accepted
     await _landed(t)
-    assert _moves(robotd) == 2
+    assert _move_calls(robot) == 2
 
     # the stop a caller sends as an intent is the same robot.stop, and lifts the hold no more
-    robotd.policy = "homing"
+    robot.policy = "homing"
     await _until(t, lambda s: s["policy"] == "homing")
     assert not (await nxt.send(Intent.move(0.1, 0.0, 0.0))).accepted
-    robotd.policy = "walk"
+    robot.policy = "walk"
     await _until(t, lambda s: s["policy"] == "walk")
     assert (await nxt.send(Intent.stop())).accepted
     assert not (await nxt.send(Intent.move(0.1, 0.0, 0.0))).accepted
@@ -1744,7 +1460,7 @@ async def test_a_move_held_back_holds_every_move_until_its_verb_ends(robotd: Fak
     last = _Verb(t)
     assert (await last.send(Intent.move(0.1, 0.0, 0.0))).accepted
     await _landed(t)
-    assert _moves(robotd) == 3
+    assert _move_calls(robot) == 3
     await last.end()
     await t.close()
 
@@ -2197,24 +1913,31 @@ async def test_a_robotd_that_does_not_answer_cannot_be_said_to_take_a_walk(
     await t.close()
 
 
-async def test_a_walk_robotd_does_not_take_stops_and_says_so(
-    registry: VerbRegistry, robotd: FakeRobotd
+async def test_a_walk_the_robot_does_not_take_stops_and_says_so(
+    member: Member, robot: FakeRobotd
 ) -> None:
-    """The walk used to say `walked` for every twist it had sent, taken or not. Now the slice
-    after the echo's verdict fails it, the verb stops the duck as it does on any refusal, and
-    the pilot is told what robotd's state said instead."""
-    robotd.drop_moves = True
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
-    await t.connect()
+    """`robot.move` is a notification, so a robot that cannot parse one says nothing back, and
+    the walk used to say `walked` for every twist it had sent, taken or not. Its state goes on
+    showing the old twist, so after three frames the slice after the echo's verdict fails the
+    walk, the verb stops the robot as it does on any refusal, and the pilot is told what the
+    robot's state said instead, in the words of the body that said it."""
+    robot.drop_moves = True
+    adapter = await member.connected(robot)
+    t = _transport(adapter)
     duration = 10 * move_echo_after_s(t.state_hz)
-    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
-        "walk", {"vx": 0.1, "duration_s": duration}
-    )
-    assert not result.ok and "robotd has not taken robot.move" in result.summary, result.summary
-    assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+    result = await _executor(adapter).run_verb("walk", {"vx": 0.1, "duration_s": duration})
+    said = {
+        "microduck": "robotd has not taken robot.move",
+        "huebot": "Huebot's shim has not taken robot.move",
+    }[member.body.name]
+    assert not result.ok and said in result.summary, result.summary
+    assert t.move_echo is not None and t.move_echo["taken"] is False
+    assert t.move_echo["requested"] == [0.0, 0.0, 0.0]
+    assert robot.requests[-1]["method"] == up.ROBOT_STOP.name
     await _landed(t)
-    assert _moves(robotd) < round(duration / MOVE_RESEND_S), "the walk ran its whole length"
-    await t.close()
+    sent = _move_calls(robot)
+    assert sent < 10, f"the walk went on through {sent} twists"
+    await adapter.disconnect()
 
 
 @pytest.mark.parametrize(
@@ -2834,23 +2557,31 @@ async def test_a_robotd_that_hung_up_is_said_to_have_at_once(robotd: FakeRobotd)
 
 @pytest.mark.parametrize(
     "answered",
-    [{"ok": False, "reason": "the policy is not driving"}, {}, None, {"accepted": "yes"}],
-    ids=["renamed", "empty", "null", "not-a-bool"],
+    [
+        {"ok": False, "reason": "the policy is not driving"},
+        {},
+        None,
+        {"accepted": "yes"},
+        {"ok": True},
+    ],
+    ids=["renamed", "empty", "null", "not-a-bool", "ok-true"],
 )
 async def test_an_answer_with_no_accepted_is_not_a_yes(
-    registry: VerbRegistry, robotd: FakeRobotd, answered: object
+    member: Member, robot: FakeRobotd, answered: object
 ) -> None:
     """robotd writes `accepted` on every `IntentResult`, at the floor and at the pin, so an
-    answer without it is not one quackd has read: a robotd newer than the read, which is served
-    now, whose result moved. It read as accepted, so a kick robotd refused was reported as a
-    kick. It is a refusal now, naming what came back."""
-    robotd.answers[up.ROBOT_DO.name] = answered
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
-    await t.connect()
-    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb("kick", {})
+    answer without it is not one quackd has read: a robot newer than the read, which is served
+    now, whose result moved. It read as accepted, so a kick the robot refused was reported as a
+    kick. It is a refusal now, naming what came back, straight from `send_intent` and from the
+    verb that sent it."""
+    robot.answers[up.ROBOT_DO.name] = answered
+    adapter = await member.connected(robot)
+    ack = await adapter.send_intent(Intent.do("kick_left"))
+    assert not ack.accepted and "carries no accepted" in (ack.reason or "")
+    result = await _executor(adapter).run_verb("kick", {})
     assert not result.ok and "carries no accepted" in result.summary, result.summary
     assert repr(answered)[:20] in result.summary
-    await t.close()
+    await adapter.disconnect()
 
 
 async def test_a_socket_that_answers_hello_but_not_robot_subscribe_is_not_robotd() -> None:
@@ -2989,39 +2720,11 @@ async def test_the_state_says_whether_mediads_frame_answered(
     await t.close()
 
 
-@contextlib.contextmanager
-def _robotd_on_its_own_loop(**kwargs: Any) -> Iterator[FakeRobotd]:
-    """A fake robotd serving from a loop in a thread of its own, for code that runs a loop of
-    its own, as `doctor.probe` does with `asyncio.run`."""
-    loop = asyncio.new_event_loop()
-    started: list[FakeRobotd] = []
-    ready = threading.Event()
-
-    def serve() -> None:
-        asyncio.set_event_loop(loop)
-        fake = FakeRobotd(**kwargs)
-        loop.run_until_complete(fake.start())
-        started.append(fake)
-        ready.set()
-        loop.run_forever()
-
-    thread = threading.Thread(target=serve, name="fake-robotd", daemon=True)
-    thread.start()
-    assert ready.wait(30), "the fake robotd never started"
-    try:
-        yield started[0]
-    finally:
-        asyncio.run_coroutine_threadsafe(started[0].stop(), loop).result(30)
-        loop.call_soon_threadsafe(loop.stop)
-        thread.join(30)
-        loop.close()
-
-
 def _probed(**kwargs: Any) -> Any:
     from quackd import doctor
     from quackd_microduck import describe
 
-    with _robotd_on_its_own_loop(**kwargs) as fake:
+    with on_its_own_loop(FakeRobotd, **kwargs) as fake:
         address = f"tcp://127.0.0.1:{fake.port}"
         report = doctor.probe("microduck:jsonrpc", describe("jsonrpc"), address, None, None)
     assert report.ok and report.error is None, report
@@ -3584,27 +3287,33 @@ async def test_the_state_says_where_the_camera_points(
     await t.close()
 
 
-async def test_without_frames_the_head_yaw_joint_says_where_the_camera_points() -> None:
-    """A robotd from before API 24 reports no `frames`. The measured head_yaw joint turns the
-    camera left when it is positive, which upstream's FK test pins (`up.HEAD_YAW_SIGN`), so it
-    gives the yaw. It gives no pitch, and nothing at all comes from a frame that is too old."""
-    fake = FakeRobotd(reports_frames=False)
-    await fake.start()
-    try:
-        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        await t.connect()
-        yaw = math.radians(30.0)
+async def test_without_frames_the_head_yaw_joint_says_where_the_camera_points(
+    member: Member, robot: FakeRobotd
+) -> None:
+    """A robotd from before API 24 reports no `frames`, and a Huebot's shim is not asked to. The
+    measured head_yaw joint turns the camera left when it is positive, which upstream's FK test
+    pins (`up.HEAD_YAW_SIGN`), so it gives the yaw, and nothing at all comes from a frame that is
+    too old. On a body quackd turns the head of the state also says there is no pitch and that
+    the yaw came from the joint; a body it sends no look has no pose to report."""
+    robot.reports_frames = False
+    adapter = await member.connected(robot)
+    t = _transport(adapter)
+    yaw = math.radians(30.0)
+    if member.body.looks:
         assert (await t.send_intent(Intent.look(math.cos(yaw), math.sin(yaw), 0.1))).accepted
-        await _until(t, lambda s: s["head"] == fake.head)
-        extras = (await t.get_state()).extras
-        assert extras["head_yaw_deg"] == pytest.approx(30.0, abs=0.05)
+    else:
+        robot.head[HEAD.index("head_yaw")] = yaw  # nothing quackd sends turns this head
+    await _until(t, lambda s: (s.get("joints") or [0.0] * 15)[7] != 0.0)
+    extras = (await t.get_state()).extras
+    assert extras["head_yaw_deg"] == 30.0
+    if member.body.looks:
         assert extras["head_pitch_deg"] is None and extras["head_pose_from"] == "joints"
-        t._last_state_at = None
-        extras = (await t.get_state()).extras
-        assert extras["head_yaw_deg"] is None and extras["head_pose_from"] is None
-        await t.close()
-    finally:
-        await fake.stop()
+    t._last_state_at = None
+    extras = (await t.get_state()).extras
+    assert extras["head_yaw_deg"] is None
+    if member.body.looks:
+        assert extras["head_pose_from"] is None
+    await adapter.disconnect()
 
 
 @pytest.mark.parametrize(
@@ -3634,14 +3343,26 @@ async def test_the_head_fade_is_robotds_on_a_robotd_that_glances(api: int, fade:
     assert MicroduckAdapter(MockTransport()).head_fade_s == 0.0
 
 
-def test_the_adapter_passes_on_which_turns_robotd_took() -> None:
-    """`search_scan` counts its turns by the ones robotd's state showed it took, and reads that
-    off what it is handed, which in a run is the adapter. The adapter did not pass it on, so a
-    run's scan counted the turns it sent. The mock says nothing of the kind, and must not read as
-    a body that took none."""
-    t = JsonRpcUnixTransport("tcp://127.0.0.1:1")
-    assert MicroduckAdapter(t).twist_shown_since == t.twist_shown_since
-    assert twist_shown_since_of(MicroduckAdapter(MockTransport()), 0.0) is None
+async def test_the_adapter_passes_on_which_turns_the_robot_showed(
+    member: Member, robot: FakeRobotd
+) -> None:
+    """Nothing answers a `robot.move`, so `search_scan` counts the turns it made by the ones the
+    robot's state showed it took, and reads that off what it is handed, which in a run is the
+    adapter. The adapter did not pass it on, so a run's scan counted the turns it sent. The mock
+    says nothing of the kind, and must not read as a body that took none."""
+    adapter = await member.connected(robot)
+    t = _transport(adapter)
+    assert adapter.twist_shown_since == t.twist_shown_since
+
+    async def verb() -> bool | None:
+        since = adapter.now()
+        assert (await adapter.send_intent(Intent.move(0.0, 0.0, 0.5))).accepted
+        await _until(t, lambda s: s["move"]["requested"] == [0.0, 0.0, 0.5])
+        return twist_shown_since_of(adapter, since)
+
+    assert await asyncio.create_task(verb()) is True
+    assert twist_shown_since_of(member.adapter(MockTransport()), 0.0) is None
+    await adapter.disconnect()
 
 
 async def test_go_to_lets_a_glance_fade_before_it_steers(
@@ -4249,7 +3970,7 @@ def test_doctor_prints_the_cameras_last_error(monkeypatch: pytest.MonkeyPatch) -
     from quackd_microduck import describe
 
     monkeypatch.setattr(jsonrpc_unix, "FIRST_FRAME_WAIT_S", 1.0)
-    with SnapshotServer((503, UNAVAILABLE)) as camera, _robotd_on_its_own_loop() as fake:
+    with SnapshotServer((503, UNAVAILABLE)) as camera, on_its_own_loop(FakeRobotd) as fake:
         address = f"tcp://127.0.0.1:{fake.port}"
         report = doctor.probe("microduck:jsonrpc", describe("jsonrpc"), address, camera.url(), None)
     rows = {row.what: row for row in report.rows}
