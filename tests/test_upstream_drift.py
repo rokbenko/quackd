@@ -31,6 +31,7 @@ from tests.test_upstream_api import UPSTREAMS as SUITE_ROWS
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "upstream_drift.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "upstream-drift.yml"
+TODDLERBOT_CONTRACT = REPO_ROOT / ".github" / "workflows" / "toddlerbot-contract.yml"
 
 PIN = "a" * 40
 HEAD = "b" * 40
@@ -1517,6 +1518,20 @@ def test_the_nightly_runs_the_script_with_what_it_needs_and_nothing_more() -> No
     assert "--issues rokbenko/quackd" in run
     env = next(step.get("env", {}) for step in steps if "upstream_drift.py" in step.get("run", ""))
     assert env == {"GITHUB_TOKEN": "${{ github.token }}"}
+
+
+def test_the_toddlerbot_contract_checks_out_upstream_at_the_adapters_pin() -> None:
+    """The contract job clones ToddlerBot and checks out a commit it spells itself, and the
+    adapter's refs were read at its own `PIN`: nothing held the two together, so a re-pin that
+    moved one of them would run the contract against code the refs were never read at."""
+    module = importlib.import_module("quackd_toddlerbot.upstream_api")
+    workflow = yaml.safe_load(TODDLERBOT_CONTRACT.read_text(encoding="utf-8"))
+    (job,) = workflow["jobs"].values()
+    runs = "\n".join(step.get("run", "") for step in job["steps"]).replace("\\\n", " ")
+    clones = re.findall(r"git clone\b.*?(https://\S+?)(?:\.git)?(?=\s)", runs)
+    checkouts = re.findall(r"git checkout\s+(\S+)", runs)
+    assert clones == [module.REPO], clones
+    assert checkouts == [module.PIN], checkouts
 
 
 def test_the_script_is_type_checked_and_its_offline_mode_takes_no_network() -> None:
