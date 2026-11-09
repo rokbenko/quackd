@@ -11,13 +11,22 @@ import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from quackd.adapters.manifest import (
     Confidence,
     Manipulator,
     Terrain,
     datasheet_sentences,
+    without_unsaid_back_load,
 )
 from quackd.verbs.aliases import canonical
 from quackd.verdict import check_needs
@@ -247,6 +256,11 @@ class DatasheetOverride(BaseModel):
     @classmethod
     def _prose(cls, values: list[str]) -> list[str]:
         return datasheet_sentences(values)
+
+    @model_serializer(mode="wrap")
+    def _leave_out_what_nobody_said(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """A task file with no `carries_kg` dumps no such key (`without_unsaid_back_load`)."""
+        return without_unsaid_back_load(handler(self))
 
 
 class PolicySection(BaseModel):

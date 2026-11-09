@@ -5,7 +5,7 @@
 **Amended 2026-11-09 by [ADR-0079](0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md):** the consequence
 below that a quadruped's load on its back is a note is no longer so. `carries_kg` is a figure
 of its own, allowed with no manipulator, and the Unitree B2's and the Go2 EDU's figures moved
-out of their notes into it on that date, read again from their makers' pages. The consequence
+out of their notes into it on that date, read again from Unitree's pages. The consequence
 stands as what 0.33.0 shipped.
 
 ## Context

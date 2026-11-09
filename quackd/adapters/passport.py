@@ -25,7 +25,7 @@ SKILLS = 64
 _SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 #: Datasheet figures carried into a passport's `body`, under the same names. `carries_kg` is
 #: not one of them (ADR-0079): `body` is the spec's own list (section 2.3), a new member is a
-#: minor of the spec, and until then a reader would only note it and ignore it.
+#: minor of the spec, and a reader ignores a member it does not know (rule 8).
 _FIGURES = ("mass_kg", "height_m", "payload_kg", "reach_m", "endurance_min")
 
 

@@ -34,7 +34,7 @@ from quackd.adapters.manifest import (
 from quackd.adapters.passport import passport_from_manifest
 from quackd.agent.prompts import ASSESS_TASK, body_lines, body_summary
 from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import DatasheetOverride, FlockRole
+from quackd.duckfile.schema import DatasheetOverride, DuckFrontmatter, FlockRole
 from quackd.flock.messages import BidMsg, FlockTask, TaskMsg
 from quackd.flock.mqtt_bus import MqttBus, decode, encode
 from quackd.mcp_server import NEEDS_WORDS_TEXT
@@ -192,8 +192,8 @@ def test_the_word_is_in_the_vocabulary_a_pilot_is_shown() -> None:
     assert "carries_kg" in NEEDS_WORDS_TEXT and "back or deck" in NEEDS_WORDS_TEXT
 
 
-def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
-    duck = parse_duck_text(
+def _duck_with(datasheet_line: str) -> DuckFrontmatter:
+    return parse_duck_text(
         "---\n"
         "duck: 2\n"
         "name: haul\n"
@@ -204,17 +204,31 @@ def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
         "  allow: [report_state, stop]\n"
         "success: [The crate is on the far shelf.]\n"
         "datasheet:\n"
-        "  carries_kg: 5\n"
+        f"  {datasheet_line}\n"
         "---\n"
         "# Task\n"
         "Carry it.\n"
-    )
-    assert duck.frontmatter.datasheet is not None
-    merged = apply_datasheet_override(_hound(), duck.frontmatter.datasheet)
+    ).frontmatter
+
+
+def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
+    front = _duck_with("carries_kg: 5")
+    assert front.datasheet is not None
+    merged = apply_datasheet_override(_hound(), front.datasheet)
     assert merged.datasheet is not None and merged.datasheet.carries_kg is not None
     assert merged.datasheet.carries_kg.value == 5
     assert merged.datasheet.carries_kg.source == TASK_FILE
     assert not missing_needs({"carries_kg": 5.0}, merged)
+
+
+def test_a_task_file_that_does_not_say_it_dumps_no_such_key() -> None:
+    """A task file written before the word reads as it always did: the contract
+    `robot_load_duckfile` hands back and the run records (`run_start`) carry no new key."""
+    front = _duck_with("payload_kg: 0.3")
+    assert "carries_kg" not in front.model_dump()["datasheet"]
+    assert "carries_kg" not in front.model_dump(mode="json")["datasheet"]
+    said = _duck_with("carries_kg: 5").model_dump(mode="json")["datasheet"]
+    assert said["carries_kg"]["value"] == 5
 
 
 # ── what a peer sees ───────────────────────────────────────────────────────────────────────────

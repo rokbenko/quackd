@@ -122,6 +122,18 @@ TASK_FILE = "the task file"
 _SENTENCE_MAX = 300
 
 
+def without_unsaid_back_load(dumped: dict[str, Any]) -> dict[str, Any]:
+    """A dump with no `carries_kg` key where nobody said one, as a dump had before the field came.
+
+    Every other figure nobody published dumps as null, and has since the digest first hashed the
+    dump, so one more null would have changed every body's digest and every bid (ADR-0079).
+    Shared with the `.duck` override, so a task file that does not say it dumps as it always
+    did: the contract `robot_load_duckfile` hands back and `run_start` records."""
+    if dumped.get("carries_kg") is None:
+        dumped.pop("carries_kg", None)
+    return dumped
+
+
 def datasheet_sentences(values: list[str]) -> list[str]:
     """Free text the prompt bullets: whitespace-normalised, non-empty, starting with a word.
 
@@ -277,15 +289,8 @@ class Datasheet(BaseModel):
 
     @model_serializer(mode="wrap")
     def _leave_out_what_nobody_said(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """A sheet with no `carries_kg` dumps no such key, as a sheet did before the field came.
-
-        Every other figure nobody published dumps as null, and has since the digest first
-        hashed the dump, so one more null here would have changed every body's digest and
-        every bid (ADR-0079). The key exists only where a body says it."""
-        dumped: dict[str, Any] = handler(self)
-        if dumped.get("carries_kg") is None:
-            dumped.pop("carries_kg", None)
-        return dumped
+        """A sheet with no `carries_kg` dumps no such key (`without_unsaid_back_load`)."""
+        return without_unsaid_back_load(handler(self))
 
     def known(self) -> list[tuple[str, Figure | Span, str]]:
         """(label, figure, unit) for every published figure, prompt order, the extras last."""

@@ -126,8 +126,8 @@ height the hands must be able to reach, which is a point inside `workspace_heigh
 
 _NUMBER_TEXT: dict[str, str] = {
     "payload_kg": (
-        "The heaviest thing the task has the body hold, in a hand, the beak or both arms, in "
-        "kg: a minimum. A load that rides on its back or deck is carries_kg."
+        "The heaviest thing the task has the body hold, with a hand, the beak or the whole "
+        "body, in kg: a minimum. A load that rides on its back or deck is carries_kg."
     ),
     "carries_kg": (
         "The heaviest load the task has ride on the body's back or deck as it moves, in kg: "

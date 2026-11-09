@@ -43,7 +43,8 @@ def _cell(text: str) -> str:
 
 def _figure(fig: Figure | None, unit: str, *, absent: str = "not published") -> str:
     """`60 kg (official)`, with the note where the figure carries one; `not published` where the
-    maker did not say, which is what the prompt tells the pilot too."""
+    maker did not say, which is what the prompt tells the pilot too, for every figure the prompt
+    lists as a gap. A back load is the one it does not: there the words are the verdict gate's."""
     if fig is None:
         return absent
     amount = f"{fig.value:g} {unit}".rstrip()
