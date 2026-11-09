@@ -633,16 +633,21 @@ IDLE_HEAD = UpstreamRef(
     "the next look, another client steering the head, a link that fails or the end of the "
     "connection. And go_to and search_scan wait FADE after centring the head, since a glance "
     "that was under way when the look arrived takes that long to fade out, and on mediad's "
-    "/frame they steer only on a frame taken after the wait (MEDIA_FRAME_ON_REQUEST). A robot "
-    "retuned to glance sooner or fade longer is not one quackd can see, since no call reports "
-    "[idle]: its gaze hold can then let go, taking a glance for another client's head, and "
-    "go_to and search_scan can steer on a frame a glance is still fading out of.",
+    "/frame they steer only on a frame taken after the wait (MEDIA_FRAME_ON_REQUEST). No call "
+    "reports [idle]'s after_s, fade_s or enabled, so quackd takes the defaults read here for "
+    "every robotd from IDLE_HEAD_SINCE_API up, in whichever mode. A robot retuned to glance "
+    "sooner or to fade for longer is not one quackd can see: its gaze hold can then let go, "
+    "taking a glance for another client's head, and go_to and search_scan can steer on a frame "
+    "a glance is still fading out of. On one with the look-around off, slower to start or "
+    "quicker to fade, quackd only waits longer than it needs, so a robot quackd drives should "
+    "keep after_s at IDLE_AFTER or more and fade_s at FADE or less, or set enabled false.",
 )
 #: The idle look-around in numbers (IDLE_HEAD): robotd counts the duck still only once nobody
 #: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3420), starts the look-around once
 #: it has counted it still for IDLE_AFTER more (robotd/src/idle_head.rs:118-125), and fades it
 #: in or out over FADE (:127). Both are [idle] settings, after_s and fade_s, and these are their
-#: defaults (robotd-params/src/lib.rs:1097-1098).
+#: defaults (robotd-params/src/lib.rs:1097-1098). No call reports either, so quackd takes these
+#: for every robot's, a retuned one's included (IDLE_HEAD says what that costs).
 IDLE_AFTER_S = 2.0
 IDLE_FADE_S = 1.5
 #: The API version the first release with the idle look-around reports, daemon-v0.16.1's. A

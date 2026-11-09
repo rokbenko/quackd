@@ -66,10 +66,13 @@ adding to it, easing the commanded head back to the middle as it fades in. At th
 quackd's gaze hold and its fade wait still hold, since a `robot.look` or `robot.head` still clears
 every part of it within the fade. A robot retuned to glance sooner or fade longer is not one
 quackd can see: its gaze hold then lets go, taking the glance for another client's head, and
-`go_to` and `search_scan` can steer on a frame a glance is still fading out of. From
-`daemon-v0.17.3` every `GET /frame` mediad serves counts as a photo in the robot's vet book, and
-from `daemon-v0.18.8` `robot.do` plays an emotion as well as a skill, during which robotd holds
-the twist at zero and reports it so. The rows below say what each does to quackd.
+`go_to` and `search_scan` can steer on a frame a glance is still fading out of. On one slower
+to glance or quicker to fade, or with the look-around off, quackd only waits longer than it
+needs, so keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less on a robot quackd drives,
+or set `enabled = false`. From `daemon-v0.17.3` every `GET /frame` mediad serves counts as a
+photo in the robot's vet book, and from `daemon-v0.18.8` `robot.do` plays an emotion as well as
+a skill, during which robotd holds the twist at zero and reports it so. The rows below say what
+each does to quackd.
 
 Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/4a763dd893f3982c3a11c136468ccf5d26bcc28a/duck-ipc-proto/src/lib.rs) ·
 [robotd/src](https://github.com/pollen-robotics/microduck/tree/4a763dd893f3982c3a11c136468ccf5d26bcc28a/robotd/src) ·

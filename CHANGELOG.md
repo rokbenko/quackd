@@ -450,6 +450,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   whose step names the tokenizer's Hub repository and carries no `artifacts`, serves as before with
   `--pin`. An ACT or a GR00T N1.7 that 0.7.0 saved carries none: ACT has no tokenizer step, and no
   GR00T step saves artifacts.
+- **quackd times a Microduck's idle look-around by robotd's defaults, since no call reports its
+  settings.** The look-around's timings and its switch are `[idle]` settings in `robotd.toml`,
+  `after_s`, `fade_s` and `enabled`, and nothing robotd answers says what they are. So on every
+  robotd from API 41 up quackd takes the defaults at daemon-v0.18.8: robotd counts the duck still
+  once nothing asks it to move and nobody has steered its head for 2 s, glances once it has counted
+  it still for 2 s more, and fades each glance in and out over 1.5 s. On those numbers a held gaze
+  goes out again every second, and `go_to` and `search_scan` wait 1.5 s after centring the head,
+  whether or not the robot glances at all. On a robot retuned to glance sooner or to fade for
+  longer, the gaze hold can let go, taking robotd's glance for another client's head, and `go_to`
+  and `search_scan` can steer on a frame a glance is still fading out of. On one slower to glance or
+  quicker to fade, or with the look-around off, quackd only waits longer than it needs. What changes
+  for you: nothing quackd does. On a robot whose `[idle]` you have changed, keep `after_s` at 2 s or
+  more and `fade_s` at 1.5 s or less, or set `enabled = false`, and quackd holds a gaze and waits
+  out a glance there as it does on a stock robot.
 
 ## [0.33.0] — 2026-11-07
 
