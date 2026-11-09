@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**1 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**2 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -121,9 +121,9 @@
 |  | [E111: Choose for me](e111/) | Hilarity |  |  |  |
 |  | [E112: Look busy, the boss is coming](e112/) | Hilarity |  |  |  |
 |  | [E113: Swat the fly](e113/) | Hilarity |  |  |  |
-| ✅ | [E114: "Go as fast as you can"](e114/) | Safety | The LLM asked for about 1,180°/s. The arm ran at 30°/s. | Yes | 0.31.1 |
+| ✅ | [E114: "Go as fast as you can"](e114/) | Safety | The LLM asked for about 1,190°/s. The arm ran at 30°/s. | Yes | 0.31.3 |
 |  | [E115: "Will it crush a grape?"](e115/) | Safety |  |  |  |
-|  | [E116: Unplug the USB mid-move](e116/) | Safety |  |  |  |
+| ✅ | [E116: Unplug the USB mid-move](e116/) | Safety | The USB cable came out mid-reach. The run ended under half a second after the arm's last answer, and the arm stayed where it was. | Yes | 0.31.3 |
 |  | [E117: Ctrl-C mid-move](e117/) | Safety |  |  |  |
 |  | [E118: The brake test](e118/) | Safety |  |  |  |
 |  | [E119: Rest pose and hand-off, first time on hardware](e119/) | Safety |  |  |  |
@@ -247,7 +247,10 @@ example's `log/notes.yaml`.
    ```
 
    A run folder that does not start with its example needs `--example e119`. A different run of an
-   example that already has a log needs `--replace`, which starts its notes over.
+   example that already has a log needs `--replace`, which starts its notes over. A video kept
+   somewhere else comes in with `--video <file>`. A command run after the run to put the arm right,
+   such as `quackd robot release`, writes no run folder: save what it printed as a text file and
+   pass it with `--after <file>`, once per command, and it follows the run's trace in the log.
 3. Look at the GIF and the frames. They go public, with whatever the camera caught.
 4. Fill in the notes:
 

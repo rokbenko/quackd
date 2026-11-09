@@ -176,6 +176,24 @@ async def test_a_blind_body_gains_a_primary_host_camera_and_the_verbs_that_need_
     await body.close()
 
 
+async def test_a_described_body_gains_the_boards_camera_and_observe_and_nothing_more(
+    hostd: FakeHostd,
+) -> None:
+    """A body quackd only describes reads none of its robot's sensors, so a board beside it is
+    its one camera, as ADR-0077 allows: `observe` comes with it, and its two verbs stay its
+    only others, since a picture moves nothing. Nobody had tried it, and 0.33.0 said so."""
+    client, _hello = _board(hostd)
+    body = make_adapter("described:unitree-b2", host=client)
+    assert isinstance(body, HostCameraAdapter)
+    manifest = await body.connect()
+    assert body.host_is_primary
+    assert set(manifest.verb_names()) == {"report_state", "stop", "observe"}
+    frames = await frames_of(body)
+    assert [(f.name, f.primary) for f in frames] == [(HOST_CAMERA_NAME, True)]
+    assert frames[0].image.size == FRAME_SIZE
+    await body.close()
+
+
 async def test_lerobot_mock_keeps_its_primary_and_the_keys_end_with_host(
     hostd: FakeHostd,
 ) -> None:

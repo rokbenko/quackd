@@ -90,6 +90,13 @@ def test_the_line_that_installs_an_adapter_names_its_extra_once() -> None:
     assert catalog.install_line(arm) == 'uv pip install "quackd[lerobot]"'
 
 
+def test_an_adapter_that_names_no_extra_is_given_no_command_for_one() -> None:
+    """A third party's adapter whose SDK is missing reads as not installed, and the setup page
+    told its owner to run `uv pip install "None"`."""
+    said = catalog.install_line({"name": "acme", "extra": None})
+    assert "None" not in said and "acme" in said and "uv pip install" not in said
+
+
 def test_an_extra_is_found_without_importing_it() -> None:
     rows = catalog.extras()
     assert [label for label, _install, _here in rows] == list(EXTRAS)

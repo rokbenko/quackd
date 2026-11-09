@@ -61,7 +61,7 @@ requires-python = ">=3.11"
 dependencies = ["quackd>=0.33.0,<0.34"]
 
 [project.optional-dependencies]
-sdk = ["lerobot[feetech]>=0.7,<0.8; python_version >= '3.12'"]
+sdk = ["lerobot[feetech]>=0.7,<0.7.1; python_version >= '3.12'"]
 
 [project.entry-points."quackd.adapters"]
 lerobot = "quackd_lerobot"
@@ -499,7 +499,10 @@ branch the pin sits on in a `BRANCH` constant when that is not the repository's 
 kind and a branch-pinned one with its branch. A `PYPI_VERSION_READ` beside a `PACKAGE` ref says
 which release you read, and a newer one on PyPI is reported as drift. And list the module in your adapter's `UPSTREAMS`, which is the walk both
 `quackd doctor` and the job make. What the job cannot do is read: a line that is the only one
-of its kind and never said what your ref claims compares as the same every night.
+of its kind and never said what your ref claims compares as the same every night. It lists a
+VERIFIED ref whose line holds no word of its name or its note as a stray anchor, which catches a
+ref cited a line or a function away from what it read and passes any line that shares a word
+with it.
 
 ## Status is a promise
 
