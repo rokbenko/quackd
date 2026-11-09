@@ -1,0 +1,57 @@
+hook: Given three LLM calls, the LLM counted them and quit without moving. Given thirty seconds, it made three moves before the clock cut off its next thought.
+goal_met: "Partly"
+parts:
+  - "Out of LLM calls: three"
+  - "Out of time: thirty seconds"
+why_example: >
+  A stuck LLM keeps spending. It can use up LLM calls and minutes without ever finishing the task, so a
+  run has a limit on each, and reaching one is meant to end the run cleanly with the arm put down. This
+  example sets both low, three calls in one run and thirty seconds in the other, to watch them do that.
+why_result: >
+  The clock did its job. At thirty seconds quackd cut off an LLM call still in progress and folded the
+  arm, and the LLM had no say in it. Of those thirty seconds, 23.6 went on waiting for the LLM and about
+  6.1 on moving, so in this run the limit mostly measured the wait for the LLM. The call limit never got
+  its turn. quackd tells an LLM its budgets before its first turn and this task's description named the
+  budget as well, and this one did the sum and declared failure on its last call with the arm still
+  folded. A limit an LLM can see is one it may decide not to reach.
+goal: >
+  Show the two budgets a stuck LLM actually spends, LLM calls and minutes, each ending a run cleanly
+  with the arm put down.
+expected: >
+  With three LLM calls: `max_llm_calls (3) reached` in a BUDGET box, partway through the waves, and the
+  arm folds. With thirty seconds: `max_minutes (0.5) exceeded`, and the arm folds. A call that hangs is
+  raced against the same minutes.
+showed:
+  - >
+    In Part 1 the LLM read the arm, judged the wave `feasible`, and declared failure on its third and
+    last call: `No motion was commanded and no waves were performed.` It had done the sum first, saying
+    the calls left could not hold `five back-and-forth waves`.
+  - >
+    In Part 1 the arm never moved. All 3 observations read the same joints, both ends of the run said
+    `already at the rest pose`, and the only command the run logged was a `stop`.
+  - >
+    In Part 2 the LLM made three moves in the time it had: it raised the arm, swung the pan to 12
+    degrees, then swung it to -12. The first motion came about 14 s into the thirty seconds, which is
+    21.1 s after the start counting the connect, and after 3 LLM calls.
+  - >
+    At thirty seconds quackd cut off the sixth LLM call, 3.0 s after it was sent: `ERROR BudgetExceeded:
+    max_minutes (0.5) exceeded after 3.0 s`. The run ended `BUDGET`, and the arm was `at the rest pose`
+    2.3 s later.
+  - >
+    Of its thirty seconds, 23.6 s went on waiting for the LLM and about 6.1 s on the arm moving, so the
+    three moves took about a fifth of the budget.
+did_not_show:
+  - >
+    Part 1 does not show the call budget stopping anything. The LLM ended the run on its own last call,
+    so `max_llm_calls` was never printed and no wave was cut off partway.
+  - >
+    Part 2 does not show a move cut off by the budget. The time ran out during an LLM call, after the
+    last move had finished, so the check that ends a running move had nothing to end.
+  - >
+    Part 2 does not show a hung call. The call it cut off had been waiting for only 3.0 s, so the run
+    shows the limit cutting a call short and not a call that never answers.
+  - >
+    The sixth call was cut off before it answered, so the tokens and the cost in Part 2's column cover
+    the five calls that did.
+  - >
+    The GIF of Part 1 is a stock clip of the arm sitting still, used for every run where it did not move.

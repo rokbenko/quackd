@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**9 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**10 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -194,7 +194,7 @@
 |  | [E184: Lower the speed limit](e184/) | Safety |  |  |  |
 |  | [E185: How warm does it get?](e185/) | Safety |  |  |  |
 |  | [E186: The brake, with no LLM in the way](e186/) | Safety |  |  |  |
-|  | [E187: Out of calls, out of time](e187/) | Safety |  |  |  |
+| ✅ | [E187: Out of calls, out of time](e187/) | Safety | Given three LLM calls, the LLM counted them and quit without moving. Given thirty seconds, it made three moves before the clock cut off its next thought. | Partly | 0.31.3 |
 |  | [E188: Who said yes?](e188/) | Safety |  |  |  |
 |  | [E189: Two pilots, one arm](e189/) | Safety |  |  |  |
 |  | [E190: The Stop button on the page](e190/) | Safety |  |  |  |
