@@ -48,6 +48,3 @@ did_not_show:
   - >
     Neither run prints a line saying it let go of the arm at its end, so the torque coming off there
     is not something these records show.
-  - >
-    The caption over the end of Part 2's video says `quackd robot release arm-01`. That command did
-    not run in this part: the fold there is the run's own, as its trace shows.

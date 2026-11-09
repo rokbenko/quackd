@@ -51,7 +51,6 @@ Show the rest pose and the hand-off working on a real arm: a run starts from the
 
 * Part 1's arm had no need to move, because it was already at its rest pose, so that part shows the check and not the fold. The fold to watch is the one at the end of Part 2.
 * Neither run prints a line saying it let go of the arm at its end, so the torque coming off there is not something these records show.
-* The caption over the end of Part 2's video says `quackd robot release arm-01`. That command did not run in this part: the fold there is the run's own, as its trace shows.
 
 ## How the run ended
 
