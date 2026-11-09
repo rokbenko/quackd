@@ -186,7 +186,7 @@ jobs:
         run: |
           uv run python -c "import mujoco; mujoco.Renderer(mujoco.MjModel.from_xml_string('<mujoco/>'), 64, 64); print('osmesa ok')"
       - name: The physics world, the transport, the renders and the seeded sweep
-        # `not real_duck` is the honest half: those need upstream's CC BY-NC-SA model, and
+        # `not real_duck` is the honest half: those need upstream's CC BY-NC-SA 4.0 meshes, and
         # this job fetches nothing. The nightly `microduck-assets` job runs them, as a user
         # would, into a runner that is then destroyed. `not so101_model` is the same half for
         # the arm: those need SO-ARM100's model, which this job does not fetch either, and the

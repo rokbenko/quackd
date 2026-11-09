@@ -395,6 +395,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The pages name the Microduck meshes' licence as CC BY-NC-SA 4.0.** The README, the assets page,
+  the licences page's row for the simulator recording, CONTRIBUTING, the browser demo's README and a
+  few comments still named CC BY-NC-SA with no version, or put the whole model under it, after the
+  re-read of `microduck_rl` above. They say CC BY-NC-SA 4.0 on the meshes now, as upstream's README has
+  since `7cc1961`, with `robot_walk.xml` under the Apache License 2.0. The recording is still labelled
+  under the meshes' terms, and whether a render of them is an adaptation is unchanged.
 
 ### Known limitations
 
