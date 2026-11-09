@@ -65,10 +65,10 @@ also leans the neck, opens the beak and yawns after 45 s, and its 2 s and 1.5 s 
 adding to it, easing the commanded head back to the middle as it fades in. At the shipped values
 quackd's gaze hold and its fade wait still hold, since a `robot.look` or `robot.head` still clears
 every part of it within the fade. A robot retuned to glance sooner or fade longer is not one
-quackd can see: its gaze hold then lets go, taking the glance for another client's head, and
-`go_to` and `search_scan` can steer on a frame a glance is still fading out of. On one slower
-to glance or quicker to fade, or with the look-around off, quackd only waits longer than it
-needs, so keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less on a robot quackd drives,
+quackd can see: its gaze hold can then let go, taking the glance for another client's head, and
+`go_to` and `search_scan` can steer on a frame a glance is still fading out of. On one that
+glances no sooner and fades no longer, or with the look-around off, quackd only waits longer than
+it needs, so keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less on a robot quackd drives,
 or set `enabled = false`. From `daemon-v0.17.3` every `GET /frame` mediad serves counts as a
 photo in the robot's vet book, and from `daemon-v0.18.8` `robot.do` plays an emotion as well as
 a skill, during which robotd holds the twist at zero and reports it so. The rows below say what

@@ -646,9 +646,10 @@ IDLE_HEAD = UpstreamRef(
     "every robotd from IDLE_HEAD_SINCE_API up, in whichever mode. A robot retuned to glance "
     "sooner or to fade for longer is not one quackd can see: its gaze hold can then let go, "
     "taking a glance for another client's head, and go_to and search_scan can steer on a frame "
-    "a glance is still fading out of. On one with the look-around off, slower to start or "
-    "quicker to fade, quackd only waits longer than it needs, so a robot quackd drives should "
-    "keep after_s at IDLE_AFTER or more and fade_s at FADE or less, or set enabled false.",
+    "a glance is still fading out of. On one with the look-around off, or one that glances no "
+    "sooner and fades no longer, quackd only waits longer than it needs, so a robot quackd "
+    "drives should keep after_s at IDLE_AFTER or more and fade_s at FADE or less, or set enabled "
+    "false.",
 )
 #: The idle look-around in numbers (IDLE_HEAD): robotd counts the duck still only once nobody
 #: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3420), starts the look-around once
