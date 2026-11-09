@@ -15,6 +15,15 @@ arm's, and a run reaches it with `--policy-url hf:NAME`, which is still typed on
 named nowhere else. The user still starts any other server, and a child process spawned by
 `quackd run`, below, is still not how a server is started.
 
+**Amended 2026-11-09:** `load_policy()`, the known gap Consequences names, is gone from
+`real.py`, at Rok's word and with no deprecation a release ahead of it. It loaded a checkpoint in
+the arm's own process with none of the server's pin checks, nothing called it, and this record
+already sends a checkpoint to the server. Its `LOAD_POLICY` row went with it, so `real.py` and
+`server.py` are no longer among the files `tests/test_upstream_api.py` allows to name an
+UNVERIFIED policy ref. Where the text below names it, it says what was so when it was written.
+The decision itself is unchanged, and the policy server is now the only path a checkpoint has to
+the arm.
+
 ## Context
 
 An LLM on the SO-101 decides about once every six seconds. The run at the top of the

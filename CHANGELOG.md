@@ -175,8 +175,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   install Pillow 12.3.0, which was 0.31.3's first Known limitation. CI's policy job no longer runs the
   picture tests on a Pillow under 13, since no install takes one now.
 - **The policy server reads LeRobot 0.7.0.** Every LeRobot name `quackd policy serve` and its client
-  rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 62 rows, five of
-  them new, 59 VERIFIED and 3 UNVERIFIED, and the installed wheel matched the tag in every file they
+  rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 61 rows, five of
+  them new, 59 VERIFIED and 2 UNVERIFIED, and the installed wheel matched the tag in every file they
   cite that it carries. A policy that answers 0.7.0's `PolicyOutput` in place of a tensor is served
   its action, though none of the six types quackd serves answers one. A pi05 or a pi0 saved before
   transformers 5.6 loads its vision tower through 0.7.0's rename of its `vision_tower.vision_model.`
@@ -241,6 +241,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
   changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
   Code, or a test, that skipped the connect is refused.
+
+### Removed
+
+- **`quackd_lerobot.real.load_policy()` is gone.** It was an older Python helper in the arm's
+  backend that loaded a LeRobot checkpoint in the arm's own process, beside the serial bus, with
+  none of the policy server's pin checks. Nothing in quackd called it and no command reached it,
+  and [ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md) makes the policy server the only
+  path a checkpoint has to the arm, so it goes with its `LOAD_POLICY` row. It was never part of the
+  surface [RELEASING.md](RELEASING.md) promises, so it had no release of warning. What changes for
+  you: code that imported it should run `quackd policy serve` instead, and reach the server through
+  `--policy-url` or a `RemoteRunner`.
 
 ### Fixed
 

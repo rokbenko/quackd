@@ -66,11 +66,8 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         {
             "adapters/lerobot/policy/upstream_api.py",
             # the pipeline that loads a checkpoint in the policy server, which says what it does
-            # about SmolVLA and pi05 (VLA_PIPELINE) and about tick mode (TICK_MODE), the server
-            # beside it, and the arm's backend, whose untested load_policy() LOAD_POLICY is
+            # about SmolVLA and pi05 (VLA_PIPELINE) and about tick mode (TICK_MODE)
             "adapters/lerobot/policy/pipeline.py",
-            "adapters/lerobot/policy/server.py",
-            "adapters/lerobot/real.py",
         },
         ("https://github.com/huggingface/lerobot",),
     ),
@@ -727,7 +724,7 @@ def test_the_policy_refs_are_read_at_the_release_a_policy_server_installs() -> N
         assert isinstance(getattr(lerobot_policy_api, name), type(lerobot_api.PACKAGE)), name
         assert not hasattr(lerobot_api, name), f"{name} is still in the arm's own file"
     unverified = {r.name for r in lerobot_policy_api.refs_by_status("UNVERIFIED")}
-    assert unverified == {"VLA_PIPELINE", "TICK_MODE", "LOAD_POLICY"}
+    assert unverified == {"VLA_PIPELINE", "TICK_MODE"}
 
 
 def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> None:

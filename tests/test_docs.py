@@ -3959,15 +3959,11 @@ _NOBODY_ASKED = (
     "and `quackd run < answers.txt` open the gate too (cli.py's `_confirm_prompt`): say a person "
     "at a terminal is asked unless --yes, or a pipe or file on stdin, answers for them"
 )
-_LOAD_POLICY_STILL_WOULD = (
-    "`load_policy()` in real.py builds a LeRobot policy in the arm's own process, and nothing in "
-    "quackd calls it: say that no quackd command loads a checkpoint there"
-)
 
-#: What the pages and the source said about who clears a policy segment and where a checkpoint
-#: loads, until 0.16.0's fact check. Each read well and none was ever true, so no record, the
-#: CHANGELOG's included, has a reason to keep one. The first correction wrote two more of its
-#: own, the two that name `--yes` as all that answers, which is why a correction is guarded too.
+#: What the pages and the source said about who clears a policy segment, until 0.16.0's fact
+#: check. Each read well and none was ever true, so no record, the CHANGELOG's included, has a
+#: reason to keep one. The first correction wrote two more of its own, the two that name `--yes`
+#: as all that answers, which is why a correction is guarded too.
 _POLICY_CLAIMS_THE_CODE_NEVER_MADE = (
     ("so a person says yes to each segment", _NOBODY_ASKED),
     ("a person confirms each segment", _NOBODY_ASKED),
@@ -3975,34 +3971,15 @@ _POLICY_CLAIMS_THE_CODE_NEVER_MADE = (
     ("unless `--yes` answers for them", _NOBODY_ASKED),
     ("unless you pass `--yes`, which starts every segment", _NOBODY_ASKED),
     ("confirm gate still asks a person on top of it", _NOBODY_ASKED),
-    ("a checkpoint never runs in the process that owns the serial bus", _LOAD_POLICY_STILL_WOULD),
-    ("no checkpoint and no inference ever run in the process", _LOAD_POLICY_STILL_WOULD),
-    ("this is why no checkpoint is loaded in the process", _LOAD_POLICY_STILL_WOULD),
-    ("why a policy never runs beside the arm's bus", _LOAD_POLICY_STILL_WOULD),
-    ("no checkpoint ever loads beside", _LOAD_POLICY_STILL_WOULD),
-    ("a policy never runs in the process that owns the arm's", _LOAD_POLICY_STILL_WOULD),
-    ("never in the process that owns the serial bus", _LOAD_POLICY_STILL_WOULD),
-    ("never in the process that holds the", _LOAD_POLICY_STILL_WOULD),
-    ("never by the process that owns the arm's bus", _LOAD_POLICY_STILL_WOULD),
-    ("no checkpoint is loaded beside", _LOAD_POLICY_STILL_WOULD),
-    ("no checkpoint is ever loaded beside", _LOAD_POLICY_STILL_WOULD),
-    ("no checkpoint runs in the process", _LOAD_POLICY_STILL_WOULD),
-    ("a checkpoint runs in a process of its own, never in the one", _LOAD_POLICY_STILL_WOULD),
-    ("a policy runs in a process of its own, never in the one", _LOAD_POLICY_STILL_WOULD),
-    (
-        "imported only in the server's own process, never in the one that drives the arm",
-        _LOAD_POLICY_STILL_WOULD,
-    ),
 )
 
 
 def test_no_page_repeats_a_claim_about_a_policy_run_the_code_never_made() -> None:
     """Sentences about a policy segment that read well and were wrong: that a person says yes to
-    each one, when `--yes` and a pipe on stdin both clear it with nobody asked, and that no
-    checkpoint ever loads in the process that owns the arm's bus, when `load_policy()` still
-    would. The CHANGELOG, ADR-0048 and the source carried them, the source in docstrings, a
-    comment and an upstream ref's note, so they are read along with the living documents, and
-    so is the arm's own README, which says where its policy server runs."""
+    each one, when `--yes` and a pipe on stdin both clear it with nobody asked. ADR-0048 and
+    the source carried them, the source in a docstring, so they are read along with the living
+    documents, as are the CHANGELOG and the arm's own README, which says what hands a policy
+    the arm's `pick` and `manipulate`."""
     sources = [
         REPO / "CHANGELOG.md",
         REPO / "adapters" / "lerobot" / "README.md",
@@ -4016,36 +3993,6 @@ def test_no_page_repeats_a_claim_about_a_policy_run_the_code_never_made() -> Non
             # pytest.fail rather than assert, for the reason the host claims above give
             if wrong in text:
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
-
-
-def test_nothing_in_quackd_calls_load_policy_as_the_pages_say() -> None:
-    """The README, the release note, ADR-0048, SECURITY.md and the pages that explain the policy
-    server say no quackd command loads a checkpoint in the process that owns the arm's bus,
-    because nothing in quackd calls `load_policy()`. A command that called it would make every
-    one of them false without a word of them changing, so the calls are counted in the syntax
-    tree, where a docstring that names the function is not a call."""
-    import ast
-
-    callers = []
-    for path in [
-        *sorted((REPO / "quackd").rglob("*.py")),
-        *sorted((REPO / "adapters").glob("*/src/**/*.py")),
-        *sorted((REPO / "bridge").rglob("*.py")),
-    ]:
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            named = (
-                isinstance(node, ast.Call)
-                and getattr(node.func, "id", getattr(node.func, "attr", None)) == "load_policy"
-            ) or (
-                isinstance(node, ast.ImportFrom)
-                and any(alias.name == "load_policy" for alias in node.names)
-            )
-            if named:
-                callers.append(f"{path.relative_to(REPO).as_posix()}:{node.lineno}")
-    assert not callers, (
-        f"load_policy() is reached from {callers}: the pages that say no quackd command loads a "
-        "checkpoint beside the arm's bus are wrong now, so correct them with the code"
-    )
 
 
 def _release_note(version: str) -> str:
