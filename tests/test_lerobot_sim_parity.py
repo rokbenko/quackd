@@ -35,9 +35,9 @@ import pytest
 from quackd.transport.base import Intent, TransportError
 from quackd_lerobot import JOINTS, LeRobotAdapter
 from quackd_lerobot import upstream_api as lr
+from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
 from quackd_lerobot.real import (
     CONNECT_ATTEMPTS,
-    ENCODER_TICKS,
     MAX_STEP_DEG,
     TORQUE_RETRIES,
     LeRobotReal,

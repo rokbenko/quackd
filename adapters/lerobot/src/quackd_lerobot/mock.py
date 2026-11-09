@@ -111,9 +111,9 @@ GRIP_ON_OBJECT = 30.0
 MOCK_TEMPERATURE_C = 30.0
 """A fixed reading, so the heat refusal has something to refuse offline. A mock has no
 servos and this number measures nothing."""
-HOT_JOINT_C = 65.0
-"""What a joint named in `hot_joints` reads: above the real backend's `HOT_C`, below the
-servo's own cut-off."""
+HOT_JOINT_MARGIN_C = 5.0
+"""How far past the arm's own heat limit (`ArmType.hot_c`) a joint named in `hot_joints` reads:
+hot enough to refuse, and short of the servo's own cut-off on every arm built today."""
 SCRIPT_RATE = "lerobot:mock's script, at the verbs' tick"
 """Where the scripted policy's rate comes from (`POLICY_HZ`), as a refusal quotes a rate's
 source."""
@@ -300,9 +300,10 @@ class LeRobotMock(LeRobotReal):
             near_deg=NEAR_DEG,
             grip_deg=GRIP_ON_OBJECT,
             temperature_c=MOCK_TEMPERATURE_C,
+            motor_ids=self._arm_type().motor_ids,
         )
         for joint in hot_joints:
-            self.follower.temperature[joint] = HOT_JOINT_C
+            self.follower.temperature[joint] = self._hot_c() + HOT_JOINT_MARGIN_C
         self._robot = self.follower
         self.camera = FakeCamera(
             self.follower,
@@ -315,7 +316,9 @@ class LeRobotMock(LeRobotReal):
         self._cameras[view.name] = self.camera
         # known before any connect, as the mock's travel always was: the calibration is its own,
         # and the connect reads the same travel back off it
-        self.joint_range_deg = joint_ranges(dict(self.follower.calibration))
+        self.joint_range_deg = joint_ranges(
+            dict(self.follower.calibration), self._arm_type().encoder_ticks
+        )
         self.rest_fails = rest_fails
         """Set to a reason and a rest move that has to drive stalls at once, sends nothing and says
         that reason (`_drive_to_rest`)."""

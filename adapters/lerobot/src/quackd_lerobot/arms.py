@@ -3,10 +3,12 @@
 What drives an arm here reads LeRobot's `Robot` and `SerialMotorsBus`, and the SO follower's own
 behaviour and its sts3215 registers where it has to (`up.SO_CONNECT_REFUSES_WHILE_OPEN`,
 `up.STS3215_REGISTERS` and their like). So an arm of that class comes as a record in this file, and
-an arm of another class needs those read again first. A record is what differs: what the manifest
-calls it, its sheet, and how far it has got. The owner rule holds here as it does for a backend
-(ADR-0076): a type with no owner and no first-run date is described and not driven, and `make()`
-refuses it.
+an arm of another class needs those read again first, as `up.DYNAMIXEL_BUS_WORDS` and the rows
+beside it have done for a Koch's bus. A record is what differs: what the manifest calls it, its
+sheet, the figures a backend reads off its servos (a turn in ticks, a heat limit, what LeRobot is
+asked to normalise to, which motor is which), and how far it has got. The owner rule holds here as
+it does for a backend (ADR-0076): a type with no owner and no first-run date is described and not
+driven, and `make()` refuses it.
 
 The SO-101's sheet is the one the arm has always had. The SO-100 runs the same class at LeRobot's
 pin (`up.ROBOT_TYPE_SO100`), so it is drivable on that code, and nobody has run one.
@@ -14,6 +16,7 @@ pin (`up.ROBOT_TYPE_SO100`), so it is drivable on that code, and nobody has run 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from quackd.adapters.base import AdapterError
@@ -23,6 +26,17 @@ from quackd_lerobot import upstream_api as up
 
 ROBOT_TYPE = up.ROBOT_TYPE_SO101.name
 """The type an arm is when nobody says, which is every arm registered before there was a choice."""
+
+SO_ENCODER_TICKS = 4096
+"""An sts3215 turn in encoder counts (`up.STS3215_RESOLUTION`); degrees use it less one. Both SO
+arms run that servo, and the simulator, which is only ever an SO-101, reads this itself rather
+than a type."""
+
+SO_HOT_C = 60.0
+"""Refuse to move a joint at or above this. The servo's own cut-off is 70 (`up.TEMPERATURE_C`)."""
+
+_SO_SERVOS = "Feetech sts3215"
+"""What an SO arm's six motors are (`up.SO_MOTORS`)."""
 
 BLURB = (
     "a six-joint desktop robot arm with a parallel gripper (an SO-101 class arm driven "
@@ -152,6 +166,9 @@ _SO100_SHEET = Datasheet(
 
 _KOCH_PAGE = "jess-moss/koch-v1-1 README, read 2026-11-05"
 
+_KOCH_SERVOS = "Dynamixel XL430-W250 and XL330-M288"
+"""What a Koch's six motors are (`up.KOCH_MOTORS`)."""
+
 _KOCH_SHEET = Datasheet(
     dof=Figure(
         value=6,
@@ -165,8 +182,9 @@ _KOCH_SHEET = Datasheet(
     cannot=["go anywhere: it has no base"],
     notes=[
         "Its maker's page publishes no reach, payload or mass, so none is listed",
-        "quackd drives no part of it. LeRobot has a class for it on a Dynamixel bus, and quackd "
-        "has not read how that bus fails, which it does for the Feetech bus of an SO arm",
+        f"quackd drives no part of it. LeRobot has a class for it, on {_KOCH_SERVOS} servos. "
+        "How that bus fails and what differs from an SO arm's Feetech bus has been read, and is "
+        "on the adapter's page, but nobody has named a date to run one",
     ],
 )
 
@@ -185,6 +203,27 @@ class ArmType:
     datasheet: Datasheet
     tier: Tier
     """How far it has got, in the catalogue's words, with who answers for it and when."""
+    servos: str
+    """Its servos as prose names them (`up.SO_MOTORS`, `up.KOCH_MOTORS`)."""
+    encoder_ticks: int
+    """A turn of its servos in encoder counts, which its degrees use less one
+    (`real.joint_ranges`, `up.DEGREES_FORMULA`)."""
+    hot_c: float | None
+    """quackd refuses to move a body joint at or above this (`real.LeRobotReal.hot_joints`). None
+    on a type whose servos' figures have not been read, which only a type that is not built can
+    be (`__post_init__`)."""
+    use_degrees: bool
+    """What quackd asks LeRobot's config for (`real.LeRobotReal._config_kwargs`), whatever
+    LeRobot's default says: every goal a verb writes is in degrees."""
+    motor_ids: Mapping[str, int]
+    """Each motor's bus id, in bus order, as LeRobot's class for this type fills its table: the
+    names a policy server's client is handed, and the table the mock's follower offers."""
+
+    def __post_init__(self) -> None:
+        # A type that can be built has the heat limit a backend reads, so a built arm never
+        # meets the None that means nobody has read one (`LeRobotReal._hot_c`).
+        if self.drivable and self.hot_c is None:
+            raise ValueError(f"{self.robot_type} can be built and names no hot_c")
 
     @property
     def drivable(self) -> bool:
@@ -216,6 +255,11 @@ ARMS: dict[str, ArmType] = {
                 note="one SO-101, driven on LeRobot 0.6.1 on 2026-09-15 and again on "
                 "2026-09-23; LeRobot 0.7.0's bus has not met it",
             ),
+            servos=_SO_SERVOS,
+            encoder_ticks=SO_ENCODER_TICKS,
+            hot_c=SO_HOT_C,
+            use_degrees=True,
+            motor_ids=up.SO_MOTOR_IDS,
         ),
         ArmType(
             robot_type=up.ROBOT_TYPE_SO100.name,
@@ -233,6 +277,11 @@ ARMS: dict[str, ArmType] = {
                 note="no SO-100 has run: it runs the code that drove the SO-101, through the same "
                 "LeRobot class",
             ),
+            servos=_SO_SERVOS,
+            encoder_ticks=SO_ENCODER_TICKS,
+            hot_c=SO_HOT_C,
+            use_degrees=True,
+            motor_ids=up.SO_MOTOR_IDS,
         ),
         ArmType(
             robot_type=up.ROBOT_TYPE_KOCH.name,
@@ -244,6 +293,16 @@ ARMS: dict[str, ArmType] = {
             ),
             datasheet=_KOCH_SHEET,
             tier=Tier("described", note="data only, until an owner names a date"),
+            servos=_KOCH_SERVOS,
+            encoder_ticks=4096,  # up.KOCH_RESOLUTION, the same on its XL430s and XL330s
+            # Not read. quackd's 60 for an sts3215 is set against Feetech's own figures
+            # (up.TEMPERATURE_C), and nobody has read an XL430's or an XL330's operating maximum,
+            # so a Koch has no limit yet, and cannot be built until it has one (__post_init__).
+            hot_c=None,
+            # up.KOCH_CONFIG: LeRobot's default for a Koch is False, and every goal quackd writes
+            # is degrees, as it passes True for an SO arm
+            use_degrees=True,
+            motor_ids=up.KOCH_MOTOR_IDS,
         ),
     )
 }

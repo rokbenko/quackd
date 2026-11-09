@@ -63,7 +63,6 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
-from quackd_lerobot import upstream_api as up
 from quackd_lerobot.sim.follower import (
     BUS_CLASS,
     DISCONNECT_RETRIES,
@@ -101,10 +100,12 @@ class FakeCalibration:
     homing_offset: int = 0
 
 
-def calibration_for(travel: Mapping[str, tuple[float, float]]) -> dict[str, FakeCalibration]:
+def calibration_for(
+    travel: Mapping[str, tuple[float, float]], motor_ids: Mapping[str, int]
+) -> dict[str, FakeCalibration]:
     """The calibration whose ticks give each body joint `travel` through LeRobot's degrees
     formula (`up.DEGREES_FORMULA`, `real.joint_ranges`), centred on `MIDDLE`, with the ids of
-    the SO follower's bus table (`up.SO_MOTOR_IDS`).
+    the arm's own bus table (`ArmType.motor_ids`).
 
     The formula centres a joint on the middle of the travel calibration recorded, so no
     calibration gives a travel that is not the same either side of zero, and one asked for is a
@@ -112,7 +113,7 @@ def calibration_for(travel: Mapping[str, tuple[float, float]]) -> dict[str, Fake
     whole encoder: LeRobot reads it as 0 to 100 whatever its ticks are."""
     out: dict[str, FakeCalibration] = {}
     for joint in JOINTS:
-        motor_id = up.SO_MOTOR_IDS[joint]
+        motor_id = motor_ids[joint]
         if joint == GRIPPER:
             out[joint] = FakeCalibration(motor_id, 0.0, float(MAX_RES))
             continue
@@ -135,9 +136,9 @@ class FakeBus:
     `up.BUS_DISABLE_TORQUE`, `up.STS3215_REGISTERS`). What a write does to the arm is the
     follower's."""
 
-    def __init__(self, arm: FakeFollower) -> None:
+    def __init__(self, arm: FakeFollower, motor_ids: Mapping[str, int]) -> None:
         self.arm = arm
-        self.motors = {name: SimMotor(up.SO_MOTOR_IDS[name]) for name in JOINTS}
+        self.motors = {name: SimMotor(motor_ids[name]) for name in JOINTS}
         self._open = False
         """Whether the port is open, which is all LeRobot's bus knows of it
         (`up.BUS_IS_CONNECTED`): there is no port handler and no busy flag (`up.NO_BUSY_FLAG`)."""
@@ -253,8 +254,8 @@ class FakeFollower:
     follower with), the travel of each body joint in degrees, which becomes its calibration
     (`calibration_for`), the pose it starts in, where the object is in joint space (`object_at`,
     the three joints that put the jaws round it, or None for nothing to hold), how near those
-    joints have to be (`near_deg`), where the jaws stop on it (`grip_deg`) and what every motor's
-    temperature reads.
+    joints have to be (`near_deg`), where the jaws stop on it (`grip_deg`), what every motor's
+    temperature reads, and the bus table of the arm it stands in for (`motor_ids`).
 
     Everything a test reads or turns is an attribute: `positions` is the arm, in degrees and the
     gripper's 0 to 100, which a test may set as a person places a limp arm; `torque` and
@@ -277,12 +278,13 @@ class FakeFollower:
         near_deg: float,
         grip_deg: float,
         temperature_c: float,
+        motor_ids: Mapping[str, int],
     ) -> None:
         self.config = config
-        self.calibration = calibration_for(travel)
+        self.calibration = calibration_for(travel, motor_ids)
         self.calibration_fpath: str | None = None
         """No file: the calibration is the mock's own, and the manifest names none."""
-        self.bus = FakeBus(self)
+        self.bus = FakeBus(self, motor_ids)
         self.positions: dict[str, float] = {joint: float(pose[joint]) for joint in JOINTS}
         self.torque: dict[str, bool] = dict.fromkeys(JOINTS, True)
         self.temperature: dict[str, float] = dict.fromkeys(JOINTS, float(temperature_c))

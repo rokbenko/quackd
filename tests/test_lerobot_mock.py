@@ -32,6 +32,7 @@ from quackd_lerobot.sim.follower import (
     DeviceNotConnectedError,
     SimFollowerConfig,
 )
+from quackd_lerobot.upstream_api import SO_MOTOR_IDS
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
@@ -58,6 +59,7 @@ def _follower(*, cap: float | None = MAX_STEP_DEG, release: bool = False) -> Fak
         near_deg=NEAR_DEG,
         grip_deg=GRIP_ON_OBJECT,
         temperature_c=30.0,
+        motor_ids=SO_MOTOR_IDS,
     )
 
 
@@ -72,12 +74,12 @@ def test_the_calibration_gives_the_travel_the_real_backend_reads_back_off_it() -
     """The travel is read off the calibration with LeRobot's formula, as on an arm, and it is
     the mock's travel to the bit. The formula centres every travel on zero, so one that is not
     the same either side is refused rather than read back as another."""
-    assert joint_ranges(dict(calibration_for(MOCK_RANGES))) == MOCK_RANGES
+    assert joint_ranges(dict(calibration_for(MOCK_RANGES, SO_MOTOR_IDS))) == MOCK_RANGES
     narrowed = dict(MOCK_RANGES) | {"elbow_flex": (-73.0, 73.0)}
-    back = joint_ranges(dict(calibration_for(narrowed)))
+    back = joint_ranges(dict(calibration_for(narrowed, SO_MOTOR_IDS)))
     assert back["elbow_flex"] == pytest.approx((-73.0, 73.0))
     with pytest.raises(ValueError, match="either side of zero"):
-        calibration_for(dict(MOCK_RANGES) | {"elbow_flex": (-58.0, 73.0)})
+        calibration_for(dict(MOCK_RANGES) | {"elbow_flex": (-58.0, 73.0)}, SO_MOTOR_IDS)
     arm = _follower()
     assert all(arm.travel(joint) == pytest.approx(MOCK_RANGES[joint]) for joint in JOINTS)
 

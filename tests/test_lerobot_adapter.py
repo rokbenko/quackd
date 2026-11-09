@@ -57,15 +57,15 @@ from quackd_lerobot import (
     published_travel,
 )
 from quackd_lerobot.arms import ARMS
+from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from quackd_lerobot.arms import SO_HOT_C as HOT_C
 from quackd_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
 from quackd_lerobot.real import (
     CLIP_SUSTAIN_S,
     CONNECT_ATTEMPTS,
-    ENCODER_TICKS,
     FAILED_SENDS,
     FINISH_S,
     HOLD_MIN,
-    HOT_C,
     KEPT_OVER_A_FAILED_CONNECT,
     MAX_STEP_DEG,
     OUT_OF_RANGE_DEG,

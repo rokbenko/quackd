@@ -39,7 +39,8 @@ from typing import Any
 import numpy as np
 
 from quackd.transport.base import TransportError
-from quackd_lerobot.real import ENCODER_TICKS, GRIPPER_SETTLE, MAX_STEP_DEG, SETTLE_GAP_S
+from quackd_lerobot.arms import SO_ENCODER_TICKS
+from quackd_lerobot.real import GRIPPER_SETTLE, MAX_STEP_DEG, SETTLE_GAP_S
 from quackd_lerobot.sim import upstream_api as so
 from quackd_lerobot.sim.model import (
     LABEL,
@@ -477,7 +478,7 @@ class ArmWorld:
         joint = self.arm.joints[joint_name]
         q = min(max(q, joint.lo), joint.hi)
         self._data.qpos[joint.qpos] = q
-        moved = abs(q - start[joint_name]) > 2 * math.pi / (ENCODER_TICKS - 1)
+        moved = abs(q - start[joint_name]) > 2 * math.pi / (SO_ENCODER_TICKS - 1)
         self._goal[joint_name] = self._data.ctrl[joint.actuator] = q if moved else start[joint_name]
         if moved:
             self.settled[joint_name] = joint.to_lerobot(q)

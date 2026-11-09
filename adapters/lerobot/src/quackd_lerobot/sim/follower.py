@@ -58,7 +58,7 @@ from pprint import pformat
 from typing import Any, TypeVar
 
 from quackd_lerobot import upstream_api as up
-from quackd_lerobot.real import ENCODER_TICKS
+from quackd_lerobot.arms import SO_ENCODER_TICKS
 from quackd_lerobot.sim.faults import (
     CONFIGURE,
     HANDSHAKE,
@@ -88,7 +88,7 @@ NOT_SENT = "Timeout error"
 out, which LeRobot ends its bus errors with (`up.BUS_SYNC_READ_ERROR`)."""
 DISCONNECT_RETRIES = 5
 """The extra tries upstream's bus disconnect gives its torque-off (`up.BUS_DISCONNECT`)."""
-MAX_RES = ENCODER_TICKS - 1
+MAX_RES = SO_ENCODER_TICKS - 1
 """What LeRobot divides a turn by to turn a tick into degrees (`up.DEGREES_FORMULA`)."""
 GRIPPER = JOINTS[-1]
 """The one motor in LeRobot's RANGE_0_100 mode rather than degrees (`up.SO_GRIPPER_RANGE`)."""

@@ -48,6 +48,9 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         {
             "adapters/lerobot/upstream_api.py",
             "adapters/lerobot/real.py",
+            # the arms' records, whose heat limit moved here from real.py and is the number
+            # the assumed Celsius of Present_Temperature is read against
+            "adapters/lerobot/arms.py",
             # the arm simulator's model, world and follower, which reproduce what these
             # assumptions say of a real arm: the gripper's open end, and a goal kept through
             # torque off
