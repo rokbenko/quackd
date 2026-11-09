@@ -474,6 +474,32 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   close does. No quackd command prints a second close's line: a flock member whose run raised can be
   closed a second time, and code of your own may close the transport twice. What changes for you:
   `close_note` after a second close is the first close's.
+- **A key held down answers no question that drops an arm on a busy machine either.** A bare Enter
+  answered the question that opens the jaws or lets go of an arm once nothing more had been read for
+  0.45 s after it, and a key thread held up for longer than that, by another thread holding the GIL or
+  by a machine with no CPU to spare, reads nothing for that long whatever the terminal is holding. So
+  Enter held down answered yes when its first repeat came out of 2 s of quiet, as on a keyboard set to
+  wait that long before it repeats, and the key thread was held up just after reading it: the wait
+  looked in the meantime and took the clock for the repeat standing alone, or the key thread got going
+  first and stamped the next repeat, which had come in 33 ms behind, with the moment it read it. At a
+  console the key thread now says each time it looks and finds no key waiting, an Enter stands alone
+  only once a look has found nothing behind it 0.45 s after it was read, and the Enter after it counts
+  from the last look before it. Where quackd reads a stream rather than a console, a terminal whose
+  mode it could not change, it still goes by the clock. What changes for you: one press after 2 s of
+  quiet is a yes about half a second after it is read, as before, and on Windows no longer sometimes
+  nearly a second.
+- **An Enter read late is judged by when it can have come in.** A bare Enter answers a question that
+  drops an arm only if it came in half a second after the question and 2 s after the Enter before it,
+  and at a console 2 s after a `q`, and all three were measured from when the key thread read it,
+  which a thread held up does long after. So an Enter pressed a moment after the question and read
+  past its half second said yes, as did the one repeat of a press held a moment too long, read 2 s
+  after the press, and the old habit of an Enter behind a `q`, read 2 s after the `q`. Each is measured
+  now from the earliest it can have come in, the last time the key thread looked and found the console
+  empty before it read it, and what the thread reads before it has once looked is taken for typed
+  ahead. A line with something typed on it is still judged by when it was read, and a stream is
+  measured as before. What changes for you: on a machine too busy to read your keys as you press them,
+  a bare Enter it read late can be passed by as too soon, saying so, where it used to answer. Press it
+  once more.
 
 ### Security
 

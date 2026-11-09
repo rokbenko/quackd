@@ -1511,12 +1511,24 @@ class _Enter(NamedTuple):
     """One Enter the key thread read."""
 
     at: float
+    """When it was read, which may be well after it came in (`waited`)."""
     quiet: float
-    """How long since the Enter before it, whatever became of that one."""
+    """How long since the Enter before it, whatever became of that one: the least it can have
+    been, counted from the earliest this one can have come in."""
     text: str
     """What was typed on its line."""
     answers: bool
     """False for one that goes to no wait: behind a `q`, or ending the line of a `[y/N]`."""
+    waited: float = 0.0
+    """How long it may have been in the terminal before it was read: back to the last time the key
+    thread looked at the console and found nothing there (`ConsoleKeys.read`). A key thread held up
+    reads what came in meanwhile once it gets going again, and stamps all of it then. Nothing where
+    it reads a stream, which cannot be looked at without a read, and is taken to keep up."""
+
+    @property
+    def earliest(self) -> float:
+        """The earliest it can have come in."""
+        return self.at - self.waited
 
 
 OUTSTAYED_S = 5.0
@@ -1628,6 +1640,16 @@ class KillSwitch:
         deliberate wait, under the lock."""
         self._enters_lock = threading.Lock()
         self._last_enter = -math.inf
+        self._looked: float | None = None
+        """The last moment the key thread looked at the console and found no key there, under the
+        lock: what it reads after that came in after it. None where it reads a stream, and then a
+        bare Enter stands alone by the clock, as it always did there."""
+        self._alone = asyncio.Event()
+        """A look at the console has just shown the newest Enter standing alone long enough to say
+        yes (`ENTER_ALONE_S`). Set from the key thread, so that a deliberate wait looks again then
+        rather than at its next turn, and cleared by that wait."""
+        self._alone_said = False
+        """`_alone` has been set for the newest Enter, under the lock."""
         self._line: list[str] = []
         """What has been typed since the last Enter, under the lock."""
         self._last_key = -math.inf
@@ -1638,28 +1660,68 @@ class KillSwitch:
     def _heard_enter(self, text: str, *, answers: bool = True) -> None:
         """An Enter the key thread read, recorded with what was typed on its line and when, and
         only then announced, so a wait woken by it finds the line it answers already there. One
-        that answers nothing is recorded too, since it is still the Enter before the next."""
+        that answers nothing is recorded too, since it is still the Enter before the next.
+
+        Its quiet counts from the earliest it can have come in. Read late, the one repeat of a
+        press held a moment too long looked like a press of its own after a quiet, and with nothing
+        behind it, it said yes."""
         now = time.monotonic()
         with self._enters_lock:
-            self._enters.append(_Enter(now, now - self._last_enter, text, answers))
+            waited = 0.0 if self._looked is None else now - self._looked
+            came = now - waited
+            quiet = math.inf if self._last_enter == -math.inf else came - self._last_enter
+            self._enters.append(_Enter(now, quiet, text, answers, waited))
             self._last_enter = now
+            self._alone_said = False
         if answers:
             self._announce(self.entered)
 
+    def _nothing_waiting(self, looked: float) -> None:
+        """The key thread looked at the console at `looked` and found no key there, so what it reads
+        next came in after that moment (`ConsoleKeys.read`). The first such look to show the newest
+        Enter standing alone long enough to say yes wakes a deliberate wait (`_alone`)."""
+        with self._enters_lock:
+            self._looked = looked
+            newest = self._enters[-1] if self._enters else None
+            alone = (
+                newest is not None
+                and newest.answers
+                and not newest.text
+                and not self._alone_said
+                and looked - newest.at >= ENTER_ALONE_S
+            )
+            if alone:
+                self._alone_said = True
+        if alone:
+            self._announce(self._alone)
+
     def _line_since(self, since: float) -> str | None:
-        """What was typed on the first line read at `since` or later that says anything: one with
-        something on it, a no, as soon as it is read, or a bare one that comes after quiet
-        (`ENTER_QUIET_S`) and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None
-        where neither has been read yet. Enter held down from before a question answered it the
-        moment the question's half second was up, and a no that had to stand alone could be lost,
-        to the next bare Enter's yes."""
+        """What was typed on the first line from `since` on that says anything: one with something
+        on it, a no, as soon as it is read, or a bare one that comes after quiet (`ENTER_QUIET_S`)
+        and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has
+        been read yet. Enter held down from before a question answered it the moment the question's
+        half second was up, and a no that had to stand alone could be lost, to the next bare
+        Enter's yes.
+
+        Alone is what the key thread has seen, never the clock alone. Held up just after it read
+        the first repeat of a key held down, it had read nothing more by the time the wait looked,
+        or it read the next repeat late and stamped it then, and either way that repeat stood
+        alone and said yes to the question that drops an arm. So at a console an Enter has stood
+        alone once the key thread has looked and found nothing behind it `ENTER_ALONE_S` after it
+        was read, and the Enter after it is measured from the earliest it can have come in. So is
+        `since` for a bare one: typed too soon and read late, past the question's half second, it
+        was taken for one read in good time. A line with something on it goes by when it was read,
+        since a no needs none of this care: passed by for having perhaps come too soon, it was lost
+        and said nothing, and the next bare Enter was a yes to what they had just refused."""
         now = time.monotonic()
         with self._enters_lock:
             enters = list(self._enters)
+            looked = now if self._looked is None else self._looked
         for n, enter in enumerate(enters):
-            if not enter.answers or enter.at < since:
+            came = enter.at if enter.text else enter.earliest
+            if not enter.answers or came < since:
                 continue
-            after = enters[n + 1].at if n + 1 < len(enters) else now
+            after = enters[n + 1].earliest if n + 1 < len(enters) else looked
             alone = enter.quiet >= ENTER_QUIET_S and after - enter.at >= ENTER_ALONE_S
             if enter.text or alone:
                 return enter.text
@@ -1674,7 +1736,7 @@ class KillSwitch:
         for enter in enters:
             if not enter.answers or enter.text or enter.at < asked_at:
                 continue
-            if enter.at < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
+            if enter.earliest < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
                 return True
         return False
 
@@ -1733,9 +1795,19 @@ class KillSwitch:
         finishing the line, and is passed by (`ENTER_BEHIND_Q_S`), or the question the press
         brought on would be answered yes by the hand still finishing it. Where it reads a stream
         and not a console, `q` comes with the rest of its line and is part of it, and a wait never
-        takes that line's Enter for an answer (`wait_for_enter`)."""
+        takes that line's Enter for an answer (`wait_for_enter`).
+
+        A console says when it has no key waiting (`_nothing_waiting`), which is what a deliberate
+        question's yes is measured by. Until it first has, nothing read is known to have come in
+        after anything: what was in it as the thread started may have been typed long before."""
         keys = self._keys
-        read = keys.read if keys is not None else functools.partial(sys.stdin.read, 1)
+        read: Callable[[], str]
+        if keys is not None:
+            with self._enters_lock:
+                self._looked = -math.inf
+            read = functools.partial(keys.read, self._nothing_waiting)
+        else:
+            read = functools.partial(sys.stdin.read, 1)
         typed: list[str] = []
         line = self._line
         previous = ""
@@ -1775,10 +1847,14 @@ class KillSwitch:
                     continue
                 typed.clear()
                 if ch in ("\r", "\n"):
-                    behind_a_q = keys is not None and time.monotonic() - q_at < ENTER_BEHIND_Q_S
                     with self._enters_lock:
                         text = "".join(line)
                         line.clear()
+                        # behind the `q` unless it cannot have come in that soon after it: read
+                        # late, the habit went to the question the `q` had brought on. A line with
+                        # something on it goes by when it was read, as it does at the question
+                        came = time.monotonic() if text or self._looked is None else self._looked
+                    behind_a_q = keys is not None and came - q_at < ENTER_BEHIND_Q_S
                     if not (ch == "\n" and previous == "\r"):
                         self._heard_enter(text, answers=not behind_a_q)
                     previous = ch
@@ -1897,6 +1973,7 @@ class KillSwitch:
                     self._line.clear()
         self.entered.clear()
         self.pressed.clear()
+        self._alone.clear()
         deadline = None if timeout_s is None else loop.time() + timeout_s
         while True:
             if deliberate and (answer := self._line_since(asked_at + TYPED_AHEAD_S)) is not None:
@@ -1923,6 +2000,8 @@ class KillSwitch:
                 asyncio.ensure_future(self.keys_ended.wait()),
             ]
             watched = [asyncio.ensure_future(self.entered.wait()), *others]
+            if deliberate:
+                watched.append(asyncio.ensure_future(self._alone.wait()))
             try:
                 await asyncio.wait(watched, timeout=wake, return_when=asyncio.FIRST_COMPLETED)
                 ended = any(task.done() for task in others)
@@ -1936,12 +2015,16 @@ class KillSwitch:
                 return False
             if not deliberate:
                 return self.entered.is_set()
-            if ended and not self.entered.is_set():
+            # the keys ending takes nothing back from a yes a look has just made sure of
+            aborted = until_abort and self.abort.is_set()
+            sure = self._alone.is_set() and self.keys_ended.is_set() and not aborted
+            if ended and not self.entered.is_set() and not sure:
                 return False
-            # An Enter was read, or the time came to look again. Whether one answers is the check
-            # at the top: one read too soon after the question was put, or that does not stand
-            # alone, is passed by, and the wait goes on for the next.
+            # An Enter was read, one has stood alone, or the time came to look again. Whether one
+            # answers is the check at the top: one read too soon after the question was put, or
+            # that does not stand alone, is passed by, and the wait goes on for the next.
             self.entered.clear()
+            self._alone.clear()
 
     def _look_for_a_signal(self) -> None:
         """Nothing to do but wake: Python runs a signal's handler on the way back to sleep."""
