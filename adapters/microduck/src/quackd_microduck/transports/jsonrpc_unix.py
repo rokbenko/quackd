@@ -1770,12 +1770,14 @@ class JsonRpcUnixTransport:
         the sensor's field along its long side (`up.IMX219_FOV`) runs down the picture, and its
         width sees that field scaled by the picture's shape through the tangent of half of it
         (`up.ALPHA_UPRIGHT_FOV`). That is the module's design and not a calibration. Only a
-        beta's, a GC2093 that sits upright, gives one wider than tall, and the PNG is the whole
-        frame it took, which upstream's own solve of the beta's lens puts at 85.2 degrees across
-        at any size (`up.BETA_UPRIGHT_FOV`). A wide frame got no lens until that solve was read. The
-        lens is taken from the first frame alone because the manifest the detector reads it from
-        is built once, at connect. A square frame, and every camera but `mediad`'s, get none, and
-        the detector falls back on its own, as it always has without `--fov-deg`."""
+        beta's, a GC2093 that sits upright, gives one wider than tall, 16:9 at every size mediad
+        streams, and the PNG is the whole frame it took, across whose width the focal length of
+        upstream's own solve of the beta's lens gives 85.2 degrees (`up.BETA_UPRIGHT_FOV`). A
+        wide frame got no lens until that solve was read, and one of any other shape, such as a
+        4:3 webcam's served at `/frame`, still gets none. The lens is taken from the first frame
+        alone because the manifest the detector reads it from is built once, at connect. A
+        square frame, and every camera but `mediad`'s, get none, and the detector falls back on
+        its own, as it always has without `--fov-deg`."""
         size = self._first_frame_size
         if size is None or not self.camera_working or not self._on_mediad:
             return None
@@ -1784,7 +1786,7 @@ class JsonRpcUnixTransport:
             half = math.radians(up.IMX219_FOV_DEG) / 2
             tall = math.degrees(2 * math.atan(math.tan(half) * width / height))
             return tall, up.ALPHA_UPRIGHT_FOV
-        if 0 < height < width:
+        if 0 < height < width and width * 9 == height * 16:
             return up.GC2093_FOV_DEG, up.BETA_UPRIGHT_FOV
         return None
 

@@ -951,7 +951,7 @@ ALPHA_UPRIGHT_FOV = UpstreamRef(
     "across its width it sees 2*atan(tan(31 degrees) * w/h), 37.3 degrees at 720 by 1280. That "
     "is the module's design, with the principal point at the centre, and not a calibration: the "
     "alpha family's own solve gives a little more (ALPHA_INTRINSICS). It rests on the shape "
-    "alone. A beta's camera sits upright and gives a wide picture, whose lens is "
+    "alone. A beta's camera sits upright and gives a 16:9 picture wider than tall, whose lens is "
     "BETA_UPRIGHT_FOV's. And upstream's scripts/duck-sim renders its twin's camera "
     "rolled like an alpha's, at MuJoCo's 45 "
     "degrees across the frame as sent (mediad/src/main.rs:246-249, mediad/src/camera.rs:236-256), "
@@ -962,7 +962,8 @@ ALPHA_UPRIGHT_FOV = UpstreamRef(
     "it in extras.assumptions while it is in use.",
 )
 BETA_UPRIGHT_FOV = UpstreamRef(
-    "a wide /frame is assumed to be a beta's GC2093, 85.2 degrees from side to side",
+    "a 16:9 /frame wider than tall is assumed to be a beta's GC2093, 85.2 degrees from side to "
+    "side",
     "UNVERIFIED",
     src("mediad/src/sensor.rs", 152),
     "quackd's own reading of mediad's GET /frame (MEDIAD_FRAME_HTTP), whose PNG carries no lens, "
@@ -977,18 +978,21 @@ BETA_UPRIGHT_FOV = UpstreamRef(
     "mediad sends it, which upstream calls a scaled readout of the sensor's only mode, 'so the "
     "same field at any size `mediad` streams' (robotd-params/src/lib.rs:826-827), and mediad's "
     "hfov_deg of 85.2 is 2*atan(640/fx) on it (sensor.rs:151-152), the field across that whole "
-    "frame's width. So a wide first frame is taken for a beta's, 85.2 degrees across whatever "
-    "its size. "
+    "frame's width. So a first frame that is 16:9 and wider than tall is taken for a beta's, "
+    "85.2 degrees across whatever its size, and a wide frame of any other shape gets no lens. "
     "That is the solve's focal length alone. Its principal point sits about 12 pixels left of "
     "the centre of a 1280 by 720 frame, so every bearing quackd's detectors take from the centre "
     "is about 1 degree left of the one from the optical axis, and its distortion, which they do "
     "not correct for, draws a thing near the picture's edge in toward the middle, so a bearing "
     "there reads short. It rests on the shape alone: an alpha whose mediad was started with "
-    "--rotate 0, or a board fitted with another camera through [media] sensor, can give a wide "
-    "picture too, and this is wrong there. The first frame of a working /frame camera, when "
-    "wider than tall, sets the manifest's camera_fov_deg to GC2093_FOV_DEG and names this "
-    "assumption beside it, so detections through it say they are uncalibrated and the log says "
-    "to pass --fov-deg, which overrides it on quackd run, and every state lists it in "
+    "--rotate 0, or a board fitted with another camera through [media] sensor, can give a 16:9 "
+    "picture wider than tall too, and so does a 16:9 camera of your own served at /frame, which "
+    "quackd reads as mediad's, and this is wrong for each of them. mediad's own test pattern, "
+    "which a beta board with no camera serves at 256 by 144 (robotd-params/src/lib.rs:740-742), "
+    "is 16:9 too and is taken for a beta's. The first frame of a working /frame camera, when "
+    "16:9 and wider than tall, sets the manifest's camera_fov_deg to GC2093_FOV_DEG and names "
+    "this assumption beside it, so detections through it say they are uncalibrated and the log "
+    "says to pass --fov-deg, which overrides it on quackd run, and every state lists it in "
     "extras.assumptions while it is in use. Until upstream's solve was read, a wide frame got "
     "no lens at all.",
 )

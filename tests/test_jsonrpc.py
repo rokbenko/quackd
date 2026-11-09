@@ -3875,6 +3875,7 @@ async def test_a_snapshot_that_runs_out_of_time_is_asked_for_again(robotd: FakeR
         (up.MEDIAD_FRAME_PATH, (720, 1280), up.ALPHA_UPRIGHT_FOV),
         (up.MEDIAD_FRAME_PATH, (1280, 720), up.BETA_UPRIGHT_FOV),
         (up.MEDIAD_FRAME_PATH, (640, 360), up.BETA_UPRIGHT_FOV),
+        (up.MEDIAD_FRAME_PATH, (640, 480), None),
         (up.MEDIAD_FRAME_PATH, (720, 720), None),
         ("/snapshot.png", (720, 1280), None),
         ("/snapshot.png", (1280, 720), None),
@@ -3883,6 +3884,7 @@ async def test_a_snapshot_that_runs_out_of_time_is_asked_for_again(robotd: FakeR
         "tall-frame",
         "wide-frame",
         "wide-360p-frame",
+        "wide-4:3-frame",
         "square-frame",
         "another-camera-tall",
         "another-camera-wide",
@@ -3895,11 +3897,13 @@ async def test_the_first_frame_from_mediad_is_taken_for_the_lens_its_shape_names
     none is measured through the simulator's 90 degrees. On a stock robot only an alpha's camera,
     turned upright for the PNG, gives a picture taller than wide, so a tall first frame from
     mediad's route is taken for the IMX219's 62 degrees running down the picture. Only a beta's
-    GC2093, which sits upright, gives one wider than tall, and the PNG is the whole frame it
-    took, which upstream's solve of the beta's lens puts at 85.2 degrees across at any size. A
-    wide frame got no lens until that solve was read, and is taken for it now. Either lens goes in
-    the manifest, and every state names the assumption it rests on. A square picture, and any
-    other camera, are left without one."""
+    GC2093, which sits upright, gives one wider than tall, 16:9 at every size mediad streams,
+    and the PNG is the whole frame it took, across whose width the focal length of upstream's
+    solve of the beta's lens gives 85.2 degrees. A wide frame got no lens until that solve was
+    read, and a 16:9 one is taken for it now. Either lens goes in the manifest, and every state
+    names the assumption it rests on. A wide picture of any other shape, such as a 4:3
+    webcam's served at `/frame`, which no mediad gives, a square one, and any other camera are
+    left without one."""
     with SnapshotServer((200, _png(*size))) as camera:
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(path), camera_wait_s=60.0

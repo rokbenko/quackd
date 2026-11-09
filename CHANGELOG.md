@@ -172,14 +172,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   none: the colour detector fell back on 90°, the YOLO and board detectors on 62°, and `watch` on
   an assumed 40°. Upstream has solved the beta's lens since daemon-v0.18.0, 85.2° across the whole
   16:9 frame at every size `mediad` streams, and read at daemon-v0.18.8 the PNG is that whole
-  frame, unturned and scaled by nothing. So a first frame wider than tall is taken for a beta's
-  now, as a tall one is for an alpha's: the manifest's `camera_fov_deg` is 85.2, beside the
-  assumption it rests on, a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`, which every state lists in
+  frame, unturned and scaled by nothing. So a first frame that is 16:9 and wider than tall is taken
+  for a beta's now, as a tall one is for an alpha's: the manifest's `camera_fov_deg` is 85.2, beside
+  the assumption it rests on, a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`, which every state lists in
   `extras.assumptions` and `extras.camera` names as `fov_assumed`, and `--fov-deg` overrides it on
   `quackd run` as it does an alpha's. What changes for you: on a beta's `/frame`, detections
   measure through 85.2° and say they are uncalibrated, the log says to pass `--fov-deg`, `watch`
   turns the head by what 85.2° calls for rather than 40°, and the digest an MCP client's
-  `robot_list` gives for the robot moves. A frame as tall as it is wide still gets no lens.
+  `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which quackd
+  reads as `mediad`'s, gets the same 85.2° now when its picture is 16:9 and wider than tall, and
+  still gets no lens when it is wide in any other shape, such as a 4:3 webcam's, or square.
 
 ### Fixed
 
