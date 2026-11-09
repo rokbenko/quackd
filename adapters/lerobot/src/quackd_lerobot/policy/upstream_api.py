@@ -241,10 +241,12 @@ TOKENIZER_TRUSTS_REMOTE_CODE = UpstreamRef(
     "its tokenizer in a directory inside the checkpoint instead, which LeRobot puts in place of "
     "whatever the step names (PROCESSOR_ARTIFACTS). A SmolVLA config that leaves "
     "`vlm_model_name` out gets that default filled in, so it is refused. SmolVLA's build asks "
-    "transformers for its backbone without saying trust_remote_code either way "
-    f"({src(_SMOLVLM, 92)}, to line 101), so a pinned model whose files map a class to code "
-    "(`auto_map`), or whose directory in the Hub's cache holds anything but configs, tokenizer "
-    "files and safetensors, is refused",
+    "transformers for its backbone without saying trust_remote_code either way, or which "
+    f"attention to build it with ({src(_SMOLVLM, 92)}, to line 101), so a pinned model whose "
+    "files map a class to code (`auto_map`), or name a repository as their attention "
+    "(`attn_implementation`), a kernel on the Hub that transformers 5 would run once the kernels "
+    "package is installed, or whose directory in the Hub's cache holds anything but configs, "
+    "tokenizer files and safetensors, is refused",
 )
 PROCESSOR_ARTIFACTS = UpstreamRef(
     "a processor step's artifacts: directories inside the checkpoint that LeRobot loads in "

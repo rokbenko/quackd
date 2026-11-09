@@ -271,6 +271,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and `/v1/policy` names that commit. A base pinned at a whole commit was never open to this. What
   changes for you: nothing to do. `tests/test_policy_pipeline.py` moves a tag between the two
   reads, and fails without this.
+- **A pinned model whose config names a kernel on the Hub as its attention is refused.**
+  transformers 5 builds a model with the attention its `config.json` names, and a name that is a
+  repository, `owner/name`, is a kernel on the Hub, whose code transformers fetches and runs
+  through the `kernels` package once that is installed, when that package trusts the
+  repository's publisher or finds the kernel in its cache offline, at a revision no `--pin`
+  fixes. LeRobot builds SmolVLA's backbone and GR00T's base with the attention their pinned
+  `config.json` names, and the server checked a pinned model's configs for `auto_map` alone. The
+  server's extra does not install `kernels`, and without it transformers fails the build instead.
+  A name with a `/` in it, under `attn_implementation` or `_attn_implementation` anywhere in a
+  pinned model's JSON, is refused now, before anything is built from it. What changes for you:
+  nothing to do, unless a pinned model's config names such a kernel, which is refused with a
+  sentence saying to pin a revision whose config names an attention transformers carries, such
+  as `sdpa`. `tests/test_policy_pipeline.py` fails without this.
 
 ### Documentation
 

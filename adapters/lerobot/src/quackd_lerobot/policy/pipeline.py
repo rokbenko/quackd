@@ -29,8 +29,9 @@ server imports it with none of them installed, and serves a scripted policy that
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
    pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
    either (`nested_patterns`), and refused if their directory holds any all the same, maps a
-   class to code or holds a PEFT adapter (`check_pinned`). A GR00T's base is fetched at the
-   commit its `config.json` was read at, whatever its tag names by then (`check_groot_base`).
+   class to code, names a kernel on the Hub as its attention or holds a PEFT adapter
+   (`check_pinned`). A GR00T's base is fetched at the commit its `config.json` was read at,
+   whatever its tag names by then (`check_groot_base`).
    The policy is built on the device `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`),
    with every weight the file holds loaded into it or none (`build_policy`). An ACT's ImageNet
    backbone is never fetched (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device
@@ -154,6 +155,15 @@ nothing loads."""
 CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+ATTENTION_KEYS = ("attn_implementation", "_attn_implementation")
+"""The keys of a transformers config that name the attention a model is built with, by a name or
+by a mapping of its sub-configs' names to names: reading a config sets either through the same
+property. A name with a `/` in it is a repository of kernels on the Hub, whose code transformers 5
+fetches and runs through the `kernels` package as it builds the model, at a revision no `--pin`
+fixes, once that package is installed at a version transformers takes, which the server's extra
+does not bring, and trusts the repository's publisher or finds the kernel in its cache offline.
+SmolVLA's build of its backbone and GR00T's of its base pass no attention of their own, so the
+pinned model's config says which (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
 ADAPTER_CONFIG = "adapter_config.json"
 """The file that makes a directory a PEFT adapter. With peft installed, which the server's
 extra does not bring and LeRobot's own `[peft]` and `[groot]` do, transformers building a model
@@ -898,10 +908,11 @@ def check_pinned(directory: Path, spec: str) -> None:
     included. So every file in it is one `NESTED_FILES` or `NESTED_DOCS` names, and no JSON in
     it maps a class to code (`CODE_MAP_KEY`), which is what would have transformers ask to run
     a repository's own code: SmolVLA's build asks for its backbone without saying
-    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). Nor does it
-    hold a PEFT adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's
-    are, and which the build would load onto the model, or swap the model for a base no pin
-    names."""
+    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). No JSON in it
+    names a repository as its attention either (`ATTENTION_KEYS`), at any depth, which is a
+    kernel on the Hub that transformers would run. Nor does it hold a PEFT adapter
+    (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's are, and which the
+    build would load onto the model, or swap the model for a base no pin names."""
     fresh = (
         "point HF_HUB_CACHE at a cache that has not fetched this revision before, or delete "
         f"{directory} and serve again"
@@ -928,6 +939,36 @@ def check_pinned(directory: Path, spec: str) -> None:
                 "would ask to run: quackd loads a model transformers has the code for, and "
                 "nothing a repository brings with it"
             )
+        kernel = _attention_repository(said)
+        if kernel is not None:
+            key, named = kernel
+            raise PipelineRefused(
+                f"{spec}'s {name} names {named[:80]!r} as its attention ({key}), which is a "
+                "repository of kernels on the Hub whose code transformers would fetch and run as "
+                "it builds the model once the kernels package is installed, at a revision no pin "
+                "fixes: pin a revision whose config names an attention transformers carries, such "
+                "as sdpa, or none"
+            )
+
+
+def _attention_repository(said: Any) -> tuple[str, str] | None:
+    """The first name a JSON document gives an attention under one of `ATTENTION_KEYS`, at any
+    depth and in any mapping or list beneath the key, that names a repository, as (key, name),
+    or None. Read without recursion, so no nesting a file holds can stop the read."""
+    pending: list[tuple[Any, str | None]] = [(said, None)]
+    while pending:
+        node, key = pending.pop()
+        if isinstance(node, str):
+            if key is not None and "/" in node:
+                return key, node
+        elif isinstance(node, Mapping):
+            pending += [
+                (value, key if key is not None else str(k) if k in ATTENTION_KEYS else None)
+                for k, value in node.items()
+            ]
+        elif isinstance(node, list):
+            pending += [(value, key) for value in node]
+    return None
 
 
 def _required(hub: Hub, repo: str, revision: str, filename: str, *, beside: Path | None) -> Path:

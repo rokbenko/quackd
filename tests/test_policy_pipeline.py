@@ -454,6 +454,47 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
         _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
 
 
+def test_a_pinned_model_whose_config_names_a_kernel_on_the_hub_as_its_attention_is_refused(
+    tmp_path: Path,
+) -> None:
+    """transformers 5 builds a model with the attention its config names, and a name that is a
+    repository, `owner/name`, is a kernel it fetches from the Hub and runs once the `kernels`
+    package is installed, at a revision no pin fixes. SmolVLA's build passes no attention of its
+    own, so the pinned backbone's config decides. The name may be the config's own, under
+    either key, a mapping of sub-configs' names to names, or a sub-config's, and each is refused
+    before anything is built from the directory. A name transformers carries is served."""
+    hub = _smolvla(tmp_path)
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    pins = (f"SomeOrg/Some-VLM@{PINNED}",)
+    carried: tuple[Any, ...] = (
+        "sdpa",
+        "eager",
+        "flash_attention_2",
+        "paged|sdpa",
+        {"": "sdpa", "vision_config": "eager"},
+    )
+    for attention in carried:
+        (where / "config.json").write_text(json.dumps({"attn_implementation": attention}))
+        assert _fetch(hub, fps=float(FPS), pins=pins).config_overrides["vlm_model_name"] == str(
+            where
+        )
+    for key, said in (
+        ("attn_implementation", {"attn_implementation": "kernels-community/flash-attn3"}),
+        ("_attn_implementation", {"_attn_implementation": "Other/Kernels@main:attention"}),
+        (
+            "attn_implementation",
+            {"attn_implementation": {"": "sdpa", "vision_config": "paged|Other/Kernels"}},
+        ),
+        (
+            "attn_implementation",
+            {"text_config": {"model_type": "llama", "attn_implementation": "Other/Kernels"}},
+        ),
+    ):
+        (where / "config.json").write_text(json.dumps(said))
+        with pytest.raises(P.PipelineRefused, match=re.escape(f"as its attention ({key})")):
+            _fetch(hub, fps=float(FPS), pins=pins)
+
+
 def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path) -> None:
     """A pi05's relative actions are made absolute over the whole chunk, against the state it
     was predicted from, as its training made them relative and as LeRobot 0.7.0's own loop
