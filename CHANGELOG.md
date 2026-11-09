@@ -251,6 +251,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **An Open Duck's link outlives a line quackd cannot read, as ToddlerBot's has since 0.32.0.** The
+  bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB, an
+  answer that was no JSON object, an id that was no number, an error that was no object, or a reset
+  socket raised out of it, and it died without a word. Every request after it waited out its timeout,
+  while the commands that feed the daemon's deadman, which are writes, went on: the duck walked on for
+  about two seconds, until a heartbeat gave up, and a stop sent then could reach the duck with nobody
+  to read its reply, and be reported as not delivered. Now such a line is skipped with a warning and
+  the link goes on, a line may be 1 MiB, and a link that fails tells whatever is waiting at once and
+  refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
+  over HTTP. What changes for you: nothing to do. No duck has run it.
 
 ### Security
 

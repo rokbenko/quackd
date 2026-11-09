@@ -26,6 +26,7 @@ from quackd_open_duck.bridge import (
     MIN_LOOP_HZ,
     PROTOCOL,
     PROTOCOL_VERSION,
+    STATE,
     TOKEN_ENV,
     OpenDuckBridge,
     parse_address,
@@ -62,9 +63,12 @@ class FakeBridge:
         self.silent = False
         self.fallen = fallen
         self.token = token
+        #: Bytes of padding on every `duck.state` answer, for lines longer than a reader takes.
+        self.state_padding = 0
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.server: asyncio.AbstractServer | None = None
+        self._clients: set[asyncio.StreamWriter] = set()
         self.port = 0
         self._arrived = asyncio.Event()
 
@@ -74,6 +78,10 @@ class FakeBridge:
 
     async def stop(self) -> None:
         assert self.server is not None
+        # From Python 3.12 `wait_closed` waits for every connection, so a test that failed
+        # before closing its client hung here rather than failing.
+        for writer in self._clients:
+            writer.close()
         self.server.close()
         await self.server.wait_closed()
 
@@ -92,6 +100,7 @@ class FakeBridge:
         return [m.get("params") or {} for m in self.notifications if m.get("method") == COMMAND]
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._clients.add(writer)
         while line := await reader.readline():
             msg = json.loads(line)
             if "id" not in msg:
@@ -136,6 +145,8 @@ class FakeBridge:
                     "command_age_ms": 40,
                     "pose": {"x": 0.1, "y": 0.2, "theta": 0.3},
                 }
+                if self.state_padding:
+                    result["notes"] = "x" * self.state_padding
             elif method == "duck.stop":
                 result = {"stopped": True, "limp": False}
             elif method == "duck.sound":
@@ -199,6 +210,90 @@ def test_parse_address() -> None:
     assert parse_address("duck.local") == ("duck.local", 9871)
     with pytest.raises(TransportError):
         parse_address("http://duck.local:9871")
+
+
+async def test_an_answer_over_asyncios_default_line_reaches_the_client(bridge: FakeBridge) -> None:
+    """Over 64 KiB `readline` raised out of the pump, and every request after it, the
+    heartbeat's and the stop's among them, waited out its timeout."""
+    bridge.state_padding = 100_000
+    t = OpenDuckBridge(bridge.address, request_timeout_s=1.0)
+    await t.connect()
+    assert len((await t.request(STATE))["notes"]) == 100_000
+    await t.heartbeat()
+    await t.close()
+
+
+async def test_a_line_over_the_limit_costs_that_line_and_not_the_link(
+    bridge: FakeBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("quackd_open_duck.bridge.READER_LIMIT", 2**12)
+    t = OpenDuckBridge(bridge.address, request_timeout_s=0.5)
+    await t.connect()
+    bridge.state_padding = 10_000
+    with pytest.raises(TransportError, match="no answer"):
+        await t.request(STATE)
+    bridge.state_padding = 0
+    t.request_timeout_s = 3.0
+    await t.heartbeat()
+    await t.stop()
+    assert t.stop_error is None
+    await t.close()
+
+
+async def test_a_line_the_client_cannot_read_does_not_end_the_link() -> None:
+    """Each of these used to raise out of the pump, where only broken JSON was skipped."""
+    t = OpenDuckBridge("tcp://127.0.0.1:1")
+    t._reader = asyncio.StreamReader()
+    answer = asyncio.get_running_loop().create_future()
+    t._pending[7] = answer
+    pump = asyncio.create_task(t._read_loop())
+    for line in (
+        b"5\n",
+        b'{"id": "seven", "result": 1}\n',
+        b"\xff\xfe\n",
+        b"not json\n",
+        b'{"method": "duck.state", "params": [1]}\n',
+    ):
+        t._reader.feed_data(line)
+    t._reader.feed_data(b'{"id": 7, "result": "still here"}\n')
+    assert await asyncio.wait_for(answer, 2.0) == "still here"
+    assert t._last_state is None
+    t._reader.feed_eof()
+    await asyncio.wait_for(pump, 2.0)
+
+
+async def test_an_error_that_is_no_object_still_answers_its_request() -> None:
+    """The request was let go before its error was read, so an error quackd could not read
+    left it waiting for an answer that had already come."""
+    t = OpenDuckBridge("tcp://127.0.0.1:1")
+    t._reader = asyncio.StreamReader()
+    answer = asyncio.get_running_loop().create_future()
+    t._pending[3] = answer
+    pump = asyncio.create_task(t._read_loop())
+    t._reader.feed_data(b'{"id": 3, "error": "the bus is down"}\n')
+    with pytest.raises(TransportError, match="the bus is down"):
+        await asyncio.wait_for(answer, 2.0)
+    t._reader.feed_eof()
+    await asyncio.wait_for(pump, 2.0)
+
+
+async def test_a_link_that_fails_tells_whoever_is_waiting_at_once() -> None:
+    """A reset raised out of the pump, left the request to wait out its timeout, and left the
+    link looking open to every write after it."""
+
+    class Reset:
+        async def readline(self) -> bytes:
+            raise ConnectionResetError("reset by peer")
+
+    t = OpenDuckBridge("tcp://127.0.0.1:1")
+    t._reader = Reset()  # type: ignore[assignment]
+    answer = asyncio.get_running_loop().create_future()
+    t._pending[7] = answer
+    await asyncio.wait_for(t._read_loop(), 2.0)
+    with pytest.raises(TransportError, match="the link to the bridge failed"):
+        await asyncio.wait_for(answer, 2.0)
+    with pytest.raises(TransportError, match="closed the connection"):
+        await t.notify(COMMAND, {"vx": 0.0})
 
 
 # ── the intents ─────────────────────────────────────────────────────────────────────────

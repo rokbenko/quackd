@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import os
 import time
@@ -50,6 +51,8 @@ from quackd_open_duck.verbs import (
     NECK_PITCH_RANGE,
 )
 
+log = logging.getLogger(__name__)
+
 STATUS = "EXPERIMENTAL — quackd's own protocol, never run against a duck"
 
 #: The wire contract. Bumped whenever a field changes meaning; a mismatch is refused.
@@ -59,6 +62,11 @@ JSONRPC_VERSION = "2.0"
 DEFAULT_PORT = 9871
 #: Where the client looks for the bridge token when no --token was given.
 TOKEN_ENV = "QUACKD_DUCK_TOKEN"
+#: The longest line the pump takes from the bridge, 1 MiB, where asyncio's default is 64 KiB.
+#: Nothing the bridge says today comes near either, its camera being fetched over HTTP, so
+#: this is room rather than need: what matters is that a longer line costs that line and not
+#: the link.
+READER_LIMIT = 2**20
 
 HELLO = "duck.hello"
 COMMAND = "duck.command"  # notification, re-sent at 10 Hz; feeds the daemon's deadman
@@ -170,7 +178,9 @@ class OpenDuckBridge:
     async def connect(self) -> None:
         host, port = parse_address(self.address)
         try:
-            self._reader, self._writer = await asyncio.open_connection(host, port)
+            self._reader, self._writer = await asyncio.open_connection(
+                host, port, limit=READER_LIMIT
+            )
         except OSError as e:
             raise TransportError(
                 f"cannot connect to the bridge at {self.address}: {e}. Is "
@@ -255,37 +265,72 @@ class OpenDuckBridge:
             self._reader = None
 
     async def _read_loop(self) -> None:
+        """Every answer comes through here, so nothing one line does may end it. A pump that
+        died left every request after it to wait out its timeout on a socket nobody read,
+        while the commands, which are writes, went on feeding the daemon's deadman: the duck
+        walked on until a heartbeat gave up, and the stop it was then sent went out with
+        nobody to read its reply, so a stop that landed was reported as one that did not."""
         assert self._reader is not None
         while True:
-            line = await self._reader.readline()
+            try:
+                line = await self._reader.readline()
+            except ValueError as e:
+                # A line over READER_LIMIT. `readline` has already let go of it, so the next
+                # read starts past it, or at a tail of it that `_take_line` throws away.
+                log.warning("skipped a line from the bridge over %d bytes: %s", READER_LIMIT, e)
+                continue
+            except OSError as e:
+                self._fail_pending(f"the link to the bridge failed: {e}")
+                return
             if not line:
-                # Mark the link dead before failing the waiters: otherwise every later
-                # request sat out its full timeout waiting for a pump that had exited, and
-                # `stop` in particular blocked for seconds before reporting anything.
-                self._closed = True
-                for fut in self._pending.values():
-                    if not fut.done():
-                        fut.set_exception(TransportError("the bridge closed the connection"))
+                self._fail_pending("the bridge closed the connection")
                 return
             try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
-                pending = self._pending.pop(int(msg["id"]), None)
-                if pending is not None and not pending.done():
-                    if "error" in msg:
-                        err = msg["error"]
-                        pending.set_exception(
-                            TransportError(f"{err.get('code')}: {err.get('message')}")
-                        )
-                    else:
-                        pending.set_result(msg.get("result"))
-            elif "method" in msg:
-                if msg["method"] == STATE:
-                    self._last_state = msg.get("params") or {}
-                with contextlib.suppress(asyncio.QueueFull):
-                    self._notifications.put_nowait(msg)
+                self._take_line(line)
+            except Exception as e:  # one line quackd mishandles must not cut the duck off
+                log.warning("skipped a line from the bridge that quackd could not read: %r", e)
+
+    def _fail_pending(self, why: str) -> None:
+        # Mark the link dead before failing the waiters: otherwise every later request sat out
+        # its full timeout waiting for a pump that had exited, and `stop` in particular blocked
+        # for seconds before reporting anything.
+        self._closed = True
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(TransportError(why))
+
+    def _take_line(self, line: bytes) -> None:
+        """One line from the bridge. Anything that is not a JSON object, or that answers with an
+        id that is no number, is skipped rather than raised, and an answer is read whole before
+        its request is let go, so no request is left waiting on one quackd could not read."""
+        try:
+            msg = json.loads(line)
+        except ValueError:  # broken JSON, or bytes that are not UTF-8
+            return
+        if not isinstance(msg, dict):
+            return
+        if msg.get("id") is not None and ("result" in msg or "error" in msg):
+            try:
+                req_id = int(msg["id"])
+            except (TypeError, ValueError):
+                return
+            pending = self._pending.pop(req_id, None)
+            if pending is None or pending.done():
+                return
+            if "error" in msg:
+                err = msg["error"]
+                said = f"{err.get('code')}: {err.get('message')}" if isinstance(err, dict) else err
+                pending.set_exception(TransportError(str(said)))
+            else:
+                pending.set_result(msg.get("result"))
+        elif "method" in msg:
+            params = msg.get("params")
+            if params is not None and not isinstance(params, dict):
+                return
+            if msg["method"] == STATE:
+                self._last_state = params or {}
+            with contextlib.suppress(asyncio.QueueFull):
+                self._notifications.put_nowait(msg)
 
     def _write(self, obj: dict[str, Any]) -> None:
         if self._closed:
