@@ -289,6 +289,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Microduck's transport. The package under each is held to the core's release now, read from the
   installed metadata, with the same words to reinstall them together. What changes for you: nothing,
   on an install that keeps the packages together.
+- **The AlohaMini's setup names the commit quackd read, `ab4462b`.** `quackd ui`'s setup page, from
+  the catalogue, told an AlohaMini owner to install upstream on the robot and named no commit, while
+  upstream's newer main refuses the stop quackd sends, so a robot set up by that line was one quackd
+  could not stop. It names `ab4462b` now, as the AlohaMini page does, and a test holds it to the
+  adapter's pin. What changes for you: set the robot up at that commit, as the page says.
 
 ### Security
 

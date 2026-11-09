@@ -534,9 +534,11 @@ _CONNECT: dict[str, dict[str, Connect]] = {
             default="tcp://127.0.0.1:5555",
             example="tcp://192.168.1.50:5555",
             camera="From the host's replies. A camera URL is not read.",
-            on_robot="quackd's host wrapper from `bridge/alohamini`, or upstream's host.",
-            first="Calibrate the robot, install upstream on it, start the host, and reach it "
-            "through an ssh tunnel.",
+            on_robot="quackd's host wrapper from `bridge/alohamini`, or upstream's host, both "
+            "at the commit quackd read, `ab4462b`.",
+            first="Calibrate the robot and install upstream on it at "
+            "`ab4462b713aeb24d0473f1ec6c8812290ab19510`, since a newer main refuses the stop "
+            "quackd sends. Then start the host and reach it through an ssh tunnel.",
             docs="docs/adapters/alohamini/README.md",
         ),
     },

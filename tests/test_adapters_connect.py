@@ -31,6 +31,15 @@ def test_every_real_backend_of_the_ten_says_how_to_connect_it_and_no_simulator_d
             assert block.address and block.example and block.on_robot, info.name
 
 
+def test_the_alohamini_setup_names_the_commit_quackd_read() -> None:
+    """Upstream's newer main refuses the stop quackd sends, so a robot set up at main is one
+    quackd cannot stop. The setup page said to install upstream on it and named no commit."""
+    from quackd_alohamini import upstream_api as up
+
+    zmq = BY_NAME["alohamini"].connect["zmq"]
+    assert up.PIN[:7] in zmq.on_robot and up.PIN in zmq.first, zmq
+
+
 def test_the_described_row_connects_nothing() -> None:
     """Its backends are bodies quackd drives no part of (ADR-0077): nothing to connect, and a
     page offering an address field for one would be a claim the body cannot keep."""
