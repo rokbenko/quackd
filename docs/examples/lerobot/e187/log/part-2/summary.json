@@ -1,0 +1,112 @@
+{
+  "duck": "e187-out-of-time",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-time.duck",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "40",
+    "--no-memory"
+  ],
+  "version": "0.31.3",
+  "outcome": "budget",
+  "reason": "max_minutes (0.5) exceeded",
+  "steps": 4,
+  "llm_calls": 6,
+  "elapsed_s": 32.95,
+  "started_at": "2026-11-06T18:15:33.613Z",
+  "ended_at": "2026-11-06T18:16:13.379Z",
+  "wall_s": 39.766,
+  "connect_s": 6.689,
+  "llm_latency_s": 23.599,
+  "llm_latency_p50_s": 4.162,
+  "llm_latency_p90_s": 5.106,
+  "llm_latency_max_s": 5.106,
+  "first_motion_s": 21.11,
+  "first_motion_llm_calls": 3,
+  "usage": {
+    "input_tokens": 20615,
+    "output_tokens": 285,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 14568,
+    "cache_write_tokens": 5417
+  },
+  "price": {
+    "input": 10.0,
+    "output": 50.0,
+    "cache_read": 1.0,
+    "cache_write": 12.5,
+    "unit": "USD per million tokens",
+    "source": "catalogue",
+    "checked": "2026-09-23"
+  },
+  "cost_usd": 0.102831,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2186954.3234359,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -6.0,
+        "shoulder_lift": -99.6,
+        "elbow_flex": 92.7,
+        "wrist_flex": 79.0,
+        "wrist_roll": 0.1,
+        "gripper": 2.5
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 30,
+        "shoulder_lift": 32,
+        "elbow_flex": 32,
+        "wrist_flex": 33,
+        "wrist_roll": 33,
+        "gripper": 33
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 236,
+          "p50_ms": 3.5,
+          "p99_ms": 10.6,
+          "max_ms": 48.9
+        }
+      },
+      "camera": {
+        "configured": true,
+        "url": "opencv://1?name=arm",
+        "ok": true,
+        "age_s": 5.43,
+        "size": "640x480",
+        "error": null
+      }
+    }
+  },
+  "log_dropped": 0
+}
