@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
 import time
 from typing import Any
 
@@ -597,6 +598,52 @@ async def test_heartbeat_failure_stops_and_aborts() -> None:
     await hb.stop()
     assert transport.stops >= 1
     assert hb.failure is not None
+
+
+def _block_the_loop(seconds: float) -> None:
+    """Nothing on the event loop runs meanwhile, so what lands in that time queues up in order."""
+    time.sleep(seconds)
+
+
+async def test_a_heartbeat_stop_ends_though_python_3_11_lost_its_cancel() -> None:
+    """A transport waits for its answers through `asyncio.wait_for`, and Python 3.11's loses a
+    cancel that lands as its call returns. The loop then beat on for good and `stop`, the first
+    line of a run's teardown, waited on it, which held a macOS job to its limit. The cancel is
+    still asked for, and the loop honours it at its next turn. On 3.12 no cancel is lost, so only
+    a 3.11 job can fail this."""
+    loop = asyncio.get_running_loop()
+    fetched, go = threading.Event(), threading.Event()
+    stopping: list[asyncio.Task[None]] = []
+    beats: list[None] = []
+
+    def answer() -> None:
+        beats.append(None)
+        if not fetched.is_set():
+            fetched.set()
+            go.wait(10.0)
+            # the stop lands in the turn after this call's own answer, before wait_for has
+            # resumed the loop: the turn it loses a cancel in
+            loop.call_soon_threadsafe(lambda: loop.call_soon(begin))
+
+    class Beating(MockTransport):
+        async def heartbeat(self) -> None:
+            await asyncio.wait_for(asyncio.to_thread(answer), timeout=5.0)
+
+    abort = asyncio.Event()
+    beat = Heartbeat(Beating(), abort, period_s=0.01)
+
+    def begin() -> None:
+        stopping.append(asyncio.create_task(beat.stop()))
+
+    beat.start()
+    assert await asyncio.to_thread(fetched.wait, 5.0), "a beat is out"
+    go.set()
+    _block_the_loop(0.3)  # the stop and the beat's answer queue up in that order
+    await asyncio.sleep(0.05)
+    done, _ = await asyncio.wait(stopping, timeout=5.0)
+    abort.set()  # ends a loop that did not stop, so a failure here is a failure and no hang
+    await asyncio.wait(stopping, timeout=5.0)
+    assert done, f"the heartbeat beat on past its cancel: {len(beats)} beats"
 
 
 # ── the abort has to reach the verb that is already moving ──────────────────────────────

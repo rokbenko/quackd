@@ -225,7 +225,7 @@ PROCESSOR_CLASS_IMPORT = UpstreamRef(
     "`registry_name`, or else imports whatever `module.Class` its `class` key names with "
     "importlib, so loading a checkpoint's processors can run any code the checkpoint points "
     "at. This is why no quackd command loads a checkpoint in the process that owns the serial "
-    "bus. Only `load_policy()` would (LOAD_POLICY), and nothing in quackd calls it",
+    "bus",
 )
 TOKENIZER_TRUSTS_REMOTE_CODE = UpstreamRef(
     "ActionTokenizerProcessorStep.trust_remote_code defaults to True",
@@ -739,7 +739,7 @@ RELATIVE_ACTIONS = UpstreamRef(
     "RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it "
     "while a policy bound to it still plays the chunk predicted from it",
     "VERIFIED",
-    src(_RELATIVE, 144),
+    src(_RELATIVE, 148),
     "training makes a chunk relative to one state, broadcast across it (`to_relative_actions`, "
     "line 44), and AbsoluteActionsProcessorStep (line 197) adds back the state the relative "
     "step cached (line 152). At 0.6.1 the step cached the state every time the pre-processor "
@@ -953,18 +953,6 @@ TICK_MODE = UpstreamRef(
     "its one action put through the post-processor, answers what upstream's own loop would "
     "play. The server refuses one without a GPU, because it has to answer inside a tick, so "
     "CI's CPU job cannot run it, and no bench has",
-)
-LOAD_POLICY = UpstreamRef(
-    "LOAD_POLICY",
-    "UNVERIFIED",
-    src(_UTILS, 158),
-    "load_policy() in the arm's backend builds a policy object from verified names in the "
-    "arm's own process, the one no checkpoint is to load in, and hands the pre-processor a "
-    "raw observation that build_inference_frame would have shaped first. Nothing in quackd "
-    "calls it, no test runs it past the missing extra, and the policy server is the path a "
-    "checkpoint takes to the arm. What reaches the arm from any policy is quackd's rule and "
-    "not upstream's: the verbs' step cap, and a goal outside the travel clipped and counted, "
-    "unlike a verb's goal, which is refused (ADR-0036)",
 )
 
 

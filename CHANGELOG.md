@@ -182,8 +182,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   install Pillow 12.3.0, which was 0.31.3's first Known limitation. CI's policy job no longer runs the
   picture tests on a Pillow under 13, since no install takes one now.
 - **The policy server reads LeRobot 0.7.0.** Every LeRobot name `quackd policy serve` and its client
-  rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 62 rows, five of
-  them new, 59 VERIFIED and 3 UNVERIFIED, and the installed wheel matched the tag in every file they
+  rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 61 rows, five of
+  them new, 59 VERIFIED and 2 UNVERIFIED, and the installed wheel matched the tag in every file they
   cite that it carries. A policy that answers 0.7.0's `PolicyOutput` in place of a tensor is served
   its action, though none of the six types quackd serves answers one. A pi05 or a pi0 saved before
   transformers 5.6 loads its vision tower through 0.7.0's rename of its `vision_tower.vision_model.`
@@ -248,6 +248,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
   changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
   Code, or a test, that skipped the connect is refused.
+
+### Removed
+
+- **`quackd_lerobot.real.load_policy()` is gone.** It was an older Python helper in the arm's
+  backend that loaded a LeRobot checkpoint in the arm's own process, beside the serial bus, with
+  none of the policy server's pin checks. Nothing in quackd called it and no command reached it,
+  and [ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md) makes the policy server the only
+  path a checkpoint has to the arm, so it goes with its `LOAD_POLICY` row. It was never part of the
+  surface [RELEASING.md](RELEASING.md) promises, so it had no release of warning. What changes for
+  you: code that imported it should run `quackd policy serve` instead, and reach the server through
+  `--policy-url` or a `RemoteRunner`.
 
 ### Fixed
 
@@ -507,6 +518,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   measured as before. What changes for you: on a machine too busy to read your keys as you press them,
   a bare Enter it read late can be passed by as too soon, saying so, where it used to answer. Press it
   once more.
+- **A run on Python 3.11 ends though its heartbeat's cancel was lost.** Python 3.11's `asyncio.wait_for`
+  loses a cancel that lands as its call returns, and a transport's heartbeat waits for its answer
+  through one. The heartbeat then beat on for good and its stop, the first line of a run's teardown,
+  waited on it, so a run could hang at its end with its stop and its record still to come. The loop
+  reads the cancel that is still asked for now and ends at its next turn. Python 3.12 loses none.
+  What changes for you: a run on 3.11 that hung this way ends.
+- **A held gaze let go during an emotion names the emotion as one cause.** An emotion has the head
+  while it plays, as it has the twist, and nothing in `robot.state` says one is, so `microduck:jsonrpc`
+  let go of a gaze saying another client was steering the head. On a robotd that names daemon-v0.18.8
+  or later in its `hello`, `extras.gaze_released` names an emotion beside the other client and says
+  robotd logs `emotion started` as one begins. What changes for you: the words only.
+- **The upstream drift nightly no longer calls a night clean when an adapter could not be read.** The
+  walk `quackd doctor` makes passes over an adapter whose module or `UPSTREAMS` raises, and its
+  upstreams with it, so a night with nothing else wrong exited 0. Such a night names who was not read
+  at the top of its report, in `drift.json` under `unread`, and exits 2, as could not check. A run of
+  one upstream with `--only` walks no adapter and is as it was.
 - **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop did
   not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
   `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and why
@@ -729,6 +756,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
   `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
   with `--text`.
+- **The safety page and the Microduck's checklist say a stock pad's Y and bumpers end a walk.** On
+  robotd daemon-v0.18.8 or later each plays an emotion, robotd holds the twist at zero while one plays,
+  and the verb fails. Neither page named those buttons among what ends a walk.
+- **Nine refs cite the line that says what they read.** Seven of ToddlerBot's, one of roslibpy's and
+  one of LeRobot's stood beside it, on the `def` or the `try` above it, and ToddlerBot's `read_vin`
+  on another function altogether, so the drift nightly listed them as stray. They are on the line
+  itself at the same pin. ToddlerBot's `reset` stays where it is: it records that no such method
+  exists, and no line can say so.
 
 ### Known limitations
 

@@ -2,12 +2,11 @@
 
 No quackd command loads a checkpoint in the process that owns the serial bus
 (`upstream_api.PROCESSOR_CLASS_IMPORT`), so the arm reaches its policy over HTTP, at a server
-the user starts (`quackd policy serve`, `server.py`). The one thing that would load one there is
-`real.load_policy()`, which nothing in quackd calls (the known gap ADR-0048 names).
-`RemoteRunner` is that server as the policy loop sees it: `reset` starts a session, `features`
-and `latency_s` say what the server said at that reset, and `next_chunk` sends one observation
-and returns the chunk that answered it. The loop calls it on its own worker thread (`loop.py`),
-so every call here may block, and each is bounded instead.
+the user starts (`quackd policy serve`, `server.py`). `RemoteRunner` is that server as the
+policy loop sees it: `reset` starts a session, `features` and `latency_s` say what the server
+said at that reset, and `next_chunk` sends one observation and returns the chunk that answered
+it. The loop calls it on its own worker thread (`loop.py`), so every call here may block, and
+each is bounded instead.
 
 **It imports the standard library, numpy and PIL and nothing else.** The arm's process gains
 no dependency from a policy: no torch, no LeRobot, no HTTP library.

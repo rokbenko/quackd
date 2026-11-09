@@ -2,8 +2,7 @@
 
 **This is the first network service whose replies move an arm.** A checkpoint's processors are
 code (`upstream_api.PROCESSOR_CLASS_IMPORT`), so no quackd command loads a checkpoint or runs
-its inference in the process that owns the serial bus. Only `real.load_policy()` would, and
-nothing in quackd calls it (`upstream_api.LOAD_POLICY`). The user starts this server, in a
+its inference in the process that owns the serial bus. The user starts this server, in a
 terminal of its own on the laptop or on a rented GPU reached through `ssh -L`, the way a board's
 daemon is started, and `client.py` reaches it with the protocol in `protocol.py`. It serves a
 LeRobot checkpoint named `--policy REPO@REVISION`, loaded and run by `pipeline.py`
