@@ -1,0 +1,113 @@
+{
+  "duck": "lerobot-lookout",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "lerobot-lookout",
+    "--robot",
+    "arm-01",
+    "--by-hand",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "10",
+    "--no-memory"
+  ],
+  "version": "0.31.3",
+  "outcome": "success",
+  "reason": "Without moving, the arm reports shoulder_pan \u22125\u00b0, shoulder_lift \u221218\u00b0, elbow_flex 4\u00b0, wrist_flex 61\u00b0, wrist_roll 1\u00b0, and gripper 4\u00b0, with torque on and no joint reading hot (the highest reported temperature is elbow_flex at 33\u00b0C, below 60\u00b0C).",
+  "steps": 1,
+  "llm_calls": 2,
+  "elapsed_s": 47.19,
+  "started_at": "2026-11-06T12:20:54.040Z",
+  "ended_at": "2026-11-06T12:22:26.571Z",
+  "wall_s": 92.531,
+  "connect_s": 7.64,
+  "llm_latency_s": 7.313,
+  "llm_latency_p50_s": 2.982,
+  "llm_latency_p90_s": 4.331,
+  "llm_latency_max_s": 4.331,
+  "first_motion_s": null,
+  "first_motion_llm_calls": null,
+  "usage": {
+    "input_tokens": 7543,
+    "output_tokens": 99,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 3384,
+    "cache_write_tokens": 3907
+  },
+  "price": {
+    "input": 10.0,
+    "output": 50.0,
+    "cache_read": 1.0,
+    "cache_write": 12.5,
+    "unit": "USD per million tokens",
+    "source": "catalogue",
+    "checked": "2026-09-23"
+  },
+  "cost_usd": 0.059692,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2165727.1204972,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -5.8,
+        "shoulder_lift": -89.1,
+        "elbow_flex": 96.0,
+        "wrist_flex": 73.2,
+        "wrist_roll": 0.5,
+        "gripper": 98.7
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 29,
+        "shoulder_lift": 30,
+        "elbow_flex": 33,
+        "wrist_flex": 31,
+        "wrist_roll": 31,
+        "gripper": 31
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 215,
+          "p50_ms": 3.7,
+          "p99_ms": 10.2,
+          "max_ms": 54.7
+        }
+      },
+      "camera": {
+        "configured": true,
+        "url": "opencv://1?name=arm",
+        "ok": true,
+        "age_s": 42.36,
+        "size": "640x480",
+        "error": null
+      }
+    }
+  },
+  "log_dropped": 0
+}

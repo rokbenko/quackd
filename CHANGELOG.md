@@ -373,6 +373,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E119 has a log, in three parts: the rest pose, the hand-off and recording a new rest pose.** One
+  README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
+  `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
+  with `--text`.
 - **E116 has a log: the USB cable pulled mid-reach.** The run ended under half a second after the
   arm's last answer, said it could not tell whether the arm was holding itself up, and the arm stayed
   where it was until `quackd robot release` put it down. A log can now carry what a command run after
