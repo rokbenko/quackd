@@ -27,7 +27,11 @@ from quackd_lerobot.mock import (
     LeRobotMock,
 )
 from quackd_lerobot.real import MAX_STEP_DEG, STEP_ENV, LeRobotReal, joint_ranges
-from quackd_lerobot.sim.follower import DeviceAlreadyConnectedError, SimFollowerConfig
+from quackd_lerobot.sim.follower import (
+    DeviceAlreadyConnectedError,
+    DeviceNotConnectedError,
+    SimFollowerConfig,
+)
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
@@ -43,7 +47,8 @@ from tests.test_lerobot_adapter import FakeArm, _handover_arm
 
 def _follower(*, cap: float | None = MAX_STEP_DEG, release: bool = False) -> FakeFollower:
     """The mock's follower on its own, at `REST`, with `cap` as the step cap on its config and
-    `release` as its disconnect's torque flag."""
+    `release` as its disconnect's torque flag. Its port is not open: a test connects it first, as
+    the real backend does, since a closed port refuses every read and write."""
     config = SimFollowerConfig(disable_torque_on_disconnect=release, max_relative_target=cap)
     return FakeFollower(
         config,
@@ -82,6 +87,7 @@ def test_a_send_moves_a_joint_one_step_of_the_cap_into_the_travel_and_says_what_
     clamp to the travel, which nothing reports: the send says the capped goal, and the record
     keeps the goal as it was asked for."""
     arm = _follower()
+    arm.connect(False)
     sent = arm.send_action(_pos(shoulder_pan=30.0))
     assert sent == _pos(shoulder_pan=MAX_STEP_DEG), "capped a step from the reading"
     assert arm.positions["shoulder_pan"] == MAX_STEP_DEG
@@ -100,12 +106,14 @@ def test_a_send_moves_a_joint_one_step_of_the_cap_into_the_travel_and_says_what_
     arm.send_action(_pos(shoulder_pan=30.0))
     assert arm.positions["shoulder_pan"] == MAX_STEP_DEG + 2.0
     uncapped = _follower(cap=None)
+    uncapped.connect(False)
     uncapped.send_action(_pos(shoulder_pan=30.0))
     assert uncapped.positions["shoulder_pan"] == 30.0, "upstream's None caps nothing"
 
 
 def test_a_limp_or_seized_joint_takes_its_goal_and_does_not_move() -> None:
     arm = _follower()
+    arm.connect(False)
     arm.torque["wrist_flex"] = False
     arm.stuck.add("wrist_roll")
     arm.send_action(_pos(wrist_flex=3.0, wrist_roll=3.0, shoulder_pan=3.0))
@@ -119,6 +127,7 @@ def test_the_jaws_stop_on_the_object_and_let_go_of_it_as_they_open() -> None:
     jaws open past it. Away from it, or with the jaws already shut, there is nothing between
     them to stop on."""
     arm = _follower(cap=None)
+    arm.connect(False)
     arm.positions.update(OBJECT_AT)
     arm.send_action(_pos(gripper=GRIPPER_CLOSED))
     assert arm.positions["gripper"] == GRIP_ON_OBJECT and arm.held
@@ -134,6 +143,7 @@ def test_the_jaws_stop_on_the_object_and_let_go_of_it_as_they_open() -> None:
     arm.send_action(_pos(gripper=GRIPPER_CLOSED))
     assert not arm.held, "jaws already shut close on nothing"
     nothing = _follower(cap=None)
+    nothing.connect(False)
     nothing.object_at = None
     nothing.positions.update(OBJECT_AT)
     nothing.send_action(_pos(gripper=GRIPPER_CLOSED))
@@ -145,6 +155,7 @@ def test_the_bus_s_torque_turns_end_a_hand_off_the_ways_an_arm_can() -> None:
     and that the goal written straight after does not undo, and a torque register that stops
     answering after the write it was told to, with the reason it was given."""
     arm = _follower()
+    arm.connect(False)
     arm.holdouts = ("wrist_roll",)
     arm.bus.disable_torque(num_retry=5)
     read = arm.bus.sync_read("Torque_Enable", normalize=False, num_retry=2)
@@ -161,6 +172,7 @@ def test_the_bus_s_torque_turns_end_a_hand_off_the_ways_an_arm_can() -> None:
     assert arm.positions["elbow_flex"] == REST["elbow_flex"] - 4.0, "and the next one moves it"
 
     quiet = _follower()
+    quiet.connect(False)
     quiet.unread_after_release = "a reason made up for this test"
     quiet.bus.disable_torque()
     with pytest.raises(ConnectionError, match="a reason made up for this test"):
@@ -189,6 +201,37 @@ def test_the_connect_and_the_disconnect_are_upstream_s() -> None:
     assert not any(arm.torque.values())
     arm.bus.disconnect(disable_torque=True)  # a port that is not open: nothing, and no write
     assert not arm.is_connected and not any(arm.torque.values())
+
+
+def test_a_closed_port_refuses_every_read_and_write_as_lerobot_s_does() -> None:
+    """LeRobot refuses a read, a send, a torque write and the follower's disconnect on a port that
+    is not open, in one sentence under the class that refused (`up.NOT_CONNECTED`), and the mock's
+    follower used to answer them all, before its connect and after its close alike. So a hand-off
+    over a mock nobody had connected was let go of and read back rather than refused at its first
+    read, as the arm's is. It refuses them now, as the arm and the simulator do, and touches no
+    motor doing so, and the bus's own disconnect still passes over a closed port without a word."""
+    arm = _follower()
+    follower = "SOFollower is not connected. Run `.connect()` first."
+    bus = "SerialMotorsBus is not connected. Run `.connect()` first."
+    for _ in ("before the connect", "after the disconnect"):
+        refusals = [
+            (lambda: arm.get_observation(), follower),
+            (lambda: arm.send_action(_pos(shoulder_pan=3.0)), follower),
+            (lambda: arm.disconnect(), follower),
+            (lambda: arm.bus.sync_read("Torque_Enable", normalize=False), bus),
+            (lambda: arm.bus.disable_torque(num_retry=5), bus),
+            (lambda: arm.bus.enable_torque(num_retry=5), bus),
+        ]
+        for call, said in refusals:
+            with pytest.raises(DeviceNotConnectedError) as refused:
+                call()
+            assert str(refused.value) == said
+        assert arm.actions == [] and all(arm.torque.values()), "a refused call reached a motor"
+        assert arm.positions == REST
+        arm.bus.disconnect(disable_torque=True)  # the bus's own: a closed port, and no word
+        arm.connect(False)
+        assert arm.get_observation()[f"{JOINTS[0]}.pos"] == REST[JOINTS[0]]
+        arm.disconnect()
 
 
 def test_a_torque_call_tries_every_motor_and_names_the_ones_that_did_not_answer() -> None:
@@ -230,6 +273,7 @@ def test_a_torque_call_tries_every_motor_and_names_the_ones_that_did_not_answer(
 
 def test_the_camera_draws_the_object_where_the_shoulder_points_and_not_once_it_is_held() -> None:
     arm = _follower(cap=None)
+    arm.connect(False)
     camera = FakeCamera(
         arm,
         size=96,
@@ -379,3 +423,17 @@ async def test_a_raw_goal_moves_the_mock_one_step_of_the_cap_as_it_moves_the_arm
         state = await transport.get_state()
         assert state.extras["joints"]["shoulder_pan"] == MAX_STEP_DEG, transport.name
         await transport.close()
+
+
+async def test_a_second_close_of_the_mock_keeps_what_the_first_one_said() -> None:
+    """The mock's port refuses a read once the first close has shut it, as the arm's does, so a
+    second close read nothing and ended on not being able to tell whether the arm holds itself
+    up, over an arm the first close had let go of at its rest pose. It keeps the first close's
+    line, as the arm's does."""
+    mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
+    await mock.close()
+    assert mock.close_note is None and not mock.torque, mock.close_note
+    await mock.close()
+    assert mock.close_note is None, mock.close_note
+    assert mock.sequence == ["close", "close"]

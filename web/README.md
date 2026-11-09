@@ -59,8 +59,8 @@ stylesheet and the script, because nothing answers on `/simulator` at the root.
 ## What loads, and from where
 
 Nothing in this directory is a robot. Everything heavy is fetched by the visitor's browser
-from whoever owns it, which is also how the licences stay clean — the Microduck's 3D model
-files are CC BY-NC-SA and quackd redistributes none of them.
+from whoever owns it, which is also how the licences stay clean — the Microduck's meshes
+are CC BY-NC-SA 4.0 and quackd redistributes none of them.
 
 | What | From | Size |
 |---|---|---|

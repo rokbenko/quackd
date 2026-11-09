@@ -11,7 +11,7 @@
   <a href="https://pypi.org/project/quackd/"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
   <a href="docs/guides/mcp.md"><img src="https://img.shields.io/badge/MCP-ready-8A2BE2" alt="MCP ready"></a>
-  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-10%20adapters%2C%201%20on%20hardware%2C%2011%20described-f5c518" alt="robots: 10 adapters, 1 on hardware, 11 described"></a>
+  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-10%20adapters%2C%201%20on%20hardware%2C%2012%20described-f5c518" alt="robots: 10 adapters, 1 on hardware, 12 described"></a>
 </p>
 
 <details>
@@ -362,7 +362,7 @@ Every quackd line there names a body with `--from`, because quackd itself ships 
 <p align="center">
   <img src="https://raw.githubusercontent.com/rokbenko/quackd/main/docs/assets/quackd-on-off.gif" alt="Two Microduck robots side by side in a MuJoCo physics simulator, running the same world. On the left, with quackd, the duck walks a square and a top-down inset traces its path. On the right, without quackd, the duck stands still and its inset shows a single unmoving dot." width="600">
   <br>
-  <sub><strong>The first line above, with and without quackd.</strong> <b>Left:</b> you type <em>walk in a square</em> and a pilot picks the robot's own verbs one at a time, correcting as it reads the pose it actually reached. Nobody wrote a square. <b>Right:</b> the identical world, robot and walking policy, minus quackd. A Microduck takes a twist, which is three numbers, so an English sentence has nowhere to go and it stands there. The pilot here is <em>scripted</em>, so this needs no API key, and the duck is a render of Pollen's model under its CC BY-NC-SA terms. <a href="docs/assets/README.md">How it was made</a>.</sub>
+  <sub><strong>The first line above, with and without quackd.</strong> <b>Left:</b> you type <em>walk in a square</em> and a pilot picks the robot's own verbs one at a time, correcting as it reads the pose it actually reached. Nobody wrote a square. <b>Right:</b> the identical world, robot and walking policy, minus quackd. A Microduck takes a twist, which is three numbers, so an English sentence has nowhere to go and it stands there. The pilot here is <em>scripted</em>, so this needs no API key, and the duck is a render of Pollen's model under its meshes' CC BY-NC-SA 4.0 terms. <a href="docs/assets/README.md">How it was made</a>.</sub>
 </p>
 
 **Or open the browser demo and install no quackd at all.** It is live at
@@ -1376,7 +1376,7 @@ steps 3 · LLM calls 5 · tokens 5430+80 · time 0.2 s (LLM 0.0 s) · LLM calls 
 
 Why a task can refuse a body, whether two robots can share a task, and more: [docs/faq.md](docs/faq.md).
 
-**Non goals for now, on purpose:** no RL training or reward generation (that is v2, and only the registry hook exists), no features that require hardware, and no vendoring of Pollen Robotics assets. No logo, mesh, policy or sound of theirs is committed here. The physics simulator and the browser demo fetch the model and the policies from upstream at run time, and the one exception in this repository is `docs/assets/quackd-on-off.gif`, the simulator recording under [No robot yet?](#no-robot-yet-try-it-in-60-seconds), which renders that model and carries its CC BY-NC-SA terms ([docs/reference/licenses.md](docs/reference/licenses.md)).
+**Non goals for now, on purpose:** no RL training or reward generation (that is v2, and only the registry hook exists), no features that require hardware, and no vendoring of Pollen Robotics assets. No logo, mesh, policy or sound of theirs is committed here. The physics simulator and the browser demo fetch the model and the policies from upstream at run time, and the one exception in this repository is `docs/assets/quackd-on-off.gif`, the simulator recording under [No robot yet?](#no-robot-yet-try-it-in-60-seconds), which renders that model and carries its meshes' CC BY-NC-SA 4.0 terms ([docs/reference/licenses.md](docs/reference/licenses.md)).
 
 <br>
 
@@ -1418,7 +1418,7 @@ On a Microduck `robotd` is the safety authority, and a gamepad does not out-rank
 
 They built the duck, and quackd began as its brain. Thanks to Pollen Robotics for [microduck](https://github.com/pollen-robotics/microduck) (the onboard daemon stack and its JSON RPC contract) and [microduck_rl](https://github.com/pollen-robotics/microduck_rl) (the training stack behind the policies the robot runs), to the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), and to the authors of [DrEureka](https://eureka-research.github.io/dr-eureka/) for the idea behind learned verbs. Thanks to Antoine Pirrone and the [Open Duck Mini](https://github.com/apirrone/Open_Duck_Mini) project for designing a biped anyone can print and build, and for publishing the runtime that makes it walk. Community: the Pollen Robotics Discord linked from the [upstream README](https://github.com/pollen-robotics/microduck#readme).
 
-quackd is an independent community project, not affiliated with or endorsed by Pollen Robotics, Hugging Face or the Open Duck Mini project. "Microduck" is used nominatively to describe compatibility. No Pollen Robotics or Open Duck Mini logo, mesh, ONNX policy or sound is distributed here. The physics simulator fetches the Microduck's model and its policies from upstream at run time and checks every file against a recorded hash. The browser demo fetches the same files at the same pin straight into the visitor's browser and hashes nothing. The simulator recording under [No robot yet?](#no-robot-yet-try-it-in-60-seconds) renders that model, so it carries the model's own CC BY-NC-SA terms ([docs/reference/licenses.md](docs/reference/licenses.md)). The recording at the top of the page is a phone video of a real arm and is quackd's own.
+quackd is an independent community project, not affiliated with or endorsed by Pollen Robotics, Hugging Face or the Open Duck Mini project. "Microduck" is used nominatively to describe compatibility. No Pollen Robotics or Open Duck Mini logo, mesh, ONNX policy or sound is distributed here. The physics simulator fetches the Microduck's model and its policies from upstream at run time and checks every file against a recorded hash. The browser demo fetches the same files at the same pin straight into the visitor's browser and hashes nothing. The simulator recording under [No robot yet?](#no-robot-yet-try-it-in-60-seconds) renders that model, so it carries the model's own terms, CC BY-NC-SA 4.0 on its meshes ([docs/reference/licenses.md](docs/reference/licenses.md)). The recording at the top of the page is a phone video of a real arm and is quackd's own.
 
 <br>
 

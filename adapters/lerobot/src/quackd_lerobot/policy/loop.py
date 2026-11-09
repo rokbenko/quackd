@@ -648,7 +648,7 @@ class PolicyLoop:
             try:
                 obs = await arm._loop_read(registers=registers)
             except Exception as e:
-                said = arm.stop_error or f"{type(e).__name__}: {e}"
+                said = arm._quoted(e)
                 return await self._held(arm, run, f"the arm did not answer a read ({said})")
             if registers:
                 run.registers_at = now
@@ -953,7 +953,7 @@ class PolicyLoop:
         except Exception as e:
             run.failed_sends += 1
             if run.failed_sends >= FAILED_SENDS:
-                said = arm.stop_error or f"{type(e).__name__}: {e}"
+                said = arm._quoted(e)
                 return await self._held(
                     arm,
                     run,

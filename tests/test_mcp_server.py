@@ -814,6 +814,33 @@ async def test_a_read_the_arm_did_not_answer_reaches_the_chat_in_words() -> None
     assert transport.stops > stops
 
 
+async def test_a_chat_is_told_when_the_stop_after_a_failed_read_held_nothing() -> None:
+    """The arm reads before it writes its hold, so over one gone silent the stop sent after the
+    failed read held nothing, which its real backend says in `stop_error`. The chat was told only
+    that the read had failed."""
+
+    class Silent(MockTransport):
+        silent = False
+        stop_error: str | None = None
+
+        async def get_state(self) -> Any:
+            if self.silent:
+                raise TransportError("the arm did not answer: ConnectionError: no status packet")
+            return await super().get_state()
+
+        async def stop(self) -> None:
+            await super().stop()
+            self.stop_error = "the hold did not reach the arm" if self.silent else None
+
+    async with connected(Silent()) as (client, _session, transport):
+        transport.silent = True
+        answer = _data(await client.call_tool("robot_run_verb", {"verb": "stop"}))
+        transport.silent = False
+    assert answer["ok"] is False
+    assert "the arm did not answer" in answer["summary"]
+    assert "the stop sent after it failed: the hold did not reach the arm" in answer["summary"]
+
+
 async def test_a_session_refuses_to_start_when_the_arm_cannot_reach_its_rest_pose() -> None:
     """Nothing here reads joint angles before it acts, so the rest pose is how the pilot
     knows where the arm is. An arm that stalled on the way to it is at a pose nobody has

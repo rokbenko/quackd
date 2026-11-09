@@ -17,6 +17,7 @@ import quackd_microduck
 from quackd.transport.base import Intent
 from quackd_huebot import upstream_api as huebot_api
 from quackd_huebot.body import HUEBOT
+from quackd_microduck import upstream_api as up
 from quackd_microduck.body import MICRODUCK
 from quackd_microduck.transports.jsonrpc_unix import CAMERA_FPS, JsonRpcUnixTransport
 from quackd_microduck.verbs import verbs_for
@@ -121,15 +122,20 @@ async def test_a_mock_is_not_kinder_than_its_robot() -> None:
 def test_a_frame_url_on_a_body_with_no_mediad_is_somebodys_snapshot_server(url: str) -> None:
     """On the Microduck `/frame` is mediad's own route, whose picture is upright and taken after
     the request. On a robot with no mediad a URL of that shape promises neither, so a frame from
-    it is not one `watch` or a slow camera's steering may trust, and no lens is assumed from it."""
+    it is not one `watch` or a slow camera's steering may trust, and no lens is assumed from it,
+    whatever shape its first frame is: a 16:9 picture wider than tall, which on a Microduck is
+    taken for a beta's, is a working camera's with no lens here."""
     hue = JsonRpcUnixTransport("tcp://127.0.0.1:1", body=HUEBOT, camera_url=url)
     assert hue.frames_upright is False
     assert hue.frame_period_s is None
     assert hue.frame_taken_at() is None
     assert hue.camera_fps == CAMERA_FPS
-    assert hue.camera_fov_assumed is None
+    hue._first_frame_size, hue.camera_working = (1280, 720), True
+    assert hue.camera_fov_assumed is None and hue.camera_fov_deg is None
     duck = JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=url)
     assert duck.frames_upright is True
+    duck._first_frame_size, duck.camera_working = (1280, 720), True
+    assert duck.camera_fov_assumed == up.BETA_UPRIGHT_FOV.name
 
 
 def test_a_body_with_no_map_reports_none_to_doctor() -> None:

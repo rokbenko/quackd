@@ -241,7 +241,8 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
 def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
     """LeRobot 0.7.0 replaced the library that talks to the arm's motors with rustypot, and
     upstream_api.py was read against it, so `quackd[lerobot]` and `quackd[lerobot-vla]` ask for
-    that minor and stop below the next, which may move the bus again. Both reach LeRobot through
+    that release and stop below its next patch, which may move the bus again, and the arm's extra
+    holds rustypot below its next minor. Both reach LeRobot through
     quackd-lerobot's own extras, which is where the window is. Whoever reads a newer one changes
     `PYPI_VERSION_READ`, and this sends them to the windows and the ignore in dependabot.yml.
 
@@ -252,7 +253,9 @@ def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
     extras = member["project"]["optional-dependencies"]
     for name in ("sdk", "vla"):
         (asks,) = [r for r in extras[name] if _dist(r) == "lerobot"]
-        assert ">=0.7,<0.8;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
+        assert ">=0.7,<0.7.1;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
+    (bus,) = [r for r in extras["sdk"] if _dist(r) == "rustypot"]
+    assert ">=1.13.1,<1.14;" in bus, f"quackd-lerobot[sdk] asks for {bus}"
     core = _toml(REPO / "pyproject.toml")
     for extra, theirs in (("lerobot", "sdk"), ("lerobot-vla", "vla")):
         (asks,) = core["project"]["optional-dependencies"][extra]
@@ -261,7 +264,9 @@ def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
     ignores = yaml.safe_load((REPO / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     (uv,) = [u for u in ignores["updates"] if u["package-ecosystem"] == "uv"]
     (lerobot,) = [i for i in uv["ignore"] if i["dependency-name"] == "lerobot"]
-    assert lerobot["versions"] == [">=0.8"], lerobot
+    assert lerobot["versions"] == [">=0.7.1"], lerobot
+    (rustypot,) = [i for i in uv["ignore"] if i["dependency-name"] == "rustypot"]
+    assert rustypot["versions"] == [">=1.14"], rustypot
 
 
 def test_ci_serves_the_policies_on_the_lerobot_their_refs_read() -> None:

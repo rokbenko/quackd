@@ -50,7 +50,13 @@ from quackd.log import (
 )
 from quackd.perception.base import Detector, detect_times
 from quackd.space.places import PlaceBook, PlaceStore
-from quackd.transport.base import CameraFrame, DuckState, DuckTransport, spatial_of
+from quackd.transport.base import (
+    CameraFrame,
+    DuckState,
+    DuckTransport,
+    TransportError,
+    spatial_of,
+)
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -1052,11 +1058,24 @@ class Executor:
         composite's, and one that has changed by the time it is admitted is not started."""
         try:
             state = await self.transport.get_state()
-        except Exception:
+        except Exception as e:
             # the one in-verb transport failure that used to send no stop. A link that
             # cannot report state cannot be trusted to be holding a zero twist either.
-            with contextlib.suppress(Exception):
-                await self.logged_transport().stop()
+            unstopped = await self._stop_after()
+            said = str(e)
+            if (
+                unstopped is not None
+                and isinstance(e, TransportError)
+                and len(e.args) == 1
+                # once: an error a link raises again for every read would gain a clause each time
+                and "the stop sent after it failed" not in said
+            ):
+                # and a stop that did not land is said beside the read, which is all a pilot or
+                # a chat is told: the arm reads before it writes its hold, so over one gone
+                # silent the stop held nothing. The error itself is kept, its class and code. A
+                # wedged bus answers the read and the stop with one sentence, said once
+                why = " the same way" if unstopped in said else f": {unstopped}"
+                e.args = (f"{said}; the stop sent after it failed{why}",)
             raise
         # Read again after the last await before the verb is tracked as moving. A pause
         # granted while this verb waited on that state read, or on a person's confirm before
@@ -1149,7 +1168,11 @@ class Executor:
             stopped = (
                 "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
             )
-            result = VerbResult.fail(f"{name} raised {type(e).__name__}: {e}; {stopped}")
+            said = f"{name} raised {type(e).__name__}: {e}"
+            # a nested verb's failed read has said already that its stop did not land, and a
+            # verb and its stop that raised alike are still two failures, each said
+            once = unstopped is not None and "the stop sent after it failed" in said
+            result = VerbResult.fail(said if once else f"{said}; {stopped}")
         finally:
             # Charged however the call ends. A call cancelled from outside, an MCP client that
             # went, or one aborted mid-segment leaves with no result, and its segment ran all

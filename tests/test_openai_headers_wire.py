@@ -245,7 +245,7 @@ def _built(monkeypatch: pytest.MonkeyPatch, preset: str, **kwargs: Any) -> Any:
     if preset == "local":
         kwargs.setdefault("base_url", LOCAL_URL)
     if preset in LOCAL_NAMES:
-        kwargs.setdefault("model", "served-model")
+        kwargs.setdefault("llm_id", "served-model")
     return make_provider(preset, **kwargs)
 
 

@@ -715,8 +715,8 @@ def _adapters_table(rows: Sequence[Mapping[str, Any]], g: Glyphs, title: str | N
     out.add_column("tier", overflow="fold")
     out.add_column("extra")
     for row in rows:
-        extra = Text(str(row["extra"]))
-        if row["extra"] != "built-in":
+        extra = Text(str(row["extra"] or "built-in"))
+        if row["extra"]:
             extra.append(*_install_state(row))
         out.add_row(
             Text(str(row["name"])),

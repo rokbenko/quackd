@@ -1,6 +1,8 @@
 # Universal Robots UR5e: a six-joint cobot. quackd describes it from UR's datasheet and drives
 # no part of it (ADR-0077). A later binding would reach it through UR's own ROS 2 driver or
-# ur_rtde. UR now lists the UR7e as its upgraded version; this body documents the installed base.
+# ur_rtde. UR's FAQ says the UR5e was renamed the UR7e, now the UR7e-920 on CB7, the arm
+# mechanically unchanged, and a launch page of UR's calls the UR7e its upgraded version; this
+# body documents the installed base by the UR5e's own datasheet.
 vendor: universal-robots
 model: ur5e
 embodiment: arm
@@ -36,4 +38,8 @@ datasheet:
     - "safety rated PL d, category 3, with 17 configurable safety functions, by the datasheet"
     - "its emergency stop is category 1 and removes drive power at standstill; a protective stop keeps drive power (UR's manual)"
     - "joints turn 360 degrees each way at up to 180 degrees per second and the tool moves at up to 4 m/s by the datasheet"
-    - "100 to 240 VAC, IP54, any mounting, by the datasheet; UR lists the UR7e as its upgraded version"
+    - "100 to 240 VAC and any mounting by the datasheet, which rates the arm IP54 and its control box IP44"
+    - "UR's October 2026 edition of this datasheet gives 20.7 kg with the cable and 23 configurable safety functions, where the December 2024 edition read here gives 20.6 kg and 17; both give 5 kg and 850 mm (universal-robots.com/manuals/latest/en/datasheets/ur5e, read 2026-11-09)"
+    - "UR's FAQ says \"the UR5e and UR10e were renamed UR7e and UR12e to reflect the payloads they actually carry, 7.5 kg and 12.5 kg\" (universal-robots.com/insights/faq, read 2026-11-09); both UR5e datasheet editions read rate it 5 kg, the figure here"
+    - "UR's FAQ also says the UR7e is now the \"UR7e-920 (previously UR7e)\" on the CB7 control box, that \"the robots themselves are mechanically unchanged\", and that the reach in the new names comes \"from a revised measurement method\" (universal-robots.com/insights/faq, read 2026-11-09)"
+    - "a launch page of UR's calls the UR7e and UR12e \"upgraded versions of the UR5e and UR10e\" (universal-robots.com/landing-pages/seao/my/ur7e-ur12e-for-malaysia, read 2026-11-09)"

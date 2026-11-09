@@ -35,5 +35,5 @@ datasheet:
   notes:
     - "rated for 5 to 45 degrees C, 100 to 240 VAC, by the datasheet"
     - "joints move at 150 to 301 degrees per second and the tool at up to 2 m/s by the datasheet; quackd clamps nothing here because it drives nothing"
-    - "the control interface stops the arm after 20 dropped packets at 1 kHz (Franka's documentation); whether brakes or power drops at that stop is not on the pages read"
-    - "the gripper counted here is the Franka Hand, a two-finger gripper; its grasp force was not read"
+    - "the control interface stops the arm after 20 packets dropped in a row at 1 kHz (Franka's documentation); whether brakes or power drops at that stop is not on the pages read"
+    - "the gripper counted here is the Franka Hand, a two-finger gripper the datasheet lists as an add-on; its grasp force was not read"

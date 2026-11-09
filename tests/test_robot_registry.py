@@ -1080,3 +1080,41 @@ async def test_a_probe_on_an_arm_already_at_its_pose_says_nothing_about_torque(
     assert "rest" not in arm.sequence
     assert result.detail == "ok"
     assert arm.torque is False, "an arm at its rest pose may be let go of"
+
+
+@pytest.mark.parametrize(
+    ("which", "said"),
+    [
+        ("one motor", "torque off in part: some joints may still hold"),
+        ("every motor", "torque unknown: the close's release did not finish"),
+    ],
+)
+async def test_a_probe_whose_close_could_not_finish_its_release_says_it_was_letting_go(
+    monkeypatch: pytest.MonkeyPatch, which: str, said: str
+) -> None:
+    """A probe lets go of an arm at its rest pose through the close's disconnect, and a torque-off
+    there that raised ends the close on a line that says the joints LeRobot named may still hold,
+    or, where it named every motor, that which ones hold is not known. The row shortened both to
+    `torque left on: not at its rest pose`, the line for an arm held up away from its pose, the
+    other way round from what the close was doing. It says the close was letting go now. The
+    motors stop answering torque writes once the connect is done, as a supply that browns out
+    under the release would leave them."""
+    from quackd_lerobot.mock import REST, LeRobotMock
+    from quackd_lerobot.verbs import JOINTS
+
+    seen: dict[str, Any] = {}
+    arm = LeRobotMock(rest_pose=dict(REST))
+    connect = arm.connect
+
+    async def connected_then_unanswered() -> None:
+        await connect()
+        arm.follower.unanswered = {"gripper"} if which == "one motor" else set(JOINTS)
+
+    monkeypatch.setattr(arm, "connect", connected_then_unanswered)
+    _hand_back(monkeypatch, arm, seen)
+
+    result = await probe_entry(_entry("arm", "lerobot:real", rest_pose=dict(REST)))
+
+    assert result.reachable is True, result.detail
+    assert result.detail == f"ok, {said}", result.detail
+    assert arm.sequence == ["close"], "the probe drove the arm"

@@ -5,7 +5,9 @@ It runs in the policy server's process and in no other. A checkpoint's processor
 it imports torch, LeRobot and huggingface_hub only inside `load` and the runner that builds: the
 server imports it with none of them installed, and serves a scripted policy that way.
 
-**Loading a checkpoint reads before it builds, and refuses rather than guesses** (`load`):
+**Loading a checkpoint reads before it builds, and refuses rather than guesses** (`load`). On a
+machine where transformers would run kernels from the Hub, with the `kernels` package installed
+at a version it takes, nothing is fetched at all (`kernels_would_load`). Elsewhere:
 
 1. `config.json` and both processor JSONs are fetched at the revision named, and nothing else
    of the repository yet (`upstream_api.CHECKPOINT_FILES`).
@@ -29,11 +31,13 @@ server imports it with none of them installed, and serves a scripted policy that
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
    pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
    either (`nested_patterns`), and refused if their directory holds any all the same, maps a
-   class to code or holds a PEFT adapter (`check_pinned`). The policy is built on the device
-   `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the file
-   holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never fetched
-   (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put where the
-   policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
+   class to code, names a repository or a flash attention as its attention, names experts,
+   carries a quantization or holds a PEFT adapter (`check_pinned`). A GR00T's base is fetched at
+   the commit its `config.json` was read at, whatever its tag names by then (`check_groot_base`).
+   The policy is built on the device `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`),
+   with every weight the file holds loaded into it or none (`build_policy`). An ACT's ImageNet
+   backbone is never fetched (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device
+   steps are put where the policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
 
 Every repository fetched is recorded with its revision (`Checkpoint.loaded`), and the server
 says them in `/v1/policy`.
@@ -57,6 +61,7 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import functools
+import importlib.metadata
 import importlib.util
 import json
 import math
@@ -153,6 +158,42 @@ nothing loads."""
 CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+ATTENTION_KEY = "attn_implementation"
+"""What the name of a key of a transformers config holds when the key names the attention a model
+is built with, by a name or by a mapping of its sub-configs' names to names: `attn_implementation`
+and `_attn_implementation`, which reading a config sets through one property, and the
+`_attn_implementation_internal` behind it, which transformers drops from a config of its own and
+GR00T's base config takes as it comes, since LeRobot's `GR00TN17Config` sets every key it is given.
+Two kinds of name reach a kernel on the Hub, whose code transformers 5 fetches and runs through
+the `kernels` package as it builds the model, at a revision no `--pin` fixes, once that package is
+installed at a version transformers takes and trusts the kernel's publisher, or finds the kernel
+in its cache offline (`KERNELS_MODULE`). One is a repository, with a `/` in it. The other is a
+flash attention, any name with `flash` in it, which transformers swaps for one of its own
+kernels-community repositories whenever flash_attn cannot run here (transformers'
+`FLASH_ATTN_KERNEL_FALLBACK`). SmolVLA's build of its backbone passes no attention of its own, so
+the pinned backbone's config says which (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). A pinned
+GR00T base's config says only which one transformers checks as it builds GR00T's own module:
+LeRobot builds the backbone from a config it carries, with the attention the checkpoint's own
+`use_flash_attention` asks for (`upstream_api.GROOT_BASE_MODEL`)."""
+EXPERTS_KEY = "experts_implementation"
+"""What the name of a key holds when the key names the code a mixture of experts runs, some of it
+kernels transformers 5 fetches from the Hub through the `kernels` package (`deepgemm`,
+`sonicmoe`). No model quackd serves has experts, and transformers 5 saves no such key in a config
+of its own, so any name under one is refused."""
+QUANTIZATION_KEY = "quantization_config"
+"""The key of a transformers config that has its weights loaded through a quantizer, and some of
+transformers 5's quantizers load their own kernels from the Hub through the `kernels` package,
+eetq's, mxfp4's and fine-grained fp8's among them, at a revision no `--pin` fixes. GR00T's base
+is always loaded through `from_pretrained`, which applies it, and so is SmolVLA's backbone when
+its weights are loaded, so a pinned model whose JSON carries the key anywhere, whatever its
+value, is refused."""
+KERNELS_MODULE = "kernels"
+"""The package, and the distribution that installs it, through which transformers 5 fetches
+kernels from the Hub and runs them: for an attention a config names by a repository, for a flash
+attention when flash_attn cannot run here, and for the quantizers and experts that load theirs,
+each at a revision no `--pin` fixes. Without it each of those fails as the model is built.
+Nothing quackd serves needs it and the server's extra does not bring it, so a server where
+transformers would use it loads no checkpoint at all (`kernels_would_load`, `fetch_checkpoint`)."""
 ADAPTER_CONFIG = "adapter_config.json"
 """The file that makes a directory a PEFT adapter. With peft installed, which the server's
 extra does not bring and LeRobot's own `[peft]` and `[groot]` do, transformers building a model
@@ -513,6 +554,32 @@ def importable_module(name: str) -> bool:
         return False
 
 
+def kernels_would_load() -> bool:
+    """Whether transformers would fetch and run kernels from the Hub here, decided as its own
+    `is_kernels_available` decides: the `kernels` distribution is installed, its package would
+    import, and its version is inside the bounds transformers takes. The bounds are read from
+    transformers where it imports, and every version counts where it does not. A folder of that
+    name on the path with no distribution behind it is not the package, to transformers or here,
+    and nothing of it is imported to find out. So an install with no distribution metadata,
+    which transformers would import to read a version from, counts as absent here too
+    (`KERNELS_MODULE`)."""
+    try:
+        installed = importlib.metadata.version(KERNELS_MODULE)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    if not importable_module(KERNELS_MODULE):
+        return False
+    try:
+        from packaging.version import InvalidVersion, Version
+        from transformers.utils.import_utils import KERNELS_MAX_VERSION, KERNELS_MIN_VERSION
+    except ImportError:
+        return True
+    try:
+        return Version(KERNELS_MIN_VERSION) <= Version(installed) < Version(KERNELS_MAX_VERSION)
+    except InvalidVersion:
+        return True
+
+
 def check_family(
     config: Mapping[str, Any],
     steps: Sequence[Mapping[str, Any]],
@@ -580,17 +647,28 @@ def _check_groot(
     config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
 ) -> Family:
     """A GR00T N1.7, read as its processors decode it (`upstream_api.GROOT_DECODE`): no N1.5,
-    no LIBERO gripper, a pack step that looks for the cameras its config names, and a decode
-    that answers every action group as joints, unnormalised by statistics it has. A checkpoint
-    that decodes by grouped statistics keeps its frame in its pack step's `raw_stats`, where the
-    normaliser's reading would never find it, so those percentiles are what comes back
-    (`upstream_api.GROOT_PERCENTILE_STATS`)."""
+    no flash attention, no LIBERO gripper, a pack step that looks for the cameras its config
+    names, and a decode that answers every action group as joints, unnormalised by statistics it
+    has. A checkpoint that decodes by grouped statistics keeps its frame in its pack step's
+    `raw_stats`, where the normaliser's reading would never find it, so those percentiles are
+    what comes back (`upstream_api.GROOT_PERCENTILE_STATS`). One whose `use_flash_attention` is
+    true has LeRobot build its backbone with `flash_attention_2` whenever flash_attn imports
+    (`upstream_api.GROOT_BASE_MODEL`), a flash attention as `ATTENTION_KEY` says."""
     base = config.get("base_model_path")
     n1_5 = isinstance(base, str) and any(mark in base.lower() for mark in up.GROOT_N1_5_BASES)
     if n1_5 or config.get("tokenizer_assets_repo") is not None:
         raise PipelineRefused(
             f"{spec} is a GR00T N1.5 checkpoint, and LeRobot {up.VERSION} serves GR00T N1.7 alone: "
             "serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+        )
+    if config.get("use_flash_attention"):
+        raise PipelineRefused(
+            f"{spec} asks for flash attention (use_flash_attention), and LeRobot builds GR00T's "
+            "backbone with flash_attention_2 whenever flash_attn imports, which transformers swaps "
+            "for a kernel it fetches from the Hub and runs when flash_attn cannot run here, once "
+            "the kernels package is installed, at a revision no pin fixes: serve a copy of the "
+            f"checkpoint whose {up.CONFIG_FILE} says use_flash_attention false "
+            "(upstream_api.GROOT_BASE_MODEL)"
         )
     transform = config.get("action_decode_transform", up.GROOT_AUTO_TRANSFORM)
     named = transform.lower() if isinstance(transform, str) else transform
@@ -713,11 +791,15 @@ def _grouped_quantiles(
 
 def check_groot_base(
     hub: Hub, config: Mapping[str, Any], pins: Mapping[str, str], spec: str
-) -> None:
+) -> str:
     """A GR00T's pinned base, its `config.json` read before any weight: LeRobot builds the
     backbone from a config of its own only while the base names that backbone, and fetches any
     other as an AutoConfig trusting its repository's code, at no revision
-    (`upstream_api.GROOT_BASE_MODEL`)."""
+    (`upstream_api.GROOT_BASE_MODEL`). It answers the commit the file was read at, and the rest
+    of the base is fetched at that commit: a tag asked again could name another by then, one
+    whose `config.json` nobody read. The Hub's cache keeps a commit's files in a directory named
+    by the commit, so a tag's commit is the directory its `config.json` landed in, and a tag
+    whose file landed in no commit's directory is refused."""
     base = str(config.get("base_model_path"))
     revision = pins[base]
     path = hub.file(base, revision, up.CONFIG_FILE)
@@ -735,6 +817,14 @@ def check_groot_base(
             f"serve a GR00T whose base is built on {up.GROOT_BACKBONE}, whose config LeRobot "
             "carries (upstream_api.GROOT_BASE_MODEL)"
         )
+    commit = revision if COMMIT.match(revision) else path.parent.name
+    if not COMMIT.match(commit):
+        raise PipelineRefused(
+            f"{base}@{revision}'s {up.CONFIG_FILE} landed in no commit's directory, so quackd "
+            "cannot fetch the rest of the base at the commit it read, and the tag could name "
+            f"another by then: pin {base} at a whole commit you have read"
+        )
+    return commit
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────
@@ -873,7 +963,7 @@ def check_fixed(
 def _json(path: Path, what: str) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as e:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as e:
         raise PipelineRefused(f"{what} is not JSON quackd can read: {_one_line(e)}") from None
 
 
@@ -885,36 +975,118 @@ def check_pinned(directory: Path, spec: str) -> None:
     included. So every file in it is one `NESTED_FILES` or `NESTED_DOCS` names, and no JSON in
     it maps a class to code (`CODE_MAP_KEY`), which is what would have transformers ask to run
     a repository's own code: SmolVLA's build asks for its backbone without saying
-    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). Nor does it
-    hold a PEFT adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's
-    are, and which the build would load onto the model, or swap the model for a base no pin
-    names."""
+    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). No JSON in it
+    names a repository or a flash attention as its attention either (`ATTENTION_KEY`), names
+    any experts (`EXPERTS_KEY`) or carries a quantization (`QUANTIZATION_KEY`), at any depth,
+    each a way to a kernel on the Hub that transformers would run. Nor does it hold a PEFT
+    adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's are, and which
+    the build would load onto the model, or swap the model for a base no pin names. A name is
+    read with its case folded, on every system: NTFS finds `config.json` under any case, and
+    transformers with it, so a `config.JSON` is a config, and one that went unread on Windows,
+    where matching a pattern folds case and reading a suffix would not, has code to hide."""
     fresh = (
         "point HF_HUB_CACHE at a cache that has not fetched this revision before, or delete "
         f"{directory} and serve again"
     )
     for path in sorted(p for p in directory.rglob("*") if p.is_file()):
         name = path.relative_to(directory).as_posix()
-        if not any(fnmatch.fnmatch(name, p) for p in NESTED_FILES + NESTED_DOCS):
+        folded = name.lower()
+        if not any(fnmatch.fnmatchcase(folded, p) for p in NESTED_FILES + NESTED_DOCS):
             raise PipelineRefused(
                 f"{spec} in this machine's Hub cache holds {name[:80]!r}, which is not a "
                 "config, a tokenizer file or safetensors, and could be code or a pickle a "
                 f"load would run: {fresh}"
             )
-        if name == ADAPTER_CONFIG:
+        if folded == ADAPTER_CONFIG:
             raise PipelineRefused(
-                f"{spec} holds a PEFT adapter ({name}), which transformers loads onto a model it "
-                "builds from that directory, or, with no config.json beside it, loads the base "
-                "model the adapter names in its place, which no pin fixes: pin a model with the "
-                "adapter merged into its weights"
+                f"{spec} holds a PEFT adapter ({name[:80]!r}), which transformers loads onto a "
+                "model it builds from that directory, or, with no config.json beside it, loads "
+                "the base model the adapter names in its place, which no pin fixes: pin a model "
+                "with the adapter merged into its weights"
             )
-        said = _json(path, f"{spec}'s {name}") if name.endswith(".json") else None
+        said = _json(path, f"{spec}'s {name[:80]!r}") if folded.endswith(".json") else None
         if isinstance(said, Mapping) and CODE_MAP_KEY in said:
             raise PipelineRefused(
-                f"{spec}'s {name} maps its classes to code ({CODE_MAP_KEY}), which loading it "
-                "would ask to run: quackd loads a model transformers has the code for, and "
+                f"{spec}'s {name[:80]!r} maps its classes to code ({CODE_MAP_KEY}), which loading "
+                "it would ask to run: quackd loads a model transformers has the code for, and "
                 "nothing a repository brings with it"
             )
+        kernel = _kernel_name(said)
+        if kernel is not None:
+            key, named = kernel
+            said_as = f"{key[:80]!r}"
+            if EXPERTS_KEY in key.lower():
+                what = (
+                    f"as its experts ({said_as}), and transformers runs some experts with kernels "
+                    "it fetches from the Hub"
+                )
+            elif "/" in named:
+                what = (
+                    f"as its attention ({said_as}), a repository of kernels on the Hub, whose code "
+                    "transformers would fetch and run as it builds the model"
+                )
+            else:
+                what = (
+                    f"as its attention ({said_as}), a flash attention, which transformers swaps "
+                    "for a kernel it fetches from the Hub and runs when flash_attn cannot run here"
+                )
+            raise PipelineRefused(
+                f"{spec}'s {name[:80]!r} names {named[:80]!r} {what}, once the kernels package is "
+                "installed, at a revision no pin fixes: pin a revision whose config names sdpa or "
+                "eager as its attention, or none, and no experts"
+            )
+        if _carries(said, QUANTIZATION_KEY):
+            raise PipelineRefused(
+                f"{spec}'s {name[:80]!r} carries a {QUANTIZATION_KEY}, and transformers loads the "
+                "weights through a quantizer it builds from that, some of which fetch kernels from "
+                "the Hub and run them once the kernels package is installed, at a revision no pin "
+                "fixes: pin a revision saved without quantization"
+            )
+
+
+def _kernel_name(said: Any) -> tuple[str, str] | None:
+    """A name a JSON document gives, at any depth and in any mapping or list beneath its key,
+    that reaches a kernel on the Hub, as (key, name), or None: under a key whose name holds
+    `ATTENTION_KEY`, one with a `/` in it, a repository, or with `flash` in it, a flash
+    attention, and under one whose name holds `EXPERTS_KEY`, any name at all. Which one of
+    several it answers is the walk's choice, and the walk keeps a list of its own rather than
+    recursing."""
+    pending: list[tuple[Any, str | None]] = [(said, None)]
+    while pending:
+        node, key = pending.pop()
+        if isinstance(node, str):
+            if key is not None and (
+                EXPERTS_KEY in key.lower() or "/" in node or "flash" in node.lower()
+            ):
+                return key, node
+        elif isinstance(node, Mapping):
+            pending += [
+                (value, key if key is not None else _kernel_key(k)) for k, value in node.items()
+            ]
+        elif isinstance(node, list):
+            pending += [(value, key) for value in node]
+    return None
+
+
+def _kernel_key(key: Any) -> str | None:
+    """`key` when its name holds `ATTENTION_KEY` or `EXPERTS_KEY`, or None."""
+    text = str(key)
+    return text if ATTENTION_KEY in text.lower() or EXPERTS_KEY in text.lower() else None
+
+
+def _carries(said: Any, wanted: str) -> bool:
+    """Whether a JSON document has the key `wanted` in any mapping, at any depth, whatever its
+    value, walked as `_kernel_name` walks one."""
+    pending = [said]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, Mapping):
+            if wanted in node:
+                return True
+            pending += list(node.values())
+        elif isinstance(node, list):
+            pending += node
+    return False
 
 
 def _required(hub: Hub, repo: str, revision: str, filename: str, *, beside: Path | None) -> Path:
@@ -934,15 +1106,16 @@ def _required(hub: Hub, repo: str, revision: str, filename: str, *, beside: Path
 
 
 def resolve_rate(
-    fps: float | None, repo: str, revision: str, hub: Hub
+    fps: float | None, repo: str, revision: str, hub: Hub, *, beside: Path
 ) -> tuple[float, str, list[str]]:
     """The rate a checkpoint is served at, where it came from, and what was fetched to learn it.
 
     `--fps` when it is given. Otherwise the fps of the dataset `train_config.json` names, read
     from its `meta/info.json` at the revision the training run named (`upstream_api.
-    TRAIN_DATASET`), since no config carries a rate (`upstream_api.CONFIG_HAS_NO_RATE`). A
-    dataset named at no revision, or at a branch, is refused rather than read at whatever it is
-    today (`check_fixed`)."""
+    TRAIN_DATASET`), since no config carries a rate (`upstream_api.CONFIG_HAS_NO_RATE`). The
+    file is the checkpoint's own only when it landed `beside` the rest of it: a tag that moved
+    would answer with another commit's training run. A dataset named at no revision, or at a
+    branch, is refused rather than read at whatever it is today (`check_fixed`)."""
     if fps is not None:
         return float(fps), "--fps", []
     spec = f"{repo}@{revision}"
@@ -952,6 +1125,11 @@ def resolve_rate(
         raise PipelineRefused(
             f"{spec} has no {up.TRAIN_CONFIG_FILE} to say what data it learned from, and no "
             f"checkpoint carries a rate: {give}"
+        )
+    if path.parent != beside:
+        raise PipelineRefused(
+            f"{up.TRAIN_CONFIG_FILE} of {spec} did not land beside its {up.CONFIG_FILE}, so the "
+            f"run it describes could be another commit's: {give}"
         )
     train = _json(path, f"{spec}'s {up.TRAIN_CONFIG_FILE}")
     dataset = train.get("dataset") if isinstance(train, Mapping) else None
@@ -1055,10 +1233,20 @@ def fetch_checkpoint(
 ) -> Checkpoint:
     """`spec` fetched and checked as the module's docstring says, in that order, or a refusal.
     Nothing is built here, and nothing that could run code is fetched before the JSON that
-    says what the checkpoint is has been checked. `importable` says whether a package a type
+    says what the checkpoint is has been checked, nor anything at all where transformers would
+    run kernels from the Hub (`kernels_would_load`). `importable` says whether a package a type
     answers with would import here (`check_family`)."""
     repo, revision = parse_repo(spec, "--policy")
     spec = f"{repo}@{revision}"
+    if kernels_would_load():
+        raise PipelineRefused(
+            "the kernels package is installed here at a version transformers takes, and "
+            "transformers fetches kernels from the Hub through it and runs them as it builds a "
+            "model, at a revision no pin fixes, for an attention or experts a config names, a "
+            f"flash attention flash_attn cannot run or a quantization, so {spec} is not loaded: "
+            "uninstall it, uv pip uninstall kernels, since nothing quackd serves needs it, and "
+            "serve again"
+        )
     pinned = parse_pins(pins)
     config_path = _required(hub, repo, revision, up.CONFIG_FILE, beside=None)
     directory = config_path.parent
@@ -1081,16 +1269,17 @@ def fetch_checkpoint(
             "--pin names",
             "pin a whole commit you have read, or a tag with the Hub in reach",
         )
+    at = dict(pinned)  # the revision each pinned model is fetched at
     if shape.policy_type == "groot":
-        check_groot_base(hub, config, pinned, spec)
-    rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub)
+        at[str(config.get("base_model_path"))] = check_groot_base(hub, config, pinned, spec)
+    rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub, beside=directory)
     # the code-free part is checked: now the weights, the processors' state and the models
     _required(hub, repo, revision, up.WEIGHTS_FILE, beside=directory)
     for step in every:
         if step["state_file"] is not None:
             _required(hub, repo, revision, step["state_file"], beside=directory)
     patterns = nested_patterns(config, every)
-    fetched = {m: hub.snapshot(m, pinned[m], patterns[m]) for m in nested}
+    fetched = {m: hub.snapshot(m, at[m], patterns[m]) for m in nested}
     for m, where in fetched.items():
         check_pinned(where, f"{m}@{pinned[m]}")
     config_overrides: dict[str, Any] = {"device": device}

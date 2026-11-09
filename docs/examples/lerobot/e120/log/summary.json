@@ -1,0 +1,112 @@
+{
+  "duck": "e120-out-of-steps",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e120/out-of-steps.duck",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "3",
+    "--no-memory"
+  ],
+  "version": "0.31.3",
+  "outcome": "failure",
+  "reason": "I checked the joint state, but cannot complete five waves within the three-step budget. Only two steps remain, and each move_joints call makes a single move to one pose, not repeated back-and-forth waves. This is an action-budget limitation, not a physical inability to wave; no waves were performed.",
+  "steps": 1,
+  "llm_calls": 2,
+  "elapsed_s": 12.1,
+  "started_at": "2026-11-06T17:07:22.925Z",
+  "ended_at": "2026-11-06T17:07:41.878Z",
+  "wall_s": 18.953,
+  "connect_s": 6.671,
+  "llm_latency_s": 11.492,
+  "llm_latency_p50_s": 5.628,
+  "llm_latency_p90_s": 5.864,
+  "llm_latency_max_s": 5.864,
+  "first_motion_s": null,
+  "first_motion_llm_calls": null,
+  "usage": {
+    "input_tokens": 7411,
+    "output_tokens": 156,
+    "reasoning_tokens": 59,
+    "cache_read_tokens": 3297,
+    "cache_write_tokens": 3862
+  },
+  "price": {
+    "input": 10.0,
+    "output": 50.0,
+    "cache_read": 1.0,
+    "cache_write": 12.5,
+    "unit": "USD per million tokens",
+    "source": "catalogue",
+    "checked": "2026-09-23"
+  },
+  "cost_usd": 0.061893,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2182842.5352144,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -5.2,
+        "shoulder_lift": -100.8,
+        "elbow_flex": 96.4,
+        "wrist_flex": 79.2,
+        "wrist_roll": 0.7,
+        "gripper": 2.5
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 26,
+        "shoulder_lift": 26,
+        "elbow_flex": 28,
+        "wrist_flex": 27,
+        "wrist_roll": 26,
+        "gripper": 27
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 32,
+          "p50_ms": 3.9,
+          "p99_ms": 58.9,
+          "max_ms": 58.9
+        }
+      },
+      "camera": {
+        "configured": true,
+        "url": "opencv://1?name=arm",
+        "ok": true,
+        "age_s": 5.97,
+        "size": "640x480",
+        "error": null
+      }
+    }
+  },
+  "log_dropped": 0
+}

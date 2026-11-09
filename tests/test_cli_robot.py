@@ -80,6 +80,23 @@ def test_an_empty_registry_says_how_to_fill_it(tmp_path: Path) -> None:
     assert "quackd robot add" in result.output
 
 
+def test_the_list_says_each_robot_s_type_when_one_was_registered_with_one(tmp_path: Path) -> None:
+    """An SO-100 and an SO-101 are both `lerobot:real`, so a list of the spec alone read them
+    alike. A registry where nobody gave a type keeps the table it had, with no empty column."""
+    registry = Registry(tmp_path)
+    registry.add_robot(RobotEntry(name="bench", spec="lerobot:real", address="COM5"))
+    untyped = runner.invoke(app, ["--no-color", "robot", "list", *_reg(tmp_path)])
+    assert untyped.exit_code == 0, untyped.output
+    assert " type " not in untyped.output, untyped.output
+    registry.add_robot(
+        RobotEntry(name="small", spec="lerobot:real", address="COM6", robot_type="so100_follower")
+    )
+    typed = runner.invoke(app, ["--no-color", "robot", "list", *_reg(tmp_path)])
+    assert typed.exit_code == 0, typed.output
+    (row,) = [line for line in typed.output.splitlines() if " small " in line]
+    assert "so100_follower" in row, typed.output
+
+
 # ── refusals are one line ───────────────────────────────────────────────────────────────
 
 

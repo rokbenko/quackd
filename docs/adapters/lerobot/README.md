@@ -82,7 +82,7 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [VERIFIED (read from source at the v0.7.0 tag)](#verified-read-from-source-at-the-v070-tag)
   * [UNVERIFIED (our assumptions about policies, and what quackd does about each)](#unverified-our-assumptions-about-policies-and-what-quackd-does-about-each)
 - [The endpoint's upstream: Hugging Face Inference Endpoints](#the-endpoints-upstream-hugging-face-inference-endpoints)
-  * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-1330)
+  * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-240-and-1330)
   * [UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)](#unverified-our-assumptions-about-hugging-face-and-what-quackd-does-about-each)
 - [Status](#status)
   * [What one afternoon proved, and what it did not](#what-one-afternoon-proved-and-what-it-did-not)
@@ -665,8 +665,8 @@ so `lerobot:mock` works and `doctor` keeps saying `not installed` however many t
 install it: check `python --version` first.
 
 > [!NOTE]
-> The extra asks for LeRobot 0.7, from 0.7.0 and below 0.8, and `quackd[lerobot-vla]` asks for
-> the same. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
+> The extra asks for LeRobot 0.7.0, below 0.7.1, with rustypot below 1.14, and
+> `quackd[lerobot-vla]` asks for the same LeRobot. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
 > `rustypot`, under one bus for every Feetech and Dynamixel servo, and quackd was read again
 > against it, but no arm has run quackd on it yet: 0.6.1 is the release that has. rustypot
 > opens the port for one program at a time on every system, so a second program on the arm's
@@ -1523,7 +1523,14 @@ Loading one reads before it builds, and refuses rather than guesses:
   fresh cache. So is one that holds a PEFT adapter (`adapter_config.json`): with peft installed,
   which the server's extra does not install but LeRobot's own `[peft]` and `[groot]` do,
   transformers would load the adapter onto the model, or, with no
-  `config.json` beside it, load the base model the adapter names, which no pin fixes.
+  `config.json` beside it, load the base model the adapter names, which no pin fixes. So is one
+  whose configs name a repository or a flash attention as their attention, under any key whose
+  name holds `attn_implementation`, name experts or carry a `quantization_config`. Each is a way
+  to a kernel on the Hub, code transformers would fetch and run while it builds from that config
+  once the `kernels` package is installed, a flash attention whenever flash_attn cannot run, and
+  some experts and quantizers always. The server's extra does not install `kernels` and nothing
+  quackd serves needs it, so a server where it is installed at a version transformers takes
+  loads no checkpoint at all, and says to uninstall it.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
   That revision is the checkpoint's choice, so it is taken only when it is a whole commit, or a
@@ -3278,7 +3285,10 @@ A real arm that stopped answering before the probe let go of it ends that cell o
 `torque unknown: the arm did not answer the close` instead: quackd cannot tell whether it is
 holding itself up, so it kept whatever torque there is. Hold it, and cut its power. One whose
 own last read found torque off on some of its joints, servos that browned out and came back
-limp, ends it on `torque reads OFF: the arm may have dropped`.
+limp, ends it on `torque reads OFF: the arm may have dropped`. And one at its rest pose whose
+release at the close raised ends it on `torque unknown: the close's release did not finish`, or
+on `torque off in part: some joints may still hold` where LeRobot named the joints it could not
+confirm.
 
 ### Only this arm parks
 
@@ -3339,7 +3349,8 @@ And once it is running:
 | `NAME (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped` | a run, a dry run, an MCP session and a flock refuse a real arm with no rest pose before anything connects, and a spec such as `--robot lerobot:real` the same way, saying it `names no registered arm`, since a pose lives only under a name | fold the arm by hand and record one: `quackd robot rest-pose NAME`. For a spec, register the arm first: `quackd robot add NAME lerobot:real --address PORT`. A spec in `--robots` or a task file's `robots:` runs from a stored flock once registered, since neither reads the registry: `quackd flock create FLOCK --robot NAME`, one `--robot` for each member, then `--flock FLOCK` |
 | `NAME has no rest pose recorded, so torque was left on rather than let go of where the arm stands, where it would fall` | a probe, `doctor` or `robot list --probe`, read a real arm with no rest pose and kept it powered where it stands, which 0.23 and before let go of there | hold it and cut its power, or press Enter at doctor's question holding the arm, or run `quackd robot release <name>` and press Enter when it asks. Then fold it by hand and record the pose: `quackd robot rest-pose <name>` |
 | `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so quackd kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `quackd robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
-| `the close was letting go of the arm and its disconnect did not finish, so some motors may have torque and some not: hold it, and cut its power to be sure` | the disconnect that takes torque off at a close raised, or had not come back in 15 s. The exit does not wait for it after that, so what the motors are doing is not known | hold it, and cut the servo supply |
+| `the close was letting go of the arm and its disconnect did not finish, so some motors may have torque and some not: hold it, and cut its power to be sure` | the disconnect that takes torque off at a close raised, naming no joint or every one, or had not come back in 15 s. The exit does not wait for it after that, so what the motors are doing is not known | hold it, and cut the servo supply |
+| `the close took torque off, at the rest pose, on every joint but <joint>, whose write LeRobot could not confirm (...), so it may still hold: hold the arm as though nothing holds it, and cut its power to be sure` | the disconnect that takes torque off at a close tried every motor, and LeRobot could not confirm the write to the joint it names, so that joint may still have torque and every other one let go. With several, the line names each of them, `whose writes` and `they may still hold` | hold the arm, and cut the servo supply |
 | `quackd cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |
 | `torque still reads on for <joints>: cut the power` from `quackd robot release` | those motors kept their torque through the release | cut the servo supply while you hold the arm. The motors not named are limp, and the line after it says what the close then did ([Releasing it](#releasing-it)) |
 | a run aborts with `the arm did not reach its rest pose: ...` before any LLM call | the run could not start from the recorded pose | something is in the way, or the pose no longer matches the arm, which is what a new calibration does to a pose recorded before it. Record it again, or move whatever is blocking the fold. A fold past the calibrated travel no longer ends a run here: the arm parks at the edge |
@@ -3633,7 +3644,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `ACTConfig.chunk_size and n_action_steps` | how many actions one inference predicts and how many of them are played, 100 and 100 for ACT and 50 and 50 for SmolVLA. The server reports both |
 | `ACTConfig.temporal_ensemble_coeff` | set, ACT is asked every step with `n_action_steps` 1, which is the loop's tick mode |
 | `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no quackd command loads a checkpoint beside the arm's bus. Only `load_policy()` would (`LOAD_POLICY`), and nothing in quackd calls it |
-| `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it, and it refuses a step that keeps its tokenizer inside the checkpoint instead (the artifacts row below). A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, so a pinned model whose files map a class to code, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused |
+| `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it, and it refuses a step that keeps its tokenizer inside the checkpoint instead (the artifacts row below). A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, or which attention to build it with, so a pinned model whose files map a class to code, name a repository or a flash attention as their attention, name experts or carry a `quantization_config`, each a way to a kernel on the Hub that transformers would run once the `kernels` package is installed, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused. A server with `kernels` installed at a version transformers takes loads no checkpoint at all |
 | `a processor step's artifacts: directories inside the checkpoint that LeRobot loads in place of the config keys they name` | new at 0.7.0: a save writes what a step saved, a tokenizer step's tokenizer every time, into a directory inside the checkpoint, names that directory in the step's config and declares it in the step's `artifacts`, and a load puts the directory in place of whatever the step names. Every SmolVLA, pi05, pi0 and X-VLA that LeRobot 0.7.0 saves names its tokenizer this way. quackd fetches no such directory and checks none, so the server refuses any step that carries `artifacts`, before a pin or a weight, and a checkpoint LeRobot 0.7.0 saved with a tokenizer step is refused until quackd fetches and checks a checkpoint's own artifact directories |
 | `config.json, model.safetensors, policy_preprocessor.json, policy_postprocessor.json, train_config.json` | the files a checkpoint is read from, each fetched at the revision named, the config and the processors before anything else, and nothing else of the repository |
 | `train_config.json's dataset.repo_id and dataset.revision; meta/info.json's fps` | where a checkpoint's rate is read when the server is given no `--fps`, and only at a commit or a tag, since the checkpoint chose that revision and a branch would give a rate that could change between two serves |
@@ -3648,7 +3659,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `tokenizer_processor, xvla_image_to_float, xvla_imagenet_normalize, xvla_add_domain_id, xvla_image_scale` | the steps X-VLA's processors add, each but the tokenizer a fixed transform of the data, the domain step handing the model the domain its data came from, which has to be one of the model's own. With the row above, the only steps an X-VLA may name |
 | `X-VLA's action_mode: ee6d, joint, agibot_ee6d, franka_joint7, auto, so101_bimanual` | what an X-VLA's answer means, set in its config, `ee6d` unless it says otherwise. `auto` is the dataset's own action, an SO-101's joints, and the server serves it alone, refusing every other mode before a pin or a weight |
 | `groot_n1_7_pack_inputs_v1, groot_n1_7_vlm_encode_v1, groot_n1_7_action_decode_v1, groot_action_unpack_unnormalize_v2, relative_actions_processor, absolute_actions_processor` | the steps GR00T N1.7's processors are built from besides the default ones: the pack step, the backbone's encoder, one of two decode steps, and the relative and absolute steps one that learned relative actions without grouped statistics adds. With the row above, the only steps a GR00T may name |
-| `GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise` | the base a GR00T is built from before its own weights replace it, filled with LeRobot's own when a config names none, so that is refused, and pinned otherwise. Its backbone is built from a config LeRobot carries only while the base names `nvidia/Cosmos-Reason2-2B`, so the pinned base's `config.json` is read before any weight and another backbone refused |
+| `GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise` | the base a GR00T is built from before its own weights replace it, filled with LeRobot's own when a config names none, so that is refused, and pinned otherwise. Its backbone is built from a config LeRobot carries only while the base names `nvidia/Cosmos-Reason2-2B`, so the pinned base's `config.json` is read before any weight and another backbone refused. The rest of the base is fetched at the commit that read found, so a tag that moves in between cannot hand the build a `config.json` nobody read. The backbone takes `flash_attention_2` when the checkpoint's own `use_flash_attention` is true and flash_attn imports, which transformers swaps for a kernel from the Hub when flash_attn cannot run and the `kernels` package is installed, so such a checkpoint is refused |
 | `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust. A step that names no `model_name` gets LeRobot's own backbone, `nvidia/Cosmos-Reason2-2B`, loaded at no revision, so the server refuses one, as it refuses a SmolVLA config with no backbone; LeRobot 0.6.1 filled it the same way, and until this release quackd let such a step through with no pin |
 | `groot_n1_7_action_decode_v1 unnormalises each action group and makes a relative one absolute against the state the pack step cached` | the decode of a checkpoint whose statistics come grouped, beside the one for a checkpoint that took its dataset's. An EEF group, LIBERO's gripper and a decode with no statistics are each refused, since the arm would take its actions as joints it never meant |
 | `a relative GR00T's chunk is decoded whole, against the state it was predicted from` | LeRobot refuses to decode one an action at a time, and the server decodes every chunk whole |
@@ -3694,11 +3705,18 @@ run reaches it with `--policy-url hf:NAME`
 on were read on 2026-10-25 from the API's own
 [OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
 from Hugging Face's pages about the service and from uv's and PyPI's documentation for what a
-container installs, and on 2026-11-08 from huggingface_hub 1.33.0, the version `uv.lock` holds
-now that LeRobot 0.7.0 asks for 1.31.0 or newer, at the commit its tag names,
+container installs, on 2026-11-08 from what the Hub answered for a public and a gated repository
+at its `api/models` route, and on 2026-11-09 from huggingface_hub 2.4.0, its newest release and
+the one CI's policy job runs, at the commit its tag names,
+[`3739729`](https://github.com/huggingface/huggingface_hub/tree/3739729b86489e4ae28b5a62e622be320b141493)
+(`v2.4.0`), and from 1.33.0 at
 [`9eeace5`](https://github.com/huggingface/huggingface_hub/tree/9eeace5e467939b8f6af6ff280a134bc7c22802f)
-(`v1.33.0`). Every file of huggingface_hub's these rows cite was compared with the 1.33.0
-wheel's that day and was the same. Every name lives in
+(`v1.33.0`), the version `uv.lock` holds, where diffusers 0.39.0 keeps the hub below 2. Of the
+17 lines the rows cited at 1.33.0, 16 read the same at 2.4.0, most at other line numbers, and
+the other named a fourth endpoint type, `protected`, which 2.4.0 has dropped and refuses. The
+rows cite 19 lines now, that one among them, and quackd's endpoint code imports neither
+release. Every file of huggingface_hub's these rows cite was compared with each release's wheel
+that day and was the same. Every name lives in
 [`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
 
 **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
@@ -3708,7 +3726,9 @@ container on 127.0.0.1 alone, with a scripted policy behind them
 The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
 worst: quackd's own token on the server is the lock, whatever the proxy in front does.
 
-### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)
+<a id="verified-read-on-the-day-from-the-api-hugging-faces-pages-and-huggingface_hub-1290"></a>
+
+### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)
 
 | Name | Why quackd relies on it |
 |---|---|
@@ -3716,7 +3736,7 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 | `POST and GET /v2/endpoint/{namespace}; GET and DELETE /v2/endpoint/{namespace}/{name}; POST /v2/endpoint/{namespace}/{name}/pause, /resume and /scale-to-zero; GET /v2/endpoint/{namespace}/{name}/logs` | create, list, read, delete, pause and resume an endpoint, and the last lines of its log, each with the account's token. The list is filtered by quackd's own tag, `quackd-policy` |
 | `GET /v2/provider/quotas/{namespace}` | an instance type the account has no room left on is refused before anything is created |
 | `lower-case letters, digits and '-', 32 characters at most` | an endpoint's name, the NAME of `hf:NAME`, and any other is refused before Hugging Face is asked anything |
-| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else, and huggingface_hub's `protected` is the deprecated name for it |
+| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else. huggingface_hub 1.33.0 kept `protected` as a deprecated name for it, and 2.4.0 refuses it |
 | `Authenticated: anyone with a Hugging Face account` | the configuration page's words for who reaches an `authenticated` endpoint, so the proxy keeps out only somebody with no account, and the lock on the server is quackd's own token |
 | `"pending", "initializing", "updating", "updateFailed", "running", "paused", "failed", "scaledToZero"` | an endpoint's states. `up` waits through the first two, pauses one that fails, wakes one at zero with a request and resumes one that is paused |
 | `Endpoint: name, type, provider {vendor, region}, compute {accelerator, instanceType, instanceSize, scaling {minReplica, maxReplica, scaleToZeroTimeout}}, model {repository, revision, framework, image {custom {url, port, healthRoute}}, env, secrets, command, args}, tags` | the body an endpoint is created from: one replica at most, scaled to zero when idle, uv's image running `uvx` to install this quackd's release and `quackd policy serve` behind the proxy's TLS |
