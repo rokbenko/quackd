@@ -324,8 +324,9 @@ which imports the protocol's from the Microduck's by name, so a re-pin of the on
 Huebot's side is the maker's word: an email to Rok Benko of 2026-10-15, which is not public,
 and the maker's page, [ce-net.com/huebot](https://ce-net.com/huebot), read on 2026-10-20. The
 maker's public code, [walking-robot-kit](https://github.com/Leif-Rydenfalk/walking-robot-kit),
-Apache-2.0 and CC BY-SA 4.0, is the servo bus alone, a Rust daemon serving an HTTP control page on port 8938,
-with no JSON-RPC, and quackd does not speak it. Nothing here has been run against Huebot's shim.
+Apache-2.0 and CC BY-SA 4.0, is the kit's electronics, firmware and control software, whose Rust
+daemon serves an HTTP control page on port 8938 with no JSON-RPC, and quackd does not speak it.
+Nothing here has been run against Huebot's shim.
 
 ### VERIFIED (robotd's protocol, read at the pin)
 

@@ -222,8 +222,13 @@ def vendor_key(vendor: str) -> tuple[str, str | None] | None:
 def install_line(row: Mapping[str, Any]) -> str:
     """The command that installs an adapter this machine lacks, from its catalogue row, whose
     `extra` names the package already: `uv pip install "quackd[lerobot]"`. The setup page put a
-    second `quackd[...]` round it, and printed `quackd[quackd[lerobot]]`."""
-    return f'uv pip install "{row.get("extra")}"'
+    second `quackd[...]` round it, and printed `quackd[quackd[lerobot]]`. A third party's adapter
+    that names no extra has no command quackd could give, and said `uv pip install "None"`."""
+    extra = row.get("extra")
+    if not extra:
+        name = row.get("name")
+        return f"install the {name} adapter as its maker says, since quackd names no package for it"
+    return f'uv pip install "{extra}"'
 
 
 def vendor_extra(vendor: str) -> tuple[str, bool] | None:

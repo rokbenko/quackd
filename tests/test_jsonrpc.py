@@ -4005,13 +4005,17 @@ async def test_mediads_frame_says_how_long_one_frame_takes_to_follow_the_last(
     slow fetch's once one is slow. A camera whose frames say nothing of when they were taken
     says no period, and nor does a body that hands out no such frames, through the adapter."""
     slow = 1.0
-    with SnapshotServer((200, _png(720, 1280)), (200, _png(720, 1280), slow)) as camera:
+    with SnapshotServer((200, _png(16, 16)), (200, _png(720, 1280), slow)) as camera:
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
         )
         await t.connect()
         try:
-            assert t.frame_period_s == 1 / MEDIAD_FRAME_FPS
+            # the rate's own while the first fetch took less than a period, which a small frame
+            # does, and asked of the fetch it measured: a loaded machine took 0.7 s over a
+            # full-size first frame, and the bare rate was then the wrong answer
+            assert t.frame_fetch_s is not None
+            assert t.frame_period_s == max(1 / MEDIAD_FRAME_FPS, t.frame_fetch_s)
             first = t._frame
             await _eventually(lambda: t._frame is not first, "a frame that took a while to come")
             tick = time.get_clock_info("monotonic").resolution

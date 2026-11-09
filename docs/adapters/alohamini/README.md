@@ -199,7 +199,7 @@ eight verbs rather than eleven: `report_state`, `stop`, `move`, `lift`, `observe
 | Joint sets | `ARM_PROFILE_JOINTS` | six per arm on the 5dof profile, seven on the others |
 | SKU table | `ROBOT_SPECS` | lead screw, wheel radius and motors per model |
 | Key format | `f"{prefix}_{joint}.pos"` | with prefixes `arm_left` and `arm_right` |
-| Default disagreement | `robot_model: str = "alohamini2"` | the host's default; the client's is alohamini1 |
+| Default disagreement | `robot_model: str = "alohamini2"` | the host config's; the host's `--robot_model` flag defaults to alohamini1 and wins, and the client's is alohamini1 |
 | The lift's two ifs | `LiftAxis.apply_action` | no else, no unconditional write |
 | Homing leaves it running | `#self._bus.write("Goal_Velocity", name, 0)` | commented out |
 | Lift stop | `LiftAxis.stop` | writes `Goal_Velocity` 0 |

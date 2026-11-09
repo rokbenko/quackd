@@ -25,12 +25,13 @@ from typing import Any
 import pytest
 import yaml
 
-from quackd.upstream import UpstreamRef
+from quackd.upstream import Status, UpstreamRef
 from tests.test_upstream_api import UPSTREAMS as SUITE_ROWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "upstream_drift.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "upstream-drift.yml"
+TODDLERBOT_CONTRACT = REPO_ROOT / ".github" / "workflows" / "toddlerbot-contract.yml"
 
 PIN = "a" * 40
 HEAD = "b" * 40
@@ -352,7 +353,7 @@ def test_a_line_that_reads_like_another_at_the_pin_is_a_weak_anchor() -> None:
     upstream next. Once the file changes it cannot be followed: one of the twins deleted leaves
     the other, which used to read as the cited line having moved."""
     script = _script()
-    module = _module([_ref("BUS", "src/thing.py", 4), _ref("A", "src/thing.py", 1)])
+    module = _module([_ref("BUS", "src/thing.py", 4), _ref("B", "src/thing.py", 3)])
     report = _one(script, module, Store(_github(script, {"src/thing.py": (TWINS, TWINS)})))
     assert report.counts == {"not a file": 0, "same": 2, "weak anchor": 1}
     assert report.rows == [] and [row.ref for row in report.weak] == ["BUS"]
@@ -367,6 +368,125 @@ def test_a_line_that_reads_like_another_at_the_pin_is_a_weak_anchor() -> None:
     assert row.status == "changed" and row.weak is True
     assert row.now.startswith("one of 2 lines that read alike at the pin")
     assert report.drift is True
+
+
+# ── stray anchors ───────────────────────────────────────────────────────────────────────
+
+
+def _cite(name: str, path: str, line: int, note: str, status: Status = "VERIFIED") -> UpstreamRef:
+    """A ref with a note of its own, where `_ref`'s note names nothing."""
+    return UpstreamRef(name, status, f"{GITHUB}/blob/{PIN}/{path}#L{line}", note)
+
+
+def test_a_verified_ref_whose_line_names_nothing_of_it_is_a_stray_anchor() -> None:
+    """Fourteen of the rosbridge refs cited lines that held something else, a line or a function
+    away from what each said it read, and read as the same, since those lines had not moved. A
+    VERIFIED ref whose line holds no word of its name or its note is listed under its upstream,
+    as a weak anchor is, and fails nothing by itself."""
+    script = _script()
+    module = _module(
+        [
+            _ref("READ", "src/thing.py", 2),
+            _ref("Bus", "src/thing.py", 2),
+            _cite("Port", "src/thing.py", 2, "opened in read()"),
+            _cite("Bus.close", "src/thing.py", 2, "a guess", status="UNVERIFIED"),
+            _ref("Bus", "src/other.py", 1),
+        ]
+    )
+    files = {"src/thing.py": (PINNED, PINNED), "src/other.py": (b"x = 1\n", b"x = 2\n")}
+    report = _one(script, module, Store(_github(script, files)))
+    assert [(row.ref, row.cited) for row in report.stray] == [
+        ("Bus", "src/thing.py:2"),
+        ("Bus", "src/other.py:1"),
+    ]
+    assert report.counts == {"not a file": 0, "same": 4, "changed": 1, "stray anchor": 2}
+    (changed,) = report.rows
+    assert changed.status == "changed" and changed.stray is True, "a drifted row is listed too"
+    assert report.drift is True and report.broken is False
+
+    clean = _module([_ref("READ", "src/thing.py", 2), _ref("Bus", "src/thing.py", 2)])
+    report = _one(script, clean, Store(_github(script, {"src/thing.py": (PINNED, PINNED)})))
+    assert report.rows == [] and report.drift is False and report.broken is False
+    assert script.exit_code([report]) == 0, "a stray anchor alone fails nothing"
+    section = script.section(report)
+    assert "1 stray anchors: each is VERIFIED" in section
+    assert "`Bus` (`src/thing.py:2`)" in section
+    assert "1 stray anchor" in script.summary_line(report)
+    assert script._needing(section) == set(), "and needs nobody, so it earns no comment"
+    (upstream,) = script.as_json([report])["upstreams"]
+    assert [row["ref"] for row in upstream["stray"]] == ["Bus"]
+
+
+def test_a_line_is_read_with_what_it_opens_and_a_path_named_ref_names_its_file() -> None:
+    """`def __init__(` names a constructor's parameters on the lines under it, `@dataclass`
+    names nothing until its class does, and `std_msgs/msg/String` cites the whole of
+    `String.msg`. A word of one character counts from the ref's name and not from its note, and
+    a keyword counts when the note quotes it."""
+    script = _script()
+    source = (
+        b"@dataclass\n"
+        b"class Obs:\n"
+        b"    def __init__(\n"
+        b"        self, port, baud\n"
+        b"    ):\n"
+        b"        self.K = port\n"
+        b"    finally:\n"
+        b"x = 1\n"
+    )
+    refs = [
+        _ref("Obs", "src/obs.py", 1),
+        _ref("Bus", "src/obs.py", 1),
+        _ref("Obs(port, baud)", "src/obs.py", 3),
+        _ref("Obs.K", "src/obs.py", 6),
+        _cite("the port closes", "src/obs.py", 7, "in a `finally`"),
+        _cite("Point", "src/obs.py", 8, "{x, y}"),
+        _ref("std_msgs/msg/String", "msg/String.msg", 1),
+    ]
+    files = {"src/obs.py": (source, source), "msg/String.msg": (b"# a comment\n", b"# a comment\n")}
+    report = _one(script, _module(refs), Store(_github(script, files)))
+    assert [(row.ref, row.cited) for row in report.stray] == [
+        ("Bus", "src/obs.py:1"),
+        ("Point", "src/obs.py:8"),
+    ]
+
+    lines = source.decode().split("\n")
+    assert {"robotstate", "robot", "state"} <= script.words("RobotState")
+    assert {"get_param", "get", "param", "45", "v23", "23"} <= script.words("get_param 45.0 v23")
+    assert script.words("Services") == {"services", "service"}, "a part loses its plural s"
+    assert script._read_on(lines, 0) == "@dataclass\nclass Obs:"
+    assert script._read_on(lines, 2).endswith("    ):")
+    assert script._read_on(lines, 5) == "        self.K = port"
+
+
+def test_a_decorator_over_several_lines_is_read_through_to_what_it_decorates() -> None:
+    """A decorator's own brackets used to end the read at its second line, so the function under
+    it, the thing a ref on the decorator names, was never read."""
+    script = _script()
+    route = (
+        b"@router.get(\n"
+        b'    "/state",\n'
+        b"    response_model=State,\n"
+        b")\n"
+        b"@cached\n"
+        b"async def read_joints(request):\n"
+        b"    return state\n"
+    )
+    module = _module([_ref("read_joints", "src/api.py", 1), _ref("Bus", "src/api.py", 1)])
+    report = _one(script, module, Store(_github(script, {"src/api.py": (route, route)})))
+    assert [row.ref for row in report.stray] == ["Bus"]
+    lines = route.decode().split("\n")
+    assert script._read_on(lines, 0).endswith("async def read_joints(request):")
+
+
+def test_a_word_that_names_nothing_keeps_its_s() -> None:
+    """Without its s, `this` read as `thi`, a word no list of common ones holds, so a note saying
+    what `this` does named every C++ line that calls a method on `this`."""
+    script = _script()
+    assert not script.words("this does") & {"thi", "doe"}
+    module = _module([_cite("Port", "src/bus.cpp", 1, "this is what it does")])
+    pinned = b"this->bus_->close();\n"
+    report = _one(script, module, Store(_github(script, {"src/bus.cpp": (pinned, pinned)})))
+    assert [row.ref for row in report.stray] == ["Port"]
 
 
 # ── which baseline ──────────────────────────────────────────────────────────────────────
@@ -891,8 +1011,11 @@ def test_what_the_issues_did_goes_in_the_report_too(
         script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, CHANGED)}))
     )
     monkeypatch.setattr(
-        script, "sync_issues", lambda reports, repo: ["widget: issue not synced: HTTP 403"]
+        script,
+        "sync_issues",
+        lambda reports, repo, known=None: ["widget: issue not synced: HTTP 403"],
     )
+    monkeypatch.setattr(script, "unread_adapters", lambda: [])
     report = tmp_path / "summary.md"
     assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 1
     text = report.read_text(encoding="utf-8")
@@ -934,7 +1057,7 @@ def test_a_line_less_ref_to_a_directory_is_counted_and_is_nobodys_fault() -> Non
     not serve: the API says it is one, so it is counted, never a row, never drift, never an
     outage."""
     script = _script()
-    module = _module([_ref("DIR", "src/package"), _ref("FILE", "src/thing.py", 2)])
+    module = _module([_ref("DIR", "src/package"), _ref("READ", "src/thing.py", 2)])
     urls = _github(script, {"src/package": (None, None), "src/thing.py": (PINNED, PINNED)})
     urls.update(_contents(script, "src/package", [{"name": "__init__.py"}]))
     urls[f"{script.API}/repos/{WIDGET}/contents/src/package?ref={HEAD}"] = b'[{"name": "x.py"}]'
@@ -1183,6 +1306,166 @@ def test_no_gh_on_the_machine_is_an_answer_and_not_a_traceback(
         script.gh_run(["issue", "list"])
 
 
+def _comment(call: list[str]) -> str:
+    return call[call.index("--comment") + 1]
+
+
+def test_a_repeat_of_an_upstreams_issue_is_closed_for_the_oldest() -> None:
+    """Two open issues with one title used to leave all but the first `gh` listed alone: edited
+    or closed was whichever came first, and the other stayed open whatever the nights found."""
+    script = _script()
+    report = _drifted_report(script)
+    body = script.section(report)
+    # gh lists the newest first
+    two = [
+        {"number": 12, "title": "upstream drift: widget", "body": body},
+        {"number": 7, "title": "upstream drift: widget", "body": body},
+    ]
+
+    gh = FakeGh(two)
+    done = script.sync_issues([report], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue edit", "issue close"]
+    assert gh.calls[2][2] == "7", "the oldest is the one kept"
+    assert gh.calls[3][2] == "12"
+    assert "#7" in _comment(gh.calls[3]) and "carries on" in _comment(gh.calls[3])
+    assert done == ["widget: issue #7 updated", "widget: issue #12 closed as a repeat of #7"]
+
+    # a clean night closes both, and a night that could not check the upstream closes neither
+    gh = FakeGh(two)
+    done = script.sync_issues([_clean_report(script)], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue close", "issue close"]
+    assert [call[2] for call in gh.calls[2:]] == ["7", "12"]
+    assert done == ["widget: issue #7 closed", "widget: issue #12 closed"]
+    gh = FakeGh(two)
+    done = script.sync_issues([_outage_report(script)], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list"]
+    assert done == ["widget: not all of it could be checked, issue #7 left"]
+
+
+def test_an_issue_for_an_upstream_no_adapter_reads_is_closed_saying_why() -> None:
+    """An upstream renamed or removed used to leave its issue open for ever: nothing the walk
+    reads is called that, so nothing updated it or closed it."""
+    script = _script()
+    wrote = f"a table\n\n{script.OPENED_BY} For a ref that changed, read it again."
+    listed = [
+        {"number": 5, "title": "upstream drift: gadget", "body": wrote},
+        {"number": 6, "title": "upstream drift is noisy", "body": ""},
+        {"number": 7, "title": "upstream drift: lerobot moved its bus, read it again", "body": ""},
+        {"number": 8, "title": "upstream drift: widget", "body": wrote},
+    ]
+    gh = FakeGh(listed)
+    done = script.sync_issues(
+        [_clean_report(script)], "rokbenko/quackd", gh, known=["widget", "lerobot"]
+    )
+    closed = [call for call in gh.calls if call[:2] == ["issue", "close"]]
+    assert [call[2] for call in closed] == ["8", "5"], "an issue a person opened is left"
+    assert "gadget" in _comment(closed[1]) and "any more" in _comment(closed[1])
+    assert done == [
+        "widget: issue #8 closed",
+        "gadget: issue #5 closed, since no upstream is called that now",
+    ]
+
+    # an upstream the walk knows is not touched on a night it was not run, as under --only
+    gh = FakeGh([{"number": 9, "title": "upstream drift: lerobot", "body": ""}])
+    assert script.sync_issues([], "rokbenko/quackd", gh, known=["widget", "lerobot"]) == []
+    assert gh.verbs() == ["label create", "issue list"]
+
+    # without the walk, and on a night anything could not be checked, nothing is closed
+    for reports, known in (([_clean_report(script)], None), ([_outage_report(script)], ["widget"])):
+        gh = FakeGh(listed[:1])
+        assert script.sync_issues(reports, "rokbenko/quackd", gh, known=known) == []
+        assert gh.verbs() == ["label create", "issue list"]
+
+
+def test_the_command_says_which_upstreams_it_knows_only_after_a_walk_of_every_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter that did not import takes its upstreams out of the walk, and their issues would
+    read as an upstream nobody reads any more: such a night closes none of them, and says why."""
+    script = _script()
+    module = _module([_ref("READ", "src/thing.py", 2)])
+    monkeypatch.setattr(script, "upstream_rows", lambda: [("widget", module), ("other", module)])
+    monkeypatch.setattr(
+        script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, PINNED)}))
+    )
+    asked: list[Any] = []
+
+    def sync(reports: Any, repo: str, known: Any = None) -> list[str]:
+        asked.append(known)
+        return []
+
+    monkeypatch.setattr(script, "sync_issues", sync)
+    monkeypatch.setattr(script, "unread_adapters", lambda: [])
+    report = tmp_path / "summary.md"
+    assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 0
+    assert asked == [["widget", "other"]]
+
+    monkeypatch.setattr(script, "unread_adapters", lambda: ["toddlerbot could not be read: boom"])
+    script.main(["--report", str(report), "--issues", "rokbenko/quackd"])
+    assert asked[-1] is None
+    assert "since toddlerbot could not be read: boom" in report.read_text(encoding="utf-8")
+
+    def unasked() -> list[str]:
+        raise AssertionError("a run of one upstream walks no adapter for the issues")
+
+    monkeypatch.setattr(script, "unread_adapters", unasked)
+    assert script.main(["--only", "widget", "--issues", "rokbenko/quackd"]) == 0
+    assert asked[-1] is None
+
+
+def test_an_adapter_that_does_not_import_is_one_the_walk_could_not_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackd.adapters import factory
+
+    script = _script()
+    real = factory._module
+
+    class Rows:
+        """An `UPSTREAMS` that raises when it is read, which doctor's walk also passes over."""
+
+        def __iter__(self) -> Any:
+            raise RuntimeError("no rows tonight")
+
+    def module(name: str) -> Any:
+        if name == "toddlerbot":
+            raise ImportError("no module named toddlerbot_sdk")
+        if name == "xlerobot":
+            return types.SimpleNamespace(UPSTREAMS=Rows())
+        return real(name)
+
+    monkeypatch.setattr(factory, "_module", module)
+    monkeypatch.setattr(factory, "is_installed", lambda name: name != "moss")
+    unread = script.unread_adapters()
+    assert "toddlerbot could not be read: no module named toddlerbot_sdk" in unread
+    assert "xlerobot could not be read: no rows tonight" in unread
+    assert "moss is not installed" in unread
+    assert len(unread) == 3, unread
+
+
+def test_what_was_done_before_a_refusal_stays_in_the_summary() -> None:
+    """One upstream's issues take several calls now. A refusal on the last of them used to be
+    the only line, as though nothing before it had been done."""
+    script = _script()
+    report = _drifted_report(script)
+    body = script.section(report)
+    two = [
+        {"number": 12, "title": "upstream drift: widget", "body": body},
+        {"number": 7, "title": "upstream drift: widget", "body": body},
+    ]
+
+    class Refuses(FakeGh):
+        def __call__(self, args: Any) -> str:
+            if list(args[:3]) == ["issue", "close", "12"]:
+                raise script.Unreachable("gh issue: HTTP 403")
+            return super().__call__(args)
+
+    done = script.sync_issues([report], "rokbenko/quackd", Refuses(two))
+    assert done == ["widget: issue #7 updated", "widget: issue not synced: gh issue: HTTP 403"]
+    done = script.sync_issues([_clean_report(script)], "rokbenko/quackd", Refuses(two))
+    assert done == ["widget: issue #7 closed", "widget: issue not synced: gh issue: HTTP 403"]
+
+
 # ── the real modules, and the workflow ──────────────────────────────────────────────────
 
 
@@ -1300,6 +1583,20 @@ def test_the_nightly_runs_the_script_with_what_it_needs_and_nothing_more() -> No
     assert "--issues rokbenko/quackd" in run
     env = next(step.get("env", {}) for step in steps if "upstream_drift.py" in step.get("run", ""))
     assert env == {"GITHUB_TOKEN": "${{ github.token }}"}
+
+
+def test_the_toddlerbot_contract_checks_out_upstream_at_the_adapters_pin() -> None:
+    """The contract job clones ToddlerBot and checks out a commit it spells itself, and the
+    adapter's refs were read at its own `PIN`: nothing held the two together, so a re-pin that
+    moved one of them would run the contract against code the refs were never read at."""
+    module = importlib.import_module("quackd_toddlerbot.upstream_api")
+    workflow = yaml.safe_load(TODDLERBOT_CONTRACT.read_text(encoding="utf-8"))
+    (job,) = workflow["jobs"].values()
+    runs = "\n".join(step.get("run", "") for step in job["steps"]).replace("\\\n", " ")
+    clones = re.findall(r"git clone\b.*?(https://\S+?)(?:\.git)?(?=\s)", runs)
+    checkouts = re.findall(r"git checkout\s+(\S+)", runs)
+    assert clones == [module.REPO], clones
+    assert checkouts == [module.PIN], checkouts
 
 
 def test_the_script_is_type_checked_and_its_offline_mode_takes_no_network() -> None:

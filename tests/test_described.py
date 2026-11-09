@@ -75,7 +75,7 @@ def test_the_catalogue_lists_exactly_the_body_files() -> None:
     assert body_files() == DESCRIBED_BODIES
     assert tuple(sorted(DESCRIBED_BODIES)) == DESCRIBED_BODIES
     assert BY_NAME[DESCRIBED].backends == DESCRIBED_BODIES
-    assert len(DESCRIBED_BODIES) >= 11
+    assert len(DESCRIBED_BODIES) >= 12
 
 
 def test_the_tenth_row_is_no_adapter() -> None:
@@ -270,7 +270,9 @@ def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_r
     assert rows[DESCRIBED]["installed"] is False and rows[DESCRIBED]["adapter_installed"] is False
     assert rows[DESCRIBED]["backends"] == list(DESCRIBED_BODIES)
     assert rows[DESCRIBED]["family"] == ["described"] and rows[DESCRIBED]["route"] == []
-    assert rows[DESCRIBED]["extra"] == "built-in"
+    # nothing installs it, so `--json` names no package a script would go and install
+    assert rows[DESCRIBED]["extra"] is None
+    assert all(row["extra"] == f"quackd[{name}]" for name, row in rows.items() if name != DESCRIBED)
     assert rows[DESCRIBED]["tiers"]["unitree-b2"] == {
         "tier": "described",
         "owner": None,
@@ -311,13 +313,13 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
         "each is a described body."
     ), hint
     # of the bodies quackd drives, the industrial arm's rehearsal carries 3 kg by its UR5e's
-    # figure, and six described bodies do by their makers': the first sentence names it, the
+    # figure, and seven described bodies do by their makers': the first sentence names it, the
     # last names three and counts, and each says which kind of body it names
     three = solo_hint({"payload_kg": 3.0}, None)
     assert three.startswith("By their datasheets, rosarm could (needs payload_kg=3)."), three
     assert three.endswith(
         f" By their makers' figures alone, {FRANKA}, {DESCRIBED}:kuka-lbr-iisy-3-r760, "
-        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 3 more could too, and quackd drives no part of "
+        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 4 more could too, and quackd drives no part of "
         "them: each is a described body."
     ), three
     # nobody quackd drives carries 6 kg, and two described bodies do: the first sentence still
@@ -327,8 +329,7 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
     assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies quackd drives"
     assert nobody.endswith(
         f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 and "
-        f"{DESCRIBED}:menlo-asimov-1 could, and quackd drives no part of them: each is a described "
-        "body."
+        f"{DESCRIBED}:ur7e could, and quackd drives no part of them: each is a described body."
     ), nobody
     assert "described" not in solo_hint({"payload_kg": 500.0}, None)
     assert solo_hint({}, None) == ""
@@ -703,12 +704,12 @@ def test_the_table_prints_one_tier_to_a_line() -> None:
         "name": "acme",
         "backends": ["mock"],
         "status": "installed here",
-        "extra": "built-in",
+        "extra": None,
         "installed": True,
     }
     buf = io.StringIO()
     Console(file=buf, width=120).print(ui.adapters_table([row]))
-    assert "installed here" in buf.getvalue()
+    assert "installed here" in buf.getvalue() and "built-in" in buf.getvalue()
 
 
 def test_a_tier_reads_back_from_the_record_json_carries() -> None:

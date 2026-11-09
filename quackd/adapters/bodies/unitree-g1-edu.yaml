@@ -1,5 +1,5 @@
-# Unitree G1 EDU: a humanoid. quackd describes it from Unitree's page, the same figures the
-# passport demo's courier carries, and drives no part of it (ADR-0077).
+# Unitree G1 EDU: a humanoid. quackd describes it from Unitree's page, the figures the passport
+# demo's courier carries and its joint count, and drives no part of it (ADR-0077).
 vendor: unitree
 model: g1-edu
 embodiment: humanoid
@@ -18,6 +18,10 @@ datasheet:
     value: 1.32
     confidence: official
     source: "unitree.com/g1: 1320 mm standing, read 2026-10-28"
+  dof:
+    value: 23
+    confidence: official
+    source: "unitree.com/g1, G1 EDU column: 23 to 43 degrees of freedom by the options fitted, the lower figure, read 2026-11-09"
   payload_kg:
     value: 3
     confidence: official

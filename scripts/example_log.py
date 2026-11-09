@@ -10,14 +10,17 @@ anything else.
     uv run --no-sync python scripts/example_log.py write             # rewrite logs and the table
     uv run --no-sync python scripts/example_log.py check             # exit 1 if any would change
 
-What `add` needs is the run folder with its video left inside it, under any name, and how many times
-faster than real time that video plays, which is read off the video. What goes where, in
-`docs/examples/lerobot/e114/`:
+What `add` needs is the run folder with its video left inside it, under any name, or named with
+`--video`, and how many times faster than real time that video plays, which is read off the video.
+A command run after the run to put the arm right, such as `quackd robot release`, writes no run
+folder, so its terminal output, saved as text, comes in with `--after` and follows the run's trace.
+What goes where, in `docs/examples/lerobot/e114/`:
 
     README.md          the log, written here
     log/notes.yaml     what somebody wrote: the result, why it matters, what the run showed
     log/summary.json   the run's own record, copied as it was
     log/terminal.txt   the run's own terminal, copied as it was
+    log/after.txt      what the commands after the run printed, as somebody saved it, if any
     log/media.json     how fast the GIF plays, how many frames were kept, which run this is
     log/run.gif        made from the video
     log/frame-N.jpg    what the robot's camera saw at the start, the middle and the end
@@ -398,6 +401,9 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
     if not first.startswith("$ "):
         raise LogError(f"{folder.name}/log/terminal.txt does not open with the command it ran")
     command = "\n".join([*(notes.get("before") or []), first.removeprefix("$ ")])
+    after = folder / "log" / "after.txt"
+    if after.exists():
+        trace += "\n\n" + _read(after).rstrip("\n")
     text = LOG.format(
         id=experiment["id"],
         title=experiment["title"],
@@ -599,13 +605,20 @@ def _video_in(run_dir: Path) -> Path:
 
 
 def add_run(
-    root: Path, run_dir: Path, speed: float, example: str | None = None, replace: bool = False
+    root: Path,
+    run_dir: Path,
+    speed: float,
+    example: str | None = None,
+    replace: bool = False,
+    after: Sequence[Path] = (),
+    video: Path | None = None,
 ) -> Path:
     """Make this run its example's log and leave notes for somebody to fill in.
 
     An example has one log. Adding the same run again, as a better video does, keeps what was
     written about it. A different run starts the notes over, because they described the old one, so
-    it takes `replace`, and the old log stays in git's history."""
+    it takes `replace`, and the old log stays in git's history. `after` is the saved terminal output
+    of the commands run once the run was over, in the order they ran."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
@@ -614,10 +627,16 @@ def add_run(
         raise LogError(f"{run_dir} has no summary.json: that run never reached its end")
     summary = _read(run_dir / "summary.json")
     trace = _read(run_dir / "terminal.txt")
-    for what, text in (("terminal.txt", trace), ("summary.json", summary)):
+    later = "\n".join(_read(path).removeprefix("﻿").rstrip("\n") for path in after)
+    copied = [("terminal.txt", trace), ("summary.json", summary)]
+    copied += [(path.name, _read(path)) for path in after]
+    for what, text in copied:
         if PRIVATE.search(text):
             raise LogError(f"{what} holds a key or a path into a home folder: not copying it")
-    video = _video_in(run_dir)
+    if video is None:
+        video = _video_in(run_dir)
+    elif not video.is_file():
+        raise LogError(f"no video at {video}")
 
     log = root / name.lower() / "log"
     if (log / "media.json").exists():
@@ -637,6 +656,8 @@ def add_run(
     frames = _keep_frames(run_dir, log)
     _write(log / "summary.json", summary)
     _write(log / "terminal.txt", trace)
+    if after:
+        _write(log / "after.txt", later + "\n")
     media = {"speed": speed, "frames": frames, "run_folder": run_dir.name}
     _write(log / "media.json", json.dumps(media, indent=2) + "\n")
     notes = log / "notes.yaml"
@@ -658,12 +679,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     add.add_argument("--example", help="the example, where the run folder's name does not say")
     add.add_argument("--replace", action="store_true", help="log this run instead of the old one")
+    add.add_argument("--video", type=Path, help="the video, where it is not in the run folder")
+    add.add_argument(
+        "--after",
+        type=Path,
+        action="append",
+        default=[],
+        help="a text file of what a command run after the run printed; once per command, in order",
+    )
     verbs.add_parser("write", help="rewrite every log and the table")
     verbs.add_parser("check", help="exit 1 if any log or the table would change")
     args = parser.parse_args(argv)
     try:
         if args.verb == "add":
-            notes = add_run(EXAMPLES, args.run_folder, args.speed, args.example, args.replace)
+            notes = add_run(
+                EXAMPLES,
+                args.run_folder,
+                args.speed,
+                args.example,
+                args.replace,
+                args.after,
+                args.video,
+            )
             print(f"Copied. Fill in {notes}, then run: example_log.py write")
         elif args.verb == "write":
             for path in write_all(EXAMPLES):

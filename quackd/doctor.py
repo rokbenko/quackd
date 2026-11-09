@@ -780,6 +780,13 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
     return [], "nothing loaded yet: Ollama loads an LLM on its first request"
 
 
+def _urls(camera_url: str | Sequence[str] | None) -> str:
+    """`--camera-url` as written: one address, or several joined by commas."""
+    if camera_url is None or isinstance(camera_url, str):
+        return camera_url or ""
+    return ", ".join(str(url) for url in camera_url)
+
+
 def probe(
     spec: str,
     static: Any,
@@ -1023,7 +1030,10 @@ def probe(
                     "ok" if size is not None else "fail",
                 )
             )
-            add(ProbeRow("  url", str(cam.get("url") or camera_url)))
+            # the configured address when the camera names none of its own: a list of
+            # them, as `--camera-url` can be given twice, is written out, never as a
+            # Python list (`url ['opencv://0']`)
+            add(ProbeRow("  url", str(cam.get("url") or _urls(camera_url))))
             if cam.get("error"):
                 add(ProbeRow("  error", str(cam["error"]), "fail"))
     rest_ok = parked.reached or not parked.recorded
@@ -2065,10 +2075,11 @@ def _assumptions_table(report: DoctorReport) -> Any:
     and a screen of them buried the one line anybody had come to read."""
     table = ui.table()
     table.add_column("upstream", style=ui.STYLES["key"], no_wrap=True)
-    table.add_column("what")
-    # `overflow="fold"`: a note that quotes a long URL is broken across lines rather than
-    # cut with an ellipsis, which is a character a cp1252 console cannot carry and a loss
-    # of the one thing the row was there to say.
+    # `overflow="fold"` on both: a note that quotes a long URL, or a ref's name on a narrow
+    # console, is broken across lines rather than cut with an ellipsis, which is a
+    # character a cp1252 console cannot carry and a loss of the one thing the row was there
+    # to say.
+    table.add_column("what", overflow="fold")
     table.add_column("note", ratio=2, overflow="fold")
     last = ""
     for item in report.assumptions:
