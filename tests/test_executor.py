@@ -29,7 +29,13 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, DuckState, Intent
+from quackd.transport.base import (
+    DEFAULT_CAMERA_NAME,
+    CameraFrame,
+    DuckState,
+    Intent,
+    TransportError,
+)
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import (
     STOP_ENDED,
@@ -458,6 +464,48 @@ async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -
         await asyncio.wait_for(running, timeout=5)
     assert "a stop was sent" not in str(aborted.value)
     assert transport.stops == 1
+
+
+class _SilentBody(_UnheardStop):
+    """A body gone silent: its reads fail, and its stop, which on the arm reads before it holds,
+    holds nothing and says so in `stop_error`, as the arm's real backend does."""
+
+    async def get_state(self) -> DuckState:
+        raise TransportError("the arm did not answer: ConnectionError: no status packet", code=7)
+
+
+def _still() -> VerbRegistry:
+    async def still(ctx: VerbContext, _: NoParams) -> VerbResult:
+        return VerbResult.success("still")
+
+    registry = VerbRegistry()
+    registry.register(Verb("still", "still", still))
+    return registry
+
+
+async def test_a_read_that_failed_says_when_the_stop_sent_after_it_did_not_land() -> None:
+    """A verb's gates read the body first, and a read that failed sent its stop and said only that
+    the read had failed, on `stop` too: neither the pilot nor a chat heard that nothing held the
+    arm. The error is the read's own, its class and its code kept."""
+    transport = _SilentBody()
+    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("still")
+    read = "the arm did not answer: ConnectionError: no status packet"
+    assert str(failed.value) == f"{read}; {UNHEARD}"
+    assert failed.value.code == 7 and transport.stops == 1
+
+
+async def test_a_read_that_failed_over_a_stop_that_landed_says_only_the_read() -> None:
+    class Unread(MockTransport):
+        async def get_state(self) -> DuckState:
+            raise TransportError("the link is down")
+
+    transport = Unread()
+    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("still")
+    assert str(failed.value) == "the link is down" and transport.stops == 1
 
 
 async def test_no_contract_allows_safe_verbs_only(

@@ -49,7 +49,13 @@ from quackd.log import (
 )
 from quackd.perception.base import Detector, detect_times
 from quackd.space.places import PlaceBook, PlaceStore
-from quackd.transport.base import CameraFrame, DuckState, DuckTransport, spatial_of
+from quackd.transport.base import (
+    CameraFrame,
+    DuckState,
+    DuckTransport,
+    TransportError,
+    spatial_of,
+)
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -1038,11 +1044,15 @@ class Executor:
         composite's, and one that has changed by the time it is admitted is not started."""
         try:
             state = await self.transport.get_state()
-        except Exception:
+        except Exception as e:
             # the one in-verb transport failure that used to send no stop. A link that
             # cannot report state cannot be trusted to be holding a zero twist either.
-            with contextlib.suppress(Exception):
-                await self.logged_transport().stop()
+            unstopped = await self._stop_after()
+            if unstopped is not None and isinstance(e, TransportError) and len(e.args) == 1:
+                # and a stop that did not land is said beside the read, which is all a pilot or
+                # a chat is told: the arm reads before it writes its hold, so over one gone
+                # silent the stop held nothing. The error itself is kept, its class and code
+                e.args = (f"{e}; the stop sent after it failed: {unstopped}",)
             raise
         # Read again after the last await before the verb is tracked as moving. A pause
         # granted while this verb waited on that state read, or on a person's confirm before

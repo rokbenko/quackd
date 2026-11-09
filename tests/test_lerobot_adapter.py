@@ -2478,6 +2478,26 @@ async def test_a_stop_over_a_folded_arm_leaves_the_fold_alone() -> None:
     assert adapter.stop_skipped == (), "the last hold's list outlived it"
 
 
+async def test_a_read_the_arm_did_not_answer_says_the_stop_after_it_held_nothing() -> None:
+    """A verb's gates read the arm first, and the stop sent after a read that failed reads before
+    it holds, so over an arm gone silent it held nothing. All the pilot or a chat was told was
+    that the read had failed, on `stop` too, the verb reached for at that moment."""
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm)
+    adapter = LeRobotAdapter(transport)
+    manifest = await adapter.connect()
+    ex = _executor(adapter, manifest)
+    arm.dead = True
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("stop")
+    said = str(failed.value)
+    assert said.startswith("the arm did not answer: "), said
+    assert adapter.stop_error is not None
+    assert said.endswith(f"; the stop sent after it failed: {adapter.stop_error}"), said
+    arm.dead = False
+    await adapter.close()
+
+
 async def test_a_stop_with_every_body_joint_past_its_travel_sends_nothing_and_is_a_stop() -> None:
     """The branch where the skip leaves nothing to send. Nothing is written, and the stop is
     not reported as undelivered, because it started nothing. That is all it can say: any goal

@@ -267,6 +267,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the link goes on, a line may be 1 MiB, and a link that fails tells whatever is waiting at once and
   refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
   over HTTP. What changes for you: nothing to do. No duck has run it.
+- **A read that failed says when the stop sent after it held nothing.** A verb's gates begin by
+  reading the body, and when that read failed the executor sent a stop and said only that the read
+  had failed, on `stop` too, so a pilot or a chat heard `the arm did not answer: ` and nothing about
+  the stop. The arm's real backend reads before it writes its hold, so over an arm gone silent that
+  stop held nothing, and it says so in `stop_error` without raising, which nothing here read. The
+  read's error now ends `; the stop sent after it failed: ` and the stop's reason, as an abort's and a
+  timeout's now do, and keeps its class and its code. Such a stop still does not reach the arm, as
+  0.31.3's Known limitations says, and the power switch is still what stops it; now the line says
+  so. What changes for you: the line a run ends on, and a chat's answer, can be longer.
 
 ### Security
 
