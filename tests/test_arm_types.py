@@ -28,6 +28,7 @@ from quackd_lerobot import describe as describe_arm
 from quackd_lerobot.arms import ARMS
 from quackd_lerobot.real import LeRobotReal
 from quackd_lerobot.verbs import JOINTS
+from tests.conftest import REPO
 
 SO101_DIGESTS = {
     (False, False): "0ccd3bf9097cd348",
@@ -291,3 +292,17 @@ async def test_an_arm_whose_bus_names_other_joints_is_refused_before_anything_is
         await arm.connect()
     assert "base, elbow" in str(refused.value) and ", ".join(JOINTS) in str(refused.value)
     assert robot.touched == []
+
+
+def test_the_status_page_gives_each_arm_type_a_row_that_says_its_tier() -> None:
+    """The table is written by hand and the tiers are not, and a row per type is where a reader
+    learns that an SO-100 is not the SO-101 that ran. The default type is the row for `lerobot:real`
+    itself, which the page's own test holds."""
+    doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
+    for name, arm in ARMS.items():
+        if name == ROBOT_TYPE:
+            continue
+        cell = f"{arm.tier.mark} {arm.tier.name}"
+        if arm.tier.owner:
+            cell += f" · {arm.tier.owner} · {arm.tier.date}"
+        assert f"| `lerobot:real`, `--robot-type {name}` | {cell} |" in doc, name

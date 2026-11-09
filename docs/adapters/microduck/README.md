@@ -16,7 +16,8 @@ Its verbs and its transport also drive [Huebot](../huebot/README.md), whose shim
 same calls. What differs is one record each, `quackd_microduck/body.py` and `quackd_huebot/body.py`
 ([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)), so a fix to either
 is a fix to both, and a Microduck-only thing in them, mediad's camera, odometry, the map, the head,
-stays behind that record.
+stays behind that record. Huebot reads the protocol's refs on this page through its own
+`upstream_api.py`, which imports them from the Microduck's by name, so a re-pin here moves both.
 
 ## Upstream API
 

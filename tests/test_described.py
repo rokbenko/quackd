@@ -60,7 +60,12 @@ from quackd.adapters.factory import (
     make_adapter,
 )
 from quackd.adapters.factory import describe as describe_spec
+from quackd.agent.loop import RunConfig, run_duck
 from quackd.agent.prompts import DESCRIBED_LINE, body_lines, body_summary
+from quackd.agent.providers.base import ToolCall
+from quackd.agent.providers.fake import FakeProvider
+from quackd.agent.transcript import Transcript
+from quackd.duckfile.parser import duck_from_goal
 from quackd.registry import RegistryError, check_name
 from quackd.verdict import missing_needs, solo_hint
 
@@ -784,3 +789,93 @@ def test_a_third_party_may_declare_tiers_a_family_and_a_route(
     bare = factory.info("acme")
     assert bare.tiers == {} and bare.family == () and bare.route == ()
     assert bare.status == "installed here"
+
+
+# ── the path a person takes ───────────────────
+
+
+def _cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """A command line over a registry and a run directory of this test's own."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(tmp_path / "registry"))
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    return lambda *argv: runner.invoke(app, list(argv))
+
+
+def test_a_described_body_goes_from_robot_add_to_its_two_verbs_on_the_command_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The way the page tells a person to use one: add it by its spec, see it listed, ask what it
+    can do. Each of those goes through a different door, and the registry's took the spec first."""
+    cli = _cli(tmp_path, monkeypatch)
+    added = cli("robot", "add", "b2", "described:unitree-b2")
+    assert added.exit_code == 0, added.output
+    listed = cli("robot", "list")
+    assert listed.exit_code == 0 and "described:unitree-b2" in listed.output, listed.output
+    verbs = cli("list-verbs", "--robot", "b2")
+    assert verbs.exit_code == 0, verbs.output
+    assert "report_state" in verbs.output and "stop" in verbs.output, verbs.output
+    assert "2 verbs" in verbs.output, verbs.output
+
+
+def test_a_goal_on_a_described_body_runs_dry_on_the_command_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole of `quackd run` over a body nothing drives: a goal, the scripted pilot and no
+    robot. The scripted pilot has no judgement of a body and says it fits, as it does of every body,
+    so what this holds is that a run reaches its end here and sends nothing but stops."""
+    cli = _cli(tmp_path, monkeypatch)
+    assert cli("robot", "add", "b2", "described:unitree-b2").exit_code == 0
+    ran = cli(
+        "run", "--goal", "carry this box upstairs", "--robot", "b2", "--llm", "fake", "--dry-run"
+    )
+    assert ran.exit_code == 0, ran.output
+    (transcript,) = (tmp_path / "runs").glob("*/transcript.jsonl")
+    events = Transcript.read(transcript)
+    assert next(e for e in events if e["kind"] == "assess")["verdict"] == "feasible"
+    sent = [e["intent"] for e in events if e["kind"] == "intent"]
+    assert set(sent) <= {"stop"}, sent
+
+
+async def test_a_task_its_sheet_rules_out_ends_at_the_verdict_and_nothing_is_sent(
+    tmp_path: Path,
+) -> None:
+    """What a described body is for: an LLM reads the maker's figures and says the task cannot be
+    done on this body, and what it read is the sheet's own `cannot` and the line that says quackd
+    drives none of it. The verdict is scripted here, since judging is what an LLM is asked for."""
+    adapter = make_adapter("described:unitree-b2")
+    duck = duck_from_goal("carry this box upstairs", ["report_state", "stop"])
+
+    class Reading(FakeProvider):
+        """Keeps the system prompt it was handed, which is all the LLM knows of the body."""
+
+        systems: list[str] = []
+
+        async def step(self, system: str, *args: Any, **kwargs: Any) -> Any:
+            self.systems.append(system)
+            return await super().step(system, *args, **kwargs)
+
+    provider = Reading(
+        script=[
+            ToolCall(
+                name="assess_task",
+                arguments={
+                    "verdict": "infeasible",
+                    "reason": "it has no manipulator, so it cannot carry a box up the stairs",
+                },
+            ),
+        ]
+    )
+    result = await run_duck(
+        RunConfig(duck=duck, provider=provider, transport=adapter, runs_dir=tmp_path)
+    )
+    assert result.outcome == "infeasible", result.reason
+    assert result.steps == 0 and not result.ok
+    assert "it has no manipulator" in provider.systems[0], "the sheet's own words"
+    assert DESCRIBED_LINE in provider.systems[0]
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert [e["intent"] for e in events if e["kind"] == "intent" and e["intent"] != "stop"] == []

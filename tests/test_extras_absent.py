@@ -76,6 +76,7 @@ ok, why = decision_llm_is_available(PRESETS["openai"])
 assert not ok and "quackd[openai]" in why, why
 ok, why = decision_llm_is_available(PRESETS["openai"], url="http://127.0.0.1:8765")
 assert not ok and "quackd[openai]" in why, why
+from quackd.adapters.catalogue import DESCRIBED_BODIES
 from quackd.adapters.factory import BACKENDS, RobotSpec, describe, list_adapters, make_adapter
 rows = list_adapters()
 assert [r["name"] for r in rows] == [
@@ -101,6 +102,10 @@ for adapter, backends in BACKENDS.items():
     for backend in backends:
         m = describe(RobotSpec(adapter, backend))
         assert "stop" in m.verb_names(), (adapter, backend)
+# a body quackd only describes needs no library at all, so every one of them reads with all gone
+for body in DESCRIBED_BODIES:
+    m = describe(RobotSpec("described", body))
+    assert m.verb_names() == ["report_state", "stop"], body
 make_adapter("microduck:mujoco")
 make_adapter("lerobot:real", address="COM5")
 make_adapter("rosbridge:ws", address="ws://robot.local:9090")

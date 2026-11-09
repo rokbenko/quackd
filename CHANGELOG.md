@@ -718,6 +718,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
   `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
   with `--text`.
+- **CONTRIBUTING sets out the tiers and the owner rule, and the status page has a row per arm type.**
+  The rule was one paragraph under adding an adapter, and the four tiers and the grandfather clause
+  were nowhere in that file. The status page gives an SO-100 and a Koch v1.1 rows of their own under
+  `lerobot:real`, so neither reads as the SO-101 that ran. CONTRIBUTING also names the drift script's
+  `--offline`, and the Microduck's page says Huebot reads its protocol refs through its own module.
 
 ### Known limitations
 
