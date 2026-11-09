@@ -1072,9 +1072,10 @@ KOCH_POSITION_LIMITS_IGNORED = UpstreamRef(
     "SerialMotorsBus.set_operating_mode's docstring says both limit registers are ignored in that "
     "mode (motors_bus.py lines 612 and 613), where an sts3215 in position mode clamps every goal "
     "to them (POSITION_LIMITS_CLAMP_GOALS, an observation on a real SO-101). So the firmware "
-    "clamp DEGREES_NO_CLAMP leans on is not there on a Koch's body joints: nothing bounds a "
-    "degrees goal at all, and real.py's rest-pose logic, which judges a joint folded past its "
-    "limit and never writes it a goal there because the servo would haul it to the limit, was "
+    "clamp DEGREES_NO_CLAMP leans on is not there on a Koch's body joints: no limit register "
+    "bounds a degrees goal, which leaves max_relative_target for each step and quackd's own "
+    "check against the travel, and real.py's rest-pose logic, which judges a joint folded past "
+    "its limit and never writes it a goal there because the servo would haul it to the limit, was "
     "written against a Feetech and would have to be read again before a Koch is wired. The "
     "gripper runs current_based_position (line 140)",
 )

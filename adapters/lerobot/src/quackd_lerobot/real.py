@@ -1620,10 +1620,11 @@ class LeRobotReal:
             await asyncio.wait({left}, timeout=end - now)
 
     def _arm_type(self) -> ArmType:
-        """The record of the arm this backend was built as (`arms.ARMS`), through which every
-        figure that is one arm's and not another's is read. A type with no record is refused as
-        it is built (`_build_robot`), and `make()` refuses one with no owner before that, so
-        only a robot handed in is ever read against one."""
+        """The record of the arm this backend was built as (`arms.ARMS`), through which its encoder
+        ticks, its heat limit, its degrees setting and its motor table are read. `TORQUE_WRITES` is
+        still the SO arms' arithmetic (`up.DYNAMIXEL_TORQUE_ONE_WRITE`). A type with no record is
+        refused as it is built (`_build_robot`), and `make()` refuses one with no owner before
+        that, so only a robot handed in is ever read against one."""
         arm = ARMS.get(self.robot_type)
         if arm is None:
             raise TransportError(f"lerobot {self.label}: no arm type {self.robot_type!r}")
