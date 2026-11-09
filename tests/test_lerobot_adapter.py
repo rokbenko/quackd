@@ -42,7 +42,15 @@ from quackd.safety import (
 from quackd.transport.base import DuckState, HeartbeatError, Intent, TransportError, primary_of
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
-from quackd_lerobot import JOINTS, LeRobotAdapter, lerobot_manifest, make, published_travel
+from quackd_lerobot import (
+    JOINTS,
+    ROBOT_TYPE,
+    LeRobotAdapter,
+    lerobot_manifest,
+    make,
+    published_travel,
+)
+from quackd_lerobot.arms import ARMS
 from quackd_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
 from quackd_lerobot.real import (
     CLIP_SUSTAIN_S,
@@ -70,6 +78,7 @@ from quackd_lerobot.real import (
     parse_camera_urls,
     step_from_env,
 )
+from quackd_lerobot.upstream_api import SO_MOTOR_IDS
 from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
@@ -329,6 +338,21 @@ async def test_a_hot_joint_refuses_the_verbs_that_move_the_uncapped_ones() -> No
 DEFAULT_TRAVEL_DEG = 200.0
 """Every joint of a plain `FakeArm` travels this far, centred on zero."""
 
+DRIVABLE_TYPES = tuple(name for name, arm in ARMS.items() if arm.drivable)
+"""The arm types `make()` builds, which the tests marked `every_arm` run over, and the only ones
+a `FakeArm` can be. A type `make()` refuses is described and never driven, so a test over it
+would run code no such arm reaches: the Koch is one
+(`test_the_arms_the_fake_can_be_are_the_ones_make_builds`)."""
+
+MOTOR_TABLES: dict[str, dict[str, int]] = {
+    "so101_follower": SO_MOTOR_IDS,
+    "so100_follower": SO_MOTOR_IDS,
+}
+"""The motors each type's bus offers, by name and bus id, as LeRobot's class for it fills its
+table (`up.SO_MOTORS`, `up.BUS_MOTORS`). At LeRobot's pin the two SO arms are one class under
+two names (`up.ROBOT_TYPE_SO100`), so they offer the same table. A type with no line here is a
+type no `FakeArm` can be, and a marked test over it would fail at the fake."""
+
 
 class FakeCalibration:
     """The two fields quackd reads off a `MotorCalibration` (`up.MOTOR_CALIBRATION`)."""
@@ -355,7 +379,7 @@ class FakeBus:
         self.motors: dict[str, Any] = (
             dict(motors)
             if motors is not None
-            else {joint: SimpleNamespace(id=n) for n, joint in enumerate(JOINTS, start=1)}
+            else {joint: SimpleNamespace(id=n) for joint, n in MOTOR_TABLES[arm.robot_type].items()}
         )
         """name -> something with an `.id`, the one field of a `Motor` quackd reads. A test
         about naming the joint in an error builds its own table, in no particular order."""
@@ -451,7 +475,12 @@ class FakeArm:
     from the ticks with LeRobot's degrees formula rather than borrowed from quackd, while a
     test is free to set a position anywhere, a fold past the limit included. Before this the
     fake followed any goal, which is how a rest pose past the travel was "driven to" in a test
-    that passed for a week while the arm on the bench could never arrive."""
+    that passed for a week while the arm on the bench could never arrive.
+
+    It is an arm of one of the types `make()` builds, an SO-101 unless told otherwise
+    (`every_arm`), and its bus offers that type's motor table (`MOTOR_TABLES`). Nothing else
+    here reads the type, because at LeRobot's pin nothing else of the two SO arms differs
+    (`up.ROBOT_TYPE_SO100`)."""
 
     def __init__(
         self,
@@ -461,7 +490,11 @@ class FakeArm:
         step: float = 25.0,
         object_in_jaws: bool = False,
         stuck: tuple[str, ...] = (),
+        robot_type: str = ROBOT_TYPE,
     ) -> None:
+        self.robot_type = robot_type
+        """Which of LeRobot's robot types this stands in for, and so which motors its bus
+        offers."""
         self.calibrated = calibrated
         self.camera = camera
         self.step = step
@@ -629,6 +662,59 @@ class FakeArm:
         return sent
 
 
+@pytest.fixture(params=DRIVABLE_TYPES)
+def every_arm_type(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Runs a test once for each arm `make()` builds, every `FakeArm` and backend it builds being
+    that arm, the backend told the type as `make()` tells it on a bench. The test says nothing
+    about the type: its subject is a code path every arm shares, and what it shows is that the
+    path still works over an arm that says `so100_follower`. `partialmethod` so that a
+    constructor that stopped taking the type raises here, rather than the run going on quietly
+    as an SO-101."""
+    robot_type: str = request.param
+    for builder in (FakeArm, LeRobotReal, LeRobotMock):
+        monkeypatch.setattr(
+            builder, "__init__", functools.partialmethod(builder.__init__, robot_type=robot_type)
+        )
+    return robot_type
+
+
+every_arm = pytest.mark.usefixtures("every_arm_type")
+"""`every_arm_type` as a mark, for a test that is not told which arm it got. A test that says
+something true of one arm alone stays on the default, the SO-101, and the Koch never runs here,
+as the next test says."""
+
+
+def test_the_arms_the_fake_can_be_are_the_ones_make_builds() -> None:
+    """The tests marked `every_arm` run over the types `make()` will build and no other, and a
+    `FakeArm` can only be one of those. The Koch is described and refused as it is built, on
+    every backend (ADR-0076), so nothing these tests run reaches it, and a green run over a fake
+    Koch would read as if somebody had shown it works."""
+    assert DRIVABLE_TYPES == ("so101_follower", "so100_follower")
+    assert set(MOTOR_TABLES) == set(DRIVABLE_TYPES)
+    assert "koch_follower" in ARMS and "koch_follower" not in MOTOR_TABLES
+    with pytest.raises(AdapterError, match="described and not driven"):
+        make("real", robot_type="koch_follower")
+    with pytest.raises(KeyError, match="koch_follower"):
+        FakeArm(robot_type="koch_follower")
+
+
+@every_arm
+async def test_a_backend_built_as_a_type_says_that_type_at_connect(every_arm_type: str) -> None:
+    """What `every_arm` is for, said once and not assumed: the backend a marked test runs is built
+    as the arm's type and says that type's name and sheet at connect, over a fake whose bus offers
+    that type's motors. Without this the `so100_follower` cases below would be the SO-101's, run
+    again under another name and passing for it."""
+    arm = FakeArm()
+    manifest = await LeRobotAdapter(LeRobotReal("COM5", robot=arm)).connect()
+    kind = ARMS[every_arm_type]
+    assert arm.robot_type == every_arm_type
+    assert {name: motor.id for name, motor in arm.bus.motors.items()} == (
+        MOTOR_TABLES[every_arm_type]
+    )
+    assert manifest.model == kind.model and manifest.extras["robot_type"] == every_arm_type
+    assert manifest.datasheet == kind.datasheet
+
+
 class FakePolicy:
     """Moves the arm and then closes the gripper, which is the only way anything on this
     body can end up holding something."""
@@ -648,6 +734,7 @@ class FakePolicy:
         return None
 
 
+@every_arm
 async def test_real_backend_maps_intents_to_verified_names_and_never_limps() -> None:
     arm = FakeArm(object_in_jaws=True)
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
@@ -730,6 +817,7 @@ def test_the_step_cap_comes_from_the_environment_or_refuses(monkeypatch: Any) ->
         step_from_env()
 
 
+@every_arm
 async def test_a_joint_that_stops_moving_is_a_failure_and_not_a_success() -> None:
     """Upstream reports nothing about whether a goal was reached: an arm against an
     obstacle and an arm that arrived look identical unless somebody compares them."""
@@ -789,6 +877,7 @@ async def _braked(
     return await running, arm.actions[after:]
 
 
+@every_arm
 async def test_a_stop_from_beside_a_move_ends_it_where_it_is() -> None:
     """Over MCP a second call's `stop` answered `stopped (velocity zeroed)`, and the arm's next
     tick sent the ramp's next goal: it held for a tenth of a second and went on to where the
@@ -818,6 +907,7 @@ async def test_a_stop_from_beside_a_move_ends_it_where_it_is() -> None:
         ("gripper", {"open": False}, GRIPPER_OPEN, "gripper did not close"),
     ],
 )
+@every_arm
 async def test_a_stop_from_beside_the_gripper_ends_it_too(
     verb: str, params: dict[str, Any], start: float, said: str
 ) -> None:
@@ -861,6 +951,7 @@ async def test_a_budget_that_runs_out_mid_move_ends_it_and_is_a_failure() -> Non
     assert clock.t < duration_s, "it did not run on to the end of its ramp"
 
 
+@every_arm
 async def test_a_move_refused_by_its_own_range_check_is_not_the_arms_first_motion() -> None:
     arm = FakeArm(step=MAX_STEP_DEG)
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, clock=SteppedClock()))
@@ -925,6 +1016,7 @@ def _share_of(travel: tuple[float, float], share: float) -> float:
 
 
 @pytest.mark.parametrize(("goals", "starts", "duration_s"), LONG_MOVES)
+@every_arm
 async def test_a_long_move_walks_its_goal_there_across_the_time_asked_for_on_the_arm(
     goals: dict[str, float], starts: dict[str, float], duration_s: float
 ) -> None:
@@ -1053,6 +1145,7 @@ async def test_a_slow_ramp_on_the_mock_is_never_mistaken_for_a_stall() -> None:
         pytest.param("elbow_flex", -0.2, -0.2, 0.5, 2.0, id="blocked where it starts"),
     ],
 )
+@every_arm
 async def test_a_joint_blocked_partway_is_a_stall_once_the_ramp_is_done_and_says_where(
     joint: str, start: float, wall: float, share: float, duration_s: float
 ) -> None:
@@ -1094,6 +1187,7 @@ async def test_a_joint_blocked_partway_is_a_stall_once_the_ramp_is_done_and_says
         ),
     ],
 )
+@every_arm
 async def test_a_joint_read_past_its_travel_starts_its_ramp_at_its_limit(
     past: dict[str, float], goals: dict[str, float]
 ) -> None:
@@ -1184,6 +1278,7 @@ def test_the_published_travel_never_promises_a_degree_the_backend_refuses() -> N
     assert hairs, "no end here rounds up to its tenth, so this proves nothing"
 
 
+@every_arm
 async def test_the_edge_the_pilot_is_shown_is_an_edge_it_can_ask_for() -> None:
     """The pilot's prompt prints the published travel, and a careful pilot asks for exactly its
     end. Rounded to nearest, a travel could be published a twentieth of a degree wider than the
@@ -1200,6 +1295,7 @@ async def test_the_edge_the_pilot_is_shown_is_an_edge_it_can_ask_for() -> None:
         _walked(_sent(arm.actions[sent:], joint), began, edge, 1.2)
 
 
+@every_arm
 async def test_a_goal_in_the_sliver_past_the_published_edge_is_refused_before_it_moves() -> None:
     """The manifest publishes each travel rounded inward and the backend refuses against the
     exact one, and the verb sent any goal past the published edge whole so that the backend's
@@ -1414,6 +1510,7 @@ async def test_the_rest_move_and_the_hold_wait_on_the_backend_s_own_clock() -> N
     assert clock.t - before == pytest.approx(TICK_S)
 
 
+@every_arm
 async def test_a_goal_outside_the_calibrated_range_is_refused_with_the_range() -> None:
     """Refused by the verb before anything is sent, in the words the backend refuses with, so
     a pilot hears one sentence for the one rule wherever it is enforced."""
@@ -1431,6 +1528,7 @@ async def test_a_goal_outside_the_calibrated_range_is_refused_with_the_range() -
     assert arm.positions["elbow_flex"] == 0.0
 
 
+@every_arm
 async def test_an_unplugged_arm_fails_the_heartbeat_even_though_is_connected_is_true() -> None:
     """`is_connected` is the serial port's own open flag, so it stays True until a read
     fails. The heartbeat reads the arm rather than the flag."""
@@ -1453,6 +1551,7 @@ async def test_an_unplugged_arm_fails_the_heartbeat_even_though_is_connected_is_
     ],
     ids=["the bus", "the port"],
 )
+@every_arm
 async def test_a_state_read_the_arm_does_not_answer_fails_as_the_transport(lost: Exception) -> None:
     """A read that fails is the transport failing, as it is for the heartbeat. `quackd run` says
     one line for that, and treats anything else as a crash, so LeRobot's own error leaving here as
@@ -1476,6 +1575,7 @@ async def test_a_state_read_the_arm_does_not_answer_fails_as_the_transport(lost:
     assert raised.value.__cause__ is lost
 
 
+@every_arm
 async def test_a_state_read_past_its_deadline_fails_as_the_transport_and_then_says_wedged() -> None:
     """A read that never comes back was a bare `TimeoutError` on this path too. The next read is
     refused for the wedge, which is a transport's own error already and is not wrapped in a
@@ -1506,6 +1606,7 @@ async def test_a_state_read_past_its_deadline_fails_as_the_transport_and_then_sa
         release.set()
 
 
+@every_arm
 async def test_a_wedged_call_refuses_every_later_call_instead_of_sharing_the_bus() -> None:
     """A call that blows its deadline is not over: its thread is still sitting on a
     half-duplex bus. Starting another would put two talkers on it."""
@@ -1643,6 +1744,7 @@ async def test_what_is_no_bus_failure_comes_out_of_a_lerobot_call_as_it_was(
 
 
 @pytest.mark.parametrize("where", ["the stop's hold", "the release", "the close's release"])
+@every_arm
 async def test_a_panic_in_a_stop_a_release_or_a_close_is_met_as_a_failed_call(where: str) -> None:
     """A panic in rustypot went through the stop, the release and the close as it was. The stop
     raised it, where a hold that did not go out is said in `stop_error` and swallowed. The release
@@ -1685,6 +1787,7 @@ async def test_a_panic_in_a_stop_a_release_or_a_close_is_met_as_a_failed_call(wh
 
 
 @pytest.mark.parametrize("register", ["Torque_Enable", "Present_Temperature"])
+@every_arm
 async def test_a_panic_in_a_register_read_costs_that_reading_and_not_the_probe(
     register: str,
 ) -> None:
@@ -1715,6 +1818,7 @@ async def test_a_panic_in_a_register_read_costs_that_reading_and_not_the_probe(
 
 
 @pytest.mark.parametrize("where", ["configure", "the handshake"])
+@every_arm
 async def test_a_connect_that_meets_a_panic_is_not_tried_again(where: str) -> None:
     """A connect is tried again when the bus loses a packet, and each attempt is a `configure()`
     that switches every motor's torque off and on. `_call` makes a panic a failed call, so a
@@ -1885,6 +1989,7 @@ async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_
     await elsewhere
 
 
+@every_arm
 async def test_torque_and_temperature_are_measured_rather_than_assumed() -> None:
     arm = FakeArm()
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
@@ -1903,6 +2008,7 @@ async def test_torque_and_temperature_are_measured_rather_than_assumed() -> None
     assert health.ok and health.extras["hottest_c"] == 65
 
 
+@every_arm
 async def test_a_corrupt_register_read_costs_a_reading_and_not_the_run() -> None:
     """A servo bus returns the odd corrupt status packet. Losing the run over one would
     be worse than the disease, so the positions are the liveness check and the registers
@@ -1917,6 +2023,7 @@ async def test_a_corrupt_register_read_costs_a_reading_and_not_the_run() -> None
     assert state.extras["torque"] is True  # the last known reading stands
 
 
+@every_arm
 async def test_real_backend_refuses_an_uncalibrated_arm() -> None:
     arm = FakeArm(calibrated=False)
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
@@ -1925,6 +2032,7 @@ async def test_real_backend_refuses_an_uncalibrated_arm() -> None:
     assert ("disconnect",) in arm.calls
 
 
+@every_arm
 async def test_real_backend_refuses_an_arm_with_no_calibration_file() -> None:
     """`is_calibrated` compares the motors with a file. Without the file there is nothing
     that knows how far each joint travels, and the range refusal has nothing to stand on."""
@@ -2312,6 +2420,7 @@ async def test_two_picks_at_once_leave_exactly_one_policy_loop_that_stop_cancels
     await adapter.close()
 
 
+@every_arm
 async def test_holding_is_never_true_from_two_samples_a_millisecond_apart() -> None:
     """A heartbeat probe and a verb's poll can land on the same reading. Two samples that
     close agree whatever the gripper is doing, so they say nothing about settling."""
@@ -2367,6 +2476,7 @@ async def test_a_hot_gripper_does_not_gate_the_body_joints() -> None:
     assert (await ex.run_verb("move_joints", {"positions": {"shoulder_pan": 5}})).ok
 
 
+@every_arm
 async def test_the_pilot_is_told_the_calibrated_travel_and_not_the_schema_bound() -> None:
     from quackd.agent.prompts import body_lines
 
@@ -2399,6 +2509,7 @@ async def test_doctor_shows_each_joint_s_travel_as_the_pilot_is_told_it() -> Non
         assert f"{joint} {lo:g} to {hi:g}" in text, (joint, lo, hi)
 
 
+@every_arm
 async def test_a_reading_past_the_travel_is_explained_to_the_pilot_in_this_arm_s_numbers() -> None:
     """On the bench an LLM was handed a joint reading well past the travel line in its prompt,
     with nothing to explain it, and refused to move "on this inconsistent state". It was right
@@ -2642,6 +2753,7 @@ async def test_the_policy_is_handed_the_frame_under_the_cameras_own_name() -> No
     await adapter.close()
 
 
+@every_arm
 async def test_a_hold_that_never_reached_the_arm_is_not_reported_as_stopped() -> None:
     arm = FakeArm()
     transport = LeRobotReal("COM5", robot=arm)
@@ -2657,6 +2769,7 @@ async def test_a_hold_that_never_reached_the_arm_is_not_reported_as_stopped() ->
     assert (await ex.run_verb("stop")).ok and adapter.stop_error is None
 
 
+@every_arm
 async def test_a_stop_over_a_folded_arm_leaves_the_fold_alone() -> None:
     """What `stop` did to the bench arm, which is why this exists. A hold writes each joint's
     present position as its goal, and for a joint folded past its travel the servo clamps that
@@ -2713,6 +2826,7 @@ async def test_a_stop_over_a_folded_arm_leaves_the_fold_alone() -> None:
     assert adapter.stop_skipped == (), "the last hold's list outlived it"
 
 
+@every_arm
 async def test_a_read_the_arm_did_not_answer_says_the_stop_after_it_held_nothing() -> None:
     """A verb's gates read the arm first, and the stop sent after a read that failed reads before
     it holds, so over an arm gone silent it held nothing. All the pilot or a chat was told was
@@ -2733,6 +2847,7 @@ async def test_a_read_the_arm_did_not_answer_says_the_stop_after_it_held_nothing
     await adapter.close()
 
 
+@every_arm
 async def test_a_stop_with_every_body_joint_past_its_travel_sends_nothing_and_is_a_stop() -> None:
     """The branch where the skip leaves nothing to send. Nothing is written, and the stop is
     not reported as undelivered, because it started nothing. That is all it can say: any goal
@@ -2874,6 +2989,7 @@ zero a `FakeArm` starts at, for the same reason: a joint that never had to move 
 """A pose recorded off an arm, gripper and all. Only the five body joints are ever driven."""
 
 
+@every_arm
 async def test_the_rest_move_drives_the_five_body_joints_and_never_the_gripper() -> None:
     """The gripper is left out of the goal for the reason a hold leaves it out: LeRobot
     writes only the keys it is given, so a rest move that re-sent the gripper would open a
@@ -3023,6 +3139,7 @@ def _within_travel(arm: FakeArm, action: dict[str, float]) -> bool:
     )
 
 
+@every_arm
 async def test_a_rest_pose_past_the_travel_parks_at_the_limit_and_is_let_go_of_there() -> None:
     """The rest pose the bench arm was recorded in had its shoulder folded past the travel its
     calibration recorded, and a test here claimed that pose "is still driven to". The fake
@@ -3084,6 +3201,7 @@ async def test_a_rest_pose_past_the_travel_parks_at_the_limit_and_is_let_go_of_t
     assert adapter.close_note is None, "a release at the reachable pose has nothing to warn"
 
 
+@every_arm
 async def test_a_pose_with_every_body_joint_past_its_travel_parks_every_one_at_its_limit() -> None:
     """Nothing about the rule is special to one joint or one end. Every body joint here is
     recorded past its own travel, three below their floors and two above their ceilings, and
@@ -3115,6 +3233,7 @@ async def test_a_pose_with_every_body_joint_past_its_travel_parks_every_one_at_i
     assert arm.torque is False and adapter.close_note is None
 
 
+@every_arm
 async def test_a_pose_inside_the_travel_is_driven_exactly_as_it_always_was() -> None:
     """The clip is for a pose past the travel and for nothing else. A pose inside it, on the
     same several-span calibration, gets the result it always got, byte for byte, and the
@@ -3140,6 +3259,7 @@ async def test_a_pose_inside_the_travel_is_driven_exactly_as_it_always_was() -> 
     assert arm.torque is False and adapter.close_note is None
 
 
+@every_arm
 async def test_an_arm_folded_past_its_travel_is_at_rest_and_is_never_hauled_up_to_the_limit() -> (
     None
 ):
@@ -3300,6 +3420,7 @@ async def test_an_arm_that_cannot_reach_its_rest_pose_keeps_its_torque_and_says_
     assert "shoulder_lift" in note, note
 
 
+@every_arm
 async def test_a_pose_that_names_no_joint_this_arm_drives_is_refused_rather_than_ignored() -> None:
     """`quackd robot rest-pose` reads the pose off the arm and cannot write one of these. A
     hand-edited `robots.json` can, by typing `elbow` where the arm says `elbow_flex`, and the
@@ -3453,6 +3574,7 @@ async def test_a_refused_connect_still_lets_a_built_arm_go(monkeypatch: Any) -> 
 
 
 @pytest.mark.parametrize("where", ["the first read", "the calibration check", "the travel"])
+@every_arm
 async def test_a_connect_that_fails_once_the_arm_is_energised_keeps_it_and_says_so(
     monkeypatch: Any, where: str
 ) -> None:
@@ -3488,6 +3610,7 @@ async def test_a_connect_that_fails_once_the_arm_is_energised_keeps_it_and_says_
     assert arm.torque_disabled == 0 and arm.torque is True, "the arm was dropped"
 
 
+@every_arm
 async def test_a_second_connect_asks_for_the_hold_again(monkeypatch: Any) -> None:
     """The flag lives on the follower, and a close at rest leaves it asking for the release.
     A transport connected again reuses that follower, so a session whose exit then skipped
@@ -3587,6 +3710,7 @@ async def test_a_refused_release_the_close_could_not_repeat_is_not_said_to_have_
     assert "the close then took torque off" not in note, note
 
 
+@every_arm
 async def test_an_arm_with_no_rest_pose_recorded_moves_nothing_and_keeps_its_torque() -> None:
     """Without a recorded pose there is nothing to check the joints against, so the rest move is
     a no-op. Nor is there anywhere the arm is known to rest, so the close keeps its torque rather
@@ -3606,6 +3730,7 @@ async def test_an_arm_with_no_rest_pose_recorded_moves_nothing_and_keeps_its_tor
     assert note == TORQUE_LEFT_ON_WITHOUT_A_POSE.format(name=UNNAMED), note
 
 
+@every_arm
 async def test_an_arm_already_at_its_rest_pose_sends_nothing() -> None:
     arm = FakeArm()
     where_it_sits = {j: arm.positions[j] for j in JOINTS if j != "gripper"}
@@ -3619,6 +3744,7 @@ async def test_an_arm_already_at_its_rest_pose_sends_nothing() -> None:
     assert arm.torque_disabled == 1 and arm.torque is False and adapter.close_note is None
 
 
+@every_arm
 async def test_close_reads_the_joints_itself_even_when_no_rest_move_ran() -> None:
     """close() is the last thing to touch the arm and the only one that knows whether
     letting go would drop it, so it reads the pose rather than trusting that somebody called
@@ -3641,6 +3767,7 @@ async def test_close_reads_the_joints_itself_even_when_no_rest_move_ran() -> Non
     assert rested.close_note is None
 
 
+@every_arm
 async def test_the_rest_move_on_a_wedged_bus_is_an_answer_and_not_an_exception() -> None:
     """Every caller of the rest move is a teardown or the first moment of a run, and a
     teardown that raised would cost the arm the disconnect it was in the middle of. A wedged
@@ -3667,6 +3794,7 @@ async def test_the_rest_move_on_a_wedged_bus_is_an_answer_and_not_an_exception()
         release.set()
 
 
+@every_arm
 async def test_a_rest_goal_that_never_reaches_the_arm_leaves_it_holding() -> None:
     """The arm answers every question and obeys none: the reads that decide whether it is
     resting still work, so close() can tell that it is not, and keeps the torque."""
@@ -3999,6 +4127,7 @@ def _handover_arm() -> tuple[FakeArm, LeRobotReal]:
     return arm, LeRobotReal("COM5", robot=arm, rest_pose=where_it_sits)
 
 
+@every_arm
 async def test_let_go_without_a_rest_pose_recorded_says_where_to_record_one() -> None:
     """Without a recorded pose there is nowhere this arm is known to be safe to release, so
     the refusal is the whole of the answer and it names the command that fixes it. The run
@@ -4016,6 +4145,7 @@ async def test_let_go_without_a_rest_pose_recorded_says_where_to_record_one() ->
     assert arm.torque is True and transport._in_hand is False
 
 
+@every_arm
 async def test_let_go_away_from_the_rest_pose_names_the_shortfall_and_keeps_torque() -> None:
     """An arm standing up is held up by torque and by nothing else, so releasing it there is
     the fall the rest pose exists to prevent. The refusal names the joint furthest from where
@@ -4033,6 +4163,7 @@ async def test_let_go_away_from_the_rest_pose_names_the_shortfall_and_keeps_torq
     assert transport._in_hand is False
 
 
+@every_arm
 async def test_let_go_at_the_rest_pose_releases_the_arm_into_somebodys_hands() -> None:
     arm, transport = _handover_arm()
     adapter = LeRobotAdapter(transport)
@@ -4048,6 +4179,7 @@ async def test_let_go_at_the_rest_pose_releases_the_arm_into_somebodys_hands() -
     assert transport._in_hand is True, "the arm is limp, so it is in somebody's hands"
 
 
+@every_arm
 async def test_a_register_read_that_failed_after_the_release_is_a_release_that_took() -> None:
     """Deliberate, and the reason is which of the two wrong answers gets an arm dropped.
 
@@ -4071,6 +4203,7 @@ async def test_a_register_read_that_failed_after_the_release_is_a_release_that_t
     assert "hold it as though nothing holds it" in note and "holding itself up" not in note, note
 
 
+@every_arm
 async def test_take_hold_writes_the_pose_before_torque_comes_on_and_again_after() -> None:
     """The order is the whole method. Nothing upstream documents what a servo does with the
     goal it was last told when it is re-energised (`up.TORQUE_ENABLE_HOLDS_PRESENT`), and the
@@ -4103,6 +4236,7 @@ async def test_take_hold_writes_the_pose_before_torque_comes_on_and_again_after(
     assert arm.torque is True and transport._in_hand is False
 
 
+@every_arm
 async def test_take_hold_refuses_when_torque_never_comes_on_and_the_arm_is_still_in_hand() -> None:
     """The arm took the call and stayed limp, so nothing is holding it and a hand still is.
     This is the one refusal that leaves the arm where `let_go` left it, and `close()` has to
@@ -4126,6 +4260,7 @@ async def test_take_hold_refuses_when_torque_never_comes_on_and_the_arm_is_still
     assert "torque was left on" not in note, note
 
 
+@every_arm
 async def test_a_joint_that_slipped_as_torque_arrived_is_refused_but_not_called_limp() -> None:
     """The bug this found, and the distinction the whole refusal turns on.
 
@@ -4165,6 +4300,7 @@ def _handed_over_far_from(arm: FakeArm, joint: str, by: float) -> LeRobotReal:
 
 
 @pytest.mark.parametrize("by", [-PLACED_PAST_BY, PLACED_PAST_BY], ids=["floor", "ceiling"])
+@every_arm
 async def test_take_hold_leaves_torque_off_under_a_joint_placed_past_its_travel(by: float) -> None:
     """What went wrong, twice. `take_hold` first wrote a hand-placed joint's present position
     as its goal before torque came on, and past the travel the servo clamps that goal to the
@@ -4303,6 +4439,7 @@ async def test_a_teardown_over_a_joint_placed_past_its_travel_writes_the_arm_not
     assert adapter.close_note == LIMP_IN_HAND.format(why=LET_GO_TO_PLACE), adapter.close_note
 
 
+@every_arm
 async def test_a_stop_while_the_arm_is_in_a_hand_picks_it_up_before_it_sends_anything() -> None:
     """Every teardown begins with a stop, so this is what a Ctrl-C during the wait reaches. A
     stop is "stay where you are", and a goal written to a limp servo stops nothing: the arm is
@@ -4325,6 +4462,7 @@ async def test_a_stop_while_the_arm_is_in_a_hand_picks_it_up_before_it_sends_any
     assert transport.stop_error is None
 
 
+@every_arm
 async def test_a_close_with_the_arm_still_in_a_hand_says_it_is_limp_not_the_opposite() -> None:
     """`--by-hand` takes hold again before the first turn, so the only way to reach a close in
     this state is a run that ended in the gap between: a Ctrl-C during the wait, a heartbeat
@@ -4346,6 +4484,7 @@ async def test_a_close_with_the_arm_still_in_a_hand_says_it_is_limp_not_the_oppo
     assert ("disconnect",) in arm.calls, "the arm was never let go of"
 
 
+@every_arm
 async def test_an_arm_let_go_of_at_its_rest_pose_and_still_there_is_not_said_to_be_in_a_hand() -> (
     None
 ):
@@ -5358,6 +5497,7 @@ def _past_the_ceiling(arm: FakeArm) -> tuple[dict[str, float], dict[str, float]]
         pytest.param(_past_the_ceiling, id="one joint past its ceiling and one low"),
     ],
 )
+@every_arm
 async def test_a_person_can_have_torque_taken_off_an_arm_that_is_away_from_its_rest_pose(
     placed: Any,
 ) -> None:
@@ -5428,6 +5568,7 @@ async def test_the_second_door_at_the_rest_pose_says_the_arm_is_at_it() -> None:
 @pytest.mark.parametrize(
     "holdouts", [("elbow_flex",), ("shoulder_pan", "wrist_roll", "gripper")], ids=["one", "three"]
 )
+@every_arm
 async def test_a_motor_that_kept_its_torque_through_the_release_is_named_and_never_called_off(
     holdouts: tuple[str, ...],
 ) -> None:
@@ -5481,6 +5622,7 @@ async def test_the_mock_names_a_joint_its_release_left_holding() -> None:
     assert "cut its power to let go of it" in note and "nothing is holding it up" not in note
 
 
+@every_arm
 async def test_an_arm_that_kept_torque_on_every_motor_was_not_released_and_is_in_no_hand() -> None:
     """Nothing let go, so nothing is in anybody's hands, and the close treats it as the arm
     holding itself up that it is: away from its pose, torque is kept and said to be kept.
@@ -5508,6 +5650,7 @@ async def test_an_arm_that_kept_torque_on_every_motor_was_not_released_and_is_in
 
 
 @pytest.mark.parametrize("pose", ["recorded", "none"], ids=["at the rest pose", "no rest pose"])
+@every_arm
 async def test_a_refused_release_the_close_then_let_go_of_says_the_close_did(pose: str) -> None:
     """The other half. An arm at its rest pose, or with none recorded, is let go of by the
     close's disconnect, as every such session ends, and that used to happen without a word
@@ -5542,6 +5685,7 @@ async def test_a_refused_release_the_close_then_let_go_of_says_the_close_did(pos
 
 
 @pytest.mark.parametrize("fault", ["the read-back", "the release call"])
+@every_arm
 async def test_a_release_that_went_out_and_was_not_confirmed_is_a_release_in_a_hand(
     fault: str,
 ) -> None:
@@ -5577,6 +5721,7 @@ async def test_a_release_that_went_out_and_was_not_confirmed_is_a_release_in_a_h
 
 
 @pytest.mark.parametrize("anywhere", [False, True], ids=["first door", "second door"])
+@every_arm
 async def test_an_arm_that_did_not_answer_before_the_release_was_never_released(
     anywhere: bool,
 ) -> None:
@@ -5640,6 +5785,7 @@ def _asked_arm(backend: str) -> tuple[Any, Any]:
 
 
 @pytest.mark.parametrize("backend", ["real", "mock"])
+@every_arm
 async def test_a_release_asked_for_at_the_rest_pose_says_it_rests_there(backend: str) -> None:
     """`quackd robot release` folds the arm and then lets go of it at its rest pose through the
     first door, which refuses anywhere else, so it can never drop the arm. The close's own read
@@ -5661,6 +5807,7 @@ async def test_a_release_asked_for_at_the_rest_pose_says_it_rests_there(backend:
 
 
 @pytest.mark.parametrize("backend", ["real", "mock"])
+@every_arm
 async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend: str) -> None:
     """The first door asked for refuses anywhere but the rest pose, exactly as `--by-hand`'s
     does, because an arm standing up is held up by torque alone. Its refusal is one a person
@@ -5691,6 +5838,7 @@ async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend
 
 
 @pytest.mark.parametrize("backend", ["real", "mock"])
+@every_arm
 async def test_an_asked_release_the_close_finds_lifted_says_it_is_in_your_hands(
     backend: str,
 ) -> None:
@@ -5807,6 +5955,7 @@ async def test_the_clip_note_names_the_arm_as_the_torque_note_does(name: str | N
 # ── an arm that did not answer, and a release a Ctrl-C landed on ────────────────────────
 
 
+@every_arm
 async def test_a_rest_move_the_arm_stopped_answering_says_so_and_a_lost_write_does_not() -> None:
     """The end-of-run offer tells a person "it is holding itself up. Hold it and press Enter",
     and it used to say so after any missed rest move, including one refused because the arm
@@ -5828,6 +5977,7 @@ async def test_a_rest_move_the_arm_stopped_answering_says_so_and_a_lost_write_do
     assert "Present_Position" in silent.reason, silent.reason
 
 
+@every_arm
 async def test_the_close_of_an_arm_that_did_not_answer_never_says_it_holds_itself_up() -> None:
     """The close keeps what torque there may be when its own read of the joints fails, which
     is right, and it used to say "torque was left on and it will not fall" over that arm. An
@@ -6023,6 +6173,7 @@ class DisconnectsThroughItsBus(FakeArm):
     ],
     ids=["one joint", "two joints", "every joint"],
 )
+@every_arm
 async def test_a_close_whose_release_raised_names_the_joints_that_may_still_hold(
     held: tuple[str, ...], note: str
 ) -> None:
@@ -6046,6 +6197,7 @@ async def test_a_close_whose_release_raised_names_the_joints_that_may_still_hold
     assert arm.calls[-1] == ("bus.disconnect", True) and not arm.connected, arm.calls[-3:]
 
 
+@every_arm
 async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
     """`stop_error` outlives the failure that set it: a stop whose hold did not reach the arm
     leaves it set until a hold does. The release and the take-hold quoted it in place of the
@@ -6086,6 +6238,7 @@ async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> 
     await transport.close()
 
 
+@every_arm
 async def test_a_rest_move_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
     """The rest move quoted `stop_error` over the error that ended it, as the hand-off did, so a
     fold whose goal LeRobot could not write named an earlier stop's failure, and the close, whose
@@ -6368,6 +6521,7 @@ class OneRegisterDown(FakeBus):
         return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
 
 
+@every_arm
 async def test_a_corrupt_temperature_packet_cannot_answer_for_the_torque_register() -> None:
     """The blocker this was all written to prevent.
 
@@ -6394,6 +6548,7 @@ async def test_a_corrupt_temperature_packet_cannot_answer_for_the_torque_registe
     assert arm.torque is False, "and it really is limp, which is what was read and believed"
 
 
+@every_arm
 async def test_a_torque_register_that_says_nothing_is_not_a_hold() -> None:
     """The other half: the bus goes silent at the moment torque is asked for, which is what a
     marginal connector or a browning-out rail looks like.
@@ -6911,6 +7066,7 @@ async def test_a_release_that_takes_every_motors_time_comes_back_naming_what_hol
         pytest.param("opened_once", True, id="the port opened once and then never again"),
     ],
 )
+@every_arm
 async def test_a_failure_that_names_no_motor_is_retried_and_names_none(
     script: str, torque_said: bool
 ) -> None:
@@ -6961,6 +7117,7 @@ async def test_a_failure_that_names_no_motor_is_retried_and_names_none(
 
 
 @pytest.mark.parametrize("how", ["blows its deadline", "raises TimeoutError"])
+@every_arm
 async def test_a_connect_that_timed_out_is_never_tried_again(how: str) -> None:
     """A connect that has not come back is a worker thread still sitting on the serial bus,
     and `_call` has wedged the transport for it. Trying again would put a second talker on a
@@ -7161,6 +7318,7 @@ async def test_a_connect_that_ends_on_a_timeout_says_hold_the_arm_when_torque_ma
         release.set()
 
 
+@every_arm
 async def test_a_port_close_needs_no_port_handler_and_writes_nothing() -> None:
     """LeRobot 0.7.0's bus holds rustypot's Bus and no port handler (`up.NO_BUSY_FLAG`), so the
     close between two attempts is the bus's own disconnect with its torque-off skipped, and
@@ -7213,6 +7371,7 @@ async def test_a_port_close_that_ran_out_of_time_waiting_for_the_bus_never_runs(
     assert ("bus.disconnect", False) in arm.calls and not arm.is_connected
 
 
+@every_arm
 async def test_a_handshake_that_found_no_motor_names_no_joint_and_says_cables_and_power() -> None:
     """With the servo supply off, which is how an arm is after the power cut a session ends
     on, the handshake lists every motor as missing, and the first id listed was named: every
@@ -7427,6 +7586,7 @@ async def test_a_run_whose_kill_switch_was_pressed_during_a_failing_connect_conn
     assert transport._stop_check is None, "the loop left its abort flag on the arm"
 
 
+@every_arm
 async def test_the_release_and_the_hold_give_each_torque_write_upstream_s_own_retries() -> None:
     """LeRobot tries each torque write once unless told otherwise, and on the bench the bus
     lost packets in exactly those writes, at connect. The same writes are the hand-off: one
