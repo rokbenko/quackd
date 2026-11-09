@@ -48,6 +48,13 @@ A cited line that reads like others in its own file at the pin is a `weak anchor
 as `same` while it stays on its line number, but once it leaves it cannot be followed and reads
 as `changed`. Those are listed under each upstream for whoever re-reads it next.
 
+A VERIFIED ref whose cited line holds no word of the ref's name or its note, at the pin, is a
+`stray anchor`: a guess that it cites a line or a function away from what it read, which no
+comparison over time can see, since that line reads the same every night. A line that leaves a
+bracket open is read with the lines that close it, a decorator with what it decorates, and a
+ref named as a path to its own file names any line of it. Those are listed under each upstream
+as well, and fail nothing by themselves.
+
 Exit 0 when every ref reads as it was read, 1 when something drifted or a ref is broken, which
 is work for somebody in this repository, and 2 when nothing did and something could not be
 checked, so an outage never reads as drift and never closes an issue.
@@ -281,6 +288,9 @@ class Cited:
     sha: str
     path: str
     line: int | None
+    status: str
+    """VERIFIED or UNVERIFIED, as the ref says."""
+    note: str
 
     @property
     def key(self) -> tuple[str, str, str, int | None]:
@@ -309,6 +319,8 @@ class Row:
     now: str = ""
     weak: bool = False
     """The cited line reads like others in its own file at the pin."""
+    stray: bool = False
+    """The ref is VERIFIED, and the line it cites holds no word of its name or its note."""
 
 
 @dataclass
@@ -324,6 +336,8 @@ class Report:
     rows: list[Row] = field(default_factory=list)
     weak: list[Row] = field(default_factory=list)
     """Refs whose line still reads the same and is not the only one that does."""
+    stray: list[Row] = field(default_factory=list)
+    """VERIFIED refs whose line at the pin holds no word of what they say they read."""
     versions: list[tuple[str, bool]] = field(default_factory=list)
     """Each version the module wrote down against what is published, and whether it moved."""
     blocked: dict[str, list[str]] = field(default_factory=dict)
@@ -364,10 +378,11 @@ def cited_of(module: ModuleType) -> tuple[list[Cited], list[str]]:
         source = str(ref.source)
         if match := BLOB.match(source):
             repo, sha, path, line = match.groups()
-            files.append(Cited(ref.name, repo, sha, path, int(line) if line else None))
+            number = int(line) if line else None
+            files.append(Cited(ref.name, repo, sha, path, number, ref.status, ref.note))
         elif match := RAW_FILE.match(source):
             repo, sha, path = match.groups()
-            files.append(Cited(ref.name, repo, sha, path, None))
+            files.append(Cited(ref.name, repo, sha, path, None, ref.status, ref.note))
         else:
             elsewhere.append(ref.name)
     return files, elsewhere
@@ -488,6 +503,91 @@ def _code(text: str) -> str:
     return f"{fence}{pad}{text}{pad}{fence}"
 
 
+#: Words that name nothing alone, so a ref and a line that share only these share nothing:
+#: English's small words, `line`, which a note says of where a thing is, and the keywords and
+#: types the languages here share.
+_COMMON = """
+    a an the and or but if of in on at to for from by with without as is are was were be been
+    being it its this that these those there here than then so not no nor do does did done has
+    have had having can could may might must shall should will would one two three all any some
+    each every both either neither more most less least only own same such too very just also
+    into onto over under up down out off about after before between while when where which who
+    whom whose what why how again once per via vs we you he she they them their our your his
+    her my me us yes s t line lines
+    self cls def class return none true false null nil pub fn let mut const static struct enum
+    impl use mod type str string int float bool void auto new import async await yield lambda
+    try except raise finally elif else pass break continue end begin
+"""
+COMMON = frozenset(_COMMON.split())
+CONTINUED = 10
+"""How many lines after a cited line are read with it while it leaves a bracket open or decorates
+what follows: `def __init__(` names a constructor's parameters on the lines under it, and
+`@dataclass` names nothing until the class under it does."""
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)*")
+_PART = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+_SPAN = re.compile(r"`([^`]+)`")
+
+
+def words(text: str) -> set[str]:
+    """What a text names: each identifier and number in it, whole and lowercased, and each part
+    an identifier is written in (`get_param` is `get` and `param`, `RobotState` is `robot` and
+    `state`) without a plural `s`. A number loses a trailing `.0`, and a part of one character
+    is no part."""
+    found: set[str] = set()
+    for token in _WORD.findall(text):
+        if token[0].isdigit():
+            found.add(re.sub(r"\.0+$", "", token))
+            continue
+        found.add(token.strip("_").lower())
+        for piece in token.split("_"):
+            for part in _PART.findall(piece):
+                part = part.lower()
+                if len(part) > 3 and part.endswith("s") and not part.endswith("ss"):
+                    part = part[:-1]
+                if len(part) > 1:
+                    found.add(part)
+    found.discard("")
+    return found
+
+
+def _depth(line: str) -> int:
+    return sum(line.count(c) for c in "([{") - sum(line.count(c) for c in ")]}")
+
+
+def _read_on(lines: Sequence[str], index: int) -> str:
+    """The cited line, with the lines after it while it leaves a bracket open or decorates what
+    follows, up to `CONTINUED` of them."""
+    taken = [lines[index]]
+    depth = _depth(lines[index])
+    decorating = lines[index].lstrip().startswith("@")
+    for line in lines[index + 1 : index + 1 + CONTINUED]:
+        if depth <= 0 and not decorating:
+            break
+        taken.append(line)
+        if decorating and not line.lstrip().startswith("@"):
+            decorating = False
+            depth = _depth(line)
+        else:
+            depth += _depth(line)
+    return "\n".join(taken)
+
+
+def names_its_ref(cited: Cited, lines: Sequence[str]) -> bool:
+    """Whether the line a ref cites holds a word of the ref's name or of its note, a keyword
+    the note quotes in a code span included: a guess, which a line a function away from what
+    the ref read fails and the line that names it passes. A word of one character counts only
+    from the name (`CameraInfo.K`, `5`), and a ref named as a path that ends at its own file
+    (`std_msgs/msg/String`) cites the file, whichever line it gives."""
+    name = cited.ref.strip()
+    if "/" in name and name.rsplit("/", 1)[1] in (Path(cited.path).name, Path(cited.path).stem):
+        return True
+    assert cited.line is not None
+    named = words(name) - COMMON
+    noted = {word for word in words(cited.note) - COMMON if len(word) > 1}
+    quoted = {word for span in _SPAN.findall(cited.note) for word in words(span) if len(word) > 1}
+    return bool((named | noted | quoted) & words(_read_on(lines, cited.line - 1)))
+
+
 def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -> Row:
     """One ref whose file is there at the pin, against its baseline, as a row."""
     where = f"{cited.path}:{cited.line}" if cited.line is not None else cited.path
@@ -514,9 +614,10 @@ def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -
         return Row(cited.ref, where, "bad anchor", "the line is blank")
     if wanted in BARE or len(wanted) <= 2:
         return Row(cited.ref, where, "bad anchor", f"the line reads {_code(wanted)}")
+    stray = cited.status == "VERIFIED" and not names_its_ref(cited, pinned_lines)
     alike = sum(1 for line in pinned_lines if line.strip() == wanted)
     if cited.line <= len(current_lines) and current_lines[cited.line - 1].strip() == wanted:
-        return Row(cited.ref, where, "same", weak=alike > 1)
+        return Row(cited.ref, where, "same", weak=alike > 1, stray=stray)
     if alike > 1:
         # one of several lines that read alike where it was read: wherever those words are
         # now, nothing says which of them the ref meant, so it cannot be called moved
@@ -527,19 +628,25 @@ def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -
             f"one of {alike} lines that read alike at the pin, so it cannot be followed to "
             f"{head_sha[:7]}: re-anchor it on a line of its own",
             weak=True,
+            stray=stray,
         )
     found = [number for number, line in enumerate(current_lines, start=1) if line.strip() == wanted]
     if len(found) == 1:
-        return Row(cited.ref, where, "moved", f"line {found[0]} at {head_sha[:7]}")
+        return Row(cited.ref, where, "moved", f"line {found[0]} at {head_sha[:7]}", stray=stray)
     if found:
         # the same words in several places are no evidence the cited one survived: a ref that
         # reads `return self._bus` could be any method's, and a re-anchor on a line of its own
         # is what settles it
         places = ", ".join(str(number) for number in found[:6])
         return Row(
-            cited.ref, where, "changed", f"reads the same on lines {places} at {head_sha[:7]}"
+            cited.ref,
+            where,
+            "changed",
+            f"reads the same on lines {places} at {head_sha[:7]}",
+            stray=stray,
         )
-    return Row(cited.ref, where, "changed", f"no line reads {_code(wanted[:60])} at {head_sha[:7]}")
+    gone = f"no line reads {_code(wanted[:60])} at {head_sha[:7]}"
+    return Row(cited.ref, where, "changed", gone, stray=stray)
 
 
 def absent_at_the_pin(cited: Cited, cache: Cache, head_sha: str) -> Row | None:
@@ -622,6 +729,9 @@ def check_module(
         report.count(row.status)
         if row.weak:
             report.count("weak anchor")
+        if row.stray:
+            report.count("stray anchor")
+            report.stray.append(row)
         if row.status not in QUIET:
             report.rows.append(row)
         elif row.weak:
@@ -749,6 +859,7 @@ ORDER = (
     "shared",
     "not a file",
     "weak anchor",
+    "stray anchor",
 )
 
 
@@ -802,6 +913,13 @@ def section(report: Report) -> str:
             "and like other lines of its own file, so a change there could not be followed"
             f"</summary>\n\n{names}\n\n</details>"
         )
+    if report.stray:
+        names = ", ".join(f"`{_cell(row.ref)}` (`{_cell(row.cited)}`)" for row in report.stray)
+        out.append(
+            f"\n<details><summary>{len(report.stray)} stray anchors: each is VERIFIED, and the "
+            "line it cites holds no word of its name or its note at the pin, so it may cite the "
+            f"wrong line</summary>\n\n{names}\n\n</details>"
+        )
     return "\n".join(out)
 
 
@@ -837,6 +955,7 @@ def as_json(reports: Sequence[Report]) -> dict[str, Any]:
                 "unchecked": r.unchecked,
                 "rows": [vars(row) for row in r.rows],
                 "weak": [vars(row) for row in r.weak],
+                "stray": [vars(row) for row in r.stray],
                 "summary": summary_line(r),
             }
             for r in reports

@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 import yaml
 
-from quackd.upstream import UpstreamRef
+from quackd.upstream import Status, UpstreamRef
 from tests.test_upstream_api import UPSTREAMS as SUITE_ROWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -352,7 +352,7 @@ def test_a_line_that_reads_like_another_at_the_pin_is_a_weak_anchor() -> None:
     upstream next. Once the file changes it cannot be followed: one of the twins deleted leaves
     the other, which used to read as the cited line having moved."""
     script = _script()
-    module = _module([_ref("BUS", "src/thing.py", 4), _ref("A", "src/thing.py", 1)])
+    module = _module([_ref("BUS", "src/thing.py", 4), _ref("B", "src/thing.py", 3)])
     report = _one(script, module, Store(_github(script, {"src/thing.py": (TWINS, TWINS)})))
     assert report.counts == {"not a file": 0, "same": 2, "weak anchor": 1}
     assert report.rows == [] and [row.ref for row in report.weak] == ["BUS"]
@@ -367,6 +367,94 @@ def test_a_line_that_reads_like_another_at_the_pin_is_a_weak_anchor() -> None:
     assert row.status == "changed" and row.weak is True
     assert row.now.startswith("one of 2 lines that read alike at the pin")
     assert report.drift is True
+
+
+# ── stray anchors ───────────────────────────────────────────────────────────────────────
+
+
+def _cite(name: str, path: str, line: int, note: str, status: Status = "VERIFIED") -> UpstreamRef:
+    """A ref with a note of its own, where `_ref`'s note names nothing."""
+    return UpstreamRef(name, status, f"{GITHUB}/blob/{PIN}/{path}#L{line}", note)
+
+
+def test_a_verified_ref_whose_line_names_nothing_of_it_is_a_stray_anchor() -> None:
+    """Fourteen of the rosbridge refs cited lines that held something else, a line or a function
+    away from what each said it read, and read as the same every night, since those lines had
+    not moved. A VERIFIED ref whose line holds no word of its name or its note is listed under
+    its upstream, as a weak anchor is, and fails nothing by itself."""
+    script = _script()
+    module = _module(
+        [
+            _ref("READ", "src/thing.py", 2),
+            _ref("Bus", "src/thing.py", 2),
+            _cite("Port", "src/thing.py", 2, "opened in read()"),
+            _cite("Bus.close", "src/thing.py", 2, "a guess", status="UNVERIFIED"),
+            _ref("Bus", "src/other.py", 1),
+        ]
+    )
+    files = {"src/thing.py": (PINNED, PINNED), "src/other.py": (b"x = 1\n", b"x = 2\n")}
+    report = _one(script, module, Store(_github(script, files)))
+    assert [(row.ref, row.cited) for row in report.stray] == [
+        ("Bus", "src/thing.py:2"),
+        ("Bus", "src/other.py:1"),
+    ]
+    assert report.counts == {"not a file": 0, "same": 4, "changed": 1, "stray anchor": 2}
+    (changed,) = report.rows
+    assert changed.status == "changed" and changed.stray is True, "a drifted row is listed too"
+    assert report.drift is True and report.broken is False
+
+    clean = _module([_ref("READ", "src/thing.py", 2), _ref("Bus", "src/thing.py", 2)])
+    report = _one(script, clean, Store(_github(script, {"src/thing.py": (PINNED, PINNED)})))
+    assert report.rows == [] and report.drift is False and report.broken is False
+    assert script.exit_code([report]) == 0, "a stray anchor alone fails nothing"
+    section = script.section(report)
+    assert "1 stray anchors: each is VERIFIED" in section
+    assert "`Bus` (`src/thing.py:2`)" in section
+    assert "1 stray anchor" in script.summary_line(report)
+    assert script._needing(section) == set(), "and needs nobody, so it earns no comment"
+    (upstream,) = script.as_json([report])["upstreams"]
+    assert [row["ref"] for row in upstream["stray"]] == ["Bus"]
+
+
+def test_a_line_is_read_with_what_it_opens_and_a_path_named_ref_names_its_file() -> None:
+    """`def __init__(` names a constructor's parameters on the lines under it, `@dataclass`
+    names nothing until its class does, and `std_msgs/msg/String` cites the whole of
+    `String.msg`. A word of one character counts from the ref's name and not from its note, and
+    a keyword counts when the note quotes it."""
+    script = _script()
+    source = (
+        b"@dataclass\n"
+        b"class Obs:\n"
+        b"    def __init__(\n"
+        b"        self, port, baud\n"
+        b"    ):\n"
+        b"        self.K = port\n"
+        b"    finally:\n"
+        b"x = 1\n"
+    )
+    refs = [
+        _ref("Obs", "src/obs.py", 1),
+        _ref("Bus", "src/obs.py", 1),
+        _ref("Obs(port, baud)", "src/obs.py", 3),
+        _ref("Obs.K", "src/obs.py", 6),
+        _cite("the port closes", "src/obs.py", 7, "in a `finally`"),
+        _cite("Point", "src/obs.py", 8, "{x, y}"),
+        _ref("std_msgs/msg/String", "msg/String.msg", 1),
+    ]
+    files = {"src/obs.py": (source, source), "msg/String.msg": (b"# a comment\n", b"# a comment\n")}
+    report = _one(script, _module(refs), Store(_github(script, files)))
+    assert [(row.ref, row.cited) for row in report.stray] == [
+        ("Bus", "src/obs.py:1"),
+        ("Point", "src/obs.py:8"),
+    ]
+
+    lines = source.decode().split("\n")
+    assert {"robotstate", "robot", "state"} <= script.words("RobotState")
+    assert {"get_param", "get", "param", "45", "v23", "23"} <= script.words("get_param 45.0 v23")
+    assert script.words("Services") == {"services", "service"}, "a part loses its plural s"
+    assert script._read_on(lines, 0) == "@dataclass\nclass Obs:"
+    assert script._read_on(lines, 2).endswith("    ):")
+    assert script._read_on(lines, 5) == "        self.K = port"
 
 
 # ── which baseline ──────────────────────────────────────────────────────────────────────
@@ -937,7 +1025,7 @@ def test_a_line_less_ref_to_a_directory_is_counted_and_is_nobodys_fault() -> Non
     not serve: the API says it is one, so it is counted, never a row, never drift, never an
     outage."""
     script = _script()
-    module = _module([_ref("DIR", "src/package"), _ref("FILE", "src/thing.py", 2)])
+    module = _module([_ref("DIR", "src/package"), _ref("READ", "src/thing.py", 2)])
     urls = _github(script, {"src/package": (None, None), "src/thing.py": (PINNED, PINNED)})
     urls.update(_contents(script, "src/package", [{"name": "__init__.py"}]))
     urls[f"{script.API}/repos/{WIDGET}/contents/src/package?ref={HEAD}"] = b'[{"name": "x.py"}]'
