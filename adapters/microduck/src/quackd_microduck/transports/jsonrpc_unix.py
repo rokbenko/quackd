@@ -9,7 +9,7 @@ posture, which is read off the policy label against the labels robotd's own sour
 fails closed on every other, and the camera's routes, read in `mediad`'s source. What is not,
 and is listed in `extras.assumptions` while it applies: what `stand_up`'s `robot.enable` does
 for a duck on the floor (`up.STAND_UP_RPC`), and the lens of `mediad`'s `/frame`, which is
-taken from the first frame's shape (`up.ALPHA_UPRIGHT_FOV`).
+taken from the first frame's shape (`up.ALPHA_UPRIGHT_FOV`, `up.BETA_UPRIGHT_FOV`).
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
@@ -66,7 +66,7 @@ is at the other end of an ssh tunnel:
   quackd takes from the first frame's shape goes in the manifest with the assumption named, so
   that the detector calls its detections uncalibrated, and is listed in `extras.assumptions`
   for as long as the detector measures through it, which ends when `--fov-deg` gives another
-  (`up.ALPHA_UPRIGHT_FOV`).
+  (`up.ALPHA_UPRIGHT_FOV`, `up.BETA_UPRIGHT_FOV`).
 
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
@@ -321,6 +321,22 @@ def _id_of(value: Any) -> int | None:
     anything else: a string, a list, a float, a bool, which Python would otherwise read as 0
     or 1, and the null robotd answers a line it could not parse with. None matches no request."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def release_key(version: Any) -> tuple[int, int, int, int] | None:
+    """A `hello`'s `daemon_version` in the order releases come in, or None for one that names
+    no release: robotd names its crate's version, `0.18.8` on daemon-v0.18.8 (`up.RELEASE`).
+
+    The fourth number is 0 for a pre-release, such as `0.18.8-rc.1`, and 1 for the release
+    itself, since a pre-release comes before the release it leads to. Build metadata after a `+`
+    changes nothing."""
+    if not isinstance(version, str):
+        return None
+    release, dash, pre = version.strip().partition("+")[0].partition("-")
+    parts = release.split(".")
+    if len(parts) != 3 or not all(p.isascii() and p.isdigit() for p in parts) or (dash and not pre):
+        return None
+    return (int(parts[0]), int(parts[1]), int(parts[2]), 0 if dash else 1)
 
 
 #: How often a held gaze goes out again (`_hold_gaze`): half of robotd's IDLE_AFTER, the wait
@@ -999,7 +1015,7 @@ class JsonRpcUnixTransport:
         """Whether `_frame_error` is a failure `connect()` waits through (`_snapshot_failure`)."""
         self._first_frame_size: tuple[int, int] | None = None
         """The first HTTP frame's width and height, which the lens of `/frame` is taken from
-        (`_assumed_fov_deg`)."""
+        (`_assumed_lens`)."""
         self._fetch_s = 0.0
         """How long the newest HTTP fetch took, answered or not, which the snapshot loop waits out
         before it asks again (`frame_period_s`)."""
@@ -1727,11 +1743,12 @@ class JsonRpcUnixTransport:
     @property
     def camera_fov_assumed(self) -> str | None:
         """The words of the assumption `camera_fov_deg` rests on, when it rests on one: the lens of
-        a tall `/frame` (`up.ALPHA_UPRIGHT_FOV`), which `MicroduckAdapter.connect` puts in the
-        manifest beside the lens, so that the detector measures through it uncalibrated and says
-        to pass `--fov-deg` (`quackd.perception.lens_of`). None for a lens the camera reported,
-        and for none."""
-        return None if self._assumed_fov_deg() is None else up.ALPHA_UPRIGHT_FOV.name
+        a tall `/frame` (`up.ALPHA_UPRIGHT_FOV`) or of a wide one (`up.BETA_UPRIGHT_FOV`), which
+        `MicroduckAdapter.connect` puts in the manifest beside the lens, so that the detector
+        measures through it uncalibrated and says to pass `--fov-deg`
+        (`quackd.perception.lens_of`). None for a lens the camera reported, and for none."""
+        lens = self._assumed_lens()
+        return None if lens is None else lens[1].name
 
     def _lens_assumed(self) -> bool:
         """Whether the detector measures through the lens assumed from the first frame's shape:
@@ -1748,31 +1765,46 @@ class JsonRpcUnixTransport:
         `--fov-deg` names one, and where `serve-mcp`, which has no `--fov-deg`, always takes it.
         Without one a real camera is measured through the simulator's 90 degrees. Over WebRTC
         it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`), and from
-        `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_fov_deg`)."""
+        `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_lens`)."""
         if self._webrtc is not None:
             return self._webrtc.fov_deg
         return self._assumed_fov_deg()
 
     def _assumed_fov_deg(self) -> float | None:
-        """The lens of `mediad`'s `/frame` as quackd assumes it, from the shape of the first frame
-        a working camera gave, or None (`up.ALPHA_UPRIGHT_FOV`).
+        """The lens of `mediad`'s `/frame` as quackd assumes it, in degrees across the frame, or
+        None (`_assumed_lens`)."""
+        lens = self._assumed_lens()
+        return None if lens is None else lens[0]
+
+    def _assumed_lens(self) -> tuple[float, up.UpstreamRef] | None:
+        """The lens of `mediad`'s `/frame` as quackd assumes it from the shape of the first frame
+        a working camera gave, in degrees across the frame, and the assumption it rests on, or
+        None.
 
         The PNG carries no lens. On a stock robot only an alpha's camera, an IMX219 mounted a
         quarter turn off and turned upright for the PNG, gives a picture taller than wide, so
         the sensor's field along its long side (`up.IMX219_FOV`) runs down the picture, and its
-        width sees that field scaled by the picture's shape through the tangent of half of it.
-        That is the module's design and not a calibration. It is taken from the first frame
+        width sees that field scaled by the picture's shape through the tangent of half of it
+        (`up.ALPHA_UPRIGHT_FOV`). That is the module's design and not a calibration. Only a
+        beta's, a GC2093 that sits upright, gives one wider than tall, 16:9 at every size mediad
+        streams, and the PNG is the whole frame it took, across whose width the focal length of
+        upstream's own solve of the beta's lens gives 85.2 degrees (`up.BETA_UPRIGHT_FOV`). A
+        wide frame got no lens until that solve was read, and one of any other shape, such as a
+        4:3 webcam's served at `/frame`, still gets none. The lens is taken from the first frame
         alone because the manifest the detector reads it from is built once, at connect. A
-        wider frame, which is a beta's, and every camera but `mediad`'s get none, and the
-        detector falls back on its own, as it always has without `--fov-deg`."""
+        square frame, and every camera but `mediad`'s, get none, and the detector falls back on
+        its own, as it always has without `--fov-deg`."""
         size = self._first_frame_size
         if size is None or not self.camera_working or not self._on_mediad:
             return None
         width, height = size
-        if not 0 < width < height:
-            return None
-        half = math.radians(up.IMX219_FOV_DEG) / 2
-        return math.degrees(2 * math.atan(math.tan(half) * width / height))
+        if 0 < width < height:
+            half = math.radians(up.IMX219_FOV_DEG) / 2
+            tall = math.degrees(2 * math.atan(math.tan(half) * width / height))
+            return tall, up.ALPHA_UPRIGHT_FOV
+        if 0 < height < width and width * 9 == height * 16:
+            return up.GC2093_FOV_DEG, up.BETA_UPRIGHT_FOV
+        return None
 
     @property
     def camera_error(self) -> str | None:
@@ -1823,7 +1855,7 @@ class JsonRpcUnixTransport:
             # the lens the detector measures through, as far as the transport knows: the one
             # --fov-deg gave, else the one assumed from the first frame, and which it is
             "fov_deg": None if fov is None else round(fov, 1),
-            "fov_assumed": up.ALPHA_UPRIGHT_FOV.name if self._lens_assumed() else None,
+            "fov_assumed": self.camera_fov_assumed if self._lens_assumed() else None,
             "fov_given": given is not None,
             "error": self._frame_error,
         }
@@ -1846,6 +1878,16 @@ class JsonRpcUnixTransport:
         """The skills this robot listed, or None before anything has answered, which
         `MicroduckAdapter.connect` offers a gated body's verbs by (`Body.skill_verbs`)."""
         return None if self.subscribed is None else self._skills()
+
+    def _plays_emotions(self) -> bool:
+        """Whether this robotd can play an emotion: the release it named in `hello` is
+        daemon-v0.18.8 or later (`up.EMOTIONS_SINCE`). Its API version cannot say, since
+        daemon-v0.18.6 and daemon-v0.18.7 report API 50 as daemon-v0.18.8 does and play none,
+        and a `hello` that names no release says nothing either. A verdict that robotd has not
+        taken a twist names an emotion as a cause only where one can play, since it says where
+        to look for one (`_not_taken`)."""
+        key = release_key((self.answered or {}).get("daemon_version"))
+        return key is not None and key >= (*up.EMOTIONS_SINCE, 1)
 
     def _read(self) -> StateRead:
         """The newest state frame and what it says about the duck, without asking robotd
@@ -2136,8 +2178,8 @@ class JsonRpcUnixTransport:
         one assumed from the first frame, which it stops doing once `--fov-deg` gives another
         (`lens_given`)."""
         listed = list(self.body.assumptions)
-        if self._lens_assumed():
-            listed.append(up.ALPHA_UPRIGHT_FOV.name)
+        if self._lens_assumed() and (lens := self.camera_fov_assumed) is not None:
+            listed.append(lens)
         return listed
 
     def _hello_record(self, read: StateRead) -> dict[str, Any] | None:
@@ -2445,12 +2487,17 @@ class JsonRpcUnixTransport:
         nothing. A walk still too short on its own, with no walk before it in the same run of
         unshown twists, is still reported on what it sent.
 
-        Two things look alike here, and the words name both. A robotd that could not parse the
+        Three things look alike here, and the words name each. A robotd that could not parse the
         twist answers nothing and goes on showing what it had. One that took it shows the next
         twist anybody sent, and a connected gamepad sends one at least ten times a second, a stop
         while its sticks are still (`up.PAD_DRIVES`), so a pad in somebody's hand fights every
-        walk quackd sends. Holding the walk back is right either way: the duck is not doing what
-        quackd asked."""
+        walk quackd sends. And while an emotion plays, one that took it shows a zero twist in its
+        place, with nothing in the frame to say why (`up.MOVE_ECHO`). The words named the first
+        two alone, which sent whoever read them after a walk an emotion had stopped looking for
+        the wrong thing. The body's `zero_twist` names the third when the frame said a zero
+        twist, the only one an emotion leaves, on a robotd that can play one
+        (`_plays_emotions`). Holding the walk back is right whichever it is: the duck is not
+        doing what quackd asked."""
         words = self.body.words
         moving = [sent for sent in self._unshown if any(sent.twist)]
         if not moving or self._last_state_at is None:
@@ -2496,10 +2543,16 @@ class JsonRpcUnixTransport:
             else ""
         )
 
+        # an emotion leaves a zero twist in every frame it plays through, and no field there
+        # names it, on a robotd from the release that plays them
+        zero = asked is not None and not any(asked)
+        zeroed = words.zero_twist if zero and self._plays_emotions() else ""
+
         def either(these: str, after: str) -> str:
             return (
                 f"{words.peer} answers a robot.move with nothing, so either it could not parse "
                 f"{these}{unread}, or another client sent one after {after}{words.other_client}"
+                f"{zeroed}"
             )
 
         if len(counted) == 1:

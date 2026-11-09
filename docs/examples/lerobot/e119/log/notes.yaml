@@ -1,0 +1,51 @@
+hook: quackd handed the arm over, held the pose a person set by hand, and folded it back to rest when the run was done.
+goal_met: "Yes"
+parts:
+  - The rest pose at both ends of a run
+  - "The hand-off: a person places the arm and quackd holds it"
+  - Recording the rest pose
+why_example: >
+  When LeRobot disconnects from an arm it takes the torque off, so an arm left raised falls where it
+  is. This project's first arm did that at the end of every run. The rest pose is quackd's answer: a
+  pose the arm can hold with no power, which every run starts from and folds back to. The hand-off is
+  the other half, where a person places the arm and quackd takes hold of it without dropping it. This
+  example shows both on a real arm.
+why_result: >
+  A run on this arm begins and ends at a pose it can hold on its own, so the end of a run is not the
+  moment it falls. When a person placed the arm by hand, quackd took hold of a pose it had never been
+  told about and only then said to let go, and at the end it opened the gripper first and gave 3 s to
+  clear before it folded. Those are the moments a person's hands are nearest the arm.
+goal: >
+  Show the rest pose and the hand-off working on a real arm: a run starts from the rest pose and folds
+  back to it, a person can place the arm by hand and quackd holds it there, and a new rest pose can be
+  recorded.
+expected: >
+  At each end of a run quackd says `moving to the rest pose`, then `already at the rest pose` or `at
+  the rest pose`. Placed by hand, the arm holds the pose it is given once quackd says the person can
+  let go, and it folds back to its rest pose at the end.
+showed:
+  - >
+    Part 1: the arm was already folded, so quackd said `already at the rest pose` at both ends and
+    nothing moved. The LLM read the arm back once and ended the run, with no joint reading hot.
+  - >
+    Part 2: quackd took the torque off at the rest pose and handed the arm over, saying `the arm is
+    yours`. With a pen in the jaws and the arm held up by hand, Enter made quackd take hold and say
+    `holding the pose you set, you can let go`. The arm stayed there for the 38 s until the next Enter.
+  - >
+    At the end of Part 2, Enter opened the gripper all the way so the pen could be taken, and 3 s later
+    the arm folded back in about 2.6 s, ending on `at the rest pose`.
+  - >
+    The arm reported `holding nothing` while the pen was in its jaws, and its own camera shows the pen
+    there in the second picture of Part 2. quackd infers holding from the gripper stopping short of
+    shut, and a pen this thin leaves it nearly shut, at 4 of 100.
+  - >
+    Part 3: `quackd robot rest-pose arm-01` read all six joints, asked before replacing the pose
+    already recorded, and kept the new one.
+did_not_show:
+  - >
+    Part 1's arm had no need to move, because it was already at its rest pose, so that part shows the
+    check and not the fold. The fold to watch is the one at the end of Part 2. Part 1's GIF is a stock clip of
+    the arm sitting still, used for every run where it did not move.
+  - >
+    Neither run prints a line saying it let go of the arm at its end, so the torque coming off there
+    is not something these records show.

@@ -185,8 +185,11 @@ quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
 720 by 1280 at `mediad`'s default quality: quackd takes that shape for an alpha's camera and
 measures through the lens it assumes for one, which every state then lists in
 `extras.assumptions` ([the Microduck page](README.md#getting-a-picture-off-a-real-microduck)).
-On a beta, expect a wide one, which gets no lens. It needs no extra, takes no media session, and
-installs and stops nothing on the duck. The route arrived in `daemon-v0.13.0`.
+On a beta, expect a wide one, 1280 by 720 at `mediad`'s default quality: quackd takes that shape
+for a beta's camera and measures through the focal length of upstream's own solve of its lens,
+85.2° across the frame, an assumption every state lists in the same way. It needs no extra, takes
+no media session, and installs and stops nothing on the duck. The route arrived in
+`daemon-v0.13.0`.
 
 > Abort if no frame arrives. quackd waits 5 s for the first one, through the `503` that `mediad`
 > answers while it cannot hand a frame out, and `doctor` prints the last failure under the

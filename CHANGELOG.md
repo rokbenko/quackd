@@ -188,6 +188,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
+- **`list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
+  where they said `"built-in"`.** The described row, in every core, said `"installed": false`
+  beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
+  went after a package that does not exist. A third party's adapter that names no extra said
+  `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
+  `built-in` as they did, and `quackd ui`'s setup page says to install such an adapter as its maker
+  says, where it would have said `uv pip install "None"`. What changes for you: a script that read `"built-in"` reads `null`.
+- **A beta Microduck's `/frame` is measured through the focal length of upstream's own solve of
+  its lens.** quackd takes the lens of `mediad`'s `/frame` from the first frame's shape, since the
+  PNG carries none, and a wide frame, which on a stock robot only a beta's upright GC2093 gives,
+  got none: the colour detector fell back on 90°, the YOLO and board detectors on 62°, and `watch`
+  on an assumed 40°. Upstream has solved the beta's lens since daemon-v0.18.0, and the field its
+  focal length gives across the width of a 16:9 frame is 85.2° at every size `mediad` streams.
+  Read at daemon-v0.18.8, the PNG is that whole frame, unturned and scaled by nothing. So a first
+  frame that is 16:9 and wider than tall is taken for a beta's now, as a tall one is for an
+  alpha's: the manifest's `camera_fov_deg` is 85.2, and beside it go the words of the assumption
+  it rests on, "a 16:9 /frame wider than tall is assumed to be a beta's GC2093, measured through
+  its solve's focal length, 85.2 degrees across" (a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`), which
+  every state lists in `extras.assumptions` and `extras.camera` gives as `fov_assumed`.
+  `--fov-deg` overrides it on `quackd run` as it does an alpha's. The solve's principal point and
+  its distortion, which quackd's detectors correct for no more than an alpha's, leave a bearing
+  short of the solve's by up to about 14° near the picture's edges. What changes for you: on a
+  beta's `/frame`, detections measure through 85.2° where they measured through the detector's own
+  90° or 62°, uncalibrated as before, the log's line about the lens names the assumption, `watch`
+  turns the head by what 85.2° calls for rather than 40°, and the digest an MCP client's
+  `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which quackd
+  reads as `mediad`'s, gets the same 85.2° now when its picture is 16:9 and wider than tall, and
+  still gets no lens when it is wide in any other shape, such as a 4:3 webcam's, or square.
 - **A close whose own release raised names the joints that may still hold.** The close lets go of an
   arm at its rest pose through LeRobot's disconnect. LeRobot 0.7.0's torque-off there tries every
   motor and names each one whose write it could not confirm, where 0.6.1's stopped at its first
@@ -213,13 +241,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
   changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
   Code, or a test, that skipped the connect is refused.
-- **`list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
-  where they said `"built-in"`.** The described row, in every core, said `"installed": false`
-  beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
-  went after a package that does not exist. A third party's adapter that names no extra said
-  `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
-  `built-in` as they did, and `quackd ui`'s setup page says to install such an adapter as its maker
-  says, where it would have said `uv pip install "None"`. What changes for you: a script that read `"built-in"` reads `null`.
 
 ### Fixed
 
@@ -305,47 +326,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
-- **A panic in rustypot is met as the failed bus call it is.** pyo3 hands a panic in rustypot's Rust
-  code to Python as `PanicException`, which derives from `BaseException` and not from `Exception`.
-  The arm's backend, which the simulator and the mock run too, raised whatever a LeRobot call
-  raised, so a panic went through every handler that meets a failed call. A stop whose hold met one
-  raised it rather than say the hold did not reach the arm, a release raised it as though a Ctrl-C
-  had landed on it, and a close stopped where it met it, before its disconnect or before the line it
-  ends on. A LeRobot call that raises something that is not an `Exception`, other than a Ctrl-C, an
-  exit, a cancellation or a generator's close, now comes out as the `ConnectionError` LeRobot raises
-  for a failed call, naming what it raised: `a LeRobot call (disable_torque) raised PanicException:
-  ...`. A panic in a register read costs that reading, as a lost packet does, and a connect that
-  meets one is not tried again: it closes the port and says so, since every attempt switches every
-  motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
-  say what they say of any failed call, and the close runs to its end.
-- **A fold to the rest pose and a policy segment quote what failed, not an earlier stop.** A stop
-  whose hold did not reach the arm leaves its reason in `stop_error` until a hold does. The rest
-  move, and a `pick` or a `manipulate` segment's reads and sends, each quoted that reason over the
-  error that ended them. So a fold whose goal LeRobot could not write named the earlier stop's
-  failure, and so did the close, whose last line quotes a fold that missed, and a segment whose
-  first read failed, or whose read or third send in a row failed mid run, named the stop and not the
-  read or the send. Each quotes the error's own words now, as the release and the take-hold do, and
-  `stop_error` only for the call that wedged the bus, or met it wedged, whose reason it is. Not
-  every timeout is a wedge: a call that waited behind another and never went out, one that came back
-  after its budget was spent, and one that raised a TimeoutError of its own write no `stop_error`,
-  so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
-  `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
-  failed this time.
-- **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
-  probe lets go of an arm at its rest pose through the close's disconnect, and when that release
-  raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
-  arm held up away from its pose, where the close had been letting go of an arm lying in its fold.
-  It says `torque unknown: the close's release did not finish` now, and `torque off in part: some
-  joints may still hold` where LeRobot named the joints it could not confirm. What changes for you:
-  the row says the close was letting go of the arm, where it said the arm was holding itself up away
-  from its pose.
-- **A second close of the arm keeps what the first one said.** A close after a close, over a port
-  the first one shut, read the arm, was refused on the shut port and ended on `quackd cannot tell
-  whether the arm is holding itself up (...)`, over an arm the first close may have let go of at its
-  rest pose. It keeps the first close's line now, and one whose port is still open closes as any
-  close does. No quackd command prints a second close's line: a flock member whose run raised can be
-  closed a second time, and code of your own may close the transport twice. What changes for you:
-  `close_note` after a second close is the first close's.
+- **A file nested too deep for Python to parse is refused, where it stopped the policy server.** A
+  checkpoint's `config.json` or a pinned model's JSON nested deeper than Python will follow raised a
+  `RecursionError` nothing caught, so `quackd policy serve` ended on a traceback. It is refused now in
+  the sentence any file that is not JSON gets. The refusals that name a file in a pinned model's
+  directory now quote it, as the one for an unknown file always did, since a name there can hold
+  anything. What changes for you: nothing to do. `tests/test_policy_pipeline.py` fails without this.
+- **A checkpoint's `train_config.json` has to be its own commit's.** The policy server reads a
+  checkpoint's rate from the dataset that file names, and it was the one file of a checkpoint not
+  checked to have landed beside its `config.json`, so a tag moved between the two reads could name
+  another commit's training run, and the checkpoint would be served at that run's rate. It is refused
+  now, before the weights are fetched, with a sentence saying to give `--fps`. What changes for you:
+  nothing to do. `tests/test_policy_pipeline.py` fails without this.
 - **An Open Duck's link outlives a line quackd cannot read, as ToddlerBot's has since 0.32.0.** The
   bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB, an
   answer that was no JSON object, an id that was no number, an error that was no object, or a reset
@@ -426,6 +418,62 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   new page, its endurance under load, the G1's 23 joints and the Asimov-1's 5 kg, and says who read
   what. It was still one more reader and no robot: no figure here has been checked against a body,
   and no maker was asked.
+- **A Microduck walk that an emotion stops names the emotion as one cause.** From daemon-v0.18.8
+  robotd plays an emotion for a `robot.do`, a stock pad's Y and bumpers play three, and while one
+  plays robotd reports a zero twist in place of the one it was asked for, with nothing in
+  `robot.state` to say an emotion is playing. A `microduck:jsonrpc` walk under way then stops, as it
+  should, since the duck is not doing what quackd asked, and the verb fails with `robotd has not
+  taken robot.move`. Its words named two causes, a twist robotd could not parse and another
+  client's twist, so whoever read them went looking for a bug or a second program. When the frame
+  the failure quotes said a zero twist, the only one an emotion leaves, the failure names an emotion
+  as a third cause now, and says robotd logs `emotion started` as one begins. It does so only on a
+  robotd that names daemon-v0.18.8 or later in its `hello`, since none before it plays an emotion
+  and daemon-v0.18.6 and daemon-v0.18.7 report API 50 too. One that quotes another client's moving
+  twist names no emotion, and Huebot's words are as they were. What changes for you: a walk that
+  stops this way on daemon-v0.18.8 or later tells you to look at the pad's Y and bumpers, at any
+  other program that sends `robot.do`, and at robotd's log. What stops the walk, the failure's
+  first words and `extras.move_echo` are as they were.
+- **A panic in rustypot is met as the failed bus call it is.** pyo3 hands a panic in rustypot's Rust
+  code to Python as `PanicException`, which derives from `BaseException` and not from `Exception`.
+  The arm's backend, which the simulator and the mock run too, raised whatever a LeRobot call
+  raised, so a panic went through every handler that meets a failed call. A stop whose hold met one
+  raised it rather than say the hold did not reach the arm, a release raised it as though a Ctrl-C
+  had landed on it, and a close stopped where it met it, before its disconnect or before the line it
+  ends on. A LeRobot call that raises something that is not an `Exception`, other than a Ctrl-C, an
+  exit, a cancellation or a generator's close, now comes out as the `ConnectionError` LeRobot raises
+  for a failed call, naming what it raised: `a LeRobot call (disable_torque) raised PanicException:
+  ...`. A panic in a register read costs that reading, as a lost packet does, and a connect that
+  meets one is not tried again: it closes the port and says so, since every attempt switches every
+  motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
+  say what they say of any failed call, and the close runs to its end.
+- **A fold to the rest pose and a policy segment quote what failed, not an earlier stop.** A stop
+  whose hold did not reach the arm leaves its reason in `stop_error` until a hold does. The rest
+  move, and a `pick` or a `manipulate` segment's reads and sends, each quoted that reason over the
+  error that ended them. So a fold whose goal LeRobot could not write named the earlier stop's
+  failure, and so did the close, whose last line quotes a fold that missed, and a segment whose
+  first read failed, or whose read or third send in a row failed mid run, named the stop and not the
+  read or the send. Each quotes the error's own words now, as the release and the take-hold do, and
+  `stop_error` only for the call that wedged the bus, or met it wedged, whose reason it is. Not
+  every timeout is a wedge: a call that waited behind another and never went out, one that came back
+  after its budget was spent, and one that raised a TimeoutError of its own write no `stop_error`,
+  so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
+  `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
+  failed this time.
+- **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
+  probe lets go of an arm at its rest pose through the close's disconnect, and when that release
+  raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
+  arm held up away from its pose, where the close had been letting go of an arm lying in its fold.
+  It says `torque unknown: the close's release did not finish` now, and `torque off in part: some
+  joints may still hold` where LeRobot named the joints it could not confirm. What changes for you:
+  the row says the close was letting go of the arm, where it said the arm was holding itself up away
+  from its pose.
+- **A second close of the arm keeps what the first one said.** A close after a close, over a port
+  the first one shut, read the arm, was refused on the shut port and ended on `quackd cannot tell
+  whether the arm is holding itself up (...)`, over an arm the first close may have let go of at its
+  rest pose. It keeps the first close's line now, and one whose port is still open closes as any
+  close does. No quackd command prints a second close's line: a flock member whose run raised can be
+  closed a second time, and code of your own may close the transport twice. What changes for you:
+  `close_note` after a second close is the first close's.
 
 ### Security
 
@@ -436,9 +484,72 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   so since 0.26.0 a GR00T whose processors left it out ran whatever code that repository held on the
   day, past `--pin`. LeRobot's own saves always write it, so it took an edited file. Such a step is
   refused now, before a pin or a weight, and `tests/test_policy_pipeline.py` fails without this.
+- **A GR00T base pinned at a tag is fetched at the commit its `config.json` was read at.** The
+  policy server reads a GR00T's pinned base's `config.json` before any weight, and refuses a base
+  that names a backbone other than `nvidia/Cosmos-Reason2-2B`, which LeRobot would fetch at no
+  revision and load trusting its repository's code. Since 0.26.0 it then fetched the rest of the
+  base at the tag again, after the checkpoint's own weights, so a tag moved between the two reads
+  handed the build a `config.json` nobody had read, and LeRobot would have fetched whatever
+  backbone that one named. The rest of the base is fetched at the commit the first read found now,
+  and `/v1/policy` names that commit. A base pinned at a whole commit was never open to this. What
+  changes for you: nothing to do. `tests/test_policy_pipeline.py` moves a tag between the two
+  reads, and fails without this.
+- **A pinned model whose config names a kernel on the Hub as its attention is refused.**
+  transformers 5 builds a model with the attention its `config.json` names, and a name that is a
+  repository, `owner/name`, is a kernel on the Hub, whose code transformers fetches and runs
+  through the `kernels` package once that is installed, when that package trusts the
+  repository's publisher or finds the kernel in its cache offline, at a revision no `--pin`
+  fixes. LeRobot builds SmolVLA's backbone with the attention its pinned `config.json` names,
+  transformers checks the one a pinned GR00T base's names as it builds GR00T's own module, though
+  LeRobot builds GR00T's backbone from a config of its own, and the server checked a pinned
+  model's configs for `auto_map` alone. The server's extra does not install `kernels`, and
+  without it transformers fails the build instead. A name with a `/` in it, under
+  `attn_implementation` or `_attn_implementation` anywhere in a pinned model's JSON, is refused
+  now, before anything is built from it. What changes for you: nothing to do, unless a pinned
+  model's config names such a kernel, which is refused with a sentence saying to pin a revision
+  whose config names `sdpa` or `eager` as its attention, or none. `tests/test_policy_pipeline.py`
+  fails without this.
+- **The policy server loads nothing where transformers would run kernels from the Hub, and
+  refuses the other ways a config reaches one.** The refusal above looks for a repository named
+  under `attn_implementation` or `_attn_implementation`, and transformers 5 reaches a kernel on
+  the Hub in other ways too. It swaps a flash attention, `flash_attention_2` and its kin, for a
+  kernels-community repository whenever flash_attn cannot run. It runs some experts and some
+  quantizers with kernels of their own, eetq's, mxfp4's and fine-grained fp8's among the
+  quantizers. A GR00T base can set its attention under `_attn_implementation_internal`, a key
+  transformers drops from its own configs and LeRobot's GR00T config takes as it comes. And a
+  GR00T checkpoint whose own `use_flash_attention` is true asks for `flash_attention_2` whenever
+  flash_attn imports. Each goes through the `kernels` package, at a revision no `--pin` fixes,
+  and without that package each fails as the model is built. The server's extra does not
+  install it, so none was open on a server installed as the docs say. Now the server refuses to
+  load any checkpoint where `kernels` is installed at a version transformers takes, decided by
+  the installed distribution as transformers decides it, before it asks the Hub for anything,
+  so a folder that is merely named `kernels` stops nothing. It refuses a pinned model whose
+  JSON names a repository or a flash attention under any key whose name holds
+  `attn_implementation`, names experts or carries a `quantization_config`, and a GR00T whose
+  `use_flash_attention` is true. What changes for you: uninstall `kernels` from the server's
+  environment if it is there, `uv pip uninstall kernels`, since nothing quackd serves needs it.
+  A pinned backbone or base whose config names `flash_attention_2`, or that was saved quantized,
+  is refused, so pin a revision that names `sdpa` or `eager`, or none. A GR00T fine-tune saved
+  with `use_flash_attention: true` is refused until a copy of it says false.
+  `tests/test_policy_pipeline.py` fails without this.
+- **A pinned model's files are read whatever the case of their names.** On Windows the server
+  matched a file in a pinned directory against what the directory may hold with its case folded,
+  as `fnmatch` does there, and looked for `.json` without, so since 0.16.0 a cached `config.JSON`
+  or `tokenizer_config.JSON` passed unread, and NTFS hands it to transformers as `config.json`. A
+  config that maps a class to code passed with it, which matters most for GR00T's VLM step, whose
+  tokenizer LeRobot loads trusting a repository's code, and an `Adapter_Config.json` passed as
+  something other than a PEFT adapter. A name is read with its case folded now, on every system,
+  so each is checked as the lower-case file is. What changes for you: nothing to do.
+  `tests/test_policy_pipeline.py` fails without this.
 
 ### Documentation
 
+- **E167 has a log: a real arm named by its spec, refused before anything connected.** A log can now
+  be one command with no run folder from end to end. `scripts/example_log.py add --text` takes a GIF
+  already made with `--gif`, puts back together a line the terminal wrapped, and reads the robot off
+  the command, and the log names the LLM and the task file the command gave. Its Try it yourself
+  section prints the refused line, with `--dry-run`, in place of a run on the mock, and a log of a
+  dry run keeps that flag when it is tried on the mock.
 - **The Microduck page warns that every `/frame` quackd pulls is a photo in the robot's vet book.**
   From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
   record an owner can share, and quackd asks for two a second for as long as it is connected, so a
@@ -517,6 +628,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The endpoint's huggingface_hub rows are read at 2.4.0, and again at the 1.33.0 the lock
+  holds.** The nightly drift job compares `policy/endpoint_upstream_api.py` with
+  huggingface_hub's newest release, 2.4.0, and kept #88 open because the rows were read at an
+  older one. 2.4.0 is also what CI's policy job runs, where nothing holds the hub below 2, while
+  `uv.lock` stays on 1.33.0, where diffusers 0.39.0 keeps it. Each of the 17 lines the rows cited
+  was read at `v2.4.0` (`3739729`) and again at `v1.33.0` (`9eeace5`). Sixteen read the same at
+  both, 13 of them at other line numbers. The seventeenth is gone: 2.4.0 dropped the `protected`
+  endpoint type, which 1.33.0 kept as a deprecated name for `authenticated`, and its
+  `create_inference_endpoint` now refuses it, which is all that changed in the code around the
+  lines the rows cited. quackd creates `authenticated` endpoints and never sends that type, and
+  its endpoint code imports no huggingface_hub, so nothing it does changes. The rows cite 19
+  lines now, all at 2.4.0 but for the one that named `protected`, the module names 1.33.0 as the
+  lock's (`LOCK_HUB_VERSION`), and `tests/test_upstream_api.py` holds every `huggingface-hub` in
+  `uv.lock` to that, so a lock that moves the hub is still a re-read. Each release's wheel
+  matched its tag in every file cited.
 - **E116 has a log: the USB cable pulled mid-reach.** The run ended under half a second after the
   arm's last answer, said it could not tell whether the arm was holding itself up, and the arm stayed
   where it was until `quackd robot release` put it down. A log can now carry what a command run after
@@ -562,6 +688,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **Huebot's page says what the maker's code is.** It called walking-robot-kit the servo bus alone,
   where NOTICE, from the maker's README, says it is the kit's electronics, firmware and control
   software. The page and `quackd_huebot.upstream_api` say that now.
+- **E119 has a log, in three parts: the rest pose, the hand-off and recording a new rest pose.** One
+  README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
+  `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
+  with `--text`.
 
 ### Known limitations
 
@@ -647,6 +777,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   whose step names the tokenizer's Hub repository and carries no `artifacts`, serves as before with
   `--pin`. An ACT or a GR00T N1.7 that 0.7.0 saved carries none: ACT has no tokenizer step, and no
   GR00T step saves artifacts.
+- **quackd times its gaze hold and its fade wait by robotd's default idle settings, since no call
+  reports them.** The idle look-around's timings and its switch are `[idle]` settings in
+  `robotd.toml`, `after_s`, `fade_s` and `enabled`, and nothing robotd answers says what they are.
+  So on every robotd from API 41 up quackd takes the defaults at daemon-v0.18.8: robotd counts the
+  duck still once nothing asks it to move and nobody has steered its head for 2 s, glances once it
+  has counted it still for 2 s more, and fades the look-around in, and out again, over 1.5 s. On
+  those numbers a held gaze goes out again every second, and `go_to` and `search_scan` wait 1.5 s
+  after centring the head, whether or not the robot glances at all. On a robot retuned to glance
+  sooner or to fade for longer, the gaze hold can let go, taking robotd's glance for another
+  client's head, and `go_to` and `search_scan` can steer on a frame a glance is still fading out
+  of. On one that glances no sooner and fades no longer, or with the look-around off, quackd only
+  waits longer than it needs. What changes for you: nothing quackd does. On a robot whose `[idle]`
+  you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
+  `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
+  robot.
 
 ## [0.33.0] — 2026-11-07
 
