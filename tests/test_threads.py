@@ -214,7 +214,10 @@ async def test_a_disconnect_that_does_not_come_back_is_said_of(
 
 
 async def test_a_second_close_says_nothing_of_a_port_it_finds_shut() -> None:
-    """The first let go of the arm, and a disconnect that raises because it did is no failed one."""
+    """The first let go of the arm, and a disconnect that raises because it did is no failed one.
+    Nor is a read refused on the port the first close shut an arm that stopped answering: the
+    second close's line was that quackd could not tell whether the arm held itself up, over an
+    arm the first had let go of at its rest pose. It keeps the first close's line now."""
 
     class Upstream(FakeArm):
         def disconnect(self) -> None:
@@ -222,11 +225,16 @@ async def test_a_second_close_says_nothing_of_a_port_it_finds_shut() -> None:
                 raise ConnectionError("SO101Follower is not connected")
             super().disconnect()
 
+        def get_observation(self) -> dict[str, Any]:
+            if not self.connected:  # `check_if_not_connected`, as the follower's read carries it
+                raise ConnectionError("SO101Follower is not connected")
+            return super().get_observation()
+
     arm = Upstream()
     transport = await _closed_at_rest(arm)
-    assert arm.torque is False
+    assert arm.torque is False and transport.close_note is None
     await transport.close()
-    assert transport.close_note != TORQUE_RELEASE_NOT_KNOWN
+    assert transport.close_note is None, transport.close_note
 
 
 async def test_a_disconnect_that_raises_is_said_of() -> None:
