@@ -980,27 +980,31 @@ def check_pinned(directory: Path, spec: str) -> None:
     any experts (`EXPERTS_KEY`) or carries a quantization (`QUANTIZATION_KEY`), at any depth,
     each a way to a kernel on the Hub that transformers would run. Nor does it hold a PEFT
     adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's are, and which
-    the build would load onto the model, or swap the model for a base no pin names."""
+    the build would load onto the model, or swap the model for a base no pin names. A name is
+    read with its case folded, on every system: NTFS finds `config.json` under any case, and
+    transformers with it, so a `config.JSON` is a config, and one that went unread on Windows,
+    where matching a pattern folds case and reading a suffix would not, has code to hide."""
     fresh = (
         "point HF_HUB_CACHE at a cache that has not fetched this revision before, or delete "
         f"{directory} and serve again"
     )
     for path in sorted(p for p in directory.rglob("*") if p.is_file()):
         name = path.relative_to(directory).as_posix()
-        if not any(fnmatch.fnmatch(name, p) for p in NESTED_FILES + NESTED_DOCS):
+        folded = name.lower()
+        if not any(fnmatch.fnmatchcase(folded, p) for p in NESTED_FILES + NESTED_DOCS):
             raise PipelineRefused(
                 f"{spec} in this machine's Hub cache holds {name[:80]!r}, which is not a "
                 "config, a tokenizer file or safetensors, and could be code or a pickle a "
                 f"load would run: {fresh}"
             )
-        if name == ADAPTER_CONFIG:
+        if folded == ADAPTER_CONFIG:
             raise PipelineRefused(
                 f"{spec} holds a PEFT adapter ({name}), which transformers loads onto a model it "
                 "builds from that directory, or, with no config.json beside it, loads the base "
                 "model the adapter names in its place, which no pin fixes: pin a model with the "
                 "adapter merged into its weights"
             )
-        said = _json(path, f"{spec}'s {name}") if name.endswith(".json") else None
+        said = _json(path, f"{spec}'s {name}") if folded.endswith(".json") else None
         if isinstance(said, Mapping) and CODE_MAP_KEY in said:
             raise PipelineRefused(
                 f"{spec}'s {name} maps its classes to code ({CODE_MAP_KEY}), which loading it "

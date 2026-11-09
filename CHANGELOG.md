@@ -309,6 +309,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   is refused, so pin a revision that names `sdpa` or `eager`, or none. A GR00T fine-tune saved
   with `use_flash_attention: true` is refused until a copy of it says false.
   `tests/test_policy_pipeline.py` fails without this.
+- **A pinned model's files are read whatever the case of their names.** On Windows the server
+  matched a file in a pinned directory against what the directory may hold with its case folded,
+  as `fnmatch` does there, and looked for `.json` without, so since 0.16.0 a cached `config.JSON`
+  or `tokenizer_config.JSON` passed unread, and NTFS hands it to transformers as `config.json`. A
+  config that maps a class to code passed with it, which matters most for GR00T's VLM step, whose
+  tokenizer LeRobot loads trusting a repository's code, and an `Adapter_Config.json` passed as
+  something other than a PEFT adapter. A name is read with its case folded now, on every system,
+  so each is checked as the lower-case file is. What changes for you: nothing to do.
+  `tests/test_policy_pipeline.py` fails without this.
 
 ### Documentation
 

@@ -455,6 +455,43 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
         _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
 
 
+@pytest.mark.parametrize(
+    ("name", "content", "needle"),
+    [
+        (
+            "config.JSON",
+            json.dumps({"auto_map": {"AutoConfig": "Other/Repo--code.Config"}}),
+            "maps its classes to code",
+        ),
+        (
+            "tokenizer_config.Json",
+            json.dumps({"auto_map": {"AutoTokenizer": ["code.Tokenizer", None]}}),
+            "maps its classes to code",
+        ),
+        (
+            "Adapter_Config.JSON",
+            json.dumps({"peft_type": "LORA", "base_model_name_or_path": "Other/Base"}),
+            "holds a PEFT adapter",
+        ),
+    ],
+)
+def test_a_pinned_models_files_are_read_whatever_the_case_of_their_names(
+    tmp_path: Path, name: str, content: str, needle: str
+) -> None:
+    """NTFS finds `config.json` under any case, and transformers with it, so a cached
+    `config.JSON` is what a build reads. On Windows a pattern matches with its case folded, and
+    the suffix that says a file is JSON was read without, so such a file passed unread and a
+    config that maps a class to code passed with it, or a PEFT adapter under another spelling.
+    A name is read with its case folded on every system, and only the one misspelled file is
+    in the directory, since NTFS would keep a name already there."""
+    hub = _smolvla(tmp_path)
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    (where / name).write_text(content)
+    assert [p.name for p in where.iterdir()] == [name]
+    with pytest.raises(P.PipelineRefused, match=needle):
+        _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+
+
 def test_a_pinned_model_whose_config_names_a_kernel_on_the_hub_as_its_attention_is_refused(
     tmp_path: Path,
 ) -> None:
