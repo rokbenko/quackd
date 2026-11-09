@@ -3927,9 +3927,10 @@ async def test_the_first_frame_from_mediad_is_taken_for_the_lens_its_shape_names
                 # what the assumption itself says the lens is, at this very shape
                 assert f"{lens:.1f} degrees at {width} by {height}" in assumed.note
             else:
-                # across the whole frame's width, at every size mediad streams
+                # the field the solve's focal length gives across the frame's width, at every
+                # size mediad streams
                 lens = up.GC2093_FOV_DEG
-                assert f"{lens:g} degrees from side to side" in assumed.name
+                assert f"its solve's focal length, {lens:g} degrees across" in assumed.name
             assert t.camera_fov_deg == pytest.approx(lens)
             assert manifest.limits["camera_fov_deg"] == pytest.approx(lens)
             # named beside the lens, so the detector measures through it uncalibrated

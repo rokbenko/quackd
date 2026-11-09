@@ -166,18 +166,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
-- **A beta Microduck's `/frame` is measured through the 85.2° of upstream's own solve of its
-  lens.** quackd takes the lens of `mediad`'s `/frame` from the first frame's shape, since the PNG
-  carries none, and a wide frame, which on a stock robot only a beta's upright GC2093 gives, got
-  none: the colour detector fell back on 90°, the YOLO and board detectors on 62°, and `watch` on
-  an assumed 40°. Upstream has solved the beta's lens since daemon-v0.18.0, 85.2° across the whole
-  16:9 frame at every size `mediad` streams, and read at daemon-v0.18.8 the PNG is that whole
-  frame, unturned and scaled by nothing. So a first frame that is 16:9 and wider than tall is taken
-  for a beta's now, as a tall one is for an alpha's: the manifest's `camera_fov_deg` is 85.2, beside
-  the assumption it rests on, a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`, which every state lists in
-  `extras.assumptions` and `extras.camera` names as `fov_assumed`, and `--fov-deg` overrides it on
-  `quackd run` as it does an alpha's. What changes for you: on a beta's `/frame`, detections
-  measure through 85.2° and say they are uncalibrated, the log says to pass `--fov-deg`, `watch`
+- **A beta Microduck's `/frame` is measured through the focal length of upstream's own solve of
+  its lens.** quackd takes the lens of `mediad`'s `/frame` from the first frame's shape, since the
+  PNG carries none, and a wide frame, which on a stock robot only a beta's upright GC2093 gives,
+  got none: the colour detector fell back on 90°, the YOLO and board detectors on 62°, and `watch`
+  on an assumed 40°. Upstream has solved the beta's lens since daemon-v0.18.0, and the field its
+  focal length gives across the width of a 16:9 frame is 85.2° at every size `mediad` streams.
+  Read at daemon-v0.18.8, the PNG is that whole frame, unturned and scaled by nothing. So a first
+  frame that is 16:9 and wider than tall is taken for a beta's now, as a tall one is for an
+  alpha's: the manifest's `camera_fov_deg` is 85.2, and beside it go the words of the assumption
+  it rests on, "a 16:9 /frame wider than tall is assumed to be a beta's GC2093, measured through
+  its solve's focal length, 85.2 degrees across" (a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`), which
+  every state lists in `extras.assumptions` and `extras.camera` gives as `fov_assumed`.
+  `--fov-deg` overrides it on `quackd run` as it does an alpha's. The solve's principal point and
+  its distortion, which quackd's detectors correct for no more than an alpha's, leave a bearing
+  short of the solve's by up to about 14° near the picture's edges. What changes for you: on a
+  beta's `/frame`, detections measure through 85.2° where they measured through the detector's own
+  90° or 62°, uncalibrated as before, the log's line about the lens names the assumption, `watch`
   turns the head by what 85.2° calls for rather than 40°, and the digest an MCP client's
   `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which quackd
   reads as `mediad`'s, gets the same 85.2° now when its picture is 16:9 and wider than tall, and

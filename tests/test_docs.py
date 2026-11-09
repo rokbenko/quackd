@@ -188,6 +188,40 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
         assert said in page, f"the Microduck page does not say {said!r}"
 
 
+def test_the_microduck_page_states_the_beta_solve_and_where_its_axis_sits() -> None:
+    """The page gives the beta family's calibration, the 85.2 degrees it makes of a beta's frame,
+    and how far its principal point sits from the centre quackd's detectors take a bearing from,
+    and what that does to a bearing at the middle of the picture and at its edges, then with the
+    solve's distortion too. Each is worked out here from the solve `upstream_api.py` carries, as
+    the alpha's are, so the page cannot keep a number the solve no longer gives."""
+    from tests.test_upstream_api import beta_bearing_shortfalls
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    solve = up.BETA_SOLVE
+    shown = ", ".join(f"`{k}` {solve[k]:.1f}" for k in ("fx", "fy", "cx", "cy"))
+    assert shown in page, f"the Microduck page does not give the beta solve as {shown!r}"
+    width, height, fx = solve["width"], solve["height"], solve["fx"]
+    assert round(math.degrees(2 * math.atan(width / 2 / fx)), 1) == up.GC2093_FOV_DEG
+    # a beta's frame is upright as sent, so the principal point is where the solve puts it, and
+    # a bearing taken from the centre is off the one from the axis by most at the middle
+    centre = (width - 1) / 2
+    off_px = centre - solve["cx"]
+    middle = math.degrees(math.atan(off_px / fx))
+    edge = math.degrees(math.atan((centre + off_px) / fx) - math.atan(centre / fx))
+    assert round(edge / middle, 1) == 0.5, (middle, edge)
+    (half_l, half_r), (most_l, most_r), (edge_l, edge_r) = beta_bearing_shortfalls()
+    for said in (
+        f"about {off_px:.0f} pixels left of the centre of a {width:g} by {height:g} frame",
+        f"about {middle:.0f}° left of the one from the camera's axis at the middle of the "
+        "picture, and about half that at its edges",
+        f"by about {half_l:.0f}° to {half_r:.0f}° half way from the centre to an edge, "
+        f"{most_l:.0f}° to {most_r:.0f}° three quarters of the way and {edge_l:.0f}° to "
+        f"{edge_r:.0f}° near the edges, the more on the right",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
 def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
     """The page says how often quackd asks mediad's `/frame` for a frame against any other
     camera, how old a frame may get, how long connect waits for the first, and the lens a tall
@@ -216,7 +250,8 @@ def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
         f"across a {width} by {height} frame, the default 720p turned upright, quackd measures "
         f"through {lens:.1f}°",
         f"2·atan(tan {half:g}° · w/h)",
-        f"so across a beta's frame, at any size, quackd measures through {up.GC2093_FOV_DEG:g}°",
+        f"at any size quackd measures through {up.GC2093_FOV_DEG:g}°, the field the focal length "
+        "of upstream's own solve of the beta's lens gives across the frame's width",
     ):
         assert said in page, f"the Microduck page does not say {said!r}"
 

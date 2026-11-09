@@ -7,6 +7,7 @@ link to.
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from types import ModuleType
@@ -488,21 +489,91 @@ def test_the_numbers_that_stop_a_walk_are_the_ones_read() -> None:
         assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
+def beta_bearing_shortfalls(
+    shares: tuple[float, ...] = (0.5, 0.75, 0.95),
+) -> list[tuple[float, float]]:
+    """How far, in degrees, the bearing quackd's detectors take on a beta's frame falls short of
+    the one the beta family's solve gives, at each share of the way from the frame's centre to
+    its left edge and to its right, along the principal row: (left, right) for each share.
+
+    quackd's is the pinhole through `GC2093_FOV_DEG` from the frame's centre. The solve's undoes
+    `BETA_DISTORTION`, OpenCV's model with y at 0, from `BETA_SOLVE`'s principal point. Near the
+    very edge the model stops rising and cannot be undone, so the shares stop short of it."""
+    solve = upstream_api.BETA_SOLVE
+    k1, k2, _p1, p2, k3 = upstream_api.BETA_DISTORTION
+    width, fx, cx = solve["width"], solve["fx"], solve["cx"]
+    focal = width / 2 / math.tan(math.radians(upstream_api.GC2093_FOV_DEG) / 2)
+    centre = (width - 1) / 2
+
+    def distorted(xu: float) -> float:
+        r2 = xu * xu
+        return xu * (1 + k1 * r2 + k2 * r2**2 + k3 * r2**3) + 3 * p2 * r2
+
+    def undistorted(xd: float) -> float:
+        sign, top = math.copysign(1.0, xd), 0.0
+        while abs(distorted(sign * (top + 1e-3))) > abs(distorted(sign * top)):
+            top += 1e-3
+        assert abs(xd) <= abs(distorted(sign * top)), f"{xd} is past where the model stops rising"
+        low, high = 0.0, top
+        for _ in range(60):
+            mid = (low + high) / 2
+            low, high = (mid, high) if abs(distorted(sign * mid)) < abs(xd) else (low, mid)
+        return sign * (low + high) / 2
+
+    shortfalls = []
+    for share in shares:
+        left, right = (
+            math.degrees(math.atan(abs(undistorted((u - cx) / fx))))
+            - math.degrees(math.atan(abs(u - centre) / focal))
+            for u in (centre - share * centre, centre + share * centre)
+        )
+        shortfalls.append((left, right))
+    return shortfalls
+
+
 def test_the_camera_numbers_are_the_ones_read() -> None:
     """The lens of a tall `/frame` is worked out from the IMX219's field of view, the lens of a
-    wide one is the GC2093's, and the lens of an upright WebRTC frame comes from the calibration
-    mediad sends, the alpha family's on an alpha. Each number sits beside the VERIFIED ref that
-    read it and says what that ref says, and that a tall frame is an alpha's and a wide one a
-    beta's are the two things assumed."""
+    16:9 one wider than tall is the GC2093's, and the lens of an upright WebRTC frame comes from
+    the calibration mediad sends, the alpha family's on an alpha. Each number sits beside the
+    VERIFIED ref that read it and says what that ref says, the GC2093's worked out from the beta
+    family's solve as mediad works it out, and that a tall frame is an alpha's and a 16:9 wide one
+    a beta's are the two things assumed."""
     fov = upstream_api.IMX219_FOV_DEG
     assert f"{fov:g} degrees" in upstream_api.IMX219_FOV.name
     assert f"{fov:g} degrees" in upstream_api.ALPHA_UPRIGHT_FOV.name
     assert f"tan({fov / 2:g} degrees)" in upstream_api.ALPHA_UPRIGHT_FOV.note
     assert upstream_api.ALPHA_UPRIGHT_FOV.status == "UNVERIFIED"
-    beta = upstream_api.GC2093_FOV_DEG
+    beta, solved = upstream_api.GC2093_FOV_DEG, upstream_api.BETA_SOLVE
+    assert set(solved) == {"width", "height", "fx", "fy", "cx", "cy"}
+    width, height, fx = solved["width"], solved["height"], solved["fx"]
+    # mediad's hfov_deg is 2·atan(640 / fx) on the 1280-wide solve (sensor.rs:151-152)
+    assert round(math.degrees(2 * math.atan(width / 2 / fx)), 1) == beta
     assert f"an hfov_deg of {beta:g}" in upstream_api.IMX219_FOV.note
+    assert "its numbers BETA_SOLVE" in upstream_api.IMX219_FOV.note
+    note = upstream_api.BETA_UPRIGHT_FOV.note
     assert f"{beta:g} degrees" in upstream_api.BETA_UPRIGHT_FOV.name
-    assert f"hfov_deg of {beta:g} is 2*atan(640/fx)" in upstream_api.BETA_UPRIGHT_FOV.note
+    assert f"hfov_deg of {beta:g} is 2*atan({width / 2:g}/fx)" in note
+    assert f"made on the {width:g} by {height:g} frame" in note
+    # how far the solve's principal point sits from the centre, and what that does to a bearing
+    # taken from the centre at the middle of the picture and at its edge
+    centre = (width - 1) / 2
+    off_px = centre - solved["cx"]
+    middle = math.degrees(math.atan(off_px / fx))
+    edge = math.degrees(math.atan((centre + off_px) / fx) - math.atan(centre / fx))
+    assert round(edge / middle, 1) == 0.5
+    assert f"about {off_px:.0f} pixels left of the centre of a {width:g} by {height:g}" in note
+    assert (
+        f"about {middle:.0f} degree left of the one from the optical axis at the middle of the "
+        "picture, and about half that at its edges"
+    ) in note
+    # and with the solve's distortion as well, half way out, three quarters and near the edges
+    (half_l, half_r), (most_l, most_r), (edge_l, edge_r) = beta_bearing_shortfalls()
+    assert half_l < half_r and most_l < most_r and edge_l < edge_r, "the more on the right"
+    assert (
+        f"by about {half_l:.0f} to {half_r:.0f} degrees half way from the centre to an edge, "
+        f"{most_l:.0f} to {most_r:.0f} three quarters of the way and {edge_l:.0f} to "
+        f"{edge_r:.0f} near the edges, the more on the right"
+    ) in note
     assert upstream_api.BETA_UPRIGHT_FOV.status == "UNVERIFIED"
     solve = upstream_api.ALPHA_SOLVE
     assert set(solve) == {"width", "height", "fx", "fy", "cx", "cy"}
