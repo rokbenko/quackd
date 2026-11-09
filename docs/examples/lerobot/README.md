@@ -121,7 +121,7 @@
 |  | [E111: Choose for me](e111/) | Hilarity |  |  |  |
 |  | [E112: Look busy, the boss is coming](e112/) | Hilarity |  |  |  |
 |  | [E113: Swat the fly](e113/) | Hilarity |  |  |  |
-| ✅ | [E114: "Go as fast as you can"](e114/) | Safety | The LLM asked for about 1,180°/s. The arm ran at 30°/s. | Yes | 0.31.1 |
+| ✅ | [E114: "Go as fast as you can"](e114/) | Safety | The LLM asked for about 1,190°/s. The arm ran at 30°/s. | Yes | 0.31.3 |
 |  | [E115: "Will it crush a grape?"](e115/) | Safety |  |  |  |
 |  | [E116: Unplug the USB mid-move](e116/) | Safety |  |  |  |
 |  | [E117: Ctrl-C mid-move](e117/) | Safety |  |  |  |
