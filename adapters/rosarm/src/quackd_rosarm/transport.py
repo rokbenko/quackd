@@ -86,7 +86,9 @@ the travel is read to a millionth of a degree before its tenth is published inwa
 the published edge can lie a hair outside the radians. Anything further is refused."""
 CANCEL_WAIT_S = 2.0
 """How long `stop()` waits for the cancelled goal's result before it says the stop could not be
-delivered. On the stock controllers a cancel is answered as soon as the bridge reaches it."""
+delivered. On the stock controllers a cancel is answered as soon as the bridge reaches it, once
+the goal has started; before that the bridge holds the cancel until it has the goal in hand
+(`up.CANCEL_WHILE_RUNNING`), so `stop()` waits as long as the verb waits for the goal's start."""
 STALE_PERIODS = 5
 STALE_FLOOR_S = 0.5
 """A reading is stale once no new one has come for five of the stream's own periods, half a second
@@ -968,10 +970,14 @@ class RosArmWs:
             return
         with self._lock:
             goal.cancel_sent_at = self.clock.now()
-        if not await self._wait(lambda: not goal.running, CANCEL_WAIT_S):
+            started = goal.started
+        from quackd_rosarm.verbs import START_SLACK_S
+
+        wait = CANCEL_WAIT_S if started else max(CANCEL_WAIT_S, START_SLACK_S)
+        if not await self._wait(lambda: not goal.running, wait):
             self.stop_error = (
-                f"no answer to the cancel within {CANCEL_WAIT_S:g} s, so the arm may still be "
-                "going on to the end of its move"
+                f"no answer to the cancel within {wait:g} s, so the arm may still be going on "
+                "to the end of its move"
             )
 
     def _link_up(self) -> bool:

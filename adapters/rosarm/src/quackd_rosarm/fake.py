@@ -602,8 +602,9 @@ class FakeBridge:
     bridge from before 2.0.0, which answers no goal (`up.ACTIONS_SINCE`); `actions_glob`, which
     drops a goal it does not match without a word (`up.GOAL_DROPPED_BY_GLOB`); `server` False for
     no action server, answered after a second (`up.NO_ACTION_SERVER`); `description` where the
-    robot's description is served, on the parameter, on the latched topic or nowhere. `sent` is
-    every operation quackd sent, as the bridge saw it."""
+    robot's description is served, on the parameter, on the latched topic or nowhere;
+    `first_goal_s` how long the first goal through a bridge that has just started takes to reach
+    the arm. `sent` is every operation quackd sent, as the bridge saw it."""
 
     def __init__(
         self,
@@ -619,10 +620,23 @@ class FakeBridge:
         urdf: str | None = None,
         rosapi: bool = True,
         reachable: bool = True,
+        first_goal_s: float = 0.0,
         clock: FakeClock | None = None,
         **arm: Any,
     ) -> None:
         self.body = body
+        self.first_goal_s = first_goal_s
+        """The bridge makes an action client for every goal and waits for the controller's server
+        before it sends the goal on (`up.NO_ACTION_SERVER`), and on a bridge that has just started
+        the first of them loads the action's types first, which took about two seconds for Jazzy's
+        rosbridge 2.7.1 in its official image. A later goal took that bridge 0.06 s, so here it
+        goes on at once. 0, the default, is a bridge that has carried a goal to this action
+        before."""
+        self._carried = False
+        self._on_the_way: dict[str, bool] = {}
+        """Goals the bridge holds while it makes their action client, each with whether a cancel
+        came for it meanwhile, which lands once the goal does."""
+        self._later_calls: list[tuple[float, Callable[[], None]]] = []
         self.clock = clock or FakeClock()
         self.new_thread = new_thread
         self.actions = actions
@@ -839,19 +853,38 @@ class FakeBridge:
                 {"status": GoalStatus.UNKNOWN, "values": up.NO_ACTION_SERVER.name},
             )
             return
-        why = self.arm.receive(
-            goal_id,
-            goal,
-            lambda result: self._deliver(resultback, result),
-            lambda fb: self._deliver(feedback, fb),
-        )
-        if why is not None:
-            self._deliver(errback, {"status": GoalStatus.UNKNOWN, "values": up.GOAL_REJECTED.name})
+
+        def forward() -> None:
+            cancelled = self._on_the_way.pop(goal_id, False)
+            why = self.arm.receive(
+                goal_id,
+                goal,
+                lambda result: self._deliver(resultback, result),
+                lambda fb: self._deliver(feedback, fb),
+            )
+            if why is not None:
+                self._deliver(
+                    errback, {"status": GoalStatus.UNKNOWN, "values": up.GOAL_REJECTED.name}
+                )
+                return
+            self._accepted.setdefault(goal_id, self.clock.now())
+            if cancelled:
+                self.arm.cancel(goal_id)
+            self._publish_goal_statuses()
+
+        first, self._carried = not self._carried, True
+        if first and self.first_goal_s > 0:
+            self._on_the_way[goal_id] = False
+            self._later_calls.append((self.clock.now() + self.first_goal_s, forward))
             return
-        self._accepted.setdefault(goal_id, self.clock.now())
-        self._publish_goal_statuses()
+        forward()
 
     def _cancel(self, action: str, goal_id: str) -> None:
+        if goal_id in self._on_the_way:
+            # the bridge's cancel waits for the goal it is still carrying, and lands with it
+            # (`up.CANCEL_WHILE_RUNNING`)
+            self._on_the_way[goal_id] = True
+            return
         running = self.arm.goal is not None and self.arm.goal.id == goal_id
         if self.new_thread is False and running:
             # the reader is still inside the goal, so the cancel waits behind it
@@ -904,6 +937,10 @@ class FakeBridge:
         self._pending.append((self.clock.now() + seconds, callback, payload))
 
     def _tick(self, now: float, dt: float) -> None:
+        arrived = [call for at, call in self._later_calls if at <= now]
+        self._later_calls = [(at, call) for at, call in self._later_calls if at > now]
+        for call in arrived:
+            call()
         self.arm.tick(dt)
         if self._held and self.arm.goal is None:
             held, self._held = self._held, []

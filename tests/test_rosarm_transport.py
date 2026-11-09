@@ -415,11 +415,27 @@ async def test_a_cancel_nobody_answers_is_a_stop_not_delivered(
 ) -> None:
     fake, transport = await _connected()
     await transport.send_intent(Intent.joint({joint: 40.0 for joint in UR.joints}, 8.0))
+    await transport.sleep(0.1)  # under way: the goal has shown its first feedback
     monkeypatch.setattr(fake.arm, "cancel", lambda goal_id: None)  # a bridge that loses it
     started = transport.now()
     await transport.stop()
     assert f"no answer to the cancel within {CANCEL_WAIT_S:g} s" in str(transport.stop_error)
     assert transport.now() - started == pytest.approx(CANCEL_WAIT_S, abs=0.1)
+
+
+async def test_a_stop_before_the_goal_has_started_waits_for_the_bridge_to_reach_it() -> None:
+    """A bridge that has just started holds its first goal while it makes the action's client,
+    and holds a cancel with it (`up.CANCEL_WHILE_RUNNING`): a stop in that window waits as long as
+    the goal's start may take, and is answered CANCELED rather than told it was not delivered."""
+    fake, transport = await _connected(first_goal_s=2.5)
+    sent = await transport.send_intent(Intent.joint({joint: 10.0 for joint in UR.joints}, 4.0))
+    assert sent.accepted, sent.reason
+    await transport.sleep(0.1)
+    before = dict(fake.arm.positions)
+    await transport.stop()
+    assert transport.stop_error is None, transport.stop_error
+    assert (await transport.get_state()).extras["move"]["status"] == "canceled"
+    assert fake.arm.positions == before, "the goal was cancelled before it moved the arm"
 
 
 async def test_close_cancels_a_goal_still_running() -> None:
@@ -457,6 +473,7 @@ async def test_a_stop_after_a_lost_cancel_sends_it_again(monkeypatch: pytest.Mon
     reach the arm: it is sent again, and so is the one a close sends."""
     fake, transport = await _connected()
     await transport.send_intent(Intent.joint({joint: 40.0 for joint in UR.joints}, 8.0))
+    await transport.sleep(0.1)  # under way: the goal has shown its first feedback
     with monkeypatch.context() as patched:
         patched.setattr(fake.arm, "cancel", lambda goal_id: None)  # a bridge that loses it
         await transport.stop()
@@ -472,6 +489,7 @@ async def test_close_cancels_a_goal_whose_first_cancel_was_lost(
 ) -> None:
     fake, transport = await _connected()
     await transport.send_intent(Intent.joint({joint: 40.0 for joint in UR.joints}, 8.0))
+    await transport.sleep(0.1)  # under way: the goal has shown its first feedback
     with monkeypatch.context() as patched:
         patched.setattr(fake.arm, "cancel", lambda goal_id: None)
         await transport.stop()

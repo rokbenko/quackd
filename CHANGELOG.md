@@ -28,7 +28,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   never sent over a running one, and every move asks a person first, on the mock as on `ws`, unless
   the run or the MCP session was started with `--yes`, or a script answers on stdin, which answer it
   as they answer every gate. It has arrived only when every joint reads within half a degree of its
-  goal on `/joint_states`, whatever the controller answered. No goal goes to an arm whose driver has
+  goal on `/joint_states`, whatever the controller answered. A move is timed from its first
+  feedback, because a bridge that has just started holds its first goal back for seconds, and a goal
+  that shows no start within 8 s is cancelled as unanswered. No goal goes to an arm whose driver has
   said it cannot move, on the three arms whose drivers say so, and a driver that has said nothing is
   believed. At connect a bridge that runs action goals on the thread that reads its client is
   refused, since its cancel would land after the move, in words that name rosbridge_suite issue #909

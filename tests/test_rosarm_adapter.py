@@ -342,17 +342,67 @@ async def test_a_move_no_result_answers_says_whether_its_cancel_went() -> None:
     executor = Executor(
         registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=allow_all
     )
+    began = bridge.clock.now()
     lost = await executor.run_verb(
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
     assert not lost.ok and "quackd could not cancel the goal: no answer to the cancel" in (
         lost.summary
     ), lost.summary
+    assert "the goal showed no sign of starting within 8 s" in lost.summary, lost.summary
+    assert "the bridge may have dropped it" in lost.summary, lost.summary
+    # the eight seconds for its start, and as long again for a cancel the bridge cannot answer
+    assert bridge.clock.now() - began == pytest.approx(16.0, abs=1.0)
     adapter.bridge.drop()
     gone = await executor.run_verb(
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
     assert not gone.ok and "is not connected, so no goal is sent" in gone.summary, gone.summary
+    await adapter.close()
+
+
+async def test_a_goal_the_bridge_starts_late_is_timed_from_its_start() -> None:
+    """A bridge that has just started holds its first goal back while it makes the action's
+    client, about two seconds on Jazzy's in the contract job. A move timed from the goal leaving
+    quackd ran out before the arm had finished, and quackd cancelled a move that was going well;
+    timed from its first feedback, it arrives."""
+    bridge = FakeBridge(BODIES["ur5e"], first_goal_s=2.5)
+    transport = RosArmWs(
+        None, body=bridge.body, roslibpy=bridge.roslibpy(), clock=bridge.clock, name="mock"
+    )
+    adapter = RosArmAdapter(transport, bridge=bridge)
+    manifest = await adapter.connect()
+    executor = Executor(
+        registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=allow_all
+    )
+    moved = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
+    )
+    assert moved.ok, moved.summary
+    assert "cancel_action_goal" not in bridge.operations()
+    assert (await adapter.get_state()).extras["joints"]["shoulder_pan_joint"] == pytest.approx(5.0)
+    await adapter.close()
+
+
+async def test_a_move_that_started_and_never_ends_is_cancelled_with_why() -> None:
+    """A UR paused by its speed scaling goes on giving feedback and gives no result. The deadline
+    is the move's own, counted from its first feedback, and the words say it was the result that
+    never came, not the bridge that dropped the goal."""
+    adapter = make("mock")
+    manifest = await adapter.connect()
+    executor = Executor(
+        registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=allow_all
+    )
+    adapter.bridge.arm.speed_scaling = 0.0
+    moved = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
+    )
+    assert not moved.ok, moved.summary
+    assert "no result came within 3.0 s of the move starting, so quackd cancelled the goal" in (
+        moved.summary
+    ), moved.summary
+    assert "dropped" not in moved.summary, moved.summary
+    assert adapter.bridge.operations().count("cancel_action_goal") == 1
     await adapter.close()
 
 

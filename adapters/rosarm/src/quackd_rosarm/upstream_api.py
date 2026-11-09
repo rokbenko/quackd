@@ -334,6 +334,16 @@ JTC_SUCCEEDS_AT_THE_END = UpstreamRef(
     "SUCCEEDED once the last point's time has passed with no goal tolerance violated (lines 495 "
     "to 512)",
 )
+GOAL_FEEDBACK = UpstreamRef(
+    "send feedback",
+    "VERIFIED",
+    jtc(_JTC, 458),
+    "the controller's update loop sends a running goal's feedback (lines 458 to 465); the same "
+    "on humble at 65db736 (line 346), in the UR's scaled controller at its jazzy pin (line 260 "
+    "of scaled_joint_trajectory_controller.cpp), and in MotoROS2's motion loop (ActionServer_FJT.c "
+    "line 404). The bridge passes it on, so a goal's first feedback is quackd's sign that the "
+    "controller has started it",
+)
 JTC_ZERO_TOLERANCE = UpstreamRef(
     "a tolerance of 0 is not checked",
     "VERIFIED",
@@ -597,8 +607,9 @@ MOTO_ECO_REENABLES = UpstreamRef(
     "VERIFIED",
     motoros2(_FJT, 183),
     "a goal that arrives while the energy saving function has turned the servos off makes "
-    "MotoROS2 call its own start_traj_mode, which turns them on (lines 181 to 199). quackd sends "
-    "no such call, and its goal can still cause this one",
+    "MotoROS2 call its own start_traj_mode, which turns them on (lines 181 to 199) and waits up "
+    "to MOTION_START_TIMEOUT, 5000 ms (MotionControl.h line 13), for the servos, so such a goal "
+    "starts that much later. quackd sends no such call, and its goal can still cause this one",
 )
 MOTO_INIT_TRAJ_CODES = UpstreamRef(
     "motoros2_interfaces/msg/InitTrajEnum",

@@ -206,10 +206,17 @@ How `move_joints` works underneath:
    cannot move, while a move is running or another `move_joints` is still watching its own, or
    when the move would need longer than 12 s at the ceiling, which the refusal says, so the
    pilot splits it. Each goal that goes is held to the description's own radians.
+6. **Timed from its start.** The bridge makes an action client for every goal and waits for the
+   controller's server before it sends the goal on, and the first goal through a bridge that has
+   just started also waits while that client loads the action's types, about two seconds for
+   Jazzy's rosbridge 2.7.1 in its official image. So a move is timed from its first feedback, the
+   controller's sign that it has started, and a goal that shows no start within 8 s is cancelled
+   as one nobody answered.
 
 ## Stop, the watchdog, and quackd going quiet
 
-- **`stop`** cancels the running goal and waits up to 2 s for it to end CANCELED. On a
+- **`stop`** cancels the running goal and waits up to 2 s for it to end CANCELED, and up to 8 s
+  when the goal has not started yet, since the bridge holds that cancel until it has the goal. On a
   JointTrajectoryController the arm then holds where it is; on MotoROS2 the motion is held and its
   queue cleared, the job goes on, and the goal ends CANCELED with -500300. With no goal running
   there is nothing to send, since every one of these controllers holds its last point. A stop
@@ -336,6 +343,7 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `a new goal ends the running one` | ABORTED on jazzy, CANCELED on humble |
 | `Current goal cancelled during deactivate transition.` | a goal running when its controller stops ends ABORTED |
 | `Goal successfully reached!` | SUCCEEDED once the last point's time has passed |
+| `send feedback` | a running goal's feedback, which quackd reads as the controller having started it |
 | `a tolerance of 0 is not checked` | and every tolerance defaults to 0 |
 | `constraints.goal_time` | 0 by default: a goal outside its tolerance waits for ever |
 | `cmd_timeout` | 0 by default: nothing ends a goal when its client goes quiet |

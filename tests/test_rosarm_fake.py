@@ -302,6 +302,25 @@ def test_the_same_cancel_on_a_threaded_bridge_stops_the_move() -> None:
     assert heard.status == GoalStatus.CANCELED
 
 
+def test_a_bridge_that_has_just_started_holds_its_first_goal_and_a_cancel_waits_for_it() -> None:
+    """The bridge makes an action client for each goal and waits for the server before it sends
+    the goal on (`up.NO_ACTION_SERVER`), which on a bridge that has just started also loads the
+    action's types. Its first goal reaches the arm late, and a cancel sent meanwhile waits for the
+    goal and lands with it (`up.CANCEL_WHILE_RUNNING`); its next goal goes on at once."""
+    bridge = FakeBridge(UR, first_goal_s=2.0)
+    actions, heard = _client(bridge)
+    goal_id = actions.send_goal(_goal(bridge.arm, 10.0, 3.0), *heard.args())
+    before = dict(bridge.arm.positions)
+    bridge.clock.advance(1.0)
+    assert bridge.arm.goal is None and heard.results == [], "still on its way"
+    actions.cancel_goal(goal_id)
+    bridge.clock.advance(1.5)
+    assert heard.status == GoalStatus.CANCELED and bridge.arm.positions == before
+    again = Heard()
+    actions.send_goal(_goal(bridge.arm, 10.0, 3.0), *again.args())
+    assert bridge.arm.goal is not None, "the next goal went on at once"
+
+
 def test_a_goal_the_glob_does_not_match_is_never_answered() -> None:
     bridge = FakeBridge(UR, actions_glob=("/some_other/*",))
     actions, heard = _client(bridge)
