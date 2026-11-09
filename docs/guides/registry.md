@@ -522,11 +522,15 @@ it probed ([concepts/safety.md](../concepts/safety.md)). A probe's connect still
 every motor for a moment, like any connect, and it prints no warning first, so hold an arm that is
 holding itself up before you probe it.
 
-Two rarer endings read differently. `torque unknown: the arm did not answer the close` is an arm
+Four rarer endings read differently. `torque unknown: the arm did not answer the close` is an arm
 that stopped answering before the close could read it, which is also how an arm whose power was
 cut at the switch looks, so hold it as though it may be limp.
 `torque could NOT be kept: the arm was released where it stood` is an arm quackd could not keep
 powered, so check whether it is still where you left it.
+`torque unknown: the close's release did not finish` is an arm at its rest pose whose release at
+the close raised or did not come back, so some motors may hold and some not: hold it, and cut its
+power to be sure. `torque off in part: some joints may still hold` is one whose release raised
+naming the motors LeRobot could not confirm: every other joint let go, and those may still hold.
 
 No registered robot has been probed on hardware. The one real robot quackd has driven, the
 SO-101 arm, was reached on 2026-09-15 as `--robot lerobot:real --address COM3` on the command

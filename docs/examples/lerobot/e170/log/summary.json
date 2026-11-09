@@ -1,0 +1,112 @@
+{
+  "duck": "e170-out-of-range",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e170/out-of-range.duck",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "10",
+    "--no-memory"
+  ],
+  "version": "0.31.3",
+  "outcome": "infeasible",
+  "reason": "The requested shoulder_pan goal of 170\u00b0 exceeds this joint's calibrated maximum of 119.6\u00b0 (range \u2212119.6\u00b0 to 119.6\u00b0). Repeating the same request cannot make that goal reachable within this body's limits. By their datasheets, lerobot could (needs arms=1, endurance_min=0, manipulator=none, mobility=none, payload_kg=0, reach_m=0, terrain=indoor_flat, work_height_m=0). This body's own datasheet meets those needs, so the verdict is the pilot's judgement rather than a limit.",
+  "steps": 0,
+  "llm_calls": 1,
+  "elapsed_s": 6.72,
+  "started_at": "2026-11-06T17:46:17.818Z",
+  "ended_at": "2026-11-06T17:46:31.474Z",
+  "wall_s": 13.656,
+  "connect_s": 6.828,
+  "llm_latency_s": 6.25,
+  "llm_latency_p50_s": 6.25,
+  "llm_latency_p90_s": 6.25,
+  "llm_latency_max_s": 6.25,
+  "first_motion_s": null,
+  "first_motion_llm_calls": null,
+  "usage": {
+    "input_tokens": 3367,
+    "output_tokens": 134,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 3241
+  },
+  "price": {
+    "input": 10.0,
+    "output": 50.0,
+    "cache_read": 1.0,
+    "cache_write": 12.5,
+    "unit": "USD per million tokens",
+    "source": "catalogue",
+    "checked": "2026-09-23"
+  },
+  "cost_usd": 0.048473,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2185172.14164,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -5.2,
+        "shoulder_lift": -100.8,
+        "elbow_flex": 96.4,
+        "wrist_flex": 79.2,
+        "wrist_roll": 0.7,
+        "gripper": 2.5
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 29,
+        "shoulder_lift": 31,
+        "elbow_flex": 31,
+        "wrist_flex": 32,
+        "wrist_roll": 32,
+        "gripper": 32
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 20,
+          "p50_ms": 3.7,
+          "p99_ms": 47.6,
+          "max_ms": 47.6
+        }
+      },
+      "camera": {
+        "configured": true,
+        "url": "opencv://1?name=arm",
+        "ok": true,
+        "age_s": 6.37,
+        "size": "640x480",
+        "error": null
+      }
+    }
+  },
+  "log_dropped": 0
+}

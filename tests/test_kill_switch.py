@@ -18,11 +18,19 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
 
-from quackd.safety import ENTER_TOO_SOON, TYPED_AHEAD_S, AfterTheClose, KillSwitch
+from quackd.safety import (
+    ENTER_QUIET_S,
+    ENTER_TOO_SOON,
+    TYPED_AHEAD_S,
+    AfterTheClose,
+    KillSwitch,
+)
 
 
 def switch() -> tuple[KillSwitch, list[str]]:
@@ -312,37 +320,387 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     assert quiet.declined is False, "a question nobody answered was filed as a no"
 
 
+class _Clock:
+    """`time` as the switch reads it, standing still until a test moves it on."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+NOTHING = object()
+"""A look at the console that finds no key in it (`_Scripted`)."""
+
+
+class _Scripted:
+    """A console whose every look and key is a step of the test's, taken in order on the test's own
+    thread with nothing in between: a float moves the clock on, `NOTHING` is a look that finds no
+    key, a string is a key read, and anything else is called where it stands, which is the wait
+    looking while the key thread is wherever the script has it."""
+
+    def __init__(self, clock: _Clock, steps: list[Any]) -> None:
+        self.clock = clock
+        self.steps = deque(steps)
+
+    def read(self, nothing_waiting: Callable[[float], None] = lambda _moment: None) -> str:
+        while self.steps:
+            step = self.steps.popleft()
+            if isinstance(step, float):
+                self.clock.now += step
+            elif step is NOTHING:
+                nothing_waiting(self.clock.now)
+            elif isinstance(step, str):
+                return step
+            else:
+                step()
+        return ""
+
+    def erase(self) -> None:
+        pass
+
+    def newline(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _looked_at(seconds: float, *, then: Callable[[], None]) -> list[Any]:
+    """A console looked at every 20 ms for `seconds` and found empty, and `then` after each look."""
+    return [step for _ in range(round(seconds / 0.02)) for step in (0.02, NOTHING, then)]
+
+
+def _ran(ks: KillSwitch, clock: _Clock, steps: list[Any]) -> None:
+    """The key thread over all of `steps`. It swallows whatever goes wrong under it, and a run that
+    stopped short would still have said no to everything it got to."""
+    console = _Scripted(clock, steps)
+    ks._keys = console
+    ks._watch_keys()
+    assert not console.steps, "the script stopped short"
+
+
+def _spied_on(ks: KillSwitch) -> Callable[[], Awaitable[None]]:
+    """Wrap the one decision a deliberate wait makes, and return a wait for the next time it makes
+    it, so that a test moves on knowing the wait has looked at what it just did."""
+    decided = asyncio.Event()
+    real = ks._line_since
+
+    def spy(since: float) -> str | None:
+        answer = real(since)
+        decided.set()
+        return answer
+
+    ks._line_since = spy  # type: ignore[method-assign]
+
+    async def looked_again() -> None:
+        await asyncio.wait_for(decided.wait(), timeout=20.0)
+        decided.clear()
+
+    return looked_again
+
+
 @pytest.mark.parametrize("delay", [0.6, 1.0])
-async def test_a_key_held_down_answers_no_deliberate_question(
-    monkeypatch: pytest.MonkeyPatch, delay: float
+@pytest.mark.parametrize("held_up", [False, True], ids=["keeping-up", "held-up"])
+def test_a_key_held_down_answers_no_deliberate_question(
+    monkeypatch: pytest.MonkeyPatch, delay: float, held_up: bool
 ) -> None:
     """Enter auto-repeats, a repeat delay after the press and then a few dozen times a second. Held
     from just before the question's half second was up, the first repeat came out of a long quiet
     whatever a person's keyboard is set to, and answered the question that drops an arm. What gives
-    it away is the next one. And the person who has let go of the key can still answer."""
+    it away is the next one. And the person who has let go of the key can still answer.
+
+    `held_up` is the key thread held up just after it read that first repeat, by another thread
+    holding the GIL or by a machine with no CPU to spare, while the repeats went on coming in. The
+    wait looked meanwhile, found nothing read since, and took the clock for the repeat standing
+    alone; or the key thread got going first and read the next repeat, which had come in 30 ms
+    behind, stamped with the moment it read it. Either way the question was answered yes. This test
+    ran on wall-clock sleeps then, and a stall on CI's macOS runner failed it once. Every moment
+    here is a step of the script's, on a clock that stands still between steps, so nothing comes
+    early or late whatever the machine is doing."""
     monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)  # room for a loaded runner's sleeps
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)
     monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.5)
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks = KillSwitch(asyncio.Event())
+    asked = clock.now
+    answers: list[tuple[float, str | None]] = []
+
+    def wait_looks() -> None:
+        answers.append((clock.now, ks._line_since(asked + 0.1)))
+
+    steps: list[Any] = [NOTHING, wait_looks, 0.05, "\r", wait_looks]  # the press, too soon
+    steps += _looked_at(delay, then=wait_looks)
+    steps += ["\r", wait_looks]  # the first repeat, out of the quiet
+    if held_up:
+        steps += [step for _ in range(7) for step in (0.1, wait_looks)]  # nothing read or looked at
+        steps += ["\r", wait_looks] * 23  # then what came in meanwhile, read all at once
+    for _ in range(17):  # half a second more of it, read as it comes
+        steps += [0.01, NOTHING, wait_looks, 0.02, "\r", wait_looks]
+    steps += _looked_at(0.8, then=wait_looks)  # let go
+    pressed: list[float] = []
+    steps += [lambda: pressed.append(clock.now), "\r", wait_looks]  # and once more, deliberately
+    steps += _looked_at(0.6, then=wait_looks)
+    _ran(ks, clock, steps)
+
+    held = [answer for moment, answer in answers if moment < pressed[0]]
+    assert held and set(held) == {None}, "a key held down answered the question"
+    after = [(moment - pressed[0], answer) for moment, answer in answers if moment >= pressed[0]]
+    assert all(answer is None for since, answer in after if since < 0.49), "too soon to be sure"
+    assert all(answer == "" for since, answer in after if since > 0.51), "the press answered"
+
+
+async def test_a_look_that_finds_an_enter_alone_answers_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deliberate wait looks again every `ENTER_ALONE_S` anyway, and a look at the console that
+    shows an Enter has stood that long is what gets the yes said the moment it is sure, rather than
+    up to a whole turn later. So for the press after one passed by, too: somebody told they came
+    too soon, who stops and presses again, is answered as soon as the first one would have been."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 1.0)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)  # a turn longer than any step here
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
     ks, _ = switch()
-    loop = asyncio.get_running_loop()
-
-    async def held() -> None:
-        await asyncio.sleep(0.05)
-        ks._heard_enter("")  # the press, before anybody could have read the question
-        await asyncio.sleep(delay)
-        end = loop.time() + 0.5
-        while loop.time() < end:
-            ks._heard_enter("")
-            await asyncio.sleep(0.03)
-
-    holding = asyncio.create_task(held())
-    assert (
-        await ks.wait_for_enter(timeout_s=delay + 0.5, until_abort=False, deliberate=True) is False
+    ks._nothing_waiting(clock.now)  # a console, looked at
+    looked_again = _spied_on(ks)
+    told: list[str] = []
+    waiting = asyncio.ensure_future(
+        ks.wait_for_enter(timeout_s=120.0, until_abort=False, deliberate=True, said=told.append)
     )
-    await holding
-    await asyncio.sleep(0.6)
-    loop.call_later(0.2, ks._heard_enter, "")
-    assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
+    await looked_again()  # at the question
+
+    def pressed() -> None:
+        clock.now += 0.25
+        ks._heard_enter("")
+
+    def looked_at_long_after() -> None:
+        clock.now += 32.0
+        ks._nothing_waiting(clock.now)
+
+    for step in (pressed, looked_at_long_after, pressed):  # too soon, a look, and again after quiet
+        step()
+        await looked_again()  # the wait looks, and goes back to sleep for a turn
+    assert not waiting.done(), "nothing has stood alone yet"
+    assert told == [ENTER_TOO_SOON], "the first was passed by, and it said why"
+    looked_at_long_after()
+    assert await asyncio.wait_for(waiting, timeout=20.0) is True, "it waited for its next turn"
+
+
+async def test_a_yes_a_look_has_made_sure_of_stands_though_the_keys_end_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The last look the key thread ever makes shows an Enter standing alone, and the keys end
+    before the wait gets to look: a terminal closed, or the end of a stand-in's list of keys. What
+    the key thread saw is what it saw, and the end of the keys is no answer to the question it
+    has just answered."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks, _ = switch()
+    ks._nothing_waiting(clock.now)
+    looked_again = _spied_on(ks)
+    waiting = asyncio.ensure_future(
+        ks.wait_for_enter(timeout_s=120.0, until_abort=False, deliberate=True)
+    )
+    await looked_again()  # at the question
+    clock.now += 0.25
+    ks._heard_enter("")
+    await looked_again()  # at the Enter, too soon to be sure of
+    clock.now += 32.0
+    ks._nothing_waiting(clock.now)  # the last look, and the keys end at the same moment
+    ks._announce(ks.keys_ended)
+    assert await asyncio.wait_for(waiting, timeout=20.0) is True
+
+
+@pytest.mark.parametrize("keys_end_too", [False, True], ids=["alone", "with-the-keys-ending"])
+async def test_an_abort_with_a_look_at_its_side_takes_no_yes(
+    monkeypatch: pytest.MonkeyPatch, keys_end_too: bool
+) -> None:
+    """Only the keys ending leaves a yes a look has just made sure of standing. An abort ends a wait
+    that watches it, as it always did, whatever a look said at the same moment and whether or not
+    the keys ended with it."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks, _ = switch()
+    ks._nothing_waiting(clock.now)
+    looked_again = _spied_on(ks)
+    waiting = asyncio.ensure_future(
+        ks.wait_for_enter(timeout_s=120.0, until_abort=True, deliberate=True)
+    )
+    await looked_again()  # at the question
+    clock.now += 0.25
+    ks._heard_enter("")
+    await looked_again()  # at the Enter, too soon to be sure of
+    clock.now += 32.0
+    ks._nothing_waiting(clock.now)  # sure of it, and an abort in the same moment
+    ks.abort.set()
+    if keys_end_too:
+        ks.keys_ended.set()
+    assert await asyncio.wait_for(waiting, timeout=20.0) is False
+
+
+async def test_a_look_is_nothing_to_a_wait_that_any_enter_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a deliberate question cares that an Enter has stood alone. A wait that any Enter
+    answers came back from anything that woke it saying whether one had come, so a look at the
+    console would have ended it with nobody having pressed a thing."""
+    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks, _ = switch()
+    ks._nothing_waiting(clock.now)
+    clock.now += 0.25
+    ks._heard_enter("")  # from before the wait, so no answer to it
+    waiting = asyncio.ensure_future(ks.wait_for_enter(timeout_s=60.0))
+    await asyncio.sleep(0.05)
+    clock.now += 32.0
+    ks._nothing_waiting(clock.now)  # that Enter has stood alone, and the wait is not told
+    await asyncio.sleep(0.05)
+    assert not waiting.done(), "a look ended a wait for an Enter"
+    ks._heard_enter("")
+    assert await asyncio.wait_for(waiting, timeout=20.0) is True
+
+
+def _read_late(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[_Clock, KillSwitch, list[str | None], Callable[[], None]]:
+    """A switch on a still clock with production's own constants, and a wait that looks at a
+    question put at the clock's start, keeping each answer it gets."""
+    clock = _Clock()
+    monkeypatch.setattr("quackd.safety.time", clock)
+    ks = KillSwitch(asyncio.Event())
+    asked = clock.now
+    answers: list[str | None] = []
+
+    def wait_looks() -> None:
+        answers.append(ks._line_since(asked + TYPED_AHEAD_S))
+
+    return clock, ks, answers, wait_looks
+
+
+def test_an_enter_typed_too_soon_and_read_late_is_still_too_soon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enter pressed a moment after a question went up, too soon to have read it, with the key
+    thread held up from before it came in until past the question's half second. It was taken for
+    one read in good time, and with nothing after it, it said yes to dropping an arm. It came in
+    after the last look before it, which was before the half second, and that is what counts."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [NOTHING, wait_looks]
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up; it came in at 0.1 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "an Enter typed too soon answered the question"
+    assert ks._passed_by(asked), "and it is passed by as too soon, which the person is told"
+
+
+def test_an_enter_in_the_console_before_the_key_thread_first_looks_is_typed_ahead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The key thread reads whatever is in the console as it starts, and one slow to get going, on
+    a busy machine, read an Enter typed while the command was starting only past the question's
+    half second, and took it for an answer. Nothing read before the thread has once looked and
+    found the console empty is known to have come in after anything."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [0.6, "\r", wait_looks]  # in the console before the thread ever looked
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "an Enter from before the thread looked answered the question"
+    assert ks._passed_by(asked), "and it is passed by as too soon"
+
+
+def test_a_no_read_late_is_still_a_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`n` and Enter, with the key thread held up from before the question's half second until they
+    came in. A no goes by when it was read, needing none of the care a yes does. Passed by as
+    perhaps too soon, it was lost with no word said, and the next bare Enter was a yes to what
+    they had just refused."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, wait_looks]
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up
+    steps += ["n", "\r", wait_looks]
+    _ran(ks, clock, steps)
+    assert answers[-1] == "n", "a no read late was lost"
+
+
+def test_an_enter_read_late_stands_alone_from_when_it_was_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The earliest an Enter can have come in says nothing of when it did, and the latest is when
+    it was read. Counted from the earliest, one read late would be sure of at once, with a repeat
+    right behind it still in the console."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, 3.0, NOTHING, 1.0, "\r"]  # in good time, and read a second late
+    steps += _looked_at(0.4, then=wait_looks)
+    steps += _looked_at(0.1, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert answers[:20] == [None] * 20, "sure of before it had stood alone since it was read"
+    assert answers[-1] == "", "and it answers once it has"
+
+
+def test_a_repeat_read_late_is_still_close_behind_the_press(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enter pressed too soon and held just past a half second repeat delay, so it repeated once,
+    with the key thread held up from just before the repeat came in. Read 2.3 s after the press,
+    the repeat looked like a press after a quiet, and with nothing after it, it said yes. It came
+    in after the last look before it, under half a second after the press, so it is close behind
+    the press however late it was read."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    asked = clock.now
+    steps: list[Any] = [NOTHING, wait_looks, 0.1, "\r", wait_looks]
+    steps += _looked_at(0.48, then=wait_looks)
+    steps += [step for _ in range(18) for step in (0.1, wait_looks)]  # held up; it came in at 0.6 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert set(answers) == {None}, "the repeat of a press too soon answered the question"
+    repeat = ks._enters[-1]
+    assert repeat.earliest >= asked + TYPED_AHEAD_S, "it is no Enter typed ahead"
+    assert repeat.quiet < ENTER_QUIET_S, "it is close behind the press"
+
+
+def test_the_habit_of_enter_behind_a_q_read_late_is_still_behind_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`q`, and the old habit of an Enter behind it, slowly, 1.5 s on, with the key thread held up
+    as it came in. Read more than 2 s after the `q`, it went to the question the `q` brought on,
+    and with nothing after it, it said yes. It came in after the last look before it, under 2 s
+    after the `q`, so it is the habit however late it was read."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, "q"]  # and the question goes up as it is read
+    steps += _looked_at(1.46, then=wait_looks)
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up; it came in at 1.5 s
+    steps += ["\r", wait_looks]
+    steps += _looked_at(1.0, then=wait_looks)
+    _ran(ks, clock, steps)
+    assert ks.presses == 1
+    assert [enter.answers for enter in ks._enters] == [False], "the habit, which answers nothing"
+    assert set(answers) == {None}, "the Enter behind a `q` answered the question"
+
+
+def test_a_no_read_late_behind_a_q_is_still_a_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`n` and Enter behind a `q`, read more than 2 s after it by a key thread held up as they came
+    in. A bare Enter there may be the habit, and a line with something on it goes by when it was
+    read, as it does at the question. Taken for the habit, it was lost with no word said, and the
+    next bare Enter was a yes to what they had just refused."""
+    clock, ks, answers, wait_looks = _read_late(monkeypatch)
+    steps: list[Any] = [NOTHING, "q"]  # and the question goes up as it is read
+    steps += _looked_at(1.46, then=wait_looks)
+    steps += [step for _ in range(8) for step in (0.1, wait_looks)]  # held up
+    steps += ["n", "\r", wait_looks]
+    _ran(ks, clock, steps)
+    assert [enter.answers for enter in ks._enters] == [True], "it goes to the question"
+    assert answers[-1] == "n", "a no read late behind a `q` was lost"
 
 
 async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_stopping(
@@ -368,6 +726,13 @@ async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_sto
     assert told == [ENTER_TOO_SOON], "said once a wait, at the first it passes by"
 
 
+def _twice_in_a_breath(ks: KillSwitch) -> None:
+    """Two Enters in one turn of the loop, so that no stall can come between them and leave the
+    first standing alone."""
+    ks._heard_enter("")
+    ks._heard_enter("")
+
+
 async def test_the_terminal_says_when_it_passes_an_enter_by(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -382,9 +747,7 @@ async def test_the_terminal_says_when_it_passes_an_enter_by(
     hand.bind(ks)
     said: list[str] = []
     monkeypatch.setattr(hand, "say", said.append)
-    loop = asyncio.get_running_loop()
-    loop.call_later(0.05, ks._heard_enter, "")
-    loop.call_later(0.1, ks._heard_enter, "")
+    asyncio.get_running_loop().call_later(0.05, _twice_in_a_breath, ks)
     came = await hand.wait("open?", timeout_s=0.25, until_abort=False, deliberate=True)
     assert came is False
     assert said == ["open?", ENTER_TOO_SOON]
@@ -624,14 +987,12 @@ async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:
 
 
 async def test_an_enter_twice_in_a_breath_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    alone = 0.5  # room for a loaded runner's stall between the two
+    alone = 0.1
     monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", alone)
     ks, _ = switch()
-    loop = asyncio.get_running_loop()
-    loop.call_later(TYPED_AHEAD_S + 0.1, ks._heard_enter, "")
-    loop.call_later(TYPED_AHEAD_S + 0.15, ks._heard_enter, "")
+    asyncio.get_running_loop().call_later(TYPED_AHEAD_S + 0.1, _twice_in_a_breath, ks)
     got = await ks.wait_for_enter(
-        timeout_s=TYPED_AHEAD_S + 0.15 + alone * 2, until_abort=False, deliberate=True
+        timeout_s=TYPED_AHEAD_S + 0.1 + alone * 3, until_abort=False, deliberate=True
     )
     assert got is False, "two presses in a breath are a slip, and pressing it once more answers"
 

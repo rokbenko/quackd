@@ -791,6 +791,54 @@ def _name_of(fn: Callable[..., Any]) -> str:
     return str(getattr(inner, "__name__", inner))
 
 
+PASSED_ON: tuple[type[BaseException], ...] = (
+    KeyboardInterrupt,
+    SystemExit,
+    asyncio.CancelledError,
+    GeneratorExit,
+)
+"""What a LeRobot call may raise that `_call` raises again as it was: a Ctrl-C, an exit, a
+cancellation and a generator's close are none of them the bus failing, and each is for its caller
+to act on. Anything else that is not an `Exception` comes out as a failed bus call
+(`_failed_call`)."""
+
+
+def _failed_call(fn: Callable[..., Any], error: BaseException) -> ConnectionError:
+    """A LeRobot call that raised something that is not an `Exception`, as the failed bus call it
+    is, naming what it raised.
+
+    rustypot is Rust, and pyo3 hands a panic in it to Python as `PanicException`, which derives
+    from `BaseException` so that no `except Exception` swallows it by accident. Every caller of
+    `_call` handles a failed bus call as an `Exception`, LeRobot's own `ConnectionError` among
+    them, and the stop, the release and the close each go on from there to what they still owe
+    the arm. A panic went through all of them as it was: a stop whose hold never went out did not
+    say so, a release went up as though a Ctrl-C had landed on it, and a close ended where it met
+    the panic, with what was left of it, the arm's disconnect among them, never run. It is raised
+    `from` the panic, so the frames a failed connect is placed by (`may_have_written_torque`) are
+    still read."""
+    said = f"{type(error).__name__}: {error}" if str(error).strip() else type(error).__name__
+    return ConnectionError(f"a LeRobot call ({_name_of(fn)}) raised {said}")
+
+
+def _register_note(fn: Callable[..., Any], error: BaseException) -> str:
+    """What `_read_all` keeps of a register read that failed: the error's type and words, and for
+    one that is not an `Exception`, a panic in rustypot among them, the failed call `_call` would
+    have made of it (`_failed_call`), so a register a panic cost reads as one a lost packet cost."""
+    failed = error if isinstance(error, Exception) else _failed_call(fn, error)
+    return f"{type(failed).__name__}: {failed}"
+
+
+def _panicked(error: BaseException) -> bool:
+    """Whether `error` is the failed call `_call` made of something that was not an `Exception`
+    (`_failed_call`): a panic in rustypot, which is no packet the bus lost."""
+    cause = error.__cause__
+    return (
+        isinstance(error, ConnectionError)
+        and cause is not None
+        and not isinstance(cause, Exception)
+    )
+
+
 def _late(fn: Callable[..., Any], budget_s: float, pending: asyncio.Future[Any] | None) -> str:
     """What a LeRobot call that ran out of time did, naming the call and its budget.
 
@@ -921,7 +969,19 @@ TORQUE_RELEASE_NOT_KNOWN = (
     "the close was letting go of the arm and its disconnect did not finish, so some motors may "
     "have torque and some not: hold it, and cut its power to be sure"
 )
-"""What a close says of a disconnect that raised or never came back, with torque coming off."""
+"""What a close says of a disconnect that never came back, with torque coming off, or that raised
+naming none of the arm's motors, or every one of them."""
+
+TORQUE_RELEASE_NAMED = (
+    "the close took torque off, {where}, on every joint but {joints}, whose {writes} LeRobot "
+    "could not confirm ({said}), so {they} may still hold: hold the arm as though nothing holds "
+    "it, and cut its power to be sure"
+)
+"""What a close says of a disconnect whose torque-off raised naming some of the arm's motors.
+LeRobot's torque call tries every motor and names each whose write it could not confirm
+(`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and the disconnect shuts the port whatever that did
+(`up.DISCONNECT_RELEASES_THE_PORT`), so every joint it leaves out let go and each it names may
+still hold, which a release `let_go` made says the same way (`LeRobotReal._release_failed`)."""
 
 
 class LeRobotReal:
@@ -1044,6 +1104,11 @@ class LeRobotReal:
         whether it is still inside its time however late the loop looks, and once its worker is
         back its closed stamp says it is on no wire (`_cancelled_call`). The longest anything
         waits for a cancelled call still on the wire."""
+        self._wedge_raised: BaseException | None = None
+        """The error `_call` raised last over a wedge: the timeout of a call that wedged the bus,
+        or the refusal of one that met it wedged. Its reason is `stop_error`, which no other
+        failure writes, so it is the one error a hand-off, the rest move and a policy's start
+        quote `stop_error` for (`_quoted`)."""
         self._policy_task: asyncio.Task[SegmentEnd] | None = None
         self._policy_name = "idle"
         self._policy_error: str | None = None
@@ -1354,6 +1419,13 @@ class LeRobotReal:
         Every call is timed on `perf_counter`, the wait for the lock included, however it ends
         (`Timing`, the state's `timing.bus_call`).
 
+        What the call raises comes out as it was, an `Exception` or one of `PASSED_ON`, and
+        anything else as the `ConnectionError` of a failed bus call, raised from it
+        (`_failed_call`). pyo3's `PanicException`, which is what a panic in rustypot reaches
+        Python as, is a `BaseException` and no `Exception`, and it went through every handler
+        the callers meet a failed call with, the stop's, the release's and the close's among
+        them.
+
         A call something was cancelled in the middle of is waited for before the check, here
         and once the lock is this call's, inside this call's own budget, as a call ahead of it
         on the lock would be (`_outwait_cancelled_call`), rather than refused on: it is that
@@ -1391,6 +1463,10 @@ class LeRobotReal:
         def stamped(handed: float) -> Any:
             try:
                 return call()
+            except BaseException as e:
+                if isinstance(e, (Exception, *PASSED_ON)):
+                    raise
+                raise _failed_call(fn, e) from e
             finally:
                 # `loop.time()` reads the monotonic clock, which is safe from any thread
                 self._bus = (self._bus[0] + loop.time() - handed, None)
@@ -1446,7 +1522,11 @@ class LeRobotReal:
                     "serial bus has one owner, so quackd refuses every call until it does"
                 )
             if spent and isinstance(e, TimeoutError):
-                raise TimeoutError(_late(fn, budget, pending)) from None
+                late = TimeoutError(_late(fn, budget, pending))
+                if pending is not None and not pending.done():
+                    # this call wedged the bus, and `stop_error` is its reason (`_quoted`)
+                    self._wedge_raised = late
+                raise late from None
             # a call that raised in time, a TimeoutError of its own among them, raises what
             # it raised
             raise
@@ -1473,7 +1553,10 @@ class LeRobotReal:
         if self._wedged is None:
             return
         if not self._wedged.done():
-            raise TransportError(self.stop_error or "a LeRobot call has not come back")
+            refused = TransportError(self.stop_error or "a LeRobot call has not come back")
+            # met the bus wedged, and `stop_error` is the wedge's reason (`_quoted`)
+            self._wedge_raised = refused
+            raise refused
         self._wedged = None
         self.stop_error = None
 
@@ -1723,8 +1806,10 @@ class LeRobotReal:
 
         Never tried again: a call that blew its deadline, because its thread is still on the
         wire and `_call` has wedged the transport (a retry would only be refused, and a second
-        talker on a half-duplex bus is how packets get lost), and quackd's own refusal of a
-        wedged transport. The cameras opened before this and stay open across attempts: they
+        talker on a half-duplex bus is how packets get lost), quackd's own refusal of a wedged
+        transport, and a panic in rustypot (`_panicked`), which `_call` raises as a failed call
+        and which is no packet the bus lost: that attempt is the last, its port is closed, and
+        the refusal says so. The cameras opened before this and stay open across attempts: they
         are not on the serial bus, and reopening one costs its warmup for nothing.
 
         Each retry is said twice over, as a WARNING while it happens and in `connect_notes`
@@ -1786,9 +1871,14 @@ class LeRobotReal:
                     str(e), getattr(getattr(self._robot, "bus", None), "motors", None)
                 )
                 await self._close_port()
-                if attempt == CONNECT_ATTEMPTS:
+                # a panic in rustypot is no packet the bus lost, and another attempt is another
+                # `configure()`, torque off every motor and on again, over a library that has just
+                # failed in a way nothing here accounts for
+                if attempt == CONNECT_ATTEMPTS or _panicked(e):
                     await self._close_cameras()
-                    raise TransportError(self._connect_refusal(e, named, split=split)) from e
+                    raise TransportError(
+                        self._connect_refusal(e, named, split=split, attempts=attempt)
+                    ) from e
                 then = (
                     PORT_CLOSED_WRITING_NOTHING
                     if port_was_open
@@ -1812,9 +1902,15 @@ class LeRobotReal:
                     raise TransportError(stopped) from e
 
     def _connect_refusal(
-        self, error: Exception, named: Sequence[tuple[str, str]], *, split: bool
+        self,
+        error: Exception,
+        named: Sequence[tuple[str, str]],
+        *,
+        split: bool,
+        attempts: int = CONNECT_ATTEMPTS,
     ) -> str:
-        """What the person at the arm reads when every connect attempt failed.
+        """What the person at the arm reads when every connect attempt failed, or when one met a
+        panic, which ends the attempts at the one it came in (`attempts`).
 
         LeRobot's words first, because they are the evidence. Then the state the arm may be in:
         an attempt that failed on a write, or inside `configure()`, may have stopped part way
@@ -1829,8 +1925,14 @@ class LeRobotReal:
         the same way as a cable that came out, and whatever else might be holding the port,
         because the port opens for one program at a time (`up.PORT_OPENED_EXCLUSIVELY`). Where
         LeRobot named no joint, or named every motor of the arm, the arm's cables and power."""
-        head = f"lerobot {self.label}: connect failed {CONNECT_ATTEMPTS} times"
-        said = [f"{head}, the last{_on(named)}" if named else head]
+        if attempts == CONNECT_ATTEMPTS:
+            head = f"lerobot {self.label}: connect failed {CONNECT_ATTEMPTS} times"
+            said = [f"{head}, the last{_on(named)}" if named else head]
+        else:
+            said = [
+                f"lerobot {self.label}: connect attempt {attempts} of {CONNECT_ATTEMPTS} "
+                f"failed{_on(named)} on a panic, which is not tried again"
+            ]
         said[0] += f": {_one_line(error)}"
         if split:
             said.append(SPLIT_TORQUE)
@@ -2131,7 +2233,15 @@ class LeRobotReal:
         refused is not sent back to that same release (`TORQUE_KEPT_AFTER_REFUSAL`). And such
         an arm, closed at its rest pose or with no pose recorded, is let go of by the
         disconnect as every such close is, which after a refusal is said
-        (`released_by_the_close`)."""
+        (`released_by_the_close`).
+
+        A close after a close, over a port the first one shut, says nothing new and keeps the
+        first one's line: nothing it could send reaches a motor, and the read it would decide by
+        is refused on a shut port, so its line would be that it cannot tell whether the arm holds
+        itself up, over an arm the first close may have let go of at its rest pose. One whose
+        port is still open, or will not say, closes as any close does."""
+        if self._closed and not self._port_is_open():
+            return
         self._closed = True
         await self._cancel_policy("the arm's transport was closed")
         if self._policy_loop is not None:
@@ -2257,16 +2367,19 @@ class LeRobotReal:
         # a close after a close finds the port shut, and that is no release going wrong
         connected = self._port_is_open()
         disconnected = False
-        with contextlib.suppress(Exception):
+        failed: Exception | None = None
+        try:
             await self._call(
                 self._robot.disconnect, deadline_s=DISCONNECT_S
             )  # up.SO_DISCONNECT_TORQUE
             disconnected = True
-        if why is None and connected and not disconnected and releases is not False:
+        except Exception as e:
+            failed = e
+        if why is None and connected and failed is not None and releases is not False:
             # that was the call that lets go of the arm, and it raised or never came back, so
             # some motors may have let go and some not, and every other line here is about an
             # arm the close knows the state of
-            self.close_note = self.RELEASE_NOT_KNOWN
+            self.close_note = self._release_not_known(failed)
         if why is None and self._release_refused and disconnected and releases is not False:
             # only once the disconnect came back, because its `Torque_Enable` 0 writes raise on
             # a bus that lost them, and "the close took torque off" is a thing to say only of a
@@ -2284,6 +2397,36 @@ class LeRobotReal:
     RELEASE_NOT_KNOWN = TORQUE_RELEASE_NOT_KNOWN
     """What the close says of a release that raised or did not come back, which the simulator words
     for a simulated arm."""
+
+    RELEASE_NAMED = TORQUE_RELEASE_NAMED
+    """What it says of a release that raised naming some of the arm's motors, which the simulator
+    words for a simulated arm too."""
+
+    def _release_not_known(self, error: Exception) -> str:
+        """What the close says of its own release when the disconnect that makes it raised `error`,
+        a timeout of `_call`'s among them, for a disconnect that never came back.
+
+        LeRobot's torque call tries every motor and names each whose write it could not confirm
+        (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and the disconnect shuts the port whatever that did
+        (`up.DISCONNECT_RELEASES_THE_PORT`). So where the error names some of the arm's motors,
+        every other one let go and those it names may still hold, and they are named, with
+        LeRobot's words, as `let_go` names them (`_release_failed`). The close used to say only
+        that some motors might hold, and the joints LeRobot named went unsaid. Where it names
+        none, or every motor of the arm, or the call never came back, which motors hold is not
+        known, and that is what is said (`RELEASE_NOT_KNOWN`)."""
+        motors = getattr(getattr(self._robot, "bus", None), "motors", None)
+        stuck = torque_failed_on(str(error))
+        if not stuck or _every_motor(stuck, motors):
+            return self.RELEASE_NOT_KNOWN
+        joints = [_named(n, motors)[1] for n in stuck]
+        one = len(joints) == 1
+        return self.RELEASE_NAMED.format(
+            where="at the rest pose" if self.rest_pose is not None else "where the arm stands",
+            joints=_listed(joints),
+            writes="write" if one else "writes",
+            said=self._quoted(error),
+            they="it" if one else "they",
+        )
 
     def _port_is_open(self) -> bool:
         """Whether the follower says it is connected. True where it will not say, so a release
@@ -2357,7 +2500,9 @@ class LeRobotReal:
 
         The positions are the liveness check and are allowed to raise. The two registers are
         not: a corrupt status packet should cost a reading, not the run, so a failure there
-        comes back as a note and the last known values stand.
+        comes back as a note and the last known values stand. A panic in one of them is that
+        register's failure too (`_register_note`), as `_call` makes a panic in any call a failed
+        call, so it costs that reading and not the probe.
 
         The two registers are read in their own `try` each, and that matters rather than being
         tidiness. They used to share one, so a corrupt temperature packet reported a failure
@@ -2373,14 +2518,18 @@ class LeRobotReal:
         written = self._torque_writes
         try:
             torque = self._robot.bus.sync_read("Torque_Enable", normalize=False, num_retry=2)
-        except Exception as e:
-            errors.torque = f"{type(e).__name__}: {e}"
+        except PASSED_ON:
+            raise
+        except BaseException as e:
+            errors.torque = _register_note(self._robot.bus.sync_read, e)
         try:
             temperature = self._robot.bus.sync_read(
                 "Present_Temperature", normalize=False, num_retry=2
             )
-        except Exception as e:
-            errors.temperature = f"{type(e).__name__}: {e}"
+        except PASSED_ON:
+            raise
+        except BaseException as e:
+            errors.temperature = _register_note(self._robot.bus.sync_read, e)
         return obs, torque, temperature, errors, written
 
     def _heartbeat_reads(self) -> Callable[[], Any]:
@@ -2871,7 +3020,7 @@ class LeRobotReal:
             try:
                 await self._probe()
             except Exception as e:
-                said = self.stop_error or f"{type(e).__name__}: {e}"
+                said = self._quoted(e)
                 return SegmentEnd(
                     "refused",
                     f"the policy was not started: the arm did not answer a read ({said})",
@@ -3342,13 +3491,19 @@ class LeRobotReal:
         )
 
     def _quoted(self, error: BaseException) -> str:
-        """What a hand-off quotes of the failure that ended it: the wedge's own reason
-        (`stop_error`) where the call ran out of time or met a bus still wedged, which is what
-        set it, and the error's own words otherwise. `stop_error` outlives the failure that set
-        it, a stop whose hold did not reach the arm among them, so quoting it over a LeRobot
-        error put an earlier failure where LeRobot's words belong, the joint a torque call
-        names among them."""
-        if isinstance(error, (TimeoutError, TransportError)) and self.stop_error:
+        """What a hand-off, the rest move and a policy segment's start quote of the failure that
+        ended them: the wedge's own reason (`stop_error`) for the error `_call` raised over a
+        wedge, the timeout of a call that wedged the bus or the refusal of one that met it wedged
+        (`_wedge_raised`), and the error's own words for anything else.
+
+        `stop_error` outlives the failure that set it, a stop whose hold did not reach the arm
+        among them, and not every timeout is a wedge: a call that waited behind another and never
+        went out, one that came back after its budget was spent, and a TimeoutError a call raised
+        itself write no `stop_error`. Quoting it over any of those, as over a LeRobot error, put
+        an earlier failure where this one's words belong, the joint a torque call names among
+        them, and a rest move that missed then carried that earlier failure into the close's
+        last line."""
+        if error is self._wedge_raised and self.stop_error:
             return self.stop_error
         return f"{type(error).__name__}: {error}"
 
@@ -3378,10 +3533,13 @@ class LeRobotReal:
                 f"any motor ({said}), so some joints may be limp and some may still hold: hold "
                 "the arm as though nothing holds it"
             )
+        # a call that ran out of time, or met a wedged bus, did not come back; anything else, a
+        # panic among them (`_failed_call`), raised
+        timed_out = isinstance(error, (TimeoutError, TransportError))
+        ended = "did not come back" if timed_out else "raised"
         return (
-            f"torque was being taken off {where} and the call did not come back ({said}), so "
-            "some joints may be limp and some may still hold: hold the arm as though nothing "
-            "holds it"
+            f"torque was being taken off {where} and the call {ended} ({said}), so some joints "
+            "may be limp and some may still hold: hold the arm as though nothing holds it"
         )
 
     async def take_hold(self) -> HandResult:
@@ -3639,7 +3797,7 @@ class LeRobotReal:
             # either way, and the wedge it leaves is read just below.
             result = RestResult(
                 "refused",
-                self.stop_error or f"{type(e).__name__}: {e}",
+                self._quoted(e),
                 answered=self._answered and not isinstance(e, TimeoutError),
             )
         if self._wedged is not None and result.answered:

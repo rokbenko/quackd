@@ -39,12 +39,14 @@ plain as the backend's code allows:
 - **The disconnect** drops torque when the config says so as it runs
   (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), and shuts the port whatever that did
   (`up.DISCONNECT_RELEASES_THE_PORT`).
-
-One thing here is the mock's and not the arm's: a read, a send and a torque write answer whether
-or not the port is open, where LeRobot's refuse them on a closed one. The mock has always answered
-before it was connected and after it was closed, tests drive it that way, and an arm in memory has
-no cable to come out. A second connect while the port is open is refused as upstream's is, and
-closing the bus's port when it is not open is passed over without a word, as LeRobot 0.7.0's is.
+- **A closed port refuses.** A read, a send, a torque write and the follower's disconnect are
+  refused on a port that is not open, in LeRobot's words (`up.NOT_CONNECTED`), as the arm's are
+  and the simulator's, so nothing reaches the mock's motors before its connect or after its close.
+  It used to answer either way, so a hand-off over a mock nobody had connected was let go of and
+  read back rather than refused at its first read, as the arm's is, and a test of one could not
+  fail for want of the connect. A second connect while the port is open is refused as upstream's
+  is, and closing the bus's port when it is not open is passed over without a word, as LeRobot
+  0.7.0's is.
 
 `FakeCamera` is the view the mock offers, read as the real backend reads a webcam. Nothing here
 imports LeRobot or MuJoCo.
@@ -63,6 +65,7 @@ from PIL import Image, ImageDraw
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
 from quackd_lerobot import upstream_api as up
 from quackd_lerobot.sim.follower import (
+    BUS_CLASS,
     DISCONNECT_RETRIES,
     FOLLOWER_CLASS,
     GRIPPER,
@@ -71,6 +74,7 @@ from quackd_lerobot.sim.follower import (
     TEMPERATURE,
     TORQUE_ENABLE,
     DeviceAlreadyConnectedError,
+    DeviceNotConnectedError,
     NameOrID,
     SimFollowerConfig,
     SimMotor,
@@ -149,6 +153,12 @@ class FakeBus:
     def shut_port(self) -> None:
         self._open = False
 
+    def _require_open(self) -> None:
+        """`up.NOT_CONNECTED`: a call that would reach a motor through a port that is not open is
+        refused, in upstream's words under its class name."""
+        if not self._open:
+            raise DeviceNotConnectedError(f"{BUS_CLASS} is not connected. Run `.connect()` first.")
+
     def disconnect(self, disable_torque: bool = True) -> None:
         """`up.BUS_DISCONNECT`: torque off on every motor first only when asked, then the port
         shut whatever the torque-off did (`up.DISCONNECT_RELEASES_THE_PORT`). A port that is not
@@ -168,6 +178,7 @@ class FakeBus:
         """`up.BUS_ENABLE_TORQUE`, how a take-hold picks the arm back up: every motor named is
         tried, those in the arm's `unanswered` left as they were, and then the one error for
         them (`raise_for_unanswered`)."""
+        self._require_open()
         names = self._names(motors)
         self.arm.take_hold([name for name in names if name not in self.arm.unanswered])
         self.raise_for_unanswered(names, on=True, num_retry=num_retry)
@@ -177,6 +188,7 @@ class FakeBus:
     ) -> None:
         """`up.BUS_DISABLE_TORQUE`, how a release lets go, tried on every motor named as the
         take-hold's torque write is (`enable_torque`)."""
+        self._require_open()
         names = self._names(motors)
         self.arm.let_go([name for name in names if name not in self.arm.unanswered])
         self.raise_for_unanswered(names, on=False, num_retry=num_retry)
@@ -211,6 +223,7 @@ class FakeBus:
         """`up.BUS_SYNC_READ` of the two registers the real backend reads off the bus itself,
         raw whatever `normalize` says (`up.BUS_NORMALIZED_DATA`). A torque register told to go
         quiet raises a ConnectionError with the reason it was given."""
+        self._require_open()
         names = self._names(motors)
         if data_name == TORQUE_ENABLE:
             if self.arm.unread is not None:
@@ -302,6 +315,14 @@ class FakeFollower:
         (`up.BUS_IS_CALIBRATED`)."""
         return set(self.calibration) == set(self.bus.motors)
 
+    def _require_open(self) -> None:
+        """`up.NOT_CONNECTED`, as the follower's own calls carry it: refused on a port that is not
+        open, in upstream's words under its class name."""
+        if not self.is_connected:
+            raise DeviceNotConnectedError(
+                f"{FOLLOWER_CLASS} is not connected. Run `.connect()` first."
+            )
+
     def travel(self, joint: str) -> tuple[float, float]:
         """The limits the servo clamps a goal to, in degrees: the calibration's ticks through
         LeRobot's formula, `(tick - mid) * 360 / 4095` with `mid` halfway between them. The
@@ -341,8 +362,10 @@ class FakeFollower:
         """`SOFollower.disconnect`: torque off on every motor first when the config says so as
         this runs (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), every motor tried, then the port
         shut whatever that did (`up.DISCONNECT_RELEASES_THE_PORT`), and then the one error for
-        the motors in `unanswered`, which keep their torque. A port that was never opened is shut
-        all the same, since the mock answers without one."""
+        the motors in `unanswered`, which keep their torque. A port that is not open is refused, as
+        upstream's follower refuses it (`up.NOT_CONNECTED`), where the bus's own disconnect passes
+        over it."""
+        self._require_open()
         try:
             if self.config.disable_torque_on_disconnect:
                 self.set_torque([name for name in JOINTS if name not in self.unanswered], on=False)
@@ -354,6 +377,7 @@ class FakeFollower:
 
     def get_observation(self) -> dict[str, Any]:
         """Every joint as `'<joint>.pos'` (`up.SO_OBSERVATION_KEYS`), and nothing else."""
+        self._require_open()
         return {f"{joint}.pos": angle for joint, angle in self.positions.items()}
 
     def send_action(self, action: Mapping[str, Any]) -> dict[str, float]:
@@ -361,6 +385,7 @@ class FakeFollower:
         `config.max_relative_target` from where each joint reads when there is a cap
         (`up.SO_ACTION_CLAMP`), and returned as they went out (`up.SO_SEND_ACTION_RETURN`):
         capped, and not clamped, which the servo does and nobody reports."""
+        self._require_open()
         goals = {
             key.removesuffix(".pos"): float(value)
             for key, value in action.items()

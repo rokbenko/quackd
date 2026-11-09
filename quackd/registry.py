@@ -1239,7 +1239,9 @@ def _torque_phrase(note: str) -> str:
     `robot list --probe` has a line per robot, not a paragraph, so the note is shortened here
     rather than printed whole. What may not be lost in the shortening is the direction: held
     up, let go, or not known, which is an arm that did not answer the close's own read and so
-    may be limp at the switch rather than holding itself up."""
+    may be limp at the switch rather than holding itself up, or one at its rest pose whose
+    release at the close did not finish. A note this does not know reads as held up, which is
+    how the close's unfinished release used to read, the other way round from what it did."""
     if "could not keep torque on" in note:
         return "torque could NOT be kept: the arm was released where it stood"
     if "cannot tell whether" in note:
@@ -1252,6 +1254,14 @@ def _torque_phrase(note: str) -> str:
         # the close's own read found servos limp, a brown-out the commonest cause: the arm is
         # not held up there, which is the other way round from the line below
         return "torque reads OFF: the arm may have dropped"
+    if "its disconnect did not finish" in note:
+        # the close was letting go of an arm at its rest pose, and its release raised or never
+        # came back, so which motors hold is not known (`TORQUE_RELEASE_NOT_KNOWN`)
+        return "torque unknown: the close's release did not finish"
+    if "the close took torque off" in note and "may still hold" in note:
+        # that release raised naming the motors LeRobot could not confirm: every other joint
+        # let go, and those may still hold (`TORQUE_RELEASE_NAMED`)
+        return "torque off in part: some joints may still hold"
     return "torque left on: not at its rest pose"
 
 
