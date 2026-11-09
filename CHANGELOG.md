@@ -257,6 +257,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the sentence any file that is not JSON gets. The refusals that name a file in a pinned model's
   directory now quote it, as the one for an unknown file always did, since a name there can hold
   anything. What changes for you: nothing to do. `tests/test_policy_pipeline.py` fails without this.
+- **A checkpoint's `train_config.json` has to be its own commit's.** The policy server reads a
+  checkpoint's rate from the dataset that file names, and it was the one file of a checkpoint not
+  checked to have landed beside its `config.json`, so a tag moved between the two reads could name
+  another commit's training run, and the checkpoint would be served at that run's rate. It is refused
+  now, before the weights are fetched, with a sentence saying to give `--fps`. What changes for you:
+  nothing to do. `tests/test_policy_pipeline.py` fails without this.
 
 ### Security
 

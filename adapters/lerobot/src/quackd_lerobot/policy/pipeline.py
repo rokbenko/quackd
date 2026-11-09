@@ -1106,15 +1106,16 @@ def _required(hub: Hub, repo: str, revision: str, filename: str, *, beside: Path
 
 
 def resolve_rate(
-    fps: float | None, repo: str, revision: str, hub: Hub
+    fps: float | None, repo: str, revision: str, hub: Hub, *, beside: Path
 ) -> tuple[float, str, list[str]]:
     """The rate a checkpoint is served at, where it came from, and what was fetched to learn it.
 
     `--fps` when it is given. Otherwise the fps of the dataset `train_config.json` names, read
     from its `meta/info.json` at the revision the training run named (`upstream_api.
-    TRAIN_DATASET`), since no config carries a rate (`upstream_api.CONFIG_HAS_NO_RATE`). A
-    dataset named at no revision, or at a branch, is refused rather than read at whatever it is
-    today (`check_fixed`)."""
+    TRAIN_DATASET`), since no config carries a rate (`upstream_api.CONFIG_HAS_NO_RATE`). The
+    file is the checkpoint's own only when it landed `beside` the rest of it: a tag that moved
+    would answer with another commit's training run. A dataset named at no revision, or at a
+    branch, is refused rather than read at whatever it is today (`check_fixed`)."""
     if fps is not None:
         return float(fps), "--fps", []
     spec = f"{repo}@{revision}"
@@ -1124,6 +1125,11 @@ def resolve_rate(
         raise PipelineRefused(
             f"{spec} has no {up.TRAIN_CONFIG_FILE} to say what data it learned from, and no "
             f"checkpoint carries a rate: {give}"
+        )
+    if path.parent != beside:
+        raise PipelineRefused(
+            f"{up.TRAIN_CONFIG_FILE} of {spec} did not land beside its {up.CONFIG_FILE}, so the "
+            f"run it describes could be another commit's: {give}"
         )
     train = _json(path, f"{spec}'s {up.TRAIN_CONFIG_FILE}")
     dataset = train.get("dataset") if isinstance(train, Mapping) else None
@@ -1266,7 +1272,7 @@ def fetch_checkpoint(
     at = dict(pinned)  # the revision each pinned model is fetched at
     if shape.policy_type == "groot":
         at[str(config.get("base_model_path"))] = check_groot_base(hub, config, pinned, spec)
-    rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub)
+    rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub, beside=directory)
     # the code-free part is checked: now the weights, the processors' state and the models
     _required(hub, repo, revision, up.WEIGHTS_FILE, beside=directory)
     for step in every:

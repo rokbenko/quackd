@@ -1562,6 +1562,36 @@ def test_closing_a_checkpoint_waits_on_no_step_still_inferring(tmp_path: Path) -
     assert runner._features is None, "a begin after the close undid it"
 
 
+class _TrainConfigOfAnotherCommit(FakeHub):
+    """The stand-in Hub with a checkpoint's `train_config.json` landing in another directory
+    than the rest of it, as a tag moved between two reads leaves it."""
+
+    def file(
+        self, repo: str, revision: str, filename: str, *, dataset: bool = False
+    ) -> Path | None:
+        path = super().file(repo, revision, filename, dataset=dataset)
+        if path is None or filename != up.TRAIN_CONFIG_FILE:
+            return path
+        moved = path.parent.with_name("another-commit") / filename
+        moved.parent.mkdir(parents=True, exist_ok=True)
+        moved.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        return moved
+
+
+def test_the_training_runs_file_is_read_beside_the_checkpoint_it_describes(tmp_path: Path) -> None:
+    """Every other file of a checkpoint is refused unless it landed beside its `config.json`,
+    so the files are one commit's. `train_config.json` says what data the checkpoint learned
+    from, and a tag that moved would answer with another commit's run, so its rate too is refused
+    with a sentence saying to give `--fps`, before the weights are fetched."""
+    hub = _hub(tmp_path)
+    elsewhere = _TrainConfigOfAnotherCommit(hub.root, hub.files)
+    with pytest.raises(P.PipelineRefused, match="did not land beside") as refused:
+        _fetch(elsewhere)
+    assert "--fps" in str(refused.value)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in elsewhere.asked]
+    assert _fetch(elsewhere, fps=float(FPS)).rate_source == "--fps", "--fps needs no such file"
+
+
 def test_the_rate_is_fps_or_the_training_datasets_at_the_revision_it_names(tmp_path: Path) -> None:
     given = _hub(tmp_path / "given")
     checkpoint = _fetch(given, fps=float(FPS * 3))
