@@ -71,7 +71,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -855,6 +855,11 @@ def exit_code(reports: Sequence[Report]) -> int:
 # ── issues, one per upstream that needs somebody ────────────────────────────────────────
 
 LABEL = "upstream-drift"
+TITLE = "upstream drift: "
+"""Every issue the script keeps is titled this and the upstream's name."""
+ISSUES_LISTED = 200
+"""How many open `upstream-drift` issues are listed: one per upstream and the odd repeat, so this
+is room to spare."""
 Gh = Callable[[Sequence[str]], str]
 
 
@@ -870,7 +875,12 @@ def gh_run(args: Sequence[str]) -> str:
     return result.stdout
 
 
-def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[str]:
+def sync_issues(
+    reports: Sequence[Report],
+    repo: str,
+    gh: Gh = gh_run,
+    known: Collection[str] | None = None,
+) -> list[str]:
     """One open issue per upstream that drifted or has a ref that cannot be followed, titled
     `upstream drift: <name>`, its body the upstream's section of the report, edited in place
     while that lasts and closed the night every ref reads as it was read.
@@ -879,7 +889,15 @@ def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[s
     outage is not a clean night, and a table missing the rows nobody could fetch would read as
     drift that went away. It still opens an issue for what it did find. A comment is added only
     when what needs somebody changed, so a watcher is not pinged every night with the same
-    table. Returns what was done, one line per upstream."""
+    table.
+
+    Two open issues with one title are an issue and its repeat, and the oldest is the one kept:
+    a night that still finds something edits it and closes the others saying it carries on, a
+    clean night closes them all, and a night that could not check the upstream leaves them all.
+    `known` is every upstream the walk read, given only when it read every adapter there is: an
+    open issue titled for an upstream not among them, renamed or removed since, would never be
+    updated or closed again, so it is closed saying why, and only on a night every upstream
+    could be checked. Returns what was done, one line per issue."""
     done: list[str] = []
     gh(
         [
@@ -895,19 +913,6 @@ def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[s
             "an upstream a quackd adapter was read against has moved",
         ]
     )
-    for report in reports:
-        try:
-            line = _sync_one(report, repo, gh)
-        except Unreachable as e:
-            line = f"{report.name}: issue not synced: {e}"
-        if line:
-            done.append(line)
-    return done
-
-
-def _sync_one(report: Report, repo: str, gh: Gh) -> str | None:
-    """One upstream's issue, and what was done about it, or None when nothing was."""
-    title = f"upstream drift: {report.name}"
     listed = gh(
         [
             "issue",
@@ -918,56 +923,138 @@ def _sync_one(report: Report, repo: str, gh: Gh) -> str | None:
             LABEL,
             "--state",
             "open",
-            "--search",
-            f'"{title}" in:title',
+            "--limit",
+            str(ISSUES_LISTED),
             "--json",
             "number,title,body",
         ]
     )
-    issues = [i for i in json.loads(listed or "[]") if i.get("title") == title]
+    titled: dict[str, list[dict[str, Any]]] = {}
+    for issue in sorted(json.loads(listed or "[]"), key=lambda issue: int(issue["number"])):
+        titled.setdefault(str(issue.get("title", "")), []).append(issue)
+    for report in reports:
+        issues = titled.pop(f"{TITLE}{report.name}", [])
+        try:
+            done.extend(_sync_one(report, repo, gh, issues))
+        except Unreachable as e:
+            done.append(f"{report.name}: issue not synced: {e}")
+    if known is not None and not any(report.blocked for report in reports):
+        done.extend(_close_unknown(titled, set(known), repo, gh))
+    return done
+
+
+def _sync_one(report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]]) -> list[str]:
+    """One upstream's open issues, oldest first, and what was done about them."""
+    title = f"{TITLE}{report.name}"
     number = str(issues[0]["number"]) if issues else ""
     if report.blocked and issues:
-        return f"{report.name}: not all of it could be checked, issue #{number} left"
+        return [f"{report.name}: not all of it could be checked, issue #{number} left"]
     if not report.needs_somebody:
-        if not issues:
-            return None
-        gh(
-            [
-                "issue",
-                "close",
-                number,
-                "--repo",
-                repo,
-                "--comment",
-                "Every ref reads as it was read tonight, or has moved within its file.",
-            ]
-        )
-        return f"{report.name}: issue #{number} closed"
+        for issue in issues:
+            gh(
+                [
+                    "issue",
+                    "close",
+                    str(issue["number"]),
+                    "--repo",
+                    repo,
+                    "--comment",
+                    "Every ref reads as it was read tonight, or has moved within its file.",
+                ]
+            )
+        return [f"{report.name}: issue #{issue['number']} closed" for issue in issues]
     body = (
         f"{section(report)}\n\nOpened by `.github/workflows/upstream-drift.yml`. For a ref "
         "that changed, re-read it at the new baseline and move the pin and `READ_ON` in "
         f"`{report.module}`. For one that cannot be followed, anchor it on the line that "
         "names what it cites. The issue closes itself the night after."
     )
-    if issues:
-        before = _needing(str(issues[0].get("body", "")))
-        gh(["issue", "edit", number, "--repo", repo, "--body", body])
-        if before != _needing(body):
-            gh(
-                [
-                    "issue",
-                    "comment",
-                    number,
-                    "--repo",
-                    repo,
-                    "--body",
-                    "What needs somebody changed tonight; the body above is current.",
-                ]
-            )
-        return f"{report.name}: issue #{number} updated"
-    create = ["issue", "create", "--repo", repo, "--title", title, "--label", LABEL]
-    created = gh([*create, "--body", body])
-    return f"{report.name}: issue opened ({created.strip().split()[-1]})"
+    if not issues:
+        create = ["issue", "create", "--repo", repo, "--title", title, "--label", LABEL]
+        created = gh([*create, "--body", body])
+        return [f"{report.name}: issue opened ({created.strip().split()[-1]})"]
+    before = _needing(str(issues[0].get("body", "")))
+    gh(["issue", "edit", number, "--repo", repo, "--body", body])
+    if before != _needing(body):
+        gh(
+            [
+                "issue",
+                "comment",
+                number,
+                "--repo",
+                repo,
+                "--body",
+                "What needs somebody changed tonight; the body above is current.",
+            ]
+        )
+    done = [f"{report.name}: issue #{number} updated"]
+    for repeat in issues[1:]:
+        gh(
+            [
+                "issue",
+                "close",
+                str(repeat["number"]),
+                "--repo",
+                repo,
+                "--comment",
+                f"This repeats #{number}, the oldest open issue for {report.name}, which "
+                "carries on.",
+            ]
+        )
+        done.append(f"{report.name}: issue #{repeat['number']} closed as a repeat of #{number}")
+    return done
+
+
+def _close_unknown(
+    titled: dict[str, list[dict[str, Any]]], known: set[str], repo: str, gh: Gh
+) -> list[str]:
+    """Close each open issue titled for an upstream the walk does not know, and say so. An issue
+    whose title is not one the script writes is somebody's own, and is left alone."""
+    done: list[str] = []
+    for title, issues in titled.items():
+        name = title[len(TITLE) :]
+        if not title.startswith(TITLE) or name in known:
+            continue
+        for issue in issues:
+            number = str(issue["number"])
+            try:
+                gh(
+                    [
+                        "issue",
+                        "close",
+                        number,
+                        "--repo",
+                        repo,
+                        "--comment",
+                        f"No upstream quackd reads is called {name} any more, so nothing would "
+                        "update this issue or close it. An upstream renamed since gets an issue "
+                        "under its new name the night it needs somebody.",
+                    ]
+                )
+            except Unreachable as e:
+                done.append(f"{name}: issue #{number} not synced: {e}")
+            else:
+                done.append(f"{name}: issue #{number} closed, since no upstream is called that now")
+    return done
+
+
+def unread_adapters() -> list[str]:
+    """Each adapter quackd knows that the walk could not read here, and why: one not installed,
+    or one that fails to import, which `quackd doctor`'s walk passes over in silence, and its
+    upstreams with it. A night with one closes no issue for an upstream the walk does not know,
+    since that upstream may be one of its."""
+    from quackd.adapters.factory import _module, adapter_names, is_installed
+
+    unread: list[str] = []
+    for name in adapter_names():
+        if not is_installed(name):
+            unread.append(f"{name} is not installed")
+            continue
+        try:
+            _module(name)
+        except Exception as e:
+            unread.append(f"{name} did not import: {e}")
+    return unread
 
 
 _NEEDING_ROW = re.compile(
@@ -1013,6 +1100,7 @@ def main(argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
 
     rows = upstream_rows()
+    known = [name for name, _module in rows]
     if args.only:
         rows = [(name, module) for name, module in rows if name == args.only]
         if not rows:
@@ -1028,10 +1116,20 @@ def main(argv: Sequence[str]) -> int:
     _say(text)
     code = exit_code(reports)
     if args.issues:
+        # an issue for an upstream the walk does not know is closed only after a walk of every
+        # adapter, never on a run of one: an adapter that did not import here takes its
+        # upstreams out of the walk tonight, and their issues would read as nobody's
+        unread = [] if args.only else unread_adapters()
+        whole = not args.only and not unread
         try:
-            lines = sync_issues(reports, args.issues)
+            lines = sync_issues(reports, args.issues, known=known if whole else None)
         except Unreachable as e:
             lines = [f"issues not synced: {e}"]
+        if unread:
+            lines.append(
+                "no issue was closed for an upstream the walk does not know, since "
+                + "; ".join(unread)
+            )
         _say("".join(line + "\n" for line in lines))
         if any("not synced" in line for line in lines):
             code = code or 2

@@ -891,8 +891,11 @@ def test_what_the_issues_did_goes_in_the_report_too(
         script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, CHANGED)}))
     )
     monkeypatch.setattr(
-        script, "sync_issues", lambda reports, repo: ["widget: issue not synced: HTTP 403"]
+        script,
+        "sync_issues",
+        lambda reports, repo, known=None: ["widget: issue not synced: HTTP 403"],
     )
+    monkeypatch.setattr(script, "unread_adapters", lambda: [])
     report = tmp_path / "summary.md"
     assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 1
     text = report.read_text(encoding="utf-8")
@@ -1181,6 +1184,132 @@ def test_no_gh_on_the_machine_is_an_answer_and_not_a_traceback(
     monkeypatch.setattr(script.subprocess, "run", missing)
     with pytest.raises(script.Unreachable, match="gh could not be run"):
         script.gh_run(["issue", "list"])
+
+
+def _comment(call: list[str]) -> str:
+    return call[call.index("--comment") + 1]
+
+
+def test_a_repeat_of_an_upstreams_issue_is_closed_for_the_oldest() -> None:
+    """Two open issues with one title used to leave all but the first `gh` listed alone: edited
+    or closed was whichever came first, and the other stayed open whatever the nights found."""
+    script = _script()
+    report = _drifted_report(script)
+    body = script.section(report)
+    # gh lists the newest first
+    two = [
+        {"number": 12, "title": "upstream drift: widget", "body": body},
+        {"number": 7, "title": "upstream drift: widget", "body": body},
+    ]
+
+    gh = FakeGh(two)
+    done = script.sync_issues([report], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue edit", "issue close"]
+    assert gh.calls[2][2] == "7", "the oldest is the one kept"
+    assert gh.calls[3][2] == "12"
+    assert "#7" in _comment(gh.calls[3]) and "carries on" in _comment(gh.calls[3])
+    assert done == ["widget: issue #7 updated", "widget: issue #12 closed as a repeat of #7"]
+
+    # a clean night closes both, and a night that could not check the upstream closes neither
+    gh = FakeGh(two)
+    done = script.sync_issues([_clean_report(script)], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue close", "issue close"]
+    assert [call[2] for call in gh.calls[2:]] == ["7", "12"]
+    assert done == ["widget: issue #7 closed", "widget: issue #12 closed"]
+    gh = FakeGh(two)
+    done = script.sync_issues([_outage_report(script)], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list"]
+    assert done == ["widget: not all of it could be checked, issue #7 left"]
+
+
+def test_an_issue_for_an_upstream_no_adapter_reads_is_closed_saying_why() -> None:
+    """An upstream renamed or removed used to leave its issue open for ever: nothing the walk
+    reads is called that, so nothing updated it or closed it."""
+    script = _script()
+    listed = [
+        {"number": 5, "title": "upstream drift: gadget", "body": ""},
+        {"number": 6, "title": "upstream drift is noisy", "body": ""},
+        {"number": 8, "title": "upstream drift: widget", "body": ""},
+    ]
+    gh = FakeGh(listed)
+    done = script.sync_issues(
+        [_clean_report(script)], "rokbenko/quackd", gh, known=["widget", "lerobot"]
+    )
+    closed = [call for call in gh.calls if call[:2] == ["issue", "close"]]
+    assert [call[2] for call in closed] == ["8", "5"], "a title the script never writes is left"
+    assert "gadget" in _comment(closed[1]) and "any more" in _comment(closed[1])
+    assert done == [
+        "widget: issue #8 closed",
+        "gadget: issue #5 closed, since no upstream is called that now",
+    ]
+
+    # an upstream the walk knows is not touched on a night it was not run, as under --only
+    gh = FakeGh([{"number": 9, "title": "upstream drift: lerobot", "body": ""}])
+    assert script.sync_issues([], "rokbenko/quackd", gh, known=["widget", "lerobot"]) == []
+    assert gh.verbs() == ["label create", "issue list"]
+
+    # without the walk, and on a night anything could not be checked, nothing is closed
+    for reports, known in (([_clean_report(script)], None), ([_outage_report(script)], ["widget"])):
+        gh = FakeGh(listed[:1])
+        assert script.sync_issues(reports, "rokbenko/quackd", gh, known=known) == []
+        assert gh.verbs() == ["label create", "issue list"]
+
+
+def test_the_command_says_which_upstreams_it_knows_only_after_a_walk_of_every_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter that did not import takes its upstreams out of the walk, and their issues would
+    read as an upstream nobody reads any more: such a night closes none of them, and says why."""
+    script = _script()
+    module = _module([_ref("READ", "src/thing.py", 2)])
+    monkeypatch.setattr(script, "upstream_rows", lambda: [("widget", module), ("other", module)])
+    monkeypatch.setattr(
+        script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, PINNED)}))
+    )
+    asked: list[Any] = []
+
+    def sync(reports: Any, repo: str, known: Any = None) -> list[str]:
+        asked.append(known)
+        return []
+
+    monkeypatch.setattr(script, "sync_issues", sync)
+    monkeypatch.setattr(script, "unread_adapters", lambda: [])
+    report = tmp_path / "summary.md"
+    assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 0
+    assert asked == [["widget", "other"]]
+
+    monkeypatch.setattr(script, "unread_adapters", lambda: ["toddlerbot did not import: boom"])
+    assert script.main(["--report", str(report), "--issues", "rokbenko/quackd"]) == 0
+    assert asked[-1] is None
+    assert "since toddlerbot did not import: boom" in report.read_text(encoding="utf-8")
+
+    def unasked() -> list[str]:
+        raise AssertionError("a run of one upstream walks no adapter for the issues")
+
+    monkeypatch.setattr(script, "unread_adapters", unasked)
+    assert script.main(["--only", "widget", "--issues", "rokbenko/quackd"]) == 0
+    assert asked[-1] is None
+
+
+def test_an_adapter_that_does_not_import_is_one_the_walk_could_not_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackd.adapters import factory
+
+    script = _script()
+    real = factory._module
+
+    def module(name: str) -> Any:
+        if name == "toddlerbot":
+            raise ImportError("no module named toddlerbot_sdk")
+        return real(name)
+
+    monkeypatch.setattr(factory, "_module", module)
+    monkeypatch.setattr(factory, "is_installed", lambda name: name != "moss")
+    unread = script.unread_adapters()
+    assert "toddlerbot did not import: no module named toddlerbot_sdk" in unread
+    assert "moss is not installed" in unread
+    assert len(unread) == 2, unread
 
 
 # ── the real modules, and the workflow ──────────────────────────────────────────────────

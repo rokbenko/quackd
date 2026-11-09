@@ -352,6 +352,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The nightly drift job closes the repeat of an issue, and the issue of an upstream it no longer
+  reads.** With two open issues for one upstream it edited or closed whichever `gh` listed first and
+  left the other open, and an upstream renamed or removed kept its issue open for good, since
+  nothing the job reads was called that any more. The oldest of two is the one kept now: a night
+  that still finds something edits it and closes the other saying which one carries on, and a clean
+  night closes both. An issue titled for an upstream no adapter reads is closed with a comment
+  saying why, but only after a walk of every adapter and on a night every upstream could be
+  checked, so an adapter that did not import, or a night something did not answer, closes nothing.
 
 ### Known limitations
 
