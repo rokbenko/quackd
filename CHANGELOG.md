@@ -511,6 +511,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   measured as before. What changes for you: on a machine too busy to read your keys as you press them,
   a bare Enter it read late can be passed by as too soon, saying so, where it used to answer. Press it
   once more.
+- **A run on Python 3.11 ends though its heartbeat's cancel was lost.** Python 3.11's `asyncio.wait_for`
+  loses a cancel that lands as its call returns, and a transport's heartbeat waits for its answer
+  through one. The heartbeat then beat on for good and its stop, the first line of a run's teardown,
+  waited on it, so a run could hang at its end with its stop and its record still to come. The loop
+  reads the cancel that is still asked for now and ends at its next turn. Python 3.12 loses none.
+  What changes for you: a run on 3.11 that hung this way ends.
 
 ### Security
 
