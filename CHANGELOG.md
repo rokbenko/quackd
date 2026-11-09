@@ -68,6 +68,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   both `lerobot:real`, and the four industrial arms are all `rosarm:ws`, so a list of specs alone read
   them alike. A `type` column shows each robot's `--robot-type` when any robot has one, and a registry
   where nobody gave one prints the table it did. `--json` carried the type already.
+- **`quackd ui` shows a robot's type and asks for one where the adapter drives several arms.** The
+  robots page could neither show which arm a registered robot is nor register one as an SO-100, since
+  `quackd robot add --robot-type` had no field there. The table has a `robot_type` column, and the
+  form offers the adapter's types, its default first, for the arm and the industrial arms alone.
 
 ### Changed
 

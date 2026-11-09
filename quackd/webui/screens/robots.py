@@ -34,7 +34,10 @@ def _registered() -> None:
         st.caption("No robot is registered here yet.")
         return
     shown = [
-        {k: r.get(k) for k in ("name", "spec", "address", "camera_url", "host", "llm", "note")}
+        {
+            k: r.get(k)
+            for k in ("name", "spec", "robot_type", "address", "camera_url", "host", "llm", "note")
+        }
         for r in robots
     ]
     st.dataframe(shown, hide_index=True, width="stretch")
@@ -66,6 +69,10 @@ def _add() -> None:
         adapter = st.selectbox("Adapter", [r["name"] for r in rows], key="add:adapter")
         row = next(r for r in rows if r["name"] == adapter)
         backend = st.selectbox("Backend", list(row.get("backends") or []), key="add:backend")
+        # an adapter that drives more than one arm asks which, as `robot add --robot-type`
+        # does, and its first is the one it takes when told none
+        types = list(row.get("robot_types") or [])
+        robot_type = st.selectbox("Type", types, key="add:robot_type") if types else None
         # a described body reaches nothing, and `robot add` refuses both for one
         reaches = catalog.drives(adapter)
         address = st.text_input("Address", key="add:address") if reaches else ""
@@ -77,6 +84,8 @@ def _add() -> None:
             widgets.key_field(token_env, f"Token ({token_env})")
         if st.button("Register it", type="primary", disabled=not name.strip()):
             args = ["robot", "add", name.strip(), f"{adapter}:{backend}"]
+            if robot_type:
+                args += ["--robot-type", str(robot_type)]
             if address.strip():
                 args += ["--address", address.strip()]
             for url in (u.strip() for u in cameras.splitlines()):
