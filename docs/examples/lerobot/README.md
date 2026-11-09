@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**6 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**7 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -174,7 +174,7 @@
 |  | [E164: Two cameras](e164/) | Hardware |  |  |  |
 |  | [E165: Place](e165/) | Hardware |  |  |  |
 |  | [E166: The power switch, first](e166/) | Safety |  |  |  |
-|  | [E167: No rest pose, no run](e167/) | Safety |  |  |  |
+| ✅ | [E167: No rest pose, no run](e167/) | Safety | Asked to drive a real arm it could never fold away afterwards, quackd refused before it touched anything. | Yes | 0.31.3 |
 |  | [E168: A connect quackd refuses lets go](e168/) | Safety |  |  |  |
 |  | [E169: What it would have done](e169/) | Safety |  |  |  |
 |  | [E170: Out of range, three times](e170/) | Safety |  |  |  |
@@ -255,9 +255,10 @@ example's `log/notes.yaml`.
    pass it with `--after <file>`, once per command, and it follows the run's trace in the log.
 
    An example run in several parts still has one README: add each with `--part 1`, `--part 2` and
-   so on, with a line for each under `parts` in the notes. A part that is a command with no run
-   folder, such as `quackd robot rest-pose`, comes in with `--text <file>` in place of the folder,
-   along with `--example`, `--version`, `--started` and `--video`, because nothing recorded them.
+   so on, with a line for each under `parts` in the notes. A command with no run folder, whether
+   a part such as `quackd robot rest-pose` or a whole example quackd refused before it started,
+   comes in with `--text <file>` in place of the folder, along with `--example`, `--version`,
+   `--started` and `--video` or `--gif`, because nothing recorded them.
 3. Look at the GIF and the frames. They go public, with whatever the camera caught.
 4. Fill in the notes:
 

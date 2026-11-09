@@ -373,6 +373,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E167 has a log: a real arm named by its spec, refused before anything connected.** A log can now
+  be one command with no run folder from end to end. `scripts/example_log.py add --text` takes a GIF
+  already made with `--gif`, puts back together a line the terminal wrapped, and reads the robot off
+  the command, and the log names the LLM and the task file the command gave. Its Try it yourself
+  section prints the refused line, with `--dry-run`, in place of a run on the mock.
 - **E119 has a log, in three parts: the rest pose, the hand-off and recording a new rest pose.** One
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
   `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
