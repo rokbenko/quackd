@@ -10,9 +10,10 @@ transport has met a real rosbridge only in CI, against a stand-in for the arm's 
 > quackd is not a safety system. On an industrial arm the risk assessment, the guarding, the
 > emergency stop and the pendant are the integrator's. quackd's confirmation before every move
 > and its speed ceiling are courtesies, not safeguards, and when quackd goes quiet in the middle
-> of a move the arm finishes that move. The pendant's stop is the brake. And `--yes`, which
-> answers every confirmation on every body, answers this one too, as a script answering on
-> stdin does.
+> of a move the arm finishes that move. The pendant's stop is the brake. `--yes` answers a move
+> on `rosarm:mock`, as it answers a `confirm` verb on any other body, and on `rosarm:ws` a person
+> answers each move: `--yes`, a flock's standing answer and an MCP session are refused before
+> its question is put. A script answering `quackd run` on stdin still answers it on both.
 
 Four bodies, which quackd also describes from their makers' figures: a Universal Robots UR5e, a
 KUKA LBR iisy 3 R760, a KUKA LBR iiwa 7 R800 and a Yaskawa MotoMini. Each sits behind a ROS 2
@@ -179,7 +180,7 @@ published to a tenth of a degree rounded inward; `ws` claims none until a bridge
 |---|---|---|
 | `report_state` | yes, the family's own | every joint in degrees to a tenth, whether a move is running, what the driver says about itself, how old the oldest of the joints' latest readings is, what the readings are on this body, and that it holds nothing |
 | `stop` | yes, core | cancels the running goal and waits a bounded time for its CANCELED result; never gated |
-| `move_joints` | yes, the family's own, confirmed by a person every time, unless the run or the session was started with `--yes`, or a script answers on stdin | the SO-101's parameters exactly, `positions` in degrees by joint name and `duration_s` |
+| `move_joints` | yes, the family's own, confirmed by a person every time. On `rosarm:mock` `--yes` or a script answering `quackd run` on stdin may answer it; on `rosarm:ws` a standing answer is refused and only a person, or such a script, answers it | the SO-101's parameters exactly, `positions` in degrees by joint name and `duration_s` |
 | `gripper`, `place`, `pick`, `manipulate` | no | no gripper or tool is fitted: what goes on its flange is the integrator's choice, and quackd drives none |
 | a rest pose | no | quackd parks an industrial arm nowhere: its controller and its brakes hold it where it stops, and a move nobody asked for at the end of a run is the hazard, not the cure |
 | a hand-off | no | hand guiding a cobot is a mode on its own pendant |
@@ -208,7 +209,23 @@ How `move_joints` works underneath:
    cannot move, while a move is running or another `move_joints` is still watching its own, or
    when the move would need longer than 12 s at the ceiling, which the refusal says, so the
    pilot splits it. Each goal that goes is held to the description's own radians.
-6. **Timed from its start.** The bridge makes an action client for every goal and waits for the
+6. **Answered by a person on `rosarm:ws`.** A standing answer does not clear a move there, and
+   the move is refused before its question is put:
+
+   ```text
+   move_joints is answered by a person on this robot, each time, while nobody is asked here (--yes,
+   a flock's standing answer or the MCP server): run it from a terminal, with quackd run or quackd
+   drive and without --yes, and answer its confirm yourself
+   ```
+
+   `quackd run --yes` runs the task with every `move_joints` refused in those words, and the pilot
+   hears them; without `--yes` it asks at the terminal, and a person's yes, or a script's on stdin,
+   clears the move. `quackd
+   drive` asks the person at its keyboard, or in its page, for each move, and under `--yes` the move
+   is refused the same way. An MCP session asks nobody, so with or without `--yes` the move is
+   refused, and a task that needs one is run from a terminal instead. On `rosarm:mock` `--yes`
+   answers as it answers every body, so a rehearsal can script.
+7. **Timed from its start.** The bridge makes an action client for every goal and waits for the
    controller's server before it sends the goal on, and the first goal through a bridge that has
    just started also waits while that client loads the action's types, about two seconds for
    Jazzy's rosbridge 2.7.1 in its official image. So a move is timed from its first feedback, the

@@ -35,7 +35,7 @@ from typing import Any
 import pytest
 import yaml
 
-from quackd.safety import Executor, allow_all
+from quackd.safety import Executor
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import registry_from_manifest
 from quackd_rosarm import RosArmAdapter
@@ -112,6 +112,14 @@ class _Process:
     def tail(self, lines: int = 40) -> str:
         text = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
         return "\n".join(text[-lines:])
+
+
+def _a_person(_name: str, _params: dict[str, Any]) -> bool:
+    return True
+
+
+_a_person.asks_a_person = True  # type: ignore[attr-defined]
+"""A person answering at a terminal: on `rosarm:ws` a standing answer does not clear a move."""
 
 
 def _middle(body: ArmBody) -> list[float]:
@@ -305,7 +313,7 @@ async def test_each_arm_connects_moves_and_stops_over_a_real_bridge(
             assert lower == pytest.approx(math.degrees(described.lower), abs=1e-5)
             assert upper == pytest.approx(math.degrees(described.upper), abs=1e-5)
         executor = Executor(
-            registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=allow_all
+            registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=_a_person
         )
         first = body.joints[0]
         here = state.extras["joints"][first]

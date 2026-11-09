@@ -121,6 +121,12 @@ class Verb:
     safety_class: SafetyClass = "safe"
     kind: VerbKind = "builtin"
     preconditions: list[Precondition] = field(default_factory=list)
+    no_standing_answer: bool = False
+    """A standing answer does not clear this verb's confirm gate: `--yes`, a flock's standing
+    answer and the MCP server answer nobody, and each is refused before the question is put, in
+    words that say what to do instead (`Executor`, ADR-0078). The CLI's own question on a pipe
+    still counts, which is where this differs from a `dangerous` verb. A backend sets it on its
+    own verb, as `rosarm:ws` does on `move_joints`; a manifest's safety class does not say it."""
     read_only: bool = False
     """The verb sends no intent: it reads state or a camera and nothing else.
 

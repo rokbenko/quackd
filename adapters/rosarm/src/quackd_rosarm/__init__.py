@@ -22,6 +22,7 @@ quackd goes quiet in the middle of one the arm finishes it and holds.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
@@ -254,7 +255,15 @@ class RosArmAdapter:
         return rosarm_conditions()
 
     def implementations(self) -> dict[str, Verb]:
-        return dict(OWN)
+        if self.backend == "mock":
+            return dict(OWN)
+        # a person answers each move of a real arm, so a standing answer does not count there
+        # (`Verb.no_standing_answer`, ADR-0078); the mock's goes on answering, so a rehearsal
+        # can script
+        return {
+            **OWN,
+            "move_joints": dataclasses.replace(OWN["move_joints"], no_standing_answer=True),
+        }
 
     @property
     def mobility(self) -> str:

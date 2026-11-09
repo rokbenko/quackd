@@ -39,11 +39,15 @@ the end of a run is the hazard on a twenty kilogram arm, not the cure. `go_to_re
 with that sentence, and a recorded rest pose is refused.
 
 **Every move asks a person first**, on the mock as well as on `ws`, since a fake is never kinder:
-`move_joints` is `safety_class="confirm"`. `--yes`, which answers every confirmation on every body,
-answers this one too, as a script answering on stdin does, and whether an industrial arm should
-refuse such answers is left open. A move is one goal to every joint, at most at a tenth of each
-joint's rated speed at the fastest point of the segment the controller plays, never sent over a
-running one, and arrived only when every joint reads within half a degree of its goal on
+`move_joints` is `safety_class="confirm"`. On `ws` a person answers each move: a standing answer
+does not count for it (`Verb.no_standing_answer`, a backend's declaration on its own verb), so
+`--yes`, a flock's standing answer and an MCP session are refused before its question is put, in
+words that say to run it from a terminal, without `--yes`, and answer it. This was left open here
+until Rok decided it on 2026-11-09. On the mock `--yes` goes on answering it, as it answers a
+`confirm` verb on any body, so a rehearsal can script. A script answering `quackd run`'s question
+on stdin still answers it on both backends. A move is one goal to every joint, at most at a tenth
+of each joint's rated speed at the fastest point of the segment the controller plays, never sent
+over a running one, and arrived only when every joint reads within half a degree of its goal on
 `/joint_states`, whatever the action said.
 
 **A bridge that cannot cancel in time is refused at connect.** quackd asks the bridge for its own

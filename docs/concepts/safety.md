@@ -38,7 +38,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the LLM calls `assess_task` |
 | `params` | the arguments fit the verb's schema. `stop` as quackd ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the LLM, not a crash |
-| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
+| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put, and a verb a backend declares `no_standing_answer` is refused the same way under the first three, where a pipe still answers it: `move_joints` on `rosarm:ws` ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | answer y, or pass `--yes`. For a `dangerous` verb, or one its backend declares `no_standing_answer`, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
 | `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.duck`'s `abort_when`, or the robot |
@@ -56,7 +56,8 @@ rather than an abort.
 
 **The three classes.** A verb is `safe`, `confirm` or `dangerous`, and the manifest says which.
 A `safe` verb runs once the gates above pass. A `confirm` verb asks first, and `--yes` or a
-standing answer may answer for you. A `dangerous` verb asks too, and only a person can answer
+standing answer may answer for you, unless its backend has declared `no_standing_answer` for it,
+as `rosarm:ws` has for `move_joints`. A `dangerous` verb asks too, and only a person can answer
 it: wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe
 on stdin, it is refused before its question is put, with a `confirm` gate whose reason says to
 run it from a terminal. A person who answers n stops it as before, and with no task file loaded
@@ -82,7 +83,8 @@ and `release` stages for an arm. What was asked, and what somebody said back, wa
 **It is written only where a person was really asked.** `--yes`, a flock's standing answer and
 the MCP server all answer without asking anybody, and none of them leaves a `prompt` event: the
 server has no terminal to ask on, so it refuses a gated verb unless it was started with `--yes`
-and clears it standing if it was. Neither does a run with no terminal under it.
+and clears it standing if it was, but for a verb its backend has declared `no_standing_answer`,
+which it refuses either way. Neither does a run with no terminal under it.
 `yes | quackd run` and `quackd run < answers.txt` open the gate exactly as they always have,
 because `input()` reads a pipe as happily as a person and opening it is what the pipe asked
 for. What is withheld is the testimony: there is no `prompt` event, and the gate's own reason

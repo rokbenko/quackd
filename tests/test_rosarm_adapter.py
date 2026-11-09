@@ -9,6 +9,7 @@ date for that arm's first hardware run (ADR-0076).
 
 from __future__ import annotations
 
+import asyncio
 import math
 from pathlib import Path
 from typing import Any
@@ -21,9 +22,19 @@ from quackd.adapters.described import describe as described
 from quackd.adapters.factory import RobotSpec, make_adapter, refusal
 from quackd.adapters.factory import describe as describe_spec
 from quackd.agent.prompts import DESCRIBED_LINE, body_lines
+from quackd.drive.session import _ANSWER, Answered, DriveSession, _Answer
+from quackd.log import EventLog
+from quackd.mcp_server import RobotSession
 from quackd.registry import Registry, RegistryError, RobotEntry
-from quackd.safety import ConfirmDenied, Executor, allow_all, deny_all
-from quackd.verbs.registry import registry_from_manifest
+from quackd.safety import (
+    ConfirmDenied,
+    Executor,
+    Heartbeat,
+    VerbNotAllowed,
+    allow_all,
+    deny_all,
+)
+from quackd.verbs.registry import default_registry, registry_from_manifest
 from quackd_rosarm import (
     BACKENDS,
     NO_REST_POSE,
@@ -229,6 +240,189 @@ async def test_a_move_nobody_confirmed_sends_nothing() -> None:
     with pytest.raises(ConfirmDenied, match="declined move_joints"):
         await executor.run_verb("move_joints", {"positions": {"shoulder_pan_joint": 10.0}})
     assert "send_action_goal" not in adapter.bridge.operations()
+    await adapter.close()
+
+
+def _on_ws() -> RosArmAdapter:
+    """`rosarm:ws` as `make()` will build it the day an owner names a date: the same transport,
+    named `ws`, over the fake."""
+    bridge = FakeBridge(BODIES["ur5e"])
+    transport = RosArmWs(
+        None, body=bridge.body, roslibpy=bridge.roslibpy(), clock=bridge.clock, name="ws"
+    )
+    return RosArmAdapter(transport, bridge=bridge)
+
+
+def _a_person(_name: str, _params: dict[str, Any]) -> bool:
+    return True
+
+
+_a_person.asks_a_person = True  # type: ignore[attr-defined]
+
+
+def _a_pipe(_name: str, _params: dict[str, Any]) -> bool:
+    return True
+
+
+_a_pipe.asks_a_person = lambda: False  # type: ignore[attr-defined]
+"""The CLI's own question where no person is at the terminal: what `input()` read from a pipe."""
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [allow_all, deny_all, Answered(yes=True)],
+    ids=["run-or-mcp-with-yes", "mcp-without-yes", "drive-with-yes"],
+)
+async def test_a_standing_answer_does_not_clear_a_move_on_the_real_backend(answer: Any) -> None:
+    """On `rosarm:ws` a person answers each move (ADR-0078). `quackd run --yes` and an MCP session
+    with `--yes` answer with `allow_all`, `quackd drive --yes` with its standing rule, and an MCP
+    session without `--yes` with `deny_all`, none of which asks anybody: each is refused before
+    the question is put, in words that say what to do instead, and no goal goes out."""
+    adapter = _on_ws()
+    manifest = await adapter.connect()
+    seen: list[Any] = []
+    executor = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=None,
+        confirm=answer,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    with pytest.raises(VerbNotAllowed) as refused:
+        await executor.run_verb("move_joints", {"positions": {"shoulder_pan_joint": 10.0}})
+    said = str(refused.value)
+    assert "move_joints is answered by a person on this robot, each time" in said, said
+    assert "without --yes, and answer its confirm yourself" in said, said
+    assert "send_action_goal" not in adapter.bridge.operations()
+    gated = [e.data for e in seen if e.kind == "gate" and e.data.get("gate") == "confirm"]
+    assert [row["outcome"] for row in gated] == ["refused"], gated
+    await adapter.close()
+
+
+async def _driven_on_ws(tmp_path: Path, *, yes: bool, says: bool | None = None) -> Any:
+    """A real drive session over `rosarm:ws`, with a person at its keyboard who says `says`
+    when asked, or none where `says` is None, as a pipe has none."""
+    adapter = _on_ws()
+    event_log = EventLog()
+    executor = Executor(
+        registry=default_registry(),
+        transport=adapter,
+        contract=None,
+        confirm=Answered(yes=yes),
+        event_log=event_log,
+    )
+    executor.require_verdict = True
+    robot = RobotSession(
+        name="cell",
+        transport=adapter,
+        registry=executor.registry,
+        executor=executor,
+        heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
+    )
+    await robot.connect()
+
+    async def ask(_question: str, *, detail: str | None = None, **_: Any) -> bool:
+        assert says is not None
+        return says
+
+    return DriveSession(
+        robot,
+        record=lambda kind, **data: None,
+        goals=tmp_path / "goals",
+        yes=yes,
+        ask=ask if says is not None else None,
+    )
+
+
+MOVE_LINE = "move_joints(positions={shoulder_pan_joint: 3}, duration_s=1)"
+
+
+async def test_drive_refuses_a_move_under_yes_and_asks_the_person_without_it(
+    tmp_path: Path,
+) -> None:
+    """What `quackd drive` now does on `rosarm:ws`: under `--yes` the line ends refused, in the
+    gate's words, with no goal sent; without it the person at the keyboard is asked, and their
+    yes moves the arm."""
+    driven = await _driven_on_ws(tmp_path, yes=True)
+    typed = driven.submit(MOVE_LINE)
+    ended = await asyncio.wait_for(typed.ended, 30.0)
+    assert ended.outcome == "refused" and "answered by a person on this robot" in ended.summary, (
+        ended
+    )
+    assert "send_action_goal" not in driven.robot.transport.bridge.operations()
+    await driven.robot.close()
+    asked = await _driven_on_ws(tmp_path, yes=False, says=True)
+    typed = asked.submit(MOVE_LINE)
+    ended = await asyncio.wait_for(typed.ended, 30.0)
+    assert ended.outcome == "ok", ended
+    assert asked.robot.transport.bridge.operations().count("send_action_goal") == 1
+    await asked.robot.close()
+
+
+async def test_drive_without_a_person_says_who_can_answer_instead_of_naming_yes(
+    tmp_path: Path,
+) -> None:
+    """A pipe has nobody to ask: the line is denied, and on `rosarm:ws` the reason does not send
+    anybody to the `--yes` that is refused there."""
+    piped = await _driven_on_ws(tmp_path, yes=False)
+    typed = piped.submit(MOVE_LINE, by="cli", channel="pipe")
+    ended = await asyncio.wait_for(typed.ended, 30.0)
+    assert ended.outcome == "denied", ended
+    assert "a person has to answer it, at the keyboard" in ended.summary, ended
+    assert "--yes answers yes" not in ended.summary, ended
+    assert "send_action_goal" not in piped.robot.transport.bridge.operations()
+    await piped.robot.close()
+
+
+async def test_a_person_clears_a_move_on_the_real_backend() -> None:
+    """A person answering at a terminal, and a person answering a drive session's own question."""
+    adapter = _on_ws()
+    manifest = await adapter.connect()
+    registry = registry_from_manifest(manifest, adapter)
+    assert registry.get("move_joints").no_standing_answer, "declared on this backend's verb"
+    executor = Executor(registry, adapter, contract=None, confirm=_a_person)
+    moved = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 3.0}, "duration_s": 1}
+    )
+    assert moved.ok, moved.summary
+    asked = Executor(registry, adapter, contract=None, confirm=Answered(yes=False))
+    token = _ANSWER.set(_Answer("move_joints", yes=True, person=True))
+    try:
+        again = await asked.run_verb(
+            "move_joints", {"positions": {"shoulder_pan_joint": 6.0}, "duration_s": 1}
+        )
+    finally:
+        _ANSWER.reset(token)
+    assert again.ok, again.summary
+    await adapter.close()
+
+
+async def test_a_pipe_still_answers_a_move_as_it_answers_every_gate() -> None:
+    """Only a standing answer is refused: a script answering the CLI's own question on stdin is
+    documented, and left as it is, as a `dangerous` verb's is not."""
+    adapter = _on_ws()
+    manifest = await adapter.connect()
+    executor = Executor(
+        registry_from_manifest(manifest, adapter), adapter, contract=None, confirm=_a_pipe
+    )
+    moved = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 3.0}, "duration_s": 1}
+    )
+    assert moved.ok, moved.summary
+    await adapter.close()
+
+
+async def test_the_mock_goes_on_taking_a_standing_answer_so_a_rehearsal_can_script() -> None:
+    """Only `ws` is a real arm. `--yes` answers `rosarm:mock` as it answers every body."""
+    adapter = make("mock")
+    manifest = await adapter.connect()
+    registry = registry_from_manifest(manifest, adapter)
+    assert not registry.get("move_joints").no_standing_answer
+    executor = Executor(registry, adapter, contract=None, confirm=allow_all)
+    moved = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": 3.0}, "duration_s": 1}
+    )
+    assert moved.ok, moved.summary
     await adapter.close()
 
 
