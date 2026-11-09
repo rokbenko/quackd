@@ -42,7 +42,7 @@ from quackd_rosarm import RosArmAdapter
 from quackd_rosarm.bodies import BODIES, ArmBody, arm_body
 from quackd_rosarm.fake import description_urdf
 from quackd_rosarm.transport import DEFAULT_BRIDGE_NODE, RosArmWs, trajectory_goal
-from quackd_rosarm.upstream_api import GOAL_THREAD_PARAM
+from quackd_rosarm.upstream_api import GOAL_THREAD_PARAM, NO_ACTION_SERVER
 from quackd_rosarm.verbs import TOL_DEG
 
 pytestmark = pytest.mark.skipif(
@@ -305,6 +305,39 @@ def cells(tmp_path: Path) -> Iterator[Callable[..., Cell]]:
         print(cell.logs())
 
 
+async def _sent_and_under_way(
+    client: Any, goal: Any, results: list[Any], feedback: list[Any], seconds: float = 15.0
+) -> Any:
+    """Send `goal` and wait for its first feedback, and return its id. The bridge makes an action
+    client for each goal and gives it a second to find the server (`NO_ACTION_SERVER`), which the
+    first goal on a slow runner can miss and the next one finds, so that refusal is sent again."""
+    deadline = time.monotonic() + seconds
+    refused: list[Any] = []
+
+    async def answered() -> bool:
+        return bool(feedback or refused)
+
+    while True:
+        refused.clear()
+        goal_id = client.send_goal(goal, results.append, feedback.append, refused.append)
+        await _until(answered, max(0.0, deadline - time.monotonic()))
+        if feedback:
+            return goal_id
+        assert refused and NO_ACTION_SERVER.name in str(refused[0]), (
+            f"the move never started: {refused}"
+        )
+        assert time.monotonic() < deadline, f"the move never started: {refused}"
+
+
+async def _moved(executor: Executor, params: dict[str, Any]) -> Any:
+    """`move_joints`, sent again on the refusal `_sent_and_under_way` explains and on no other."""
+    for _ in range(3):
+        moved = await executor.run_verb("move_joints", params)
+        if moved.ok or NO_ACTION_SERVER.name not in moved.summary:
+            return moved
+    return moved
+
+
 async def _until(check: Callable[[], Awaitable[Any]], seconds: float) -> Any:
     """What `check` answers once it answers something, or its last answer at the deadline."""
     deadline = time.monotonic() + seconds
@@ -348,9 +381,7 @@ async def test_each_arm_connects_moves_and_stops_over_a_real_bridge(
         )
         first = body.joints[0]
         here = state.extras["joints"][first]
-        moved = await executor.run_verb(
-            "move_joints", {"positions": {first: here + 5.0}, "duration_s": 2}
-        )
+        moved = await _moved(executor, {"positions": {first: here + 5.0}, "duration_s": 2})
         assert moved.ok, moved.summary
         arrived = (await adapter.get_state()).extras["joints"][first]
         assert arrived == pytest.approx(here + 5.0, abs=TOL_DEG)
@@ -420,22 +451,18 @@ async def test_a_bridge_that_runs_goals_on_its_reader_lands_a_cancel_after_the_m
         goal[0] += math.radians(10.0)
         results: list[Any] = []
         feedback: list[Any] = []
-        goal_id = client.send_goal(
+        # the first goal through a bridge that has just started waits while the bridge makes
+        # its action client, so the second is counted from the move's own start
+        goal_id = await _sent_and_under_way(
+            client,
             roslibpy.Goal(trajectory_goal(list(body.joints), start, goal, 3.0)),
-            results.append,
-            feedback.append,
-            results.append,
+            results,
+            feedback,
         )
-
-        async def moving() -> bool:
-            return bool(feedback)
 
         async def answered() -> bool:
             return bool(results)
 
-        # the first goal through a bridge that has just started waits while the bridge makes
-        # its action client, so the second is counted from the move's own start
-        assert await _until(moving, 15.0), "the move never started"
         await asyncio.sleep(1.0)
         client.cancel_goal(goal_id)
         assert await _until(answered, 10.0), "no result came"
@@ -463,17 +490,12 @@ async def test_a_goal_left_running_refuses_the_connect_until_it_ends(
     goal = list(start)
     goal[0] += math.radians(20.0)
     feedback: list[Any] = []
-    client.send_goal(
+    await _sent_and_under_way(
+        client,
         roslibpy.Goal(trajectory_goal(list(body.joints), start, goal, 6.0)),
-        lambda _result: None,
-        feedback.append,
-        lambda _error: None,
+        [],
+        feedback,
     )
-
-    async def moving() -> bool:
-        return bool(feedback)
-
-    assert await _until(moving, 15.0), "the move never started"
     started_at = time.monotonic()
     ros.close()  # gone, with no cancel
     with pytest.raises(TransportError) as refused:
