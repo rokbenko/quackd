@@ -52,7 +52,13 @@ from quackd_lerobot.policy.loop import (
 from quackd_lerobot.policy.runner import Chunk, Features, Observation
 from quackd_lerobot.policy.scripted import ScriptedRunner
 from quackd_lerobot.real import HOT_C, MAX_STEP_DEG, POLICY_HZ, LeRobotReal
-from quackd_lerobot.verbs import MANIPULATE_S, MANIPULATE_TIMEOUT_S, TICK_S, SegmentEnd
+from quackd_lerobot.verbs import (
+    GRIPPER_OPEN,
+    MANIPULATE_S,
+    MANIPULATE_TIMEOUT_S,
+    TICK_S,
+    SegmentEnd,
+)
 from tests.test_lerobot_adapter import (
     FakeArm,
     SteppedClock,
@@ -721,7 +727,7 @@ async def test_a_policy_send_that_outlives_its_deadline_still_goes_out_under_the
     await adapter.close()
 
 
-@pytest.mark.parametrize("where", ["a verb's send", "a stop", "a rest move"])
+@pytest.mark.parametrize("where", ["a verb's send", "a stop", "a rest move", "the gripper closing"])
 async def test_a_policy_s_cap_left_on_the_follower_is_taken_off_before_anything_else_is_sent(
     where: str,
 ) -> None:
@@ -745,6 +751,10 @@ async def test_a_policy_s_cap_left_on_the_follower_is_taken_off_before_anything_
         assert moved.ok, moved.summary
     elif where == "a stop":
         await adapter.stop()
+    elif where == "the gripper closing":
+        arm.positions["gripper"] = GRIPPER_OPEN
+        shut = await adapter.close_gripper()
+        assert not shut.short, shut
     else:
         parked = await adapter.go_to_rest()
         assert parked.reached, parked.reason

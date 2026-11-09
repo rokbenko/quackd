@@ -241,6 +241,48 @@ async def go_to_rest_if_any(transport: Any) -> RestResult:
         return RestResult("refused", f"{type(e).__name__}: {e}")
 
 
+GripperHow = Literal["none", "already", "closed", "stalled", "timeout", "refused"]
+
+
+@dataclass(frozen=True)
+class GripperResult:
+    """What `close_gripper()` did, as a value rather than an exception.
+
+    `quackd robot release` asks for this between a fold that arrived and the release at that
+    pose, and no answer here is a reason not to make that release. A gripper that stopped short
+    has met something, on an arm that is down, and an arm that went quiet is read again by the
+    release, which refuses for itself. So all a caller does with this is say it."""
+
+    how: GripperHow
+    reason: str
+    position: float | None = None
+    """Where the gripper read last, 0 shut and 100 open, or None where nothing read it."""
+
+    @property
+    def short(self) -> bool:
+        """There was a gripper to close, and it is not closed."""
+        return self.how in ("stalled", "timeout", "refused")
+
+    @classmethod
+    def none(cls, reason: str = "this body has no gripper") -> GripperResult:
+        return cls("none", reason)
+
+
+async def close_gripper_if_any(transport: Any) -> GripperResult:
+    """Close the gripper on anything that has one: an adapter, a bare transport, a logged wrapper.
+
+    Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of ten does this.
+    Never raises an `Exception`, because the release comes next and the close after it, and a
+    cancellation goes on up, which is a person stopping it."""
+    close = getattr(transport, "close_gripper", None)
+    if not callable(close):
+        return GripperResult.none()
+    try:
+        return await close()
+    except Exception as e:
+        return GripperResult("refused", f"{type(e).__name__}: {e}")
+
+
 def refuse_rest_pose(adapter: str, rest_pose: Any) -> None:
     """Refuse a rest pose a body cannot hold, rather than accepting and ignoring it.
 

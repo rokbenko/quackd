@@ -21,7 +21,13 @@ from typing import Any
 import numpy as np
 import pytest
 
-from quackd.adapters.base import AdapterError, AdapterNotInstalled, RobotAdapter
+from quackd.adapters.base import (
+    AdapterError,
+    AdapterNotInstalled,
+    GripperResult,
+    RobotAdapter,
+    close_gripper_if_any,
+)
 from quackd.adapters.factory import RobotSpec, describe, make_adapter, parse_robot_spec
 from quackd.duckfile.parser import load_duck, parse_duck_text
 from quackd.duckfile.schema import Budgets
@@ -58,6 +64,7 @@ from quackd_lerobot.real import (
     ENCODER_TICKS,
     FAILED_SENDS,
     FINISH_S,
+    HOLD_MIN,
     HOT_C,
     KEPT_OVER_A_FAILED_CONNECT,
     MAX_STEP_DEG,
@@ -106,6 +113,7 @@ from quackd_lerobot.verbs import (
     RAMP_RESOLUTION,
     REST_MAX_S,
     REST_MIN_S,
+    STALL_DEG,
     STALL_TICKS,
     TICK_S,
     TOL_DEG,
@@ -9171,6 +9179,188 @@ async def test_a_gripper_alone_reading_torque_off_is_no_limp_arm() -> None:
     await transport.close()
     note = transport.close_note or ""
     assert "torque reads off" not in note and "torque was left on" in note, note
+
+
+# ── closing the gripper before `quackd robot release` lets go ───────────────────────────────────
+
+
+async def _shut(arm: FakeArm, *, step: float = MAX_STEP_DEG) -> tuple[GripperResult, LeRobotReal]:
+    """`close_gripper` on `arm`, a fake arm sitting at its rest pose, on a stepped clock."""
+    pose = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal(
+        "COM5", robot=arm, rest_pose=pose, max_step_deg=step, clock=SteppedClock()
+    )
+    await transport.connect()
+    return await transport.close_gripper(), transport
+
+
+async def test_closing_the_gripper_sends_it_alone_until_it_is_shut() -> None:
+    """One send moves the gripper a step at most, so one intent would close it a twentieth of
+    the way, and it goes on until it is there. Only the gripper is written: the body is at its
+    rest pose, and a goal for a joint folded past its travel would haul it up out of the fold."""
+    arm = FakeArm(step=5.0)
+    shut, _ = await _shut(arm, step=5.0)
+    assert (shut.how, shut.position, shut.short) == ("closed", GRIPPER_CLOSED, False), shut
+    assert arm.positions["gripper"] == GRIPPER_CLOSED
+    assert len(arm.actions) == 20, arm.actions
+    assert all(set(goal) == {"gripper.pos"} for goal in arm.actions), arm.actions
+
+
+async def test_closing_the_gripper_goes_on_past_where_the_verb_calls_it_arrived() -> None:
+    """The `gripper` verb is done within `GRIPPER_TOL` of its goal, which leaves the jaws that
+    many units open. Asked for fully closed, this goes on to the end of the range."""
+    arm = FakeArm(step=1.0)
+    arm.positions["gripper"] = GRIPPER_TOL + 3.0
+    shut, _ = await _shut(arm, step=1.0)
+    assert (shut.how, arm.positions["gripper"]) == ("closed", GRIPPER_CLOSED), shut
+
+
+@pytest.mark.parametrize(("stops_at", "how"), [(HOLD_MIN, "closed"), (HOLD_MIN + 1.0, "stalled")])
+async def test_jaws_are_closed_where_the_arm_would_call_them_empty(
+    stops_at: float, how: str
+) -> None:
+    """A gripper's controller has no integral term and its jaws meet before its range ends, so
+    it stops short of 0 with nothing in it. What the arm's own `holding` calls empty is closed:
+    warning that something may be in jaws it says hold nothing would be two answers to one
+    reading. It is watched until it stops moving."""
+    arm = FakeArm(step=5.0)
+    arm.obstacles["gripper"] = (stops_at, math.inf)
+    shut, _ = await _shut(arm, step=5.0)
+    assert (shut.how, shut.position) == (how, stops_at), shut
+
+
+async def test_a_gripper_that_is_already_shut_is_sent_nothing() -> None:
+    arm = FakeArm()
+    arm.positions["gripper"] = GRIPPER_CLOSED
+    shut, _ = await _shut(arm)
+    assert (shut.how, shut.short) == ("already", False), shut
+    assert arm.actions == [], arm.actions
+
+
+async def test_a_gripper_that_stops_on_something_says_where_and_stops_pushing() -> None:
+    """Closing on something is a stop short of the end, and it is said with the reading, and the
+    sends end a few ticks after the jaws stop moving rather than pushing until the time is up."""
+    arm = FakeArm(step=5.0, object_in_jaws=True)
+    shut, _ = await _shut(arm, step=5.0)
+    assert (shut.how, shut.short) == ("stalled", True), shut
+    assert shut.position == GRIP_ON_OBJECT, shut
+    assert f"stopped at {GRIP_ON_OBJECT:.0f}/100, short of closed" in shut.reason, shut.reason
+    travel = round((GRIPPER_OPEN - GRIP_ON_OBJECT) / 5.0)
+    assert travel < len(arm.actions) <= travel + STALL_TICKS + 1, len(arm.actions)
+
+
+async def test_a_gripper_that_never_arrives_runs_out_of_time_and_says_so() -> None:
+    """A gripper still moving when its time is up has not closed, and is not called stalled: it
+    was moving, and nothing is known to be in it. The time is the gripper verb's own."""
+    arm = FakeArm(step=STALL_DEG + 0.1)
+    shut, transport = await _shut(arm)
+    assert (shut.how, shut.short) == ("timeout", True), shut
+    assert "when the time ran out" in shut.reason, shut.reason
+    assert transport.now() <= gripper_budget_s(MAX_STEP_DEG) + TICK_S, transport.now()
+
+
+async def test_a_lowered_step_cap_is_given_the_time_it_needs_to_close() -> None:
+    """At a cap of 1 the whole range is a hundred sends, far past the verb's plain six seconds:
+    the budget grows with the cap, so a gripper in good order is not reported short."""
+    arm = FakeArm(step=1.0)
+    shut, _ = await _shut(arm, step=1.0)
+    assert (shut.how, arm.positions["gripper"]) == ("closed", GRIPPER_CLOSED), shut
+
+
+async def test_a_gripper_in_somebodys_hands_is_read_and_sent_nothing() -> None:
+    """A limp servo keeps a goal in its register and drives to it the next time torque comes on,
+    so an arm released into a hand is written nothing, as a rest move writes it nothing."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+    await transport.let_go()
+    shut = await transport.close_gripper()
+    assert (shut.how, shut.reason, shut.short) == ("refused", IN_HAND_NOT_MOVED, True), shut
+    assert arm.actions == [], arm.actions
+
+
+async def test_a_closed_transport_closes_no_gripper() -> None:
+    arm, transport = _handover_arm()
+    await transport.connect()
+    await transport.close()
+    arm.actions.clear()
+    shut = await transport.close_gripper()
+    assert (shut.how, shut.short) == ("refused", True), shut
+    assert arm.actions == [], arm.actions
+
+
+async def test_an_arm_that_reports_no_gripper_has_none_to_close() -> None:
+    arm = FakeArm()
+    del arm.positions["gripper"]
+    shut, _ = await _shut(arm)
+    assert (shut.how, shut.short) == ("none", False), shut
+    assert arm.actions == [], arm.actions
+
+
+@pytest.mark.parametrize("fault", ["dead", "send_fails"])
+async def test_a_gripper_the_arm_will_not_close_is_an_answer_and_never_raises(fault: str) -> None:
+    """The release comes next and reads the arm for itself, so all this owes it is an answer: a
+    command that raised here would lose the close, which is what says what became of the torque."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+    setattr(arm, fault, True)
+    shut = await transport.close_gripper()
+    assert (shut.how, shut.short) == ("refused", True), shut
+    assert "Failed to sync" in shut.reason, shut.reason
+
+
+async def test_a_cancelled_gripper_stops_sending() -> None:
+    """A press cancels the closing at its next await (`fold_unless_stopped`), so the cancellation
+    has to go on up and nothing may be sent after it."""
+    arm = FakeArm(step=5.0)
+    pose = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=pose, clock=SteppedClock())
+    await transport.connect()
+    first_goal = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    send = arm.send_action
+
+    def sending(action: dict[str, float]) -> dict[str, float]:
+        loop.call_soon_threadsafe(first_goal.set)
+        return send(action)
+
+    arm.send_action = sending  # type: ignore[method-assign]
+    closing = asyncio.ensure_future(transport.close_gripper())
+    await asyncio.wait_for(first_goal.wait(), 5.0)
+    closing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
+    sent = len(arm.actions)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert len(arm.actions) == sent, "a goal went out after the cancellation"
+
+
+@pytest.mark.parametrize("backend", ["real", "mock"])
+async def test_the_adapter_closes_the_gripper_of_the_transport_under_it(backend: str) -> None:
+    """Reached the way a rest move is, through the adapter and `close_gripper_if_any`, which is
+    what `quackd robot release` holds."""
+    arm, transport = _asked_arm(backend)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    shut = await close_gripper_if_any(adapter)
+    assert (shut.how, shut.short) == ("closed", False), shut
+    reading = arm.joints["gripper"] if backend == "mock" else arm.positions["gripper"]
+    assert reading == GRIPPER_CLOSED, reading
+    if backend == "mock":
+        assert arm.sequence == ["gripper"], arm.sequence
+
+
+async def test_a_body_with_no_gripper_to_close_answers_none() -> None:
+    assert (await close_gripper_if_any(object())) == GripperResult.none()
+
+
+async def test_a_body_whose_gripper_raises_answers_with_the_error() -> None:
+    class Jammed:
+        async def close_gripper(self) -> GripperResult:
+            raise ConnectionError("the bus went away")
+
+    shut = await close_gripper_if_any(Jammed())
+    assert (shut.how, shut.reason) == ("refused", "ConnectionError: the bus went away"), shut
 
 
 async def test_an_asked_release_read_back_limp_is_at_rest_when_the_close_cannot_read() -> None:

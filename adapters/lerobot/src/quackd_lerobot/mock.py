@@ -41,7 +41,7 @@ import asyncio
 import math
 from collections.abc import Mapping
 
-from quackd.adapters.base import HandResult, RestResult
+from quackd.adapters.base import GripperResult, HandResult, RestResult
 from quackd.transport.base import Ack, HeartbeatError, Intent
 from quackd_lerobot.arms import ROBOT_TYPE
 from quackd_lerobot.fake_follower import FakeCamera, FakeFollower
@@ -320,8 +320,9 @@ class LeRobotMock(LeRobotReal):
         """Set to a reason and a rest move that has to drive stalls at once, sends nothing and says
         that reason (`_drive_to_rest`)."""
         self.sequence: list[str] = []
-        """`stop`, `rest`, `let_go`, `take_hold` and `close` in the order they were called. A
-        run's teardown is an order as much as a set, and this is what a test reads to check it."""
+        """`stop`, `rest`, `gripper`, `let_go`, `take_hold` and `close` in the order they were
+        called. A run's teardown is an order as much as a set, and this is what a test reads to
+        check it."""
         self.intents: list[Intent] = []
         """Every intent sent, and a stop's, in order, as the mock transport keeps them."""
         self.stops = 0
@@ -451,6 +452,10 @@ class LeRobotMock(LeRobotReal):
     async def go_to_rest(self) -> RestResult:
         self.sequence.append("rest")
         return await super().go_to_rest()
+
+    async def close_gripper(self) -> GripperResult:
+        self.sequence.append("gripper")
+        return await super().close_gripper()
 
     async def let_go(self, *, anywhere: bool = False, asked: bool = False) -> HandResult:
         self.sequence.append("let_go")

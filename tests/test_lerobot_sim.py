@@ -114,6 +114,7 @@ from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     GRIPPER_S,
+    GRIPPER_TOL,
     JOINTS,
     MOVE_MIN_S,
     PICK_POLL_S,
@@ -1986,6 +1987,34 @@ async def test_a_rest_move_a_hand_off_and_a_verb_all_run_in_one_task(mjcf: str) 
         await adapter.close()
 
 
+async def test_the_gripper_closes_under_physics_once_the_arm_is_at_rest(mjcf: str) -> None:
+    """`quackd robot release` closes the gripper after its fold through the real backend's own
+    send, and here the jaws are bodies that meet rather than a number that reaches zero. Opened
+    all the way first, they close, the read says so, and the arm is still at its rest pose for
+    the release that comes next."""
+    rest = dict.fromkeys(BODY, 0.0)
+    adapter, _ = await _sim_arm(mjcf, rest_pose=rest)
+    try:
+        assert adapter.manifest is not None
+        executor = _executor(adapter, adapter.manifest)
+
+        async def session() -> tuple[Any, Any, dict[str, float]]:
+            opened = await executor.run_verb("gripper", {"open": True})
+            assert opened.ok, opened.summary
+            shut = await adapter.close_gripper()
+            parked = await adapter.go_to_rest()
+            state = await adapter.get_state()
+            return shut, parked, state.extras["joints"]
+
+        shut, parked, joints = await asyncio.wait_for(session(), WALL_S)
+        assert (shut.how, shut.short) == ("closed", False), shut
+        assert shut.position is not None and shut.position <= GRIPPER_TOL, shut
+        assert joints["gripper"] <= GRIPPER_TOL, joints
+        assert parked.how == "already", parked.reason
+    finally:
+        await adapter.close()
+
+
 async def test_a_twin_whose_fold_is_in_the_table_ends_at_rest_after_time_has_passed(
     mjcf: str,
 ) -> None:
@@ -3195,7 +3224,7 @@ def test_release_on_a_simulated_arm_with_a_rest_pose_folds_and_never_asks(
     assert (
         "this is the arm's simulator: connecting takes torque off every simulated motor for a "
         "moment, as LeRobot's connect does on a real arm, and the simulated arm then folds to "
-        "its rest pose and is let go of there, with no arm to hold"
+        "its rest pose, closes its gripper and is let go of there, with no arm to hold"
     ) in flat, flat
     assert "folding arm-sim to its rest pose" in flat, flat
     assert "torque reads off on every joint of arm-sim" in flat, flat

@@ -2,9 +2,10 @@
 
 Taking torque off a LeRobot arm where it stands drops it: nothing but torque holds it up, and
 an SO-101 has no brake. So releasing it means putting it down first. `quackd robot release`
-folds the arm to its recorded rest pose and lets go there, and the end of every run already
-did the same. This module is what both do when that fold misses, in one place so the two
-cannot come to say different things to a person standing at the same arm.
+folds the arm to its recorded rest pose, closes its gripper and lets go there, and the end of
+every run already folded and let go the same way. This module is what both do when that fold
+misses, in one place so the two cannot come to say different things to a person standing at
+the same arm.
 
 A fold misses when something is in its way, a hand, the desk, an object the arm closed on, or
 when a joint stalls. Rok's rule for that (ADR-0058) has two questions, in this order:
@@ -164,6 +165,22 @@ and before it lets go of the bus. A real arm's close keeps such an arm powered r
 it go where it stands (ADR-0058), and at first contact the person usually wants it limp, to fold
 it by hand and record its pose: Enter drops it into their hands, and anything else keeps it as
 it is. With no terminal nothing is asked, and torque stays on."""
+
+CLOSING_THE_GRIPPER = "closing the gripper: keep your hands out of its jaws"
+"""Said as the gripper starts to close, once a fold has put the arm down. Before a first fold of
+`quackd robot release` the line about the fold says this as well. After a second fold nothing
+has said it since a person was asked to clear the arm's way, and their hand may have been at the
+jaws, which may be what the first fold met."""
+
+GRIPPER_STOPPED = (
+    "the gripper was stopped where it was. The close still lets go of the arm where it reads at "
+    "its rest pose, so expect it to go limp there"
+)
+"""Said when a Ctrl-C or `q` stopped the gripper closing, the last thing `quackd robot release`
+and a `--by-hand` run that opened it move. The arm reached its rest pose before the gripper
+started, so the close that comes straight after this lets go of it there, and that is said
+because a person who pressed is the one who should not be surprised by it. It keeps the torque
+of an arm its own read finds moved off the pose, and its own line says so then."""
 
 REFOLDED = (
     "the arm reached its rest pose this time, so it is let go of there when the run disconnects "
@@ -352,7 +369,8 @@ async def fold_unless_stopped(
 ) -> T:
     """Fold, unless the person stops it with a fresh Ctrl-C or `q` first: then `FoldStopped`.
     Whatever else a person standing at the arm may stop goes through here too: the count before
-    a fold, and the gripper opening at the end of a `--by-hand` run.
+    a fold, the gripper closing once a fold has put the arm down, and the gripper opening at the
+    end of a `--by-hand` run.
 
     The fold is the arm's own rest move, which runs until it arrives, stalls or runs out of
     time, and never looks at the kill switch: in a teardown the abort flag is already set and

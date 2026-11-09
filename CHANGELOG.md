@@ -249,6 +249,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
   Code, or a test, that skipped the connect is refused.
 
+- **`quackd robot release` closes the arm's gripper before it lets go, and so does a `--by-hand`
+  run that opened it.** A fold never touches the gripper, so an arm came back to its rest pose with
+  its jaws however they were left, and a `--by-hand` run that ended on Enter had just opened them
+  all the way. Once a fold has arrived, the first or the second, `quackd robot release` now sends
+  the gripper shut until it reads the end of its range or stops moving, and lets go at the pose as
+  before. Its warning, its question and the line before the fold say so:
+  `fold arm-01 to its rest pose, close its gripper and release torque there?`. A `--by-hand` run
+  does the same to the gripper its hand-back opened, after the fold and before its close, and the
+  question at the end says so: `the gripper opens all the way, and 3 s later the arm folds up and
+  the gripper closes again`. It says `closing the gripper: keep your hands out of its jaws` as they
+  start, as `quackd robot release` does after a second fold, the log has
+  `closed: the gripper is closed`, and the transcript's `hand_off` a stage `closed`. Stopped within
+  8 of shut on its 0 to 100 range, which is what the arm's `holding` calls empty, the gripper is
+  closed. Stopped further out it has met something, which is said
+  (`the gripper stopped at 30/100, short of closed: something may be in its jaws`), and the arm is
+  let go of all the same, because it is down: `quackd robot release` exits 0. Ctrl-C or `q` stops
+  the gripper as it stops a fold, and `quackd robot release` exits 1. Nothing else moves the jaws: a
+  run's fold that no hand-back came before and `quackd doctor`'s leave them as they are, as does a
+  `--by-hand` run whose question ended without an Enter, an arm whose fold missed is sent nothing
+  for them, and an arm released where it stands, or with no rest pose, keeps its gripper as it was.
+
 ### Removed
 
 - **`quackd_lerobot.real.load_policy()` is gone.** It was an older Python helper in the arm's
@@ -805,6 +826,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   there proves only that the goal was played, and nothing quackd reads says whether that arm can
   move. On the MotoMini, a goal that reaches an arm whose energy saving function has turned its
   servos off makes MotoROS2 turn them on itself, which nothing quackd sends can rule out.
+- **The gripper closing in `quackd robot release` and at the end of a `--by-hand` run has met no
+  arm.** It has run on `lerobot:mock`, a fake arm and the simulator's stand-in model. Owed on an
+  SO-101: `quackd robot release arm-01` with the jaws open at the rest pose closes them and leaves
+  the arm limp there, E119's by-hand line ends with them shut, and jaws that meet with nothing
+  between them are called closed rather than stopped short, which is the line at 8 meeting a real
+  pair. Which end of the 0 to 100 range is shut is still quackd's assumption
+  (`GRIPPER_OPEN_VALUE`), which E136 confirms by hand on each arm.
 - **No arm has run quackd on LeRobot 0.7.0.** One SO-101 ran it on 0.6.1, on 2026-09-15 and
   2026-09-23. What is here about 0.7.0's bus was read from LeRobot's, rustypot's and serialport-rs's
   source, and run over LeRobot's own follower and bus with a fake in place of rustypot's `Bus`, which

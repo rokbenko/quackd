@@ -344,8 +344,8 @@ for a moment. None of this has run on an arm yet, and `e171` to `e179` are what 
 After the Enter that starts a by-hand run, keep a hand on a link until it prints `you can let go`:
 torque comes back on under your hand, and an arm it refuses to take hold of stays limp. At the end
 of such a run, Enter at the last question opens the gripper all the way, with whatever it holds in
-your hand, and 3 seconds later the arm folds. Take your hands away in those seconds. A Ctrl-C or `q`
-holds it where it is, and none of this has met an arm yet.
+your hand, and 3 seconds later the arm folds and the gripper closes again. Take your hands away
+in those seconds. A Ctrl-C or `q` holds it where it is, and none of this has met an arm yet.
 
 118 of these files give the pilot a part to play, a feeling to show or a question to answer with
 its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,
