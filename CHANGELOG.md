@@ -72,6 +72,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   robots page could neither show which arm a registered robot is nor register one as an SO-100, since
   `quackd robot add --robot-type` had no field there. The table has a `robot_type` column, and the
   form offers the adapter's types, its default first, for the arm and the industrial arms alone.
+- **A Universal Robots UR7e, described beside the UR5e.** People own arms sold as UR5e and buy arms
+  sold as UR7e, with different figures published for each, so `described:ur7e` is a body of its own,
+  read on 2026-11-09 from UR's UR7e datasheet of October 2026: 20.6 kg with the cable, six rotating
+  joints, 7.5 kg of payload and 850 mm of reach, PL d category 3 with 23 configurable safety
+  functions, and its stops from UR's manual for the UR7e. Its notes, like the UR5e's, quote UR's
+  FAQ: the UR5e was renamed the UR7e for the 7.5 kg it actually carries, the UR7e is now the
+  UR7e-920 on the CB7 control box, the arm mechanically unchanged, and the 920 mm comes from a
+  revised measurement method where the datasheet gives 850. They also say that a launch page of UR's
+  calls the UR7e the UR5e's upgraded version, and that UR's page for the UR7e on CB5 heads it 7 kg
+  of payload where its specifications say 7.5. quackd drives no part of it, and `rosarm` takes no
+  UR7e as a robot type. What changes for you: `quackd robot add cell-7 described:ur7e` registers
+  one, the README's badge counts 12 described bodies, and a run that ends infeasible for want of 6
+  kg of payload names it last, beside the LBR iiwa. Its figures have had one reader.
 
 ### Changed
 
@@ -306,6 +319,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   upstream's newer main refuses the stop quackd sends, so a robot set up by that line was one quackd
   could not stop. It names `ab4462b` now, as the AlohaMini page does, and a test holds it to the
   adapter's pin. What changes for you: set the robot up at that commit, as the page says.
+- **The described bodies had a second reader, and every file but the KUKA LBR iiwa's needed
+  mending.** One reader read every figure, on 2026-11-05, and the Unitree G1 EDU's on 2026-10-28. On
+  2026-11-09 a second read again every page their sources and notes name: 27 lines were wrong,
+  short, missing or without a page, and three of the UR5e's are contradicted by another of UR's
+  pages. The Unitree B2's joint count cited a dealer's listing it did not name, and now names the
+  dealer page that gives it, MYBOTSHOP's `docs.mybotshop.de/b2.html`, still marked `estimate`; its
+  endurance said Unitree publishes no figure under load, where unitree.com/b2 gives over 4 h with a
+  20 kg load; its stairs took the page's 40 cm for a depth, where the page climbs stairs of 40 cm up
+  and down facing forward and crosses a 40 cm obstacle; and its stop note named no page and left out
+  the SDK's StopMove and the remote's L1 + A, which a dealer gives as its e-stop. The G1 EDU's
+  joints read not published, and Unitree's page gives 23 to 43, so the figure is 23, the lower end.
+  Unitree's Go2 manual forbids the wet ground, gravel and soft ground the Go2 EDU's file said
+  Unitree rates nowhere, and ice, dust and bad weather besides, and asks for flat terrain where
+  unitree.com/go2 shows the robot on gravel and slopes; Unitree's table marks secondary development
+  part filled on the Go2 X where the file gave the SDK to the EDU alone; and the notes gain its top
+  speed of about 5 m/s and the EDU's depth camera and foot force sensors. The Menlo Asimov-1's
+  payload was 15 kg an arm, which Menlo's FAQ gives as a peak of about three seconds; the FAQ rates
+  5 kg held, the figure now, and says the robot has no hands yet, which a cannot line says. Its
+  E-Stop is in Asimov Manager, and nothing in its SDK is one; the robot, not its firmware, zeroes
+  velocity 2 s after the last velocity command, not the last packet, and a trajectory left 2 s
+  without a setpoint ends in DAMP, which drops it; the firmware caps its walk at 0.4 m/s and the SDK
+  mirrors the cap; and it is not yet waterproof. The Noetix Bumi's 1 m/s was the Boomy's page's, no
+  Noetix page read says the Bumi sells abroad as the Boomy, Noetix forbids potholed, soft and
+  slippery ground besides rain, stairs and slopes over 20 degrees, and its SDK's START disables
+  every joint at once, where the file said it had no stop. The Microban turns at 3 rad/s only in
+  place and 1.5 on the move, and stops a walk at zero velocity with torque on, where the file said
+  torque off was its only stop. The Franka Research 3's control interface stops after 20 packets
+  dropped in a row, not 20 in all, and its hand is an add-on; the LBR iisy's torque sensors are on
+  kuka.com's page and not in its datasheet; and MotoROS2 stops a MotoMini whose agent PC
+  disconnects, by its default. The UR5e's note that UR lists the UR7e as its upgraded version named
+  no page, and only a launch page of UR's says it: UR's FAQ says the UR5e was renamed the UR7e, the
+  arm mechanically unchanged, for the 7.5 kg it carries, and UR's October 2026 datasheet gives 20.7
+  kg and 23 safety functions where the December 2024 one the file cites gives 20.6 kg and 17. Its
+  figures stay the cited edition's and its notes say all of it, and that IP54 is the arm's rating
+  and the control box's is IP44. What changes for you: a pilot handed one of these bodies plans from
+  the corrected lines, a run that ends infeasible for want of 6 kg of payload no longer names the
+  Asimov-1, and [docs/adapters/status.md](docs/adapters/status.md#described-bodies) shows the B2's
+  new page, its endurance under load, the G1's 23 joints and the Asimov-1's 5 kg, and says who read
+  what. It was still one more reader and no robot: no figure here has been checked against a body,
+  and no maker was asked.
 
 ### Security
 
