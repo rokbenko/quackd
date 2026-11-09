@@ -216,6 +216,31 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which quackd
   reads as `mediad`'s, gets the same 85.2° now when its picture is 16:9 and wider than tall, and
   still gets no lens when it is wide in any other shape, such as a 4:3 webcam's, or square.
+- **A close whose own release raised names the joints that may still hold.** The close lets go of an
+  arm at its rest pose through LeRobot's disconnect. LeRobot 0.7.0's torque-off there tries every
+  motor and names each one whose write it could not confirm, where 0.6.1's stopped at its first
+  failed write, and it shuts the port whatever that did. When it raised, the close said only that
+  some motors might have torque and some not, which over 0.6.1's bus was all anyone could say. It
+  names the joints now, quoting LeRobot in the parenthesis: `the close took torque off, at the rest
+  pose, on every joint but gripper, whose write LeRobot could not confirm (...), so it may still
+  hold: hold the arm as though nothing holds it, and cut its power to be sure`. A disconnect that
+  named every motor, raised anything else or did not come back still says which motors hold is not
+  known. On the simulator the line names the joint the same way, with nothing to hold and no power
+  to cut. What changes for you: the close's last line sends you to the joint that may still hold,
+  and the arm's page lists that line.
+- **`lerobot:mock` refuses a read and a write on a closed port, as the arm's bus does.** The mock's
+  follower answered whether its port was open or not, so a hand-off over a mock nobody had connected
+  was let go of and read back, `torque is off at the rest pose`, rather than refused at its first
+  read, as the arm's is, and after a close a stop still wrote a hold. A rehearsal, or a test, that
+  dropped the connect before a hand-off could not fail on the mock. Now a read, a send or a
+  disconnect of the follower on a port that is not open is refused as ``SOFollower is not connected.
+  Run `.connect()` first.``, and a torque write or a register read on its bus as ``SerialMotorsBus
+  is not connected. Run `.connect()` first.``, in LeRobot's words, as `lerobot:real` and
+  `lerobot:mujoco` refuse them, and the bus's own close still passes over a shut port without a
+  word. So after its close a stop says `the hold did not reach the arm: DeviceNotConnectedError:
+  ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
+  changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
+  Code, or a test, that skipped the connect is refused.
 
 ### Fixed
 
@@ -282,11 +307,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   every motor and names each one it could not switch, and quackd names them all: `connect attempt 1
   of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both cables, and a release
   you asked for that raised names the joints that may still hold, every other one having let go. The
-  close's own release at the rest pose still says only that some motors may hold. A read of several
-  motors at once names the first motor that did not answer, said as that, since a cable that breaks
-  there silences the ones after it too. A handshake that found none of the arm's motors, or a torque
-  call that reached none, still names none. And a connect note tells a port that never opened from
-  one LeRobot closed behind its handshake, which writes to no motor and which the old bus left open.
+  close's own release names them too. A read of several motors at once names the first motor that
+  did not answer, said as that, since a cable that breaks there silences the ones after it too. A
+  handshake that found none of the arm's motors, or a torque call that reached none, still names
+  none. And a connect note tells a port that never opened from one LeRobot closed behind its
+  handshake, which writes to no motor and which the old bus left open.
   `tests/test_lerobot_adapter.py` builds each of those sentences as LeRobot does, citing the line
   that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
   over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that talks
@@ -408,6 +433,47 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   stops this way on daemon-v0.18.8 or later tells you to look at the pad's Y and bumpers, at any
   other program that sends `robot.do`, and at robotd's log. What stops the walk, the failure's
   first words and `extras.move_echo` are as they were.
+- **A panic in rustypot is met as the failed bus call it is.** pyo3 hands a panic in rustypot's Rust
+  code to Python as `PanicException`, which derives from `BaseException` and not from `Exception`.
+  The arm's backend, which the simulator and the mock run too, raised whatever a LeRobot call
+  raised, so a panic went through every handler that meets a failed call. A stop whose hold met one
+  raised it rather than say the hold did not reach the arm, a release raised it as though a Ctrl-C
+  had landed on it, and a close stopped where it met it, before its disconnect or before the line it
+  ends on. A LeRobot call that raises something that is not an `Exception`, other than a Ctrl-C, an
+  exit, a cancellation or a generator's close, now comes out as the `ConnectionError` LeRobot raises
+  for a failed call, naming what it raised: `a LeRobot call (disable_torque) raised PanicException:
+  ...`. A panic in a register read costs that reading, as a lost packet does, and a connect that
+  meets one is not tried again: it closes the port and says so, since every attempt switches every
+  motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
+  say what they say of any failed call, and the close runs to its end.
+- **A fold to the rest pose and a policy segment quote what failed, not an earlier stop.** A stop
+  whose hold did not reach the arm leaves its reason in `stop_error` until a hold does. The rest
+  move, and a `pick` or a `manipulate` segment's reads and sends, each quoted that reason over the
+  error that ended them. So a fold whose goal LeRobot could not write named the earlier stop's
+  failure, and so did the close, whose last line quotes a fold that missed, and a segment whose
+  first read failed, or whose read or third send in a row failed mid run, named the stop and not the
+  read or the send. Each quotes the error's own words now, as the release and the take-hold do, and
+  `stop_error` only for the call that wedged the bus, or met it wedged, whose reason it is. Not
+  every timeout is a wedge: a call that waited behind another and never went out, one that came back
+  after its budget was spent, and one that raised a TimeoutError of its own write no `stop_error`,
+  so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
+  `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
+  failed this time.
+- **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
+  probe lets go of an arm at its rest pose through the close's disconnect, and when that release
+  raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
+  arm held up away from its pose, where the close had been letting go of an arm lying in its fold.
+  It says `torque unknown: the close's release did not finish` now, and `torque off in part: some
+  joints may still hold` where LeRobot named the joints it could not confirm. What changes for you:
+  the row says the close was letting go of the arm, where it said the arm was holding itself up away
+  from its pose.
+- **A second close of the arm keeps what the first one said.** A close after a close, over a port
+  the first one shut, read the arm, was refused on the shut port and ended on `quackd cannot tell
+  whether the arm is holding itself up (...)`, over an arm the first close may have let go of at its
+  rest pose. It keeps the first close's line now, and one whose port is still open closes as any
+  close does. No quackd command prints a second close's line: a flock member whose run raised can be
+  closed a second time, and code of your own may close the transport twice. What changes for you:
+  `close_note` after a second close is the first close's.
 - **A key held down answers no question that drops an arm on a busy machine either.** A bare Enter
   answered the question that opens the jaws or lets go of an arm once nothing more had been read for
   0.45 s after it, and a key thread held up for longer than that, by another thread holding the GIL or

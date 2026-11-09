@@ -564,6 +564,14 @@ class LeRobotSim(LeRobotReal):
         "the close was letting go of the simulated arm and its disconnect did not finish"
     )
 
+    RELEASE_NAMED = (
+        "the close took torque off the simulated arm, {where}, on every joint but {joints}, "
+        "whose {writes} LeRobot could not confirm ({said}), so {they} may still hold"
+    )
+    """The arm's line for a close whose torque-off named the motors it could not confirm
+    (`LeRobotReal._release_not_known`), worded for a simulated arm: like the simulator's
+    `RELEASE_NOT_KNOWN`, it has nothing to hold and no power to cut."""
+
     def _torque_left_on(self, why: str) -> str:
         return SIM_TORQUE_LEFT_ON.format(why=why)
 

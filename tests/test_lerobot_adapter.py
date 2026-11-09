@@ -58,6 +58,7 @@ from quackd_lerobot.real import (
     REGISTER_PERIOD_S,
     SPLIT_TORQUE,
     STEP_ENV,
+    TORQUE_RELEASE_NOT_KNOWN,
     TORQUE_RETRIES,
     LeRobotReal,
     Timing,
@@ -91,6 +92,7 @@ from quackd_lerobot.verbs import (
     MOVE_MIN_S,
     MOVE_SETTLE_S,
     NO_INSTRUCTION,
+    PICK_POLL_S,
     PICK_SETTLE_S,
     RAMP_DECIMALS,
     RAMP_RESOLUTION,
@@ -1593,6 +1595,154 @@ async def test_a_call_still_out_wedges_and_says_which_call_and_its_budget(how: s
         release.set()
 
 
+class Panic(BaseException):
+    """What a panic in rustypot's Rust reaches Python as: pyo3's `PanicException`, which derives
+    from `BaseException` and not from `Exception`."""
+
+
+PANICKED = "index out of bounds: the len is 4 but the index is 4"
+"""A panic's words, made up: the kind of thing a Rust panic says."""
+
+
+async def test_a_panic_under_a_lerobot_call_comes_out_as_a_failed_bus_call() -> None:
+    """`_call` raised whatever its worker raised, and a panic in rustypot, a `BaseException`, went
+    through every `except Exception` its callers meet a failed bus call with. It comes out as the
+    `ConnectionError` LeRobot raises for a failed call, naming what it was and raised from it, and
+    wedges nothing, since its worker came back."""
+    transport = LeRobotReal("COM5", robot=FakeArm())
+
+    def sync_read() -> None:
+        raise Panic(PANICKED)
+
+    with pytest.raises(ConnectionError) as failed:
+        await transport._call(sync_read)
+    assert str(failed.value) == f"a LeRobot call (sync_read) raised Panic: {PANICKED}"
+    assert isinstance(failed.value.__cause__, Panic)
+    assert transport._wedged is None and transport.stop_error is None
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [KeyboardInterrupt, SystemExit, asyncio.CancelledError, GeneratorExit],
+    ids=["a Ctrl-C", "an exit", "a cancellation", "a generator's close"],
+)
+async def test_what_is_no_bus_failure_comes_out_of_a_lerobot_call_as_it_was(
+    raised: type[BaseException],
+) -> None:
+    """Only a panic, or anything else that is not an `Exception`, is made a failed bus call. A
+    Ctrl-C, an exit, a cancellation and a generator's close are none of them the bus failing and
+    are for their caller to act on (`PASSED_ON`), so each comes out of the call as it was raised
+    in it, and wedges nothing."""
+    transport = LeRobotReal("COM5", robot=FakeArm())
+
+    def sync_read() -> None:
+        raise raised
+
+    with pytest.raises(raised):
+        await transport._call(sync_read)
+    assert transport._wedged is None and transport.stop_error is None
+
+
+@pytest.mark.parametrize("where", ["the stop's hold", "the release", "the close's release"])
+async def test_a_panic_in_a_stop_a_release_or_a_close_is_met_as_a_failed_call(where: str) -> None:
+    """A panic in rustypot went through the stop, the release and the close as it was. The stop
+    raised it, where a hold that did not go out is said in `stop_error` and swallowed. The release
+    raised it as though a Ctrl-C had landed on it, where one that raised tells the person to hold
+    the arm as though nothing holds it. And the close ended at it with nothing said, where a
+    release that raised is said of. Each meets it now as the failed bus call it is."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+
+    def send_action(_action: Any) -> None:
+        raise Panic(PANICKED)
+
+    def disable_torque(*_args: Any, **_kwargs: Any) -> None:
+        raise Panic(PANICKED)
+
+    def disconnect() -> None:
+        raise Panic(PANICKED)
+
+    def said(call: str) -> str:
+        return f"ConnectionError: a LeRobot call ({call}) raised Panic: {PANICKED}"
+
+    if where == "the stop's hold":
+        arm.send_action = send_action  # type: ignore[method-assign]
+        await transport.stop()
+        assert transport.stop_error == f"the hold did not reach the arm: {said('send_action')}"
+        await transport.close()
+    elif where == "the release":
+        arm.bus.disable_torque = disable_torque  # type: ignore[method-assign]
+        released = await transport.let_go(anywhere=True)
+        assert released.how == "released" and transport.in_hand, released
+        assert f"({said('disable_torque')})" in released.reason, released.reason
+        assert "at the rest pose and the call raised (" in released.reason, released.reason
+        assert released.reason.endswith("hold the arm as though nothing holds it"), released
+        await transport.close()
+    else:
+        arm.disconnect = disconnect  # type: ignore[method-assign]
+        await transport.close()
+        assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN, transport.close_note
+        assert arm.config.disable_torque_on_disconnect is True, "the close asked for the release"
+
+
+@pytest.mark.parametrize("register", ["Torque_Enable", "Present_Temperature"])
+async def test_a_panic_in_a_register_read_costs_that_reading_and_not_the_probe(
+    register: str,
+) -> None:
+    """`_read_all` reads each of the two registers in a `try` of its own, so a register that fails
+    costs that reading and not the probe, positions and all. A panic went through those
+    `except Exception`s and failed the whole read, so a stop over it sent no hold. It is that
+    register's failed read now, in the words `_call` gives any failed call, and the stop holds
+    the arm."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+    read = arm.bus.sync_read
+
+    def sync_read(data_name: str, *args: Any, **kwargs: Any) -> Any:
+        if data_name == register:
+            raise Panic(PANICKED)
+        return read(data_name, *args, **kwargs)
+
+    arm.bus.sync_read = sync_read  # type: ignore[method-assign]
+    sent = len(arm.actions)
+    await transport.stop()
+    assert transport.stop_error is None, transport.stop_error
+    assert len(arm.actions) == sent + 1, "the stop sent no hold"
+    assert transport._register_error == (
+        f"ConnectionError: a LeRobot call (sync_read) raised Panic: {PANICKED}"
+    ), transport._register_error
+    arm.bus.sync_read = read  # type: ignore[method-assign]
+    await transport.close()
+
+
+@pytest.mark.parametrize("where", ["configure", "the handshake"])
+async def test_a_connect_that_meets_a_panic_is_not_tried_again(where: str) -> None:
+    """A connect is tried again when the bus loses a packet, and each attempt is a `configure()`
+    that switches every motor's torque off and on. `_call` makes a panic a failed call, so a
+    connect that met one was tried again like a lost packet, two more rounds of torque off and on
+    over a library that had just failed in a way nothing here accounts for. It ends at the
+    attempt the panic came in now, with the port closed, and says whether that attempt can have
+    written torque, as the last attempt of any connect does: one in `configure()` can have, one
+    in the handshake cannot."""
+    arm = FakeArm(camera=False)
+    if where == "configure":
+        arm.connect_errors = [Panic(PANICKED)] * CONNECT_ATTEMPTS
+    else:
+        arm.handshake_errors = [Panic(PANICKED)] * CONNECT_ATTEMPTS
+    transport = LeRobotReal("COM5", robot=arm)
+    transport.connect_pause_s = 0.0
+    with pytest.raises(TransportError) as refused:
+        await transport.connect()
+    why = str(refused.value)
+    assert arm.calls.count(("connect", False)) == 1, arm.calls
+    assert why.startswith(
+        f"lerobot real: connect attempt 1 of {CONNECT_ATTEMPTS} failed on a panic, which is not "
+        f"tried again: a LeRobot call (connect) raised Panic: {PANICKED}"
+    ), why
+    assert (SPLIT_TORQUE in why) is (where == "configure"), why
+    assert ("bus.disconnect", False) in arm.calls and not arm.connected, arm.calls
+
+
 @pytest.mark.parametrize(
     "ahead", ["came back in time", "came back and its step stalled", "held the bus past it"]
 )
@@ -1870,6 +2020,94 @@ async def test_pick_looks_once_more_before_calling_a_finished_policy_a_failed_gr
     picked = await ex.run_verb("pick", {"target": "cup", "max_s": 10})
     assert picked.ok, picked.summary
     assert transport.looks >= 3, "pick decided without giving the grasp a settle"
+
+
+class RunsItsOwnSegment(MockTransport):
+    """A backend that runs no segment task of its own, whose policy has moved by the time its
+    `do` is acknowledged, which is the one `manipulate` watches by polling
+    (`verbs._manipulate_polled`). Its state names the segment running, by its policy and its
+    `segment` number, and `ended_by` ends it `ends_at` seconds of its clock after the `do`: a
+    stop, which leaves the arm idle, or the next `manipulate` told the same thing, which leaves
+    the same policy running under the next number. None runs it until its time is up."""
+
+    name = "mock"
+    policy_available = True
+
+    def __init__(self, ended_by: str | None = None, ends_at: float = 0.0) -> None:
+        super().__init__(states=[DuckState(policy="idle", posture="unknown")])
+        self.ended_by = ended_by
+        self.ends_at = ends_at
+        self.policy = "idle"
+        self.segment = 0
+        self.started: float | None = None
+        self.policy_stopped_by: str | None = None
+
+    async def send_intent(self, intent: Intent) -> Any:
+        ack = await super().send_intent(intent)
+        if intent.kind == "do":
+            self.policy = str(intent.params["skill"])
+            self.segment += 1
+            self.started = self.now()
+        return ack
+
+    async def get_state(self) -> Any:
+        state = await super().get_state()
+        ended = self.started is not None and self.now() - self.started >= self.ends_at
+        if self.ended_by is not None and ended:
+            if self.ended_by == "a stop":
+                self.policy, self.policy_stopped_by = "idle", "a stop was sent to the arm"
+            else:
+                self.segment += 1
+                self.policy_stopped_by = "another manipulate started"
+            self.ended_by = None
+        return state.model_copy(update={"policy": self.policy, "extras": {"segment": self.segment}})
+
+
+@pytest.mark.parametrize(
+    ("ended_by", "said"),
+    [
+        (None, None),
+        ("a stop", "a stop was sent to the arm"),
+        ("the next segment", "another manipulate started"),
+    ],
+    ids=["its time", "a stop", "the next segment told the same thing"],
+)
+async def test_manipulate_on_a_backend_with_no_segment_task_watches_it_until_its_time(
+    ended_by: str | None, said: str | None
+) -> None:
+    """`manipulate` on a backend that runs no segment task looks at the segment every
+    `PICK_POLL_S` of the backend's clock until its seconds are up, and is ok then, saying it ran
+    and never that the task is done. Something that ends it first is a failed `manipulate` naming
+    what did, `policy_stopped_by`, as on the arm, and that includes a later segment told the same
+    thing, which only its `segment` number tells apart. None of the arm's own backends reaches this
+    path, and the mock used to be the one that did; this stand-in is what keeps it tested."""
+    stops_at = 3 * PICK_POLL_S
+    transport = RunsItsOwnSegment(ended_by, stops_at)
+    adapter = LeRobotAdapter(transport)
+    manifest = await adapter.connect()
+    ex = Executor(registry_from_manifest(manifest, adapter), adapter, confirm=allow_all)
+    t0 = transport.now()
+    ran = await ex.run_verb("manipulate", {"instruction": "wave"})
+    assert transport.intents_of("do")[0].params == {
+        "skill": "policy:manipulate:wave",
+        "max_s": MANIPULATE_S,
+    }
+    if said is None:
+        assert ran.ok, ran.summary
+        assert ran.summary == (
+            f"manipulate 'wave' ran {MANIPULATE_S:g} s and ended because its {MANIPULATE_S:g} s "
+            "ran out. Nothing on the arm says whether it did the task: look at it before the next "
+            "step"
+        )
+        assert ran.data == {"instruction": "wave", "seconds": MANIPULATE_S, "ended": "time"}
+        assert transport.now() - t0 == pytest.approx(MANIPULATE_S)
+        assert max(transport.sleeps) <= PICK_POLL_S
+    else:
+        assert not ran.ok
+        assert ran.summary == f"manipulate 'wave' stopped: {said}", ran.summary
+        assert ran.data == {"instruction": "wave", "seconds": stops_at, "ended": "stopped"}
+        assert transport.now() - t0 == pytest.approx(stops_at)
+    await adapter.close()
 
 
 async def test_the_mock_scripts_manipulate_toward_its_object_and_ends_on_time() -> None:
@@ -4135,12 +4373,14 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     reasons and in the same words: a rehearsal that releases an arm the real one would not is
     a rehearsal that teaches the wrong thing."""
     bare = LeRobotMock()
+    await bare.connect()
     nowhere = await bare.let_go()
     assert nowhere.how == "refused" and not nowhere.ok
     assert "no rest pose is recorded for this arm" in nowhere.reason
     assert "quackd robot rest-pose NAME" in nowhere.reason, nowhere.reason
     assert bare.torque is True and bare.in_hand is False
     assert bare.sequence == ["let_go"], "a refusal is still an attempt, and it is recorded"
+    await bare.close()
 
     mock = LeRobotMock(rest_pose=dict(REST))
     adapter = LeRobotAdapter(mock)
@@ -4150,6 +4390,27 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     assert away.how == "refused" and "the arm is not at its rest pose" in away.reason
     assert "shoulder_pan is at 30 with a goal of 0" in away.reason, away.reason
     assert mock.torque is True and mock.in_hand is False
+
+
+async def test_a_hand_off_over_a_mock_nobody_connected_is_refused_as_the_arm_s_would_be() -> None:
+    """The mock's follower answered with its port closed, so a release over a mock nobody had
+    connected was let go of and read back, `torque is off at the rest pose`, rather than refused
+    at its first read, as the arm's is, and a rehearsal or a test that dropped the connect before
+    a hand-off could not fail on the mock. Its port refuses as LeRobot's does now
+    (`up.NOT_CONNECTED`), so the release is refused in the arm's words with nothing let go, and
+    the close lets go of nothing either, saying it could not read the arm."""
+    mock = LeRobotMock(rest_pose=dict(REST))
+    released = await mock.let_go()
+    assert released.how == "refused", released
+    assert released.reason == (
+        "the arm did not answer before the release, so nothing was released "
+        "(DeviceNotConnectedError: SOFollower is not connected. Run `.connect()` first.)"
+    ), released.reason
+    assert mock.torque is True and mock.in_hand is False
+    await mock.close()
+    note = mock.close_note or ""
+    assert note.startswith("quackd cannot tell whether the arm is holding itself up"), note
+    assert mock.torque is True, "the close of a mock nobody connected let go of it"
 
 
 async def test_a_mock_stop_over_an_arm_in_a_hand_takes_hold_before_it_stops() -> None:
@@ -4294,6 +4555,7 @@ async def test_a_refused_hold_is_kept_only_until_a_hold_takes_or_the_arm_is_rele
     assert arm.torque is True and transport.in_hand is False, "the new hand-off was not held"
 
     mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
     assert (await mock.let_go()).how == "released"
     mock.joints[joint] = MOCK_RANGES[joint][1] + PLACED_PAST_BY
     assert (await mock.take_hold()).how == "refused" and mock.hold_refusal is not None
@@ -4301,6 +4563,7 @@ async def test_a_refused_hold_is_kept_only_until_a_hold_takes_or_the_arm_is_rele
     assert (await mock.let_go()).how == "released"
     await mock.stop()
     assert mock.torque is True and mock.in_hand is False, "the new hand-off was not held"
+    await mock.close()
 
 
 # ── a take-hold refused, and the teardown after it, on the real backend through a run ───────
@@ -5210,6 +5473,7 @@ async def test_the_mock_names_a_joint_its_release_left_holding() -> None:
     the end-of-run offer ends on the line the arm would: its in-memory release used to take on
     every motor, so its close could only ever say nothing held the arm."""
     mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
     mock.release_holdouts = ("wrist_roll",)
     released = await mock.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on == ("wrist_roll",), released
@@ -5362,8 +5626,10 @@ async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks
     assert mock.close_note == LIMP_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), mock.close_note
 
     bare = LeRobotMock()
+    await bare.connect()
     assert (await bare.let_go()).how == "refused", "no pose, first door"
     assert (await bare.let_go(anywhere=True)).how == "released", "no pose, second door"
+    await bare.close()
 
 
 def _asked_arm(backend: str) -> tuple[Any, Any]:
@@ -5531,12 +5797,14 @@ async def test_the_clip_note_names_the_arm_as_the_torque_note_does(name: str | N
 
     ceiling = MOCK_RANGES["elbow_flex"][1]
     mock = LeRobotMock(rest_pose=dict(REST) | {"elbow_flex": ceiling + 11.0}, registered_name=name)
+    await mock.connect()
     rehearsed = await mock.go_to_rest()
     assert rehearsed.reached and rehearsed.note, rehearsed
 
     for note in (parked.note, rehearsed.note, adapter.rest_pose_note(pose) or ""):
         assert f"(quackd robot rest-pose {shown}) to make the fold reachable" in note, note
     await adapter.close()
+    await mock.close()
 
 
 # ── an arm that did not answer, and a release a Ctrl-C landed on ────────────────────────
@@ -5715,6 +5983,72 @@ async def test_a_release_that_raised_part_way_on_an_arm_with_no_pose_is_not_call
     assert arm.config.disable_torque_on_disconnect is False
 
 
+class LeavesSomeHolding(FakeBus):
+    """A bus whose torque-off reaches every motor and cannot confirm the ones in
+    `arm.torque_holdouts`, which keep their torque, and then raises naming each of them by name and
+    id, in the order of their ids, as LeRobot 0.7.0's does (`up.TORQUE_TRIED_ON_EVERY_MOTOR`)."""
+
+    def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
+        super().disable_torque(motors, num_retry=num_retry)
+        held = {joint: self.motors[joint] for joint in self.arm.torque_holdouts}
+        raise _torque_failed(False, held, num_retry + 1, NO_STATUS)
+
+
+class DisconnectsThroughItsBus(FakeArm):
+    """`SOFollower.disconnect` as LeRobot has it: the bus's own disconnect, asked to take torque off
+    when the config says so as it runs (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), which tries
+    every motor and shuts the port whatever that did (`up.DISCONNECT_RELEASES_THE_PORT`)."""
+
+    def disconnect(self) -> None:
+        self.calls.append(("disconnect",))
+        self.bus.disconnect(self.config.disable_torque_on_disconnect)
+
+
+@pytest.mark.parametrize(
+    ("held", "note"),
+    [
+        (
+            ("gripper",),
+            "the close took torque off, at the rest pose, on every joint but gripper, whose write "
+            "LeRobot could not confirm (ConnectionError: Failed to disable torque after 6 tries on "
+            "'gripper' (motor ID 6): Operation timed out.), so it may still hold: hold the arm as "
+            "though nothing holds it, and cut its power to be sure",
+        ),
+        (
+            ("wrist_roll", "shoulder_lift"),
+            "the close took torque off, at the rest pose, on every joint but shoulder_lift and "
+            "wrist_roll, whose writes LeRobot could not confirm (ConnectionError: Failed to "
+            "disable torque after 6 tries on 'shoulder_lift' (motor ID 2): Operation timed out, "
+            "'wrist_roll' (motor ID 5): Operation timed out.), so they may still hold: hold the "
+            "arm as though nothing holds it, and cut its power to be sure",
+        ),
+        (JOINTS, TORQUE_RELEASE_NOT_KNOWN),
+    ],
+    ids=["one joint", "two joints", "every joint"],
+)
+async def test_a_close_whose_release_raised_names_the_joints_that_may_still_hold(
+    held: tuple[str, ...], note: str
+) -> None:
+    """The close lets go of an arm at its rest pose through LeRobot's disconnect, whose torque-off
+    tries every motor and names each whose write it could not confirm, and that close said only
+    that some motors might hold, with the joints LeRobot named swallowed, where a release `let_go`
+    made names them. It names them now, in the bus's order and with LeRobot's words, every other
+    joint having let go. A disconnect that named every motor, like one that raised anything else
+    or never came back (`test_threads.py`), still says which motors hold is not known. The tries
+    are upstream's own count for a disconnect, five retries and the first (motors_bus.py line 457),
+    and the ids are the fake bus's, one to six in the follower's order."""
+    arm = DisconnectsThroughItsBus()
+    arm.bus = LeavesSomeHolding(arm)
+    arm.torque_holdouts = set(held)
+    rest = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest)
+    await transport.connect()
+    await transport.close()
+    assert transport.close_note == note, transport.close_note
+    assert arm.config.disable_torque_on_disconnect is True, "the close asked for the release"
+    assert arm.calls[-1] == ("bus.disconnect", True) and not arm.connected, arm.calls[-3:]
+
+
 async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
     """`stop_error` outlives the failure that set it: a stop whose hold did not reach the arm
     leaves it set until a hold does. The release and the take-hold quoted it in place of the
@@ -5755,11 +6089,156 @@ async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> 
     await transport.close()
 
 
+async def test_a_rest_move_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
+    """The rest move quoted `stop_error` over the error that ended it, as the hand-off did, so a
+    fold whose goal LeRobot could not write named an earlier stop's failure, and the close, whose
+    last line quotes a fold that missed, said it again. Both quote LeRobot's own words now, and
+    `stop_error` only for a call that ran out of time or met a wedged bus (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    transport.stop_error = earlier
+    arm.send_fails = True
+    rested = await transport.go_to_rest()
+    assert rested.how == "refused" and rested.answered, rested
+    assert rested.reason == "ConnectionError: Failed to sync write 'Goal_Position'", rested.reason
+    await transport.close()
+    note = transport.close_note or ""
+    assert rested.reason in note and earlier not in note, note
+
+
+async def test_a_policy_start_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
+    """A policy segment's start reads the arm before it sends anything, and a read LeRobot refused
+    there was quoted as `stop_error` whenever an earlier stop had left one, so the `do` named that
+    stop's failure and not the read's. It quotes LeRobot's own words now (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = FakeArm(camera=False)
+    transport = LeRobotReal("COM5", robot=arm, policy=FakePolicy())
+    await transport.connect()
+    transport.stop_error = earlier
+    arm.dead = True
+    refused = await transport.send_intent(Intent.do("policy:pick:cup"))
+    assert not refused.accepted
+    assert refused.reason == (
+        "the policy was not started: the arm did not answer a read "
+        "(ConnectionError: Failed to sync read 'Present_Position')"
+    ), refused.reason
+    assert arm.actions == [], "a segment refused at its start sent something"
+    arm.dead = False
+    await transport.close()
+
+
+@pytest.mark.parametrize("where", ["the release", "the fold"])
+async def test_a_call_that_waited_behind_another_quotes_its_own_words_not_an_earlier_stop(
+    where: str,
+) -> None:
+    """Not every timeout is a wedge. A call queued behind another whose budget runs out before
+    the bus is free never goes out and writes no `stop_error`, and the hand-off, the rest move
+    and a policy's start quoted the one an earlier stop had left there, as they did for any
+    timeout. They quote `stop_error` only for the error `_call` raised over a wedge now, a call
+    that wedged the bus or met it wedged, and this one's own words otherwise (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    transport = _handover_arm()[1]
+    await transport.connect()
+    transport.stop_error = earlier
+    transport.timeout_s = 0.2
+    free = threading.Event()
+
+    def sync_read() -> None:
+        free.wait(5.0)
+
+    ahead = asyncio.create_task(transport._call(sync_read, deadline_s=5.0))
+    await asyncio.sleep(0.05)  # it has the bus
+    try:
+        if where == "the release":
+            ended: Any = await transport.let_go(anywhere=True)
+        else:
+            ended = await transport.go_to_rest()
+    finally:
+        free.set()
+        await ahead
+    assert ended.how == "refused", ended
+    queued = "TimeoutError: a LeRobot call (_read_all) waited 0.2 s for the bus and never went out"
+    assert queued in ended.reason and earlier not in ended.reason, ended.reason
+    assert transport.stop_error == earlier, "the queued call wrote a stop_error of its own"
+    await transport.close()
+
+
+@pytest.mark.parametrize("fails", ["a read", "three sends"])
+async def test_a_running_segment_quotes_lerobots_words_and_not_an_earlier_failure(
+    fails: str,
+) -> None:
+    """A segment that a failed read, or `FAILED_SENDS` failed sends in a row, ends mid run
+    quoted `stop_error` over LeRobot's words whenever an earlier stop had left one, as its start
+    did, so the pick named that stop's failure and not the read or the send that ended it. Both
+    quote the error's own words now (`_quoted`)."""
+    earlier = "the hold did not reach the arm: ConnectionError: an earlier stop's own failure"
+    arm = _segment_arm()
+
+    def script(n: int) -> dict[str, float]:
+        if n >= 3:
+            if fails == "a read":
+                arm.dead = True
+            else:
+                arm.send_fails = True
+        return {"shoulder_pan": 1.0}
+
+    _, transport, adapter, ex = await _segment(Scripted(script), arm)
+    transport.stop_error = earlier
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": 30})
+    assert not picked.ok and earlier not in picked.summary, picked.summary
+    said = (
+        "the arm did not answer a read (ConnectionError: Failed to sync read 'Present_Position')"
+        if fails == "a read"
+        else f"{FAILED_SENDS} sends in a row did not reach the arm, the last with "
+        "ConnectionError: Failed to sync write 'Goal_Position'"
+    )
+    assert said in picked.summary, picked.summary
+    arm.dead = arm.send_fails = False
+    await adapter.close()
+
+
+@pytest.mark.parametrize("where", ["the fold", "the policy start"])
+async def test_a_fold_or_a_policy_start_over_a_wedged_bus_quotes_the_wedge(where: str) -> None:
+    """The other side of `_quoted`: a call refused on a bus that a call still out has wedged met
+    the wedge, and the wedge's own reason is what the fold and a policy's start quote, as the
+    hand-off does, and not the refusal's type and words."""
+    release = threading.Event()
+    arm = FakeArm(camera=False)
+    rest = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, policy=FakePolicy(), rest_pose=rest, timeout_s=0.2)
+    await transport.connect()
+
+    def sync_read() -> None:
+        release.wait(5.0)
+
+    try:
+        with pytest.raises(TimeoutError):
+            await transport._call(sync_read)
+        wedge = transport.stop_error
+        assert wedge is not None and "(sync_read) has not come back" in wedge, wedge
+        if where == "the fold":
+            rested = await transport.go_to_rest()
+            assert rested.how == "refused" and rested.reason == wedge, rested
+        else:
+            refused = await transport.send_intent(Intent.do("policy:pick:cup"))
+            assert not refused.accepted
+            assert refused.reason == (
+                f"the policy was not started: the arm did not answer a read ({wedge})"
+            ), refused.reason
+    finally:
+        release.set()
+    await _until(lambda: transport._wedged is None or transport._wedged.done())
+    await transport.close()
+
+
 async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_words() -> None:
     """The mock's twin, so a rehearsal of `quackd robot release` or of the end-of-run offer can
     end the way an arm whose read-back failed ends: its in-memory release always read back, so
     its close could only ever say the arm was limp or name a joint still on."""
     mock = LeRobotMock()
+    await mock.connect()
     mock.release_unread = "a reason made up for this test"
     released = await mock.let_go(anywhere=True)
     assert released.how == "released" and released.torque_on is None, released
@@ -5770,6 +6249,7 @@ async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_w
     assert mock.close_note == UNREAD_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), mock.close_note
 
     read = LeRobotMock()
+    await read.connect()
     assert (await read.let_go(anywhere=True)).torque_on == ()
     await read.close()
     assert read.close_note == LIMP_IN_HAND.format(why=LET_GO_WHERE_IT_STOOD), read.close_note
