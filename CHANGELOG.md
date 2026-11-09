@@ -425,17 +425,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   holds.** The nightly drift job compares `policy/endpoint_upstream_api.py` with
   huggingface_hub's newest release, 2.4.0, and kept #88 open because the rows were read at an
   older one. 2.4.0 is also what CI's policy job runs, where nothing holds the hub below 2, while
-  `uv.lock` stays on 1.33.0, where diffusers 0.39.0 keeps it. Each of the 17 lines the rows cite
+  `uv.lock` stays on 1.33.0, where diffusers 0.39.0 keeps it. Each of the 17 lines the rows cited
   was read at `v2.4.0` (`3739729`) and again at `v1.33.0` (`9eeace5`). Sixteen read the same at
   both, 13 of them at other line numbers. The seventeenth is gone: 2.4.0 dropped the `protected`
   endpoint type, which 1.33.0 kept as a deprecated name for `authenticated`, and its
   `create_inference_endpoint` now refuses it, which is all that changed in the code around the
-  lines the rows cite. quackd creates `authenticated` endpoints and never sends that type, and
-  its endpoint code imports no huggingface_hub, so nothing it does changes: its endpoint tests
-  pass the same with either release installed. The rows cite 2.4.0, the module names 1.33.0 as
-  the lock's (`LOCK_HUB_VERSION`), and `tests/test_upstream_api.py` holds `uv.lock` to that, so
-  a lock that moves the hub is still a re-read. Each release's wheel matched its tag in every
-  file cited.
+  lines the rows cited. quackd creates `authenticated` endpoints and never sends that type, and
+  its endpoint code imports no huggingface_hub, so nothing it does changes. The rows cite 19
+  lines now, all at 2.4.0 but for the one that named `protected`, the module names 1.33.0 as the
+  lock's (`LOCK_HUB_VERSION`), and `tests/test_upstream_api.py` holds every `huggingface-hub` in
+  `uv.lock` to that, so a lock that moves the hub is still a re-read. Each release's wheel
+  matched its tag in every file cited.
 
 ### Known limitations
 

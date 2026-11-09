@@ -774,10 +774,8 @@ def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_i
         if ref.source.startswith(api.HUB_REPO):
             assert api.PIN in ref.source, ref
     lock = (PKG.parent / "uv.lock").read_text(encoding="utf-8")
-    locked = re.search(r'name = "huggingface-hub"\nversion = "([^"]+)"', lock)
-    assert locked and locked.group(1) == api.LOCK_HUB_VERSION, (
-        "uv.lock moved huggingface_hub: re-read"
-    )
+    locked = set(re.findall(r'name = "huggingface-hub"\nversion = "([^"]+)"', lock))
+    assert locked == {api.LOCK_HUB_VERSION}, f"uv.lock moved huggingface_hub: re-read ({locked})"
     assert api.ENDPOINT_STATES.name == ", ".join(f'"{s}"' for s in api.STATES)
     assert api.ENDPOINT_TYPES.name == ", ".join(f'"{t}"' for t in api.TYPES)
     assert api.CREATED_TYPE == "authenticated" and api.CREATED_TYPE in api.TYPES

@@ -3701,16 +3701,18 @@ run reaches it with `--policy-url hf:NAME`
 on were read on 2026-10-25 from the API's own
 [OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
 from Hugging Face's pages about the service and from uv's and PyPI's documentation for what a
-container installs, and on 2026-11-09 from huggingface_hub 2.4.0, its newest release and the one
-CI's policy job runs, at the commit its tag names,
+container installs, on 2026-11-08 from what the Hub answered for a public and a gated repository
+at its `api/models` route, and on 2026-11-09 from huggingface_hub 2.4.0, its newest release and
+the one CI's policy job runs, at the commit its tag names,
 [`3739729`](https://github.com/huggingface/huggingface_hub/tree/3739729b86489e4ae28b5a62e622be320b141493)
 (`v2.4.0`), and from 1.33.0 at
 [`9eeace5`](https://github.com/huggingface/huggingface_hub/tree/9eeace5e467939b8f6af6ff280a134bc7c22802f)
-(`v1.33.0`), the version `uv.lock` holds, where diffusers 0.39.0 keeps the hub below 2. Every
-line the rows cite reads the same in both, most at other line numbers, but the one about
-`protected`, which 2.4.0 has dropped, and quackd's endpoint code imports neither. Every file of
-huggingface_hub's these rows cite was compared with each release's wheel that day and was the
-same. Every name lives in
+(`v1.33.0`), the version `uv.lock` holds, where diffusers 0.39.0 keeps the hub below 2. Of the
+17 lines the rows cited at 1.33.0, 16 read the same at 2.4.0, most at other line numbers, and
+the other named a fourth endpoint type, `protected`, which 2.4.0 has dropped and refuses. The
+rows cite 19 lines now, that one among them, and quackd's endpoint code imports neither
+release. Every file of huggingface_hub's these rows cite was compared with each release's wheel
+that day and was the same. Every name lives in
 [`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
 
 **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
@@ -3719,6 +3721,8 @@ container on 127.0.0.1 alone, with a scripted policy behind them
 ([tests/fake_hugging_face.py](../../../tests/fake_hugging_face.py)), and nothing was paid for.
 The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
 worst: quackd's own token on the server is the lock, whatever the proxy in front does.
+
+<a id="verified-read-on-the-day-from-the-api-hugging-faces-pages-and-huggingface_hub-1290"></a>
 
 ### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)
 

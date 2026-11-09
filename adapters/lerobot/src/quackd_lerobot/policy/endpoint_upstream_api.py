@@ -8,10 +8,10 @@ Hugging Face's pages about it, huggingface_hub at the commit its v2.4.0 tag name
 documentation for the image the container runs, and PyPI's for the release a container
 installs. huggingface_hub 2.4.0 is its newest release, and the one CI's policy job runs, where
 nothing holds the hub below 2, and the wheel and the tag were compared file by file for every
-file cited. `uv.lock` holds 1.33.0, where diffusers 0.39.0 keeps it, and every row was read at
-that release's tag as well (`LOCK_PIN`): each line a row cites reads the same in both, most at
-other line numbers, but for ENDPOINT_TYPES's, whose fourth type 2.4.0 has dropped. quackd's
-endpoint code imports no huggingface_hub, so either one installed beside it is the same to it.
+file cited. `uv.lock` holds 1.33.0, where diffusers 0.39.0 keeps it (`LOCK_PIN`), and the 17
+lines the rows cited there were read at 2.4.0 as well: they read the same in both, most at other
+line numbers, but for ENDPOINT_TYPES's, whose fourth type 2.4.0 has dropped. quackd's endpoint
+code imports no huggingface_hub, so either one installed beside it is the same to it.
 The day is `READ_ON` for huggingface_hub, 2026-11-08 for the Hub's answers MODEL_INFO quotes,
 and 2026-10-25 for everything else. `docs/adapters/lerobot/README.md` is the human-readable
 version, and `tests/test_upstream_api.py` proves UNVERIFIED names are only reachable from the
@@ -37,8 +37,8 @@ PIN = "3739729b86489e4ae28b5a62e622be320b141493"  # the v2.4.0 tag
 HUB_VERSION = "2.4.0"
 LOCK_PIN = "9eeace5e467939b8f6af6ff280a134bc7c22802f"  # the v1.33.0 tag
 LOCK_HUB_VERSION = "1.33.0"
-"""The huggingface_hub `uv.lock` holds, at the commit its tag names, which every row was read
-at as well, so a lock that moves the hub is a re-read."""
+"""The huggingface_hub `uv.lock` holds, at the commit its tag names, whose cited lines were read
+beside 2.4.0's, so a lock that moves the hub is a re-read."""
 READ_ON = "2026-11-09"
 
 
