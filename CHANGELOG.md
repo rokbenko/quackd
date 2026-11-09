@@ -375,6 +375,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
   checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
   changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **The endpoint's huggingface_hub rows are read at 2.4.0, and again at the 1.33.0 the lock
+  holds.** The nightly drift job compares `policy/endpoint_upstream_api.py` with
+  huggingface_hub's newest release, 2.4.0, and kept #88 open because the rows were read at an
+  older one. 2.4.0 is also what CI's policy job runs, where nothing holds the hub below 2, while
+  `uv.lock` stays on 1.33.0, where diffusers 0.39.0 keeps it. Each of the 17 lines the rows cite
+  was read at `v2.4.0` (`3739729`) and again at `v1.33.0` (`9eeace5`). Sixteen read the same at
+  both, 13 of them at other line numbers. The seventeenth is gone: 2.4.0 dropped the `protected`
+  endpoint type, which 1.33.0 kept as a deprecated name for `authenticated`, and its
+  `create_inference_endpoint` now refuses it, which is all that changed in the code around the
+  lines the rows cite. quackd creates `authenticated` endpoints and never sends that type, and
+  its endpoint code imports no huggingface_hub, so nothing it does changes: its endpoint tests
+  pass the same with either release installed. The rows cite 2.4.0, the module names 1.33.0 as
+  the lock's (`LOCK_HUB_VERSION`), and `tests/test_upstream_api.py` holds `uv.lock` to that, so
+  a lock that moves the hub is still a re-read. Each release's wheel matched its tag in every
+  file cited.
 
 ### Known limitations
 

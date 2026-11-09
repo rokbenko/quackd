@@ -759,21 +759,25 @@ def test_the_policy_families_are_the_types_the_server_serves() -> None:
 
 def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_its_tag() -> None:
     """Hugging Face's Inference Endpoints are read from the API's own document, its pages and
-    huggingface_hub at the commit its tag names, the version `uv.lock` holds, so a lock that
-    moves huggingface_hub is a re-read somebody has to make on purpose. The names the endpoint's
-    code takes as data sit beside the refs that read them and say what those refs say, the image
-    is pinned by its digest on both registries, and the UNVERIFIED rows are the ones a first real
-    endpoint settles."""
+    huggingface_hub at the commit its tag names, and again at the version `uv.lock` holds, where
+    diffusers keeps the hub below the newest, so a lock that moves huggingface_hub is a re-read
+    somebody has to make on purpose. The names the endpoint's code takes as data sit beside the
+    refs that read them and say what those refs say, the image is pinned by its digest on both
+    registries, and the UNVERIFIED rows are the ones a first real endpoint settles."""
     from quackd_lerobot.policy import client
 
     api = lerobot_endpoint_api
-    assert len(api.PIN) == 40 and api.PIN.isalnum()
+    for pin in (api.PIN, api.LOCK_PIN):
+        assert len(pin) == 40 and pin.isalnum()
+    assert (api.LOCK_PIN == api.PIN) == (api.LOCK_HUB_VERSION == api.HUB_VERSION)
     for ref in api.all_refs():
         if ref.source.startswith(api.HUB_REPO):
             assert api.PIN in ref.source, ref
     lock = (PKG.parent / "uv.lock").read_text(encoding="utf-8")
     locked = re.search(r'name = "huggingface-hub"\nversion = "([^"]+)"', lock)
-    assert locked and locked.group(1) == api.HUB_VERSION, "uv.lock moved huggingface_hub: re-read"
+    assert locked and locked.group(1) == api.LOCK_HUB_VERSION, (
+        "uv.lock moved huggingface_hub: re-read"
+    )
     assert api.ENDPOINT_STATES.name == ", ".join(f'"{s}"' for s in api.STATES)
     assert api.ENDPOINT_TYPES.name == ", ".join(f'"{t}"' for t in api.TYPES)
     assert api.CREATED_TYPE == "authenticated" and api.CREATED_TYPE in api.TYPES

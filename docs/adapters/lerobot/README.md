@@ -82,7 +82,7 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [VERIFIED (read from source at the v0.7.0 tag)](#verified-read-from-source-at-the-v070-tag)
   * [UNVERIFIED (our assumptions about policies, and what quackd does about each)](#unverified-our-assumptions-about-policies-and-what-quackd-does-about-each)
 - [The endpoint's upstream: Hugging Face Inference Endpoints](#the-endpoints-upstream-hugging-face-inference-endpoints)
-  * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-1330)
+  * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-240-and-1330)
   * [UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)](#unverified-our-assumptions-about-hugging-face-and-what-quackd-does-about-each)
 - [Status](#status)
   * [What one afternoon proved, and what it did not](#what-one-afternoon-proved-and-what-it-did-not)
@@ -3697,11 +3697,16 @@ run reaches it with `--policy-url hf:NAME`
 on were read on 2026-10-25 from the API's own
 [OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
 from Hugging Face's pages about the service and from uv's and PyPI's documentation for what a
-container installs, and on 2026-11-08 from huggingface_hub 1.33.0, the version `uv.lock` holds
-now that LeRobot 0.7.0 asks for 1.31.0 or newer, at the commit its tag names,
+container installs, and on 2026-11-09 from huggingface_hub 2.4.0, its newest release and the one
+CI's policy job runs, at the commit its tag names,
+[`3739729`](https://github.com/huggingface/huggingface_hub/tree/3739729b86489e4ae28b5a62e622be320b141493)
+(`v2.4.0`), and from 1.33.0 at
 [`9eeace5`](https://github.com/huggingface/huggingface_hub/tree/9eeace5e467939b8f6af6ff280a134bc7c22802f)
-(`v1.33.0`). Every file of huggingface_hub's these rows cite was compared with the 1.33.0
-wheel's that day and was the same. Every name lives in
+(`v1.33.0`), the version `uv.lock` holds, where diffusers 0.39.0 keeps the hub below 2. Every
+line the rows cite reads the same in both, most at other line numbers, but the one about
+`protected`, which 2.4.0 has dropped, and quackd's endpoint code imports neither. Every file of
+huggingface_hub's these rows cite was compared with each release's wheel that day and was the
+same. Every name lives in
 [`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
 
 **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
@@ -3711,7 +3716,7 @@ container on 127.0.0.1 alone, with a scripted policy behind them
 The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
 worst: quackd's own token on the server is the lock, whatever the proxy in front does.
 
-### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 1.33.0)
+### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)
 
 | Name | Why quackd relies on it |
 |---|---|
@@ -3719,7 +3724,7 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 | `POST and GET /v2/endpoint/{namespace}; GET and DELETE /v2/endpoint/{namespace}/{name}; POST /v2/endpoint/{namespace}/{name}/pause, /resume and /scale-to-zero; GET /v2/endpoint/{namespace}/{name}/logs` | create, list, read, delete, pause and resume an endpoint, and the last lines of its log, each with the account's token. The list is filtered by quackd's own tag, `quackd-policy` |
 | `GET /v2/provider/quotas/{namespace}` | an instance type the account has no room left on is refused before anything is created |
 | `lower-case letters, digits and '-', 32 characters at most` | an endpoint's name, the NAME of `hf:NAME`, and any other is refused before Hugging Face is asked anything |
-| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else, and huggingface_hub's `protected` is the deprecated name for it |
+| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else. huggingface_hub 1.33.0 kept `protected` as a deprecated name for it, and 2.4.0 refuses it |
 | `Authenticated: anyone with a Hugging Face account` | the configuration page's words for who reaches an `authenticated` endpoint, so the proxy keeps out only somebody with no account, and the lock on the server is quackd's own token |
 | `"pending", "initializing", "updating", "updateFailed", "running", "paused", "failed", "scaledToZero"` | an endpoint's states. `up` waits through the first two, pauses one that fails, wakes one at zero with a request and resumes one that is paused |
 | `Endpoint: name, type, provider {vendor, region}, compute {accelerator, instanceType, instanceSize, scaling {minReplica, maxReplica, scaleToZeroTimeout}}, model {repository, revision, framework, image {custom {url, port, healthRoute}}, env, secrets, command, args}, tags` | the body an endpoint is created from: one replica at most, scaled to zero when idle, uv's image running `uvx` to install this quackd's release and `quackd policy serve` behind the proxy's TLS |
