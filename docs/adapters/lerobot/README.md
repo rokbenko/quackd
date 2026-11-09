@@ -3278,7 +3278,10 @@ A real arm that stopped answering before the probe let go of it ends that cell o
 `torque unknown: the arm did not answer the close` instead: quackd cannot tell whether it is
 holding itself up, so it kept whatever torque there is. Hold it, and cut its power. One whose
 own last read found torque off on some of its joints, servos that browned out and came back
-limp, ends it on `torque reads OFF: the arm may have dropped`.
+limp, ends it on `torque reads OFF: the arm may have dropped`. And one at its rest pose whose
+release at the close raised ends it on `torque unknown: the close's release did not finish`, or
+on `torque off in part: some joints may still hold` where LeRobot named the joints it could not
+confirm.
 
 ### Only this arm parks
 

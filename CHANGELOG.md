@@ -302,6 +302,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
   `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
   failed this time.
+- **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
+  probe lets go of an arm at its rest pose through the close's disconnect, and when that release
+  raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
+  arm held up away from its pose, where the close had been letting go of an arm lying in its fold.
+  It says `torque unknown: the close's release did not finish` now, and `torque off in part: some
+  joints may still hold` where LeRobot named the joints it could not confirm. What changes for you:
+  the row says the close was letting go of the arm, where it said the arm was holding itself up away
+  from its pose.
 
 ### Security
 
