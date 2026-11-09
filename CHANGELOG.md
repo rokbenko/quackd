@@ -251,6 +251,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **A panic in rustypot is met as the failed bus call it is.** pyo3 hands a panic in rustypot's Rust
+  code to Python as `PanicException`, which derives from `BaseException` and not from `Exception`.
+  The arm's backend, which the simulator and the mock run too, raised whatever a LeRobot call
+  raised, so a panic went through every handler that meets a failed call. A stop whose hold met one
+  raised it rather than say the hold did not reach the arm, a release raised it as though a Ctrl-C
+  had landed on it, and a close stopped where it met it, before its disconnect or before the line it
+  ends on. A LeRobot call that raises something that is not an `Exception`, other than a Ctrl-C, an
+  exit, a cancellation or a generator's close, now comes out as the `ConnectionError` LeRobot raises
+  for a failed call, naming what it raised: `a LeRobot call (disable_torque) raised PanicException:
+  ...`. A panic in a register read costs that reading, as a lost packet does, and a connect that
+  meets one is not tried again: it closes the port and says so, since every attempt switches every
+  motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
+  say what they say of any failed call, and the close runs to its end.
 
 ### Security
 

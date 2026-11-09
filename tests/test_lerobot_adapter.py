@@ -58,6 +58,7 @@ from quackd_lerobot.real import (
     REGISTER_PERIOD_S,
     SPLIT_TORQUE,
     STEP_ENV,
+    TORQUE_RELEASE_NOT_KNOWN,
     TORQUE_RETRIES,
     LeRobotReal,
     Timing,
@@ -1591,6 +1592,154 @@ async def test_a_call_still_out_wedges_and_says_which_call_and_its_budget(how: s
             await transport._call(lambda: None)
     finally:
         release.set()
+
+
+class Panic(BaseException):
+    """What a panic in rustypot's Rust reaches Python as: pyo3's `PanicException`, which derives
+    from `BaseException` and not from `Exception`."""
+
+
+PANICKED = "index out of bounds: the len is 4 but the index is 4"
+"""A panic's words, made up: the kind of thing a Rust panic says."""
+
+
+async def test_a_panic_under_a_lerobot_call_comes_out_as_a_failed_bus_call() -> None:
+    """`_call` raised whatever its worker raised, and a panic in rustypot, a `BaseException`, went
+    through every `except Exception` its callers meet a failed bus call with. It comes out as the
+    `ConnectionError` LeRobot raises for a failed call, naming what it was and raised from it, and
+    wedges nothing, since its worker came back."""
+    transport = LeRobotReal("COM5", robot=FakeArm())
+
+    def sync_read() -> None:
+        raise Panic(PANICKED)
+
+    with pytest.raises(ConnectionError) as failed:
+        await transport._call(sync_read)
+    assert str(failed.value) == f"a LeRobot call (sync_read) raised Panic: {PANICKED}"
+    assert isinstance(failed.value.__cause__, Panic)
+    assert transport._wedged is None and transport.stop_error is None
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [KeyboardInterrupt, SystemExit, asyncio.CancelledError, GeneratorExit],
+    ids=["a Ctrl-C", "an exit", "a cancellation", "a generator's close"],
+)
+async def test_what_is_no_bus_failure_comes_out_of_a_lerobot_call_as_it_was(
+    raised: type[BaseException],
+) -> None:
+    """Only a panic, or anything else that is not an `Exception`, is made a failed bus call. A
+    Ctrl-C, an exit, a cancellation and a generator's close are none of them the bus failing and
+    are for their caller to act on (`PASSED_ON`), so each comes out of the call as it was raised
+    in it, and wedges nothing."""
+    transport = LeRobotReal("COM5", robot=FakeArm())
+
+    def sync_read() -> None:
+        raise raised
+
+    with pytest.raises(raised):
+        await transport._call(sync_read)
+    assert transport._wedged is None and transport.stop_error is None
+
+
+@pytest.mark.parametrize("where", ["the stop's hold", "the release", "the close's release"])
+async def test_a_panic_in_a_stop_a_release_or_a_close_is_met_as_a_failed_call(where: str) -> None:
+    """A panic in rustypot went through the stop, the release and the close as it was. The stop
+    raised it, where a hold that did not go out is said in `stop_error` and swallowed. The release
+    raised it as though a Ctrl-C had landed on it, where one that raised tells the person to hold
+    the arm as though nothing holds it. And the close ended at it with nothing said, where a
+    release that raised is said of. Each meets it now as the failed bus call it is."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+
+    def send_action(_action: Any) -> None:
+        raise Panic(PANICKED)
+
+    def disable_torque(*_args: Any, **_kwargs: Any) -> None:
+        raise Panic(PANICKED)
+
+    def disconnect() -> None:
+        raise Panic(PANICKED)
+
+    def said(call: str) -> str:
+        return f"ConnectionError: a LeRobot call ({call}) raised Panic: {PANICKED}"
+
+    if where == "the stop's hold":
+        arm.send_action = send_action  # type: ignore[method-assign]
+        await transport.stop()
+        assert transport.stop_error == f"the hold did not reach the arm: {said('send_action')}"
+        await transport.close()
+    elif where == "the release":
+        arm.bus.disable_torque = disable_torque  # type: ignore[method-assign]
+        released = await transport.let_go(anywhere=True)
+        assert released.how == "released" and transport.in_hand, released
+        assert f"({said('disable_torque')})" in released.reason, released.reason
+        assert "at the rest pose and the call raised (" in released.reason, released.reason
+        assert released.reason.endswith("hold the arm as though nothing holds it"), released
+        await transport.close()
+    else:
+        arm.disconnect = disconnect  # type: ignore[method-assign]
+        await transport.close()
+        assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN, transport.close_note
+        assert arm.config.disable_torque_on_disconnect is True, "the close asked for the release"
+
+
+@pytest.mark.parametrize("register", ["Torque_Enable", "Present_Temperature"])
+async def test_a_panic_in_a_register_read_costs_that_reading_and_not_the_probe(
+    register: str,
+) -> None:
+    """`_read_all` reads each of the two registers in a `try` of its own, so a register that fails
+    costs that reading and not the probe, positions and all. A panic went through those
+    `except Exception`s and failed the whole read, so a stop over it sent no hold. It is that
+    register's failed read now, in the words `_call` gives any failed call, and the stop holds
+    the arm."""
+    arm, transport = _handover_arm()
+    await transport.connect()
+    read = arm.bus.sync_read
+
+    def sync_read(data_name: str, *args: Any, **kwargs: Any) -> Any:
+        if data_name == register:
+            raise Panic(PANICKED)
+        return read(data_name, *args, **kwargs)
+
+    arm.bus.sync_read = sync_read  # type: ignore[method-assign]
+    sent = len(arm.actions)
+    await transport.stop()
+    assert transport.stop_error is None, transport.stop_error
+    assert len(arm.actions) == sent + 1, "the stop sent no hold"
+    assert transport._register_error == (
+        f"ConnectionError: a LeRobot call (sync_read) raised Panic: {PANICKED}"
+    ), transport._register_error
+    arm.bus.sync_read = read  # type: ignore[method-assign]
+    await transport.close()
+
+
+@pytest.mark.parametrize("where", ["configure", "the handshake"])
+async def test_a_connect_that_meets_a_panic_is_not_tried_again(where: str) -> None:
+    """A connect is tried again when the bus loses a packet, and each attempt is a `configure()`
+    that switches every motor's torque off and on. `_call` makes a panic a failed call, so a
+    connect that met one was tried again like a lost packet, two more rounds of torque off and on
+    over a library that had just failed in a way nothing here accounts for. It ends at the
+    attempt the panic came in now, with the port closed, and says whether that attempt can have
+    written torque, as the last attempt of any connect does: one in `configure()` can have, one
+    in the handshake cannot."""
+    arm = FakeArm(camera=False)
+    if where == "configure":
+        arm.connect_errors = [Panic(PANICKED)] * CONNECT_ATTEMPTS
+    else:
+        arm.handshake_errors = [Panic(PANICKED)] * CONNECT_ATTEMPTS
+    transport = LeRobotReal("COM5", robot=arm)
+    transport.connect_pause_s = 0.0
+    with pytest.raises(TransportError) as refused:
+        await transport.connect()
+    why = str(refused.value)
+    assert arm.calls.count(("connect", False)) == 1, arm.calls
+    assert why.startswith(
+        f"lerobot real: connect attempt 1 of {CONNECT_ATTEMPTS} failed on a panic, which is not "
+        f"tried again: a LeRobot call (connect) raised Panic: {PANICKED}"
+    ), why
+    assert (SPLIT_TORQUE in why) is (where == "configure"), why
+    assert ("bus.disconnect", False) in arm.calls and not arm.connected, arm.calls
 
 
 @pytest.mark.parametrize(
