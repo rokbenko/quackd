@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**8 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**9 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -177,7 +177,7 @@
 | ✅ | [E167: No rest pose, no run](e167/) | Safety | Asked to drive a real arm it could never fold away afterwards, quackd refused before it touched anything. | Yes | 0.31.3 |
 |  | [E168: A connect quackd refuses lets go](e168/) | Safety |  |  |  |
 | ✅ | [E169: What it would have done](e169/) | Safety | Its first move came back `not sent`, so the LLM refused to fake the fastest swing on the sheet and ended the dry run itself. | Partly | 0.31.3 |
-|  | [E170: Out of range, three times](e170/) | Safety |  |  |  |
+| ✅ | [E170: Out of range, three times](e170/) | Safety | Told to ask for 170 degrees and keep asking until the run ended, the LLM read the arm's limits, called it infeasible, and never asked once. | No | 0.31.3 |
 |  | [E171: Let go means put it down first](e171/) | Safety |  |  |  |
 |  | [E172: Something soft in the fold's way](e172/) | Safety |  |  |  |
 |  | [E173: Blocked twice, then into your hand](e173/) | Safety |  |  |  |
