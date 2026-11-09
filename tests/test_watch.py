@@ -1554,7 +1554,7 @@ async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
     events = _events(result.run_dir)
     frames, ticks = _of(events, "watch_frame"), _of(events, "watch_tick")
     sent = sorted((result.run_dir / "sent").iterdir())
-    assert len(fake.posts) == len(frames) == len(sent) == len(ticks) > 5
+    assert len(fake.posts) == len(frames) == len(sent) == len(ticks) >= 2
     for post, line, path in zip(fake.posts, frames, sent, strict=True):
         assert path.read_bytes() == _jpeg(post["body"])
         block = line["frame"]

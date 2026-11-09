@@ -32,6 +32,8 @@ import signal
 import subprocess
 import sys
 import threading
+import time
+from collections.abc import Callable
 from typing import Any, Protocol
 
 POLL_S = 0.02
@@ -68,6 +70,10 @@ def _has_a_use(key: str) -> bool:
     return key in ENTER or key in BACKSPACE or key == CTRL_C or key.isprintable()
 
 
+def _nobody_to_tell(_moment: float) -> None:
+    pass
+
+
 class _Echoing:
     """What a key looks like on the screen, where nothing else draws it."""
 
@@ -90,8 +96,14 @@ class _Echoing:
 class ConsoleKeys(Protocol):
     """A console read a key at a time."""
 
-    def read(self) -> str:
-        """The next key, waiting for one. Empty when there will be no more, or once closed."""
+    def read(self, nothing_waiting: Callable[[float], None] = _nobody_to_tell) -> str:
+        """The next key, waiting for one. Empty when there will be no more, or once closed.
+
+        `nothing_waiting` is told each time the console was looked at and had no key in it, with
+        the moment taken before the look, so a key read after it came in after that moment. That is
+        all a read can say of when a key came: the thread reading it reads it when it gets to it,
+        and a thread held up, by another holding the GIL or by a machine with no CPU to spare,
+        reads everything that came in meanwhile as one burst once it gets going again."""
         ...
 
     def erase(self) -> None:
@@ -115,9 +127,11 @@ class WindowsKeys(_Echoing):
         self._console = console
         self._closed = threading.Event()
 
-    def read(self) -> str:
+    def read(self, nothing_waiting: Callable[[float], None] = _nobody_to_tell) -> str:
         while not self._closed.is_set():
+            looked = time.monotonic()
             if not self._console.kbhit():
+                nothing_waiting(looked)
                 self._closed.wait(POLL_S)
                 continue
             key = self._console.getwch()
@@ -218,9 +232,9 @@ class PosixKeys(_Echoing):
         self.close()
         signal.raise_signal(number)
 
-    def read(self) -> str:
+    def read(self, nothing_waiting: Callable[[float], None] = _nobody_to_tell) -> str:
         while not self._closed.is_set():
-            data = self._byte(POLL_S)
+            data = self._byte(POLL_S, nothing_waiting)
             if data is None:
                 self._keep_the_mode()
                 continue
@@ -250,15 +264,23 @@ class PosixKeys(_Echoing):
             ):
                 termios.tcsetattr(self._fd, termios.TCSANOW, self._mode)
 
-    def _byte(self, wait_s: float) -> bytes | None:
+    def _byte(
+        self, wait_s: float, nothing_waiting: Callable[[float], None] | None = None
+    ) -> bytes | None:
         """One byte from the terminal, `b""` where it has gone away, None where none came. Not
         while this process is in its background, where a read stops the whole process, robot and
-        all, until somebody brings it back."""
+        all, until somebody brings it back. `nothing_waiting` is told of a look that found none,
+        made before the wait for one so that the moment it is told is not a wait old."""
         if self._ahead:
             data, self._ahead = self._ahead, b""
             return data
         try:
-            ready, _, _ = select.select([self._fd], [], [], wait_s)
+            looked = time.monotonic()
+            ready, _, _ = select.select([self._fd], [], [], 0)
+            if not ready:
+                if nothing_waiting is not None:
+                    nothing_waiting(looked)
+                ready, _, _ = select.select([self._fd], [], [], wait_s)
             if not ready:
                 return None
             if _behind_the_terminal(self._fd):

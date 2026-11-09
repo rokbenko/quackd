@@ -481,6 +481,32 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   close does. No quackd command prints a second close's line: a flock member whose run raised can be
   closed a second time, and code of your own may close the transport twice. What changes for you:
   `close_note` after a second close is the first close's.
+- **A key held down answers no question that drops an arm on a busy machine either.** A bare Enter
+  answered the question that opens the jaws or lets go of an arm once nothing more had been read for
+  0.45 s after it, and a key thread held up for longer than that, by another thread holding the GIL or
+  by a machine with no CPU to spare, reads nothing for that long whatever the terminal is holding. So
+  Enter held down answered yes when its first repeat came out of 2 s of quiet, as on a keyboard set to
+  wait that long before it repeats, and the key thread was held up just after reading it: the wait
+  looked in the meantime and took the clock for the repeat standing alone, or the key thread got going
+  first and stamped the next repeat, which had come in 33 ms behind, with the moment it read it. At a
+  console the key thread now says each time it looks and finds no key waiting, an Enter stands alone
+  only once a look has found nothing behind it 0.45 s after it was read, and the Enter after it counts
+  from the last look before it. Where quackd reads a stream rather than a console, a terminal whose
+  mode it could not change, it still goes by the clock. What changes for you: one press after 2 s of
+  quiet is a yes about half a second after it is read, as before, and on Windows no longer sometimes
+  nearly a second.
+- **An Enter read late is judged by when it can have come in.** A bare Enter answers a question that
+  drops an arm only if it came in half a second after the question and 2 s after the Enter before it,
+  and at a console 2 s after a `q`, and all three were measured from when the key thread read it,
+  which a thread held up does long after. So an Enter pressed a moment after the question and read
+  past its half second said yes, as did the one repeat of a press held a moment too long, read 2 s
+  after the press, and the old habit of an Enter behind a `q`, read 2 s after the `q`. Each is measured
+  now from the earliest it can have come in, the last time the key thread looked and found the console
+  empty before it read it, and what the thread reads before it has once looked is taken for typed
+  ahead. A line with something typed on it is still judged by when it was read, and a stream is
+  measured as before. What changes for you: on a machine too busy to read your keys as you press them,
+  a bare Enter it read late can be passed by as too soon, saying so, where it used to answer. Press it
+  once more.
 - **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop did
   not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
   `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and why
@@ -717,15 +743,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
   robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
   the lift on the newer host is not settled.
-- **The industrial arm has met a real rosbridge, and no controller and no arm.** A job of its own in
-  CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi as
-  Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver in
-  rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written from
-  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so what a
-  JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that runs:
-  the same job with a stock controller on ros2_control's mock hardware is what would, and it is
-  owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner and
-  a date for one. Each body's names, its action, joints, readings and status topics, are a
+- **The industrial arm has met nothing real.** The fake bridge and the fake arms are written from
+  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, and nothing
+  has compared them with a running controller. A job in CI against ros2_control's mock hardware and
+  a stock JointTrajectoryController, in a `ros:jazzy` and a `ros:humble` container, is what would,
+  and it is owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an
+  owner and a date for one. Each body's names, its action, joints, readings and status topics, are a
   stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
   joints, and the connect checks the action and the joints against what the bridge lists; a status
   topic a cell names otherwise is never read, and then `can_move` believes the driver.
@@ -734,17 +757,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and MotoROS2 is read to watch only its own agent, so the bound is one move, at most 12 s at the
   speed asked, after which the arm holds. The heartbeat cancels what it can reach while quackd runs,
   and the pendant's stop is the brake.
-- **quackd looks for a goal still running only at connect, and only in the action's own status.**
-  MotoROS2 is read to publish no status, so on the MotoMini nothing is checked, and quackd's first
-  goal there waits behind one still running, unanswered until that one ends. On the other three a
-  status the bridge has not handed over within a second reads as nothing running, and neither a
-  goal another client sends after the check nor a trajectory published on the controller's own
-  topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
-- **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
-  moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
-  near where each joint already reads passes it at once, and a controller that said it succeeded
-  without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
-  within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
 - **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
   reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
   hold the instant between. A socket that is already down is never handed one.
@@ -817,6 +829,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
   `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
   robot.
+- **The industrial arm has met a real rosbridge, and no controller and no arm.** A job of its own in
+  CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi as
+  Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver in
+  rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written from
+  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so what a
+  JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that runs:
+  the same job with a stock controller on ros2_control's mock hardware is what would, and it is
+  owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner and
+  a date for one. Each body's names, its action, joints, readings and status topics, are a
+  stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
+  joints, and the connect checks the action and the joints against what the bridge lists; a status
+  topic a cell names otherwise is never read, and then `can_move` believes the driver.
+- **quackd looks for a goal still running only at connect, and only in the action's own status.**
+  MotoROS2 is read to publish no status, so on the MotoMini nothing is checked, and quackd's first
+  goal there waits behind one still running, unanswered until that one ends. On the other three a
+  status the bridge has not handed over within a second reads as nothing running, and neither a
+  goal another client sends after the check nor a trajectory published on the controller's own
+  topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
+- **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
+  moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
+  near where each joint already reads passes it at once, and a controller that said it succeeded
+  without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
+  within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
 - **On rosbridge_server 2.7.1, which Jazzy ships, a parameter read can take rosapi down.** rosapi keeps
   a client per node and stamps it with a time of the wrong clock until a read has used it. A read that
   finds the node's parameter service not ready leaves it stamped that way, and rosapi's own cleanup
