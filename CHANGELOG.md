@@ -251,6 +251,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **A file nested too deep for Python to parse is refused, where it stopped the policy server.** A
+  checkpoint's `config.json` or a pinned model's JSON nested deeper than Python will follow raised a
+  `RecursionError` nothing caught, so `quackd policy serve` ended on a traceback. It is refused now in
+  the sentence any file that is not JSON gets. The refusals that name a file in a pinned model's
+  directory now quote it, as the one for an unknown file always did, since a name there can hold
+  anything. What changes for you: nothing to do. `tests/test_policy_pipeline.py` fails without this.
 
 ### Security
 

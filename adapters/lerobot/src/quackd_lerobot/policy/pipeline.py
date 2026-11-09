@@ -963,7 +963,7 @@ def check_fixed(
 def _json(path: Path, what: str) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as e:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as e:
         raise PipelineRefused(f"{what} is not JSON quackd can read: {_one_line(e)}") from None
 
 
@@ -999,16 +999,16 @@ def check_pinned(directory: Path, spec: str) -> None:
             )
         if folded == ADAPTER_CONFIG:
             raise PipelineRefused(
-                f"{spec} holds a PEFT adapter ({name}), which transformers loads onto a model it "
-                "builds from that directory, or, with no config.json beside it, loads the base "
-                "model the adapter names in its place, which no pin fixes: pin a model with the "
-                "adapter merged into its weights"
+                f"{spec} holds a PEFT adapter ({name[:80]!r}), which transformers loads onto a "
+                "model it builds from that directory, or, with no config.json beside it, loads "
+                "the base model the adapter names in its place, which no pin fixes: pin a model "
+                "with the adapter merged into its weights"
             )
-        said = _json(path, f"{spec}'s {name}") if folded.endswith(".json") else None
+        said = _json(path, f"{spec}'s {name[:80]!r}") if folded.endswith(".json") else None
         if isinstance(said, Mapping) and CODE_MAP_KEY in said:
             raise PipelineRefused(
-                f"{spec}'s {name} maps its classes to code ({CODE_MAP_KEY}), which loading it "
-                "would ask to run: quackd loads a model transformers has the code for, and "
+                f"{spec}'s {name[:80]!r} maps its classes to code ({CODE_MAP_KEY}), which loading "
+                "it would ask to run: quackd loads a model transformers has the code for, and "
                 "nothing a repository brings with it"
             )
         kernel = _kernel_name(said)

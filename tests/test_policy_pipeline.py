@@ -488,7 +488,22 @@ def test_a_pinned_models_files_are_read_whatever_the_case_of_their_names(
     where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
     (where / name).write_text(content)
     assert [p.name for p in where.iterdir()] == [name]
-    with pytest.raises(P.PipelineRefused, match=needle):
+    with pytest.raises(P.PipelineRefused, match=needle) as refused:
+        _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+    assert repr(name) in str(refused.value), "a file's name is quoted, as it may hold anything"
+
+
+def test_a_json_too_deep_to_read_is_refused(tmp_path: Path) -> None:
+    """`json.loads` raises a `RecursionError` on nesting deep enough, which nothing caught, so
+    one such file, the checkpoint's own or a pinned model's, stopped the server with a
+    traceback. It is refused as any file that is not JSON is."""
+    deep = "[" * 100_000 + "]" * 100_000
+    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
+        _fetch(_hub(tmp_path / "own", config=deep), fps=float(FPS))
+    hub = _smolvla(tmp_path / "pinned")
+    where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
+    (where / "config.json").write_text(deep)
+    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
         _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
 
 
