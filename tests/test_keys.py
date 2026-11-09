@@ -37,7 +37,6 @@ from quackd.keys import (
     is_a_console,
 )
 from quackd.safety import (
-    ASK_POLL_S,
     ENTER_ALONE_S,
     ENTER_QUIET_S,
     TYPED_AHEAD_S,
@@ -574,6 +573,12 @@ async def test_ctrl_c_read_as_a_key_is_still_a_press() -> None:
     assert ks.presses == 1 and ks.abort.is_set()
 
 
+async def _asked(ks: KillSwitch) -> None:
+    """The question is up. The thread it was handed to gets there when it gets there, and a key
+    thread gone before that is no question it has gone from."""
+    assert await asyncio.to_thread(ks._line_wanted.wait, 5)
+
+
 def _reader(ks: KillSwitch) -> threading.Event:
     """A key thread that stays alive until the event this returns is set."""
     done = threading.Event()
@@ -590,7 +595,7 @@ async def test_a_press_at_a_question_answers_no() -> None:
     done = _reader(ks)
     try:
         asking = asyncio.create_task(asyncio.to_thread(ks.ask, ""))
-        await asyncio.sleep(ASK_POLL_S)
+        await _asked(ks)
         ks._fire("Ctrl-C")
         assert await asyncio.wait_for(asking, timeout=5) == ""
         assert ks.unanswered is not None and "kill switch" in ks.unanswered, "the record says so"
@@ -605,7 +610,7 @@ async def test_a_question_the_key_thread_has_gone_from_answers_no() -> None:
     ks._loop = asyncio.get_running_loop()
     done = _reader(ks)
     asking = asyncio.create_task(asyncio.to_thread(ks.ask, ""))
-    await asyncio.sleep(ASK_POLL_S)
+    await _asked(ks)
     done.set()
     assert await asyncio.wait_for(asking, timeout=5) == ""
     assert ks.unanswered is not None and "no key" in ks.unanswered, "the record says so"
@@ -660,7 +665,7 @@ async def test_a_question_still_takes_its_line() -> None:
     done = _reader(ks)
     try:
         asking = asyncio.create_task(asyncio.to_thread(ks.ask, ""))
-        await asyncio.sleep(ASK_POLL_S)
+        await _asked(ks)
         ks._lines.put("y")
         assert await asyncio.wait_for(asking, timeout=5) == "y"
         assert ks.unanswered is None

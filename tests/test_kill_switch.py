@@ -722,6 +722,13 @@ async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_sto
     assert told == [ENTER_TOO_SOON], "said once a wait, at the first it passes by"
 
 
+def _twice_in_a_breath(ks: KillSwitch) -> None:
+    """Two Enters in one turn of the loop, so that no stall can come between them and leave the
+    first standing alone."""
+    ks._heard_enter("")
+    ks._heard_enter("")
+
+
 async def test_the_terminal_says_when_it_passes_an_enter_by(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -736,9 +743,7 @@ async def test_the_terminal_says_when_it_passes_an_enter_by(
     hand.bind(ks)
     said: list[str] = []
     monkeypatch.setattr(hand, "say", said.append)
-    loop = asyncio.get_running_loop()
-    loop.call_later(0.05, ks._heard_enter, "")
-    loop.call_later(0.1, ks._heard_enter, "")
+    asyncio.get_running_loop().call_later(0.05, _twice_in_a_breath, ks)
     came = await hand.wait("open?", timeout_s=0.25, until_abort=False, deliberate=True)
     assert came is False
     assert said == ["open?", ENTER_TOO_SOON]
@@ -978,14 +983,12 @@ async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:
 
 
 async def test_an_enter_twice_in_a_breath_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    alone = 0.5  # room for a loaded runner's stall between the two
+    alone = 0.1
     monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", alone)
     ks, _ = switch()
-    loop = asyncio.get_running_loop()
-    loop.call_later(TYPED_AHEAD_S + 0.1, ks._heard_enter, "")
-    loop.call_later(TYPED_AHEAD_S + 0.15, ks._heard_enter, "")
+    asyncio.get_running_loop().call_later(TYPED_AHEAD_S + 0.1, _twice_in_a_breath, ks)
     got = await ks.wait_for_enter(
-        timeout_s=TYPED_AHEAD_S + 0.15 + alone * 2, until_abort=False, deliberate=True
+        timeout_s=TYPED_AHEAD_S + 0.1 + alone * 3, until_abort=False, deliberate=True
     )
     assert got is False, "two presses in a breath are a slip, and pressing it once more answers"
 
