@@ -77,6 +77,24 @@ async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> No
         assert "camera_fov_deg" not in (await MicroduckAdapter(garbled).connect()).limits, odd
 
 
+def test_each_package_makes_its_body_through_the_one_path() -> None:
+    """`make_for` is what the Microduck's `make` and Huebot's come to, so a fix to how a transport
+    is built reaches both. Each gets an adapter of its own class over its own body."""
+    from quackd_huebot import HuebotAdapter
+    from quackd_huebot import make as make_huebot
+    from quackd_huebot.body import HUEBOT
+    from quackd_microduck import MICRODUCK, make_for
+    from quackd_microduck import make as make_microduck
+
+    assert type(make_microduck("mock")) is MicroduckAdapter
+    assert type(make_huebot("mock")) is HuebotAdapter
+    duck = make_for(MICRODUCK, "mock", MicroduckAdapter, robot_id="d")
+    shim = make_for(HUEBOT, "mock", HuebotAdapter, robot_id="h")
+    assert type(duck) is MicroduckAdapter and duck.body is MICRODUCK
+    assert type(shim) is HuebotAdapter and shim.body is HUEBOT
+    assert (duck.robot_id, shim.robot_id) == ("d", "h")
+
+
 def test_huebot_is_a_robot_adapter_though_it_is_one_record_over_the_microducks() -> None:
     """Its adapter subclasses the Microduck's and fixes the body, and `RobotAdapter` is a protocol
     read at run time, so nothing else would notice a member lost in the subclass."""

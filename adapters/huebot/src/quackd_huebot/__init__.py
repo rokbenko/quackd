@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 
-from quackd.adapters.base import one_camera_url, refuse_rest_pose
+from quackd.adapters.base import refuse_rest_pose
 from quackd.adapters.manifest import RobotManifest
 from quackd.verbs.registry import Precondition, Verb
 from quackd_huebot.body import BLURB, DATASHEET, HUEBOT, SKILLS_OF
-from quackd_microduck import MicroduckAdapter
+from quackd_microduck import MicroduckAdapter, make_for
 from quackd_microduck import manifest_for as _manifest_for
 from quackd_microduck import offered_skill_verbs as _offered_skill_verbs
 from quackd_microduck.verbs import conditions_for, verbs_for
@@ -107,14 +107,12 @@ def make(
     rest_pose: dict[str, float] | None = None,
 ) -> HuebotAdapter:
     refuse_rest_pose("huebot", rest_pose)
-    url = one_camera_url(camera_url, spec=f"huebot:{backend}")
     # `token`, `seed` and `live` are accepted and unused, deliberately: the factory calls every
     # adapter's `make` with the same keywords. The protocol has no authentication at all, so the
     # shim is reached over ssh or on the robot itself, never through an open port.
-    from quackd_microduck.transports.factory import make_transport
-
-    transport = make_transport(backend, body=HUEBOT, address=address, camera_url=url)
-    return HuebotAdapter(transport, robot_id=robot_id)
+    return make_for(
+        HUEBOT, backend, HuebotAdapter, robot_id=robot_id, address=address, camera_url=camera_url
+    )
 
 
 __all__ = [

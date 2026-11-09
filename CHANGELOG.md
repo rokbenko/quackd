@@ -92,6 +92,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   UR7e as a robot type. What changes for you: `quackd robot add cell-7 described:ur7e` registers
   one, the README's badge counts 12 described bodies, and a run that ends infeasible for want of 6
   kg of payload names it last, beside the LBR iiwa. Its figures have had one reader.
+- **`make_for`, for a package built on the Microduck's.** `quackd_microduck.make_for(body, backend, adapter)`
+  builds the transport and the adapter for one body, which is what the Microduck's `make` and Huebot's
+  come to once each has refused what its body does not take.
 
 ### Changed
 

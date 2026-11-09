@@ -9316,12 +9316,16 @@ async def test_a_cancelled_gripper_stops_sending() -> None:
     transport = LeRobotReal("COM5", robot=arm, rest_pose=pose, clock=SteppedClock())
     await transport.connect()
     first_goal = asyncio.Event()
+    landed = threading.Event()
     loop = asyncio.get_running_loop()
     send = arm.send_action
 
     def sending(action: dict[str, float]) -> dict[str, float]:
         loop.call_soon_threadsafe(first_goal.set)
-        return send(action)
+        try:
+            return send(action)
+        finally:
+            landed.set()
 
     arm.send_action = sending  # type: ignore[method-assign]
     closing = asyncio.ensure_future(transport.close_gripper())
@@ -9329,6 +9333,9 @@ async def test_a_cancelled_gripper_stops_sending() -> None:
     closing.cancel()
     with pytest.raises(asyncio.CancelledError):
         await closing
+    # the goal on its way to the bus when the press came finishes in its worker thread, and it was
+    # sent before the cancellation, so what is counted is what follows it
+    assert await asyncio.to_thread(landed.wait, 5.0), "the goal under way never landed"
     sent = len(arm.actions)
     for _ in range(5):
         await asyncio.sleep(0)
