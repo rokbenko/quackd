@@ -3314,6 +3314,25 @@ async def test_a_head_somebody_else_steers_is_let_go_of(robotd: FakeRobotd) -> N
     await t.close()
 
 
+@pytest.mark.parametrize(("release", "named"), [("0.18.8", True), ("0.18.7", False)])
+async def test_a_gaze_an_emotion_may_have_taken_says_so_where_one_can_play(
+    robotd: FakeRobotd, release: str, named: bool
+) -> None:
+    """An emotion has the head while it plays and nothing in the state says one is, so a gaze let
+    go during one said another client was steering the head, which sent whoever read it looking
+    for a second program. Only a robotd from the release that plays them names it."""
+    robotd.daemon_version = release
+    robotd.head_alpha = 0.5
+    t = await _looked(robotd, 30.0)
+    robotd.steering = [0.0, 0.0, math.radians(-40.0), 0.0]
+    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    released = (await t.get_state()).extras["gaze_released"] or ""
+    assert "another client is steering the head" in released
+    assert ("an emotion is playing" in released) is named, released
+    assert "or robotd is not taking quackd's robot.head" in released
+    await t.close()
+
+
 async def test_a_head_held_still_off_the_gaze_is_somebody_elses(robotd: FakeRobotd) -> None:
     """robotd's smoothing is a setting, and at 1 it passes every head straight through. A gamepad
     posing the head sends its pose at least ten times a second, so quackd's re-send has the slot

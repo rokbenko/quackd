@@ -423,10 +423,6 @@ Also in scope:
   code imported by a path it chose or a repository's own code trusted, a model a checkpoint
   names loading at a revision nobody pinned, or a policy the arm's connect did not check
   starting a segment. No quackd command loads a checkpoint in the arm's own process.
-  `load_policy()` in the arm's backend, an older Python helper that nothing in quackd calls,
-  still would, with none of the checks above and no check at connect, as the `LOAD_POLICY` row in
-  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-070)
-  says. Whether to remove it is an open item in PLAN.md.
 - **The policy server on a Hugging Face Endpoint** (`quackd policy endpoint`,
   `adapters/lerobot/src/quackd_lerobot/policy/endpoint.py`,
   [docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint)), which rents a

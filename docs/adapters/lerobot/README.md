@@ -1212,10 +1212,8 @@ that reason. On `lerobot:real` and `lerobot:mujoco` they are **in the manifest o
 names a policy server** with `--policy-url` ([below](#a-run-with-a-policy-server)), or when a
 policy object is handed to the backend in Python. A checkpoint loads in
 [a policy server of its own](#a-policy-in-a-process-of-its-own-quackd-policy-serve), and the arm
-reaches it through `RemoteRunner`, the server's client. `real.py` still has `load_policy(path)`,
-which would load one in the arm's own process and which nothing calls or has run: it is the
-`LOAD_POLICY` row in [the policies' table](#the-policies-upstream-lerobot-070) below. Setting a
-server up, on the laptop or on a rented GPU, is [guides/policies.md](../../guides/policies.md).
+reaches it through `RemoteRunner`, the server's client. Setting a server up, on the laptop or on
+a rented GPU, is [guides/policies.md](../../guides/policies.md).
 
 `pick` runs its policy as a segment, a loop of its own on the arm's clock that reads the arm,
 judges the reading, takes the policy's goal and sends it, and the verb waits for that loop to
@@ -1344,10 +1342,9 @@ A checkpoint's processors are code: loading one imports whatever class its JSON 
 quackd command loads a checkpoint in the process that owns the arm's serial bus
 ([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)), and
 [guides/policies.md](../../guides/policies.md) is how to set one up, with the licences of the ones
-there are. The one thing in quackd that would is `load_policy()`, an older Python helper that
-nothing in quackd calls (`LOAD_POLICY`, in the same table). The policy runs in a server you start,
-in a terminal of its own, on the laptop or on a rented GPU you reach through `ssh -L`, and the arm's
-side reaches it over HTTP on port 9875, with a client that needs no torch and no LeRobot.
+there are. The policy runs in a server you start, in a terminal of its own, on the laptop or on a
+rented GPU you reach through `ssh -L`, and the arm's side reaches it over HTTP on port 9875, with a
+client that needs no torch and no LeRobot.
 It serves a LeRobot checkpoint named as `REPO@REVISION`
 ([below](#serving-a-checkpoint)), and two scripted policies that need no torch either:
 `scripted:hold` holds the arm where it reads, so a `manipulate` of it ends on a stall, and
@@ -3631,8 +3628,7 @@ Line endings in the model do not count, because Git for Windows checks it out wi
 
 `pick` and `manipulate` hand the arm to a learned policy, and a quackd command loads a LeRobot
 checkpoint only in [a policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve),
-never in the process that owns the arm's bus. Only `load_policy()`, which nothing in quackd
-calls, would load one there (`LOAD_POLICY`, below). The names quackd relies on here are read
+never in the process that owns the arm's bus. The names quackd relies on here are read
 against lerobot 0.7.0, at the commit its tag names,
 [`410c095`](https://github.com/huggingface/lerobot/tree/410c095eacc0011d998a73383eb94abed2715af0)
 (`v0.7.0`), the commit [the arm's own table](#upstream-api) is pinned to as well. They
@@ -3669,7 +3665,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `lerobot.policies.utils.make_robot_action(action_tensor, ds_features)` | one action row to a dict by name, so a chunk is turned into actions a row at a time |
 | `ACTConfig.chunk_size and n_action_steps` | how many actions one inference predicts and how many of them are played, 100 and 100 for ACT and 50 and 50 for SmolVLA. The server reports both |
 | `ACTConfig.temporal_ensemble_coeff` | set, ACT is asked every step with `n_action_steps` 1, which is the loop's tick mode |
-| `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no quackd command loads a checkpoint beside the arm's bus. Only `load_policy()` would (`LOAD_POLICY`), and nothing in quackd calls it |
+| `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no quackd command loads a checkpoint beside the arm's bus |
 | `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it, and it refuses a step that keeps its tokenizer inside the checkpoint instead (the artifacts row below). A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, or which attention to build it with, so a pinned model whose files map a class to code, name a repository or a flash attention as their attention, name experts or carry a `quantization_config`, each a way to a kernel on the Hub that transformers would run once the `kernels` package is installed, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused. A server with `kernels` installed at a version transformers takes loads no checkpoint at all |
 | `a processor step's artifacts: directories inside the checkpoint that LeRobot loads in place of the config keys they name` | new at 0.7.0: a save writes what a step saved, a tokenizer step's tokenizer every time, into a directory inside the checkpoint, names that directory in the step's config and declares it in the step's `artifacts`, and a load puts the directory in place of whatever the step names. Every SmolVLA, pi05, pi0 and X-VLA that LeRobot 0.7.0 saves names its tokenizer this way. quackd fetches no such directory and checks none, so the server refuses any step that carries `artifacts`, before a pin or a weight, and a checkpoint LeRobot 0.7.0 saved with a tokenizer step is refused until quackd fetches and checks a checkpoint's own artifact directories |
 | `config.json, model.safetensors, policy_preprocessor.json, policy_postprocessor.json, train_config.json` | the files a checkpoint is read from, each fetched at the revision named, the config and the processors before anything else, and nothing else of the repository |
@@ -3720,7 +3716,6 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 |---|---|
 | `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is how training made the chunk relative, and since 0.7.0 what LeRobot's own loop does too (`RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it while a policy bound to it still plays the chunk predicted from it`), so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
-| `LOAD_POLICY` | `load_policy()` in the arm's backend builds a policy in the arm's own process, the one no checkpoint is to load in, and hands the pre-processor a raw observation `build_inference_frame` would have shaped first. Nothing calls it and nothing has run it. What reaches the arm from any policy is quackd's rule: the verbs' step cap, and a goal outside the travel clipped and counted, unlike a verb's goal, which is refused |
 
 ## The endpoint's upstream: Hugging Face Inference Endpoints
 

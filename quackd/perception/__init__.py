@@ -55,9 +55,10 @@ def lens_of(manifest: RobotManifest, given: float | None) -> tuple[float | None,
     `camera_fov_deg`, with the words of the assumption the body named under `ASSUMED_LENS` when
     it named one.
 
-    A Microduck on mediad's `/frame` takes its lens from the first frame's shape, which is the
-    camera module's design and not anybody's measurement. A lens like that was taken for a
-    measured one: every detection through it said it was calibrated, and the warning to pass
+    A Microduck on mediad's `/frame` takes its lens from the first frame's shape: an alpha's from
+    the camera module's design, a beta's from upstream's solve of that camera's focal length, and
+    neither from anybody's measurement of the camera on this robot. A lens like that was taken for
+    a measured one: every detection through it said it was calibrated, and the warning to pass
     `--fov-deg` never came. The assumption travels with the lens now, so it is neither."""
     if given:
         return float(given), None

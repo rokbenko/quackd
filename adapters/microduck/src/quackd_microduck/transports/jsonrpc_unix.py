@@ -2926,7 +2926,8 @@ class JsonRpcUnixTransport:
         with every frame, however slowly robotd is set to smooth, and once a glance has faded it
         never moves away from it. A gamepad posing the head, `robotctl`, or another client that
         writes the slot moves it toward a head of its own, away from quackd's, and so does
-        robotd glancing again because it is not taking quackd's `robot.head`.
+        robotd glancing again because it is not taking quackd's `robot.head`, and an emotion,
+        which has the head while it plays and which no field of the state names.
 
         So the newest two frames are compared, both read at least `head_fade_s` and a hold
         period after the head was last sent this target, by when any glance has faded. A head
@@ -2956,9 +2957,15 @@ class JsonRpcUnixTransport:
             if off_now > off_before
             else f"came no closer to the {held} quackd held, from {_shown(before)} to {_shown(now)}"
         )
+        # an emotion has the head while it plays, and no field of robot.state names it
+        emotion = (
+            ", an emotion is playing (robotd logs 'emotion started' as one begins)"
+            if self._plays_emotions()
+            else ""
+        )
         return (
-            f"robot.state.head {moved}: another client is steering the head, or robotd is not "
-            "taking quackd's robot.head"
+            f"robot.state.head {moved}: another client is steering the head{emotion}, or robotd "
+            "is not taking quackd's robot.head"
         )
 
     def _gaze_record(self) -> dict[str, Any] | None:

@@ -666,7 +666,10 @@ and a read that got the bus just before a write says nothing about what that wri
   leaves the pad's stop as the newest twist until the pilot sends its next walk. What ends a
   quackd walk outright is quackd's own `stop`, from Ctrl-C or `q` at the terminal, or the pad
   button that sits the duck, `sit_toggle` on A unless the robot's owner moved it, since quackd
-  sends no walk to a duck that is not standing. Nobody has tried any of this on a duck.
+  sends no walk to a duck that is not standing. On robotd daemon-v0.18.8 or later a stock pad's Y
+  and two bumpers end one too: each plays an emotion, robotd holds the twist at zero while one
+  plays, and the verb fails with `robotd has not taken robot.move`. Nobody has tried any of this
+  on a duck.
 - **robotd's deadman does not fire while quackd walks the duck.** It zeroes a twist older than
   0.5 s, and quackd re-sends its twist every 100 ms for as long as a verb walks, so the deadman
   stops the legs only once quackd's twists stop arriving: a tunnel pulled out, a laptop asleep,
@@ -723,14 +726,11 @@ and a read that got the bus just before a write says nothing about what that wri
   at its own speed, so the power switch is still the only stop for that stretch.
 - **The policy runs in a server of its own**, `quackd policy serve`, and no quackd command loads
   a checkpoint in the process that holds the serial bus, because a checkpoint's processors can
-  name code to import. `load_policy()` in the arm's backend, an older Python helper that nothing
-  in quackd calls, still would, with none of the server's checks and no check at connect that
-  what it built fits the arm (the `LOAD_POLICY` row in
-  [adapters/lerobot/README.md](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
-  The server's answers move the arm, so it wants a token on every request and binds loopback unless
-  a TLS proxy stands in front of it, and the arm checks at connect, before any torque, that the
-  policy fits this arm's motors, cameras and calibrated travel, and that the latency its server
-  declares is one its chunks can carry ([guides/policies.md](../guides/policies.md),
+  name code to import. The server's answers move the arm, so it wants a token on every request
+  and binds loopback unless a TLS proxy stands in front of it, and the arm checks at connect,
+  before any torque, that the policy fits this arm's motors, cameras and calibrated travel, and
+  that the latency its server declares is one its chunks can carry
+  ([guides/policies.md](../guides/policies.md),
   [SECURITY.md](../../SECURITY.md)). A server that stops answering ends the segment with the arm
   held, starved on the arm once what was queued has played out, after 1 s, or 5 s between
   chunks with `--no-async-chunks`, and on the client's own deadline on the simulator, or on the

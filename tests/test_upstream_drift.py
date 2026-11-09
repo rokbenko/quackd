@@ -1377,6 +1377,40 @@ def test_an_issue_for_an_upstream_no_adapter_reads_is_closed_saying_why() -> Non
         assert gh.verbs() == ["label create", "issue list"]
 
 
+def test_a_night_an_adapter_could_not_be_read_on_is_no_clean_night(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An adapter that did not import takes its upstreams out of the walk, and with nothing else
+    wrong the night said it was clean. So it says who was not read, and exits as could not check."""
+    script = _script()
+    module = _module([_ref("READ", "src/thing.py", 2)])
+    monkeypatch.setattr(script, "upstream_rows", lambda: [("widget", module)])
+    monkeypatch.setattr(
+        script, "web_fetch", Store(_github(script, {"src/thing.py": (PINNED, PINNED)}))
+    )
+    report, findings = tmp_path / "summary.md", tmp_path / "drift.json"
+    argv = ["--report", str(report), "--json", str(findings)]
+
+    monkeypatch.setattr(script, "unread_adapters", lambda: ["toddlerbot could not be read: boom"])
+    assert script.main(argv) == 2
+    assert "Not read tonight" in report.read_text(encoding="utf-8")
+    assert "toddlerbot could not be read: boom" in report.read_text(encoding="utf-8")
+    assert json.loads(findings.read_text(encoding="utf-8"))["unread"] == [
+        "toddlerbot could not be read: boom"
+    ]
+
+    monkeypatch.setattr(script, "unread_adapters", lambda: [])
+    assert script.main(argv) == 0
+    assert "Not read tonight" not in report.read_text(encoding="utf-8")
+    assert json.loads(findings.read_text(encoding="utf-8"))["unread"] == []
+
+    def unasked() -> list[str]:
+        raise AssertionError("a run of one upstream walks no adapter")
+
+    monkeypatch.setattr(script, "unread_adapters", unasked)
+    assert script.main(["--only", "widget"]) == 0
+
+
 def test_the_command_says_which_upstreams_it_knows_only_after_a_walk_of_every_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
