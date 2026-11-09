@@ -276,6 +276,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   timeout's now do, and keeps its class and its code. Such a stop still does not reach the arm, as
   0.31.3's Known limitations says, and the power switch is still what stops it; now the line says
   so. What changes for you: the line a run ends on, and a chat's answer, can be longer.
+- **`quackd doctor` prints a camera's address and a long assumption whole.** A camera that names no
+  address of its own printed the one it was given, and `--camera-url` given twice arrives as a list,
+  so the row read `url ['opencv://0']`. It reads `opencv://0` now, or the addresses joined by commas.
+  And the assumptions table cut a long ref's name in its `what` column with an ellipsis at a hundred
+  columns or fewer, where its note column folded. Both columns fold now. What changes for you:
+  nothing to do.
+- **Huebot and rosarm are refused over a Microduck or rosbridge package from another release.**
+  quackd refuses one of its adapters that is from another release than the core, and Huebot's package
+  runs the Microduck's code as its own, as rosarm's runs rosbridge's, but only each adapter's own
+  version was asked. So an install that upgraded one package alone could run Huebot over an older
+  Microduck's transport. The package under each is held to the core's release now, read from the
+  installed metadata, with the same words to reinstall them together. What changes for you: nothing,
+  on an install that keeps the packages together.
 
 ### Security
 

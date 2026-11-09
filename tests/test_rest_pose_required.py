@@ -415,3 +415,31 @@ def test_an_adapter_from_another_release_is_refused_before_it_is_described(
     factory.describe(factory.parse_robot_spec("lerobot:mock"))
     stranger = types.SimpleNamespace(__version__="9.9.9")
     factory._same_release("a-third-partys-arm", stranger)
+
+
+def test_an_adapter_built_on_another_is_refused_over_a_base_from_another_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Huebot's package is built on the Microduck's, and rosarm's on rosbridge's, so each runs the
+    other's code as its own. Its own version matching the core said nothing of the package under
+    it, which an install that upgraded one package alone leaves behind."""
+    import importlib.metadata as metadata
+
+    from quackd import __version__ as core
+    from quackd.adapters import factory
+    from quackd.adapters.base import AdapterError
+
+    assert factory._built_on("huebot") == ("microduck",)
+    assert factory._built_on("rosarm") == ("rosbridge",)
+    assert factory._built_on("microduck") == ()
+    major, minor, *_ = core.split(".")
+    read = metadata.version
+    monkeypatch.setattr(
+        metadata,
+        "version",
+        lambda name: f"{major}.{int(minor) - 1}.0" if name == "quackd-microduck" else read(name),
+    )
+    with pytest.raises(AdapterError, match=r"built on quackd-microduck .* reinstall them together"):
+        factory.describe(factory.parse_robot_spec("huebot:mock"))
+    # the Microduck itself is asked by its module's own version, which is the core's
+    factory.describe(factory.parse_robot_spec("microduck:sim2d"))
