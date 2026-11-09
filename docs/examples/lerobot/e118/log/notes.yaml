@@ -1,0 +1,36 @@
+hook: Asked to stop halfway, the LLM could only stop an arm that had already stopped.
+goal_met: "No"
+why_example: >
+  `stop` is the one verb quackd always allows, and it is what an LLM reaches for when something looks
+  wrong. How far the arm still travels after it decides how much room a person or an object needs,
+  and nobody had measured that on this arm. This example asks for the number.
+why_result: >
+  An LLM running a task cannot brake its own move. `move_joints` waits for the arm to arrive before the
+  LLM gets another turn, so by the time it can call `stop` the arm has already stopped. Anyone counting
+  on an LLM to halt a move partway should know that: a stop during a move has to come from outside it.
+goal: >
+  Show how far the arm travels after `stop` is called during a sweep, a number nobody had measured.
+expected: >
+  `stop` lands during the sweep and the arm travels a small number of degrees before it settles,
+  somewhere from 1° to 10°.
+showed:
+  - >
+    The LLM took the pan to one end of its range and back to the middle in six moves of 12 s each, at
+    about 3°/s, and ended at -0.6°, within 1° of the midpoint.
+  - >
+    It called `stop` about 2.4 s after the last move had finished. The arm read -0.6° before the `stop`
+    and -0.6° after it, so there was nothing left to brake, and `stopped (velocity zeroed)` says only
+    that the call went through.
+  - >
+    `move_joints` waits for the arm to arrive, so the LLM only gets its next turn once a move is over.
+    It said so itself in its closing reason: this was `not braking during an active move`.
+did_not_show:
+  - >
+    It does not show how far the arm travels after a `stop`, which is what this example set out to
+    measure. The range of 1° to 10° is still a guess. The run's SUCCESS is the LLM's verdict on the
+    sweep, and the measurement did not happen.
+  - >
+    It does not show `stop` halting anything, because nothing was moving when it landed. E186 is the
+    example that brakes a moving arm with no LLM in the way.
+  - >
+    The GIF plays at 10x, so the arm's speed cannot be read off it.

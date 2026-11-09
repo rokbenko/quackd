@@ -532,6 +532,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **Huebot's page says what the maker's code is.** It called walking-robot-kit the servo bus alone,
   where NOTICE, from the maker's README, says it is the kit's electronics, firmware and control
   software. The page and `quackd_huebot.upstream_api` say that now.
+- **E119 has a log, in three parts: the rest pose, the hand-off and recording a new rest pose.** One
+  README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
+  `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
+  with `--text`.
 
 ### Known limitations
 

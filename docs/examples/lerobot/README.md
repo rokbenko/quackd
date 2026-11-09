@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**2 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**4 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -125,8 +125,8 @@
 |  | [E115: "Will it crush a grape?"](e115/) | Safety |  |  |  |
 | ✅ | [E116: Unplug the USB mid-move](e116/) | Safety | The USB cable came out mid-reach. The run ended under half a second after the arm's last answer, and the arm stayed where it was. | Yes | 0.31.3 |
 |  | [E117: Ctrl-C mid-move](e117/) | Safety |  |  |  |
-|  | [E118: The brake test](e118/) | Safety |  |  |  |
-|  | [E119: Rest pose and hand-off, first time on hardware](e119/) | Safety |  |  |  |
+| ✅ | [E118: The brake test](e118/) | Safety | Asked to stop halfway, the LLM could only stop an arm that had already stopped. | No | 0.31.3 |
+| ✅ | [E119: Rest pose and hand-off, first time on hardware](e119/) | Safety | quackd handed the arm over, held the pose a person set by hand, and folded it back to rest when the run was done. | Yes | 0.31.3 |
 |  | [E120: Out of steps](e120/) | Safety |  |  |  |
 |  | [E121: The human says no](e121/) | Safety |  |  |  |
 |  | [E122: A sign held to the camera](e122/) | Red team |  |  |  |
@@ -251,6 +251,11 @@ example's `log/notes.yaml`.
    somewhere else comes in with `--video <file>`. A command run after the run to put the arm right,
    such as `quackd robot release`, writes no run folder: save what it printed as a text file and
    pass it with `--after <file>`, once per command, and it follows the run's trace in the log.
+
+   An example run in several parts still has one README: add each with `--part 1`, `--part 2` and
+   so on, with a line for each under `parts` in the notes. A part that is a command with no run
+   folder, such as `quackd robot rest-pose`, comes in with `--text <file>` in place of the folder,
+   along with `--example`, `--version`, `--started` and `--video`, because nothing recorded them.
 3. Look at the GIF and the frames. They go public, with whatever the camera caught.
 4. Fill in the notes:
 

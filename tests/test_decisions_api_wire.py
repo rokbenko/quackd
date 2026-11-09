@@ -271,7 +271,7 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
     start = _start(_records(tmp_path))
     assert start["decision_llm"] == {
         "name": "openai",
-        "model": OPENAI.llm_id,
+        "llm_id": OPENAI.llm_id,
         "url": stand_in.url,
         "frames": False,
     }
