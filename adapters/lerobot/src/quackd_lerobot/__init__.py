@@ -610,14 +610,15 @@ def _refuse_policy(backend: str) -> None:
         )
 
 
-def _policy_runner(policy: PolicyChoice | None) -> Any:
+def _policy_runner(policy: PolicyChoice | None, arm: ArmType) -> Any:
     """The client a policy server is reached through, `RemoteRunner`, built from the address
     and the token `--policy-url` and `--policy-token` gave, or None without a server. A token
     that was not typed is `QUACKD_POLICY_TOKEN`, then the file the server writes, by the
     client's own rule (`policy.client.client_token`). An address the client would refuse, and a
-    token found nowhere, are refused here, before anything connects. Its motors are the arm's
-    joints until the connect's fit hands it the bus's own (`LeRobotReal._fit_policy`), and
-    `--accept-other-frame` is the fit's override of the same name (`policy.fit.fit`).
+    token found nowhere, are refused here, before anything connects. Its motors are this arm's,
+    in its bus's order (`ArmType.motor_ids`), until the connect's fit hands it the bus's own
+    (`LeRobotReal._fit_policy`), and `--accept-other-frame` is the fit's override of the same name
+    (`policy.fit.fit`).
 
     `hf:NAME`, and the https address of an endpoint this machine started, are reached as the
     record `quackd policy endpoint up` kept says (`policy.endpoint.reach`): its address, its
@@ -636,7 +637,7 @@ def _policy_runner(policy: PolicyChoice | None) -> Any:
             return RemoteRunner(
                 reached.url,
                 token=reached.token,
-                motors=JOINTS,
+                motors=tuple(arm.motor_ids),
                 accept_other_frame=policy.accept_other_frame,
                 bearer=reached.bearer,
                 endpoint=reached.endpoint,
@@ -645,7 +646,7 @@ def _policy_runner(policy: PolicyChoice | None) -> Any:
         return RemoteRunner(
             url,
             token=client_token(token),
-            motors=JOINTS,
+            motors=tuple(arm.motor_ids),
             accept_other_frame=policy.accept_other_frame,
         )
     except ValueError as e:
@@ -740,7 +741,7 @@ def make(
                 rest_pose=rest_pose,
                 registered_name=registered_name,
                 scene=scene,
-                policy=_policy_runner(policy),
+                policy=_policy_runner(policy, arm),
                 async_chunks=policy is None or policy.async_chunks,
             ),
             robot_id=robot_id,
@@ -757,7 +758,7 @@ def make(
                 cameras=parse_camera_urls(camera_urls(camera_url)),
                 rest_pose=rest_pose,
                 registered_name=registered_name,
-                policy=_policy_runner(policy),
+                policy=_policy_runner(policy, arm),
                 async_chunks=policy is None or policy.async_chunks,
             ),
             robot_id=robot_id,

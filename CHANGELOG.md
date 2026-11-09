@@ -826,6 +826,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   were nowhere in that file. The status page gives an SO-100 and a Koch v1.1 rows of their own under
   `lerobot:real`, so neither reads as the SO-101 that ran. CONTRIBUTING also names the drift script's
   `--offline`, and the Microduck's page says Huebot reads its protocol refs through its own module.
+- **How a Dynamixel bus fails has been read, at LeRobot 0.7.0 and rustypot 1.13.1.** A Koch's bus
+  errors come from the same `SerialMotorsBus` as an SO arm's, so the sentences quackd reads to name a
+  joint or place a failed connect hold on one, and new rows in `quackd_lerobot/upstream_api.py` and on
+  the arm's page say so, with what differs: a handshake that reads no firmware registers, servos that
+  answer no ping at LeRobot's 1 Mbps until they are set up from the factory's 57600, an error number
+  that makes LeRobot raise where an sts3215 never does, a torque call with no `Lock`, `is_calibrated`
+  comparing `Drive_Mode` too (`BUS_IS_CALIBRATED_DYNAMIXEL`), body joints that ignore the position
+  limits, and reads with no retries. A Koch stays described and refused at `make()`, and quackd
+  drives none.
 
 ### Known limitations
 

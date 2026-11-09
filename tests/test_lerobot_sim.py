@@ -49,8 +49,8 @@ from quackd.safety import Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, TransportError
 from quackd_lerobot import REACH, LeRobotAdapter, lerobot_manifest, make
 from quackd_lerobot import upstream_api as lr
+from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
 from quackd_lerobot.real import (
-    ENCODER_TICKS,
     MAX_STEP_DEG,
     POLICY_HZ,
     TORQUE_RETRIES,

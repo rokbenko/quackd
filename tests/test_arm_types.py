@@ -12,23 +12,27 @@ import itertools
 import json
 import sys
 import types
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from quackd.adapters.base import AdapterError
+from quackd.adapters.base import AdapterError, PolicyChoice
 from quackd.adapters.catalogue import BY_NAME
 from quackd.adapters.factory import RobotSpec, describe, make_adapter
 from quackd.registry import Registry, RegistryError, RobotEntry
 from quackd.transport.base import TransportError
-from quackd_lerobot import BACKENDS, ROBOT_TYPE, lerobot_manifest, make
+from quackd_lerobot import BACKENDS, ROBOT_TYPE, LeRobotAdapter, lerobot_manifest, make
 from quackd_lerobot import describe as describe_arm
-from quackd_lerobot.arms import ARMS
-from quackd_lerobot.real import LeRobotReal
+from quackd_lerobot import upstream_api as up
+from quackd_lerobot.arms import ARMS, ArmType
+from quackd_lerobot.mock import HOT_JOINT_MARGIN_C, LeRobotMock
+from quackd_lerobot.real import LeRobotReal, joint_ranges
 from quackd_lerobot.verbs import JOINTS
 from tests.conftest import REPO
+from tests.test_lerobot_adapter import FakeArm
 
 SO101_DIGESTS = {
     (False, False): "0ccd3bf9097cd348",
@@ -292,6 +296,158 @@ async def test_an_arm_whose_bus_names_other_joints_is_refused_before_anything_is
         await arm.connect()
     assert "base, elbow" in str(refused.value) and ", ".join(JOINTS) in str(refused.value)
     assert robot.touched == []
+
+
+# ── the figures on the record ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("robot_type", ["so101_follower", "so100_follower"])
+def test_an_so_arm_holds_the_figures_the_backend_used_to_keep_as_constants(robot_type: str) -> None:
+    """Moved verbatim, for the arm that ran on 2026-09-15 and the SO-100 that runs its code."""
+    arm = ARMS[robot_type]
+    assert (arm.encoder_ticks, arm.hot_c, arm.use_degrees) == (4096, 60.0, True)
+    assert dict(arm.motor_ids) == up.SO_MOTOR_IDS and tuple(arm.motor_ids) == JOINTS
+    assert arm.servos == "Feetech sts3215"
+
+
+def test_a_koch_holds_what_was_read_for_it_and_none_where_nothing_has_been() -> None:
+    """Each figure is its real value with a source (`up.KOCH_MOTORS` and the rows beside it), or
+    None: a heat limit for its servos is a choice nobody has made, and is not borrowed from the
+    sts3215's."""
+    koch = ARMS["koch_follower"]
+    assert koch.servos == "Dynamixel XL430-W250 and XL330-M288"
+    assert koch.encoder_ticks == 4096 and up.KOCH_RESOLUTION.status == "VERIFIED"
+    assert up.KOCH_RESOLUTION.name.endswith(f"resolution {koch.encoder_ticks}")
+    assert koch.hot_c is None
+    assert koch.use_degrees is True, "LeRobot's default is False, and every goal is degrees"
+    assert dict(koch.motor_ids) == up.KOCH_MOTOR_IDS and tuple(koch.motor_ids) == JOINTS
+    assert not koch.drivable
+
+
+def test_a_type_that_can_be_built_has_to_name_its_heat_limit() -> None:
+    """Only a type that is not built may leave it unread, or a backend would meet a None
+    reading one temperature against it."""
+    with pytest.raises(ValueError, match="names no hot_c"):
+        replace(ARMS[ROBOT_TYPE], hot_c=None)
+
+
+@pytest.fixture
+def other_arm(monkeypatch: pytest.MonkeyPatch) -> ArmType:
+    """A type differing from the SO-101 in every figure a backend reads off its record, and
+    buildable as the SO-101 is, in the table every part of the adapter reads."""
+    arm = replace(
+        ARMS[ROBOT_TYPE],
+        robot_type="other_arm",
+        encoder_ticks=2048,
+        hot_c=45.0,
+        use_degrees=False,
+        motor_ids={name: ids + 10 for name, ids in reversed(list(up.SO_MOTOR_IDS.items()))},
+    )
+    monkeypatch.setitem(ARMS, "other_arm", arm)
+    return arm
+
+
+async def test_the_backend_reads_its_degrees_through_the_type_it_was_built_as(
+    other_arm: ArmType,
+) -> None:
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm, robot_type="other_arm")
+    await LeRobotAdapter(transport).connect()
+    calibration = arm.calibration["elbow_flex"]
+    half = abs(calibration.range_max - calibration.range_min) / 2 * 360.0 / (2048 - 1)
+    assert transport.joint_range_deg["elbow_flex"] == pytest.approx((-half, half))
+    assert transport.joint_range_deg != joint_ranges(dict(arm.calibration)), (
+        "the SO-101's ticks read this calibration otherwise"
+    )
+
+
+async def test_the_backend_reads_its_heat_limit_through_the_type_it_was_built_as(
+    other_arm: ArmType,
+) -> None:
+    arm = FakeArm()
+    assert other_arm.hot_c is not None
+    arm.temperature["wrist_flex"] = other_arm.hot_c + 1  # hot by this type's limit alone
+    transport = LeRobotReal("COM5", robot=arm, robot_type="other_arm")
+    await LeRobotAdapter(transport).connect()
+    state = await transport.get_state()
+    assert state.extras["hot"] == ["wrist_flex"]
+    assert "or above 45°C" in (transport._unsafe_to_drive() or "")
+    # and the same reading on the SO-101 this double was copied from is not hot
+    so101 = FakeArm()
+    so101.temperature["wrist_flex"] = other_arm.hot_c + 1
+    ordinary = LeRobotReal("COM5", robot=so101)
+    await LeRobotAdapter(ordinary).connect()
+    await ordinary.get_state()
+    assert ordinary.hot_joints == []
+
+
+def test_the_config_asks_lerobot_for_what_the_type_says(other_arm: ArmType) -> None:
+    assert LeRobotReal("COM5", robot_type="other_arm")._config_kwargs()["use_degrees"] is False
+    assert LeRobotReal("COM5")._config_kwargs()["use_degrees"] is True
+    assert (
+        LeRobotReal("COM5", robot_type="koch_follower")._config_kwargs()["use_degrees"] is True
+    ), "a described type's record is read as any other"
+
+
+def test_a_policy_client_is_handed_the_type_s_motors_in_its_bus_order(other_arm: ArmType) -> None:
+    adapter: Any = make(
+        "real",
+        address="COM5",
+        policy=PolicyChoice("http://127.0.0.1:9875", "t" * 32),
+        robot_type="other_arm",
+    )
+    assert adapter.transport.policy_loop.runner.motors == tuple(other_arm.motor_ids)
+
+
+async def test_a_policy_is_fitted_to_the_travel_the_type_reads(other_arm: ArmType) -> None:
+    class Fitted:
+        def __init__(self) -> None:
+            self.travel: Any = None
+
+        def fit_arm(self, motors: Any, cameras: Any, travel: Any, slack: float) -> list[str]:
+            self.travel = travel
+            return []
+
+        def features(self) -> Any:
+            return {}
+
+        def next_chunk(self, observation: Any, sent: Any) -> Any:
+            return None
+
+        def reset(self, instruction: str) -> None:
+            pass
+
+        def latency_s(self) -> float:
+            return 0.0
+
+        def close(self) -> None:
+            pass
+
+    fitted = Fitted()
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm, robot_type="other_arm", policy=fitted)
+    await LeRobotAdapter(transport).connect()
+    calibration = arm.calibration["elbow_flex"]
+    half = abs(calibration.range_max - calibration.range_min) / 2 * 360.0 / (2048 - 1)
+    assert fitted.travel["elbow_flex"] == pytest.approx((-half, half))
+
+
+def test_the_mock_reads_its_figures_through_the_type_it_stands_in_for(other_arm: ArmType) -> None:
+    mock = LeRobotMock(robot_type="other_arm", hot_joints=("wrist_flex",))
+    assert other_arm.hot_c is not None
+    assert mock.follower.temperature["wrist_flex"] == other_arm.hot_c + HOT_JOINT_MARGIN_C
+    assert mock.follower.bus.motors["gripper"].id == other_arm.motor_ids["gripper"]
+    expected = joint_ranges(dict(mock.follower.calibration), other_arm.encoder_ticks)
+    assert mock.joint_range_deg == expected
+    assert mock._config_kwargs()["use_degrees"] is False
+
+
+def test_an_so_mock_reads_the_figures_it_always_read() -> None:
+    """Sixty and five, and one to six: the pure move, as the mock shows it."""
+    mock = LeRobotMock(hot_joints=("wrist_flex",))
+    assert mock.follower.temperature["wrist_flex"] == 65.0
+    table = {name: motor.id for name, motor in mock.follower.bus.motors.items()}
+    assert table == up.SO_MOTOR_IDS
 
 
 def test_the_status_page_gives_each_arm_type_a_row_that_says_its_tier() -> None:

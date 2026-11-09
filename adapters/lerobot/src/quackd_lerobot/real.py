@@ -85,7 +85,7 @@ from quackd.transport.base import (
     TransportError,
 )
 from quackd_lerobot import upstream_api as up
-from quackd_lerobot.arms import ARMS
+from quackd_lerobot.arms import ARMS, SO_ENCODER_TICKS, ArmType
 from quackd_lerobot.policy.loop import CLIP_SUSTAIN_S as CLIP_SUSTAIN_S
 from quackd_lerobot.policy.loop import FAILED_SENDS as FAILED_SENDS
 from quackd_lerobot.policy.loop import REGISTER_PERIOD_S as REGISTER_PERIOD_S
@@ -297,12 +297,6 @@ WRITE_FAILED = re.compile(r"\bFailed to (?:(?:sync )?write|(?:en|dis)able torque
 (`up.BUS_WRITE_ERROR_NAMES_THE_ID`), a torque call's among them (`up.TORQUE_TRIED_ON_EVERY_MOTOR`).
 Every write a connect makes is inside `configure()`, after its torque-off has started, so a
 connect that failed on one may have left the motors in two torque states."""
-
-ENCODER_TICKS = 4096
-"""An sts3215 turn in encoder counts (`up.STS3215_RESOLUTION`); degrees use it less one."""
-
-HOT_C = 60.0
-"""Refuse to move a joint at or above this. The servo's own cut-off is 70 (`up.TEMPERATURE_C`)."""
 
 HOLD_MIN = 8.0
 HOLD_MAX = 90.0
@@ -542,12 +536,16 @@ def check_port(port: str, *, label: str = "real") -> None:
         )
 
 
-def joint_ranges(calibration: dict[str, Any]) -> dict[str, tuple[float, float]]:
+def joint_ranges(
+    calibration: dict[str, Any], encoder_ticks: int = SO_ENCODER_TICKS
+) -> dict[str, tuple[float, float]]:
     """Each joint's travel in degrees, from the arm's own calibration file.
 
     LeRobot records raw encoder ticks and converts with `up.DEGREES_FORMULA`, which centres
     a joint on the middle of its recorded travel. So the reachable range is half the
-    recorded span either side of zero. The gripper is a 0..100 range whatever else is."""
+    recorded span either side of zero. The gripper is a 0..100 range whatever else is.
+    `encoder_ticks` is the arm's own turn (`ArmType.encoder_ticks`), which every backend
+    passes; the default is the SO arms', for a calibration read with no backend in hand."""
     ranges: dict[str, tuple[float, float]] = {}
     for joint in JOINTS:
         cal = calibration.get(joint)
@@ -557,7 +555,7 @@ def joint_ranges(calibration: dict[str, Any]) -> dict[str, tuple[float, float]]:
             ranges[joint] = (GRIPPER_CLOSED, GRIPPER_OPEN)
             continue
         span = abs(float(cal.range_max) - float(cal.range_min))
-        half = span / 2.0 * 360.0 / (ENCODER_TICKS - 1)
+        half = span / 2.0 * 360.0 / (encoder_ticks - 1)
         ranges[joint] = (-half, half)
     return ranges
 
@@ -1621,6 +1619,28 @@ class LeRobotReal:
                 return
             await asyncio.wait({left}, timeout=end - now)
 
+    def _arm_type(self) -> ArmType:
+        """The record of the arm this backend was built as (`arms.ARMS`), through which its encoder
+        ticks, its heat limit, its degrees setting and its motor table are read. `TORQUE_WRITES` is
+        still the SO arms' arithmetic (`up.DYNAMIXEL_TORQUE_ONE_WRITE`). A type with no record is
+        refused as it is built (`_build_robot`), and `make()` refuses one with no owner before
+        that, so only a robot handed in is ever read against one."""
+        arm = ARMS.get(self.robot_type)
+        if arm is None:
+            raise TransportError(f"lerobot {self.label}: no arm type {self.robot_type!r}")
+        return arm
+
+    def _hot_c(self) -> float:
+        """The temperature this arm is not moved at or above (`ArmType.hot_c`), which every type
+        that can be built names (`ArmType.__post_init__`)."""
+        hot_c = self._arm_type().hot_c
+        if hot_c is None:
+            raise TransportError(
+                f"lerobot {self.label}: {self.robot_type} names no heat limit, and quackd reads no "
+                "temperature against none"
+            )
+        return hot_c
+
     def _config_kwargs(self) -> dict[str, Any]:
         """Every safety-shaped field of `up.SO_CONFIG`, spelled out.
 
@@ -1639,7 +1659,7 @@ class LeRobotReal:
         return {
             "port": self.port,
             "id": self.robot_id,
-            "use_degrees": True,
+            "use_degrees": self._arm_type().use_degrees,
             "disable_torque_on_disconnect": False,
             # quackd owns its camera instead: up.SO_CAMERAS_ARE_THE_FOLLOWERS
             "cameras": {},
@@ -1717,7 +1737,7 @@ class LeRobotReal:
             refusal = self._refusal()
             if refusal is None:
                 calibration = dict(getattr(self._robot, "calibration", None) or {})
-                self.joint_range_deg = joint_ranges(calibration)
+                self.joint_range_deg = joint_ranges(calibration, self._arm_type().encoder_ticks)
                 path = getattr(self._robot, "calibration_fpath", None)
                 self.calibration_file = str(path) if path else None
                 # the follower is built with cameras={}, so its observation_features never
@@ -2143,7 +2163,10 @@ class LeRobotReal:
                 cameras.append(
                     CameraInfo.model_validate({"name": name, **size, "rotation": rotation})
                 )
-            travel = joint_ranges(dict(getattr(self._robot, "calibration", None) or {}))
+            travel = joint_ranges(
+                dict(getattr(self._robot, "calibration", None) or {}),
+                self._arm_type().encoder_ticks,
+            )
             motors = tuple(str(m) for m in bus.motors)
             notes = await loop.call(
                 fit_arm,
@@ -2691,9 +2714,11 @@ class LeRobotReal:
 
     @property
     def hot_joints(self) -> list[str]:
-        """The body joints at or above `HOT_C`. The gripper is left out on purpose: it has
-        LeRobot's own torque and current caps, and its temperature is still reported."""
-        return sorted(k for k, v in self._temperature_c.items() if v >= HOT_C and k != "gripper")
+        """The body joints at or above this arm's own limit (`_hot_c`). The gripper is left out
+        on purpose: it has LeRobot's own torque and current caps, and its temperature is still
+        reported."""
+        hot_c = self._hot_c()
+        return sorted(k for k, v in self._temperature_c.items() if v >= hot_c and k != "gripper")
 
     def _out_of_range(self) -> list[str]:
         """Joints reading outside the travel their own calibration recorded. Not a refusal:
@@ -2946,13 +2971,13 @@ class LeRobotReal:
 
     def _unsafe_to_drive(self) -> str | None:
         """What in the last reading of the registers rules out another goal, or None: a body
-        joint at or above `HOT_C`, or torque off on any motor. What becomes of the policy is the
-        caller's to say."""
+        joint at or above this arm's own limit (`_hot_c`), or torque off on any motor. What
+        becomes of the policy is the caller's to say."""
         if hot := self.hot_joints:
             worst = max(hot, key=lambda joint: self._temperature_c.get(joint, 0.0))
             return (
                 f"{worst} reads {self._temperature_c[worst]:.0f}°C, and quackd moves no joint at "
-                f"or above {HOT_C:g}°C: let the arm cool"
+                f"or above {self._hot_c():g}°C: let the arm cool"
             )
         if not self._torque:
             off = [j for j in JOINTS if j in self._joints and j not in self._torque_on]

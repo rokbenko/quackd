@@ -28,7 +28,8 @@ from quackd.adapters.factory import make_adapter
 from quackd.cli import app
 from quackd.registry import Registry, RobotEntry
 from quackd_lerobot import upstream_api as lr
-from quackd_lerobot.real import ENCODER_TICKS, joint_ranges
+from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from quackd_lerobot.real import joint_ranges
 from quackd_lerobot.sim.model import MOUNTS, calibration_path, read_calibration
 from quackd_lerobot.verbs import JOINTS
 

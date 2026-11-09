@@ -48,7 +48,8 @@ from quackd.adapters.base import AdapterError
 from quackd.transport.base import TransportError
 from quackd_lerobot import REACH
 from quackd_lerobot import upstream_api as lr
-from quackd_lerobot.real import ENCODER_TICKS, PORT_SHAPE
+from quackd_lerobot.arms import SO_ENCODER_TICKS
+from quackd_lerobot.real import PORT_SHAPE
 from quackd_lerobot.sim import upstream_api as up
 from quackd_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
 
@@ -1300,8 +1301,8 @@ def generic_calibration(arm: ArmModel) -> dict[str, MotorCalibration]:
     hinge's. Ids are the SO follower's bus table's (`upstream_api.SO_MOTORS`), drive modes and
     homing offsets zero. None of it is any real arm's: the travel a calibration records is one
     arm's, and a run that names no arm has none to borrow (`JOINT_RANGES`)."""
-    per_deg = (ENCODER_TICKS - 1) / 360.0  # upstream_api.DEGREES_FORMULA
-    middle = ENCODER_TICKS // 2
+    per_deg = (SO_ENCODER_TICKS - 1) / 360.0  # upstream_api.DEGREES_FORMULA
+    middle = SO_ENCODER_TICKS // 2
     out: dict[str, MotorCalibration] = {}
     for name, joint in arm.joints.items():
         if isinstance(joint, GripperMap):
@@ -1314,7 +1315,7 @@ def generic_calibration(arm: ArmModel) -> dict[str, MotorCalibration]:
                     f"{LABEL} {arm.label}'s {name} cannot reach LeRobot's zero between its stops, "
                     f"so there is no travel to give it. {_remedy(arm.label)}"
                 )
-        half = min(math.floor(half_deg * per_deg), middle, ENCODER_TICKS - 1 - middle)
+        half = min(math.floor(half_deg * per_deg), middle, SO_ENCODER_TICKS - 1 - middle)
         out[name] = MotorCalibration(
             id=lr.SO_MOTOR_IDS[name],
             drive_mode=0,

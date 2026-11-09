@@ -31,6 +31,7 @@ from quackd.safety import Aborted, Executor, Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, Intent
 from quackd.verbs.registry import registry_from_manifest
 from quackd_lerobot import LeRobotAdapter
+from quackd_lerobot.arms import SO_HOT_C as HOT_C
 from quackd_lerobot.mock import LeRobotMock
 from quackd_lerobot.policy.loop import (
     EXACT,
@@ -51,7 +52,7 @@ from quackd_lerobot.policy.loop import (
 )
 from quackd_lerobot.policy.runner import Chunk, Features, Observation
 from quackd_lerobot.policy.scripted import ScriptedRunner
-from quackd_lerobot.real import HOT_C, MAX_STEP_DEG, POLICY_HZ, LeRobotReal
+from quackd_lerobot.real import MAX_STEP_DEG, POLICY_HZ, LeRobotReal
 from quackd_lerobot.verbs import (
     GRIPPER_OPEN,
     MANIPULATE_S,

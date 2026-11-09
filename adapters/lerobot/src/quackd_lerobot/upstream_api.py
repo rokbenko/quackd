@@ -87,6 +87,8 @@ _RP_BUS = "src/bus.rs"
 _RP_PROTOCOL = "src/dynamixel_protocol/mod.rs"
 _RP_DEFINITION = "src/servo/definition.rs"
 _RP_STS3215 = "src/servo/feetech/sts3215.rs"
+_RP_XL430 = "src/servo/dynamixel/xl430.rs"
+_RP_SERVOS = "src/servo/mod.rs"
 
 # ── package ─────────────────────────────────────────────────────────────────────────────
 
@@ -313,17 +315,26 @@ KOCH_MOTORS = UpstreamRef(
     "VERIFIED",
     src(_KOCH, 51),
     "the SO-101's six joint names, on servos of another maker, to line 56, on the one bus class "
-    "the SO follower uses too (line 48)",
+    "the SO follower uses too (line 48), the ids in KOCH_MOTOR_IDS",
 )
+KOCH_MOTOR_IDS: dict[str, int] = {
+    "shoulder_pan": 1,
+    "shoulder_lift": 2,
+    "elbow_flex": 3,
+    "wrist_flex": 4,
+    "wrist_roll": 5,
+    "gripper": 6,
+}
+"""Each motor's bus id in the Koch follower's table, as KOCH_MOTORS reads it at the pin."""
 KOCH_REGISTERS = UpstreamRef(
     "Torque_Enable (64, 1) and Present_Temperature (146, 1)",
     "VERIFIED",
     rp("src/servo/dynamixel/xl430.rs", 51),
     "the two names quackd reads off a bus, in rustypot's XL430 table, with Present_Temperature "
     "at line 80, and at the same addresses in its XL330 table (xl330.rs lines 52 and 81): "
-    "LeRobot's own Dynamixel tables went with #4672. How a Dynamixel bus fails, protocol 2's "
-    "status and what rustypot makes of it, has not been read, which wiring one would have to do "
-    "first",
+    "LeRobot's own Dynamixel tables went with #4672. How a Dynamixel bus fails has been read at "
+    "the pin (DYNAMIXEL_BUS_WORDS and the rows beside it, including protocol 2's status and what "
+    "rustypot makes of it), which wiring a Koch would have to act on",
 )
 SO_FOLLOWER = UpstreamRef(
     "lerobot.robots.so_follower.SO101Follower",
@@ -949,6 +960,170 @@ STATUS_TIMEOUT_S = 0.05
 FLUSH_TRIES = 3
 FLUSH_PAUSE_S = 0.005
 """rustypot's flush before every instruction: up to three tries, 5 ms apart (NO_BUSY_FLAG)."""
+
+# ── how a Dynamixel bus fails, where it differs from an SO arm's ────────────────────────
+
+DYNAMIXEL_BUS_WORDS = UpstreamRef(
+    "SerialMotorsBus is one class for Feetech and Dynamixel, so its failures read alike",
+    "VERIFIED",
+    src(_BUS, 157),
+    "its docstring says so, and `DynamixelMotorsBus` is a deprecated alias of it "
+    "(dynamixel/dynamixel.py line 44). So the sentences real.py reads are a Koch's as they are an "
+    "SO arm's (BUS_WRITE_ERROR_NAMES_THE_ID, TORQUE_TRIED_ON_EVERY_MOTOR, BUS_SYNC_READ_ERROR and "
+    "HANDSHAKE_NAMES_THE_ID), and rustypot words a failure the same way on both protocols: a "
+    "Dynamixel speaks protocol 2 (xl430.rs line 8), whose Protocol impl is the shared one "
+    "(dynamixel_protocol/v2.rs line 14, with sync_read_with_error at mod.rs lines 729 to 745), and "
+    "Bus::new leaves fast sync read off (bus.rs line 45, mod.rs line 78), so `motor <M>: <error>` "
+    "is still one motor's own status packet that did not come back whole. KochFollower.connect() "
+    "has the SO's shape, the same frames real.py places a failure by (koch_follower.py line 96, "
+    "bus.connect(), line 97, the calibration check, whatever `calibrate` says, line 106, "
+    "configure(), under bus.torque_disabled() at line 125), and it disconnects the same way "
+    "(line 206). Each pattern real.py reads holds there, except where the rows below say, each "
+    "with what differs",
+)
+DYNAMIXEL_HANDSHAKE_PINGS_ONLY = UpstreamRef(
+    "a Dynamixel bus's handshake is its Model_Number reads, with no firmware check",
+    "VERIFIED",
+    src(_BUS, 375),
+    "_assert_same_firmware() reads Firmware_Major_Version and Firmware_Minor_Version (lines 377 "
+    "and 378) through _sync_read_where, which reads a register only from the motors that have it "
+    "(lines 769 to 772), and an XL430 or XL330 has neither (its firmware register is "
+    "`firmware_version`, xl430.rs line 31, xl330.rs line 28), so no sync read goes out at all. A "
+    "Koch's handshake is the six reads of Model_Number in _assert_motors_exist (BUS_HANDSHAKE), "
+    "and writes nothing, as an SO arm's does, and a failure in it leaves the port shut the same "
+    "way (HANDSHAKE_CLOSES_THE_PORT). The two firmware sync reads an SO's handshake makes are "
+    "simply not there to fail",
+)
+DYNAMIXEL_FACTORY_BAUD = UpstreamRef(
+    "an XL430 or XL330 leaves the factory at 57600 baud",
+    "VERIFIED",
+    rp(_RP_XL430, 15),
+    "and xl330.rs line 17, where an sts3215 leaves it at 1000000 (sts3215.rs line 15), which is "
+    "the rate LeRobot opens every bus at (motors_bus.py lines 192 and 251). setup_motors() is what "
+    "writes a new rate to each servo (line 513). So a Koch whose servos were never set up answers "
+    "no ping on a port opened at 1 Mbps, every motor comes back as missing, and quackd reads that "
+    "as the arm's cables or its power (real.py's _every_motor_missing), which is the wrong remedy "
+    "for a servo that was never told its baud rate. An SO's servos ship at the rate LeRobot "
+    "speaks, so this is a failure only a Dynamixel has",
+)
+DYNAMIXEL_STATUS_REFUSES = UpstreamRef(
+    "a Dynamixel can refuse an instruction, and LeRobot raises on it",
+    "VERIFIED",
+    rp(_RP_DEFINITION, 324),
+    "STATUS_ALARMS_ONLY's opposite: an XL430 or XL330 does not set status_alarms_only (its default "
+    "is false, servo_macro.rs lines 1139 to 1142), so `refuses()` is true for any non-zero error "
+    "number on protocol 2 (bits 0 to 6, dynamixel_protocol/mod.rs lines 893 to 895), and the "
+    "RuntimeError LeRobot raises for a motor that refused an instruction, which never comes from "
+    "an sts3215, can come from one, on a read, a write or a sync read (motors_bus.py lines 1139 "
+    "to 1141, 1187 to 1191 and 1240 to 1245, each naming `motor ID <N>`). The alert bit alone, "
+    "0x80, is no refusal (definition.rs line 684, and `v2_alert`, mod.rs line 901): a latched "
+    "hardware fault answers reads as an sts3215 in an alarm does (DYNAMIXEL_LATCHED_FAULT). A "
+    "torque call's failure keeps its form with rustypot's words inside it, `motor <N> refused "
+    "the instruction with status error 0x<XX>` (mod.rs lines 925 to 932), and a refused write is "
+    "not tried again whatever num_retry says (definition.rs line 514). real.py's patterns read "
+    "each of these as they read the rest: `motor ID <N>` names the joint, `Failed to write` "
+    "counts as a write that failed, `'<joint>' (motor ID <N>)` names a torque failure, and "
+    "LeRobot's words are quoted as they stand",
+)
+DYNAMIXEL_TORQUE_ONE_WRITE = UpstreamRef(
+    "a torque call writes only Torque_Enable to a Dynamixel",
+    "VERIFIED",
+    rp(_RP_BUS, 244),
+    "the Lock write is behind `if definition.info.eeprom_lock` (lines 244 to 247), which an XL430 "
+    "or XL330 does not set and which defaults to false (servo_macro.rs lines 1128 to 1131), and "
+    "neither table has a lock register. So a Koch's torque call is one write a motor, where an "
+    "sts3215's is Torque_Enable and then Lock (BUS_ENABLE_TORQUE); every motor is still tried and "
+    "retried the same way (RUSTYPOT_SET_TORQUE), so TORQUE_TRIED_ON_EVERY_MOTOR holds. real.py's "
+    "TORQUE_WRITES of 2 is the SO arms' arithmetic for its deadline TORQUE_CALL_S, which on a "
+    "Koch would only be longer than it needs",
+)
+BUS_IS_CALIBRATED_DYNAMIXEL = UpstreamRef(
+    "is_calibrated also compares Drive_Mode on a Dynamixel",
+    "VERIFIED",
+    src(_BUS, 729),
+    "BUS_IS_CALIBRATED's twin. An XL430 and an XL330 both have Homing_Offset and Drive_Mode "
+    "(rustypot xl430.rs lines 39 and 35, xl330.rs lines 36 and 32), so read_calibration() makes "
+    "four sync reads on a Koch, the two limits and then both of those (lines 753 to 756), where "
+    "on an sts3215 it makes three, and _same_calibration() holds the file's drive_mode against "
+    "the servo's as well as its homing_offset and limits (lines 725 to 729), where on an sts3215 "
+    "the drive mode lives only in the file. A file whose drive_mode disagrees with the Drive_Mode "
+    "register therefore reads as not calibrated on a Koch, which quackd refuses as it does any "
+    "other mismatch. The check is still reads only: the same sync reads with num_retry 0, "
+    "reached on every connect, calibrate=False included (koch_follower.py line 97), and placed "
+    "by the is_calibrated and read_calibration frames real.py reads",
+)
+DYNAMIXEL_REFUSED_PING_IS_MISSING = UpstreamRef(
+    "a Dynamixel that refuses the handshake's read is listed as missing",
+    "VERIFIED",
+    src(_BUS, 1087),
+    "ping() returns None for a refusal as for a silence (lines 1085 to 1088), and the handshake "
+    "lists a None as missing (lines 343 and 354 to 357), so a Koch servo that answered "
+    "Model_Number with an error number (DYNAMIXEL_STATUS_REFUSES) reads as `Missing motor IDs: "
+    "- <N>`, the same as one that did not answer. HANDSHAKE_NAMES_THE_ID's sts3215 with an alarm "
+    "set answers and is found; a Dynamixel with only the alert bit is found too, and one that "
+    "refuses is not. quackd names the joint through BUS_MOTORS and says to check its cable, which "
+    "is right for a silent servo and misses one that answered and refused",
+)
+KOCH_POSITION_LIMITS_IGNORED = UpstreamRef(
+    "a Koch's body motors ignore Min_Position_Limit and Max_Position_Limit",
+    "VERIFIED",
+    src(_KOCH, 132),
+    "configure() puts every motor but the gripper in extended_position (lines 130 to 132), and "
+    "SerialMotorsBus.set_operating_mode's docstring says both limit registers are ignored in that "
+    "mode (motors_bus.py lines 612 and 613), where an sts3215 in position mode clamps every goal "
+    "to them (POSITION_LIMITS_CLAMP_GOALS, an observation on a real SO-101). So the firmware "
+    "clamp DEGREES_NO_CLAMP leans on is not there on a Koch's body joints: no limit register "
+    "bounds a degrees goal, which leaves max_relative_target for each step and quackd's own "
+    "check against the travel, and real.py's rest-pose logic, which judges a joint folded past "
+    "its limit and never writes it a goal there because the servo would haul it to the limit, was "
+    "written against a Feetech and would have to be read again before a Koch is wired. The "
+    "gripper runs current_based_position (line 140)",
+)
+KOCH_READS_HAVE_NO_RETRIES = UpstreamRef(
+    "a Koch's get_observation reads with no retries",
+    "VERIFIED",
+    src(_KOCH, 155),
+    "KochFollowerConfig has no num_read_retries (config_koch_follower.py lines 24 to 39), so its "
+    "get_observation's read of the positions and the read before a capped send_action (line "
+    "196) take no retries, where an SO follower's both pass num_retry=config.num_read_retries, 2 "
+    "by default (so_follower.py lines 166 and 207, config_so_follower.py line 53). One lost status "
+    "packet is therefore a raised `Failed to sync read 'Present_Position' ... after 1 tries` on a "
+    "Koch, where an SO arm's takes three losses in a row. real.py's patterns read that wording "
+    "the same way, since the count of tries is no part of what they match, but a Koch's reads "
+    "would fail where an SO's would not, so wiring one would want its heartbeat read retried",
+)
+DYNAMIXEL_LATCHED_FAULT = UpstreamRef(
+    "DYNAMIXEL_LATCHED_FAULT",
+    "UNVERIFIED",
+    rp(_RP_PROTOCOL, 899),
+    "rustypot says the alert bit of a protocol 2 status means a hardware fault is latched and "
+    "not which one, that being in the servo's Hardware Error Status register (lines 899 and "
+    "900, at address 70 in both XL tables, xl430.rs line 55 and xl330.rs line 56), and LeRobot "
+    "reads the status byte and acts on refuses() alone (motors_bus.py lines 1139 and 1187). What "
+    "the servo does next, whether it cuts its own torque and whether it keeps answering, is its "
+    "firmware's, and nothing in LeRobot or rustypot reads it. quackd would not know either: it "
+    "reads Torque_Enable and would say torque reads off, which names no fault, and it reads no "
+    "Hardware Error Status. Whoever wires a Koch would have to decide whether that is enough",
+)
+KOCH_RESOLUTION = UpstreamRef(
+    "xl430-w250 and xl330-m288 resolution 4096",
+    "VERIFIED",
+    rp(_RP_XL430, 9),
+    "and xl330.rs line 11, in rustypot's tables, which LeRobot reads motor by motor through "
+    "`resolution()` (motors_bus.py lines 268 to 283, its degrees formula taking each motor's own "
+    "at lines 1032 and 1062). So a Koch's body joints are 4095 ticks a turn, as an SO's are "
+    "(STS3215_RESOLUTION), and `ArmType.encoder_ticks` records it",
+)
+KOCH_MODEL_NUMBERS = UpstreamRef(
+    "xl430-w250 model number 1060, xl330-m288 model number 1200",
+    "VERIFIED",
+    rp(_RP_SERVOS, 148),
+    "(line 143 for the XL330), what a Koch's servos answer a ping with in rustypot's table, "
+    "as STS3215_MODEL_NUMBER is an SO's, found by name without hyphens or case "
+    "(servo_macro.rs lines 1901 to 1918). The handshake prints them beside each id it lists "
+    "(HANDSHAKE_NAMES_THE_ID), two different numbers on a Koch's bus where an SO's shows one, and "
+    "nothing quackd reads depends on them: it reads the ids",
+)
 
 # ── cameras ─────────────────────────────────────────────────────────────────────────────
 

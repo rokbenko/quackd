@@ -326,7 +326,7 @@ class LeRobotSim(LeRobotReal):
         """The arm at its rest pose, settled clear of the table and itself where the pose, or
         the pose the close parks it in at the edge of the travel this calibration recorded,
         puts it into either (`ArmWorld._settle`)."""
-        travel = joint_ranges(dict(self._calibration[0]))
+        travel = joint_ranges(dict(self._calibration[0]), self._arm_type().encoder_ticks)
         return ArmWorld(arm, rest_pose=self.rest_pose, name=self.registered_name, travel=travel)
 
     def _lay_table(self, world: ArmWorld) -> None:
