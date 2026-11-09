@@ -1194,13 +1194,16 @@ async def test_a_chunk_asked_for_in_an_earlier_segment_is_thrown_away() -> None:
         await adapter.stop()
         assert not transport.policy_running and arm.actions and _whole_hold(arm.actions[-1])
         before = len(arm.actions)
-        second = asyncio.create_task(_segment_end(transport, max_s=10 * PERIOD))
-        await asyncio.sleep(0.05)
+        # The second segment ends on its first chunk played, not on the clock: ten periods were
+        # sometimes over on a loaded machine before the runner had answered it at all. Its
+        # start opens the epoch before the reset that waits behind the first one's request.
+        second = asyncio.create_task(_segment_end(transport, max_s=1e6, max_chunks=1))
+        await _until(lambda: loop.epoch == 2)
         runner.open.set()
-        ended = await second
+        ended = await asyncio.wait_for(second, 10.0)
         epochs.append(loop.epoch)
         assert epochs == [1, 2]
-        assert ended.stats.stale >= 1, ended.stats
+        assert ended.how == "chunks" and ended.stats.stale >= 1, ended
         pans = [a["shoulder_pan.pos"] for a in arm.actions[before:] if "shoulder_pan.pos" in a]
         assert pans and 1.0 not in pans and 2.0 in pans, pans
     finally:

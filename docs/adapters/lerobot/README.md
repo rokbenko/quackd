@@ -665,8 +665,8 @@ so `lerobot:mock` works and `doctor` keeps saying `not installed` however many t
 install it: check `python --version` first.
 
 > [!NOTE]
-> The extra asks for LeRobot 0.7, from 0.7.0 and below 0.8, and `quackd[lerobot-vla]` asks for
-> the same. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
+> The extra asks for LeRobot 0.7.0, below 0.7.1, with rustypot below 1.14, and
+> `quackd[lerobot-vla]` asks for the same LeRobot. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
 > `rustypot`, under one bus for every Feetech and Dynamixel servo, and quackd was read again
 > against it, but no arm has run quackd on it yet: 0.6.1 is the release that has. rustypot
 > opens the port for one program at a time on every system, so a second program on the arm's

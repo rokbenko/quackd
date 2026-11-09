@@ -48,6 +48,13 @@ A cited line that reads like others in its own file at the pin is a `weak anchor
 as `same` while it stays on its line number, but once it leaves it cannot be followed and reads
 as `changed`. Those are listed under each upstream for whoever re-reads it next.
 
+A VERIFIED ref whose cited line holds no word of the ref's name or its note, at the pin, is a
+`stray anchor`: a guess that it cites a line or a function away from what it read, which no
+comparison over time can see, since that line reads the same every night. A line that leaves a
+bracket open is read with the lines that close it, a decorator with what it decorates, and a
+ref named as a path to its own file names any line of it. Those are listed under each upstream
+as well, and fail nothing by themselves.
+
 Exit 0 when every ref reads as it was read, 1 when something drifted or a ref is broken, which
 is work for somebody in this repository, and 2 when nothing did and something could not be
 checked, so an outage never reads as drift and never closes an issue.
@@ -71,7 +78,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -281,6 +288,9 @@ class Cited:
     sha: str
     path: str
     line: int | None
+    status: str
+    """VERIFIED or UNVERIFIED, as the ref says."""
+    note: str
 
     @property
     def key(self) -> tuple[str, str, str, int | None]:
@@ -309,6 +319,8 @@ class Row:
     now: str = ""
     weak: bool = False
     """The cited line reads like others in its own file at the pin."""
+    stray: bool = False
+    """The ref is VERIFIED, and the line it cites holds no word of its name or its note."""
 
 
 @dataclass
@@ -324,6 +336,8 @@ class Report:
     rows: list[Row] = field(default_factory=list)
     weak: list[Row] = field(default_factory=list)
     """Refs whose line still reads the same and is not the only one that does."""
+    stray: list[Row] = field(default_factory=list)
+    """VERIFIED refs whose line at the pin holds no word of what they say they read."""
     versions: list[tuple[str, bool]] = field(default_factory=list)
     """Each version the module wrote down against what is published, and whether it moved."""
     blocked: dict[str, list[str]] = field(default_factory=dict)
@@ -364,10 +378,11 @@ def cited_of(module: ModuleType) -> tuple[list[Cited], list[str]]:
         source = str(ref.source)
         if match := BLOB.match(source):
             repo, sha, path, line = match.groups()
-            files.append(Cited(ref.name, repo, sha, path, int(line) if line else None))
+            number = int(line) if line else None
+            files.append(Cited(ref.name, repo, sha, path, number, ref.status, ref.note))
         elif match := RAW_FILE.match(source):
             repo, sha, path = match.groups()
-            files.append(Cited(ref.name, repo, sha, path, None))
+            files.append(Cited(ref.name, repo, sha, path, None, ref.status, ref.note))
         else:
             elsewhere.append(ref.name)
     return files, elsewhere
@@ -488,6 +503,95 @@ def _code(text: str) -> str:
     return f"{fence}{pad}{text}{pad}{fence}"
 
 
+#: Words that name nothing alone, so a ref and a line that share only these share nothing:
+#: English's small words, `line`, which a note says of where a thing is, and the keywords and
+#: types the languages here share.
+_COMMON = """
+    a an the and or but if of in on at to for from by with without as is are was were be been
+    being it its this that these those there here than then so not no nor do does did done has
+    have had having can could may might must shall should will would one two three all any some
+    each every both either neither more most less least only own same such too very just also
+    into onto over under up down out off about after before between while when where which who
+    whom whose what why how again once per via vs we you he she they them their our your his
+    her my me us yes s t line lines
+    self cls def class return none true false null nil pub fn let mut const static struct enum
+    impl use mod type str string int float bool void auto new import async await yield lambda
+    try except raise finally elif else pass break continue end begin
+"""
+COMMON = frozenset(_COMMON.split())
+CONTINUED = 10
+"""How many lines after a cited line are read with it while it leaves a bracket open or decorates
+what follows: `def __init__(` names a constructor's parameters on the lines under it, and
+`@dataclass` names nothing until the class under it does."""
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)*")
+_PART = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+_SPAN = re.compile(r"`([^`]+)`")
+
+
+def words(text: str) -> set[str]:
+    """What a text names: each identifier and number in it, whole and lowercased, and each part
+    an identifier is written in (`get_param` is `get` and `param`, `RobotState` is `robot` and
+    `state`) without a plural `s`, which a word that names nothing keeps, so `this` never reads
+    as `thi`. A number loses a trailing `.0`, and a part of one character is no part."""
+    found: set[str] = set()
+    for token in _WORD.findall(text):
+        if token[0].isdigit():
+            found.add(re.sub(r"\.0+$", "", token))
+            continue
+        found.add(token.strip("_").lower())
+        for piece in token.split("_"):
+            for part in _PART.findall(piece):
+                part = part.lower()
+                if (
+                    len(part) > 3
+                    and part.endswith("s")
+                    and not part.endswith("ss")
+                    and part not in COMMON
+                ):
+                    part = part[:-1]
+                if len(part) > 1:
+                    found.add(part)
+    found.discard("")
+    return found
+
+
+def _depth(line: str) -> int:
+    return sum(line.count(c) for c in "([{") - sum(line.count(c) for c in ")]}")
+
+
+def _read_on(lines: Sequence[str], index: int) -> str:
+    """The cited line, with the lines after it while it leaves a bracket open or decorates what
+    follows, up to `CONTINUED` of them: a decorator's own brackets are closed first, so one
+    written over several lines is read through to what it decorates."""
+    taken = [lines[index]]
+    depth = _depth(lines[index])
+    decorating = lines[index].lstrip().startswith("@")
+    for line in lines[index + 1 : index + 1 + CONTINUED]:
+        if depth <= 0 and not decorating:
+            break
+        taken.append(line)
+        if depth <= 0 and not line.lstrip().startswith("@"):
+            decorating = False
+        depth += _depth(line)
+    return "\n".join(taken)
+
+
+def names_its_ref(cited: Cited, lines: Sequence[str]) -> bool:
+    """Whether the line a ref cites holds a word of the ref's name or of its note, a keyword
+    the note quotes in a code span included: a guess, which a line a function away from what
+    the ref read fails and the line that names it passes. A word of one character counts only
+    from the name (`CameraInfo.K`, `5`), and a ref named as a path that ends at its own file
+    (`std_msgs/msg/String`) cites the file, whichever line it gives."""
+    name = cited.ref.strip()
+    if "/" in name and name.rsplit("/", 1)[1] in (Path(cited.path).name, Path(cited.path).stem):
+        return True
+    assert cited.line is not None
+    named = words(name) - COMMON
+    noted = {word for word in words(cited.note) - COMMON if len(word) > 1}
+    quoted = {word for span in _SPAN.findall(cited.note) for word in words(span) if len(word) > 1}
+    return bool((named | noted | quoted) & words(_read_on(lines, cited.line - 1)))
+
+
 def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -> Row:
     """One ref whose file is there at the pin, against its baseline, as a row."""
     where = f"{cited.path}:{cited.line}" if cited.line is not None else cited.path
@@ -514,9 +618,10 @@ def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -
         return Row(cited.ref, where, "bad anchor", "the line is blank")
     if wanted in BARE or len(wanted) <= 2:
         return Row(cited.ref, where, "bad anchor", f"the line reads {_code(wanted)}")
+    stray = cited.status == "VERIFIED" and not names_its_ref(cited, pinned_lines)
     alike = sum(1 for line in pinned_lines if line.strip() == wanted)
     if cited.line <= len(current_lines) and current_lines[cited.line - 1].strip() == wanted:
-        return Row(cited.ref, where, "same", weak=alike > 1)
+        return Row(cited.ref, where, "same", weak=alike > 1, stray=stray)
     if alike > 1:
         # one of several lines that read alike where it was read: wherever those words are
         # now, nothing says which of them the ref meant, so it cannot be called moved
@@ -527,19 +632,25 @@ def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -
             f"one of {alike} lines that read alike at the pin, so it cannot be followed to "
             f"{head_sha[:7]}: re-anchor it on a line of its own",
             weak=True,
+            stray=stray,
         )
     found = [number for number, line in enumerate(current_lines, start=1) if line.strip() == wanted]
     if len(found) == 1:
-        return Row(cited.ref, where, "moved", f"line {found[0]} at {head_sha[:7]}")
+        return Row(cited.ref, where, "moved", f"line {found[0]} at {head_sha[:7]}", stray=stray)
     if found:
         # the same words in several places are no evidence the cited one survived: a ref that
         # reads `return self._bus` could be any method's, and a re-anchor on a line of its own
         # is what settles it
         places = ", ".join(str(number) for number in found[:6])
         return Row(
-            cited.ref, where, "changed", f"reads the same on lines {places} at {head_sha[:7]}"
+            cited.ref,
+            where,
+            "changed",
+            f"reads the same on lines {places} at {head_sha[:7]}",
+            stray=stray,
         )
-    return Row(cited.ref, where, "changed", f"no line reads {_code(wanted[:60])} at {head_sha[:7]}")
+    gone = f"no line reads {_code(wanted[:60])} at {head_sha[:7]}"
+    return Row(cited.ref, where, "changed", gone, stray=stray)
 
 
 def absent_at_the_pin(cited: Cited, cache: Cache, head_sha: str) -> Row | None:
@@ -622,6 +733,9 @@ def check_module(
         report.count(row.status)
         if row.weak:
             report.count("weak anchor")
+        if row.stray:
+            report.count("stray anchor")
+            report.stray.append(row)
         if row.status not in QUIET:
             report.rows.append(row)
         elif row.weak:
@@ -749,6 +863,7 @@ ORDER = (
     "shared",
     "not a file",
     "weak anchor",
+    "stray anchor",
 )
 
 
@@ -802,6 +917,13 @@ def section(report: Report) -> str:
             "and like other lines of its own file, so a change there could not be followed"
             f"</summary>\n\n{names}\n\n</details>"
         )
+    if report.stray:
+        names = ", ".join(f"`{_cell(row.ref)}` (`{_cell(row.cited)}`)" for row in report.stray)
+        out.append(
+            f"\n<details><summary>{len(report.stray)} stray anchors: each is VERIFIED, and the "
+            "line it cites holds no word of its name or its note at the pin, so it may cite the "
+            f"wrong line</summary>\n\n{names}\n\n</details>"
+        )
     return "\n".join(out)
 
 
@@ -837,6 +959,7 @@ def as_json(reports: Sequence[Report]) -> dict[str, Any]:
                 "unchecked": r.unchecked,
                 "rows": [vars(row) for row in r.rows],
                 "weak": [vars(row) for row in r.weak],
+                "stray": [vars(row) for row in r.stray],
                 "summary": summary_line(r),
             }
             for r in reports
@@ -855,6 +978,13 @@ def exit_code(reports: Sequence[Report]) -> int:
 # ── issues, one per upstream that needs somebody ────────────────────────────────────────
 
 LABEL = "upstream-drift"
+TITLE = "upstream drift: "
+"""Every issue the script keeps is titled this and the upstream's name."""
+OPENED_BY = "Opened by `.github/workflows/upstream-drift.yml`."
+"""What the body of every issue the script writes says, which tells it from a person's own."""
+ISSUES_LISTED = 200
+"""How many open `upstream-drift` issues are listed: one per upstream and the odd repeat, so this
+is room to spare."""
 Gh = Callable[[Sequence[str]], str]
 
 
@@ -870,7 +1000,12 @@ def gh_run(args: Sequence[str]) -> str:
     return result.stdout
 
 
-def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[str]:
+def sync_issues(
+    reports: Sequence[Report],
+    repo: str,
+    gh: Gh = gh_run,
+    known: Collection[str] | None = None,
+) -> list[str]:
     """One open issue per upstream that drifted or has a ref that cannot be followed, titled
     `upstream drift: <name>`, its body the upstream's section of the report, edited in place
     while that lasts and closed the night every ref reads as it was read.
@@ -879,7 +1014,16 @@ def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[s
     outage is not a clean night, and a table missing the rows nobody could fetch would read as
     drift that went away. It still opens an issue for what it did find. A comment is added only
     when what needs somebody changed, so a watcher is not pinged every night with the same
-    table. Returns what was done, one line per upstream."""
+    table.
+
+    Two open issues with one title are an issue and its repeat, and the oldest is the one kept:
+    a night that still finds something edits it and closes the others saying it carries on, a
+    clean night closes them all, and a night that could not check the upstream leaves them all.
+    `known` is every upstream the walk read, given only when it read every adapter there is: an
+    open issue the script wrote, titled for an upstream not among them, renamed or removed since,
+    would never be updated or closed again, so it is closed saying why, and only on a night every
+    upstream could be checked. Returns what was done, a line at a time, and what was done before
+    a refusal stays in it."""
     done: list[str] = []
     gh(
         [
@@ -895,19 +1039,6 @@ def sync_issues(reports: Sequence[Report], repo: str, gh: Gh = gh_run) -> list[s
             "an upstream a quackd adapter was read against has moved",
         ]
     )
-    for report in reports:
-        try:
-            line = _sync_one(report, repo, gh)
-        except Unreachable as e:
-            line = f"{report.name}: issue not synced: {e}"
-        if line:
-            done.append(line)
-    return done
-
-
-def _sync_one(report: Report, repo: str, gh: Gh) -> str | None:
-    """One upstream's issue, and what was done about it, or None when nothing was."""
-    title = f"upstream drift: {report.name}"
     listed = gh(
         [
             "issue",
@@ -918,56 +1049,146 @@ def _sync_one(report: Report, repo: str, gh: Gh) -> str | None:
             LABEL,
             "--state",
             "open",
-            "--search",
-            f'"{title}" in:title',
+            "--limit",
+            str(ISSUES_LISTED),
             "--json",
             "number,title,body",
         ]
     )
-    issues = [i for i in json.loads(listed or "[]") if i.get("title") == title]
+    titled: dict[str, list[dict[str, Any]]] = {}
+    for issue in sorted(json.loads(listed or "[]"), key=lambda issue: int(issue["number"])):
+        titled.setdefault(str(issue.get("title", "")), []).append(issue)
+    for report in reports:
+        issues = titled.pop(f"{TITLE}{report.name}", [])
+        try:
+            _sync_one(report, repo, gh, issues, done)
+        except Unreachable as e:
+            done.append(f"{report.name}: issue not synced: {e}")
+    if known is not None and not any(report.blocked for report in reports):
+        done.extend(_close_unknown(titled, set(known), repo, gh))
+    return done
+
+
+def _sync_one(
+    report: Report, repo: str, gh: Gh, issues: Sequence[dict[str, Any]], done: list[str]
+) -> None:
+    """One upstream's open issues, oldest first, each thing done added to `done` as it is done."""
+    title = f"{TITLE}{report.name}"
     number = str(issues[0]["number"]) if issues else ""
     if report.blocked and issues:
-        return f"{report.name}: not all of it could be checked, issue #{number} left"
+        done.append(f"{report.name}: not all of it could be checked, issue #{number} left")
+        return
     if not report.needs_somebody:
-        if not issues:
-            return None
+        for issue in issues:
+            gh(
+                [
+                    "issue",
+                    "close",
+                    str(issue["number"]),
+                    "--repo",
+                    repo,
+                    "--comment",
+                    "Every ref reads as it was read tonight, or has moved within its file.",
+                ]
+            )
+            done.append(f"{report.name}: issue #{issue['number']} closed")
+        return
+    body = (
+        f"{section(report)}\n\n{OPENED_BY} For a ref that changed, re-read it at the new "
+        "baseline and move the pin and `READ_ON` in "
+        f"`{report.module}`. For one that cannot be followed, anchor it on the line that "
+        "names what it cites. The issue closes itself the night after."
+    )
+    if not issues:
+        create = ["issue", "create", "--repo", repo, "--title", title, "--label", LABEL]
+        created = gh([*create, "--body", body])
+        done.append(f"{report.name}: issue opened ({created.strip().split()[-1]})")
+        return
+    before = _needing(str(issues[0].get("body", "")))
+    gh(["issue", "edit", number, "--repo", repo, "--body", body])
+    done.append(f"{report.name}: issue #{number} updated")
+    if before != _needing(body):
+        gh(
+            [
+                "issue",
+                "comment",
+                number,
+                "--repo",
+                repo,
+                "--body",
+                "What needs somebody changed tonight; the body above is current.",
+            ]
+        )
+    for repeat in issues[1:]:
         gh(
             [
                 "issue",
                 "close",
-                number,
+                str(repeat["number"]),
                 "--repo",
                 repo,
                 "--comment",
-                "Every ref reads as it was read tonight, or has moved within its file.",
+                f"This repeats #{number}, the oldest open issue for {report.name}, which "
+                "carries on.",
             ]
         )
-        return f"{report.name}: issue #{number} closed"
-    body = (
-        f"{section(report)}\n\nOpened by `.github/workflows/upstream-drift.yml`. For a ref "
-        "that changed, re-read it at the new baseline and move the pin and `READ_ON` in "
-        f"`{report.module}`. For one that cannot be followed, anchor it on the line that "
-        "names what it cites. The issue closes itself the night after."
-    )
-    if issues:
-        before = _needing(str(issues[0].get("body", "")))
-        gh(["issue", "edit", number, "--repo", repo, "--body", body])
-        if before != _needing(body):
-            gh(
-                [
-                    "issue",
-                    "comment",
-                    number,
-                    "--repo",
-                    repo,
-                    "--body",
-                    "What needs somebody changed tonight; the body above is current.",
-                ]
-            )
-        return f"{report.name}: issue #{number} updated"
-    create = ["issue", "create", "--repo", repo, "--title", title, "--label", LABEL]
-    created = gh([*create, "--body", body])
-    return f"{report.name}: issue opened ({created.strip().split()[-1]})"
+        done.append(f"{report.name}: issue #{repeat['number']} closed as a repeat of #{number}")
+
+
+def _close_unknown(
+    titled: dict[str, list[dict[str, Any]]], known: set[str], repo: str, gh: Gh
+) -> list[str]:
+    """Close each open issue the script wrote that is titled for an upstream the walk does not
+    know, and say so. One whose body does not say the workflow opened it is somebody's own,
+    whatever its title, and is left alone."""
+    done: list[str] = []
+    for title, issues in titled.items():
+        name = title[len(TITLE) :]
+        if not title.startswith(TITLE) or name in known:
+            continue
+        for issue in issues:
+            if OPENED_BY not in str(issue.get("body", "")):
+                continue
+            number = str(issue["number"])
+            try:
+                gh(
+                    [
+                        "issue",
+                        "close",
+                        number,
+                        "--repo",
+                        repo,
+                        "--comment",
+                        f"No upstream quackd reads is called {name} any more, so nothing would "
+                        "update this issue or close it. An upstream renamed since gets an issue "
+                        "under its new name the night it needs somebody.",
+                    ]
+                )
+            except Unreachable as e:
+                done.append(f"{name}: issue #{number} not synced: {e}")
+            else:
+                done.append(f"{name}: issue #{number} closed, since no upstream is called that now")
+    return done
+
+
+def unread_adapters() -> list[str]:
+    """Each adapter quackd knows that the walk could not read here, and why: one not installed,
+    or one whose module or `UPSTREAMS` raises, which `quackd doctor`'s walk passes over in
+    silence, and its upstreams with it. A night with one closes no issue for an upstream the walk
+    does not know, since that upstream may be one of its."""
+    from quackd.adapters.factory import _module, adapter_names, is_installed
+
+    unread: list[str] = []
+    for name in adapter_names():
+        if not is_installed(name):
+            unread.append(f"{name} is not installed")
+            continue
+        try:
+            for row in getattr(_module(name), "UPSTREAMS", ()):
+                tuple(row)
+        except Exception as e:
+            unread.append(f"{name} could not be read: {e}")
+    return unread
 
 
 _NEEDING_ROW = re.compile(
@@ -1013,6 +1234,7 @@ def main(argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
 
     rows = upstream_rows()
+    known = [name for name, _module in rows]
     if args.only:
         rows = [(name, module) for name, module in rows if name == args.only]
         if not rows:
@@ -1028,10 +1250,20 @@ def main(argv: Sequence[str]) -> int:
     _say(text)
     code = exit_code(reports)
     if args.issues:
+        # an issue for an upstream the walk does not know is closed only after a walk of every
+        # adapter, never on a run of one: an adapter that did not import here takes its
+        # upstreams out of the walk tonight, and their issues would read as nobody's
+        unread = [] if args.only else unread_adapters()
+        whole = not args.only and not unread
         try:
-            lines = sync_issues(reports, args.issues)
+            lines = sync_issues(reports, args.issues, known=known if whole else None)
         except Unreachable as e:
             lines = [f"issues not synced: {e}"]
+        if unread:
+            lines.append(
+                "no issue was closed for an upstream the walk does not know, since "
+                + "; ".join(unread)
+            )
         _say("".join(line + "\n" for line in lines))
         if any("not synced" in line for line in lines):
             code = code or 2

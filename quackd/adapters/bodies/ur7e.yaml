@@ -1,0 +1,45 @@
+# Universal Robots UR7e: a six-joint cobot. quackd describes it from UR's datasheet and drives
+# no part of it (ADR-0077). A later binding would reach it through UR's own ROS 2 driver, which
+# takes ur7e as a robot type, or ur_rtde. UR's FAQ says the UR5e was renamed the UR7e, now the
+# UR7e-920 on CB7, the arm mechanically unchanged, and a launch page of UR's calls it the UR5e's
+# upgraded version; this body is the arm sold as a UR7e, by the UR7e's own datasheet.
+vendor: universal-robots
+model: ur7e
+embodiment: arm
+mobility: none
+blurb: >-
+  a Universal Robots UR7e, a six-joint collaborative arm, bolted down any way up and run from
+  its own control box
+datasheet:
+  manipulator: arms
+  arms: 1
+  tethered: true
+  terrain: indoor_flat
+  mass_kg:
+    value: 20.6
+    confidence: official
+    source: "UR7e datasheet, October 2026, universal-robots.com/manuals/latest/en/datasheets/ur7e: 20.6 kg with the cable, read 2026-11-09"
+  dof:
+    value: 6
+    confidence: official
+    source: "UR7e datasheet, October 2026, universal-robots.com/manuals/latest/en/datasheets/ur7e: 6 rotating joints, read 2026-11-09"
+  payload_kg:
+    value: 7.5
+    confidence: official
+    source: "UR7e datasheet, October 2026, universal-robots.com/manuals/latest/en/datasheets/ur7e: 7.5 kg, read 2026-11-09"
+  reach_m:
+    value: 0.850
+    confidence: official
+    source: "UR7e datasheet, October 2026, universal-robots.com/manuals/latest/en/datasheets/ur7e: 850 mm, read 2026-11-09"
+  cannot:
+    - "move its base: it is bolted down and mains powered"
+  notes:
+    - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
+    - "safety rated PL d, category 3, with 23 configurable safety functions, by the datasheet"
+    - "its emergency stop is category 1 and removes drive power at standstill; a protective stop keeps drive power (UR's manual)"
+    - "joints turn 360 degrees each way at up to 180 degrees per second and the tool moves at up to 4 m/s by the datasheet; quackd clamps nothing here because it drives nothing"
+    - "100 to 240 VAC and any mounting by the datasheet, which rates the arm IP54 and its control box IP44"
+    - "UR's FAQ says \"the UR5e and UR10e were renamed UR7e and UR12e to reflect the payloads they actually carry, 7.5 kg and 12.5 kg\", and that this arm is now the \"UR7e-920 (previously UR7e)\" on the CB7 control box (universal-robots.com/insights/faq, read 2026-11-09)"
+    - "UR's FAQ also says \"the robots themselves are mechanically unchanged\", the 920 mm in the new name coming \"from a revised measurement method\", where this datasheet gives 850 mm (universal-robots.com/insights/faq, read 2026-11-09)"
+    - "a launch page of UR's calls the UR7e and UR12e \"upgraded versions of the UR5e and UR10e\" (universal-robots.com/landing-pages/seao/my/ur7e-ur12e-for-malaysia, read 2026-11-09)"
+    - "UR's page for the UR7e on CB5 heads it \"7 kg payload robot\", where its specifications and the datasheet say 7.5 kg (universal-robots.com/products/ur7e-cb5, read 2026-11-09)"

@@ -21,8 +21,9 @@ The protocol refs are `quackd_microduck.upstream_api`'s own, imported by name, s
 Microduck moves both by construction (ADR-0075). This module keeps what is Huebot's: the refs below
 sourced to its maker, and the words its lines use for what each of robotd's labels means.
 
-The maker's own code, github.com/Leif-Rydenfalk/walking-robot-kit, is the servo bus alone: a
-daemon serving an HTTP control page on port 8938, with no JSON-RPC, which quackd does not speak.
+The maker's own code, github.com/Leif-Rydenfalk/walking-robot-kit, is the kit's electronics,
+firmware and control software, whose daemon serves an HTTP control page on port 8938 with no
+JSON-RPC, which quackd does not speak.
 
 Nothing here has been run against a Huebot.
 """

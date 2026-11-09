@@ -1,0 +1,52 @@
+hook: The USB cable came out mid-reach. The run ended under half a second after the arm's last answer, and the arm stayed where it was.
+goal_met: "Yes"
+why_example: >
+  A USB cable can be knocked out, and the arm does not go limp when it is: its servos take their
+  power from their own supply, not from USB, and keep holding their last goal. In that moment quackd
+  has lost the only way it had to steer the arm. This example pulls the cable mid-move to see whether
+  quackd notices at once, stops trying to drive the arm, and says plainly what state it leaves the arm
+  in.
+why_result: >
+  With the cable out, nothing can fold the arm, stop it or let it go, so what matters is what quackd
+  says and when. It ended the run under half a second after the arm's last answer and told the person
+  the one thing that was true: it could not tell whether the arm was holding itself up, so hold it and
+  cut its power. Once the cable was back in, `quackd robot release` put the arm down at its rest pose.
+goal: >
+  Show that pulling the arm's USB cable mid-move ends the run at once, that the arm stays where the
+  move left it, and that quackd tells the person to hold the arm and cut its power rather than
+  claiming anything it cannot check.
+expected: >
+  The run ends within about a second of the pull, saying the arm did not answer. The arm holds its last
+  goal and does not sag. The close cannot read the arm, so it ends on a line telling the person to hold
+  it and cut its power, and nothing is asked. Once the cable is back in, `quackd robot release` folds
+  the arm to its rest pose and lets go there.
+showed:
+  - >
+    The LLM began the reach with one slow move of 5 s, from the fold toward the arm held out. The cable
+    came out about 3 s into it, after 29 sends had gone through.
+  - >
+    The next send could not read the arm, 0.11 s after the last good one, and the run stopped there.
+    Its last line came under half a second after the arm's last answer, `✗ error: the arm did not
+    answer: ...`, on one line and with no Python traceback, which is what 0.31.3 changed for an arm
+    that stops answering.
+  - >
+    Before that, the close said what this example asks to hear, word for word: `quackd cannot tell
+    whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut
+    its power`. It asked nothing, because nothing could reach the arm.
+  - >
+    The video shows the arm staying where the reach stopped while the cable was out. Once it was back
+    in, `quackd robot release arm-01` read the arm within 3° of the last goal sent, folded it to its
+    rest pose and took torque off: `✓ torque reads off on every joint of arm-01`.
+  - >
+    The error says `Port is in use!`, though what happened was a pulled cable. Those are the words of
+    the servo SDK underneath, and they read as if another program held the port.
+did_not_show:
+  - >
+    It does not show the heartbeat catching a pull. The pull came mid-move, and the move's own read
+    failed first.
+  - >
+    Nothing could read the arm while the cable was out, so whether it held is shown by the video and by
+    where it read once the cable was back in, not by the run's own record.
+  - >
+    The robot's own camera kept no picture after the reach began. Its three frames are from before the
+    move, because the run ended before it took another.

@@ -358,3 +358,39 @@ def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:
     assert "sk-ant-very-secret-key" not in (state.setup().path or Path()).read_text(
         encoding="utf-8"
     ), "never written to the saved setup"
+
+
+def test_the_robots_screen_shows_a_robots_type_and_asks_for_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An SO-100 and an SO-101 are both `lerobot:real`, so the page could neither show which a
+    robot is nor register one as the other: `quackd robot add --robot-type` had no field here."""
+    import os
+    import types
+
+    from quackd.registry import Registry, RobotEntry
+    from quackd.webui import jobs
+
+    Registry(os.environ["QUACKD_REGISTRY_DIR"]).add_robot(
+        RobotEntry(name="small", spec="lerobot:real", address="COM6", robot_type="so100_follower")
+    )
+    sent: list[list[str]] = []
+
+    def run_command(args: list[str], **_kw: object) -> object:
+        sent.append(list(args))
+        return types.SimpleNamespace(returncode=0, stdout="added", stderr="")
+
+    monkeypatch.setattr(jobs, "run_command", run_command)
+    at = _screen("robots")
+    table = at.dataframe[0].value
+    assert list(table["robot_type"]) == ["so100_follower"], table
+    at.selectbox(key="add:adapter").set_value("lerobot").run()
+    asked = at.selectbox(key="add:robot_type")
+    assert list(asked.options) == ["so101_follower", "so100_follower"]
+    asked.set_value("so100_follower").run()
+    at.text_input(key="add:name").set_value("small-2").run()
+    next(b for b in at.button if b.label == "Register it").click().run()
+    assert sent and sent[-1][:4] == ["robot", "add", "small-2", "lerobot:mock"], sent
+    assert sent[-1][-2:] == ["--robot-type", "so100_follower"], sent
+    at.selectbox(key="add:adapter").set_value("microduck").run()
+    assert not [s for s in at.selectbox if s.key == "add:robot_type"], "a duck has no type"
