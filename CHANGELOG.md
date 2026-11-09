@@ -401,6 +401,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   re-read of `microduck_rl` above. They say CC BY-NC-SA 4.0 on the meshes now, as upstream's README has
   since `7cc1961`, with `robot_walk.xml` under the Apache License 2.0. The recording is still labelled
   under the meshes' terms, and whether a render of them is an adaptation is unchanged.
+- **Huebot's page says what the maker's code is.** It called walking-robot-kit the servo bus alone,
+  where NOTICE, from the maker's README, says it is the kit's electronics, firmware and control
+  software. The page and `quackd_huebot.upstream_api` say that now.
 
 ### Known limitations
 
