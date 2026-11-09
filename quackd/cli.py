@@ -7500,10 +7500,16 @@ def robot_rest_pose(
         _registry_fail(e if isinstance(e, AdapterError) else AdapterError(str(e)))
         return
     if not getattr(adapter, "supports_rest_pose", False):
-        _fail(
-            f"{name} ({entry.key}) has joints, and quackd does not drive it to a rest pose "
-            "yet: only the LeRobot arm does today"
-        )
+        # a body quackd will never park says why itself, as an industrial arm does (ADR-0078),
+        # and one that says nothing is one quackd does not park yet
+        never = getattr(adapter, "rest_pose_refusal", None)
+        if isinstance(never, str) and never:
+            _fail(f"{name} ({entry.key}) has joints, and {never}")
+        else:
+            _fail(
+                f"{name} ({entry.key}) has joints, and quackd does not drive it to a rest pose "
+                "yet: only the LeRobot arm does today"
+            )
         return
 
     if not yes and not _can_prompt():

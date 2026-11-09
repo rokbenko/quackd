@@ -163,6 +163,9 @@ class RosArmAdapter:
     """A cobot is hand guided on its own pendant, in a mode quackd neither enters nor watches."""
     supports_rest_pose = False
     """quackd parks none of these arms (`NO_REST_POSE`)."""
+    rest_pose_refusal = NO_REST_POSE
+    """Why `quackd robot rest-pose` records no pose for one, in the words `go_to_rest()` answers
+    with: never, where a body quackd does not park yet is told not yet."""
 
     def __init__(self, transport: Any, *, robot_id: str | None = None, bridge: Any = None) -> None:
         self.transport = transport

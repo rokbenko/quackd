@@ -43,9 +43,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   never powers, enables, un-brakes or un-stops an arm, parks none and drives no tool, so `gripper`,
   `place`, `pick` and `manipulate` are withheld with why. CI's packaging job installs the wheel
   beside rosbridge's and lists its verbs. What changes for you: `quackd robot add cell-1 rosarm:mock
-  --robot-type ur5e` registers one, `quackd list-adapters --json` has eleven rows, the industrial
-  arm's before the described one, and the hint after an infeasible verdict names `rosarm` for a
-  payload up to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
+  --robot-type ur5e` registers one, `quackd robot rest-pose cell-1` refuses it, since quackd parks
+  an industrial arm nowhere, `quackd list-adapters --json` has eleven rows, the industrial arm's
+  before the described one, and the hint after an infeasible verdict names `rosarm` for a payload up
+  to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
 - **`quackd robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
   anything is written and in the words `make()` refuses it with, so no `robots.json` holds a robot
   that cannot run. `quackd robot add cell-2 rosarm:ws --robot-type ur5e --address
