@@ -5844,6 +5844,72 @@ async def test_a_release_that_raised_part_way_on_an_arm_with_no_pose_is_not_call
     assert arm.config.disable_torque_on_disconnect is False
 
 
+class LeavesSomeHolding(FakeBus):
+    """A bus whose torque-off reaches every motor and cannot confirm the ones in
+    `arm.torque_holdouts`, which keep their torque, and then raises naming each of them by name and
+    id, in the order of their ids, as LeRobot 0.7.0's does (`up.TORQUE_TRIED_ON_EVERY_MOTOR`)."""
+
+    def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
+        super().disable_torque(motors, num_retry=num_retry)
+        held = {joint: self.motors[joint] for joint in self.arm.torque_holdouts}
+        raise _torque_failed(False, held, num_retry + 1, NO_STATUS)
+
+
+class DisconnectsThroughItsBus(FakeArm):
+    """`SOFollower.disconnect` as LeRobot has it: the bus's own disconnect, asked to take torque off
+    when the config says so as it runs (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), which tries
+    every motor and shuts the port whatever that did (`up.DISCONNECT_RELEASES_THE_PORT`)."""
+
+    def disconnect(self) -> None:
+        self.calls.append(("disconnect",))
+        self.bus.disconnect(self.config.disable_torque_on_disconnect)
+
+
+@pytest.mark.parametrize(
+    ("held", "note"),
+    [
+        (
+            ("gripper",),
+            "the close took torque off, at the rest pose, on every joint but gripper, whose write "
+            "LeRobot could not confirm (ConnectionError: Failed to disable torque after 6 tries on "
+            "'gripper' (motor ID 6): Operation timed out.), so it may still hold: hold the arm as "
+            "though nothing holds it, and cut its power to be sure",
+        ),
+        (
+            ("wrist_roll", "shoulder_lift"),
+            "the close took torque off, at the rest pose, on every joint but shoulder_lift and "
+            "wrist_roll, whose writes LeRobot could not confirm (ConnectionError: Failed to "
+            "disable torque after 6 tries on 'shoulder_lift' (motor ID 2): Operation timed out, "
+            "'wrist_roll' (motor ID 5): Operation timed out.), so they may still hold: hold the "
+            "arm as though nothing holds it, and cut its power to be sure",
+        ),
+        (JOINTS, TORQUE_RELEASE_NOT_KNOWN),
+    ],
+    ids=["one joint", "two joints", "every joint"],
+)
+async def test_a_close_whose_release_raised_names_the_joints_that_may_still_hold(
+    held: tuple[str, ...], note: str
+) -> None:
+    """The close lets go of an arm at its rest pose through LeRobot's disconnect, whose torque-off
+    tries every motor and names each whose write it could not confirm, and that close said only
+    that some motors might hold, with the joints LeRobot named swallowed, where a release `let_go`
+    made names them. It names them now, in the bus's order and with LeRobot's words, every other
+    joint having let go. A disconnect that named every motor, like one that raised anything else
+    or never came back (`test_threads.py`), still says which motors hold is not known. The tries
+    are upstream's own count for a disconnect, five retries and the first (motors_bus.py line 457),
+    and the ids are the fake bus's, one to six in the follower's order."""
+    arm = DisconnectsThroughItsBus()
+    arm.bus = LeavesSomeHolding(arm)
+    arm.torque_holdouts = set(held)
+    rest = {joint: arm.positions[joint] for joint in JOINTS if joint != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest)
+    await transport.connect()
+    await transport.close()
+    assert transport.close_note == note, transport.close_note
+    assert arm.config.disable_torque_on_disconnect is True, "the close asked for the release"
+    assert arm.calls[-1] == ("bus.disconnect", True) and not arm.connected, arm.calls[-3:]
+
+
 async def test_a_hand_off_quotes_lerobots_words_and_not_an_earlier_failure() -> None:
     """`stop_error` outlives the failure that set it: a stop whose hold did not reach the arm
     leaves it set until a hold does. The release and the take-hold quoted it in place of the

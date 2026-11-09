@@ -961,7 +961,19 @@ TORQUE_RELEASE_NOT_KNOWN = (
     "the close was letting go of the arm and its disconnect did not finish, so some motors may "
     "have torque and some not: hold it, and cut its power to be sure"
 )
-"""What a close says of a disconnect that raised or never came back, with torque coming off."""
+"""What a close says of a disconnect that never came back, with torque coming off, or that raised
+naming none of the arm's motors, or every one of them."""
+
+TORQUE_RELEASE_NAMED = (
+    "the close took torque off, {where}, on every joint but {joints}, whose {writes} LeRobot "
+    "could not confirm ({said}), so {they} may still hold: hold the arm as though nothing holds "
+    "it, and cut its power to be sure"
+)
+"""What a close says of a disconnect whose torque-off raised naming some of the arm's motors.
+LeRobot's torque call tries every motor and names each whose write it could not confirm
+(`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and the disconnect shuts the port whatever that did
+(`up.DISCONNECT_RELEASES_THE_PORT`), so every joint it leaves out let go and each it names may
+still hold, which a release `let_go` made says the same way (`LeRobotReal._release_failed`)."""
 
 
 class LeRobotReal:
@@ -2339,16 +2351,19 @@ class LeRobotReal:
         # a close after a close finds the port shut, and that is no release going wrong
         connected = self._port_is_open()
         disconnected = False
-        with contextlib.suppress(Exception):
+        failed: Exception | None = None
+        try:
             await self._call(
                 self._robot.disconnect, deadline_s=DISCONNECT_S
             )  # up.SO_DISCONNECT_TORQUE
             disconnected = True
-        if why is None and connected and not disconnected and releases is not False:
+        except Exception as e:
+            failed = e
+        if why is None and connected and failed is not None and releases is not False:
             # that was the call that lets go of the arm, and it raised or never came back, so
             # some motors may have let go and some not, and every other line here is about an
             # arm the close knows the state of
-            self.close_note = self.RELEASE_NOT_KNOWN
+            self.close_note = self._release_not_known(failed)
         if why is None and self._release_refused and disconnected and releases is not False:
             # only once the disconnect came back, because its `Torque_Enable` 0 writes raise on
             # a bus that lost them, and "the close took torque off" is a thing to say only of a
@@ -2366,6 +2381,36 @@ class LeRobotReal:
     RELEASE_NOT_KNOWN = TORQUE_RELEASE_NOT_KNOWN
     """What the close says of a release that raised or did not come back, which the simulator words
     for a simulated arm."""
+
+    RELEASE_NAMED = TORQUE_RELEASE_NAMED
+    """What it says of a release that raised naming some of the arm's motors, which the simulator
+    words for a simulated arm too."""
+
+    def _release_not_known(self, error: Exception) -> str:
+        """What the close says of its own release when the disconnect that makes it raised `error`,
+        a timeout of `_call`'s among them, for a disconnect that never came back.
+
+        LeRobot's torque call tries every motor and names each whose write it could not confirm
+        (`up.TORQUE_TRIED_ON_EVERY_MOTOR`), and the disconnect shuts the port whatever that did
+        (`up.DISCONNECT_RELEASES_THE_PORT`). So where the error names some of the arm's motors,
+        every other one let go and those it names may still hold, and they are named, with
+        LeRobot's words, as `let_go` names them (`_release_failed`). The close used to say only
+        that some motors might hold, and the joints LeRobot named went unsaid. Where it names
+        none, or every motor of the arm, or the call never came back, which motors hold is not
+        known, and that is what is said (`RELEASE_NOT_KNOWN`)."""
+        motors = getattr(getattr(self._robot, "bus", None), "motors", None)
+        stuck = torque_failed_on(str(error))
+        if not stuck or _every_motor(stuck, motors):
+            return self.RELEASE_NOT_KNOWN
+        joints = [_named(n, motors)[1] for n in stuck]
+        one = len(joints) == 1
+        return self.RELEASE_NAMED.format(
+            where="at the rest pose" if self.rest_pose is not None else "where the arm stands",
+            joints=_listed(joints),
+            writes="write" if one else "writes",
+            said=self._quoted(error),
+            they="it" if one else "they",
+        )
 
     def _port_is_open(self) -> bool:
         """Whether the follower says it is connected. True where it will not say, so a release

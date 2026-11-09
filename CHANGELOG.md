@@ -166,6 +166,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
+- **A close whose own release raised names the joints that may still hold.** The close lets go of an
+  arm at its rest pose through LeRobot's disconnect. LeRobot 0.7.0's torque-off there tries every
+  motor and names each one whose write it could not confirm, where 0.6.1's stopped at its first
+  failed write, and it shuts the port whatever that did. When it raised, the close said only that
+  some motors might have torque and some not, which over 0.6.1's bus was all anyone could say. It
+  names the joints now, quoting LeRobot in the parenthesis: `the close took torque off, at the rest
+  pose, on every joint but gripper, whose write LeRobot could not confirm (...), so it may still
+  hold: hold the arm as though nothing holds it, and cut its power to be sure`. A disconnect that
+  named every motor, raised anything else or did not come back still says which motors hold is not
+  known. On the simulator the line names the joint the same way, with nothing to hold and no power
+  to cut. What changes for you: the close's last line sends you to the joint that may still hold,
+  and the arm's page lists that line.
 
 ### Fixed
 
@@ -232,11 +244,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   every motor and names each one it could not switch, and quackd names them all: `connect attempt 1
   of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both cables, and a release
   you asked for that raised names the joints that may still hold, every other one having let go. The
-  close's own release at the rest pose still says only that some motors may hold. A read of several
-  motors at once names the first motor that did not answer, said as that, since a cable that breaks
-  there silences the ones after it too. A handshake that found none of the arm's motors, or a torque
-  call that reached none, still names none. And a connect note tells a port that never opened from
-  one LeRobot closed behind its handshake, which writes to no motor and which the old bus left open.
+  close's own release names them too. A read of several motors at once names the first motor that
+  did not answer, said as that, since a cable that breaks there silences the ones after it too. A
+  handshake that found none of the arm's motors, or a torque call that reached none, still names
+  none. And a connect note tells a port that never opened from one LeRobot closed behind its
+  handshake, which writes to no motor and which the old bus left open.
   `tests/test_lerobot_adapter.py` builds each of those sentences as LeRobot does, citing the line
   that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
   over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that talks

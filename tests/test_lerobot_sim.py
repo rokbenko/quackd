@@ -2704,6 +2704,27 @@ async def test_the_heartbeat_draws_no_fault_and_feeds_no_grasp_but_meets_a_lost_
         await adapter.close()
 
 
+async def test_a_close_whose_release_lost_a_motor_names_it_in_the_simulators_words(
+    mjcf: str,
+) -> None:
+    """The simulated bus's torque-off tries every motor and names the one a seeded fault lands on,
+    as LeRobot 0.7.0's does, so the close names that joint as the arm's close does, in the words
+    the simulator's close has for a simulated arm: nobody holds one and there is no power to cut.
+    With no rest pose, which the simulated arm does not need, the close lets go of it where it
+    stands."""
+    adapter, transport = await _sim_arm(mjcf, faults=FaultPlan.parse("torque=1", seed=0))
+    follower = transport._robot
+    assert isinstance(follower, SimFollower) and transport.rest_pose is None
+    await adapter.close()
+    note = transport.close_note or ""
+    head = "the close took torque off the simulated arm, where the arm stands, on every joint but "
+    assert note.startswith(head) and note.endswith(", so it may still hold"), note
+    joint = note.removeprefix(head).split(",", 1)[0]
+    assert joint in JOINTS, note
+    assert f"tries on '{joint}' (motor ID {follower.bus.motors[joint].id}): " in note, note
+    assert "hold the arm" not in note and "cut its power" not in note, note
+
+
 BUSY_BEAT = 3
 """The heartbeat whose probe the event loop's thread is blocked behind: a few in, so the beats
 before it show the heartbeat was running."""
