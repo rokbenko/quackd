@@ -669,6 +669,62 @@ def test_add_wants_exactly_one_video(tmp_path: Path, monkeypatch: pytest.MonkeyP
         script.add_run(root, run, 10.0)
 
 
+def test_a_video_kept_elsewhere_is_named_with_video(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    with pytest.raises(script.LogError, match="no video at"):
+        script.add_run(root, run, 5.0, video=tmp_path / "missing.mp4")
+    (tmp_path / "E001.mp4").write_bytes(b"video")
+    script.add_run(root, run, 5.0, video=tmp_path / "E001.mp4")
+    media = json.loads((root / "e001" / "log" / "media.json").read_text(encoding="utf-8"))
+    assert media["speed"] == 5.0
+
+
+def test_what_a_command_after_the_run_printed_follows_its_trace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`quackd robot release` writes no run folder, so its output comes in as text, verbatim."""
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path, trace="$ quackd run x\nthe run's last line\n")
+    recorded = {"duck": "e001-task", "command": ["quackd", "run", "x"], **GOOD}
+    (run / "summary.json").write_text(json.dumps(recorded), encoding="utf-8")
+    (run / "E001.mp4").write_bytes(b"video")
+    saved = tmp_path / "E001-2.txt"
+    saved.write_bytes(
+        "\ufeffPS> quackd robot release arm-01\r\n✓ torque reads off\r\nPS>\r\n".encode()
+    )
+    notes = script.add_run(root, run, 5.0, after=[saved])
+    after = root / "e001" / "log" / "after.txt"
+    assert (
+        after.read_bytes() == "PS> quackd robot release arm-01\n✓ torque reads off\nPS>\n".encode()
+    )
+    notes.write_text(json.dumps(NOTES), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    run_part = "$ quackd run x\nthe run's last line"
+    after_part = "PS> quackd robot release arm-01\n✓ torque reads off\nPS>"
+    assert f"```text\n{run_part}\n\n{after_part}\n```" in text
+    assert "Show the full terminal trace (6 lines)" in text
+    assert "```text\nquackd run x\n```" in text, "the exact command is the run's alone"
+
+
+def test_add_will_not_copy_a_key_from_what_came_after(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "E001.mp4").write_bytes(b"video")
+    saved = tmp_path / "E001-2.txt"
+    saved.write_text("PS C:\\Users\\somebody> quackd robot release arm-01\n", encoding="utf-8")
+    with pytest.raises(script.LogError, match=r"E001-2\.txt holds a key"):
+        script.add_run(root, run, 5.0, after=[saved])
+    assert not (root / "e001" / "log").exists()
+
+
 def test_add_needs_a_run_that_reached_its_end(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     run = tmp_path / "20261104-114416-e001-task"
@@ -744,7 +800,7 @@ def test_the_how_to_names_everything_a_log_asks_for() -> None:
         assert f"`{word}`" in section
     for verb in ("add", "write", "check"):
         assert f"example_log.py {verb}" in section
-    for flag in ("--speed", "--example", "--replace"):
+    for flag in ("--speed", "--example", "--replace", "--video", "--after"):
         assert flag in section
 
 

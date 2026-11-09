@@ -373,6 +373,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E116 has a log: the USB cable pulled mid-reach.** The run ended under half a second after the
+  arm's last answer, said it could not tell whether the arm was holding itself up, and the arm stayed
+  where it was until `quackd robot release` put it down. A log can now carry what a command run after
+  the run printed, such as that release, which writes no run folder: `scripts/example_log.py add`
+  takes it as a saved text file with `--after`, and a video kept outside the run folder with `--video`.
 - **The Microduck page warns that every `/frame` quackd pulls is a photo in the robot's vet book.**
   From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
   record an owner can share, and quackd asks for two a second for as long as it is connected, so a
