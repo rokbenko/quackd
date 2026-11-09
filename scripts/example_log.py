@@ -698,13 +698,16 @@ def add_run(
     after: Sequence[Path] = (),
     video: Path | None = None,
     part: int | None = None,
+    gif: Path | None = None,
 ) -> Path:
     """Make this run its example's log and leave notes for somebody to fill in.
 
     An example has one log. Adding the same run again, as a better video does, keeps what was
     written about it. A different run starts the notes over, because they described the old one, so
     it takes `replace`, and the old log stays in git's history. `after` is the saved terminal output
-    of the commands run once the run was over, in the order they ran."""
+    of the commands run once the run was over, in the order they ran. `gif` is a GIF already made,
+    used as it is in place of a video: the clip of an arm that did not move is the same every time,
+    and git keeps one copy of identical files."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
@@ -719,7 +722,10 @@ def add_run(
     for what, text in copied:
         if PRIVATE.search(text):
             raise LogError(f"{what} holds a key or a path into a home folder: not copying it")
-    if video is None:
+    if gif is not None:
+        if not gif.is_file():
+            raise LogError(f"no GIF at {gif}")
+    elif video is None:
         video = _video_in(run_dir)
     elif not video.is_file():
         raise LogError(f"no video at {video}")
@@ -735,10 +741,13 @@ def add_run(
         if logged != run_dir.name:
             shutil.rmtree(log)
     log.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as scratch:
-        made = Path(scratch) / "run.gif"
-        make_gif(video, made)
-        shutil.copyfile(made, log / "run.gif")
+    if gif is not None:
+        shutil.copyfile(gif, log / "run.gif")
+    elif video is not None:
+        with tempfile.TemporaryDirectory() as scratch:
+            made = Path(scratch) / "run.gif"
+            make_gif(video, made)
+            shutil.copyfile(made, log / "run.gif")
     frames = _keep_frames(run_dir, log)
     _write(log / "summary.json", summary)
     _write(log / "terminal.txt", trace)
@@ -829,6 +838,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     add.add_argument("--replace", action="store_true", help="log this run instead of the old one")
     add.add_argument("--video", type=Path, help="the video, where it is not in the run folder")
     add.add_argument(
+        "--gif", type=Path, help="a GIF already made, used as it is in place of a video"
+    )
+    add.add_argument(
         "--after",
         type=Path,
         action="append",
@@ -870,6 +882,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.after,
                 args.video,
                 args.part,
+                args.gif,
             )
             print(f"Copied. Fill in {notes}, then run: example_log.py write")
         elif args.verb == "write":

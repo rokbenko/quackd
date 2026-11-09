@@ -892,6 +892,27 @@ def test_add_wants_exactly_one_video(tmp_path: Path, monkeypatch: pytest.MonkeyP
         script.add_run(root, run, 10.0)
 
 
+def test_a_gif_already_made_is_used_as_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The clip of an arm that did not move is the same every time, so it is never made again."""
+    _no_media(monkeypatch)
+
+    def no_new_gif(video: Path, gif: Path) -> None:
+        raise AssertionError("a GIF was made from the video")
+
+    monkeypatch.setattr(script, "make_gif", no_new_gif)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "still.mp4").write_bytes(b"video")
+    with pytest.raises(script.LogError, match="no GIF at"):
+        script.add_run(root, run, 5.0, gif=tmp_path / "gone.gif")
+    made = tmp_path / "still.gif"
+    made.write_bytes(b"GIF89a the still clip")
+    script.add_run(root, run, 5.0, gif=made)
+    assert (root / "e001" / "log" / "run.gif").read_bytes() == made.read_bytes()
+
+
 def test_a_video_kept_elsewhere_is_named_with_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1023,7 +1044,8 @@ def test_the_how_to_names_everything_a_log_asks_for() -> None:
         assert f"`{word}`" in section
     for verb in ("add", "write", "check"):
         assert f"example_log.py {verb}" in section
-    for flag in ("--speed", "--example", "--replace", "--video", "--after", "--part", "--text"):
+    flags = ("--speed", "--example", "--replace", "--video", "--gif", "--after", "--part", "--text")
+    for flag in flags:
         assert flag in section
 
 
