@@ -17,6 +17,9 @@ arm's own controller's: one trajectory goal, sent once, and watched until it end
   within `TOL_DEG` of its goal on `/joint_states`, or the verb fails naming the joint furthest off,
   as the SO-101's `shortfall` does. A SUCCEEDED proves little where the tolerances are left at 0
   (`up.JTC_ZERO_TOLERANCE`), and on the iiwa the readings are the commands (`up.IIWA_OPEN_LOOP`).
+  A joint within `TOL_DEG` of its goal is at it, so a goal that near every reading is arrived at
+  whether or not the arm moves: the check cannot tell a move that small from none, and the verb's
+  description says so.
 
 Every move asks the person first (`safety_class="confirm"`, on the mock as on `ws`, since a fake is
 never kinder): a seven to twenty-four kilogram arm is not moved on a pilot's word alone. And it
@@ -48,7 +51,9 @@ TICK_S = 0.1
 """How often a running move is looked at."""
 TOL_DEG = 0.5
 """Close enough, on an industrial arm. MotoROS2's own default goal tolerance is 0.01 rad, about
-0.57 degrees (`up.MOTO_GOAL_TOLERANCE`), and UR's 0.1 rad (`up.UR_TOLERANCES`)."""
+0.57 degrees (`up.MOTO_GOAL_TOLERANCE`), and UR's 0.1 rad (`up.UR_TOLERANCES`). A joint already
+this near its goal counts as at it, so a move smaller than this counts as arrived whether or not
+the arm moved."""
 SPEED_SHARE = 0.1
 """The share of each joint's rated speed a move may use at most: 18 degrees a second on a UR5e
 joint rated at 180. quackd's own ceiling, a courtesy and not a safeguard."""
@@ -377,7 +382,9 @@ def rosarm_verbs() -> dict[str, Verb]:
             "move_joints",
             "Move the arm's joints to goal angles in degrees over duration_s seconds, as one "
             "trajectory its own controller runs, and wait for it to arrive. Every joint not "
-            "named stays where it is. A person confirms every move first.",
+            f"named stays where it is. Arrived means every joint reads within {TOL_DEG:g} "
+            "degrees of its goal, so a goal that close to where the joints already read counts "
+            "as arrived whether or not the arm moved. A person confirms every move first.",
             move_joints,
             MoveJointsParams,
             timeout_s=MOVE_JOINTS_TIMEOUT_S,

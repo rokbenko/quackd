@@ -9,6 +9,7 @@ date for that arm's first hardware run (ADR-0076).
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,14 @@ from quackd_rosarm import (
 from quackd_rosarm.bodies import BODIES, ws_tier
 from quackd_rosarm.fake import FakeBridge
 from quackd_rosarm.transport import RosArmWs
-from quackd_rosarm.verbs import MOVE_MAX_S, NOT_OFFERED, PEAK_OVER_MEAN, SPEED_SHARE
+from quackd_rosarm.verbs import (
+    MOVE_MAX_S,
+    NOT_OFFERED,
+    NOTHING_TO_MOVE_DEG,
+    PEAK_OVER_MEAN,
+    SPEED_SHARE,
+    TOL_DEG,
+)
 
 OWNER_RULE = "bound code needs a named owner and a date for its first hardware run (docs/adr/0076)"
 
@@ -370,6 +378,37 @@ async def test_arrival_is_read_only_off_fresh_readings() -> None:
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
     assert not moved.ok and "the readings are stale" in moved.summary, moved.summary
+    await adapter.close()
+
+
+async def test_a_goal_within_the_tolerance_is_arrived_at_whether_or_not_the_arm_moved() -> None:
+    """A joint within `TOL_DEG` of its goal counts as at it, so a goal that near where the joints
+    read passes the arrival check at once: an arm that stops short of every goal by the whole of
+    this one, and so never moves, is called arrived. The verb's description tells the pilot so, and
+    a goal within `NOTHING_TO_MOVE_DEG` sends nothing at all."""
+    adapter = make("mock")
+    manifest = await adapter.connect()
+    registry = registry_from_manifest(manifest, adapter)
+    executor = Executor(registry, adapter, contract=None, confirm=allow_all)
+    bridge = adapter.bridge
+    bridge.arm.short_rad = math.radians(TOL_DEG)  # short of every goal by half a degree
+    here = (await adapter.get_state()).extras["joints"]["shoulder_pan_joint"]
+    before = dict(bridge.arm.positions)
+    small = await executor.run_verb(
+        "move_joints", {"positions": {"shoulder_pan_joint": here + 0.8 * TOL_DEG}, "duration_s": 1}
+    )
+    assert small.ok and small.summary.startswith("moved shoulder_pan_joint="), small.summary
+    assert bridge.arm.positions == before, "the arm never moved"
+    assert bridge.operations().count("send_action_goal") == 1
+    nothing = await executor.run_verb(
+        "move_joints",
+        {"positions": {"shoulder_pan_joint": here + 0.5 * NOTHING_TO_MOVE_DEG}, "duration_s": 1},
+    )
+    assert nothing.ok and nothing.summary == "already there: nothing was sent", nothing.summary
+    assert bridge.operations().count("send_action_goal") == 1
+    said = registry.get("move_joints").description
+    assert f"within {TOL_DEG:g} degrees of its goal" in said, said
+    assert "counts as arrived whether or not the arm moved" in said, said
     await adapter.close()
 
 

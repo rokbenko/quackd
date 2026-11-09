@@ -388,6 +388,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   status the bridge has not handed over within a second reads as nothing running, and neither a
   goal another client sends after the check nor a trajectory published on the controller's own
   topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
+- **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
+  moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
+  near where each joint already reads passes it at once, and a controller that said it succeeded
+  without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
+  within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
 - **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
   reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
   hold the instant between. A socket that is already down is never handed one.

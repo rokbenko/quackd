@@ -195,7 +195,11 @@ How `move_joints` works underneath:
    one.
 4. **Arrival is quackd's judgement.** After the result, every joint must read within 0.5 degrees
    of its goal on `/joint_states`, or the verb fails naming the joint furthest off. A SUCCEEDED
-   proves little where the tolerances are left at 0, as they are on the iisy and the iiwa.
+   proves little where the tolerances are left at 0, as they are on the iisy and the iiwa. A joint
+   within 0.5 degrees of its goal is at it, so a goal that near where every joint already reads
+   counts as arrived whether or not the arm moved: the check cannot tell a move that small from
+   none, and the verb's own description tells the pilot so. A goal within 0.05 degrees of every
+   reading sends nothing, and says the arm is already there.
 5. **Refused before anything is sent** when a goal lies outside the travel the robot's own
    description gives, when any joint reads past that travel, since a joint the pilot did not
    name is held where it reads, when the readings are stale, when the driver says the arm
