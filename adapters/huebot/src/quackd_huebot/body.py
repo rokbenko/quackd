@@ -172,6 +172,7 @@ HUEBOT = Body(
             "so it does not answer this call as robotd does (docs/adapters/huebot/README.md)"
         ),
         other_client="",
+        zero_twist="",
         unhealthy="Huebot's shim says it is unhealthy",
         no_stop=(
             "What stops Huebot now is its own deadman, which zeroes velocity once robot.move "

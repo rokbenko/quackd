@@ -1,0 +1,5 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3 --llm openai:gpt-6-astra --max-steps 10 --no-memory
+✗ error: lerobot:real names no registered arm, so it has no rest pose, and at the end of a run, a dry one included, there is nothing to fold it to, and it
+would be left holding itself up wherever it stopped
+  quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME
+(lerobot-test) PS D:\Development\lerobot-test\.venv>
