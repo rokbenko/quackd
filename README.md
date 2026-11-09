@@ -11,7 +11,7 @@
   <a href="https://pypi.org/project/quackd/"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
   <a href="docs/guides/mcp.md"><img src="https://img.shields.io/badge/MCP-ready-8A2BE2" alt="MCP ready"></a>
-  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-10%20adapters%2C%201%20on%20hardware%2C%2011%20described-f5c518" alt="robots: 10 adapters, 1 on hardware, 11 described"></a>
+  <a href="docs/adapters/status.md"><img src="https://img.shields.io/badge/robots-10%20adapters%2C%201%20on%20hardware%2C%2012%20described-f5c518" alt="robots: 10 adapters, 1 on hardware, 12 described"></a>
 </p>
 
 <details>

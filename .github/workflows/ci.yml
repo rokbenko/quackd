@@ -98,7 +98,7 @@ jobs:
           assert len(rows) == 11, rows
           assert not any(r["adapter_installed"] or r["installed"] for r in rows), rows
           (described,) = [r for r in rows if r["kind"] == "described"]
-          assert len(described["backends"]) >= 11, described
+          assert len(described["backends"]) >= 12, described
           PY
           ! ./bare/bin/quackd run hello-world --llm fake 2>err.txt
           grep -q "no robot adapter is installed" err.txt

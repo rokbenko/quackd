@@ -33,7 +33,7 @@ datasheet:
     - "move its base: it is bolted to a bench and mains powered"
   notes:
     - "no gripper is listed here: what goes on its flange is the integrator's choice, so arms stands for the bare wrist"
-    - "safety rated PL d, category 3, with torque sensors in every axis, by the datasheet"
+    - "safety rated PL d, category 3, by the datasheet, with joint torque sensors in every axis by kuka.com's LBR iisy page"
     - "joints move at 200 to 400 degrees per second by the datasheet"
     - "rated for 5 to 45 degrees C and IP30 by the datasheet; its mains voltage is not on the pages read"
     - "KUKA's RSI driver ends external control after a second with no state from the controller, and its RSI configuration decides whether the last command is held between packets; the pendant's stop is the brake"

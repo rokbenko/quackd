@@ -426,6 +426,7 @@ DESCRIBED_BODIES: tuple[str, ...] = (
     "unitree-g1-edu",
     "unitree-go2-edu",
     "ur5e",
+    "ur7e",
     "yaskawa-motomini",
 )
 """The bodies quackd describes and drives no part of, one YAML each under
