@@ -55,8 +55,8 @@ from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 from quackd_microduck.transports.mapd import MapdSource, sim_map_params
 from quackd_moss import verbs as moss_verbs
 from tests.fake_mapd import FakeMapd
+from tests.fake_robotd import FakeRobotd
 from tests.test_go_to_place import Recording, _map
-from tests.test_jsonrpc import FakeRobotd
 
 
 async def _duck(room: str = "two-rooms", seed: int = 3) -> tuple[Any, Recording, VerbContext]:

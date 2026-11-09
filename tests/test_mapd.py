@@ -34,7 +34,7 @@ from quackd_microduck.transports.mapd import (
     same_map,
 )
 from tests.fake_mapd import FakeMapd
-from tests.test_jsonrpc import FakeRobotd
+from tests.fake_robotd import FakeRobotd
 
 
 @pytest.fixture
