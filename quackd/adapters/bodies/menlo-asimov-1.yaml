@@ -24,12 +24,15 @@ datasheet:
     confidence: official
     source: "menlo.ai, Asimov-1 specifications: 25 powered joints, read 2026-11-05"
   payload_kg:
-    value: 15
+    value: 5
     confidence: official
-    source: "menlo.ai, Asimov-1 specifications: 15 kg per arm, read 2026-11-05"
-    note: per arm
+    source: "menlo.ai/asimov-1, the FAQ on how robust it is: 5 kg rated per arm in a curl or a front raise and 6 in a lateral raise, the lower figure, read 2026-11-09"
+    note: "per arm, held; 15 kg at peak, for about three seconds"
+  cannot:
+    - "grip anything in a hand: it has none, since Menlo says manipulation is in active development and its common adapter wrist takes third-party hands (menlo.ai/asimov-1, read 2026-11-09)"
   notes:
-    - "its SDK's documented E-Stop damps every actuator, and the documentation says a free-standing robot falls (docs.menlo.ai/sdk)"
-    - "the firmware zeroes velocity 2 s after the last packet and the SDK raises LinkLostError after 2 s without state (docs.menlo.ai/sdk): a deadman, which no binding here uses yet"
-    - "its SDK caps walking at 0.4 m/s and 0.8 rad/s; quackd clamps nothing here because it drives nothing"
-    - "endurance, speed and terrain are not on the pages read; the battery is 491 Wh"
+    - "the E-Stop in Asimov Manager damps every actuator at once and a free-standing robot falls; nothing in its SDK is an emergency stop (docs.menlo.ai/sdk/safety)"
+    - "on its udp and hybrid connections the robot zeroes velocity 2 s after the last velocity command and goes on balancing, and the SDK raises LinkLostError after 2 s without state (docs.menlo.ai/sdk/safety): a deadman, which no binding here uses yet"
+    - "in every mode the robot goes to DAMP 2 s after a trajectory's last setpoint, and DAMP drops a free-standing robot (docs.menlo.ai/sdk/safety)"
+    - "its firmware caps walking at 0.4 m/s and 0.8 rad/s, and its SDK clamps to the same by default (docs.menlo.ai/sdk/safety); quackd clamps nothing here because it drives nothing"
+    - "no endurance figure is on the pages read, and the battery is 491 Wh; Menlo says it is not yet waterproof (menlo.ai/asimov-1) and that a walking robot needs 2 m of clear floor ahead of it (docs.menlo.ai/sdk/safety)"

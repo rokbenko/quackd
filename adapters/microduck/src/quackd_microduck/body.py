@@ -72,6 +72,9 @@ class Words:
     """What a call refused by name means from a peer that speaks the version quackd read."""
     other_client: str
     """Who else sends a `robot.move`, as a clause, or nothing when nobody has said."""
+    zero_twist: str
+    """What else makes the state report a zero twist in place of the one sent, with nothing in
+    the state to say so, as a clause, or nothing when nobody has said."""
     unhealthy: str
     """What goes before the reason a health poll gave."""
     no_stop: str
@@ -332,6 +335,13 @@ MICRODUCK = Body(
         other_client=(
             ", as padd does at least ten times a second while a gamepad is connected, a stop "
             "while its sticks are still"
+        ),
+        # robotd puts an emotion's zero twist in place of the one it holds on every tick the
+        # emotion plays, and no field of robot.state says one is playing (`up.MOVE_ECHO`)
+        zero_twist=(
+            ", or an emotion was playing, which holds robotd's twist at zero with nothing in "
+            "robot.state to say so (any client can start one with robot.do, as a stock pad's Y "
+            "and bumpers do, and robotd logs 'emotion started' as one begins)"
         ),
         unhealthy="robotd unhealthy",
         no_stop=(

@@ -5,7 +5,7 @@ This was the README hero until 2026-09-15, when a real SO-101 arm ran quackd and
 recording of that became the picture at the top of the page
 ([ADR-0038](../adr/0038-the-readme-hero-is-a-real-run.md)). It is still what argues for
 the simulator, under *No robot yet? Try it in 60 seconds*, and it is still the one file
-here that renders upstream's model and carries its CC BY-NC-SA terms.
+here that renders upstream's model and carries its meshes' CC BY-NC-SA 4.0 terms.
 
 Two runs of one arena, side by side.
 
@@ -28,7 +28,7 @@ part of the simulation.
 
 Needs `quackd[mujoco]`. The first run downloads upstream's model and policies into
 `~/.quackd/cache` (about 10 MB) and prints their licence. Nothing of theirs is written here
-except the frames of this recording, which render a CC BY-NC-SA model and are labelled in
+except the frames of this recording, which render CC BY-NC-SA 4.0 meshes and are labelled in
 `docs/assets/README.md` and `docs/reference/licenses.md`.
 """
 

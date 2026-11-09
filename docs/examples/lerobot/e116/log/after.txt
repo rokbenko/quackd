@@ -1,0 +1,37 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it off, and the arm then folds to its rest pose and is let go
+of there: support it while it connects, then take your hands away when it says so, before it folds
+fold arm-01 to its rest pose and release torque there? [y/N]: y
+arm-01 (lerobot:real) is at
+shoulder_pan   -2.1
+shoulder_lift  -75.6
+elbow_flex     86.4
+wrist_flex     63.3
+wrist_roll     0.7
+gripper        0.5
+folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
+folding arm-01 to its rest pose: keep your hands out of its way
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.79120879120879,
+                      'safe goal_pos': 91.50549450549451},
+    'shoulder_lift': {   'original goal_pos': -91.4,
+                         'safe goal_pos': -80.56043956043956},
+    'wrist_flex': {   'original goal_pos': 73.7,
+                      'safe goal_pos': 68.25274725274726}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.79120879120879,
+                      'safe goal_pos': 94.67032967032966},
+    'shoulder_lift': {   'original goal_pos': -91.4,
+                         'safe goal_pos': -83.37362637362638},
+    'wrist_flex': {   'original goal_pos': 73.7,
+                      'safe goal_pos': 71.06593406593407}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -91.4,
+                         'safe goal_pos': -86.8021978021978}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -91.4,
+                         'safe goal_pos': -90.31868131868131}}
+✓ torque reads off on every joint of arm-01
+  the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and where it still reads: it rests there with no torque, as
+it does at the end of every run
+(lerobot-test) PS D:\Development\lerobot-test\.venv>

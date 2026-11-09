@@ -1,0 +1,12 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot rest-pose arm-01
+arm-01 (lerobot:real) is at
+shoulder_pan   -5.7
+shoulder_lift  -100.9
+elbow_flex     96.4
+wrist_flex     79.2
+wrist_roll     0.7
+gripper        2.5
+record this as arm-01's rest pose, replacing the one already recorded? [y/N]: Y
+✓ recorded arm-01's rest pose (6 joints)
+  quackd run <duck> --robot arm-01 starts from it and returns to it before letting go
+(lerobot-test) PS D:\Development\lerobot-test\.venv>

@@ -157,6 +157,12 @@ def _experiment(root: Path, wanted: str) -> dict[str, str]:
     return next(e for e in script.experiments(root) if e["id"] == wanted)
 
 
+def _fixed_lines() -> list[str]:
+    """Every line of the templates with nothing to fill in, which every log says word for word."""
+    templates = (script.LOG, script.FILM, script.ENDED, script.COMMAND)
+    return [line for text in templates for line in text.splitlines() if line and "{" not in line]
+
+
 def test_the_repository_holds_what_the_script_writes() -> None:
     """A hand-edited log or table, a key in a trace or a GIF too big all land here."""
     assert script.check_all(script.EXAMPLES) == []
@@ -190,10 +196,9 @@ def test_every_log_reads_the_same_but_for_its_content(tmp_path: Path) -> None:
 
     assert headings(one) == headings(two)
     assert labels(one) == labels(two)
-    for line in script.LOG.splitlines():
-        if line and "{" not in line:
-            assert line in one, f"the log dropped a fixed line: {line}"
-            assert line in two, f"the log dropped a fixed line: {line}"
+    for line in _fixed_lines():
+        assert line in one, f"the log dropped a fixed line: {line}"
+        assert line in two, f"the log dropped a fixed line: {line}"
 
 
 def test_a_log_says_why_it_matters_before_anything_else(tmp_path: Path) -> None:
@@ -212,7 +217,8 @@ def test_every_log_and_the_table_say_llm_and_never_the_other_word() -> None:
     for readme in readmes:
         found = script.NOT_THE_WORD.search(script.our_words(readme.read_text(encoding="utf-8")))
         assert found is None, f"{readme} says {found.group() if found else ''}"
-    for written in (script.LOG, script.NOTES, script.render_table(script.EXAMPLES)):
+    fixed = (script.LOG, script.FILM, script.ENDED, script.COMMAND, script.NOTES)
+    for written in (*fixed, script.render_table(script.EXAMPLES)):
         assert script.NOT_THE_WORD.search(script.our_words(written)) is None
 
 
@@ -367,6 +373,17 @@ def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
         script.render_log(root, _experiment(root, "E001"))
 
 
+def test_a_dry_run_is_tried_dry_and_any_other_is_not(tmp_path: Path) -> None:
+    """Left off, the line under Try it yourself would send the moves the log says were skipped."""
+    root = _tree(tmp_path / "examples")
+    for number, extra in (("e001", ["--dry-run"]), ("e002", [])):
+        command = ["quackd", "run", "t.duck", "--robot", "arm-01", *extra]
+        _logged(root, number, {**GOOD, "command": command})
+        text = script.render_log(root, _experiment(root, number.upper()))
+        tried = "quackd run t.duck --robot lerobot:mock --llm openai:gpt-6-sol --no-memory"
+        assert f"{tried}{' --dry-run' if extra else ''}\n```" in text
+
+
 def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
     """The line took the command's third word for a task, which beside a goal is `--goal`, so it
     printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
@@ -379,6 +396,323 @@ def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
         assert (
             'quackd run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol --no-memory'
         ) in text
+
+
+def _in_parts(root: Path, name: str = "e001") -> Path:
+    """An example in two parts, as `add --part` and `add --text --part` would leave it."""
+    log = root / name / "log"
+    run = log / "part-1"
+    run.mkdir(parents=True)
+    command = ["quackd", "run", "lerobot-lookout", "--robot", "arm-01"]
+    (run / "summary.json").write_text(
+        json.dumps({"duck": "lerobot-lookout", "command": command, **GOOD}), encoding="utf-8"
+    )
+    (run / "terminal.txt").write_text(
+        "$ quackd run lerobot-lookout --robot arm-01\nquackd 0.31.3\n", encoding="utf-8"
+    )
+    media = {"speed": 5, "frames": 2, "run_folder": "20261106-121736-lerobot-lookout"}
+    (run / "media.json").write_text(json.dumps(media), encoding="utf-8")
+    text = log / "part-2"
+    text.mkdir()
+    (text / "terminal.txt").write_text(
+        "(v) PS D:\\x> quackd robot rest-pose arm-01\n✓ recorded the pose\n(v) PS D:\\x>\n",
+        encoding="utf-8",
+    )
+    record = {
+        "command": ["quackd", "robot", "rest-pose", "arm-01"],
+        "version": "0.31.3",
+        "started_at": "2026-11-06T12:27:26Z",
+        "outcome": "success",
+        "reason": "recorded the pose",
+        "robot": "arm-01",
+        "transport": "real",
+    }
+    (text / "record.json").write_text(json.dumps(record), encoding="utf-8")
+    media = {"speed": 2, "frames": 0, "run_folder": None}
+    (text / "media.json").write_text(json.dumps(media), encoding="utf-8")
+    notes = {**NOTES, "parts": ["The run", "The command"]}
+    (log / "notes.yaml").write_text(json.dumps(notes), encoding="utf-8")
+    return root / name
+
+
+def test_a_log_in_parts_has_the_structure_of_any_other(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    _logged(root, "e002", GOOD)
+    _in_parts(root)
+    whole = script.render_log(root, _experiment(root, "E002"))
+    parts = script.render_log(root, _experiment(root, "E001"))
+
+    def headings(text: str) -> list[str]:
+        return [
+            re.sub(r"^(# E)\d.*", r"\1", line) for line in text.splitlines() if line.startswith("#")
+        ]
+
+    def labels(text: str) -> list[str]:
+        block = text.split("## The numbers\n", 1)[1].split("\n## ", 1)[0]
+        return [row.split("|")[1] for row in block.splitlines() if row.startswith("|")]
+
+    assert headings(parts) == headings(whole)
+    assert labels(parts) == labels(whole)
+    for line in _fixed_lines():
+        assert line in parts, f"the log in parts dropped a fixed line: {line}"
+    assert "**Part 1 of 2:** The run\n\n![E001, filmed with an external camera]" in parts
+    assert "(log/part-1/run.gif)" in parts
+    assert "(log/part-2/run.gif)" in parts
+    assert "The GIF plays at 5x speed." in parts
+    assert "The GIF plays at 2x speed." in parts, "each part says its own speed"
+    assert (
+        "| Hilarity | Yes | SUCCESS / SUCCESS | 2026-11-04 / 2026-11-06 | 0.31.1 / 0.31.3 |"
+        in parts
+    )
+    assert "| | Part 1 | Part 2 |\n|---|---|---|\n" in parts
+    assert "| LLM | `openai:gpt-6-sol` | none |" in parts
+    assert (
+        "| Run folder | `runs\\20261106-121736-lerobot-lookout` | none, it writes no run folder |"
+        in parts
+    )
+    assert "(log/part-1/frame-2.jpg)" in parts
+    assert "**Part 2 of 2:** The command\n\nThis run used no camera." in parts
+    said = "The following command was run with quackd 0.31.3:\n\n"
+    assert said + "```text\nquackd robot rest-pose arm-01\n```" in parts
+    assert "> recorded the pose" in parts
+    assert "quackd run lerobot-lookout --robot lerobot:mock" in parts, "the part that can be tried"
+    trace = parts.split("<details>", 1)[1]
+    assert "quackd 0.31.3\n\n(v) PS D:\\x> quackd robot rest-pose arm-01" in trace
+
+
+def test_parts_need_one_line_each(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    folder = _in_parts(root)
+    notes_path = folder / "log" / "notes.yaml"
+    notes = json.loads(notes_path.read_text(encoding="utf-8"))
+    notes_path.write_text(json.dumps({**notes, "parts": ["Only one"]}), encoding="utf-8")
+    with pytest.raises(script.LogError, match="parts"):
+        script.render_log(root, _experiment(root, "E001"))
+
+
+def test_a_log_in_parts_is_checked_and_on_the_table_like_any_other(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    folder = _in_parts(root)
+    script.write_all(root)
+    assert script.check_all(root) == []
+    assert (
+        "| It asked for a lot. It got a little. | Yes | 0.31.1 / 0.31.3 |"
+        in script.render_table(root)
+    )
+    trace = folder / "log" / "part-2" / "terminal.txt"
+    secret = "sk-abcdefghijklmnopqrstuv"
+    trace.write_text(trace.read_text(encoding="utf-8") + secret, encoding="utf-8")
+    assert any("holds a key" in problem for problem in script.check_all(root))
+
+
+def _text_file(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "E001.txt"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+REST_POSE = (
+    "\ufeff(v) PS D:\\x> quackd robot rest-pose arm-01\n"
+    "arm-01 (lerobot:real) is at\n"
+    "shoulder_pan   -5.7\n"
+    "✓ recorded arm-01's rest pose (6 joints)\n"
+    "  quackd run <duck> --robot arm-01 starts from it\n"
+    "(v) PS D:\\x>\n"
+)
+
+
+def _add_text(root: Path, text: Path, tmp_path: Path, **over: Any) -> Path:
+    (tmp_path / "v.mp4").write_bytes(b"video")
+    args: dict[str, Any] = {
+        "root": root,
+        "text_file": text,
+        "speed": 5.0,
+        "example": "e001",
+        "version": "0.31.3",
+        "started": "2026-11-06T12:27:26Z",
+        "video": tmp_path / "v.mp4",
+        "part": 3,
+    }
+    return script.add_text(**{**args, **over})
+
+
+def test_add_text_reads_a_command_that_writes_no_run_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    notes = _add_text(root, _text_file(tmp_path, REST_POSE), tmp_path)
+    part = root / "e001" / "log" / "part-3"
+    record = json.loads((part / "record.json").read_text(encoding="utf-8"))
+    assert record["command"] == ["quackd", "robot", "rest-pose", "arm-01"]
+    assert record["version"] == "0.31.3"
+    assert record["started_at"] == "2026-11-06T12:27:26Z"
+    assert record["outcome"] == "success"
+    assert record["reason"] == "recorded arm-01's rest pose (6 joints)"
+    assert (record["robot"], record["transport"]) == ("arm-01", "real")
+    assert json.loads((part / "media.json").read_text(encoding="utf-8")) == {
+        "speed": 5.0,
+        "frames": 0,
+        "run_folder": None,
+    }
+    assert (part / "terminal.txt").read_text(encoding="utf-8") == REST_POSE.removeprefix("\ufeff")
+    assert notes == root / "e001" / "log" / "notes.yaml"
+    assert "parts:" in notes.read_text(encoding="utf-8")
+
+
+def test_add_text_marks_a_failed_command_as_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    failed = "PS> quackd robot rest-pose arm-01\n✗ error: no arm\nPS>\n"
+    _add_text(root, _text_file(tmp_path, failed), tmp_path)
+    part = root / "e001" / "log" / "part-3"
+    record = json.loads((part / "record.json").read_text(encoding="utf-8"))
+    assert (record["outcome"], record["reason"]) == ("error", "error: no arm")
+    assert (record["robot"], record["transport"]) == ("not recorded", "not recorded")
+
+
+@pytest.mark.parametrize(
+    ("body", "over", "named"),
+    [
+        ("PS> quackd robot x\nno mark here\n", {}, "no line marked"),
+        ("nothing typed\n✓ fine\n", {}, "does not open with the command"),
+        ("PS C:\\Users\\me> quackd robot x\n✓ fine\n", {}, "holds a key"),
+        ("PS> quackd robot x\n✓ fine\n", {"started": "yesterday"}, "UTC time"),
+    ],
+)
+def test_add_text_refuses_what_it_cannot_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, over: dict[str, Any], named: str
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    with pytest.raises(script.LogError, match=named):
+        _add_text(root, _text_file(tmp_path, body), tmp_path, **over)
+    assert not (root / "e001" / "log").exists()
+
+
+def test_add_text_wants_its_video(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    with pytest.raises(script.LogError, match="no video at"):
+        _add_text(root, _text_file(tmp_path, REST_POSE), tmp_path, video=tmp_path / "gone.mp4")
+
+
+def test_add_text_uses_a_gif_already_made(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An arm that was never reached gets the same still clip as one that did not move."""
+    _no_media(monkeypatch)
+
+    def no_new_gif(video: Path, gif: Path) -> None:
+        raise AssertionError("a GIF was made from the video")
+
+    monkeypatch.setattr(script, "make_gif", no_new_gif)
+    root = _tree(tmp_path / "examples")
+    text = _text_file(tmp_path, REST_POSE)
+    with pytest.raises(script.LogError, match="no GIF at"):
+        _add_text(root, text, tmp_path, video=None, gif=tmp_path / "gone.gif")
+    made = tmp_path / "still.gif"
+    made.write_bytes(b"GIF89a the still clip")
+    _add_text(root, text, tmp_path, video=None, gif=made)
+    assert (root / "e001" / "log" / "part-3" / "run.gif").read_bytes() == made.read_bytes()
+
+
+REFUSED = (
+    "(v) PS D:\\x> quackd run D:/co/docs/examples/lerobot/e016/wave.duck --robot lerobot:real"
+    " --address COM3 --llm openai:gpt-6-astra --max-steps 10 --no-memory\n"
+    "✗ error: lerobot:real names no registered arm, so it has no rest pose, and it\n"
+    "would be left holding itself up wherever it stopped\n"
+    "  quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME\n"
+    "(v) PS D:\\x>\n"
+)
+
+
+def _refused_log(root: Path, text: Path, tmp_path: Path) -> str:
+    """The README of an example that is one refused run, as `add --text` leaves it."""
+    _add_text(root, text, tmp_path, part=None)
+    (root / "e001" / "log" / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
+    return script.render_log(root, _experiment(root, "E001"))
+
+
+def test_add_text_joins_a_line_the_terminal_wrapped_and_stops_at_the_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    _add_text(root, _text_file(tmp_path, REFUSED), tmp_path, part=None)
+    record = json.loads((root / "e001" / "log" / "record.json").read_text(encoding="utf-8"))
+    assert record["outcome"] == "error"
+    assert record["reason"] == (
+        "error: lerobot:real names no registered arm, so it has no rest pose, and it "
+        "would be left holding itself up wherever it stopped"
+    )
+
+
+def test_a_refused_run_names_what_it_was_given_and_says_it_used_none_of_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
+    assert "| Robot | `lerobot:real` (real) |" in text
+    assert "| LLM | `openai:gpt-6-astra`, never asked |" in text
+    assert "| Task file | [`wave.duck`](../e016/wave.duck) |" in text
+    assert "| LLM calls | none |" in text
+    assert "| Tokens | none |" in text
+    assert "| Connecting | never connected |" in text
+    assert "| First motion | no verb moved the arm |" in text
+
+
+def test_a_refused_run_is_tried_as_the_same_line_and_dry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
+    line = (
+        "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3"
+        " --llm openai:gpt-6-astra --max-steps 10 --no-memory --dry-run"
+    )
+    assert f"```bash\n{line}\n```" in text
+    assert script.TRY_THE_REFUSAL in text
+    assert "--llm None" not in text
+    assert "lerobot:mock" not in text
+
+
+def test_a_refused_run_already_dry_is_not_made_dry_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    dry = REFUSED.replace("--no-memory\n", "--no-memory --dry-run\n")
+    text = _refused_log(root, _text_file(tmp_path, dry), tmp_path)
+    assert "--no-memory --dry-run\n```" in text
+    assert "--dry-run --dry-run" not in text
+
+
+def test_a_command_that_is_no_run_and_no_refusal_is_not_given_a_try_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    with pytest.raises(script.LogError, match="nothing says how to try it"):
+        _refused_log(root, _text_file(tmp_path, REST_POSE), tmp_path)
+
+
+def test_a_whole_log_and_parts_do_not_mix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "E001.mp4").write_bytes(b"video")
+    script.add_run(root, run, 5.0)
+    with pytest.raises(script.LogError, match="whole log"):
+        script.add_run(root, run, 5.0, part=1)
+
+    other = _tree(tmp_path / "other")
+    script.add_run(other, run, 5.0, part=1)
+    assert (other / "e001" / "log" / "part-1" / "summary.json").exists()
+    with pytest.raises(script.LogError, match="in parts"):
+        script.add_run(other, run, 5.0)
 
 
 def test_the_gif_says_how_fast_it_plays(tmp_path: Path) -> None:
@@ -396,7 +730,7 @@ def test_a_run_that_went_wrong_still_gets_a_whole_log(tmp_path: Path) -> None:
     assert "The run ended with **ABORTED**" in text
     assert "> the arm did not answer" in text
     assert "This run used no camera." in text
-    assert "| First motion | no motion |" in text
+    assert "| First motion | no verb moved the arm |" in text
     assert "| Cost at list price | not recorded |" in text
     assert "| Speed cap | not recorded |" in text
 
@@ -669,6 +1003,83 @@ def test_add_wants_exactly_one_video(tmp_path: Path, monkeypatch: pytest.MonkeyP
         script.add_run(root, run, 10.0)
 
 
+def test_a_gif_already_made_is_used_as_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The clip of an arm that did not move is the same every time, so it is never made again."""
+    _no_media(monkeypatch)
+
+    def no_new_gif(video: Path, gif: Path) -> None:
+        raise AssertionError("a GIF was made from the video")
+
+    monkeypatch.setattr(script, "make_gif", no_new_gif)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "still.mp4").write_bytes(b"video")
+    with pytest.raises(script.LogError, match="no GIF at"):
+        script.add_run(root, run, 5.0, gif=tmp_path / "gone.gif")
+    made = tmp_path / "still.gif"
+    made.write_bytes(b"GIF89a the still clip")
+    script.add_run(root, run, 5.0, gif=made)
+    assert (root / "e001" / "log" / "run.gif").read_bytes() == made.read_bytes()
+
+
+def test_a_video_kept_elsewhere_is_named_with_video(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    with pytest.raises(script.LogError, match="no video at"):
+        script.add_run(root, run, 5.0, video=tmp_path / "missing.mp4")
+    (tmp_path / "E001.mp4").write_bytes(b"video")
+    script.add_run(root, run, 5.0, video=tmp_path / "E001.mp4")
+    media = json.loads((root / "e001" / "log" / "media.json").read_text(encoding="utf-8"))
+    assert media["speed"] == 5.0
+
+
+def test_what_a_command_after_the_run_printed_follows_its_trace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`quackd robot release` writes no run folder, so its output comes in as text, verbatim."""
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path, trace="$ quackd run x\nthe run's last line\n")
+    recorded = {"duck": "e001-task", "command": ["quackd", "run", "x"], **GOOD}
+    (run / "summary.json").write_text(json.dumps(recorded), encoding="utf-8")
+    (run / "E001.mp4").write_bytes(b"video")
+    saved = tmp_path / "E001-2.txt"
+    saved.write_bytes(
+        "\ufeffPS> quackd robot release arm-01\r\n✓ torque reads off\r\nPS>\r\n".encode()
+    )
+    notes = script.add_run(root, run, 5.0, after=[saved])
+    after = root / "e001" / "log" / "after.txt"
+    assert (
+        after.read_bytes() == "PS> quackd robot release arm-01\n✓ torque reads off\nPS>\n".encode()
+    )
+    notes.write_text(json.dumps(NOTES), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    run_part = "$ quackd run x\nthe run's last line"
+    after_part = "PS> quackd robot release arm-01\n✓ torque reads off\nPS>"
+    assert f"```text\n{run_part}\n\n{after_part}\n```" in text
+    assert "Show the full terminal trace (6 lines)" in text
+    assert "```text\nquackd run x\n```" in text, "the exact command is the run's alone"
+
+
+def test_add_will_not_copy_a_key_from_what_came_after(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "E001.mp4").write_bytes(b"video")
+    saved = tmp_path / "E001-2.txt"
+    saved.write_text("PS C:\\Users\\somebody> quackd robot release arm-01\n", encoding="utf-8")
+    with pytest.raises(script.LogError, match=r"E001-2\.txt holds a key"):
+        script.add_run(root, run, 5.0, after=[saved])
+    assert not (root / "e001" / "log").exists()
+
+
 def test_add_needs_a_run_that_reached_its_end(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     run = tmp_path / "20261104-114416-e001-task"
@@ -744,7 +1155,8 @@ def test_the_how_to_names_everything_a_log_asks_for() -> None:
         assert f"`{word}`" in section
     for verb in ("add", "write", "check"):
         assert f"example_log.py {verb}" in section
-    for flag in ("--speed", "--example", "--replace"):
+    flags = ("--speed", "--example", "--replace", "--video", "--gif", "--after", "--part", "--text")
+    for flag in flags:
         assert flag in section
 
 

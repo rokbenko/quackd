@@ -21,10 +21,12 @@ updates:
     # group. Drop an entry once what holds it back moves. hatchling, the last, is the build
     # backend, which the updater cannot move.
     ignore:
-      # quackd-lerobot's extras stop below 0.8, which nobody here has read
-      # (adapters/lerobot/pyproject.toml). A person moves the two together, with upstream_api.py.
+      # quackd-lerobot's extras stop below lerobot 0.7.1 and rustypot 1.14, which nobody here has
+      # read (adapters/lerobot/pyproject.toml). A person moves them together, with upstream_api.py.
       - dependency-name: "lerobot"
-        versions: [">=0.8"]
+        versions: [">=0.7.1"]
+      - dependency-name: "rustypot"
+        versions: [">=1.14"]
       # lerobot 0.7, the arm's SDK on Python 3.12 and later, pins numpy>=2.0.0,<2.3.0.
       - dependency-name: "numpy"
         versions: [">=2.3.0"]

@@ -19,10 +19,15 @@ dependencies = ["quackd>=0.33.0,<0.34"]
 # 0.7.0 that library is rustypot, which replaced feetech-servo-sdk under one bus for every Feetech
 # and Dynamixel servo (LeRobot's #4672), and 0.7.0 is the release upstream_api.py was read at. The
 # floor is that release, because 0.6's bus is not the one quackd reads the arm through, and the
-# ceiling is the next minor, which may move it again. Raise it with upstream_api.py and with the
-# ignore in .github/dependabot.yml; PLAN.md says what an arm still owes the release before.
+# ceiling is its next patch: the arm's stop, release and close lean on the bus as it reads at
+# 0.7.0, and a patch may move it, so rustypot, the part that talks to the port, is held below its
+# next minor too. Raise them with upstream_api.py and with the ignores in .github/dependabot.yml;
+# PLAN.md says what an arm still owes the release before.
 [project.optional-dependencies]
-sdk = ["lerobot[feetech]>=0.7,<0.8; python_version >= '3.12'"]
+sdk = [
+  "lerobot[feetech]>=0.7,<0.7.1; python_version >= '3.12'",
+  "rustypot>=1.13.1,<1.14; python_version >= '3.12'",
+]
 # The arm's simulator, `lerobot:mujoco`: MuJoCo on the CPU and nothing of LeRobot's, so it
 # installs on 3.11 as well. The SO-101's model is fetched at run time and never shipped.
 sim = ["mujoco>=3.12,<4"]
@@ -36,7 +41,7 @@ sim = ["mujoco>=3.12,<4"]
 # takes. No `[feetech]`, since the server never opens a serial port. A pi05, a pi0 or a GR00T
 # also wants a Hub token for its gated tokenizer (docs/adapters/lerobot/README.md).
 vla = [
-  "lerobot[smolvla,pi,xvla,diffusers-dep]>=0.7,<0.8; python_version >= '3.12'",
+  "lerobot[smolvla,pi,xvla,diffusers-dep]>=0.7,<0.7.1; python_version >= '3.12'",
   "dm-tree>=0.1.8,<1.0.0; python_version >= '3.12'",
 ]
 

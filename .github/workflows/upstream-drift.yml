@@ -12,14 +12,16 @@ name: upstream drift
 # of quackd's own cannot be followed, and somebody should go and read it. Exit 2: something did
 # not answer as it should and nothing else was found, so the night says nothing either way.
 #
-# The first run is expected red for seven upstreams, LeRobot among them, whose Feetech tables that
-# pull request removed, and MOSS, whose main moves most days. That is the point, not a fault.
+# It stays red while any upstream has moved under a ref that nobody has read again. That is the
+# point, not a fault, and MOSS's main moves most days.
 #
 # The script also keeps one issue open per upstream that needs somebody, labelled
 # `upstream-drift`, edits it in place while that lasts and closes it the night every ref reads
-# as it was read, so the finding outlives the run's logs. A night that could not check an
-# upstream closes nothing. That is the one write this workflow makes, and only in this
-# repository.
+# as it was read, so the finding outlives the run's logs. A second open issue with the same
+# title is closed in favour of the oldest, and one it wrote for an upstream no adapter reads any
+# more is closed saying why. A night that could not check an upstream closes none of its
+# issues, and a night that could not check them all closes none for an upstream gone from the
+# walk. That is the one write this workflow makes, and only in this repository.
 
 on:
   schedule:

@@ -29,7 +29,13 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, DuckState, Intent
+from quackd.transport.base import (
+    DEFAULT_CAMERA_NAME,
+    CameraFrame,
+    DuckState,
+    Intent,
+    TransportError,
+)
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import (
     STOP_ENDED,
@@ -458,6 +464,109 @@ async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -
         await asyncio.wait_for(running, timeout=5)
     assert "a stop was sent" not in str(aborted.value)
     assert transport.stops == 1
+
+
+class _SilentBody(_UnheardStop):
+    """A body gone silent: its reads fail, and its stop, which on the arm reads before it holds,
+    holds nothing and says so in `stop_error`, as the arm's real backend does."""
+
+    async def get_state(self) -> DuckState:
+        raise TransportError("the arm did not answer: ConnectionError: no status packet", code=7)
+
+
+def _still() -> VerbRegistry:
+    async def still(ctx: VerbContext, _: NoParams) -> VerbResult:
+        return VerbResult.success("still")
+
+    registry = VerbRegistry()
+    registry.register(Verb("still", "still", still))
+    return registry
+
+
+async def test_a_read_that_failed_says_when_the_stop_sent_after_it_did_not_land() -> None:
+    """A verb's gates read the body first, and a read that failed sent its stop and said only that
+    the read had failed, on `stop` too: neither the pilot nor a chat heard that nothing held the
+    arm. The error is the read's own, its class and its code kept."""
+    transport = _SilentBody()
+    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("still")
+    read = "the arm did not answer: ConnectionError: no status packet"
+    assert str(failed.value) == f"{read}; {UNHEARD}"
+    assert failed.value.code == 7 and transport.stops == 1
+
+
+async def test_a_read_that_failed_over_a_stop_that_landed_says_only_the_read() -> None:
+    class Unread(MockTransport):
+        async def get_state(self) -> DuckState:
+            raise TransportError("the link is down")
+
+    transport = Unread()
+    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("still")
+    assert str(failed.value) == "the link is down" and transport.stops == 1
+
+
+async def test_a_stop_whose_reason_the_read_already_gave_is_not_said_twice() -> None:
+    """A wedged bus answers the read and the stop with one sentence, which read twice over. The
+    stop's failure is still said, since it is what tells a pilot nothing holds the arm."""
+
+    class Wedged(MockTransport):
+        stop_error: str | None = None
+
+        async def get_state(self) -> DuckState:
+            raise TransportError("the bus is wedged")
+
+        async def stop(self) -> None:
+            self.stops += 1
+            self.stop_error = "the bus is wedged"
+
+    ex = Executor(_still(), Wedged(), contract=duck("still").frontmatter)
+    with pytest.raises(TransportError) as failed:
+        await ex.run_verb("still")
+    assert str(failed.value) == "the bus is wedged; the stop sent after it failed the same way"
+
+
+async def test_an_error_a_link_raises_again_gains_the_stop_once() -> None:
+    """A link that keeps the one error it died of raised it again for every read, and each verb
+    added the clause again."""
+    kept = TransportError("the arm did not answer: ConnectionError: no status packet")
+
+    class Kept(_UnheardStop):
+        async def get_state(self) -> DuckState:
+            raise kept
+
+    ex = Executor(_still(), Kept(), contract=duck("still").frontmatter)
+    for _ in range(3):
+        with pytest.raises(TransportError):
+            await ex.run_verb("still")
+    assert str(kept).count("the stop sent after it failed") == 1, str(kept)
+
+
+async def test_a_composite_whose_nested_read_failed_says_the_stop_once() -> None:
+    """The nested verb's read said why its stop did not land, and the composite's own handler
+    said it again after it."""
+
+    class SecondReadFails(_UnheardStop):
+        reads = 0
+
+        async def get_state(self) -> DuckState:
+            self.reads += 1
+            if self.reads > 1:
+                raise TransportError("the arm did not answer: ConnectionError: no status packet")
+            return await super().get_state()
+
+    async def outer(ctx: VerbContext, _: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        return await ctx.run_verb("still", {})
+
+    registry = _still()
+    registry.register(Verb("outer", "outer", outer))
+    ex = Executor(registry, SecondReadFails(), contract=duck("outer, still").frontmatter)
+    result = await ex.run_verb("outer")
+    assert not result.ok
+    assert result.summary.count("the stop sent after it failed") == 1, result.summary
 
 
 async def test_no_contract_allows_safe_verbs_only(

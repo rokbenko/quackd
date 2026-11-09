@@ -1639,3 +1639,34 @@ def test_a_single_camera_still_reads_under_the_row_label_it_always_had(
     labels = [r.what for r in _probe_of(report).rows if r.what.startswith("camera")]
     assert labels == ["camera"], labels
     assert report.ok is True
+
+
+class _UnnamedEye(_OneEye):
+    """One camera whose health names no address, as the mock's does, so the probe prints the one
+    it was given."""
+
+    def camera_health(self) -> dict[str, Any]:
+        return {k: v for k, v in super().camera_health().items() if k != "url"}
+
+
+def test_a_camera_address_given_as_a_list_is_printed_as_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--camera-url` can be given twice, so it arrives as a list, and the row printed that list
+    as Python wrote it: `url ['opencv://0']`."""
+    report = _probed(monkeypatch, _UnnamedEye(), camera_url=["opencv://0"])
+    assert _row(report, "  url").value == "opencv://0"
+    report = _probed(monkeypatch, _UnnamedEye(), camera_url=["opencv://0", "opencv://1"])
+    assert _row(report, "  url").value == "opencv://0, opencv://1"
+
+
+def test_the_assumptions_table_folds_a_long_what_rather_than_cutting_it() -> None:
+    """Its note column folded, and its `what` column cut a ref's name with an ellipsis at a
+    hundred columns or fewer, a character a cp1252 console cannot carry."""
+    report = doctor.DoctorReport(version="0", python="3.12", platform="test")
+    report.assumptions = [
+        doctor.Assumption("lerobot", "TORQUE_CALL_TRIES_EVERY_MOTOR_" + "AND_NAMES_EACH_" * 4, "n")
+    ]
+    out = io.StringIO()
+    Console(file=out, width=60).print(doctor._assumptions_table(report))
+    assert "…" not in out.getvalue() and "AND_NAMES_EACH_" in out.getvalue(), out.getvalue()
