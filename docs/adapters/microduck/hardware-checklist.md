@@ -19,10 +19,12 @@ the walk over at once; quackd stops sending a walk once robotd's state no longer
 letting go after that stops the duck until the pilot sends its next walk. What ends a quackd walk
 outright is quackd's `stop`, which Ctrl-C or `q` in the terminal running it sends, or the pad's
 sit button, A unless the robot's owner moved it (`ssh microduck@<duck> robotctl pad bindings`
-says), since quackd sends no walk to a duck that is not standing. Somebody should be holding the
-pad all the same, and should know which of these they are reaching for. quackd's `stop` is a
-request over a socket, and step 8 is where you find out what happens when that socket is not
-there.
+says), since quackd sends no walk to a duck that is not standing. On robotd daemon-v0.18.8 or later
+Y and the two bumpers end one as well unless the owner moved them: each plays an emotion, robotd
+holds the twist at zero while one plays, and the verb fails saying robotd has not taken its twist.
+Somebody should be holding the pad all the same, and should know which of these they are reaching
+for. quackd's `stop` is a request over a socket, and step 8 is where you find out what happens when
+that socket is not there.
 
 ## 0. Rehearse in the physics simulator first
 

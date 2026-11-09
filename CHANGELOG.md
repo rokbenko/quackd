@@ -408,6 +408,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   stops this way on daemon-v0.18.8 or later tells you to look at the pad's Y and bumpers, at any
   other program that sends `robot.do`, and at robotd's log. What stops the walk, the failure's
   first words and `extras.move_echo` are as they were.
+- **A held gaze let go during an emotion names the emotion as one cause.** An emotion has the head
+  while it plays, as it has the twist, and nothing in `robot.state` says one is, so `microduck:jsonrpc`
+  let go of a gaze saying another client was steering the head. On a robotd that names daemon-v0.18.8
+  or later in its `hello`, `extras.gaze_released` names an emotion beside the other client and says
+  robotd logs `emotion started` as one begins. What changes for you: the words only.
+- **The upstream drift nightly no longer calls a night clean when an adapter could not be read.** The
+  walk `quackd doctor` makes passes over an adapter whose module or `UPSTREAMS` raises, and its
+  upstreams with it, so a night with nothing else wrong exited 0. Such a night names who was not read
+  at the top of its report, in `drift.json` under `unread`, and exits 2, as could not check. A run of
+  one upstream with `--only` walks no adapter and is as it was.
 
 ### Security
 
@@ -626,6 +636,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
   `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
   with `--text`.
+- **The safety page and the Microduck's checklist say a stock pad's Y and bumpers end a walk.** On
+  robotd daemon-v0.18.8 or later each plays an emotion, robotd holds the twist at zero while one plays,
+  and the verb fails. Neither page named those buttons among what ends a walk.
+- **Nine refs cite the line that says what they read.** Seven of ToddlerBot's, one of roslibpy's and
+  one of LeRobot's stood beside it, on the `def` or the `try` above it, and ToddlerBot's `read_vin`
+  on another function altogether, so the drift nightly listed them as stray. They are on the line
+  itself at the same pin. ToddlerBot's `reset` stays where it is: it records that no such method
+  exists, and no line can say so.
 
 ### Known limitations
 

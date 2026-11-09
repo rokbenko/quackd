@@ -81,7 +81,7 @@ OBS = UpstreamRef(
 OBS_NONE_ON_HARDWARE = UpstreamRef(
     "pos, lin_vel, joint_pos, joint_vel",
     "VERIFIED",
-    src(_SIM, 10),
+    src(_SIM, 39),
     "all None from RealWorld, along with motor_acc, and the two backends' None-sets are "
     "disjoint: MuJoCo fills these and leaves motor_cur None instead. Only time, motor_pos, "
     "motor_vel and motor_tor are non-None on both. There is no pose on hardware, ever.",
@@ -151,7 +151,7 @@ OBSERVATION_CAN_BE_ALL_ZEROS = UpstreamRef(
 CONTROLLER_FAULT_IS_A_KEYERROR = UpstreamRef(
     "KeyError",
     "VERIFIED",
-    src(_MCH, 248),
+    src(_MCH, 252),
     "the C++ swallows a per-controller exception, logs to stderr and inserts an empty map to "
     "keep the dict key, so Python sees no exception and then raises KeyError indexing it. "
     "There is no try/except anywhere in get_observation. It is a hardware fault, not a "
@@ -253,7 +253,7 @@ INIT_ENABLES_TORQUE = UpstreamRef(
 INIT_REQUIRES_AN_IMU = UpstreamRef(
     "get_latest_state",
     "VERIFIED",
-    src(_REAL, 71),
+    src(_REAL, 72),
     "dereferenced with no None guard and outside the try that would have caught a missing "
     "IMU, so a robot built without one raises AttributeError here despite the optional-IMU "
     "handling twenty lines above.",
@@ -261,7 +261,7 @@ INIT_REQUIRES_AN_IMU = UpstreamRef(
 INIT_BUSY_WAITS_FOREVER = UpstreamRef(
     "while not imu_data",
     "VERIFIED",
-    src(_REAL, 73),
+    src(_REAL, 74),
     "no sleep, no timeout, no retry cap, and torque is already on by this point. A silent IMU "
     "hangs construction at full CPU with the motors live and no target established. quackd "
     "runs construction under its own watchdog because nothing inside the class can recover.",
@@ -269,7 +269,7 @@ INIT_BUSY_WAITS_FOREVER = UpstreamRef(
 INIT_SWALLOWS_BUS_FAILURE = UpstreamRef(
     "Dynamixel controller not found",
     "VERIFIED",
-    src(_REAL, 68),
+    src(_REAL, 69),
     "construction still succeeds with the controller list empty and the index arrays never "
     "assigned, so the failure surfaces later as an AttributeError inside set_motor_target. "
     "quackd asserts the invariants immediately after construction instead.",
@@ -366,7 +366,7 @@ SPEAKER_CANNOT_SPEAK = UpstreamRef(
 NO_BATTERY_IN_PYTHON = UpstreamRef(
     "read_vin",
     "VERIFIED",
-    src(_CTRL, 184),
+    src(_CTRL, 83),
     "bus voltage is read in C++ during initialisation and only printed. Nothing exposes it to "
     "Python, so battery_percent is always None and a battery abort can never fire.",
 )
@@ -383,7 +383,7 @@ VERSION_DISAGREES_WITH_THE_TAG = UpstreamRef(
 UPSTREAM_CI_IS_DISABLED = UpstreamRef(
     "Skipping tests",
     "VERIFIED",
-    src(_CI, 11),
+    src(_CI, 16),
     "the only step echoes a skip and exits zero, and the repository has one test file. "
     "Nothing at this pin was ever machine-verified upstream, so quackd assumes nothing works "
     "until it has run it itself.",

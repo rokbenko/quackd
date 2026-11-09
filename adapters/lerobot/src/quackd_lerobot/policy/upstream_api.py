@@ -739,7 +739,7 @@ RELATIVE_ACTIONS = UpstreamRef(
     "RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it "
     "while a policy bound to it still plays the chunk predicted from it",
     "VERIFIED",
-    src(_RELATIVE, 144),
+    src(_RELATIVE, 148),
     "training makes a chunk relative to one state, broadcast across it (`to_relative_actions`, "
     "line 44), and AbsoluteActionsProcessorStep (line 197) adds back the state the relative "
     "step cached (line 152). At 0.6.1 the step cached the state every time the pre-processor "
