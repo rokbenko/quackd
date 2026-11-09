@@ -423,3 +423,17 @@ async def test_a_raw_goal_moves_the_mock_one_step_of_the_cap_as_it_moves_the_arm
         state = await transport.get_state()
         assert state.extras["joints"]["shoulder_pan"] == MAX_STEP_DEG, transport.name
         await transport.close()
+
+
+async def test_a_second_close_of_the_mock_keeps_what_the_first_one_said() -> None:
+    """The mock's port refuses a read once the first close has shut it, as the arm's does, so a
+    second close read nothing and ended on not being able to tell whether the arm holds itself
+    up, over an arm the first close had let go of at its rest pose. It keeps the first close's
+    line, as the arm's does."""
+    mock = LeRobotMock(rest_pose=dict(REST))
+    await mock.connect()
+    await mock.close()
+    assert mock.close_note is None and not mock.torque, mock.close_note
+    await mock.close()
+    assert mock.close_note is None, mock.close_note
+    assert mock.sequence == ["close", "close"]

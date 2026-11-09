@@ -2225,7 +2225,15 @@ class LeRobotReal:
         refused is not sent back to that same release (`TORQUE_KEPT_AFTER_REFUSAL`). And such
         an arm, closed at its rest pose or with no pose recorded, is let go of by the
         disconnect as every such close is, which after a refusal is said
-        (`released_by_the_close`)."""
+        (`released_by_the_close`).
+
+        A close after a close, over a port the first one shut, says nothing new and keeps the
+        first one's line: nothing it could send reaches a motor, and the read it would decide by
+        is refused on a shut port, so its line would be that it cannot tell whether the arm holds
+        itself up, over an arm the first close may have let go of at its rest pose. One whose
+        port is still open, or will not say, closes as any close does."""
+        if self._closed and not self._port_is_open():
+            return
         self._closed = True
         await self._cancel_policy("the arm's transport was closed")
         if self._policy_loop is not None:

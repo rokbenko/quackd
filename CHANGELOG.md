@@ -310,6 +310,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   joints may still hold` where LeRobot named the joints it could not confirm. What changes for you:
   the row says the close was letting go of the arm, where it said the arm was holding itself up away
   from its pose.
+- **A second close of the arm keeps what the first one said.** A close after a close, over a port
+  the first one shut, read the arm, was refused on the shut port and ended on `quackd cannot tell
+  whether the arm is holding itself up (...)`, over an arm the first close may have let go of at its
+  rest pose. It keeps the first close's line now, and one whose port is still open closes as any
+  close does. No quackd command prints a second close's line: a flock member whose run raised can be
+  closed a second time, and code of your own may close the transport twice. What changes for you:
+  `close_note` after a second close is the first close's.
 
 ### Security
 
