@@ -1099,8 +1099,8 @@ async def test_the_state_lists_as_assumed_only_what_upstream_api_calls_unverifie
     nothing read in robotd's source belongs in it. Posture was its one entry until the policy
     labels were read at the pin. On a robot with no camera what is left is stand_up's
     `robot.enable`, which upstream does not promise gets a fallen duck up, and the lens assumed
-    for a tall `/frame` joins it while one is in use
-    (`test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens`)."""
+    for a tall or a wide `/frame` joins it while one is in use
+    (`test_the_first_frame_from_mediad_is_taken_for_the_lens_its_shape_names`)."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     listed = (await t.get_state()).extras["assumptions"]
@@ -3872,21 +3872,34 @@ async def test_a_snapshot_that_runs_out_of_time_is_asked_for_again(robotd: FakeR
 @pytest.mark.parametrize(
     ("path", "size", "assumed"),
     [
-        (up.MEDIAD_FRAME_PATH, (720, 1280), True),
-        (up.MEDIAD_FRAME_PATH, (1280, 720), False),
-        ("/snapshot.png", (720, 1280), False),
+        (up.MEDIAD_FRAME_PATH, (720, 1280), up.ALPHA_UPRIGHT_FOV),
+        (up.MEDIAD_FRAME_PATH, (1280, 720), up.BETA_UPRIGHT_FOV),
+        (up.MEDIAD_FRAME_PATH, (640, 360), up.BETA_UPRIGHT_FOV),
+        (up.MEDIAD_FRAME_PATH, (720, 720), None),
+        ("/snapshot.png", (720, 1280), None),
+        ("/snapshot.png", (1280, 720), None),
     ],
-    ids=["tall-frame", "wide-frame", "another-camera"],
+    ids=[
+        "tall-frame",
+        "wide-frame",
+        "wide-360p-frame",
+        "square-frame",
+        "another-camera-tall",
+        "another-camera-wide",
+    ],
 )
-async def test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens(
-    robotd: FakeRobotd, path: str, size: tuple[int, int], assumed: bool
+async def test_the_first_frame_from_mediad_is_taken_for_the_lens_its_shape_names(
+    robotd: FakeRobotd, path: str, size: tuple[int, int], assumed: up.UpstreamRef | None
 ) -> None:
     """The PNG carries no lens, and `serve-mcp` has no `--fov-deg` to give one, so a body with
     none is measured through the simulator's 90 degrees. On a stock robot only an alpha's camera,
     turned upright for the PNG, gives a picture taller than wide, so a tall first frame from
-    mediad's route is taken for the IMX219's 62 degrees running down the picture: the lens goes
-    in the manifest, and every state names the assumption. A wide picture, a beta's, and any
-    other camera are left without one."""
+    mediad's route is taken for the IMX219's 62 degrees running down the picture. Only a beta's
+    GC2093, which sits upright, gives one wider than tall, and the PNG is the whole frame it
+    took, which upstream's solve of the beta's lens puts at 85.2 degrees across at any size. A
+    wide frame got no lens until that solve was read, and is taken for it now. Either lens goes in
+    the manifest, and every state names the assumption it rests on. A square picture, and any
+    other camera, are left without one."""
     with SnapshotServer((200, _png(*size))) as camera:
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(path), camera_wait_s=60.0
@@ -3897,29 +3910,44 @@ async def test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens(
             assert t.camera_working
             extras = (await t.get_state()).extras
             assert extras["camera"]["fov_given"] is False
-            if not assumed:
+            if assumed is None:
                 assert t.camera_fov_deg is None and "camera_fov_deg" not in manifest.limits
                 assert ASSUMED_LENS not in manifest.extras
                 assert extras["assumptions"] == [up.STAND_UP_RPC.name]
                 assert extras["camera"]["fov_deg"] is None
                 return
             width, height = size
-            half = math.radians(up.IMX219_FOV_DEG) / 2
-            lens = math.degrees(2 * math.atan(math.tan(half) * width / height))
+            if assumed is up.ALPHA_UPRIGHT_FOV:
+                half = math.radians(up.IMX219_FOV_DEG) / 2
+                lens = math.degrees(2 * math.atan(math.tan(half) * width / height))
+                # what the assumption itself says the lens is, at this very shape
+                assert f"{lens:.1f} degrees at {width} by {height}" in assumed.note
+            else:
+                # across the whole frame's width, at every size mediad streams
+                lens = up.GC2093_FOV_DEG
+                assert f"{lens:g} degrees from side to side" in assumed.name
             assert t.camera_fov_deg == pytest.approx(lens)
             assert manifest.limits["camera_fov_deg"] == pytest.approx(lens)
             # named beside the lens, so the detector measures through it uncalibrated
-            assert manifest.extras[ASSUMED_LENS] == up.ALPHA_UPRIGHT_FOV.name
-            assert extras["assumptions"] == [up.STAND_UP_RPC.name, up.ALPHA_UPRIGHT_FOV.name]
+            assert manifest.extras[ASSUMED_LENS] == assumed.name
+            assert extras["assumptions"] == [up.STAND_UP_RPC.name, assumed.name]
             assert extras["camera"]["fov_deg"] == round(lens, 1)
-            assert extras["camera"]["fov_assumed"] == up.ALPHA_UPRIGHT_FOV.name
-            # what the assumption itself says the lens is, at this very shape
-            assert f"{lens:.1f} degrees at {width} by {height}" in up.ALPHA_UPRIGHT_FOV.note
+            assert extras["camera"]["fov_assumed"] == assumed.name
         finally:
             await adapter.disconnect()
 
 
-async def test_the_lens_is_the_first_frames_and_stays(robotd: FakeRobotd) -> None:
+@pytest.mark.parametrize(
+    ("first", "then", "assumed"),
+    [
+        ((720, 1280), (1280, 720), up.ALPHA_UPRIGHT_FOV),
+        ((1280, 720), (720, 1280), up.BETA_UPRIGHT_FOV),
+    ],
+    ids=["tall-then-wide", "wide-then-tall"],
+)
+async def test_the_lens_is_the_first_frames_and_stays(
+    robotd: FakeRobotd, first: tuple[int, int], then: tuple[int, int], assumed: up.UpstreamRef
+) -> None:
     """The detector reads its lens off the manifest, which is built once, at connect, so the
     lens the transport reports and the assumption every state names stay the first frame's
     whatever shape a later frame is."""
@@ -3928,7 +3956,7 @@ async def test_the_lens_is_the_first_frames_and_stays(robotd: FakeRobotd) -> Non
         camera_url=f"http://127.0.0.1:1{up.MEDIAD_FRAME_PATH}",
         camera_wait_s=60.0,
     )
-    frames = [Image.new("RGB", (720, 1280)), Image.new("RGB", (1280, 720))]
+    frames = [Image.new("RGB", first), Image.new("RGB", then)]
 
     async def fetch() -> Image.Image:
         return frames.pop(0) if len(frames) > 1 else frames[0]
@@ -3939,10 +3967,11 @@ async def test_the_lens_is_the_first_frames_and_stays(robotd: FakeRobotd) -> Non
         lens = t.camera_fov_deg
         assert lens is not None
         await _eventually(
-            lambda: t._frame is not None and t._frame.size == (1280, 720), "a wide frame"
+            lambda: t._frame is not None and t._frame.size == then, "a frame of the other shape"
         )
         assert t.camera_fov_deg == lens
-        assert up.ALPHA_UPRIGHT_FOV.name in (await t.get_state()).extras["assumptions"]
+        listed = (await t.get_state()).extras["assumptions"]
+        assert listed == [up.STAND_UP_RPC.name, assumed.name], listed
     finally:
         await t.close()
 
@@ -4067,12 +4096,20 @@ async def test_mediads_frame_says_how_long_one_frame_takes_to_follow_the_last(
     assert MicroduckAdapter(MockTransport()).frame_period_s is None
 
 
-async def test_fov_deg_takes_the_assumed_lens_off_the_state(robotd: FakeRobotd) -> None:
+@pytest.mark.parametrize(
+    ("size", "assumed"),
+    [((720, 1280), up.ALPHA_UPRIGHT_FOV), ((1280, 720), up.BETA_UPRIGHT_FOV)],
+    ids=["tall-frame", "wide-frame"],
+)
+async def test_fov_deg_takes_the_assumed_lens_off_the_state(
+    robotd: FakeRobotd, size: tuple[int, int], assumed: up.UpstreamRef
+) -> None:
     """`--fov-deg` replaced the lens the detector measures through and nothing else, so every
     state went on listing the lens assumed from a tall `/frame` and showing its degrees as the
     camera's. The loop hands the flag to the body, through the adapter, and from then on the state
-    lists no such assumption and `extras.camera` shows the lens given, over WebRTC as well."""
-    with SnapshotServer((200, _png(720, 1280))) as camera:
+    lists no such assumption and `extras.camera` shows the lens given, over WebRTC as well. The
+    lens assumed from a wide `/frame`, a beta's, gives way to the flag the same way."""
+    with SnapshotServer((200, _png(*size))) as camera:
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
         )
@@ -4080,8 +4117,8 @@ async def test_fov_deg_takes_the_assumed_lens_off_the_state(robotd: FakeRobotd) 
         await adapter.connect()
         try:
             extras = (await t.get_state()).extras
-            assert up.ALPHA_UPRIGHT_FOV.name in extras["assumptions"]
-            assert extras["camera"]["fov_assumed"] == up.ALPHA_UPRIGHT_FOV.name
+            assert assumed.name in extras["assumptions"]
+            assert extras["camera"]["fov_assumed"] == assumed.name
             adapter.lens_given(50.0)
             extras = (await t.get_state()).extras
             assert extras["assumptions"] == [up.STAND_UP_RPC.name]

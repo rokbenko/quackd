@@ -191,8 +191,9 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
 def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
     """The page says how often quackd asks mediad's `/frame` for a frame against any other
     camera, how old a frame may get, how long connect waits for the first, and the lens a tall
-    first frame is taken for. Each is a number in the code or in upstream's source, and the page
-    is where somebody with a duck at the other end of a tunnel reads why a run saw what it saw."""
+    or a wide first frame is taken for. Each is a number in the code or in upstream's source, and
+    the page is where somebody with a duck at the other end of a tunnel reads why a run saw what
+    it saw."""
     from quackd_microduck.transports.jsonrpc_unix import (
         CAMERA_FPS,
         FIRST_FRAME_WAIT_S,
@@ -215,6 +216,7 @@ def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
         f"across a {width} by {height} frame, the default 720p turned upright, quackd measures "
         f"through {lens:.1f}°",
         f"2·atan(tan {half:g}° · w/h)",
+        f"so across a beta's frame, at any size, quackd measures through {up.GC2093_FOV_DEG:g}°",
     ):
         assert said in page, f"the Microduck page does not say {said!r}"
 

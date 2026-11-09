@@ -489,15 +489,21 @@ def test_the_numbers_that_stop_a_walk_are_the_ones_read() -> None:
 
 
 def test_the_camera_numbers_are_the_ones_read() -> None:
-    """The lens of a tall `/frame` is worked out from the IMX219's field of view, and the lens of
-    an upright WebRTC frame comes from the calibration mediad sends, the alpha family's on an
-    alpha. Each number sits beside the VERIFIED ref that read it and says what that ref says, and
-    that a tall frame is an alpha's is the one thing assumed."""
+    """The lens of a tall `/frame` is worked out from the IMX219's field of view, the lens of a
+    wide one is the GC2093's, and the lens of an upright WebRTC frame comes from the calibration
+    mediad sends, the alpha family's on an alpha. Each number sits beside the VERIFIED ref that
+    read it and says what that ref says, and that a tall frame is an alpha's and a wide one a
+    beta's are the two things assumed."""
     fov = upstream_api.IMX219_FOV_DEG
     assert f"{fov:g} degrees" in upstream_api.IMX219_FOV.name
     assert f"{fov:g} degrees" in upstream_api.ALPHA_UPRIGHT_FOV.name
     assert f"tan({fov / 2:g} degrees)" in upstream_api.ALPHA_UPRIGHT_FOV.note
     assert upstream_api.ALPHA_UPRIGHT_FOV.status == "UNVERIFIED"
+    beta = upstream_api.GC2093_FOV_DEG
+    assert f"an hfov_deg of {beta:g}" in upstream_api.IMX219_FOV.note
+    assert f"{beta:g} degrees" in upstream_api.BETA_UPRIGHT_FOV.name
+    assert f"hfov_deg of {beta:g} is 2*atan(640/fx)" in upstream_api.BETA_UPRIGHT_FOV.note
+    assert upstream_api.BETA_UPRIGHT_FOV.status == "UNVERIFIED"
     solve = upstream_api.ALPHA_SOLVE
     assert set(solve) == {"width", "height", "fx", "fy", "cx", "cy"}
     assert f"{solve['width']:g} by {solve['height']:g} frame" in upstream_api.ALPHA_INTRINSICS.note

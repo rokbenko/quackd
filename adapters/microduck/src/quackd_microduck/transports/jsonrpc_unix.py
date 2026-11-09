@@ -9,7 +9,7 @@ posture, which is read off the policy label against the labels robotd's own sour
 fails closed on every other, and the camera's routes, read in `mediad`'s source. What is not,
 and is listed in `extras.assumptions` while it applies: what `stand_up`'s `robot.enable` does
 for a duck on the floor (`up.STAND_UP_RPC`), and the lens of `mediad`'s `/frame`, which is
-taken from the first frame's shape (`up.ALPHA_UPRIGHT_FOV`).
+taken from the first frame's shape (`up.ALPHA_UPRIGHT_FOV`, `up.BETA_UPRIGHT_FOV`).
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
@@ -66,7 +66,7 @@ is at the other end of an ssh tunnel:
   quackd takes from the first frame's shape goes in the manifest with the assumption named, so
   that the detector calls its detections uncalibrated, and is listed in `extras.assumptions`
   for as long as the detector measures through it, which ends when `--fov-deg` gives another
-  (`up.ALPHA_UPRIGHT_FOV`).
+  (`up.ALPHA_UPRIGHT_FOV`, `up.BETA_UPRIGHT_FOV`).
 
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
@@ -999,7 +999,7 @@ class JsonRpcUnixTransport:
         """Whether `_frame_error` is a failure `connect()` waits through (`_snapshot_failure`)."""
         self._first_frame_size: tuple[int, int] | None = None
         """The first HTTP frame's width and height, which the lens of `/frame` is taken from
-        (`_assumed_fov_deg`)."""
+        (`_assumed_lens`)."""
         self._fetch_s = 0.0
         """How long the newest HTTP fetch took, answered or not, which the snapshot loop waits out
         before it asks again (`frame_period_s`)."""
@@ -1727,11 +1727,12 @@ class JsonRpcUnixTransport:
     @property
     def camera_fov_assumed(self) -> str | None:
         """The words of the assumption `camera_fov_deg` rests on, when it rests on one: the lens of
-        a tall `/frame` (`up.ALPHA_UPRIGHT_FOV`), which `MicroduckAdapter.connect` puts in the
-        manifest beside the lens, so that the detector measures through it uncalibrated and says
-        to pass `--fov-deg` (`quackd.perception.lens_of`). None for a lens the camera reported,
-        and for none."""
-        return None if self._assumed_fov_deg() is None else up.ALPHA_UPRIGHT_FOV.name
+        a tall `/frame` (`up.ALPHA_UPRIGHT_FOV`) or of a wide one (`up.BETA_UPRIGHT_FOV`), which
+        `MicroduckAdapter.connect` puts in the manifest beside the lens, so that the detector
+        measures through it uncalibrated and says to pass `--fov-deg`
+        (`quackd.perception.lens_of`). None for a lens the camera reported, and for none."""
+        lens = self._assumed_lens()
+        return None if lens is None else lens[1].name
 
     def _lens_assumed(self) -> bool:
         """Whether the detector measures through the lens assumed from the first frame's shape:
@@ -1748,31 +1749,44 @@ class JsonRpcUnixTransport:
         `--fov-deg` names one, and where `serve-mcp`, which has no `--fov-deg`, always takes it.
         Without one a real camera is measured through the simulator's 90 degrees. Over WebRTC
         it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`), and from
-        `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_fov_deg`)."""
+        `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_lens`)."""
         if self._webrtc is not None:
             return self._webrtc.fov_deg
         return self._assumed_fov_deg()
 
     def _assumed_fov_deg(self) -> float | None:
-        """The lens of `mediad`'s `/frame` as quackd assumes it, from the shape of the first frame
-        a working camera gave, or None (`up.ALPHA_UPRIGHT_FOV`).
+        """The lens of `mediad`'s `/frame` as quackd assumes it, in degrees across the frame, or
+        None (`_assumed_lens`)."""
+        lens = self._assumed_lens()
+        return None if lens is None else lens[0]
+
+    def _assumed_lens(self) -> tuple[float, up.UpstreamRef] | None:
+        """The lens of `mediad`'s `/frame` as quackd assumes it from the shape of the first frame
+        a working camera gave, in degrees across the frame, and the assumption it rests on, or
+        None.
 
         The PNG carries no lens. On a stock robot only an alpha's camera, an IMX219 mounted a
         quarter turn off and turned upright for the PNG, gives a picture taller than wide, so
         the sensor's field along its long side (`up.IMX219_FOV`) runs down the picture, and its
-        width sees that field scaled by the picture's shape through the tangent of half of it.
-        That is the module's design and not a calibration. It is taken from the first frame
-        alone because the manifest the detector reads it from is built once, at connect. A
-        wider frame, which is a beta's, and every camera but `mediad`'s get none, and the
-        detector falls back on its own, as it always has without `--fov-deg`."""
+        width sees that field scaled by the picture's shape through the tangent of half of it
+        (`up.ALPHA_UPRIGHT_FOV`). That is the module's design and not a calibration. Only a
+        beta's, a GC2093 that sits upright, gives one wider than tall, and the PNG is the whole
+        frame it took, which upstream's own solve of the beta's lens puts at 85.2 degrees across
+        at any size (`up.BETA_UPRIGHT_FOV`). A wide frame got no lens until that solve was read. The
+        lens is taken from the first frame alone because the manifest the detector reads it from
+        is built once, at connect. A square frame, and every camera but `mediad`'s, get none, and
+        the detector falls back on its own, as it always has without `--fov-deg`."""
         size = self._first_frame_size
         if size is None or not self.camera_working or not self._on_mediad:
             return None
         width, height = size
-        if not 0 < width < height:
-            return None
-        half = math.radians(up.IMX219_FOV_DEG) / 2
-        return math.degrees(2 * math.atan(math.tan(half) * width / height))
+        if 0 < width < height:
+            half = math.radians(up.IMX219_FOV_DEG) / 2
+            tall = math.degrees(2 * math.atan(math.tan(half) * width / height))
+            return tall, up.ALPHA_UPRIGHT_FOV
+        if 0 < height < width:
+            return up.GC2093_FOV_DEG, up.BETA_UPRIGHT_FOV
+        return None
 
     @property
     def camera_error(self) -> str | None:
@@ -1823,7 +1837,7 @@ class JsonRpcUnixTransport:
             # the lens the detector measures through, as far as the transport knows: the one
             # --fov-deg gave, else the one assumed from the first frame, and which it is
             "fov_deg": None if fov is None else round(fov, 1),
-            "fov_assumed": up.ALPHA_UPRIGHT_FOV.name if self._lens_assumed() else None,
+            "fov_assumed": self.camera_fov_assumed if self._lens_assumed() else None,
             "fov_given": given is not None,
             "error": self._frame_error,
         }
@@ -2136,8 +2150,8 @@ class JsonRpcUnixTransport:
         one assumed from the first frame, which it stops doing once `--fov-deg` gives another
         (`lens_given`)."""
         listed = list(self.body.assumptions)
-        if self._lens_assumed():
-            listed.append(up.ALPHA_UPRIGHT_FOV.name)
+        if self._lens_assumed() and (lens := self.camera_fov_assumed) is not None:
+            listed.append(lens)
         return listed
 
     def _hello_record(self, read: StateRead) -> dict[str, Any] | None:
