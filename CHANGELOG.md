@@ -251,6 +251,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
   rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
   motor never needs, since a try ends at its first write that gets no reply, and a second on top.
+- **A Microduck walk that an emotion stops names the emotion as one cause.** From daemon-v0.18.8
+  robotd plays an emotion for a `robot.do`, a stock pad's Y and bumpers play three, and while one
+  plays robotd reports a zero twist in place of the one it was asked for, with nothing in
+  `robot.state` to say an emotion is playing. A `microduck:jsonrpc` walk under way then stops, as it
+  should, since the duck is not doing what quackd asked, and the verb fails with `robotd has not
+  taken robot.move`. Its words named two causes, a twist robotd could not parse and another
+  client's twist, so whoever read them went looking for a bug or a second program. When the frame
+  the failure quotes said a zero twist, the only one an emotion leaves, the failure names an emotion
+  as a third cause now, and says robotd logs `emotion started` as one begins. One that quotes
+  another client's moving twist names no emotion, and Huebot's words are as they were. What changes
+  for you: a walk that stops this way tells you to look at the pad's Y and bumpers, at any other
+  program that sends `robot.do`, and at robotd's log. What stops the walk, the failure's first words
+  and `extras.move_echo` are as they were.
 
 ### Security
 

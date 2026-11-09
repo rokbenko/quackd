@@ -221,6 +221,11 @@ class FakeRobotd:
         self.twist = [0.0, 0.0, 0.0]
         """The twist robotd was last asked for, `[vx, vy, vyaw]`, which every state frame reports
         as `move.requested` (`up.MOVE_ECHO`). A stop zeroes it; the deadman does not."""
+        self.emotion: str | None = None
+        """The emotion robotd is playing, or None. While one plays every frame reports a zero
+        twist in place of `twist`, which is kept as it was asked for, and nothing else in the
+        frame says so, as robotd puts the emotion's zero in place of what its clients asked for
+        on every tick of it (`up.MOVE_ECHO`)."""
         self.head = [0.0, 0.0, 0.0, 0.0]
         """The head slot, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
         `robot.look` or `robot.head` asked for, from anyone."""
@@ -326,9 +331,10 @@ class FakeRobotd:
         reported = list(self.shown)
         reported[HEAD.index("head_yaw")] += self.glance.pop(0) if self.glance else 0.0
         t = time.monotonic() - self._t0
+        twist = list(self.twist) if self.emotion is None else [0.0, 0.0, 0.0]
         params: dict[str, Any] = {
             "t": t,
-            "move": {"requested": list(self.twist), "applied": list(self.twist)},
+            "move": {"requested": twist, "applied": list(twist)},
             "head": reported,
             "policy": self.policy,
             "safety": safety,
@@ -2207,6 +2213,43 @@ async def test_a_walk_robotd_does_not_take_stops_and_says_so(
     assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
     await _landed(t)
     assert _moves(robotd) < round(duration / MOVE_RESEND_S), "the walk ran its whole length"
+    await t.close()
+
+
+@pytest.mark.parametrize("other", ["emotion", "stick"], ids=["an-emotion", "a-pad-stick"])
+async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
+    registry: VerbRegistry, robotd: FakeRobotd, other: str
+) -> None:
+    """While an emotion plays robotd reports a zero twist in place of the one it was asked for,
+    and nothing in its state says one is playing (`up.MOVE_ECHO`), so a walk under way when
+    somebody presses a stock pad's Y or a bumper stops as one robotd did not take, which is
+    right: the duck is not doing what quackd asked. The words named a twist robotd could not
+    parse and another client's alone, which sent the pilot and the robot's owner looking for a
+    bug or a second program when the pad was the thing to look at. They name an emotion too
+    now, when the state said a zero twist, and not when it showed another client's moving one,
+    which no emotion leaves."""
+    if other == "emotion":
+        robotd.emotion = "yes"  # the left bumper of a pad nobody has configured
+    else:
+        robotd.drop_moves, robotd.twist = True, [0.2, 0.0, 0.0]  # a stick held forward
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    duration = 10 * move_echo_after_s(t.state_hz)
+    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        "walk", {"vx": 0.1, "duration_s": duration}
+    )
+    said = result.summary
+    assert not result.ok and "robotd has not taken robot.move" in said, said
+    if other == "stick":
+        assert "still says it was asked for [0.2, 0, 0]" in said, said
+        assert "emotion" not in said, said
+    else:
+        assert _moves(robotd) and not robotd.rejected, "robotd took every twist it was sent"
+        assert "still says it was asked for [0, 0, 0]" in said, said
+        # the cause quackd cannot see, and where the pilot and the owner can
+        assert "or an emotion was playing" in said, said
+        assert "a stock pad's Y and bumpers" in said and "'emotion started'" in said, said
+    assert "could not parse" in said and "another client" in said, said
     await t.close()
 
 

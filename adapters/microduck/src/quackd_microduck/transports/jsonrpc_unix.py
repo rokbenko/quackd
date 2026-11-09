@@ -2445,12 +2445,16 @@ class JsonRpcUnixTransport:
         nothing. A walk still too short on its own, with no walk before it in the same run of
         unshown twists, is still reported on what it sent.
 
-        Two things look alike here, and the words name both. A robotd that could not parse the
+        Three things look alike here, and the words name each. A robotd that could not parse the
         twist answers nothing and goes on showing what it had. One that took it shows the next
         twist anybody sent, and a connected gamepad sends one at least ten times a second, a stop
         while its sticks are still (`up.PAD_DRIVES`), so a pad in somebody's hand fights every
-        walk quackd sends. Holding the walk back is right either way: the duck is not doing what
-        quackd asked."""
+        walk quackd sends. And while an emotion plays, one that took it shows a zero twist in its
+        place, with nothing in the frame to say why (`up.MOVE_ECHO`). The words named the first
+        two alone, which sent whoever read them after a walk an emotion had stopped looking for
+        the wrong thing. The body's `zero_twist` names the third when the frame said a zero
+        twist, the only one an emotion leaves. Holding the walk back is right whichever it is:
+        the duck is not doing what quackd asked."""
         words = self.body.words
         moving = [sent for sent in self._unshown if any(sent.twist)]
         if not moving or self._last_state_at is None:
@@ -2496,10 +2500,14 @@ class JsonRpcUnixTransport:
             else ""
         )
 
+        # an emotion leaves a zero twist in every frame it plays through, and nothing else there
+        zeroed = words.zero_twist if asked is not None and not any(asked) else ""
+
         def either(these: str, after: str) -> str:
             return (
                 f"{words.peer} answers a robot.move with nothing, so either it could not parse "
                 f"{these}{unread}, or another client sent one after {after}{words.other_client}"
+                f"{zeroed}"
             )
 
         if len(counted) == 1:

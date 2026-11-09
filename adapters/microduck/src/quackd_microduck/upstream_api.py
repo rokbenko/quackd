@@ -344,8 +344,10 @@ MOVE_ECHO = UpstreamRef(
     "frames without showing one it sent, counted over the walks of a verb up to each stop, "
     "quackd sends no robot.move until the verb that sent it ends. An emotion that plays while a "
     "verb walks, one a stock pad's Y or bumpers start among them (PAD_DRIVES), ends the walk "
-    "that way, and the verb says robotd did not take its twist, since nothing in the state says "
-    "an emotion is playing.",
+    "that way, since nothing in the state says an emotion is playing, and the verb says robotd "
+    "has not taken its twist. When the frame it quotes said a zero twist, the only one an "
+    "emotion leaves, it names an emotion as one cause beside a twist robotd could not parse and "
+    "another client's, and says robotd logs 'emotion started' as one begins (main.rs:2820).",
 )
 ROBOT_HEALTH = UpstreamRef(
     "robot.health",
