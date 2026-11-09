@@ -313,14 +313,6 @@ only Rok can name, and a CI job against a real controller in a container, which 
   ended on `gate: shadow_only` each time, with the pilot LLM taking the turn. No real decision LLM
   has run beside a policy, so those records hold no agreement rate. Promoting it needs one
   measured from real runs, and a decision of its own, not a floor.
-- ⬜ **`load_policy()` still builds a policy beside the arm's bus.** 0.16.0 moved checkpoints
-  into a policy server of their own and left this helper in the arm's `real.py`, where it
-  loads a LeRobot checkpoint in the arm's own process with none of the server's reading before
-  it builds and no check at connect that the policy fits. Nothing in quackd calls it and no
-  command reaches it, and nothing else keeps it off the bus. Removing it takes its test, its
-  `LOAD_POLICY` row and the lines in the docs that name it along, and the release that does it
-  says so in its notes
-  ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md#consequences)).
 - ⬜ **No `cost_usd` quackd reports has been checked against an invoice.** Every rate in
   `quackd/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, most on
   2026-09-23, OpenRouter's six on 2026-10-06 and `gpt-6.1-sol`'s on 2026-10-26, and a rate read

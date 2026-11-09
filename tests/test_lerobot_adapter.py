@@ -64,7 +64,6 @@ from quackd_lerobot.real import (
     WallClock,
     check_port,
     joint_ranges,
-    load_policy,
     motor_in_error,
     parse_camera_url,
     parse_camera_urls,
@@ -1959,8 +1958,6 @@ async def test_real_backend_without_the_extra_names_it() -> None:
     adapter = make_adapter(RobotSpec("lerobot", "real", "arm-01"), address="COM5")
     with pytest.raises(AdapterNotInstalled, match=r"quackd\[lerobot\]"):
         await adapter.connect()
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[lerobot\]"):
-        load_policy("some/checkpoint")
 
 
 # ── what an adversarial review of the branch found, and what now pins it ────────────────

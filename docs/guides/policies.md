@@ -752,14 +752,6 @@ checkpoint at a revision you have read, from a Hub cache you control, on a machi
 nothing you would mind it reading. [SECURITY.md](../../SECURITY.md) lists what would be a security
 issue in the server itself.
 
-One path in quackd skips all of it. `load_policy()` in the arm's backend is an older Python
-helper that builds a LeRobot policy in the arm's own process, beside the serial bus, with none
-of the reading above. Nothing in quackd calls it and no command reaches it, so it runs only if
-your own Python calls it. The `LOAD_POLICY` row on
-[the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070) describes it, and
-whether it goes is an open item
-([ADR-0048](../adr/0048-policies-are-the-arms-executor.md#consequences)).
-
 ## What a segment says
 
 A segment's result says why it ended, how long it ran, the chunks, the goals clipped to the

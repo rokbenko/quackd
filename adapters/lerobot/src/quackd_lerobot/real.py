@@ -43,9 +43,8 @@ What this backend refuses to take on faith, because upstream cannot tell it:
 `pick` and `manipulate` run an injected policy, a `PolicyRunner` or a `PolicyLike` object, one
 segment at a time in the policy loop (`policy/loop.py`). A checkpoint runs in a policy server of
 its own and reaches the arm through `policy/client.py`, whose policy is checked against this arm
-before it is energised (`_fit_policy`). `load_policy` builds one in this process instead, and
-nothing calls it (LOAD_POLICY, in `policy/upstream_api.py`). LeRobot is imported inside
-`connect()` and `load_policy()` only: `quackd[lerobot]` is an extra.
+before it is energised (`_fit_policy`). LeRobot is imported inside `connect()` only:
+`quackd[lerobot]` is an extra.
 """
 
 from __future__ import annotations
@@ -3736,35 +3735,3 @@ class LeRobotReal:
         await self.clock.sleep(seconds)
         if self.post_sleep is not None:
             self.post_sleep()
-
-
-def load_policy(path: str, *, device: str = "cpu") -> PolicyLike:
-    """A `PolicyLike` from a LeRobot checkpoint, from verified names, in the arm's own process.
-    UNTESTED end to end, and not the path a checkpoint takes (`policy/upstream_api.py`'s
-    LOAD_POLICY): serve it with `quackd policy serve` and hand the arm a `RemoteRunner`."""
-    try:
-        import torch
-        from lerobot.configs.policies import PreTrainedConfig
-        from lerobot.policies.factory import get_policy_class, make_pre_post_processors
-    except ImportError as e:
-        raise AdapterNotInstalled("lerobot", "quackd[lerobot]") from e
-
-    config = PreTrainedConfig.from_pretrained(path)
-    config.device = device
-    policy = get_policy_class(config.type).from_pretrained(path, config=config)
-    preprocess, postprocess = make_pre_post_processors(config, pretrained_path=path)
-
-    class _HubPolicy:
-        def act(self, observation: dict[str, Any], *, task: str) -> dict[str, float] | None:
-            batch = preprocess({**observation, "task": task})
-            with torch.no_grad():
-                action = policy.select_action(batch)
-            out = postprocess(action)
-            return {str(k): float(v) for k, v in dict(out).items()}
-
-        def reset(self) -> None:
-            # the queue of actions the last chunk predicted (POLICY_SELECT_ACTION), which a
-            # new segment must not play out from wherever the arm now is
-            policy.reset()  # POLICY_RESET, in policy/upstream_api.py
-
-    return _HubPolicy()
