@@ -1,0 +1,87 @@
+{
+  "command": [
+    "quackd",
+    "drive",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra"
+  ],
+  "version": "0.34.0",
+  "started_at": "2026-11-10T14:36:06.959Z",
+  "outcome": "success",
+  "reason": "the session ended",
+  "provider": "openai",
+  "llm_id": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "steps": 8,
+  "llm_calls": 8,
+  "wall_s": 60.292,
+  "llm_latency_s": 28.669,
+  "usage": {
+    "input_tokens": 33480,
+    "output_tokens": 398,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 22046,
+    "cache_write_tokens": 10426
+  },
+  "cost_usd": 0.182351,
+  "final_state": {
+    "extras": {
+      "step_deg": 5.0
+    }
+  },
+  "session": {
+    "typed": [
+      "Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.",
+      "",
+      "Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.",
+      "gripper false",
+      "quit"
+    ],
+    "drive": {
+      "lanes": {
+        "brake": 1,
+        "exact": 1,
+        "pilot": 2,
+        "session": 1
+      },
+      "outcomes": {
+        "aborted": 2,
+        "braked": 1,
+        "ok": 2
+      },
+      "to_start_ms": {
+        "exact": {
+          "n": 1,
+          "p50": 21.0,
+          "p90": 21.0,
+          "max": 21.0
+        },
+        "pilot": {
+          "n": 2,
+          "p50": 4.4,
+          "p90": 8.4,
+          "max": 8.4
+        }
+      },
+      "to_motion_ms": {
+        "exact": {
+          "n": 1,
+          "p50": 28.3,
+          "p90": 28.3,
+          "max": 28.3
+        }
+      },
+      "brake_ms": {
+        "n": 1,
+        "p50": 20.4,
+        "p90": 20.4,
+        "max": 20.4
+      }
+    }
+  }
+}

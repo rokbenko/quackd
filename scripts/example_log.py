@@ -232,6 +232,12 @@ This ran with no arm attached, on `lerobot:mock`, an arm that lives in memory, s
 lines that ran, with their paths as they read from a checkout of this repository. Run them from one
 with quackd's `lerobot` extra.{beside} {cost}"""
 
+TRY_A_SESSION = """\
+This starts the same session with no arm attached, on `lerobot:mock`, an arm that lives in memory:
+type the lines under The exact command at its `drive>` prompt, a bare Enter where one is empty. It
+shows the rules a session is held to and not the physics. Run it from a checkout of this repository
+with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges."""
+
 TRACE_HEAD = 200
 TRACE_TAIL = 200
 """How much of a trace too long for a README it shows: where the run began, and how it ended."""
@@ -398,6 +404,8 @@ def _try_intro(summary: dict[str, Any], notes: dict[str, Any]) -> str:
             else "It needs the LLM's own SDK and key, and costs what the LLM charges."
         )
         return TRY_AS_IT_RAN.format(beside=beside, cost=cost)
+    if summary.get("session") is not None:
+        return TRY_A_SESSION
     said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
     return said.format(what="task file" if _goal(summary) is None else "goal")
 
@@ -463,6 +471,9 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
         return _as_it_ran(summary, notes, after)
     goal = _goal(summary)
     words = summary["command"]
+    if summary.get("session") is not None:
+        # a session's goals are typed at its prompt, and the intro says to type the same lines
+        return f"quackd drive --robot lerobot:mock --llm {_pilot(summary)}"
     task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
     if summary.get("provider") != VLA:
         # without it, a log of a dry run would be tried as a run that sends its moves
@@ -486,6 +497,8 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
 
 
 def _task_file(summary: dict[str, Any], folder: Path) -> str:
+    if summary.get("session") is not None:
+        return "none, a person types the goals"
     path = _duck_path(summary)
     if _goal(summary) is not None:
         return "none, the command gave a goal"
@@ -513,6 +526,9 @@ def _numbers(
     refused = _refused(summary)
     if moved is not None:
         first_motion = f"{moved:.1f} s after the start"
+    elif summary.get("session") is not None:
+        # each goal times its own first motion from its own start, and the session from none
+        first_motion = "not recorded"
     elif ran or refused:
         first_motion = "no verb moved the arm"
     else:
@@ -585,10 +601,10 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
     afters: list[list[str]] = []
     for n, part in enumerate(parts, start=1):
         summary = _record(part)
-        if "drive" in summary:
+        if "drive" in summary and summary.get("session") is None:
             raise LogError(
-                f"{folder.name} holds a chat session's record, and this script writes the log of a "
-                "run: a session has no task file, no version and no command to copy"
+                f"{folder.name} holds a session's own summary.json, which has no version and no "
+                "command: add the session's folder with `add`, which reads them from its record"
             )
         media: dict[str, Any] = json.loads(_read(part / "media.json"))
         trace = _read(part / "terminal.txt").rstrip("\n")
@@ -599,9 +615,13 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
             trace += "\n\n" + later
             files.append(f"{where}/after.txt")
         afters.append(_typed_in(later))
-        # every line typed for this part, in order: what came before it, the run, what came after
+        # every line typed for this part, in order: what came before it, the run, what was typed
+        # at a session's prompt, what came after
         typed_here = _typed(_read(part / "terminal.txt").split("\n", 1)[0], folder.name)
-        command = "\n".join([*(notes.get("before") or []), typed_here, *afters[-1]])
+        prompted = [
+            f"drive> {line}".rstrip() for line in (summary.get("session") or {}).get("typed", [])
+        ]
+        command = "\n".join([*(notes.get("before") or []), typed_here, *prompted, *afters[-1]])
         records.append(summary)
         if _mock(summary):
             film = NO_FILM
@@ -826,14 +846,23 @@ def make_gif(video: Path, gif: Path) -> None:
 
 
 def _keep_frames(run_dir: Path, log: Path) -> int:
-    """Up to three of the robot's own pictures, from its first camera, small enough to commit."""
-    frames = sorted((run_dir / "frames").glob("*.png")) if (run_dir / "frames").is_dir() else []
-    if not frames:
+    """Up to three of the robot's own pictures, from its first camera, small enough to commit: the
+    first, the middle and the last moment. A session keeps its pictures with each of its goals, so
+    its moments are all of theirs, goal after goal."""
+    own = run_dir / "frames"
+    goals = sorted(path for path in (run_dir / "goals").glob("*/frames") if path.is_dir())
+    folders = [own] if own.is_dir() else goals
+    moments = [
+        (folder, number)
+        for folder in folders
+        for number in sorted({path.name[:4] for path in folder.glob("*.png")})
+    ]
+    if not moments:
         return 0
-    numbers = sorted({p.name[:4] for p in frames})
-    picked = sorted({numbers[0], numbers[len(numbers) // 2], numbers[-1]})
-    for i, number in enumerate(picked, start=1):
-        first = next(p for p in frames if p.name.startswith(number))
+    picked = sorted({0, len(moments) // 2, len(moments) - 1})
+    for i, at in enumerate(picked, start=1):
+        folder, number = moments[at]
+        first = sorted(folder.glob(f"{number}*.png"))[0]
         _run("ffmpeg", "-y", "-v", "error", "-i", first, "-vf", "scale=320:-2", "-q:v", "5",
              log / f"frame-{i}.jpg")  # fmt: skip
     return len(picked)
@@ -859,6 +888,7 @@ def add_run(
     video: Path | None = None,
     part: int | None = None,
     gif: Path | None = None,
+    terminal: Path | None = None,
 ) -> Path:
     """Make this run its example's log and leave notes for somebody to fill in.
 
@@ -869,7 +899,9 @@ def add_run(
     used as it is in place of a video: the clip of an arm that did not move is the same every time,
     and git keeps one copy of identical files. A run on `lerobot:mock` had no arm to film, so it
     takes no video, no GIF and no `speed`. A run whose process was killed wrote no summary.json,
-    and what its transcript recorded up to then stands in for one, as `record.json`."""
+    and what its transcript recorded up to then stands in for one, as `record.json`. So does what a
+    `quackd drive` session recorded, whose own summary has no version and no command, and which
+    writes no terminal record at all, so `terminal` is what its terminal printed, as saved."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
@@ -880,8 +912,21 @@ def add_run(
             f"{run_dir} has no summary.json and no transcript.jsonl: that run never reached its "
             "end and left nothing to say how far it got"
         )
-    summary = _killed_record(run_dir) if killed else _read(run_dir / "summary.json")
-    trace = _read(run_dir / "terminal.txt")
+    session = not killed and "drive" in json.loads(_read(run_dir / "summary.json"))
+    if session and terminal is None:
+        raise LogError(
+            f"{run_dir.name} is a session, which writes no terminal record: save what its terminal "
+            "printed as a text file and pass it with --terminal"
+        )
+    if terminal is not None and not session:
+        raise LogError(f"{run_dir.name} wrote its own terminal.txt: --terminal is for a session")
+    if killed:
+        summary = _killed_record(run_dir)
+    elif session:
+        summary = _session_record(run_dir)
+    else:
+        summary = _read(run_dir / "summary.json")
+    trace = _read(terminal).removeprefix("﻿") if terminal else _read(run_dir / "terminal.txt")
     later = "\n".join(_read(path).removeprefix("﻿").rstrip("\n") for path in after)
     copied = [("terminal.txt", trace), ("summary.json", summary)]
     copied += [(path.name, _read(path)) for path in after]
@@ -917,7 +962,7 @@ def add_run(
     log.mkdir(parents=True, exist_ok=True)
     _place_gif(log, gif, video)
     frames = _keep_frames(run_dir, log)
-    _write(log / ("record.json" if killed else "summary.json"), summary)
+    _write(log / ("record.json" if killed or session else "summary.json"), summary)
     _write(log / "terminal.txt", trace)
     if after:
         _write(log / "after.txt", later + "\n")
@@ -935,6 +980,51 @@ def _place_gif(log: Path, gif: Path | None, video: Path | None) -> None:
             made = Path(scratch) / "run.gif"
             make_gif(video, made)
             shutil.copyfile(made, log / "run.gif")
+
+
+def _session_record(run_dir: Path) -> str:
+    """What a `quackd drive` session recorded, in the words a run's summary uses. The session's own
+    summary has its counters and its brake, its start has the version, and each goal it flew keeps
+    a summary of its own with the command that started the session, its cost and its waits, which
+    add up to the session's. The lines typed at its prompt are in its transcript, in order."""
+    own: dict[str, Any] = json.loads(_read(run_dir / "summary.json"))
+    lines = _read(run_dir / "transcript.jsonl").splitlines()
+    rows: list[dict[str, Any]] = [json.loads(line) for line in lines if line.strip()]
+    start = next((row for row in rows if row.get("kind") == "run_start"), None)
+    if start is None:
+        raise LogError(f"{run_dir.name}'s transcript has no run_start: nothing says what ran")
+    goals = [json.loads(_read(path)) for path in sorted(run_dir.glob("goals/*/summary.json"))]
+    command = next((goal["command"] for goal in goals if goal.get("command")), None)
+    if command is None:
+        raise LogError(f"{run_dir.name} flew no goal, so nothing recorded the command it ran")
+    costs = [goal.get("cost_usd") for goal in goals]
+    waits = [goal.get("llm_latency_s") for goal in goals]
+    steps = [
+        ((goal.get("final_state") or {}).get("extras") or {}).get("step_deg") for goal in goals
+    ]
+    record = {
+        "command": command,
+        "version": start["version"],
+        "started_at": own["started_at"],
+        "outcome": own["outcome"],
+        "reason": own.get("reason"),
+        "provider": own.get("provider") or start.get("provider"),
+        "llm_id": start.get("llm_id"),
+        "transport": start.get("transport"),
+        "robot": _flag(command, "--robot") or "not recorded",
+        "steps": own.get("steps"),
+        "llm_calls": own.get("llm_calls"),
+        "wall_s": own.get("wall_s"),
+        "llm_latency_s": round(sum(waits), 3) if None not in waits else None,
+        "usage": own.get("usage") or {},
+        "cost_usd": round(sum(costs), 6) if None not in costs else None,
+        "final_state": {"extras": {"step_deg": next((s for s in steps if s is not None), None)}},
+        "session": {
+            "typed": [row.get("text", "") for row in rows if row.get("kind") == "command"],
+            "drive": own["drive"],
+        },
+    }
+    return json.dumps(record, indent=2, ensure_ascii=False) + "\n"
 
 
 def _killed_record(run_dir: Path) -> str:
@@ -1082,6 +1172,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     add.add_argument("--part", type=int, help="which part of an example run in parts this is")
     add.add_argument("--text", type=Path, help="what a command with no run folder printed")
+    add.add_argument(
+        "--terminal",
+        type=Path,
+        help="with a session's folder: what its terminal printed, since a session saves none",
+    )
     add.add_argument("--version", help="with --text: the quackd version that ran it")
     add.add_argument("--started", help="with --text: when it ran, as 2026-11-06T12:27:26Z")
     verbs.add_parser("write", help="rewrite every log and the table")
@@ -1119,6 +1214,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.video,
                 args.part,
                 args.gif,
+                args.terminal,
             )
             print(f"Copied. Fill in {notes}, then run: example_log.py write")
         elif args.verb == "write":

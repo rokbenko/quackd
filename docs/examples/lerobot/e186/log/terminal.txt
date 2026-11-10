@@ -1,0 +1,41 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd drive --robot arm-01 --camera-url "opencv://1?name=arm" --llm openai:gpt-6-astra
+drive    arm-01: type a command, a goal, or help; Enter brakes
+drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
+drive> WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
+drive>
+brake    Enter (0.208 ms)
+pilot    goal 1 (5.339 ms)
+result   aborted: the brake, Enter; aborted mid-verb; the verb was cancelled and a stop was sent
+drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
+drive> WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
+drive> gripper false
+pilot    goal 2 (2.657 ms)
+result   aborted: a newer command, gripper false; aborted mid-verb; the verb was cancelled and a stop was sent
+exact    gripper(open=false) (2.28 ms)
+result   ok: gripper closed on nothing (stopped at 1/100)
+drive> quit
+session  quit (0.08 ms)
+result   ok: goodbye
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -27.21978021978022}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -24.67032967032967}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -21.24175824175824}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -17.98901098901099}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -14.64835164835165}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -11.395604395604394}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -7.967032967032967}}
+record   runs\20261110-143606-drive
+(lerobot-test) PS D:\Development\lerobot-test\.venv>

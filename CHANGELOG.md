@@ -11,6 +11,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E186 has a log: an empty Enter in `quackd drive` braked the arm partway through a move, 20.4 ms
+  from the press to the stop.** A session had no way into a log, so `scripts/example_log.py add` now takes a
+  `quackd drive` folder with `--terminal`, what its terminal printed as somebody saved it, since a
+  session writes none. Its version comes from the session's start and its command from its goals,
+  every line typed at its prompt shows under The exact command, and its cost and wait are its goals'
+  added up.
 - **E166's card says how a run ends when the power goes.** It said the run ends in an error within
   about a second either way. It ends ABORTED when the heartbeat fails before the move gives up, and in
   an error when the move gives up first, because the run's own next read of the arm then meets the
