@@ -369,7 +369,8 @@ def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
         "started_at": "2026-11-04T11:44:16.998Z",
     }
     _logged(root, "e001", session)
-    with pytest.raises(script.LogError, match="e001 holds a chat session's record"):
+    # its own summary.json copied in by hand: `add` writes a session's record, which has them
+    with pytest.raises(script.LogError, match=r"e001 holds a session's own summary\.json"):
         script.render_log(root, _experiment(root, "E001"))
 
 
@@ -1270,6 +1271,94 @@ def test_the_exact_command_has_what_was_typed_after_the_run(tmp_path: Path) -> N
     (folder / "log" / "after.txt").write_text(saved, encoding="utf-8")
     text = script.render_log(root, _experiment(root, "E001"))
     assert "--robot arm-01\ntaskkill /F /IM quackd.exe\n```" in text
+
+
+DRIVE = ["quackd", "drive", "--robot", "arm-01", "--llm", "openai:gpt-6-astra"]
+
+
+def _session(tmp_path: Path) -> tuple[Path, Path]:
+    """A `quackd drive` folder as a session leaves it, and its terminal as somebody saved it."""
+    run = tmp_path / "runs" / "20261110-143606-drive"
+    run.mkdir(parents=True)
+    own = {"duck": "drive", "outcome": "success", "reason": "the session ended", "steps": 3}
+    own |= {"provider": "openai", "llm_calls": 2, "wall_s": 20.5}
+    own |= {"usage": {"input_tokens": 2000, "output_tokens": 40}}
+    own |= {"started_at": "2026-11-10T14:36:06.959Z", "drive": {"brake_ms": {"n": 1, "p50": 20.4}}}
+    (run / "summary.json").write_text(json.dumps(own), encoding="utf-8")
+    start = {"kind": "run_start", "version": "0.34.0", "provider": "openai"}
+    start |= {"llm_id": "gpt-6-astra", "transport": "real"}
+    typed = ["Sweep it.", "", "gripper false", "quit"]
+    rows = [start, *({"kind": "command", "text": text} for text in typed)]
+    lines = "".join(json.dumps(row) + "\n" for row in rows)
+    (run / "transcript.jsonl").write_text(lines, encoding="utf-8")
+    for name, cost, wait in (("01-sweep-it", 0.03, 5.0), ("02-sweep-it", 0.05, 6.0)):
+        (run / "goals" / name).mkdir(parents=True)
+        goal = {"command": DRIVE, "cost_usd": cost, "llm_latency_s": wait}
+        goal |= {"final_state": {"extras": {"step_deg": 5.0}}}
+        (run / "goals" / name / "summary.json").write_text(json.dumps(goal), encoding="utf-8")
+    (run / "E001.mp4").write_bytes(b"video")
+    saved = tmp_path / "E001.txt"
+    screen = (
+        f"(v) PS D:\\x> {' '.join(DRIVE)}\ndrive> Sweep it.\nresult   ok: goodbye\n(v) PS D:\\x>\n"
+    )
+    saved.write_text(screen, encoding="utf-8")
+    return run, saved
+
+
+def test_a_session_is_logged_with_every_line_typed_at_its_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `quackd drive` session writes no terminal record and its summary has no version and no
+    command: those come from its start, its goals and what somebody saved off the screen."""
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run, saved = _session(tmp_path)
+    with pytest.raises(script.LogError, match="writes no terminal record"):
+        script.add_run(root, run, 5.0, example="e001")
+    script.add_run(root, run, 5.0, example="e001", terminal=saved)
+    log = root / "e001" / "log"
+    record = json.loads((log / "record.json").read_text(encoding="utf-8"))
+    assert (record["version"], record["command"], record["outcome"]) == ("0.34.0", DRIVE, "success")
+    assert record["session"]["typed"] == ["Sweep it.", "", "gripper false", "quit"]
+    # the session's cost and wait are its goals', added up
+    assert (record["cost_usd"], record["llm_latency_s"]) == (0.08, 11.0)
+    (log / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    typed = "drive> Sweep it.\ndrive>\ndrive> gripper false\ndrive> quit"
+    assert f"{' '.join(DRIVE)}\n{typed}\n```" in text
+    assert "| Task file | none, a person types the goals |" in text
+    assert "| Cost at list price | $0.0800 |" in text
+    assert "| First motion | not recorded |" in text
+    assert script.TRY_A_SESSION in text
+    assert "```bash\nquackd drive --robot lerobot:mock --llm openai:gpt-6-astra\n```" in text
+
+
+def test_only_a_session_takes_a_terminal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "E001.mp4").write_bytes(b"video")
+    with pytest.raises(script.LogError, match="--terminal is for a session"):
+        script.add_run(root, run, 5.0, terminal=tmp_path / "E001.txt")
+
+
+def test_a_sessions_pictures_come_from_its_goals_in_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first, the middle and the last moment of the whole session, goal after goal."""
+    run, _ = _session(tmp_path)
+    for name, count in (("01-sweep-it", 2), ("02-sweep-it", 3)):
+        (run / "goals" / name / "frames").mkdir()
+        for n in range(count):
+            (run / "goals" / name / "frames" / f"{n:04d}.png").write_bytes(b"png")
+    taken: list[str] = []
+    monkeypatch.setattr(script, "_run", lambda *words: taken.append(Path(str(words[5])).as_posix()))
+    assert script._keep_frames(run, tmp_path) == 3
+    assert [path.split("/goals/")[1] for path in taken] == [
+        "01-sweep-it/frames/0000.png",
+        "02-sweep-it/frames/0000.png",
+        "02-sweep-it/frames/0002.png",
+    ]
 
 
 def test_add_needs_to_be_told_the_example_of_a_goal_run(
