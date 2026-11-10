@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**13 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**14 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -189,7 +189,7 @@
 |  | [E179: Ctrl-C during the fold of a finished run](e179/) | Safety |  |  |  |
 |  | [E180: A second Ctrl-C during the fold](e180/) | Safety |  |  |  |
 |  | [E181: Ctrl-C with the arm in your hands](e181/) | Safety |  |  |  |
-|  | [E182: Ctrl-C while it thinks](e182/) | Safety |  |  |  |
+| ✅ | [E182: Ctrl-C while it thinks](e182/) | Safety | Asked to plan a twelve-step dance at high effort, the LLM had not answered 7.7 seconds into the call when Ctrl-C landed, and the arm was back at rest half a second later. | Yes | 0.34.0 |
 |  | [E183: Push back: is a stall caught?](e183/) | Safety |  |  |  |
 |  | [E184: Lower the speed limit](e184/) | Safety |  |  |  |
 |  | [E185: How warm does it get?](e185/) | Safety |  |  |  |
