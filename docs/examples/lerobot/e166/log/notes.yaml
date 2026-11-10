@@ -1,0 +1,66 @@
+hook: The power switch cut the arm during its lift, twice, and both times quackd ended the run saying the arm did not answer, with no traceback.
+goal_met: "Partly"
+parts:
+  - "Cut, and left off"
+  - "Cut, then switched back on after the run had ended"
+why_example: >
+  An SO-101 has no emergency stop button, and quackd cannot give it one: cutting the servo supply is
+  the one thing that stops this arm in every case, including the one where quackd itself has died.
+  This example cuts it on purpose, mid-move, with the move small and a hand under the arm, to see the
+  arm go limp and quackd end the run cleanly and say why, instead of crashing.
+why_result: >
+  The switch stopped the arm both times. quackd's first sign of it came within half a second of the
+  last goal the arm answered, and each run ended saying `the arm did not answer`, with no Python
+  traceback, about 1.7 s and 1.6 s after that goal. Neither asked a person anything, since the arm
+  could not answer, and both closed by telling the person what to do, `hold it, and cut its power`.
+  Part 1 ended on the run's own read of the arm, the path that on 0.31.2 and before ended in a
+  traceback.
+goal: >
+  Prove the only real emergency stop before any line moves a joint on purpose: cut the servo supply
+  mid-move, on purpose, while the move is small and a hand is under the arm.
+expected: >
+  The arm goes limp and falls when the supply goes, and the run ends in an error within about a
+  second, saying the arm did not answer, whichever meets the silence first, the heartbeat or a read
+  the move makes. Nothing is asked, and the close ends `so it kept whatever torque the arm has: hold
+  it, and cut its power`. With the supply off and on again inside a second, the servos come back with
+  torque off, and the fold at the end finds the arm that way.
+showed:
+  - >
+    In both parts the LLM read the arm, judged the lift `feasible` and sent `move_joints` with
+    elbow_flex 76 over 10 s, from 96 at rest.
+  - >
+    In Part 1 the supply went near the end of the lift, 9.7 s into it: the last goal the arm answered
+    was elbow_flex 76.6. 0.4 s later the move had failed, `Failed to sync read 'Present_Position' from
+    motor IDs [1, 2, 3, 4, 5, 6] after 3 tries`, and the stop quackd sent after it was refused. The
+    heartbeat failed next, and the run's own read of the arm ended it in an error, in one line and
+    with no Python traceback: `the arm did not answer`.
+  - >
+    In Part 2 the supply went partway through, 6.4 s in: the last goal was elbow_flex 83.4, and 0.2 s
+    later the heartbeat met the silence first, `heartbeat failed: the arm did not answer`. The move
+    failed after it, and the run ended `ABORTED`.
+  - >
+    Every `stop` quackd sent after the cut was refused, `the hold did not reach the arm`, and the fold
+    failed too, `the arm did not reach its rest pose`. Nothing asked the person anything, and both runs
+    closed with `quackd cannot tell whether the arm is holding itself up`, telling them to hold it and
+    cut its power.
+did_not_show:
+  - >
+    The GIFs do not show the power switch. The supply is under the table, out of frame. It was turned
+    off in both parts, and in Part 2 turned back on as well, so the two GIFs look alike although the
+    takes were not.
+  - >
+    It does not show the card's second take, off and on inside a second. In Part 2 the power came back
+    only after the arm had fallen and the run had ended, so the servos never answered again mid-run and
+    no fold found them with torque off.
+  - >
+    It misses the card's `within about a second`. From the last goal the arm answered to the end of the
+    run took about 1.7 s in Part 1 and 1.6 s in Part 2.
+  - >
+    The same cut ended in an error once and was aborted once. Which one depends on whether the heartbeat
+    had failed by the time the move gave up: in Part 2 it had, and in Part 1 the run's own read met the
+    silence first. The card's `ends in an error` fits only Part 1.
+  - >
+    It does not show how far the arm fell, or whether the hand under it caught it. The record stops at
+    the cut, with the last goals elbow_flex 76.6 and 83.4 from 96 at rest.
+  - >
+    It does not show the card's third line, `quackd doctor` with the switch off.
