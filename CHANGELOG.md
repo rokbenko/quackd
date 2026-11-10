@@ -11,6 +11,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E166's card says how a run ends when the power goes.** It said the run ends in an error within
+  about a second either way. It ends ABORTED when the heartbeat fails before the move gives up, and in
+  an error when the move gives up first, because the run's own next read of the arm then meets the
+  silence. On the arm both took about 1.6 to 1.7 s from the last goal the arm answered.
 - **E117 has a log in two parts: Ctrl-C folded the arm away, and a hard kill left it holding under
   torque until `quackd robot release` put it down.** A run whose process was killed writes no
   `summary.json`, so `scripts/example_log.py add` now reads what its `transcript.jsonl` recorded up
