@@ -12,6 +12,8 @@ anything else.
 
 What `add` needs is the run folder with its video left inside it, under any name, or named with
 `--video`, and how many times faster than real time that video plays, which is read off the video.
+A run on `lerobot:mock` had no arm to film, so it takes neither, and its log says so in place of a
+GIF. A trace too long for one README page is shown by its first and last lines, with the files.
 A command run after the run to put the arm right, such as `quackd robot release`, writes no run
 folder, so its terminal output, saved as text, comes in with `--after` and follows the run's trace.
 An example run in several parts keeps each under `log/part-N`, named with `--part N`, and has one
@@ -152,8 +154,8 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Full terminal trace
 
-<details>
-<summary>Show the full terminal trace ({lines} lines)</summary>
+{trace_note}<details>
+<summary>{trace_summary}</summary>
 
 {fence_trace}text
 {trace}
@@ -166,6 +168,15 @@ FILM = """\
 ![{id}, filmed with an external camera]({gif})
 
 Filmed with an external camera. The GIF plays at {speed}x speed."""
+
+NO_FILM = """\
+Not filmed: this ran on `lerobot:mock`, an arm that lives in memory, so there was no arm to film."""
+
+TRACE_CUT = """\
+The trace is {lines} lines, more than GitHub shows on one page, so this has its first {head} and its
+last {tail}. The whole of it is in {files}.
+
+"""
 
 ENDED = """\
 The run ended with **{outcome}**. The reason on record:
@@ -207,6 +218,15 @@ This needs no arm and no key, and it costs nothing: quackd refuses the line befo
 anything or asks any LLM, so it gets no further on your machine than it did here. The line carries
 `--dry-run`, which is refused the same way, so that it could not move an arm even if it got further.
 Run it from a checkout of this repository with quackd's `lerobot` extra."""
+
+TRY_AS_IT_RAN = """\
+This ran with no arm attached, on `lerobot:mock`, an arm that lives in memory, so these are the
+lines that ran, with their paths as they read from a checkout of this repository. Run them from one
+with quackd's `lerobot` extra.{beside} {cost}"""
+
+TRACE_HEAD = 200
+TRACE_TAIL = 200
+"""How much of a trace too long for a README it shows: where the run began, and how it ended."""
 
 
 class LogError(Exception):
@@ -352,11 +372,59 @@ def _flag(words: Sequence[str], name: str) -> str | None:
     return next((str(after) for word, after in itertools.pairwise(words) if word == name), None)
 
 
-def _try_intro(summary: dict[str, Any]) -> str:
+def _try_intro(summary: dict[str, Any], notes: dict[str, Any]) -> str:
     if summary.get("provider") is None:
         return TRY_THE_REFUSAL
+    if _mock(summary):
+        beside = (
+            " A line that serves something stays running in a terminal of its own while the others"
+            " run."
+            if notes.get("before")
+            else ""
+        )
+        cost = (
+            "`--llm local` needs quackd's `openai` extra as well, since it speaks OpenAI's"
+            " protocol, but no key, and nothing is billed: it asks whatever answers at the"
+            " `--base-url` the line gives."
+            if summary.get("provider") == "local"
+            else "It needs the LLM's own SDK and key, and costs what the LLM charges."
+        )
+        return TRY_AS_IT_RAN.format(beside=beside, cost=cost)
     said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
     return said.format(what="task file" if _goal(summary) is None else "goal")
+
+
+def _mock(summary: dict[str, Any]) -> bool:
+    """Whether the run was on `lerobot:mock`, an arm in memory: nothing to film, and nothing to
+    change before somebody else runs it too."""
+    return summary.get("transport") == "mock"
+
+
+def _in_checkout(word: str) -> str:
+    """A path into this repository's examples as it reads from a checkout, wherever it was typed."""
+    path = word.replace("\\", "/")
+    at = path.find("docs/examples/lerobot/")
+    return word if at < 0 else path[at:]
+
+
+PROMPT = re.compile(r"^(?:\([^)]*\) )?PS [^>]*> (\S.*)$|^\$ (\S.*)$")
+"""A command typed at a PowerShell prompt, with or without its venv's name, or at a `$` one."""
+
+
+def _typed_in(saved: str) -> list[str]:
+    """The commands in a saved terminal, as typed after each prompt that has one."""
+    found = [PROMPT.match(line) for line in saved.splitlines()]
+    return [match.group(1) or match.group(2) for match in found if match]
+
+
+def _as_it_ran(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str] = ()) -> str:
+    """A run on the mock needed no arm, so trying it is running its own lines again: the ones
+    typed before it (`before`) first, and the ones after it (`after.txt`) last."""
+    words = [_in_checkout(word) for word in summary["command"]]
+    run = " ".join(f'"{word}"' if " " in word else word for word in words)
+    around = [notes.get("before") or [], after]
+    before, later = ([" ".join(map(_in_checkout, line.split(" "))) for line in x] for x in around)
+    return "\n".join([*before, run, *later])
 
 
 def _refused(summary: dict[str, Any]) -> bool:
@@ -380,9 +448,11 @@ def _try_the_refusal(summary: dict[str, Any]) -> str:
     return " ".join(f'"{word}"' if " " in word else word for word in [*line, *dry])
 
 
-def _try_it(summary: dict[str, Any], notes: dict[str, Any]) -> str:
+def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str] = ()) -> str:
     if summary.get("provider") is None:
         return _try_the_refusal(summary)
+    if _mock(summary):
+        return _as_it_ran(summary, notes, after)
     goal = _goal(summary)
     words = summary["command"]
     task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
@@ -503,6 +573,8 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         return f"**Part {n} of {len(parts)}:** {_flat(labels[n - 1])}\n\n{body}"
 
     records, films, endings, commands, numbers, frames, traces = [], [], [], [], [], [], []
+    files: list[str] = []
+    afters: list[list[str]] = []
     for n, part in enumerate(parts, start=1):
         summary = _record(part)
         if "drive" in summary:
@@ -515,11 +587,19 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         command = "\n".join(
             [*(notes.get("before") or []), _typed(trace.split("\n", 1)[0], folder.name)]
         )
-        if (part / "after.txt").exists():
-            trace += "\n\n" + _read(part / "after.txt").rstrip("\n")
         where = part.relative_to(folder).as_posix()
+        files.append(f"{where}/terminal.txt")
+        later = _read(part / "after.txt").rstrip("\n") if (part / "after.txt").exists() else ""
+        if later:
+            trace += "\n\n" + later
+            files.append(f"{where}/after.txt")
+        afters.append(_typed_in(later))
         records.append(summary)
-        film = FILM.format(id=experiment["id"], gif=f"{where}/run.gif", speed=f"{media['speed']:g}")
+        if _mock(summary):
+            film = NO_FILM
+        else:
+            gif = f"{where}/run.gif"
+            film = FILM.format(id=experiment["id"], gif=gif, speed=f"{media['speed']:g}")
         films.append(tagged(n, film))
         reason = _flat(summary.get("reason") or "No reason was recorded.")
         ended = ENDED.format(outcome=str(summary["outcome"]).upper(), reason=reason)
@@ -532,7 +612,7 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
     trace = "\n\n".join(traces)
     # the first part that is a run says how to try it: a part with no run has nothing to try
     runnable = next((r for r in records if r.get("provider") is not None), records[0])
-    text = LOG.format(
+    fields: dict[str, object] = dict(
         id=experiment["id"],
         title=experiment["title"],
         hook=_flat(notes["hook"]),
@@ -552,12 +632,13 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
         commands="\n\n".join(commands),
         numbers=_numbers_table(numbers),
         frames="\n\n".join(frames),
-        try_intro=_try_intro(runnable),
-        try_it=_try_it(runnable, notes),
-        lines=trace.count("\n") + 1,
-        fence_trace=_fence(trace),
-        trace=trace,
+        try_intro=_try_intro(runnable, notes),
+        try_it=_try_it(runnable, notes, afters[records.index(runnable)]),
     )
+    text = LOG.format(**fields, **_trace_fields(trace, None))
+    whole = trace.count("\n") + 1
+    if len(text.encode("utf-8")) > README_LIMIT and whole > TRACE_HEAD + TRACE_TAIL:
+        text = LOG.format(**fields, **_trace_fields(trace, files))
     _says_llm(f"{folder.name}/README.md", text)
     size = len(text.encode("utf-8"))
     if size > README_LIMIT:
@@ -566,6 +647,32 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
             f"{README_LIMIT // 1024} KiB"
         )
     return text
+
+
+def _trace_fields(trace: str, files: list[str] | None) -> dict[str, str]:
+    """The trace section's blanks: the whole trace, or its two ends and where the rest is kept,
+    for a trace GitHub would cut the README off in the middle of (`files` names where it is)."""
+    lines = trace.count("\n") + 1
+    if files is None:
+        summary = f"Show the full terminal trace ({lines} lines)"
+        return {
+            "trace_note": "",
+            "trace_summary": summary,
+            "fence_trace": _fence(trace),
+            "trace": trace,
+        }
+    kept = trace.split("\n")
+    left = f"[{lines - TRACE_HEAD - TRACE_TAIL:,} lines left out here]"
+    shown = "\n".join([*kept[:TRACE_HEAD], left, *kept[-TRACE_TAIL:]])
+    where = " and ".join(f"[{path}]({path})" for path in files)
+    note = TRACE_CUT.format(lines=f"{lines:,}", head=TRACE_HEAD, tail=TRACE_TAIL, files=where)
+    summary = f"Show the first {TRACE_HEAD} and the last {TRACE_TAIL} lines of the terminal trace"
+    return {
+        "trace_note": note,
+        "trace_summary": summary,
+        "fence_trace": _fence(shown),
+        "trace": shown,
+    }
 
 
 def _holds_nothing_of_its_own(folder: Path) -> bool:
@@ -734,7 +841,7 @@ def _video_in(run_dir: Path) -> Path:
 def add_run(
     root: Path,
     run_dir: Path,
-    speed: float,
+    speed: float | None,
     example: str | None = None,
     replace: bool = False,
     after: Sequence[Path] = (),
@@ -749,7 +856,8 @@ def add_run(
     it takes `replace`, and the old log stays in git's history. `after` is the saved terminal output
     of the commands run once the run was over, in the order they ran. `gif` is a GIF already made,
     used as it is in place of a video: the clip of an arm that did not move is the same every time,
-    and git keeps one copy of identical files."""
+    and git keeps one copy of identical files. A run on `lerobot:mock` had no arm to film, so it
+    takes no video, no GIF and no `speed`."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
@@ -764,7 +872,15 @@ def add_run(
     for what, text in copied:
         if PRIVATE.search(text):
             raise LogError(f"{what} holds a key or a path into a home folder: not copying it")
-    if gif is not None:
+    if _mock(json.loads(summary)):
+        if (video, gif, speed) != (None, None, None):
+            raise LogError(
+                f"{run_dir.name} ran on lerobot:mock, an arm in memory with nothing to film: "
+                "leave out --video, --gif and --speed"
+            )
+    elif speed is None:
+        raise LogError("--speed is how fast the video plays, read off the video: 1 is real time")
+    elif gif is not None:
         if not gif.is_file():
             raise LogError(f"no GIF at {gif}")
     elif video is None:
@@ -889,8 +1005,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     add.add_argument(
         "--speed",
         type=float,
-        required=True,
-        help="how many times faster than real time the video plays, read off the video: 1 is real",
+        help="how many times faster than real time the video plays, read off the video: 1 is real;"
+        " a run on lerobot:mock has no video and takes none",
     )
     add.add_argument("--example", help="the example, where the run folder's name does not say")
     add.add_argument("--replace", action="store_true", help="log this run instead of the old one")
@@ -914,9 +1030,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.verb == "add" and args.text is not None:
-            needs = (args.example, args.version, args.started)
+            needs = (args.example, args.version, args.started, args.speed)
             if None in needs or (args.video is None) == (args.gif is None):
-                parser.error("--text needs --example, --version, --started, and --video or --gif")
+                parser.error(
+                    "--text needs --example, --version, --started, --speed, and --video or --gif"
+                )
             notes = add_text(
                 EXAMPLES,
                 args.text,

@@ -1,0 +1,70 @@
+hook: A monkey fired 999 random commands at quackd on a mock robot arm, `rm -rf` and `fire_laser` among them. Not one ran outside the rules.
+goal_met: "Yes"
+before:
+  - python D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.py --port 8799 --seed 1
+why_example: >
+  An LLM can send anything: a verb the robot does not have, arguments that are not numbers, an angle
+  past a joint's travel. quackd's contract is meant to stop all of it before it reaches the arm, and
+  the way to test that is to send it everything on purpose. This example puts a monkey at the
+  controls: a page of Python, beside the task file, that answers like an LLM, knows nothing of the
+  task, and picks a random call with arguments that are sometimes sane and usually not, for a
+  thousand turns on the mock arm.
+why_result: >
+  Nothing ran outside the contract. Of the monkey's 999 random calls, 300 ran, every one a verb the
+  task allows, and none sent a goal past a joint's travel. The rest were stopped: 511 for bad
+  arguments, 182 for verbs that are not on the task's list, `rm -rf` and `fire_laser` among them, 5
+  by quackd's range check and the last by the budget. The counts are the ones the run sheet recorded
+  for the same seed on quackd 0.30.3, so the gates held the same way from 0.30.3 to 0.33.0. It cost
+  nothing and needed no arm.
+goal: >
+  Show a random command generator hammering the mock arm for a thousand turns, and count how many of
+  its calls escape the contract. The target is zero.
+expected: >
+  With seed 1 the count reads `998 calls, 300 of them ran`, with 694 stopped at a gate (`params` 511,
+  `allowlist` 182, `budget` 1), and nothing runs outside the contract or goes past a joint's travel.
+  The run ends on `max_llm_calls (1000) reached`, which is the budget doing its job.
+showed:
+  - >
+    The monkey answered all 1,000 turns. Its first answer is always `assess_task`, and after that
+    every turn was a random call: verbs the task allows, such as `move_joints` and `gripper`, verbs
+    the arm has but the task leaves out, `pick` and `manipulate`, and ones the arm does not have at
+    all, such as `rm -rf`, `fire_laser`, `disable_torque` and `walk`.
+  - >
+    The count after the run, from the monkey's own script: `998 calls, 300 of them ran`, `stopped at
+    a gate: allowlist 182, budget 1, params 511`, `verbs run outside the contract: 0` and `goals past
+    a joint's travel, or not a number: 0`. Recounted from the run's transcript, every figure matches.
+    Its 998 leaves out the last call, which the budget stopped before it became a verb and which is
+    its `budget 1`.
+  - >
+    The 300 that ran were 164 `stop`, 128 `gripper` and 8 `move_joints`. Every `stop` ran, whatever
+    arguments it came with, which is what the run sheet says 0.30.1 fixed: a `stop` with junk
+    arguments used to be refused and stop nothing.
+  - >
+    Five more `move_joints` calls passed the gates and were refused by quackd's own range check,
+    against the mock's stand-in travel of -100 to 100, each with a goal such as 170: `LeRobot does
+    not clamp a degrees goal, so quackd refuses it`.
+  - >
+    quackd reads some wrong arguments generously rather than refusing them. 74 of the 128 `gripper`
+    calls that ran gave `open` as `1` or `"yes"`, and both were sent as open. The monkey's count
+    looks only at which verbs ran and at joint goals, so it does not count these.
+  - >
+    What reached the arm was 379 joint commands from those 8 moves, 128 gripper commands and 165
+    stops, the last of them quackd's own when the budget ran out.
+  - >
+    The run ended `BUDGET` on `max_llm_calls (1000) reached`, after 10 minutes 19 seconds, 9 minutes
+    4 seconds of it waiting on the monkey, and it cost nothing.
+did_not_show:
+  - >
+    It does not show a real arm. This ran on `lerobot:mock`, an arm that lives in memory, so it tests
+    the rules every call goes through and not what a servo does with the calls that get past them.
+  - >
+    It does not show what an LLM would try. The monkey picks at random, so this tests the gates and
+    not anybody's judgement.
+  - >
+    The record names the robot `arm-01`, the name quackd's LeRobot adapter gives an arm when it is
+    not told one. The transport was `mock`, and no arm was connected.
+  - >
+    The pictures under What the robot saw are the mock's drawn scene, the same in every frame, and
+    `--no-vision` kept them from the monkey.
+  - >
+    It does not show the monkey's other mode, `--gibberish`, or any seed but 1.

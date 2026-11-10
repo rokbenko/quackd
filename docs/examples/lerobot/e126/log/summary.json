@@ -1,0 +1,92 @@
+{
+  "duck": "e126-monkey",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.duck",
+    "--robot",
+    "lerobot:mock",
+    "--llm",
+    "local:monkey",
+    "--base-url",
+    "http://127.0.0.1:8799/v1",
+    "--no-vision",
+    "--max-steps",
+    "1000",
+    "--no-memory"
+  ],
+  "version": "0.33.0",
+  "outcome": "budget",
+  "reason": "max_llm_calls (1000) reached",
+  "steps": 305,
+  "llm_calls": 1000,
+  "elapsed_s": 50.7,
+  "started_at": "2026-11-10T11:03:43.312Z",
+  "ended_at": "2026-11-10T11:14:02.016Z",
+  "wall_s": 618.704,
+  "connect_s": 0.008,
+  "llm_latency_s": 544.469,
+  "llm_latency_p50_s": 0.497,
+  "llm_latency_p90_s": 0.913,
+  "llm_latency_max_s": 4.712,
+  "first_motion_s": 8.547,
+  "first_motion_llm_calls": 24,
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 1000,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "price": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0,
+    "unit": "USD per million tokens",
+    "source": "self-hosted",
+    "checked": null
+  },
+  "cost_usd": 0.0,
+  "provider": "local",
+  "llm_id": "monkey",
+  "transport": "mock",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 50.70000000000045,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": 0.0,
+        "shoulder_lift": 0.0,
+        "elbow_flex": -40.0,
+        "wrist_flex": 0.0,
+        "wrist_roll": 40.0,
+        "gripper": 100.0
+      },
+      "torque": true,
+      "temperature_c": {
+        "shoulder_pan": 30,
+        "shoulder_lift": 30,
+        "elbow_flex": 30,
+        "wrist_flex": 30,
+        "wrist_roll": 30,
+        "gripper": 30
+      },
+      "hot": [],
+      "out_of_range": [],
+      "near_object": false,
+      "segment": null
+    }
+  },
+  "log_dropped": 0
+}

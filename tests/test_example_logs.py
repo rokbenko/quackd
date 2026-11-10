@@ -1024,6 +1024,114 @@ def test_a_gif_already_made_is_used_as_it_is(
     assert (root / "e001" / "log" / "run.gif").read_bytes() == made.read_bytes()
 
 
+MOCK = {**GOOD, "transport": "mock"}
+"""A run on `lerobot:mock`, an arm in memory."""
+
+
+def test_a_run_on_the_mock_is_not_filmed(tmp_path: Path) -> None:
+    """Rok's rule: an arm in memory had nothing in front of a camera, so its log shows no GIF."""
+    root = _tree(tmp_path / "examples")
+    _logged(root, "e001", MOCK)
+    media = {"speed": None, "frames": 3, "run_folder": "20261110-110343-e001-task"}
+    (root / "e001" / "log" / "media.json").write_text(json.dumps(media), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert script.NO_FILM in text
+    assert "run.gif" not in text
+    assert "The GIF plays" not in text
+
+
+def test_add_takes_no_video_for_a_run_on_the_mock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "summary.json").write_text(json.dumps({"duck": "e001-task", **MOCK}), encoding="utf-8")
+    (run / "E001.mp4").write_bytes(b"video")
+    for given in ({"speed": 5.0}, {"gif": run / "E001.mp4"}, {"video": run / "E001.mp4"}):
+        with pytest.raises(script.LogError, match="nothing to film"):
+            script.add_run(root, run, **{"speed": None, **given})
+    script.add_run(root, run, None)
+    log = root / "e001" / "log"
+    assert not (log / "run.gif").exists()
+    assert json.loads((log / "media.json").read_text(encoding="utf-8"))["speed"] is None
+
+
+def test_add_wants_the_speed_of_a_video(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    run = _run_folder(tmp_path)
+    (run / "E001.mp4").write_bytes(b"video")
+    with pytest.raises(script.LogError, match="--speed is how fast the video plays"):
+        script.add_run(root, run, None)
+    assert not (root / "e001" / "log").exists()
+
+
+def test_a_run_on_the_mock_is_tried_as_it_ran(tmp_path: Path) -> None:
+    """It needed no arm, so its own lines are the try, with the server typed before it first."""
+    root = _tree(tmp_path / "examples")
+    command = [
+        "quackd",
+        "run",
+        "D:/co/docs/examples/lerobot/e001/monkey.duck",
+        "--robot",
+        "lerobot:mock",
+        "--llm",
+        "local:monkey",
+        "--base-url",
+        "http://127.0.0.1:8799/v1",
+        "--no-vision",
+        "--max-steps",
+        "1000",
+        "--no-memory",
+    ]
+    serve = "python D:\\co\\docs\\examples\\lerobot\\e001\\monkey.py --port 8799 --seed 1"
+    summary = {**MOCK, "provider": "local", "model": "monkey", "command": command}
+    folder = _logged(root, "e001", summary, notes={"before": [serve]})
+    counted = "(v) PS D:\\x> python D:/co/docs/examples/lerobot/e001/monkey.py --count runs"
+    (folder / "log" / "after.txt").write_text(f"{counted}\n998 calls\n(v) PS D:\\x>\n", "utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    tried = (
+        "python docs/examples/lerobot/e001/monkey.py --port 8799 --seed 1\n"
+        "quackd run docs/examples/lerobot/e001/monkey.duck --robot lerobot:mock --llm local:monkey"
+        " --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory\n"
+        "python docs/examples/lerobot/e001/monkey.py --count runs"
+    )
+    assert f"```bash\n{tried}\n```" in text
+    assert "stays running in a terminal of its own while the others run" in text
+    assert "needs quackd's `openai` extra" in text
+    assert "nothing is billed" in text
+    assert "lerobot:mujoco" not in text
+
+
+def test_a_trace_too_long_for_a_readme_shows_its_two_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GitHub stops showing a README past its limit, so a long trace keeps its start, where the
+    run began, and its end, how it ended, and says where the whole of it is."""
+    root = _tree(tmp_path / "examples")
+    folder = _logged(root, "e001", GOOD)
+    body = "\n".join(f"line {n}" for n in range(1, 3001))
+    (folder / "log" / "terminal.txt").write_text(f"$ quackd run x\n{body}\n", encoding="utf-8")
+    (folder / "log" / "after.txt").write_text("PS> python count.py\n998 calls\n", encoding="utf-8")
+    monkeypatch.setattr(script, "README_LIMIT", 20 * 1024)
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert len(text.encode("utf-8")) <= 20 * 1024
+    assert "The trace is 3,004 lines" in text
+    assert "[log/terminal.txt](log/terminal.txt) and [log/after.txt](log/after.txt)" in text
+    assert "\nline 199\n[2,604 lines left out here]\nline 2804\n" in text
+    assert "998 calls" in text
+    assert "Show the first 200 and the last 200 lines of the terminal trace" in text
+
+
+def test_a_trace_that_fits_is_shown_whole(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    _logged(root, "e001", GOOD)
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert "<summary>Show the full terminal trace (3 lines)</summary>" in text
+    assert "lines left out here" not in text
+
+
 def test_a_video_kept_elsewhere_is_named_with_video(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -659,6 +659,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E126 has a log: a monkey sent a thousand random commands to the mock arm, and none ran outside
+  the contract.** A run on `lerobot:mock` had no arm to film, so `scripts/example_log.py add` takes
+  no `--video`, `--gif` or `--speed` for one, and its log says it was not filmed where the GIF would
+  be. Its Try it yourself section is the lines that ran, with their paths from a checkout, because
+  they needed no arm. A trace too long for one README page is shown by its first and last 200
+  lines, with links to the files that hold the whole of it.
 - **The run sheet's cards say what the runs and the code say.** E169's no longer says the LLM
   thinks it is driving: a dry run tells it each move was not sent, and on the arm it stopped after
   one. E170's no longer calls quackd's refusal the only thing between a number and the servo, which

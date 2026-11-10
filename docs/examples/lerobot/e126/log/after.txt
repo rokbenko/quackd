@@ -1,0 +1,7 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> python D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.py --count runs
+998 calls, 300 of them ran
+stopped at a gate: allowlist 182, budget 1, params 511
+sent to the arm: gripper 128, joint 379, stop 165
+verbs run outside the contract: 0
+goals past a joint's travel, or not a number: 0
+(lerobot-test) PS D:\Development\lerobot-test\.venv>
