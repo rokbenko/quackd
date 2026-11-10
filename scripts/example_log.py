@@ -14,6 +14,7 @@ What `add` needs is the run folder with its video left inside it, under any name
 `--video`, and how many times faster than real time that video plays, which is read off the video.
 A run on `lerobot:mock` had no arm to film, so it takes neither, and its log says so in place of a
 GIF. A trace too long for one README page is shown by its first and last lines, with the files.
+A run whose process was killed wrote no summary.json, so what its transcript recorded stands in.
 A command run after the run to put the arm right, such as `quackd robot release`, writes no run
 folder, so its terminal output, saved as text, comes in with `--after` and follows the run's trace.
 An example run in several parts keeps each under `log/part-N`, named with `--part N`, and has one
@@ -182,6 +183,13 @@ ENDED = """\
 The run ended with **{outcome}**. The reason on record:
 
 > {reason}"""
+
+KILLED = "killed"
+"""The outcome of a run whose process was killed: it wrote no summary, so nothing else says one."""
+
+ENDED_KILLED = """\
+The run did not end on its own: its process was killed, so it wrote no summary and recorded no
+reason. What it did record up to then is in the numbers and the trace."""
 
 COMMAND = """\
 The following command was run with quackd {version}:
@@ -584,9 +592,6 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
             )
         media: dict[str, Any] = json.loads(_read(part / "media.json"))
         trace = _read(part / "terminal.txt").rstrip("\n")
-        command = "\n".join(
-            [*(notes.get("before") or []), _typed(trace.split("\n", 1)[0], folder.name)]
-        )
         where = part.relative_to(folder).as_posix()
         files.append(f"{where}/terminal.txt")
         later = _read(part / "after.txt").rstrip("\n") if (part / "after.txt").exists() else ""
@@ -594,6 +599,9 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
             trace += "\n\n" + later
             files.append(f"{where}/after.txt")
         afters.append(_typed_in(later))
+        # every line typed for this part, in order: what came before it, the run, what came after
+        typed_here = _typed(_read(part / "terminal.txt").split("\n", 1)[0], folder.name)
+        command = "\n".join([*(notes.get("before") or []), typed_here, *afters[-1]])
         records.append(summary)
         if _mock(summary):
             film = NO_FILM
@@ -602,7 +610,10 @@ def render_log(root: Path, experiment: dict[str, str]) -> str:
             film = FILM.format(id=experiment["id"], gif=gif, speed=f"{media['speed']:g}")
         films.append(tagged(n, film))
         reason = _flat(summary.get("reason") or "No reason was recorded.")
-        ended = ENDED.format(outcome=str(summary["outcome"]).upper(), reason=reason)
+        if summary["outcome"] == KILLED:
+            ended = ENDED_KILLED
+        else:
+            ended = ENDED.format(outcome=str(summary["outcome"]).upper(), reason=reason)
         endings.append(tagged(n, ended))
         typed = COMMAND.format(version=summary["version"], fence=_fence(command), command=command)
         commands.append(tagged(n, typed))
@@ -857,14 +868,19 @@ def add_run(
     of the commands run once the run was over, in the order they ran. `gif` is a GIF already made,
     used as it is in place of a video: the clip of an arm that did not move is the same every time,
     and git keeps one copy of identical files. A run on `lerobot:mock` had no arm to film, so it
-    takes no video, no GIF and no `speed`."""
+    takes no video, no GIF and no `speed`. A run whose process was killed wrote no summary.json,
+    and what its transcript recorded up to then stands in for one, as `record.json`."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
     if name is None:
         raise LogError(f"cannot tell the example from {run_dir.name}: pass --example eNNN")
-    if not (run_dir / "summary.json").exists():
-        raise LogError(f"{run_dir} has no summary.json: that run never reached its end")
-    summary = _read(run_dir / "summary.json")
+    killed = not (run_dir / "summary.json").exists()
+    if killed and not (run_dir / "transcript.jsonl").exists():
+        raise LogError(
+            f"{run_dir} has no summary.json and no transcript.jsonl: that run never reached its "
+            "end and left nothing to say how far it got"
+        )
+    summary = _killed_record(run_dir) if killed else _read(run_dir / "summary.json")
     trace = _read(run_dir / "terminal.txt")
     later = "\n".join(_read(path).removeprefix("﻿").rstrip("\n") for path in after)
     copied = [("terminal.txt", trace), ("summary.json", summary)]
@@ -901,7 +917,7 @@ def add_run(
     log.mkdir(parents=True, exist_ok=True)
     _place_gif(log, gif, video)
     frames = _keep_frames(run_dir, log)
-    _write(log / "summary.json", summary)
+    _write(log / ("record.json" if killed else "summary.json"), summary)
     _write(log / "terminal.txt", trace)
     if after:
         _write(log / "after.txt", later + "\n")
@@ -919,6 +935,49 @@ def _place_gif(log: Path, gif: Path | None, video: Path | None) -> None:
             made = Path(scratch) / "run.gif"
             make_gif(video, made)
             shutil.copyfile(made, log / "run.gif")
+
+
+def _killed_record(run_dir: Path) -> str:
+    """What a run's transcript recorded up to the moment its process was killed, in the words a
+    summary would have used: a killed process writes no summary.json and gives no reason. Its last
+    LLM call may have been sent and never answered, so that call counts and its wait and tokens do
+    not. First motion is timed as quackd times it, from the start of the verb that moved."""
+    lines = _read(run_dir / "transcript.jsonl").splitlines()
+    rows: list[dict[str, Any]] = [json.loads(line) for line in lines if line.strip()]
+    start = next((row for row in rows if row.get("kind") == "run_start"), None)
+    if start is None:
+        raise LogError(f"{run_dir.name}'s transcript has no run_start: nothing says what ran")
+    if any(row.get("kind") == "run_end" for row in rows):
+        raise LogError(f"{run_dir.name} reached its end, so its summary.json is missing: copy it")
+    answered = [row for row in rows if row.get("kind") == "llm" and row.get("usage_total")]
+    waits = [row["latency_s"] for row in answered if row.get("latency_s") is not None]
+    sent = [n for n, row in enumerate(rows) if row.get("kind") == "intent"]
+    moving = next((n for n in sent if rows[n].get("intent") != "stop"), None)
+    began = [row["t"] for row in rows[:moving] if row.get("kind") == "verb_start"] if moving else []
+    moved = began[-1] if began else (rows[moving]["t"] if moving is not None else None)
+    seen = [row for row in rows if row.get("kind") == "observation"]
+    state = ((seen[-1].get("features") or {}).get("state") or {}) if seen else {}
+    last = answered[-1] if answered else {}
+    record = {
+        "command": start["command"],
+        "version": start["version"],
+        "started_at": start["started_at"],
+        "outcome": KILLED,
+        "reason": None,
+        "provider": start.get("provider"),
+        "llm_id": start.get("llm_id") or start.get("model"),
+        "transport": start.get("transport"),
+        "robot": _flag(start["command"], "--robot") or "not recorded",
+        "steps": sum(1 for row in rows if row.get("kind") == "verb"),
+        "llm_calls": sum(1 for row in rows if row.get("kind") == "llm_request"),
+        "connect_s": start.get("connect_s"),
+        "llm_latency_s": round(sum(waits), 3) if waits else None,
+        "first_motion_s": moved,
+        "usage": last.get("usage_total") or {},
+        "cost_usd": last.get("cost_usd_total"),
+        "final_state": {"extras": {"step_deg": (state.get("extras") or {}).get("step_deg")}},
+    }
+    return json.dumps(record, indent=2, ensure_ascii=False) + "\n"
 
 
 def _log_of(home: Path, part: int | None) -> Path:

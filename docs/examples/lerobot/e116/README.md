@@ -51,6 +51,7 @@ The following command was run with quackd 0.31.3:
 
 ```text
 quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e116/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+quackd robot release arm-01
 ```
 
 ## The numbers

@@ -1,0 +1,68 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM quackd.exe
+SUCCESS: The process "quackd.exe" with PID 21872 has been terminated.
+SUCCESS: The process "quackd.exe" with PID 35824 has been terminated.
+SUCCESS: The process "quackd.exe" with PID 22152 has been terminated.
+SUCCESS: The process "quackd.exe" with PID 20864 has been terminated.
+(lerobot-test) PS D:\Development\lerobot-test\.venv>
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+⚠ connecting takes torque off every motor for a moment, because LeRobot
+configures them with it off, and the arm then folds to its rest pose and is
+let go of there: support it while it connects, then take your hands away
+when it says so, before it folds
+fold arm-01 to its rest pose and release torque there? [y/N]: y
+arm-01 (lerobot:real) is at
+shoulder_pan   -0.6
+shoulder_lift  -75.3
+elbow_flex     78.2
+wrist_flex     60.8
+wrist_roll     0.5
+gripper        2.5
+folding arm-01 to its rest pose in 3 s: take your hands away from it now.
+Ctrl-C or q stops it before it moves
+folding arm-01 to its rest pose: keep your hands out of its way
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 83.24175824175825},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -80.2967032967033},
+    'shoulder_pan': {   'original goal_pos': -5.7,
+                        'safe goal_pos': -5.571428571428571},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 65.79120879120879}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 86.49450549450549},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -83.1978021978022},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 68.6923076923077}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 90.53846153846153},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -86.53846153846153},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 72.03296703296704}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 94.14285714285714},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -89.79120879120879},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 75.28571428571429}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -93.04395604395604},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 78.62637362637362}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -96.47252747252747}}
+WARNING:root:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -99.81318681318682}}
+✓ torque reads off on every joint of arm-01
+  the arm is limp at its rest pose, where it was folded and let go of
+because you asked for it, and where it still reads: it rests there with no
+torque, as it does at the end of every run
+(lerobot-test) PS D:\Development\lerobot-test\.venv>

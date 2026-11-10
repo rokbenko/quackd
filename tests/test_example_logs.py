@@ -1196,6 +1196,82 @@ def test_add_needs_a_run_that_reached_its_end(tmp_path: Path) -> None:
         script.add_run(root, run, 10.0)
 
 
+def _killed_run(tmp_path: Path, *, ended: bool = False) -> Path:
+    """A run folder as a killed process leaves it: a transcript cut off mid-run, no summary.json."""
+    run = tmp_path / "runs" / "20261110-113231-e001-task"
+    run.mkdir(parents=True)
+    command = ["quackd", "run", "D:/co/docs/examples/lerobot/e001/task.duck", "--robot", "arm-01"]
+    state = {"extras": {"step_deg": 5.0}}
+    usage = {"input_tokens": 3500, "output_tokens": 70}
+    rows = [
+        {"t": 10.3, "kind": "run_start", "command": command, "version": "0.33.0"}
+        | {"started_at": "2026-11-10T11:32:31.535Z", "provider": "openai", "llm_id": "gpt-6-astra"}
+        | {"transport": "real", "connect_s": 10.322},
+        {"t": 10.4, "kind": "observation", "features": {"state": state}},
+        {"t": 10.5, "kind": "llm_request"},
+        {"t": 14.9, "kind": "llm", "usage_total": usage, "cost_usd_total": 0.0244}
+        | {"latency_s": 4.4},
+        {"t": 14.94, "kind": "verb_start", "name": "move_joints"},
+        {"t": 15.0, "kind": "intent", "intent": "joint"},
+        {"t": 20.1, "kind": "verb", "name": "move_joints", "ok": True},
+        {"t": 20.2, "kind": "llm_request"},
+    ]
+    if ended:
+        rows.append({"t": 30.0, "kind": "run_end"})
+    lines = "".join(json.dumps(row) + "\n" for row in rows)
+    (run / "transcript.jsonl").write_text(lines, encoding="utf-8")
+    trace = "$ quackd run D:/co/docs/examples/lerobot/e001/task.duck --robot arm-01\n"
+    (run / "terminal.txt").write_text(trace, encoding="utf-8")
+    (run / "E001.mp4").write_bytes(b"video")
+    return run
+
+
+def test_a_killed_run_is_logged_from_what_its_transcript_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hard kill writes no summary.json, and that is the example: the log says so, and keeps
+    what the transcript recorded up to the kill, the unanswered call counted and not billed."""
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    script.add_run(root, _killed_run(tmp_path), 3.0)
+    log = root / "e001" / "log"
+    record = json.loads((log / "record.json").read_text(encoding="utf-8"))
+    assert not (log / "summary.json").exists()
+    assert (record["outcome"], record["reason"], record["version"]) == ("killed", None, "0.33.0")
+    # first motion is timed from the start of the verb that moved, as quackd times it
+    assert (record["steps"], record["llm_calls"], record["first_motion_s"]) == (1, 2, 14.94)
+    # the wait and the tokens are the answered call's: the one sent at the kill has neither
+    assert (record["llm_latency_s"], record["usage"]["input_tokens"]) == (4.4, 3500)
+    (log / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert script.ENDED_KILLED in text
+    assert "| Hilarity | Yes | KILLED |" in text
+    assert "| LLM calls | 2 |" in text
+    assert "| Total time | not recorded |" in text
+    assert "| Waiting for the LLM | 4.4 s |" in text
+    assert "| First motion | 14.9 s after the start |" in text
+    assert "| Tokens | 3,500 in, 70 out |" in text
+    assert "| Speed cap | 5° per send |" in text
+
+
+def test_a_run_that_reached_its_end_needs_its_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    with pytest.raises(script.LogError, match=r"reached its end, so its summary\.json is missing"):
+        script.add_run(root, _killed_run(tmp_path, ended=True), 3.0)
+
+
+def test_the_exact_command_has_what_was_typed_after_the_run(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "examples")
+    folder = _logged(root, "e001", GOOD)
+    saved = "(v) PS D:\\x> taskkill /F /IM quackd.exe\nSUCCESS: gone\n(v) PS D:\\x>\n"
+    (folder / "log" / "after.txt").write_text(saved, encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert "--robot arm-01\ntaskkill /F /IM quackd.exe\n```" in text
+
+
 def test_add_needs_to_be_told_the_example_of_a_goal_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

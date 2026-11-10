@@ -11,6 +11,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E117 has a log in two parts: Ctrl-C folded the arm away, and a hard kill left it holding under
+  torque until `quackd robot release` put it down.** A run whose process was killed writes no
+  `summary.json`, so `scripts/example_log.py add` now reads what its `transcript.jsonl` recorded up
+  to the kill, and its log says it never ended. The lines typed after a run, saved with `--after`,
+  now follow the run's own line under The exact command, which adds `quackd robot release` to
+  E116's log and the monkey's count to E126's.
 - **E126 has a log: a monkey fired 999 random commands at quackd on the mock arm, and none ran
   outside the contract.** A run on `lerobot:mock` had no arm to film, so `scripts/example_log.py add` takes
   no `--video`, `--gif` or `--speed` for one, and its log says it was not filmed where the GIF would
