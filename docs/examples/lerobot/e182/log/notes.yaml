@@ -1,0 +1,43 @@
+hook: Asked to plan a twelve-step dance at high effort, the LLM had not answered 7.7 seconds into the call when Ctrl-C landed, and the arm was back at rest half a second later.
+goal_met: "Yes"
+why_example: >
+  An LLM told to think hard can take a long time over one answer, and the arm waits where it is while
+  it does. Until 0.24.0, quackd acted on a Ctrl-C only once that answer came back, so a press could
+  sit unanswered for as long as the LLM kept thinking. This example sets the effort high, asks for a
+  twelve-step dance worked out in detail, and presses Ctrl-C while the LLM is still working it out.
+why_result: >
+  The kill switch did not wait for the LLM. The press cut the call 7.7 s in, quackd threw away
+  whatever it would have said, sent a `stop` and folded the arm to its rest pose 0.44 s later, and
+  the run ended `ABORTED` on `kill switch` under a second after the call was cut. For a person next
+  to the arm, a stop that answers at once matters more than any answer the LLM had yet to give.
+goal: >
+  Show that the kill switch does not wait for the LLM: a press while it is still thinking ends the
+  call and the run at once.
+expected: >
+  The press ends the call that is still out, throws away whatever it would have said, and the run
+  ends ABORTED, `kill switch`, in under a second, with the arm folding at once. The call's `llm`
+  record in `transcript.jsonl` says what it cut short.
+showed:
+  - >
+    The run asked for high effort, and its header said so, `high (--effort)`. The LLM spent 247
+    reasoning tokens over its first three calls, 181 of them on its verdict.
+  - >
+    It lifted the forearm, `move_joints` with elbow_flex 76 over 8 s, which ended at 78, and then the
+    next call went out, the one the task meant for working out the dance.
+  - >
+    Ctrl-C came 7.7 s into that call: `ERROR Aborted: kill switch after 7.7 s`. quackd sent a `stop`,
+    the arm was `at the rest pose` 0.44 s later, and the run ended `ABORTED` on `kill switch`, under a
+    second after the call was cut.
+  - >
+    The cut call's own record in the transcript says what happened to it: no answer, `Aborted: kill
+    switch`, after 7.7 s.
+did_not_show:
+  - >
+    It does not show a long think. The call had been waiting 7.7 s when it was cut, so this shows the
+    press ending a call in flight, not one that would have taken a minute.
+  - >
+    The effort is not in the run's summary.json, which has no such field. It is recorded once, at the
+    run's start, which says every request asked for `high`.
+  - >
+    It does not show the dance. The LLM never got as far as answering, so nothing says what the twelve
+    steps would have been.

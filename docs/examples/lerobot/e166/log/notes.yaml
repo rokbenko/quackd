@@ -57,8 +57,8 @@ did_not_show:
     run took about 1.7 s in Part 1 and 1.6 s in Part 2.
   - >
     The same cut ended in an error once and was aborted once. Which one depends on whether the heartbeat
-    had failed by the time the move gave up: in Part 2 it had, and in Part 1 the run's own read met the
-    silence first. The card's `ends in an error` fits only Part 1.
+    had failed by the time the move gave up. In Part 2 it had. In Part 1 the move gave up first, and the
+    run's own next read of the arm met the silence. The card's `ends in an error` fits only Part 1.
   - >
     It does not show how far the arm fell, or whether the hand under it caught it. The record stops at
     the cut, with the last goals elbow_flex 76.6 and 83.4 from 96 at rest.

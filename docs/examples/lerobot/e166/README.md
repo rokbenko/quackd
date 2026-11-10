@@ -45,7 +45,7 @@ Prove the only real emergency stop before any line moves a joint on purpose: cut
 * The GIFs do not show the power switch. The supply is under the table, out of frame. It was turned off in both parts, and in Part 2 turned back on as well, so the two GIFs look alike although the takes were not.
 * It does not show the card's second take, off and on inside a second. In Part 2 the power came back only after the arm had fallen and the run had ended, so the servos never answered again mid-run and no fold found them with torque off.
 * It misses the card's `within about a second`. From the last goal the arm answered to the end of the run took about 1.7 s in Part 1 and 1.6 s in Part 2.
-* The same cut ended in an error once and was aborted once. Which one depends on whether the heartbeat had failed by the time the move gave up: in Part 2 it had, and in Part 1 the run's own read met the silence first. The card's `ends in an error` fits only Part 1.
+* The same cut ended in an error once and was aborted once. Which one depends on whether the heartbeat had failed by the time the move gave up. In Part 2 it had. In Part 1 the move gave up first, and the run's own next read of the arm met the silence. The card's `ends in an error` fits only Part 1.
 * It does not show how far the arm fell, or whether the hand under it caught it. The record stops at the cut, with the last goals elbow_flex 76.6 and 83.4 from 96 at rest.
 * It does not show the card's third line, `quackd doctor` with the switch off.
 
