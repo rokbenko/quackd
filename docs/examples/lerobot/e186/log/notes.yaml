@@ -1,0 +1,67 @@
+hook: An empty Enter stopped the arm partway through a move, with no LLM in the way. It was routed in 0.208 ms, and the stop went out 20.4 ms after the press.
+goal_met: "Partly"
+why_example: >
+  In E118 an LLM was asked to stop the arm, and its stop could only land between moves, seconds late.
+  `quackd drive` gives the person a brake that does not go through the LLM at all: an empty Enter
+  drops whatever is waiting, ends the verb moving the arm and sends the stop straight to it. This
+  example presses it during a move on the real arm, then cuts a second move short with a newer
+  command, to see how fast the brake is and how far the arm carries on.
+why_result: >
+  The brake is the fast path the card promised. Enter was routed in 0.208 ms and the stop went out
+  20.4 ms after the press, without asking the LLM anything. Right after the stop the arm read
+  shoulder_pan -17.0, short of the last goal the move had sent, and stayed there. The number the card
+  is after, how many degrees the arm carries on past the press, needs its position at the press,
+  which nothing recorded, so it is still open. A newer command did the same job: `gripper false`,
+  typed during the second move, ended it and then ran. For a person beside the arm, that is a brake
+  that answers in milliseconds without waiting on the LLM.
+goal: >
+  The other half of E118: an empty Enter brakes at once, with no LLM in the way. It drops every line
+  that has not started, ends the verb moving the arm, and sends the stop straight to the body.
+expected: >
+  A brake line ending `Enter (0.2 ms)` for quackd's part, and `brake_ms` in the session's
+  `summary.json` from the press to the stop, 15 ms on the arm's twin. The number to measure is how
+  many degrees the arm carries on past the press, against E118's. Typed mid-sweep, `gripper false` is
+  a newer command: it ends the verb it finds moving, waits for its stop, then runs, so the sweep ends
+  and the jaws close.
+showed:
+  - >
+    The first line went to the pilot as goal 1. The LLM read the arm and began the sweep with its first
+    move, the pan to -40 over 5 s.
+  - >
+    Enter on an empty line, 1.8 s into that move, braked, its line ending `Enter (0.208 ms)`. The stop
+    went out 20.4 ms after the press, the session's `brake_ms`, and the goal ended `aborted mid-verb;
+    the verb was cancelled and a stop was sent`.
+  - >
+    A stop makes the arm's present position its goal. Right after it the arm read shoulder_pan -17.0,
+    short of -17.3, the last goal the move had sent before the press, and the second goal began from
+    -16.9.
+  - >
+    The same line again began a second sweep, and `gripper false`, typed 3.5 s into its first move,
+    ended it as a newer command, `aborted: a newer command, gripper false`. Then it ran, starting 21 ms
+    after it was typed. The jaws were already all but shut, at 2.5 of 100, so it found nothing to
+    close: `gripper closed on nothing (stopped at 1/100)`.
+  - >
+    `quit` ended the session, `ok: goodbye`, and its close moved the pan back toward its rest pose,
+    -5.7.
+  - >
+    The prompt worked in PowerShell, though a camera warning landed after a `drive>` prompt once per
+    goal, and LeRobot printed seven clamp warnings as the close moved the arm.
+did_not_show:
+  - >
+    It does not give the card's number, how many degrees the arm carried on past the press. Nothing read
+    the arm at the press itself, and no protractor was in frame.
+  - >
+    It does not show the brake dropping lines that had not started: nothing was waiting when Enter was
+    pressed.
+  - >
+    Neither press stopped the sweep itself. Both landed during the first move, toward -40, and the
+    sweep from -40 to +40 never began.
+  - >
+    It is one press: 20.4 ms on the real arm against the twin's 15 ms is a single sample, not the
+    brake's spread.
+  - >
+    It does not show Ctrl-C as a brake, or a second press within 1.5 s ending the session, both on the
+    card.
+  - >
+    The cost and the wait for the LLM in the table are the session's two goals added up, because the
+    session's own summary records neither.

@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**14 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**15 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -193,7 +193,7 @@
 |  | [E183: Push back: is a stall caught?](e183/) | Safety |  |  |  |
 |  | [E184: Lower the speed limit](e184/) | Safety |  |  |  |
 |  | [E185: How warm does it get?](e185/) | Safety |  |  |  |
-|  | [E186: The brake, with no LLM in the way](e186/) | Safety |  |  |  |
+| ✅ | [E186: The brake, with no LLM in the way](e186/) | Safety | An empty Enter stopped the arm partway through a move, with no LLM in the way. It was routed in 0.208 ms, and the stop went out 20.4 ms after the press. | Partly | 0.34.0 |
 | ✅ | [E187: Out of calls, out of time](e187/) | Safety | Given three LLM calls, the LLM counted them and quit without moving. Given thirty seconds, it made three moves before the clock cut off its next thought. | Partly | 0.31.3 |
 |  | [E188: Who said yes?](e188/) | Safety |  |  |  |
 |  | [E189: Two pilots, one arm](e189/) | Safety |  |  |  |
@@ -264,7 +264,10 @@ example's `log/notes.yaml`.
    A trace too long for one README page is shown by its first and last 200 lines, with a link to
    the files that hold the whole of it. A run whose process was killed writes no `summary.json`, so
    `add` reads what its `transcript.jsonl` recorded up to the kill, and its log says it never ended.
-   The lines typed after a run, saved with `--after`, follow it under The exact command.
+   The lines typed after a run, saved with `--after`, follow it under The exact command. A
+   `quackd drive` session writes no terminal record and its own summary has no version and no
+   command: add its folder with `--terminal <file>`, what its terminal printed as you saved it, and
+   `add` reads the rest from the session's start and its goals.
 3. Look at the GIF and the frames. They go public, with whatever the camera caught.
 4. Fill in the notes:
 
