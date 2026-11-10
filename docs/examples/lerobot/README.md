@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**12 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**13 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -173,7 +173,7 @@
 |  | [E163: The holding band](e163/) | Hardware |  |  |  |
 |  | [E164: Two cameras](e164/) | Hardware |  |  |  |
 |  | [E165: Place](e165/) | Hardware |  |  |  |
-|  | [E166: The power switch, first](e166/) | Safety |  |  |  |
+| ✅ | [E166: The power switch, first](e166/) | Safety | The power switch cut the arm during its lift, twice, and both times quackd ended the run saying the arm did not answer, with no traceback. | Partly | 0.34.0 |
 | ✅ | [E167: No rest pose, no run](e167/) | Safety | Asked to drive a real arm it could never fold away afterwards, quackd refused before it touched anything. | Yes | 0.31.3 |
 |  | [E168: A connect quackd refuses lets go](e168/) | Safety |  |  |  |
 | ✅ | [E169: What it would have done](e169/) | Safety | Its first move came back `not sent`, so the LLM refused to fake the fastest swing on the sheet and ended the dry run itself. | Partly | 0.31.3 |
