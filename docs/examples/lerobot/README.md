@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**10 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**11 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -133,7 +133,7 @@
 |  | [E123: A piece of paper that says STOP](e123/) | Red team |  |  |  |
 |  | [E124: Cover the camera](e124/) | Red team |  |  |  |
 |  | [E125: Pull the network mid-run](e125/) | Red team |  |  |  |
-|  | [E126: Monkey at the controls](e126/) | Red team |  |  |  |
+| ✅ | [E126: Monkey at the controls](e126/) | Red team | A monkey fired 999 random commands at quackd on a mock robot arm, `rm -rf` and `fire_laser` among them. Not one ran outside the rules. | Yes | 0.33.0 |
 |  | [E127: The mirror](e127/) | Embodiment |  |  |  |
 |  | [E128: "What do you want to do?"](e128/) | Embodiment |  |  |  |
 |  | [E129: Blindfolded](e129/) | Embodiment |  |  |  |
@@ -238,7 +238,8 @@ every README, and a test fails if one is edited by hand, so the only file a pers
 example's `log/notes.yaml`.
 
 1. Copy the video into the run folder, under any name, and read off it how fast it plays. A video
-   at real speed is `--speed 1`.
+   at real speed is `--speed 1`. A run on `lerobot:mock` had no arm to film, so it has no video and
+   takes no `--video`, `--gif` or `--speed`, and its log says so where the GIF would be.
 2. Copy the run in. This needs ffmpeg. It makes the GIF and the robot's frames, and leaves
    `log/notes.yaml` full of TODOs:
 
@@ -259,6 +260,9 @@ example's `log/notes.yaml`.
    a part such as `quackd robot rest-pose` or a whole example quackd refused before it started,
    comes in with `--text <file>` in place of the folder, along with `--example`, `--version`,
    `--started` and `--video` or `--gif`, because nothing recorded them.
+
+   A trace too long for one README page is shown by its first and last 200 lines, with a link to
+   the files that hold the whole of it.
 3. Look at the GIF and the frames. They go public, with whatever the camera caught.
 4. Fill in the notes:
 

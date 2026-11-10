@@ -9,6 +9,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Documentation
+
+- **E126 has a log: a monkey fired 999 random commands at quackd on the mock arm, and none ran
+  outside the contract.** A run on `lerobot:mock` had no arm to film, so `scripts/example_log.py add` takes
+  no `--video`, `--gif` or `--speed` for one, and its log says it was not filmed where the GIF would
+  be. Its Try it yourself section is the lines that ran, with their paths from a checkout, because
+  they needed no arm. A trace too long for one README page is shown by its first and last 200
+  lines, with links to the files that hold the whole of it.
+
 ## [0.34.0] — 2026-11-10
 
 0.34.0 moves the arm to LeRobot 0.7.0 and adds a family of industrial arms. LeRobot 0.7.0 replaced
