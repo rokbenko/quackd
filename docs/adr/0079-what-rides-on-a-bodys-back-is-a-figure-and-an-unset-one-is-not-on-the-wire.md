@@ -1,6 +1,6 @@
 # ADR-0079: What rides on a body's back is a figure of its own, and an unset one is not on the wire
 
-**Status:** proposed; accepting it is Rok's · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `quackd/adapters/manifest.py` and `quackd/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
+**Status:** accepted on 2026-11-10 · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `quackd/adapters/manifest.py` and `quackd/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR-0078: An industrial arm is moved one confirmed goal at a time, and never brought up by quackd
 
-**Status:** proposed, and merged with its change as 8b087020 on 2026-11-08 on Rok's word to merge once green; accepting it is his · **Date:** 2026-11-08 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (a family over another package's binding) and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) (bound code with no owner is refused in its words) · Implemented in `adapters/rosarm` (`quackd-rosarm`) · Documented in [docs/adapters/rosarm/README.md](../adapters/rosarm/README.md)
+**Status:** accepted on 2026-11-10, having merged with its change as 8b087020 on 2026-11-08 · **Date:** 2026-11-08 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (a family over another package's binding) and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) (bound code with no owner is refused in its words) · Implemented in `adapters/rosarm` (`quackd-rosarm`) · Documented in [docs/adapters/rosarm/README.md](../adapters/rosarm/README.md)
 
 ## Context
 

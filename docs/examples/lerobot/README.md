@@ -45,7 +45,7 @@
 |  | [E035: Refuse dramatically](e035/) | Hilarity |  |  |  |
 |  | [E036: Guard the teddy bear](e036/) | Hilarity |  |  |  |
 |  | [E037: Make a decision without thinking](e037/) | Hilarity |  |  |  |
-|  | [E038: Wave to your eight siblings](e038/) | Hilarity |  |  |  |
+|  | [E038: Wave to your nine siblings](e038/) | Hilarity |  |  |  |
 |  | [E039: Claw machine](e039/) | Hilarity |  |  |  |
 |  | [E040: "I'm not a robot"](e040/) | Hilarity |  |  |  |
 |  | [E041: Rubber duck debugging](e041/) | Hilarity |  |  |  |

@@ -130,7 +130,9 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   its follower from the robot type a registered arm carries, from the class 0.32.0 used for an
   SO-101, and refuses an arm whose bus names other joints than the six before anything is energised.
   Both have run only against a fake arm, and the first connect on 0.33.0 shows whether the SO-101
-  still builds.
+  still builds. In 0.34.0 it builds over LeRobot 0.7.0's bus and reads its encoder ticks, its heat
+  limit and its motor table from its type, and none of that has met the arm either: the item on
+  LeRobot 0.7.0 below says what it owes.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a
@@ -452,16 +454,15 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   lines on the LeRobot mock's scripted policy alone. Owed: a session on `lerobot:mujoco` with
   `quackd policy serve --policy scripted:sweep`, three lines with a brake mid-segment, from the
   keyboard and from the page, then the same on the arm with a trained checkpoint.
-- ⬜ **LeRobot 0.7.0 on the arm.** `quackd-lerobot`'s extras take LeRobot from 0.7.0 and below
-  0.8, whose motor bus is rustypot under one `SerialMotorsBus` (its #4672). Both `upstream_api.py`
-  files were read at the `v0.7.0` tag, `doctor` has a rustypot row, `real.py` names the joints in
-  0.7.0's words, `sim/follower.py` stands in for the new bus, Dependabot's ignore moved with the
-  ceiling, `override-dependencies` is gone and the core's Pillow floor is 13, so `quackd[lerobot]`
-  is off Pillow 12.3.0. Owed: the arm, which has only ever run 0.6.1, through the steps
-  CHANGELOG.md's Known limitations lists, with a release over silent motors timed against
-  `TORQUE_CALL_S`. Then the lock past the last five Dependabot alerts, which LeRobot 0.7.0 now
-  allows: `uv lock --upgrade-package` for torch, setuptools and transformers, a move of torch
-  from 2.11 to 2.15 that wants a person's word.
+- ⬜ **LeRobot 0.7.0 on the arm.** `quackd-lerobot`'s extras take LeRobot 0.7.0 and nothing past it,
+  below 0.7.1, with rustypot below 1.14, the motor bus 0.7.0 puts under one `SerialMotorsBus` (its
+  #4672). Shipped in 0.34.0. Both `upstream_api.py` files were read at the `v0.7.0` tag, `doctor`
+  has a rustypot row, `real.py` names the joints in 0.7.0's words, `sim/follower.py` stands in for
+  the new bus, Dependabot's ignore moved with the ceiling, `override-dependencies` is gone and the
+  core's Pillow floor is 13, so `quackd[lerobot]` is off Pillow 12.3.0. Owed: the arm, which has
+  only ever run 0.6.1, through the steps CHANGELOG.md's Known limitations lists, with a release over
+  silent motors timed against `TORQUE_CALL_S`. The lock moved past the last five Dependabot alerts
+  in the same release, to torch 2.15.0, setuptools 84.2.1 and transformers 5.22.2, on Rok's word.
 
 ## Open elsewhere
 

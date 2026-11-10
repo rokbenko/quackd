@@ -9,6 +9,40 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-11-10
+
+0.34.0 moves the arm to LeRobot 0.7.0 and adds a family of industrial arms. LeRobot 0.7.0 replaced
+the motor library under the SO-101 with rustypot, one bus for every Feetech and Dynamixel servo, so
+what quackd reads off the arm's bus was read again at the new tag: the words a fault names its joint
+in, how long a release over motors that do not answer takes, what a panic in the bus looks like, and
+a second program on the arm's port refused as it opens it, on Linux and macOS too. The policy server
+reads LeRobot 0.7.0 as well, and refuses more of what a checkpoint can ask of the machine it loads on:
+a kernel from the Hub, a backbone named with no pin, a base pinned at a tag and fetched at another
+commit. No arm has run any of it, and Known limitations lists what the arm owes.
+
+An industrial arm on ROS 2 joins as the tenth adapter, `rosarm`, in a package of its own: a UR5e, a
+KUKA LBR iisy or iiwa, or a Yaskawa MotoMini, moved through its own driver and rosbridge one confirmed
+goal at a time
+([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). quackd never
+powers, enables or un-brakes one, and on a real arm a person answers each move, which `--yes` does
+not. It is rehearsed only: a job in CI runs its transport against a real rosbridge on Jazzy and Humble
+with a stand-in arm, and no controller and no arm have met it.
+
+A key held down, or an Enter read late by a key thread that a busy machine held up, could answer yes
+to a question that drops an arm, and can no longer. A run on Python 3.11 could hang at its end when its
+heartbeat's cancel was lost. A body can say what it carries on its back, and a task can ask for it
+([ADR-0079](docs/adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)).
+
+What changes for you: `quackd[lerobot]` installs LeRobot 0.7.0 and rustypot, which Python 3.14 on
+Linux builds from source, and a second program on the arm's port is refused on Linux and macOS too,
+so close whatever holds it before a run. `quackd robot release`, and a `--by-hand` run that opened
+the gripper, close the gripper before they let go of the arm. `quackd_lerobot.real.load_policy()` is
+gone. `list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
+where they said `"built-in"`. Pillow 13 is quackd's own floor. And `lerobot:mock` is the real
+backend over an arm in memory, so a rehearsal on it says what the arm would. The policy server loads
+nothing where the `kernels` package is installed, and refuses a SmolVLA, pi05, pi0 or X-VLA
+checkpoint that LeRobot 0.7.0 saved, for now.
+
 ### Added
 
 - **An industrial arm on ROS 2, the tenth adapter, rehearsed only.** `quackd[rosarm]` installs
@@ -43,14 +77,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   joint reads past its travel, and a socket that drops is let go of for good, since roslibpy would
   send what it held back once it reconnected by itself, by closing this client's socket and never
   the event loop every roslibpy client in the process shares. The transport keeps the ceiling too,
-  for any intent it is handed, and never takes a rated speed above the stock description's. quackd
-  never powers, enables, un-brakes or un-stops an arm, parks none and drives no tool, so `gripper`,
-  `place`, `pick` and `manipulate` are withheld with why. CI's packaging job installs the wheel
-  beside rosbridge's and lists its verbs. What changes for you: `quackd robot add cell-1 rosarm:mock
-  --robot-type ur5e` registers one, `quackd robot rest-pose cell-1` refuses it, since quackd parks
-  an industrial arm nowhere, `quackd list-adapters --json` has eleven rows, the industrial arm's
-  before the described one, and the hint after an infeasible verdict names `rosarm` for a payload up
-  to 5 kg, the UR5e's figure, though quackd drives nothing on its flange.
+  for any intent it is handed, and never takes a rated speed above the stock description's. The
+  UR5e's, the iisy's and the MotoMini's body files no longer say that quackd clamps nothing on them
+  because it drives nothing. quackd never powers, enables, un-brakes or un-stops an arm, parks none
+  and drives no tool, so `gripper`, `place`, `pick` and `manipulate` are withheld with why. CI's
+  packaging job installs the wheel beside rosbridge's and lists its verbs. What changes for you:
+  `quackd robot add cell-1 rosarm:mock --robot-type ur5e` registers one,
+  `quackd robot rest-pose cell-1` refuses it, since quackd parks an industrial arm nowhere,
+  `quackd list-adapters --json` has eleven rows, the industrial arm's before the described one, and
+  the hint after an infeasible verdict names `rosarm` for a payload up to 5 kg, the UR5e's figure,
+  though quackd drives nothing on its flange.
 - **`quackd robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
   anything is written and in the words `make()` refuses it with, so no `robots.json` holds a robot
   that cannot run. `quackd robot add cell-2 rosarm:ws --robot-type ur5e --address
@@ -61,8 +97,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the catalogue, where a backend tiered described on an adapter's row is refused. An adapter from
   another release is asked nothing and the catalogue's tier is the word, and its run refuses the
   release itself, as before. `--robot-type`'s help names every adapter that takes one and its types,
-  and a robot type given to an adapter that takes none is refused as one `which only lerobot and
-  rosarm have`.
+  and a robot type given to an adapter that takes none is refused as it was in 0.33.0, in words that
+  now say `which only lerobot and rosarm have`.
 - **What an adapter over another's package can build on.** `quackd.adapters.described.body_data`
   hands a package a copy of a body file's figures, which the arms' manifests take theirs from, so
   `described:ur5e` and `rosarm:mock` on a UR5e carry the same figures. `published_travel` and
@@ -72,13 +108,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `param_text` reads a parameter rosapi returns. The rosbridge base describes itself as it did,
   which `tests/test_rosbridge_adapter.py` pins by the digests of its manifests from before the move.
 - **`quackd robot list` shows the type a robot was registered with.** An SO-100 and an SO-101 are
-  both `lerobot:real`, and the four industrial arms are all `rosarm:ws`, so a list of specs alone read
-  them alike. A `type` column shows each robot's `--robot-type` when any robot has one, and a registry
-  where nobody gave one prints the table it did. `--json` carried the type already.
+  both `lerobot:real`, and the four industrial arms are all `rosarm:mock` until one is driven, so a
+  list of specs alone read them alike. A `type` column shows each robot's `--robot-type` when any
+  robot has one, and is empty for a robot on its adapter's default, which is stored as none, and a
+  registry where nobody gave one prints the table it did. `--json` carried the type already.
 - **`quackd ui` shows a robot's type and asks for one where the adapter drives several arms.** The
-  robots page could neither show which arm a registered robot is nor register one as an SO-100, since
-  `quackd robot add --robot-type` had no field there. The table has a `robot_type` column, and the
-  form offers the adapter's types, its default first, for the arm and the industrial arms alone.
+  robots page could neither show which arm a registered robot is nor register one as an SO-100,
+  since `quackd robot add --robot-type` had no field there. The table has a `robot_type` column,
+  empty for a robot on its adapter's default type, as in `quackd robot list`, and the form offers
+  the adapter's types, its default first, for the arm and the industrial arms alone.
 - **A Universal Robots UR7e, described beside the UR5e.** People own arms sold as UR5e and buy arms
   sold as UR7e, with different figures published for each, so `described:ur7e` is a body of its own,
   read on 2026-11-09 from UR's UR7e datasheet of October 2026: 20.6 kg with the cable, six rotating
@@ -92,10 +130,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   UR7e as a robot type. What changes for you: `quackd robot add cell-7 described:ur7e` registers
   one, the README's badge counts 12 described bodies, and a run that ends infeasible for want of 6
   kg of payload names it last, beside the LBR iiwa. Its figures have had one reader.
-- **`make_for`, for a package built on the Microduck's.** `quackd_microduck.make_for(body, backend, adapter)`
-  builds the transport and the adapter for one body, which is what the Microduck's `make` and Huebot's
-  come to once each has refused what its body does not take.
-
+- **`make_for`, for a package built on the Microduck's.**
+  `quackd_microduck.make_for(body, backend, adapter)` builds the transport and the adapter for one
+  body, which is what the Microduck's `make` and Huebot's come to once each has refused what its
+  body does not take.
 - **A body can say what rides on its back, and a task can ask for it.** The datasheet has a new
   optional figure, `carries_kg`: what rides on a body's back or deck as it moves, with no hand
   holding it, so it is allowed with `manipulator: none`
@@ -121,16 +159,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **quackd reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** quackd
   read the Microduck's robotd on 2026-10-08 at daemon-v0.16.1, on API 41, and so warned about every
-  release from daemon-v0.17.3 on, the newest on API 50. It reads robotd at daemon-v0.18.8 (`4a763dd`)
-  now, every reference in `upstream_api.py` is anchored there, and a robotd on API 50 connects with no
-  warning, where one on API 41 to 49 is now served with one, as every version but the one read is.
-  The nine bumps add or remove only calls quackd does not make, so nothing it sends or reads changed
-  shape. What robotd does changed more than what it says, and the Microduck page and the refs say
-  what each change does to quackd: `limp_fall` is on by default, the idle look-around takes the head
-  over rather than adding to it, a stock pad's Y and bumpers play emotions, and while an emotion
-  plays robotd holds the twist at zero and reports it so, which ends a quackd walk saying robotd did
-  not take its twist. Every `GET /frame` quackd pulls counts as a photo in the robot's vet book, and
-  the beta's camera has a calibration that only quackd's WebRTC camera reads. Huebot's protocol
+  release from daemon-v0.17.3 on, the newest on API 50. It reads robotd at daemon-v0.18.8
+  (`4a763dd`) now, every reference in `upstream_api.py` is anchored there, and a robotd on API 50
+  connects with no warning, where one on API 41, which connected with none, is now warned about, as
+  every version but the one read is. The nine bumps add or remove only calls quackd does not make,
+  but for API 48's change to what `robot.health` says of a servo that goes quiet, and nothing quackd
+  sends or reads changed shape. What robotd does changed more than what it says, and the Microduck
+  page and the refs say what each change does to quackd: `limp_fall` is on by default, the idle
+  look-around takes the head over rather than adding to it, a stock pad's Y and bumpers play
+  emotions, and while an emotion plays robotd holds the twist at zero and reports it so, which ends
+  a quackd walk saying robotd did not take its twist. Every `GET /frame` quackd pulls counts as a
+  photo in the robot's vet book, and the beta's camera has a calibration, which quackd's WebRTC
+  camera reads and its `/frame` camera now takes the focal length of, as below. Huebot's protocol
   refs, imported from the Microduck's, move with them. `tests/test_jsonrpc.py` names API 50, and the
   guard in `tests/test_docs.py` that holds the ADRs written since the daemon-v0.16.1 re-read names
   that day, which used to be the newest read's.
@@ -178,16 +218,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   calibrated one is, and the knobs that make a read fail now give its error's type,
   `(ConnectionError: ...)`, as a register on the arm does.
 - **The arm's extras take LeRobot 0.7, whose motor bus is new.** `quackd[lerobot]`,
-  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot 0.7.0, below 0.7.1, where they
-  stopped below 0.6.2, and the arm's extras hold rustypot below 1.14, since the arm's stop, release
-  and close lean on the bus as it reads at 0.7.0 and a patch may move it. 0.7.0 replaced `feetech-servo-sdk`, the library under the SO-101's bus, with
-  rustypot, under one `SerialMotorsBus` for every Feetech and Dynamixel servo, so every LeRobot name
-  the arm relies on was read again at the `v0.7.0` tag, and the bus below LeRobot's Python at
-  rustypot's `v1.13.1`. What changes for you: `doctor`'s `lerobot (feetech bus)` row shows rustypot's
-  version, 1.13.1 today, and a servo answering with an overload or an overheat no longer reads as
-  missing at connect, because LeRobot 0.7.0 reports neither, as Known limitations says. Calibration
-  files are unchanged, by LeRobot's release notes. No arm has run quackd on 0.7.0, and Known
-  limitations lists what the arm owes, step by step.
+  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot 0.7.0, below 0.7.1, where they stopped
+  below 0.6.2, and `quackd[lerobot]` and `quackd[robots]` hold rustypot below 1.14, since the arm's
+  stop, release and close lean on the bus as it reads at 0.7.0 and a patch may move it. 0.7.0
+  replaced `feetech-servo-sdk`, the library under the SO-101's bus, with rustypot, under one
+  `SerialMotorsBus` for every Feetech and Dynamixel servo, so every LeRobot name the arm relies on
+  was read again at the `v0.7.0` tag, and the bus below LeRobot's Python at rustypot's `v1.13.1`.
+  What changes for you: `doctor`'s `lerobot (feetech bus)` row shows rustypot's version, 1.13.1
+  today, and a servo answering with an overload or an overheat no longer reads as missing at
+  connect, because LeRobot 0.7.0 reports neither, as Known limitations says. Calibration files are
+  unchanged, by LeRobot's release notes. No arm has run quackd on 0.7.0, and Known limitations lists
+  what the arm owes, step by step.
 - **A second program on the arm's port is refused as it opens it, on Linux and macOS too.** rustypot
   opens the port for one program at a time on every system. The old SDK's pyserial did that on Windows
   alone, so on Linux and macOS a teleoperation, a recording, a serial monitor or a second quackd could
@@ -220,12 +261,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
 - **`list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
-  where they said `"built-in"`.** The described row, in every core, said `"installed": false`
-  beside `"extra": "built-in"`, so a script that installs the extra of every row not installed
-  went after a package that does not exist. A third party's adapter that names no extra said
-  `"built-in"` too, which it is not. `null` says there is nothing to install. The tables print
-  `built-in` as they did, and `quackd ui`'s setup page says to install such an adapter as its maker
-  says, where it would have said `uv pip install "None"`. What changes for you: a script that read `"built-in"` reads `null`.
+  where they said `"built-in"`.** The described row, in every core, said `"installed": false` beside
+  `"extra": "built-in"`, so a script that installs the extra of every row not installed went after a
+  package that does not exist. A third party's adapter that names no extra said `"built-in"` too,
+  which it is not. `null` says there is nothing to install. The tables print `built-in` as they did,
+  and `quackd ui`'s setup page says to install such an adapter as its maker says, where it said
+  `uv pip install "built-in"`. What changes for you: a script that read `"built-in"` reads `null`.
 - **A beta Microduck's `/frame` is measured through the focal length of upstream's own solve of
   its lens.** quackd takes the lens of `mediad`'s `/frame` from the first frame's shape, since the
   PNG carries none, and a wide frame, which on a stock robot only a beta's upright GC2093 gives,
@@ -259,20 +300,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   known. On the simulator the line names the joint the same way, with nothing to hold and no power
   to cut. What changes for you: the close's last line sends you to the joint that may still hold,
   and the arm's page lists that line.
-- **`lerobot:mock` refuses a read and a write on a closed port, as the arm's bus does.** The mock's
-  follower answered whether its port was open or not, so a hand-off over a mock nobody had connected
-  was let go of and read back, `torque is off at the rest pose`, rather than refused at its first
-  read, as the arm's is, and after a close a stop still wrote a hold. A rehearsal, or a test, that
+- **`lerobot:mock` refuses a read and a write on a closed port, as the arm's bus does.** The mock
+  answered whether it had been connected or not, so a hand-off over a mock nobody had connected was
+  let go of and read back, `torque is off at the rest pose`, rather than refused at its first read,
+  as the arm's is, and a stop after its close was taken without a word. A rehearsal, or a test, that
   dropped the connect before a hand-off could not fail on the mock. Now a read, a send or a
-  disconnect of the follower on a port that is not open is refused as ``SOFollower is not connected.
-  Run `.connect()` first.``, and a torque write or a register read on its bus as ``SerialMotorsBus
-  is not connected. Run `.connect()` first.``, in LeRobot's words, as `lerobot:real` and
-  `lerobot:mujoco` refuse them, and the bus's own close still passes over a shut port without a
-  word. So after its close a stop says `the hold did not reach the arm: DeviceNotConnectedError:
-  ...` and a read says `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What
-  changes for you: nothing for quackd's own commands, which connect the mock before they drive it.
-  Code, or a test, that skipped the connect is refused.
-
+  disconnect of the follower on a port that is not open is refused as
+  ``SOFollower is not connected. Run `.connect()` first.``, and a torque write or a register read on
+  its bus as ``SerialMotorsBus is not connected. Run `.connect()` first.``, in LeRobot's words, as
+  `lerobot:real` and `lerobot:mujoco` refuse them, and the bus's own close still passes over a shut
+  port without a word. So after its close a stop says
+  `the hold did not reach the arm: DeviceNotConnectedError: ...` and a read says
+  `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What changes for you:
+  nothing for quackd's own commands, which connect the mock before they drive it. Code, or a test,
+  that skipped the connect is refused.
 - **`quackd robot release` closes the arm's gripper before it lets go, and so does a `--by-hand`
   run that opened it.** A fold never touches the gripper, so an arm came back to its rest pose with
   its jaws however they were left, and a `--by-hand` run that ended on Enter had just opened them
@@ -293,6 +334,44 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   run's fold that no hand-back came before and `quackd doctor`'s leave them as they are, as does a
   `--by-hand` run whose question ended without an Enter, an arm whose fold missed is sent nothing
   for them, and an arm released where it stands, or with no rest pose, keeps its gripper as it was.
+- **A failed torque call names every joint it could not switch, and a failed read of several motors
+  names the first that did not answer.** On LeRobot 0.6.1's bus a torque call stopped at the first
+  motor whose write failed, so quackd named that joint alone, and a read of several motors at once
+  named none. LeRobot 0.7.0's torque call tries every motor and names each one it could not switch,
+  and quackd names them all:
+  `connect attempt 1 of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both
+  cables, and a release you asked for that raised names the joints that may still hold, every other
+  one having let go. The close's own release names them too. A read of several motors at once names
+  the first motor that did not answer, said as that, since a cable that breaks there silences the
+  ones after it too. A failed read or write of one motor names its joint as it did, now from 0.7.0's
+  words, which no longer say `id_=<N>`. A handshake that found none of the arm's motors, or a torque
+  call that reached none, still names none. And a connect note tells a port that never opened from
+  one LeRobot closed behind its handshake, which writes to no motor and which 0.6.1's bus left open.
+  `tests/test_lerobot_adapter.py` builds each of those sentences as LeRobot does, citing the line
+  that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
+  over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that
+  talks to the port, replaced by a fake that answers in rustypot's words. The mock's follower,
+  `quackd_lerobot/fake_follower.py`, speaks 0.7.0's bus too: a torque call tries every motor and
+  names each that did not answer (`unanswered`, a turn for tests), and a port already shut is passed
+  over without a word, so a rehearsal names a joint as the arm would.
+- **A release or a take-hold over motors that do not answer gets the time LeRobot 0.7.0 takes.**
+  LeRobot 0.6.1's torque call stopped at the first motor whose write failed, and 0.7.0's tries every
+  motor, six tries each with `num_retry=5`, each waiting 50 ms for a reply, so a release over six
+  silent motors takes some 1.8 s. The two torque calls get 5.68 s now, where they had the 1 s every
+  other call gets: LeRobot's and rustypot's numbers with room for both of every motor's writes to
+  wait out each try, which a silent motor never needs, since a try ends at its first write that gets
+  no reply, and a second on top.
+- **A panic in rustypot is met as a failed bus call.** pyo3 hands a panic in rustypot's Rust code to
+  Python as `PanicException`, which derives from `BaseException` and not from `Exception`, so it
+  would pass every handler quackd has for a failed call. The arm's backend, which the simulator and
+  the mock run too, turns anything a LeRobot call raises that is not an `Exception`, other than a
+  Ctrl-C, an exit, a cancellation or a generator's close, into the `ConnectionError` LeRobot raises
+  for a failed call, naming what it raised:
+  `a LeRobot call (disable_torque) raised PanicException: ...`. So a stop, a release and a close
+  that meet a panic say what they say of any failed call, and the close runs to its end. A panic in
+  a register read costs that reading, as a lost packet does, and a connect that meets one is not
+  tried again: it closes the port and says so, since every attempt switches every motor's torque off
+  and on. LeRobot 0.6.1's bus was Python and raised none.
 
 ### Removed
 
@@ -308,11 +387,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 ### Fixed
 
 - **An infeasible verdict no longer says that no limit was involved.** When a pilot answered
-  `infeasible` and its own datasheet met every need it named, the reason ended `so the verdict is
-  the pilot's judgement rather than a limit`. Those needs cover payload, reach, endurance, working
-  height, arms, the manipulator, mobility and terrain, and a joint's travel is none of them, so when
-  E170's LLM refused 170 degrees on a joint that stops at 119.6, quackd's closing line said no limit
-  was involved. The reason now ends `so the verdict rests on something they do not cover`.
+  `infeasible` and its own datasheet met every need it named, the reason ended
+  `so the verdict is the pilot's judgement rather than a limit`. Those needs cover payload, the load
+  on its back or deck, reach, endurance, working height, arms, the manipulator, mobility and
+  terrain, and a joint's travel is none of them, so when E170's LLM refused 170 degrees on a joint
+  that stops at 119.6, quackd's closing line said no limit was involved. The reason now ends
+  `so the verdict rests on something they do not cover`.
 - **After an abort or a timeout, the executor's own stop says when it did not land.** A verb the
   executor ends, by an abort, a timeout, a verb that raised, a preemption or a pause, is followed by a
   stop, and the executor said a stop was sent unless that call raised. A transport that knows its stop
@@ -322,25 +402,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   transport's reason, as the `stop` verb does.
 - **The physics simulator's licence notice says what `microduck_rl` says now: CC BY-NC-SA 4.0 for
   the meshes, and the Apache License 2.0 for `robot_walk.xml`.** `microduck:mujoco` fetched its
-  model at `microduck_rl`'s `2b25a48`, whose README licensed its 3D model files in one sentence,
-  "3D model files are licensed under Creative Commons BY-SA-NC.", with no version and nothing to
-  say whether `robot_walk.xml` was one of them. Upstream's `7cc1961` of 2026-10-09 named
-  CC BY-NC-SA 4.0 for the `.stl` meshes alone and added a `LICENSE-MODELS.md`, which puts the MJCF
-  robot descriptions under the Apache License 2.0 with the code. quackd now fetches at `develop`'s
-  head, `bae39f5` of 2026-10-27, where `robot_walk.xml` and its 38 meshes are the same bytes, so
-  the simulator walks exactly as it did, and the notice written beside them quotes the README and
-  `LICENSE-MODELS.md` there. The cache is named after the commit, so the first `microduck:mujoco`
-  run after upgrading fetches the model again, about 9 MB, without being asked, and leaves the old
-  commit's directory under `~/.quackd/cache/microduck_rl`, which can be deleted. The browser demo
-  fetches from the same commit. In `sim3d/upstream_api.py`, `MESH_LICENSE` cites the README's new
-  line, and a new ref, `MJCF_LICENSE`, cites the line of `LICENSE-MODELS.md` that names the XML, so
-  the nightly drift job reads both. The eleven refs that cite `scripts/infer_policy.py` and
-  `export.py` whole read as they did: the first only gained lines, an odometry overlay behind two
-  flags that are off unless given, and the second also loads a checkpoint from a training bundle
-  and writes the export's provenance beside the metadata quackd reads. The licences page, NOTICE,
-  the FAQ, the Microduck page, the browser demo's footer and two comments named no version, spelled
-  the licence as the old sentence did, or put `robot_walk.xml` under it, and say what upstream says
-  now.
+  model at `microduck_rl`'s `2b25a48`, whose README licensed its 3D model files in one sentence, "3D
+  model files are licensed under Creative Commons BY-SA-NC.", with no version and nothing to say
+  whether `robot_walk.xml` was one of them. Upstream's `7cc1961` of 2026-10-09 named CC BY-NC-SA 4.0
+  for the `.stl` meshes alone and added a `LICENSE-MODELS.md`, which puts the MJCF robot
+  descriptions under the Apache License 2.0 with the code. quackd now fetches at `bae39f5` of
+  2026-10-27, `develop`'s head when it was read on 2026-11-08, where `robot_walk.xml` and its 38
+  meshes are the same bytes, so the simulator walks exactly as it did, and the notice written beside
+  them quotes the README and `LICENSE-MODELS.md` there. The cache is named after the commit, so the
+  first `microduck:mujoco` run after upgrading fetches the model again, about 9 MB, without being
+  asked, and leaves the old commit's directory under `~/.quackd/cache/microduck_rl`, which can be
+  deleted. The browser demo fetches from the same commit. In `sim3d/upstream_api.py`, `MESH_LICENSE`
+  cites the README's new line, and a new ref, `MJCF_LICENSE`, cites the line of `LICENSE-MODELS.md`
+  that names the XML, so the nightly drift job reads both. The eleven refs that cite
+  `scripts/infer_policy.py` and `export.py` whole read as they did: the first only gained lines, an
+  odometry overlay behind two flags that are off unless given, and the second also loads a
+  checkpoint from a training bundle and writes the export's provenance beside the metadata quackd
+  reads. The licences page, NOTICE, the FAQ, the Microduck page, the browser demo's footer and two
+  comments named no version, spelled the licence as the old sentence did, or put `robot_walk.xml`
+  under it, and say what upstream says now.
 - **Fourteen of the rosbridge adapter's upstream refs pointed at the wrong lines of their pinned
   files,** thirteen of them VERIFIED: `SERVICE` and `SERVICE_CALL` at lines of roslibpy's
   ActionClient, `SERVICE_REQUEST` at a comment in its `Service`, `ROS_GET_PARAM` at a docstring,
@@ -354,47 +434,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `use_robot_description_topic` declares no `robot_description` parameter and subscribes to the
   topic instead, which `RSP_NODE` and `DESCRIPTION_NAMES` now say. What changes for you: nothing
   quackd does, and `quackd doctor` and the rosbridge page link to the lines meant.
-- **Three body files said what the industrial arm family makes untrue, and the iisy's said what its
-  driver does not do.** The UR5e's, the iisy's and the MotoMini's speed notes said quackd clamps
-  nothing because it drives nothing, and the family clamps each joint to a tenth of its rated speed.
-  The iisy's note said KUKA's ROS 2 drivers end the connection on a missed packet. Read in
-  `kuka_drivers` at its pin, the RSI driver ends external control after a second with no state from
-  the controller, and its RSI configuration decides whether the last command is held between
-  packets, which the note says now, with the pendant's stop as the brake. A pilot handed
-  `described:` one of the three reads the corrected notes. No generated table shows them, so
-  `scripts/bodies_docs.py` changed nothing.
+- **The LBR iisy's body file said what its driver does not do.** Its note said KUKA's ROS 2 drivers
+  end the connection on a missed packet. Read in `kuka_drivers` at its pin, the RSI driver ends
+  external control after a second with no state from the controller, and its RSI configuration
+  decides whether the last command is held between packets, which the note says now, with the
+  pendant's stop as the brake. A pilot handed `described:kuka-lbr-iisy-3-r760` reads the corrected
+  note. No generated table shows it, so `scripts/bodies_docs.py` changed nothing.
 - **A rosbridge base's close ends its own socket and no other.** It ended roslibpy's event loop,
   which every roslibpy client in the process runs on, so in a flock a base whose run ended first
-  took the other robots' links down with it: another base's, or the industrial arm's, with its
+  took every other base's link down with it, and would have taken the industrial arm's, with its
   readings and its cancel. It closes its own client now, as the arm's transport does, and the loop
   runs on for the rest, on the daemon thread it has always run on.
-- **A fault on LeRobot 0.7.0's bus names its joints.** quackd found the servo a failure was about by
-  0.6.1's words, `id_=<N>`, which 0.7.0 says nowhere, so over the new bus a failed torque call, a
-  failed read or write and a failed read of several motors would each have named no joint, and sent
-  the person at the arm to all of its cables and its power for one loose cable. Only the handshake,
-  whose words did not change, still named one. It reads 0.7.0's sentences now. A torque call tries
-  every motor and names each one it could not switch, and quackd names them all: `connect attempt 1
-  of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both cables, and a release
-  you asked for that raised names the joints that may still hold, every other one having let go. The
-  close's own release names them too. A read of several motors at once names the first motor that
-  did not answer, said as that, since a cable that breaks there silences the ones after it too. A
-  handshake that found none of the arm's motors, or a torque call that reached none, still names
-  none. And a connect note tells a port that never opened from one LeRobot closed behind its
-  handshake, which writes to no motor and which the old bus left open.
-  `tests/test_lerobot_adapter.py` builds each of those sentences as LeRobot does, citing the line
-  that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
-  over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that talks
-  to the port, replaced by a fake that answers in rustypot's words. The mock's follower,
-  `quackd_lerobot/fake_follower.py`, speaks 0.7.0's bus too: a torque call tries every motor and
-  names each that did not answer (`unanswered`, a turn for tests), and a port already shut is
-  passed over without a word, so a rehearsal names a joint as the arm would.
-- **A release or a take-hold over motors that do not answer gets the time LeRobot 0.7.0 takes.** Its
-  torque call tries every motor, six tries each with `num_retry=5`, each waiting 50 ms for a reply, so a
-  release over six silent motors takes some 1.8 s where 0.6.1's stopped at the first. That is past the
-  1 s quackd gives a call, after which it would have refused every call on the bus until that one came
-  back, the release's own read-back among them. The two torque calls get 5.68 s now, LeRobot's and
-  rustypot's numbers with room for both of every motor's writes to wait out each try, which a silent
-  motor never needs, since a try ends at its first write that gets no reply, and a second on top.
 - **A file nested too deep for Python to parse is refused, where it stopped the policy server.** A
   checkpoint's `config.json` or a pinned model's JSON nested deeper than Python will follow raised a
   `RecursionError` nothing caught, so `quackd policy serve` ended on a traceback. It is refused now in
@@ -408,85 +458,88 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   now, before the weights are fetched, with a sentence saying to give `--fps`. What changes for you:
   nothing to do. `tests/test_policy_pipeline.py` fails without this.
 - **An Open Duck's link outlives a line quackd cannot read, as ToddlerBot's has since 0.32.0.** The
-  bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB, an
-  answer that was no JSON object, an id that was no number, an error that was no object, or a reset
-  socket raised out of it, and it died without a word. Every request after it waited out its timeout,
-  while the commands that feed the daemon's deadman, which are writes, went on: the duck walked on for
-  about two seconds, until a heartbeat gave up, and a stop sent then could reach the duck with nobody
-  to read its reply, and be reported as not delivered. Now a line over the limit, or one quackd cannot
-  read, is skipped with a warning, broken JSON and an answer that is no object are skipped as broken
-  JSON always was, an error that is no object answers its request, and the link goes on. A line may
-  be 1 MiB, and a link that fails tells whatever is waiting at once and refuses every write after it. Nothing the bridge sends today comes near 64 KiB, its camera coming
-  over HTTP. What changes for you: nothing to do. No duck has run it.
+  bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB,
+  an answer that was no JSON object, an id that was no number, an error that was no object, or a
+  reset socket raised out of it, and it died without a word. Every request after it waited out its
+  timeout, while the commands that feed the daemon's deadman, which are writes, went on: the duck
+  walked on for about two seconds, until a heartbeat gave up, and a stop sent then could reach the
+  duck with nobody to read its reply, and be reported as not delivered. Now a line over the limit,
+  or one quackd cannot read, is skipped with a warning, broken JSON and an answer that is no object
+  are skipped as broken JSON always was, an answer whose id is no number is dropped, an error that
+  is no object answers its request, and the link goes on. A line may be 1 MiB, and a link that fails
+  tells whatever is waiting at once and refuses every write after it. Nothing the bridge sends today
+  comes near 64 KiB, its camera coming over HTTP. What changes for you: nothing to do. No duck has
+  run it.
 - **A read that failed says when the stop sent after it held nothing.** A verb's gates begin by
   reading the body, and when that read failed the executor sent a stop and said only that the read
   had failed, on `stop` too, so a pilot or a chat heard `the arm did not answer: ` and nothing about
   the stop. The arm's real backend reads before it writes its hold, so over an arm gone silent that
   stop held nothing, and it says so in `stop_error` without raising, which nothing here read. The
-  read's error now ends `; the stop sent after it failed: ` and the stop's reason, as an abort's and a
-  timeout's now do, or `the same way` where the stop failed for the reason the read did, as on a
+  read's error now ends `; the stop sent after it failed: ` and the stop's reason, as an abort's and
+  a timeout's now do, or `the same way` where the stop failed for the reason the read did, as on a
   wedged bus, and keeps its class and its code. A composite whose nested read said so does not say
-  it again. Such a stop still does not reach the arm, as
-  0.31.3's Known limitations says, and the power switch is still what stops it; now the line says
-  so. What changes for you: the line a run ends on, and a chat's answer, can be longer.
+  it again. Such a stop still does not reach the arm, as 0.31.3's Known limitations says, and the
+  power switch is still what stops it; now the line says so. What changes for you: the line a run
+  ends on, and a chat's answer, can be longer.
 - **`quackd doctor` prints a camera's address and a long assumption whole.** A camera that names no
-  address of its own printed the one it was given, and `--camera-url` given twice arrives as a list,
-  so the row read `url ['opencv://0']`. It reads `opencv://0` now, or the addresses joined by commas.
-  And the assumptions table cut a long ref's name in its `what` column with an ellipsis at a hundred
-  columns or fewer, where its note column folded. Both columns fold now. What changes for you:
-  nothing to do.
-- **Huebot and rosarm are refused over a Microduck or rosbridge package from another release.**
-  quackd refuses one of its adapters that is from another release than the core, and Huebot's package
-  runs the Microduck's code as its own, as rosarm's runs rosbridge's, but only each adapter's own
-  version was asked. So an install that upgraded one package alone could run Huebot over an older
-  Microduck's transport. The package under each is held to the core's release now, by its module's
-  own version as the adapter's is, with the same words to reinstall them together. What changes for you: nothing,
-  on an install that keeps the packages together.
+  address of its own printed the one it was given, and `--camera-url`, which may be given more than
+  once, arrives as a list even when given once, so the row read `url ['opencv://0']`. It reads
+  `opencv://0` now, or the addresses joined by commas. And the assumptions table cut a long ref's
+  name in its `what` column with an ellipsis at a hundred columns or fewer, where its note column
+  folded. Both columns fold now. What changes for you: nothing to do.
+- **Huebot is refused over a Microduck package from another release.** quackd refuses one of its
+  adapters that is from another release than the core, and Huebot's package runs the Microduck's
+  code as its own, but only Huebot's own version was asked. So an install that upgraded one package
+  alone could run Huebot over an older Microduck's transport. The Microduck's package under it is
+  held to the core's release now, by its module's own version as the adapter's is, with the same
+  words to reinstall them together, and `rosarm` holds the rosbridge package under it the same way.
+  What changes for you: nothing, on an install that keeps the packages together.
 - **The AlohaMini's setup names the commit quackd read, `ab4462b`.** `quackd ui`'s setup page, from
   the catalogue, told an AlohaMini owner to install upstream on the robot and named no commit, while
   upstream's newer main refuses the stop quackd sends, so a robot set up by that line was one quackd
   could not stop. It names `ab4462b` now, as the AlohaMini page does, and a test holds it to the
   adapter's pin. What changes for you: set the robot up at that commit, as the page says.
-- **The described bodies had a second reader, and every file but the KUKA LBR iiwa's needed
-  mending.** One reader read every figure, on 2026-11-05, and the Unitree G1 EDU's on 2026-10-28. On
-  2026-11-09 a second read again every page their sources and notes name: 27 lines were wrong,
-  short, missing or without a page, and three of the UR5e's are contradicted by another of UR's
-  pages. The Unitree B2's joint count cited a dealer's listing it did not name, and now names the
-  dealer page that gives it, MYBOTSHOP's `docs.mybotshop.de/b2.html`, still marked `estimate`; its
-  endurance said Unitree publishes no figure under load, where unitree.com/b2 gives over 4 h with a
-  20 kg load; its stairs took the page's 40 cm for a depth, where the page climbs stairs of 40 cm up
-  and down facing forward and crosses a 40 cm obstacle; and its stop note named no page and left out
-  the SDK's StopMove and the remote's L1 + A, which a dealer gives as its e-stop. The G1 EDU's
-  joints read not published, and Unitree's page gives 23 to 43, so the figure is 23, the lower end.
-  Unitree's Go2 manual forbids the wet ground, gravel and soft ground the Go2 EDU's file said
-  Unitree rates nowhere, and ice, dust and bad weather besides, and asks for flat terrain where
-  unitree.com/go2 shows the robot on gravel and slopes; Unitree's table marks secondary development
-  part filled on the Go2 X where the file gave the SDK to the EDU alone; and the notes gain its top
-  speed of about 5 m/s and the EDU's depth camera and foot force sensors. The Menlo Asimov-1's
-  payload was 15 kg an arm, which Menlo's FAQ gives as a peak of about three seconds; the FAQ rates
-  5 kg held, the figure now, and says the robot has no hands yet, which a cannot line says. Its
-  E-Stop is in Asimov Manager, and nothing in its SDK is one; the robot, not its firmware, zeroes
-  velocity 2 s after the last velocity command, not the last packet, and a trajectory left 2 s
-  without a setpoint ends in DAMP, which drops it; the firmware caps its walk at 0.4 m/s and the SDK
-  mirrors the cap; and it is not yet waterproof. The Noetix Bumi's 1 m/s was the Boomy's page's, no
-  Noetix page read says the Bumi sells abroad as the Boomy, Noetix forbids potholed, soft and
-  slippery ground besides rain, stairs and slopes over 20 degrees, and its SDK's START disables
-  every joint at once, where the file said it had no stop. The Microban turns at 3 rad/s only in
-  place and 1.5 on the move, and stops a walk at zero velocity with torque on, where the file said
-  torque off was its only stop. The Franka Research 3's control interface stops after 20 packets
-  dropped in a row, not 20 in all, and its hand is an add-on; the LBR iisy's torque sensors are on
-  kuka.com's page and not in its datasheet; and MotoROS2 stops a MotoMini whose agent PC
-  disconnects, by its default. The UR5e's note that UR lists the UR7e as its upgraded version named
-  no page, and only a launch page of UR's says it: UR's FAQ says the UR5e was renamed the UR7e, the
-  arm mechanically unchanged, for the 7.5 kg it carries, and UR's October 2026 datasheet gives 20.7
-  kg and 23 safety functions where the December 2024 one the file cites gives 20.6 kg and 17. Its
-  figures stay the cited edition's and its notes say all of it, and that IP54 is the arm's rating
-  and the control box's is IP44. What changes for you: a pilot handed one of these bodies plans from
-  the corrected lines, a run that ends infeasible for want of 6 kg of payload no longer names the
-  Asimov-1, and [docs/adapters/status.md](docs/adapters/status.md#described-bodies) shows the B2's
-  new page, its endurance under load, the G1's 23 joints and the Asimov-1's 5 kg, and says who read
-  what. It was still one more reader and no robot: no figure here has been checked against a body,
-  and no maker was asked.
+- **The described bodies had a second reader, and every one of the eleven files but the KUKA LBR
+  iiwa's needed mending.** One reader read every figure, on 2026-11-05, and the Unitree G1 EDU's on
+  2026-10-28. On 2026-11-09 a second read again every page their sources and notes name: 27 lines
+  were wrong, short, missing or without a page, and three of the UR5e's are contradicted by another
+  of UR's pages. The Unitree B2's joint count cited a dealer's listing it did not name, and now
+  names the dealer page that gives it, MYBOTSHOP's `docs.mybotshop.de/b2.html`, still marked
+  `estimate`; its endurance said Unitree publishes no figure under load, where unitree.com/b2 gives
+  over 4 h with a 20 kg load; its stairs took the page's 40 cm for a depth, where the page climbs
+  stairs of 40 cm up and down facing forward and crosses a 40 cm obstacle; and its stop note named
+  no page and left out the SDK's StopMove and the remote's L1 + A, which a dealer gives as its
+  e-stop. The G1 EDU's joints read not published, and Unitree's page gives 23 to 43, so the figure
+  is 23, the lower end. Unitree's Go2 manual forbids the wet ground, gravel and soft ground the Go2
+  EDU's file said Unitree rates nowhere, and ice, dust and bad weather besides, and asks for flat
+  terrain where unitree.com/go2 shows the robot on gravel and slopes; Unitree's table marks
+  secondary development part filled on the Go2 X where the file gave the SDK to the EDU alone; and
+  the notes gain its top speed of about 5 m/s and the EDU's depth camera and foot force sensors. The
+  Menlo Asimov-1's payload was 15 kg an arm, which Menlo's FAQ gives as a peak of about three
+  seconds; the FAQ rates 5 kg held, the figure now, and says the robot has no hands yet, which a
+  cannot line says. Its E-Stop is in Asimov Manager, and nothing in its SDK is one; the robot, not
+  its firmware, zeroes velocity 2 s after the last velocity command, not the last packet, and a
+  trajectory left 2 s without a setpoint ends in DAMP, which drops it; the firmware caps its walk at
+  0.4 m/s and the SDK mirrors the cap; and it is not yet waterproof. The Noetix Bumi's 1 m/s was the
+  Boomy's page's, no Noetix page read says the Bumi sells abroad as the Boomy, Noetix forbids
+  potholed, soft and slippery ground besides rain, stairs and slopes over 20 degrees, and its SDK's
+  START disables every joint at once, where the file said it had no stop. The Microban turns at 3
+  rad/s only in place and 1.5 on the move, and stops a walk at zero velocity with torque on, where
+  the file said torque off was its only stop. The Franka Research 3's control interface stops after
+  20 packets dropped in a row, not 20 in all, and its hand is an add-on; the LBR iisy's torque
+  sensors are on kuka.com's page and not in its datasheet; and MotoROS2 stops a MotoMini whose agent
+  PC disconnects, by its default. The UR5e's note that UR lists the UR7e as its upgraded version
+  named no page, and only a launch page of UR's says it: UR's FAQ says the UR5e was renamed the
+  UR7e, the arm mechanically unchanged, for the 7.5 kg it carries, and the October 2026 edition of
+  the UR5e's datasheet gives 20.7 kg and 23 safety functions where the December 2024 one the file
+  cites gives 20.6 kg and 17. Its figures stay the cited edition's and its notes say all of it, and
+  that IP54 is the arm's rating and the control box's is IP44. What changes for you: a pilot handed
+  one of these bodies plans from the corrected lines, a run that ends infeasible for want of 6 kg of
+  payload no longer names the Asimov-1, and
+  [docs/adapters/status.md](docs/adapters/status.md#described-bodies) shows the B2's new page, its
+  endurance under load, the G1's 23 joints and the Asimov-1's 5 kg, and says who read what. It was
+  still one more reader and no robot: no figure here has been checked against a body, and no maker
+  was asked.
 - **A Microduck walk that an emotion stops names the emotion as one cause.** From daemon-v0.18.8
   robotd plays an emotion for a `robot.do`, a stock pad's Y and bumpers play three, and while one
   plays robotd reports a zero twist in place of the one it was asked for, with nothing in
@@ -502,32 +555,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   stops this way on daemon-v0.18.8 or later tells you to look at the pad's Y and bumpers, at any
   other program that sends `robot.do`, and at robotd's log. What stops the walk, the failure's
   first words and `extras.move_echo` are as they were.
-- **A panic in rustypot is met as the failed bus call it is.** pyo3 hands a panic in rustypot's Rust
-  code to Python as `PanicException`, which derives from `BaseException` and not from `Exception`.
-  The arm's backend, which the simulator and the mock run too, raised whatever a LeRobot call
-  raised, so a panic went through every handler that meets a failed call. A stop whose hold met one
-  raised it rather than say the hold did not reach the arm, a release raised it as though a Ctrl-C
-  had landed on it, and a close stopped where it met it, before its disconnect or before the line it
-  ends on. A LeRobot call that raises something that is not an `Exception`, other than a Ctrl-C, an
-  exit, a cancellation or a generator's close, now comes out as the `ConnectionError` LeRobot raises
-  for a failed call, naming what it raised: `a LeRobot call (disable_torque) raised PanicException:
-  ...`. A panic in a register read costs that reading, as a lost packet does, and a connect that
-  meets one is not tried again: it closes the port and says so, since every attempt switches every
-  motor's torque off and on. What changes for you: a stop, a release and a close that meet a panic
-  say what they say of any failed call, and the close runs to its end.
-- **A fold to the rest pose and a policy segment quote what failed, not an earlier stop.** A stop
-  whose hold did not reach the arm leaves its reason in `stop_error` until a hold does. The rest
-  move, and a `pick` or a `manipulate` segment's reads and sends, each quoted that reason over the
-  error that ended them. So a fold whose goal LeRobot could not write named the earlier stop's
-  failure, and so did the close, whose last line quotes a fold that missed, and a segment whose
-  first read failed, or whose read or third send in a row failed mid run, named the stop and not the
-  read or the send. Each quotes the error's own words now, as the release and the take-hold do, and
+- **A fold to the rest pose, a release, a take-hold and a policy segment quote what failed, not an
+  earlier stop.** A stop whose hold did not reach the arm leaves its reason in `stop_error` until a
+  hold does. The rest move, the release, the take-hold, and a `pick` or a `manipulate` segment's
+  reads and sends each quoted that reason over the error that ended them. So a fold whose goal
+  LeRobot could not write named the earlier stop's failure, and so did the close, whose last line
+  quotes a fold that missed, a release or a take-hold that failed named the stop and not what
+  failed, and a segment whose first read failed, or whose read or third send in a row failed mid
+  run, named the stop and not the read or the send. Each quotes the error's own words now, and
   `stop_error` only for the call that wedged the bus, or met it wedged, whose reason it is. Not
   every timeout is a wedge: a call that waited behind another and never went out, one that came back
   after its budget was spent, and one that raised a TimeoutError of its own write no `stop_error`,
-  so each of those is quoted in its own words too. What changes for you: a fold that failed, and a
-  `pick` or a `manipulate` refused at its start or ended by a read or sends that failed, say what
-  failed this time.
+  so each of those is quoted in its own words too. What changes for you: a fold, a release and a
+  take-hold that failed, and a `pick` or a `manipulate` refused at its start or ended by a read or
+  sends that failed, say what failed this time.
 - **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
   probe lets go of an arm at its rest pose through the close's disconnect, and when that release
   raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
@@ -580,15 +621,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   let go of a gaze saying another client was steering the head. On a robotd that names daemon-v0.18.8
   or later in its `hello`, `extras.gaze_released` names an emotion beside the other client and says
   robotd logs `emotion started` as one begins. What changes for you: the words only.
-- **The upstream drift nightly no longer calls a night clean when an adapter could not be read.** The
-  walk `quackd doctor` makes passes over an adapter whose module or `UPSTREAMS` raises, and its
-  upstreams with it, so a night with nothing else wrong exited 0. Such a night names who was not read
-  at the top of its report, in `drift.json` under `unread`, and exits 2, as could not check. A run of
-  one upstream with `--only` walks no adapter and is as it was.
-- **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop did
-  not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
-  `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and why
-  now, as the `stop` verb and the executor's own stop already did.
+- **A stop that did not land is no longer recorded as accepted.** A transport that knows its stop
+  did not reach the robot says so in `stop_error` and raises nothing, and the run's record wrote
+  `accepted: true` for it all the same. The `intent` event of that stop says `accepted: false` and
+  why now, as the `stop` verb already did and the executor's own stop now does.
 
 ### Security
 
@@ -611,42 +647,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   reads, and fails without this.
 - **A pinned model whose config names a kernel on the Hub as its attention is refused.**
   transformers 5 builds a model with the attention its `config.json` names, and a name that is a
-  repository, `owner/name`, is a kernel on the Hub, whose code transformers fetches and runs
-  through the `kernels` package once that is installed, when that package trusts the
-  repository's publisher or finds the kernel in its cache offline, at a revision no `--pin`
-  fixes. LeRobot builds SmolVLA's backbone with the attention its pinned `config.json` names,
-  transformers checks the one a pinned GR00T base's names as it builds GR00T's own module, though
-  LeRobot builds GR00T's backbone from a config of its own, and the server checked a pinned
-  model's configs for `auto_map` alone. The server's extra does not install `kernels`, and
-  without it transformers fails the build instead. A name with a `/` in it, under
-  `attn_implementation` or `_attn_implementation` anywhere in a pinned model's JSON, is refused
-  now, before anything is built from it. What changes for you: nothing to do, unless a pinned
-  model's config names such a kernel, which is refused with a sentence saying to pin a revision
-  whose config names `sdpa` or `eager` as its attention, or none. `tests/test_policy_pipeline.py`
-  fails without this.
-- **The policy server loads nothing where transformers would run kernels from the Hub, and
-  refuses the other ways a config reaches one.** The refusal above looks for a repository named
-  under `attn_implementation` or `_attn_implementation`, and transformers 5 reaches a kernel on
-  the Hub in other ways too. It swaps a flash attention, `flash_attention_2` and its kin, for a
-  kernels-community repository whenever flash_attn cannot run. It runs some experts and some
-  quantizers with kernels of their own, eetq's, mxfp4's and fine-grained fp8's among the
-  quantizers. A GR00T base can set its attention under `_attn_implementation_internal`, a key
-  transformers drops from its own configs and LeRobot's GR00T config takes as it comes. And a
-  GR00T checkpoint whose own `use_flash_attention` is true asks for `flash_attention_2` whenever
-  flash_attn imports. Each goes through the `kernels` package, at a revision no `--pin` fixes,
-  and without that package each fails as the model is built. The server's extra does not
-  install it, so none was open on a server installed as the docs say. Now the server refuses to
-  load any checkpoint where `kernels` is installed at a version transformers takes, decided by
-  the installed distribution as transformers decides it, before it asks the Hub for anything,
-  so a folder that is merely named `kernels` stops nothing. It refuses a pinned model whose
-  JSON names a repository or a flash attention under any key whose name holds
-  `attn_implementation`, names experts or carries a `quantization_config`, and a GR00T whose
-  `use_flash_attention` is true. What changes for you: uninstall `kernels` from the server's
-  environment if it is there, `uv pip uninstall kernels`, since nothing quackd serves needs it.
-  A pinned backbone or base whose config names `flash_attention_2`, or that was saved quantized,
-  is refused, so pin a revision that names `sdpa` or `eager`, or none. A GR00T fine-tune saved
-  with `use_flash_attention: true` is refused until a copy of it says false.
+  repository, `owner/name`, is a kernel on the Hub, whose code transformers fetches and runs through
+  the `kernels` package once that is installed, when that package trusts the repository's publisher
+  or finds the kernel in its cache offline, at a revision no `--pin` fixes. LeRobot builds SmolVLA's
+  backbone with the attention its pinned `config.json` names, transformers checks the one a pinned
+  GR00T base's names as it builds GR00T's own module, though LeRobot builds GR00T's backbone from a
+  config of its own, and the server checked a pinned model's configs for `auto_map` alone. The
+  server's extra does not install `kernels`, and without it transformers fails the build instead. A
+  name with a `/` in it, under any key whose name holds `attn_implementation`, anywhere in a pinned
+  model's JSON, is refused now, before anything is built from it. What changes for you: nothing to
+  do, unless a pinned model's config names such a kernel, which is refused with a sentence saying to
+  pin a revision whose config names `sdpa` or `eager` as its attention, or none, and no experts.
   `tests/test_policy_pipeline.py` fails without this.
+- **The policy server loads nothing where transformers would run kernels from the Hub, and refuses
+  the other ways a config reaches one.** transformers 5 reaches a kernel on the Hub in other ways
+  than a repository named as the attention. It swaps a flash attention, `flash_attention_2` and its
+  kin, for a kernels-community repository whenever flash_attn cannot run. It runs some experts and
+  some quantizers with kernels of their own, eetq's, mxfp4's and fine-grained fp8's among the
+  quantizers. A GR00T base can set its attention under `_attn_implementation_internal`, a key
+  transformers drops from its own configs and LeRobot's GR00T config takes as it comes. And a GR00T
+  checkpoint whose own `use_flash_attention` is true asks for `flash_attention_2` whenever
+  flash_attn imports. Each goes through the `kernels` package, at a revision no `--pin` fixes, and
+  without that package each fails as the model is built. The server's extra does not install it, so
+  none was open on a server installed as the docs say. Now the server refuses to load any checkpoint
+  where `kernels` is installed at a version transformers takes, decided by the installed
+  distribution as transformers decides it, before it asks the Hub for anything, so a folder that is
+  merely named `kernels` stops nothing. It refuses a pinned model whose JSON names a repository or a
+  flash attention under any key whose name holds `attn_implementation`, names experts or carries a
+  `quantization_config`, and a GR00T whose `use_flash_attention` is true. What changes for you:
+  uninstall `kernels` from the server's environment if it is there, `uv pip uninstall kernels`,
+  since nothing quackd serves needs it. A pinned backbone or base whose config names
+  `flash_attention_2`, or that was saved quantized, is refused, so pin a revision that names `sdpa`
+  or `eager`, or none. A GR00T fine-tune saved with `use_flash_attention: true` is refused until a
+  copy of it says false. `tests/test_policy_pipeline.py` fails without this.
 - **A pinned model's files are read whatever the case of their names.** On Windows the server
   matched a file in a pinned directory against what the directory may hold with its case folded,
   as `fnmatch` does there, and looked for `.json` without, so since 0.16.0 a cached `config.JSON`
@@ -675,11 +708,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
   record an owner can share, and quackd asks for two a second for as long as it is connected, so a
   note under "Getting a picture off a real Microduck" says so before anyone shares one.
-- **`uv.lock` takes `openai` 3.43.0, `laya` 0.4.22 and `types-pyyaml` 6.0.12.20261103, from
-  Dependabot's #74.** A refresh of the lock changes no requirement a user installs against. CI installs
-  neither openai nor laya, so its checks say the lock resolves. Through a stub of OpenAI's two APIs,
-  `quackd run hello-world` sent the same four requests from 3.42.1 as from 3.43.0, and laya's `Router`,
-  the one name quackd uses, is the same in both wheels.
+- **`uv.lock` takes `openai` 3.46.0, `laya` 0.4.26 and eight more of Dependabot's updates, from #74
+  and #106.** A refresh of the lock changes no requirement a user installs against. #74 took
+  `openai` 3.43.0, `laya` 0.4.22 and `types-pyyaml` 6.0.12.20261103, and #106 the python-deps group:
+  `typer` 0.28.0, `pydantic` 2.14.3, `openai` 3.46.0, `laya` 0.4.26, `paho-mqtt` 2.2.0, `streamlit`
+  1.67.0, `ruff` 0.17.4, `pyzmq` 27.3.0 and `aiortc` 1.16.0, with `aioice` 0.13.0, `pydantic-core`
+  2.50.4 and a new `vegaml` 0.16.1 behind them. CI installs no provider SDK, so its checks say the
+  lock resolves, and the rest was checked by hand. Through a stub of OpenAI's two APIs,
+  `quackd run hello-world` sent the same four requests from 3.42.1 as from 3.43.0, and 3.46.0 sent
+  eight request bodies identical to 3.43.0's. Every name quackd takes from laya answers as it did,
+  every aiortc name the Microduck client uses is on 1.16.0 and a loopback of them opened its channel
+  and decoded video, the paho-mqtt 2.2.0 client has what quackd calls, and every option typer draws
+  is the same.
 - **Seven more SO-101 examples lift the forearm instead of raising the shoulder alone.** E125, E142,
   E157, E166, E176, E179 and E182 raised the shoulder lift alone from the rest pose, which swings the
   folded jaws into the desk, as E116 did and as a run of E176 on a real arm showed. They lift the
@@ -733,22 +773,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a fold and a hand-off are the servo arm's alone. The architecture page's row for Huebot no longer
   says its transport is a copy of the Microduck's, which 0.33.0 made one record over the Microduck's
   own.
-- **Every LeRobot name the arm relies on is read again, at the `v0.7.0` tag.** `upstream_api.py`'s 113
-  rows were read at 410c095, the commit the tag names, and the bus below LeRobot's Python at
-  rustypot's `v1.13.1` and serialport-rs's `v4.9.0`: 104 VERIFIED and 9 UNVERIFIED, and each row
-  about something 0.7.0 removed says what replaced it. Eight are new: the torque calls trying every
-  motor, in LeRobot and again in rustypot, the bus's disconnect releasing the port whatever its
-  torque-off did, the busy flag that is gone, the port a failed handshake closes, the alarms nothing
-  raises on, the port opened for one program, and the 50 ms each try waits. The nightly drift job
-  compares the module with LeRobot's newest release tag and its rustypot rows with rustypot's,
-  because it declares both releases now, and `scripts/upstream_drift.py` reads a second repository's
-  release (`RELEASES`) for that. It compares the line a row cites as its source and none its note
-  cites, which is why rustypot's torque call has a row of its own.
-  `policy/endpoint_upstream_api.py`'s rows were read again at huggingface_hub 1.33.0 (`9eeace5`):
-  of the 17 lines they cite, 12 moved and none changed what a row says, and `create_inference_endpoint`
-  no longer sends `accountId`, which quackd never sent. The arm's page, its first-run page, its
-  checklist, the safety page, the adapter guide and the policies and VLA guides say what 0.7.0
-  changes, and the arm's page keeps the old anchor of its policies' table for the links that name it.
+- **Every LeRobot name the arm relies on is read again, at the `v0.7.0` tag.** `upstream_api.py`'s
+  125 rows were read at 410c095, the commit the tag names, and the bus below LeRobot's Python at
+  rustypot's `v1.13.1` and serialport-rs's `v4.9.0`: 115 VERIFIED and 10 UNVERIFIED, and each row
+  about something 0.7.0 removed says what replaced it. Twenty are new: twelve about a Koch's
+  Dynamixel bus, which the entry on it below lists, and eight about the bus under every arm: the
+  torque calls trying every motor, in LeRobot and again in rustypot, the bus's disconnect releasing
+  the port whatever its torque-off did, the busy flag that is gone, the port a failed handshake
+  closes, the alarms nothing raises on, the port opened for one program, and the 50 ms each try
+  waits. The nightly drift job compares the module with LeRobot's newest release tag and its
+  rustypot rows with rustypot's, because it declares both releases now, and
+  `scripts/upstream_drift.py` reads a second repository's release (`RELEASES`) for that. It compares
+  the line a row cites as its source and none its note cites, which is why rustypot's torque call
+  has a row of its own. `policy/endpoint_upstream_api.py`'s rows were read again too, at
+  huggingface_hub 2.4.0 and at the 1.33.0 the lock holds, as the entry after this one says. The
+  arm's page, its first-run page, its checklist, the safety page, the adapter guide and the policies
+  and VLA guides say what 0.7.0 changes, and the arm's page keeps the old anchor of its policies'
+  table for the links that name it.
 - **The endpoint's huggingface_hub rows are read at 2.4.0, and again at the 1.33.0 the lock
   holds.** The nightly drift job compares `policy/endpoint_upstream_api.py` with
   huggingface_hub's newest release, 2.4.0, and kept #88 open because the rows were read at an
@@ -790,16 +831,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a comment saying why, but only after a walk of every adapter and on a night every upstream could
   be checked, so an adapter that did not import, or a night something did not answer, closes none of
   them. An issue a person opened is left alone, whatever its title.
+- **The drift nightly no longer calls a night clean when it could not read an adapter.** Its walk,
+  the one `quackd doctor` makes, passes over an adapter that is not installed, or whose module or
+  `UPSTREAMS` raises, and its upstreams with it, so a night with nothing else wrong exited 0.
+  `scripts/upstream_drift.py` now names who it did not read at the top of its report and in
+  `drift.json` under `unread`, and exits 2, as could not check. A run of one upstream with `--only`
+  walks no adapter and is as it was. `quackd doctor` does not change.
 - **The nightly drift job lists a VERIFIED ref whose line names nothing of it.** Fourteen of the
   rosbridge adapter's refs cited lines that held something else, and the job read them as the same,
-  since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin,
-  holds no word of its name or its note is a stray anchor, listed under its upstream in the run's
-  summary as a weak anchor is. It is a guess and fails nothing by itself: a line that leaves a
-  bracket open is read with the lines that close it, a decorator with what it decorates, a ref
-  named as a path to its own file names any line of it, and a line that shares any word with the
-  ref passes. Over the rosbridge refs as they were before eighteen of them were read again at their
-  lines, it lists ten of the sixteen of those that are VERIFIED. On 2026-11-09 it lists ten refs of
-  all the job reads, eight of them ToddlerBot's, left for whoever reads those upstreams again.
+  since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin, holds no word of
+  its name or its note is a stray anchor, listed under its upstream in the run's summary as a weak
+  anchor is. It is a guess and fails nothing by itself: a line that leaves a bracket open is read
+  with the lines that close it, a decorator with what it decorates, a ref named as a path to its own
+  file names any line of it, and a line that shares any word with the ref passes. Over the rosbridge
+  refs as they were before 0.33.0 moved four urdfdom refs and this release the fourteen above, it
+  lists ten of the sixteen of those eighteen that are VERIFIED. On 2026-11-09 it listed ten refs of
+  all the job reads, eight of them ToddlerBot's: nine of those now cite their own lines (below), and
+  the tenth, ToddlerBot's `reset`, records a method that does not exist.
 - **The pages name the Microduck meshes' licence as CC BY-NC-SA 4.0.** The README, the assets page,
   the licences page's row for the simulator recording, CONTRIBUTING, the browser demo's README and a
   few comments still named CC BY-NC-SA with no version, or put the whole model under it, after the
@@ -813,28 +861,42 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
   `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
   with `--text`.
+- **Seven of the SO-101's examples have new logs, all run on 2026-11-06 under quackd 0.31.3.**
+  E114's replaces its run of 2026-11-04: the LLM asked for about 1,190°/s, and the arm ran at 30°/s.
+  The other six had none. In E118's the LLM, asked to stop halfway, could only stop an arm that had
+  already stopped; in E120's it read its budget and never moved the arm; in E121's it was not sure
+  and asked a person, who said no; in E169's its first move came back `not sent` and it ended the
+  dry run itself; in E170's it read the arm's limits and never once asked for the 170 degrees; and
+  in E187's two parts it counted its three LLM calls and quit without moving, then made three moves
+  in thirty seconds before the clock cut off its next thought.
 - **The safety page and the Microduck's checklist say a stock pad's Y and bumpers end a walk.** On
   robotd daemon-v0.18.8 or later each plays an emotion, robotd holds the twist at zero while one plays,
   and the verb fails. Neither page named those buttons among what ends a walk.
-- **Nine refs cite the line that says what they read.** Seven of ToddlerBot's, one of roslibpy's and
-  one of LeRobot's stood beside it, on the `def` or the `try` above it, and ToddlerBot's `read_vin`
-  on another function altogether, so the drift nightly listed them as stray. They are on the line
-  itself at the same pin. ToddlerBot's `reset` stays where it is: it records that no such method
-  exists, and no line can say so.
+- **Nine refs cite the line that says what they read.** Six of ToddlerBot's, one of roslibpy's and
+  one of LeRobot's stood beside it, on the `def` or the `try` above it, and a seventh of
+  ToddlerBot's, `read_vin`, on another function altogether, so the drift nightly listed them as
+  stray. They are on the line itself at the same pin. ToddlerBot's `reset` stays where it is: it
+  records that no such method exists, and no line can say so.
 - **CONTRIBUTING sets out the tiers and the owner rule, and the status page has a row per arm type.**
   The rule was one paragraph under adding an adapter, and the four tiers and the grandfather clause
   were nowhere in that file. The status page gives an SO-100 and a Koch v1.1 rows of their own under
   `lerobot:real`, so neither reads as the SO-101 that ran. CONTRIBUTING also names the drift script's
   `--offline`, and the Microduck's page says Huebot reads its protocol refs through its own module.
 - **How a Dynamixel bus fails has been read, at LeRobot 0.7.0 and rustypot 1.13.1.** A Koch's bus
-  errors come from the same `SerialMotorsBus` as an SO arm's, so the sentences quackd reads to name a
-  joint or place a failed connect hold on one, and new rows in `quackd_lerobot/upstream_api.py` and on
-  the arm's page say so, with what differs: a handshake that reads no firmware registers, servos that
-  answer no ping at LeRobot's 1 Mbps until they are set up from the factory's 57600, an error number
-  that makes LeRobot raise where an sts3215 never does, a torque call with no `Lock`, `is_calibrated`
-  comparing `Drive_Mode` too (`BUS_IS_CALIBRATED_DYNAMIXEL`), body joints that ignore the position
-  limits, and reads with no retries. A Koch stays described and refused at `make()`, and quackd
-  drives none.
+  errors come from the same `SerialMotorsBus` as an SO arm's, so the sentences quackd reads to name
+  a joint or place a failed connect hold on one, and new rows in `quackd_lerobot/upstream_api.py`
+  and on the arm's page say so, with what differs: a handshake that reads no firmware registers,
+  servos that answer no ping at LeRobot's 1 Mbps until they are set up from the factory's 57600, an
+  error number that makes LeRobot raise where an sts3215 never does, a torque call with no `Lock`,
+  `is_calibrated` comparing `Drive_Mode` too (`BUS_IS_CALIBRATED_DYNAMIXEL`), body joints that
+  ignore the position limits, and reads with no retries. A Koch stays described and refused at
+  `make()`, and quackd drives none. The Koch's own datasheet now says how that bus fails has been
+  read, where it said quackd had not read it.
+- **E038 counts the tenth adapter, and E189 says what rustypot does on Linux and macOS.** The run
+  sheet's E038 asked the arm to wave to eight siblings, and its task file named eight, where 0.34.0
+  ships ten adapters: it waves to nine, `rosarm` among them. E189 said nothing refuses a second quackd
+  on Linux, which rustypot's lock on the port makes untrue there and on macOS. The file names and the
+  commands are as they were.
 
 ### Known limitations
 
@@ -849,15 +911,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
   robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
   the lift on the newer host is not settled.
-- **The industrial arm has met nothing real.** The fake bridge and the fake arms are written from
-  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, and nothing
-  has compared them with a running controller. A job in CI against ros2_control's mock hardware and
-  a stock JointTrajectoryController, in a `ros:jazzy` and a `ros:humble` container, is what would,
-  and it is owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an
-  owner and a date for one. Each body's names, its action, joints, readings and status topics, are a
-  stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
-  joints, and the connect checks the action and the joints against what the bridge lists; a status
-  topic a cell names otherwise is never read, and then `can_move` believes the driver.
 - **When quackd goes quiet in the middle of a move, the arm finishes that move.** rosbridge cancels
   nothing for a client that has gone, the JointTrajectoryController's own timeout is off by default,
   and MotoROS2 is read to watch only its own agent, so the bound is one move, at most 12 s at the
@@ -879,22 +932,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   pair. Which end of the 0 to 100 range is shut is still quackd's assumption
   (`GRIPPER_OPEN_VALUE`), which E136 confirms by hand on each arm.
 - **No arm has run quackd on LeRobot 0.7.0.** One SO-101 ran it on 0.6.1, on 2026-09-15 and
-  2026-09-23. What is here about 0.7.0's bus was read from LeRobot's, rustypot's and serialport-rs's
-  source, and run over LeRobot's own follower and bus with a fake in place of rustypot's `Bus`, which
-  answers in rustypot's words but is not its code. Owed on the arm, in order: a fresh install whose
-  `doctor` shows rustypot; a connect with the arm's calibration file from 0.6.1, reading as
-  calibrated with every joint's travel as it was; readings at a fixed pose within a tick of 0.6.1's;
-  plausible torque and temperature reads; a small move, the step cap, the goal clamp, the rest move
-  and a hold; `quackd robot release` and the take-hold, with torque read back on all six motors; a
-  close at rest that goes limp, and one away from it that keeps holding and frees the port; a second
-  quackd or `doctor` on the port while a run holds it, refused as it opens; the USB cable pulled
-  mid-session, its heartbeat, its words and its 50 ms waits, with no wedge; the servo supply off, every
-  motor missing and the arm's cables and power; one servo cable out, naming that joint; Ctrl-C during
-  a release and during a take-hold, now that rustypot lets go of Python's lock while it talks; a
-  stalled gripper or forearm, which raises nothing now, with the 60 °C refusal still holding; and a
-  trained ACT through the policy server on 0.7.0. And a release over motors that stopped answering,
-  timed against the 5.68 s it gets. What rustypot says for a reply that comes back short, and what each
-  system says for a port another program holds, nobody has seen.
+  2026-09-23, and again in November under quackd 0.31.1 and 0.31.3, last on 2026-11-06 for the logs
+  of E114, E116, E118 to E121, E169, E170 and E187. What is here about 0.7.0's bus was read from
+  LeRobot's, rustypot's and serialport-rs's source, and run over LeRobot's own follower and bus with
+  a fake in place of rustypot's `Bus`, which answers in rustypot's words but is not its code. Owed
+  on the arm, in order: a fresh install whose `doctor` shows rustypot; a connect with the arm's
+  calibration file from 0.6.1, reading as calibrated with every joint's travel as it was; readings
+  at a fixed pose within a tick of 0.6.1's; plausible torque and temperature reads; a small move,
+  the step cap, the goal clamp, the rest move and a hold; `quackd robot release` and the take-hold,
+  with torque read back on all six motors; a close at rest that goes limp, and one away from it that
+  keeps holding and frees the port; a second quackd or `doctor` on the port while a run holds it,
+  refused as it opens; the USB cable pulled mid-session, its heartbeat, its words and its 50 ms
+  waits, with no wedge; the servo supply off, every motor missing and the arm's cables and power;
+  one servo cable out, naming that joint; Ctrl-C during a release and during a take-hold, now that
+  rustypot lets go of Python's lock while it talks; a stalled gripper or forearm, which raises
+  nothing now, with the 60 °C refusal still holding; and a trained ACT through the policy server on
+  0.7.0. And a release over motors that stopped answering, timed against the 5.68 s it gets. What
+  rustypot says for a reply that comes back short, and what each system says for a port another
+  program holds, nobody has seen.
 - **LeRobot 0.7.0 reports no overload and no overheat, so quackd's temperature read is the only heat
   guard.** An sts3215's status byte is alarms only, so a servo whose overload or overheat protection
   has tripped answers every read and write as any other, and LeRobot drops the byte, while its own
@@ -942,37 +997,38 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
   `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
   robot.
-- **The industrial arm has met a real rosbridge, and no controller and no arm.** A job of its own in
-  CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi as
-  Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver in
-  rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written from
-  reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so what a
-  JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that runs:
-  the same job with a stock controller on ros2_control's mock hardware is what would, and it is
-  owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner and
-  a date for one. Each body's names, its action, joints, readings and status topics, are a
-  stock bringup's defaults. The address sets the action, the readings topic and a prefix for the
-  joints, and the connect checks the action and the joints against what the bridge lists; a status
-  topic a cell names otherwise is never read, and then `can_move` believes the driver.
+- **The industrial arm has met a real rosbridge, and no controller and no arm.** A workflow of its
+  own in CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi
+  as Jazzy and Humble release them, in their official images, with a stand-in for the arm's driver
+  in rclpy whose action server is ROS 2's own. The fake bridge and the fake arms are still written
+  from reading rosbridge_suite, roslibpy, ros2_controllers and each driver at pinned commits, so
+  what a JointTrajectoryController or MotoROS2 does with a goal has been compared with nothing that
+  runs: the same job with a stock controller on ros2_control's mock hardware is what would, and it
+  is owed. No arm has been driven, and `rosarm:ws` refuses every arm until somebody names an owner
+  and a date for one. Each body's names, its action, joints, readings and status topics, are a stock
+  bringup's defaults. The address sets the action, the readings topic and a prefix for the joints,
+  and the connect checks the action and the joints against what the bridge lists; a status topic a
+  cell names otherwise is never read, and then `can_move` believes the driver.
 - **quackd looks for a goal still running only at connect, and only in the action's own status.**
-  MotoROS2 is read to publish no status, so on the MotoMini nothing is checked, and quackd's first
-  goal there waits behind one still running, unanswered until that one ends. On the other three a
-  status the bridge has not handed over within a second reads as nothing running, and neither a
-  goal another client sends after the check nor a trajectory published on the controller's own
-  topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
+  MotoROS2 is read to publish no goal status, so on the MotoMini nothing is checked, and quackd's
+  first goal there waits behind one still running, unanswered until that one ends. On the other
+  three a status the bridge has not handed over within a second reads as nothing running, and
+  neither a goal another client sends after the check nor a trajectory published on the controller's
+  own topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
 - **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
   moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
   near where each joint already reads passes it at once, and a controller that said it succeeded
   without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
   within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
-- **On rosbridge_server 2.7.1, which Jazzy ships, a parameter read can take rosapi down.** rosapi keeps
-  a client per node and stamps it with a time of the wrong clock until a read has used it. A read that
-  finds the node's parameter service not ready leaves it stamped that way, and rosapi's own cleanup
-  raises on it half a second later, so `rosapi_node` exits while the bridge goes on. `rosarm:ws` and
-  `rosbridge:ws` read parameters through rosapi at connect, so a connect that races a node still being
-  discovered can do this, and the next connect is refused naming the parameter it could not read.
-  Restart the bridge, or start it with `respawn:=true`, which brings rosapi back. Upstream fixed it in
-  rosbridge_suite #1308, which 2.7.1 does not carry. Humble's 2.0.8 keeps no such cache.
+- **On rosbridge_server 2.7.1, which Jazzy ships, a parameter read can take rosapi down.** rosapi
+  keeps a client per node and stamps it with a time of the wrong clock until a read has used it. A
+  read that finds the node's parameter service not ready leaves it stamped that way, and rosapi's
+  own cleanup raises on it half a second later, so `rosapi_node` exits while the bridge goes on.
+  `rosarm:ws` and `rosbridge:ws` read parameters through rosapi at connect, so a connect that races
+  a node still being discovered can do this. The next `rosarm:ws` connect is then refused naming the
+  parameter it could not read, and a `rosbridge:ws` one connects with nothing discovered and says
+  why. Restart the bridge, or start it with `respawn:=true`, which brings rosapi back. Upstream
+  fixed it in rosbridge_suite #1308, which 2.7.1 does not carry. Humble's 2.0.8 keeps no such cache.
 
 ## [0.33.0] — 2026-11-07
 
@@ -11187,7 +11243,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/rokbenko/quackd/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/rokbenko/quackd/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/rokbenko/quackd/compare/v0.31.3...v0.32.0
 [0.31.3]: https://github.com/rokbenko/quackd/compare/v0.31.2...v0.31.3

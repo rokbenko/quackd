@@ -105,8 +105,8 @@ steps, each written so that it can only fail in a way you can recover from.
 > **Cutting the servo supply is the only thing that stops this arm in every case.** It has no
 > e-stop and no deadman, and its five body joints have no torque cap. Keep people and anything
 > fragile out of its sweep, and keep a hand on the switch whenever it moves on a line you have not
-> run before. What quackd changed after 2026-09-23 has not run on an arm yet, so what differs on
-> your bench is [worth reporting](first-run.md#14-what-to-report).
+> run before. What quackd changed after 0.31.3, the last release an arm ran, has not met one yet,
+> so what differs on your bench is [worth reporting](first-run.md#14-what-to-report).
 
 ### Before the arm
 
@@ -455,7 +455,7 @@ quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --cam
 | `--llm openai:gpt-6-sol` | The pilot. Lines that compare LLMs name theirs |
 | `--decision-llm jev --decision-mode shadow` | Only on the decision LLM lines: `jev` with `quackd[decision]` and its own key, `TYPESAFE_API_KEY`, or `openai` with yours. The "off" legs say `--decision-mode off`, so a setting in your environment cannot leak into them |
 | `--max-steps 16` | The step budget, the same number as in the task file. A step is one verb, and the verdict and the declarations are free. Raise it on the line if a run needs more room: the file's minutes and LLM calls are sized with room to spare |
-| `--no-memory` | Every run starts fresh: nothing from earlier runs in the prompt, and no extra turn at the end to write a note. `e110`, `e120` and `e194` use memory on purpose |
+| `--no-memory` | Every run starts fresh: nothing from earlier runs in the prompt, and no extra turn at the end to write a note. `e110`, the failed take run before it, and `e194` use memory on purpose |
 | `--no-play` | 118 of the task files give the pilot a part to play, with `play: true` in the file. Add this to any of those lines to see the same task without it ([guides/play.md](../../guides/play.md)) |
 | `--dry-run` | Add it to any line without `--by-hand` to see what the LLM would do: reads run, nothing that moves is sent, and the arm does not even go to its rest pose |
 | `--effort low` | Only where it is the test. How hard the pilot's LLM reasons before each answer, for a vendor and LLM that take it |
@@ -564,7 +564,7 @@ hurt somebody. They shape everything below:
 | `--robot` | Status | What it is |
 |---|---|---|
 | `lerobot:mock` | ✅ | `lerobot:real`'s own code over an arm in memory: a goal lands a step of the cap at a time, the gripper stops on the object, a scripted policy answers `pick` and `manipulate` in the real backend's policy loop, and every refusal, hand-off and close line is the real backend's own, since it is that backend's code, though with no rest pose recorded its close lets go of the arm, as the simulator's does, where the arm's keeps its torque and says so |
-| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm on two afternoons, 2026-09-15 on quackd 0.9.0 and 2026-09-23 on quackd 0.12.0, with lerobot 0.6.1 and no policy. What changed after 2026-09-23 has not run on an arm yet, LeRobot 0.7.0's bus, which quackd installs now, included, and the backend has run over that bus's own code with rustypot's `Bus`, the part that talks to the port, replaced by a fake (`tests/test_lerobot_real_bus.py`) |
+| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm, on 2026-09-15 on quackd 0.9.0, on 2026-09-23 on quackd 0.12.0, and on 2026-11-04 and 2026-11-06 on quackd 0.31.1 and 0.31.3, with lerobot 0.6.1 and no policy. What changed after 0.31.3 has not run on an arm yet, LeRobot 0.7.0's bus, which quackd installs now, included, and the backend has run over that bus's own code with rustypot's `Bus`, the part that talks to the port, replaced by a fake (`tests/test_lerobot_real_bus.py`) |
 | `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
 
 From a terminal:
@@ -1366,7 +1366,7 @@ quackd policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
 
 ```text
   http://127.0.0.1:9875
-policy           scripted:sweep (quackd-policy 1, quackd 0.33.0)
+policy           scripted:sweep (quackd-policy 1, quackd 0.34.0)
 features         whatever the arm has (a scripted policy)
 rate             10 Hz, from scripted:sweep's own, the verbs' tick
 chunks           10 actions, 10 played from each
@@ -1563,7 +1563,7 @@ quackd policy check --policy quackd-test/tiny-act@v1 --bench --seconds 3
 
 ```text
   served here for the check, at http://127.0.0.1:53804
-policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.33.0)
+policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.34.0)
 features         state 6, action 6, images observation.images.front 64x48
 rate             10 Hz, from
                  quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
