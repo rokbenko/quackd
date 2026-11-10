@@ -7196,7 +7196,8 @@ def robot_list(
     # 80-column terminal a probe's refusal needs every character it can get
     cells: dict[str, list[Any]] = {
         # the type a robot was registered with, which its spec does not carry: an SO-100
-        # and an SO-101 are both lerobot:real, and four industrial arms are rosarm:ws
+        # and an SO-101 are both lerobot:real, and four industrial arms are rosarm:mock until
+        # one is driven
         "type": [Text(e.robot_type or "") for e in entries.values()],
         "address": [Text(e.address or "") for e in entries.values()],
         "host": [Text(e.host or "") for e in entries.values()],

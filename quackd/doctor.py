@@ -2183,7 +2183,7 @@ def verdict(report: DoctorReport) -> Any:
     else:
         reason = "the robot did not report healthy"
     # the described row is not an adapter: its backends are bodies nothing drives, counted
-    # apart so that "9 adapters" never includes them
+    # apart so that "10 adapters" never includes them
     adapters = [a for a in report.adapters if a.get("kind", "adapter") == "adapter"]
     described = sum(len(a["backends"]) for a in report.adapters if a.get("kind") == "described")
     counters = [
