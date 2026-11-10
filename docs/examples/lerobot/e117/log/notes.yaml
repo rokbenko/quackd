@@ -1,0 +1,63 @@
+hook: Ctrl-C folded the arm away. A hard kill left it reached out over the table under torque, until `quackd robot release` put it down.
+goal_met: "Partly"
+parts:
+  - "Ctrl-C, pressed once"
+  - "A hard kill from a second terminal, then `quackd robot release`"
+why_example: >
+  A process that stops is not an arm that stops. The SO-101's servos, with their torque on, hold
+  their last goal until the torque or the power is cut, so when quackd ends, the arm stays where it
+  was unless something puts it down. This example compares two of the ways a run can be stopped
+  from the keyboard: Ctrl-C, which quackd handles, and a hard kill, which it never sees.
+why_result: >
+  Both behaved as designed. Ctrl-C cut the LLM call it landed in, sent a `stop` and folded the arm
+  back to its rest pose within a second. The hard kill gave quackd no chance: no `stop`, no fold and
+  no `summary.json`, and the arm stayed reached out under torque, still reading shoulder_lift -75.3,
+  until `quackd robot release` folded it and turned its torque off. That is the hazard the card warns
+  about, and the way back from a killed run is to support the arm and let `quackd robot release` put
+  it down, or to hold it and cut its power.
+goal: >
+  Show that killing the process does not stop the arm: it holds its last commanded position under
+  torque, which is the real hardware hazard quackd is designed around. Ctrl-C, an ordinary exit, is
+  the contrast.
+expected: >
+  Ctrl-C: `aborted mid-verb; the verb was cancelled and a stop was sent`, the arm freezes, then folds
+  to the rest pose and goes limp there. Hard kill: the arm freezes under torque and stays there, with
+  nothing running to release it and no `summary.json` in the run folder, until `quackd robot release`
+  puts it down.
+showed:
+  - >
+    In Part 1 the LLM read the arm, judged the reach `feasible` and raised it, shoulder_lift to -75
+    over 5 s. Ctrl-C landed while it waited on its next answer, and that call ended `ERROR Aborted:
+    kill switch after 0.2 s`.
+  - >
+    quackd then sent a `stop` and folded the arm: `moving to the rest pose`, then `at the rest pose`
+    0.8 s later. The run ended `ABORTED` on `kill switch`, with its summary written.
+  - >
+    In Part 2 nearly the same move ran, this time also turning the pan to 0, and the process was
+    killed from a second terminal while the LLM was thinking: `taskkill /F /IM quackd.exe` ended four
+    quackd.exe processes. The run's own terminal stops at the call it was waiting on, and the
+    screen's last line was `waiting on openai gpt-6-astra (last call 4.4 s)`, the 4.4 s being how
+    long the call before it took.
+  - >
+    Nothing ran after the kill: no `stop`, no fold and no `summary.json`. The run folder kept its
+    terminal, its transcript and its frames up to that moment, which is where this part's numbers
+    come from.
+  - >
+    The arm held its pose under torque. When `quackd robot release arm-01` connected, it read
+    shoulder_lift -75.3, elbow_flex 78.2 and wrist_flex 60.8, within a degree of where the move had
+    left it, then folded it and let go: `torque reads off on every joint of arm-01`.
+  - >
+    The release said first that `connecting takes torque off every motor for a moment`, so the arm has
+    to be supported while it connects.
+did_not_show:
+  - >
+    Neither stop landed mid-move. Both came while the LLM was thinking, after the move had finished,
+    so the run does not show a move cut off, and the card's `aborted mid-verb` line was never printed.
+  - >
+    It does not show how long the arm would hold after a kill: the release came within the same take.
+  - >
+    Part 2's numbers stop at the kill. Its total time is not recorded, and its fourth LLM call was
+    sent and never answered, so that call is counted and its wait, tokens and cost are not.
+  - >
+    It does not show which quackd.exe processes the taskkill ended besides the run's own. It ends
+    every one on the machine, and the card warns that an editor's MCP server can be among them.

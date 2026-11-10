@@ -1,0 +1,42 @@
+{
+  "command": [
+    "quackd",
+    "run",
+    "D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck",
+    "--robot",
+    "arm-01",
+    "--camera-url",
+    "opencv://1?name=arm",
+    "--llm",
+    "openai:gpt-6-astra",
+    "--max-steps",
+    "10",
+    "--no-memory"
+  ],
+  "version": "0.33.0",
+  "started_at": "2026-11-10T11:32:31.535Z",
+  "outcome": "killed",
+  "reason": null,
+  "provider": "openai",
+  "llm_id": "gpt-6-astra",
+  "transport": "real",
+  "robot": "arm-01",
+  "steps": 2,
+  "llm_calls": 4,
+  "connect_s": 10.322,
+  "llm_latency_s": 17.562,
+  "first_motion_s": 28.344,
+  "usage": {
+    "input_tokens": 12004,
+    "output_tokens": 226,
+    "reasoning_tokens": 21,
+    "cache_read_tokens": 9253,
+    "cache_write_tokens": 2373
+  },
+  "cost_usd": 0.053995,
+  "final_state": {
+    "extras": {
+      "step_deg": 5.0
+    }
+  }
+}

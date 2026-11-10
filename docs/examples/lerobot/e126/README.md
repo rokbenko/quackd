@@ -54,6 +54,7 @@ The following command was run with quackd 0.33.0:
 ```text
 python D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.py --port 8799 --seed 1
 quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.duck --robot lerobot:mock --llm local:monkey --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory
+python D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.py --count runs
 ```
 
 ## The numbers
