@@ -57,7 +57,7 @@ from quackd_rosarm.verbs import (
     rosarm_verbs,
 )
 
-__version__ = "0.33.0"
+__version__ = "0.34.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here rather
 than being read from the core, because this file is all an adapter's sdist contains."""
 

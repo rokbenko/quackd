@@ -13,11 +13,11 @@ authors = [{ name = "Rok Benko" }]
 # A family over the rosbridge package's binding (ADR-0075): its roslibpy plumbing and its VERIFIED
 # protocol refs are that package's, so both move with this one, and scripts/set_version.py moves
 # both windows.
-dependencies = ["quackd>=0.33.0,<0.34", "quackd-rosbridge>=0.33.0,<0.34"]
+dependencies = ["quackd>=0.34.0,<0.35", "quackd-rosbridge>=0.34.0,<0.35"]
 
 [project.optional-dependencies]
 # roslibpy, through the binding's own extra, so the two can never ask for different ones
-sdk = ["quackd-rosbridge[sdk]>=0.33.0,<0.34"]
+sdk = ["quackd-rosbridge[sdk]>=0.34.0,<0.35"]
 
 [project.entry-points."quackd.adapters"]
 rosarm = "quackd_rosarm"

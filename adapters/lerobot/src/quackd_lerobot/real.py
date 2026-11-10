@@ -145,7 +145,10 @@ from quackd_lerobot.verbs import (
     worth_saying,
 )
 
-STATUS = "LeRobot names verified at its v0.7.0 tag; one SO-101 driven on 0.6.1 on 2026-09-15"
+STATUS = (
+    "LeRobot names verified at its v0.7.0 tag; one SO-101 driven on 0.6.1, first on 2026-09-15 "
+    "and last on 2026-11-06"
+)
 _THREADS = DaemonThreads("quackd-lerobot")
 """Where every call that can hang runs, the bus's and the cameras'. Not asyncio's pool, which
 `asyncio.run` and the exit both join: a call that never came back held a run that had finished,
