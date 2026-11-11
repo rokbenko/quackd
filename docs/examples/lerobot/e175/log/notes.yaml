@@ -1,0 +1,84 @@
+hook: Ctrl-C stopped the run's own fold to rest partway, and the arm held there with torque on until the next release connected, which found it about half a degree from where it was read right after the stop and folded it the rest of the way.
+goal_met: "Partly"
+why_example: >
+  A fold to the rest pose is quackd moving the arm on its own, and a person has to be able to stop it
+  partway, for a hand, a cable or a cup in its way. Since 0.24.0 Ctrl-C or `q` during a fold stops it
+  where it is and keeps torque on, where a run's fold used to finish first. This example presses
+  Ctrl-C while the arm is on its way down, to see it stop and hold, and how far it carries on after
+  the press.
+why_result: >
+  The fold stopped and the arm held: `the fold was stopped where it was, and nothing was released:
+  torque is as the fold left it`. A reading right after the stop found the arm short of the goal the
+  fold had last sent it, so it ran on less than one step after the press, and the next release found
+  it about half a degree from there. A person can stop a fold partway and leave the arm safely up,
+  then finish the fold once its way is clear.
+goal: >
+  Show that a fold you asked for is one you can stop, and give a first number for how far the arm
+  runs on after the press. It is the fifth of the nine bench steps 0.24.0 left for a real arm.
+expected: >
+  Ctrl-C pressed while the arm is on its way down stops the fold, and the arm holds with torque on,
+  at most a step past where the press found it: `the fold was stopped where it was, and nothing was
+  released: torque is as the fold left it`. A second release then finishes the fold. The card does
+  this during `quackd robot release`'s fold, after a run left the arm raised, at E171's slow step.
+showed:
+  - >
+    The fold that was stopped was the run's own, not the release's. The video's caption names `quackd
+    robot release arm-01` as both hands type, at the moment the run's record has a `q` end its wait to
+    hand the arm back: the command went into the run's own terminal, and its first letter, `q`, is a
+    run's stop key, `kill switch: 'q' pressed`. It ended that wait and started the run's fold, and the
+    command itself never ran.
+  - >
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd was `connected in 3.30
+    s`, the arm was lifted by hand into a raised pose leaning forward over the desk, `holding the pose
+    you set, you can let go`, at shoulder_lift 44 and elbow_flex -21, and the pilot's three calls
+    ended in its `declare_success`.
+  - >
+    The `q` ended the wait, `(the kill switch ended the wait, without an Enter)`, and after a 3 s
+    count the fold set off. The `stop` the trace prints after the `q` is the one the run sent when the
+    pilot declared, 11.7 s earlier.
+  - >
+    Ctrl-C, 2.16 s into the fold, stopped it: a `stop` went out, then `the fold was stopped where it
+    was, and nothing was released: torque is as the fold left it`. LeRobot had clamped the fold's
+    goals to 5 degrees from where the arm stood 20 times; at the last of them the arm read elbow_flex
+    46.1 and shoulder_lift 2.2 and was sent toward 51.1 and -2.8. A reading right after the stop,
+    stamped 8 ms after it on the arm's own clock, found elbow_flex at 49.3 and shoulder_lift at -0.1,
+    short of that goal, and the fold sent no goal after it.
+  - >
+    The arm held where it stopped. The run's last note read it again, `the arm is not at its rest pose
+    (shoulder_lift is at -0 with a goal of -101; a fold to it was stopped partway), so torque was left
+    on and it will not fall as it stands`, and the run ended SUCCESS, the scripted pilot's own verdict.
+  - >
+    `quackd robot release arm-01`, run once the run had ended, warned that connecting takes torque off
+    every motor for a moment and to support the arm while it connects. Nobody did: both hands stayed at
+    the laptop, and the arm stayed where it was. It read the arm at shoulder_lift 0.4 and elbow_flex
+    49.8, about half a degree from the reading right after the stop, counted 3 s, folded the arm the
+    rest of the way, with LeRobot clamping 29 of its goals, and let go: `✓ torque reads off on every
+    joint of arm-01`, then `the arm is limp at its rest pose, where it was folded and let go of
+    because you asked for it`.
+  - >
+    In the video the arm stops partway through its fold, its upper arm upright, and stands there, with
+    both hands at the laptop, until the release folds it.
+did_not_show:
+  - >
+    It does not give the card's number exactly: nothing read the arm at the press itself. The press
+    came after the fold's last goal, which the trace prints before the Ctrl-C, so from the press to
+    the reading right after the stop the arm moved at most 3.2 degrees at the elbow and 2.3 at the
+    shoulder, less than one step.
+  - >
+    It does not show Ctrl-C during `quackd robot release`'s fold, which the card asks for: the fold
+    stopped was the run's own, started by the stray `q`. What it showed instead is the ninth bench
+    step, E179's case, in a `--by-hand` run: a run that ended by itself, and Ctrl-C during its fold.
+    The release says the same line when its own fold is stopped.
+  - >
+    Type a command only where nothing is running. A run reads every key as it is pressed until it
+    ends: a `q` ends its wait at once, and so does a line typed and entered, and either way the arm
+    folds 3 s later.
+  - >
+    The take ran at quackd's default step, 5 degrees per send and up to 50 degrees a second, where the
+    card's slow step is 1 degree per send and 10 degrees a second.
+  - >
+    No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, its tokens
+    are that pilot's own estimate, and nothing was billed. The table gives no first motion because no
+    verb moved the arm: the person lifted it, and the fold was the run's own, at its end.
+  - >
+    The GIF plays at 10x, so the countdown, the fold and the stop look far quicker than they were.
