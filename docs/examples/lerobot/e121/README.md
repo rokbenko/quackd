@@ -34,7 +34,7 @@ Show the confirmation gate stopping a task when a person says no: the LLM answer
 
 ## What the run did not show
 
-* It does not show what happens on a yes. The person said no, so nothing after the gate ran.
+* It does not show what happens on a yes. The person said no, and the run ended there: quackd sent its own `stop`, found the arm already at its rest pose, and asked the LLM nothing more.
 * The task file's own confirm list is empty, so the question here came from the LLM's `uncertain` and not from a verb marked to ask first. Those are two different gates, and this run shows one of them.
 * The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
 
