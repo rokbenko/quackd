@@ -3208,12 +3208,14 @@ that drops it says "hold it first" before anything happens, which is the whole d
 `--by-hand`, where the release comes first and the person's hands second.
 
 > [!WARNING]
-> None of this has run on an arm. The fold before the release, both questions, a Ctrl-C during a
-> fold and the release itself are exercised against `lerobot:mock`, a fake arm and the simulator
-> in the test suite. Whether a person supporting the arm through the connect can take their
-> hands away before the fold starts, what an SO-101 does when its fold is held back by something
-> soft, how far it drops when the second question's Enter reaches it away from its fold, and
-> whether one hand is enough to catch it, are for the bench to say.
+> Of this, the fold before the release and `quackd robot release` itself have run on an arm: in
+> [E117](../../examples/lerobot/e117/README.md) and [E171](../../examples/lerobot/e171/README.md)
+> the release folded the arm to its rest pose and let go of it there. Both questions and a Ctrl-C
+> during a fold have not, and are exercised only against `lerobot:mock`, a fake arm and the
+> simulator in the test suite. Whether a person supporting the arm through the connect can take
+> their hands away before the fold starts, what an SO-101 does when its fold is held back by
+> something soft, how far it drops when the second question's Enter reaches it away from its fold,
+> and whether one hand is enough to catch it, are for the bench to say.
 
 ### What is driven, and what is not
 

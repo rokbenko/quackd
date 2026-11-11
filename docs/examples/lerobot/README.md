@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**15 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**16 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -178,7 +178,7 @@
 |  | [E168: A connect quackd refuses lets go](e168/) | Safety |  |  |  |
 | ✅ | [E169: What it would have done](e169/) | Safety | Its first move came back `not sent`, so the LLM refused to fake the fastest swing on the sheet and ended the dry run itself. | Partly | 0.31.3 |
 | ✅ | [E170: Out of range, three times](e170/) | Safety | Told to ask for 170 degrees and keep asking until the run ended, the LLM read the arm's limits, called it infeasible, and never asked once. | No | 0.31.3 |
-|  | [E171: Let go means put it down first](e171/) | Safety |  |  |  |
+| ✅ | [E171: Let go means put it down first](e171/) | Safety | A hard kill left the arm holding itself up. `quackd robot release` then folded it to its rest pose and only let go once it was there. | Yes | 0.34.0 |
 |  | [E172: Something soft in the fold's way](e172/) | Safety |  |  |  |
 |  | [E173: Blocked twice, then into your hand](e173/) | Safety |  |  |  |
 |  | [E174: Nobody answers](e174/) | Safety |  |  |  |
@@ -348,7 +348,9 @@ and Enter at that second question takes torque off where the arm stands, so hold
 because it drops. Leave either question for 60 seconds and torque stays on. After that, clear
 its way and run `quackd robot release arm-01`, which folds the arm to its rest pose and lets go
 of it there: support the arm while it connects, because connecting takes torque off every motor
-for a moment. None of this has run on an arm yet, and `e171` to `e179` are what would settle it.
+for a moment. Of this, `quackd robot release` has run on an arm, in [E117](e117/) and
+[E171](e171/), where it folded the arm to its rest pose and let go of it there. The two questions
+after a fold that misses have not, and `e172`, `e173`, `e174` and `e176` are what would settle them.
 
 After the Enter that starts a by-hand run, keep a hand on a link until it prints `you can let go`:
 torque comes back on under your hand, and an arm it refuses to take hold of stays limp. At the end

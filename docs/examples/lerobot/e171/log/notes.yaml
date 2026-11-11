@@ -1,0 +1,97 @@
+hook: A hard kill left the arm holding itself up. `quackd robot release` then folded it to its rest pose and only let go once it was there.
+goal_met: "Yes"
+why_example: >
+  When a quackd run is killed, nothing is left to put the arm down. The SO-101's servos hold their
+  last goal under torque until something cuts the torque or the power, so a raised arm stays raised.
+  `quackd robot release` is the way back, and how it lets go matters: before 0.24.0 it took torque
+  off wherever the arm stood, so a raised arm fell. Since 0.24.0 it folds the arm to its rest pose
+  first and lets go there. This example leaves the arm raised on purpose, kills the run, and checks
+  that the release puts the arm down.
+why_result: >
+  The release put the arm down rather than dropping it. It warned that connecting takes torque off
+  every motor for a moment, asked first, read the arm within a degree of the pose it had been left
+  holding, counted 3 s for hands to come away, folded the arm to its rest pose and only then let go,
+  checking that every joint read torque off with the arm still at rest. For anyone whose run was
+  killed with the arm up, that is the way back: support the arm while the release connects, then
+  let it fold the arm down.
+goal: >
+  Show `quackd robot release` on an arm left holding itself up after its run was killed. Since 0.24.0
+  the release folds the arm to its rest pose and lets go there, where 0.14.0's release took torque
+  off wherever the arm stood and let it fall. It is the first of the nine bench steps 0.24.0 left for a
+  real arm.
+expected: >
+  The scripted pilot finishes at once, and the run waits up to two minutes, holding the arm, for a
+  person to press Enter and take whatever is in the gripper, after which it folds the arm itself.
+  `taskkill` ends the run during that wait, nothing runs any more, and the arm keeps holding. The release then warns that connecting takes torque off every motor for a moment, asks,
+  connects, prints the joints, says `folding arm-01 to its rest pose in 3 s: take your hands away
+  from it now. Ctrl-C or q stops it before it moves`, folds, closes its gripper, and ends with `✓
+  torque reads off on every joint of arm-01` and `the arm is limp at its rest pose, where it was
+  folded and let go of because you asked for it`. The card set `QUACKD_LEROBOT_MAX_STEP_DEG` to 1
+  for this, a fold at 10 degrees a second, and asked whether it folds and whether it then rests there
+  limp.
+showed:
+  - >
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd connected in 5.92 s,
+    found the arm already at its rest pose, took its torque off and handed it over: `the arm is yours`.
+  - >
+    The arm was lifted by hand into a raised pose and Enter pressed, and quackd held it there,
+    `holding the pose you set, you can let go`, at shoulder_pan -8, shoulder_lift -14, elbow_flex 23,
+    wrist_flex 49, wrist_roll 0 and gripper 1.
+  - >
+    The scripted pilot's three calls, `assess_task`, `report_state` and `declare_success`, were over
+    about 0.2 s after the Enter, and the run began its wait to hand the arm back: `the run is over
+    and the arm is holding where it ended`.
+  - >
+    During that wait `taskkill /F /IM quackd.exe`, from a second terminal, ended two quackd.exe
+    processes. Nothing ran after it: no fold and no `summary.json`, and the run's terminal stops at
+    the wait's message.
+  - >
+    The arm kept holding under torque. When `quackd robot release arm-01` connected, it read
+    shoulder_pan -8.4, shoulder_lift -13.3, elbow_flex 23.4, wrist_flex 48.8, wrist_roll 0.5 and
+    gripper 1.0, within a degree of the pose it had been set to hold.
+  - >
+    First the release warned that `connecting takes torque off every motor for a moment`, saying to
+    support the arm while it connects, and asked `fold arm-01 to its rest pose, close its gripper and
+    release torque there? [y/N]`. Once connected it printed the joints and counted down: `folding
+    arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it
+    moves`.
+  - >
+    It folded the arm to its rest pose. On the way LeRobot printed 27 warnings that it had clamped a
+    goal, because quackd has it hold each send to 5 degrees from where the arm stands. Then `✓ torque
+    reads off on every joint of arm-01`, and `the arm is limp at its rest pose, where it was folded
+    and let go of because you asked for it, and where it still reads`.
+  - >
+    In the video the arm comes down to the folded pose it started the take in, and is still there
+    when the video ends.
+did_not_show:
+  - >
+    It did not run at the card's slow step. The card sets `QUACKD_LEROBOT_MAX_STEP_DEG` to 1 for this,
+    a fold at 10 degrees a second with each goal 1 degree ahead. It was not set: the run's record
+    gives the cap as 5 degrees per send, quackd's default and a ceiling of 50 degrees a second, and
+    LeRobot's clamp warnings in the release show goals 5 degrees ahead.
+  - >
+    The card asks for a low raised pose, and this one was not low: shoulder_lift stood at -14,
+    against -100.8 at the rest pose, so the fold had nearly 87 degrees to come down.
+  - >
+    The card asks for the arm to be supported while the release connects, and nobody did: in the
+    video both hands stay at the laptop, and the arm stays up until the fold.
+  - >
+    It does not show the gripper closing: the jaws were already all but shut, at 1 of 100, when the
+    release began.
+  - >
+    Nobody pressed `q` or Ctrl-C during the countdown, so it does not show either one stopping the
+    fold before it moves.
+  - >
+    It does not show how long the arm would hold after a kill: the release came within the same take.
+  - >
+    The run's numbers stop at the kill. Its total time is not recorded, and the run itself moved
+    nothing, so it has no first motion: the arm was lifted by hand, and the fold was the release's.
+  - >
+    No LLM read anything. The table's three LLM calls are the scripted pilot's turns, and its tokens
+    are that pilot's own estimate, a quarter of the characters in the system prompt and the
+    observation it was shown, with 16 out each turn. Nothing was billed.
+  - >
+    It does not show which quackd.exe processes the taskkill ended besides the run's own. It ends every
+    one on the machine, and the card warns that an editor's MCP server can be among them.
+  - >
+    The GIF plays at 10x, so the countdown and the fold look far quicker than they were.

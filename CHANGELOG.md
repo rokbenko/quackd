@@ -11,6 +11,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E171 has a log: after a hard kill left the arm holding itself up, `quackd robot release` folded
+  it to its rest pose and let go of it there.** A killed run of a task that ships with quackd now
+  names that task in its log, and a run flown by `--llm fake` is tried with `--llm fake` and says
+  that this needs no key and costs nothing, since its pilot is a script and no LLM is asked. The
+  arm's page and the examples page no longer say the release has never run on an arm: it has, in
+  E117 and E171, while the two questions after a fold that misses have not.
 - **E186 has a log: an empty Enter in `quackd drive` braked the arm partway through a move, 20.4 ms
   from the press to the stop.** A session had no way into a log, so `scripts/example_log.py add` now takes a
   `quackd drive` folder with `--terminal`, what its terminal printed as somebody saved it, since a
