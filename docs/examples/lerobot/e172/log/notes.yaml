@@ -1,0 +1,102 @@
+hook: "A hand on the arm slowed its fold to rest until the fold ran out of time, and quackd kept the arm up there and asked before folding again. Do not try this with a hand: the card says foam."
+goal_met: "Partly"
+why_example: >
+  An arm folding back to its rest pose can meet something in its way: a cable, a cup, a hand. A fold
+  that misses must not end with the arm dropping where it stands. Until 0.24.0, the end of a run
+  whose fold missed offered a single Enter that let go of the arm where it stood. Since then a fold
+  that misses keeps the arm up and asks first: clear its way and press Enter, and it tries the fold
+  once more. This example puts something in the fold's way on purpose, to see the miss, the
+  question and the second try.
+why_result: >
+  The hand slowed the fold until its time ran out short of the pose, and quackd kept the arm up under
+  torque there rather than letting go, until a person said its way was clear. With the hand gone, one
+  Enter started the second fold, and it reached the rest pose a third of a second later. That is what
+  keeps a missed fold from dropping the arm onto whatever is in its way: it holds, and it asks. It
+  also shows why the card wants foam and not a hand: the arm never stopped for the hand, and pushed
+  on at every send until its time ran out.
+goal: >
+  Show a fold that misses, and the first of the two questions a miss asks before anything drops:
+  clear the arm's way and press Enter, and it tries the fold once more. It is the second of the nine
+  bench steps 0.24.0 left for a real arm.
+expected: >
+  The fold stops against what is in its way, and quackd says `the arm did not reach its rest pose
+  (...), so it is holding itself up where it stopped. Clear whatever is in its way and keep your
+  hands out of its path, then press Enter and it tries the fold once more. Leave it, and after 60 s
+  it stays that way`. With its way cleared and Enter pressed, the second fold arrives and lets go at
+  the pose. The card does this with `quackd robot release` and a block of foam, at E171's slow step,
+  and asks whether the arm stalled where expected and whether the second fold set off from there.
+showed:
+  - >
+    This take did not follow the card's lines. The fold was the run's own, at its end, where the card
+    runs `quackd robot release`, and a hand held it back where the card puts foam. That is in effect
+    0.24.0's sixth bench step, which E176 carries, more than its second. A run's last fold asks the
+    same question as the release's, word for word.
+  - >
+    The first connect failed on one servo, `connect attempt 1 of 3 failed on wrist_roll (id 5)`, when
+    turning its torque on timed out. quackd closed the port without a write to any motor and tried
+    again, and the run was `connected in 4.29 s`.
+  - >
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. The arm was lifted by hand and
+    held, `holding the pose you set, you can let go`, at shoulder_pan -6, shoulder_lift -6, elbow_flex
+    18, wrist_flex 42, wrist_roll 0 and gripper 1, and the pilot's three calls ended in its
+    `declare_success`.
+  - >
+    Ctrl-C at the wait to hand the arm back ended that wait, `(the kill switch ended the wait, without
+    an Enter)`, and quackd left the gripper as it was and counted down: `folding the arm to its rest
+    pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`. The `stop`
+    the trace prints after the press is the one the run sent when the pilot declared, 14.75 s earlier.
+  - >
+    A hand went onto the arm at its wrist during that countdown, and went down with the arm, holding
+    the fold back from its start. The arm never stopped for it. LeRobot clamped all 36 of the fold's
+    goals to 5 degrees from where the arm stood, and the elbow and the shoulder moved at every send,
+    the elbow by at least 0.97 degrees, slower than E171's free fold of the same arm, until the time
+    ran out: `elbow_flex is at 82 with a goal of 96 when the time ran out (4 s)`. That is quackd's time
+    limit; its stall check, which says `and it has stopped moving`, never fired.
+  - >
+    quackd held the arm there and asked, in the card's words: `the arm did not reach its rest pose
+    (...), so it is holding itself up where it stopped. Clear whatever is in its way and keep your
+    hands out of its path, then press Enter and it tries the fold once more. Leave it, and after 60 s
+    it stays that way`.
+  - >
+    The hand came away, and Enter, 8 s after the question, started the second fold: `release refold:
+    Enter, to fold it once more`. It set off from where the arm had been held, and it was `at the rest
+    pose` 0.34 s after the Enter, with three goals clamped on the way.
+  - >
+    Then `the arm reached its rest pose this time, so it is let go of there when the run disconnects
+    from it, as at the end of every run that folds`. The run ended SUCCESS, the scripted pilot's own
+    verdict: the Ctrl-C ended only the wait, not the run's outcome.
+  - >
+    In the video a hand goes onto the arm during the countdown, goes down with it, is still on it when
+    the fold's time runs out, and is gone well before the Enter, after which the arm folds the rest of
+    the way.
+did_not_show:
+  - >
+    Do not try this with a hand. The card says foam because the five body joints have no torque cap,
+    and this record shows why: the arm never stopped for the hand, and pushed on at every one of its
+    36 sends until its time ran out. The take also ran at quackd's default step, 5 degrees per send
+    and up to 50 degrees a second, where the card's slow step is 1 degree per send and 10 degrees a
+    second. E176 is the one card that holds a fold back by hand, and it asks for the slow step, a palm
+    under the forearm in the air, never between two links, and the other hand on the power switch.
+  - >
+    It does not show a stall, which the card asks about: the hand never held a joint still long enough
+    for quackd's stall check, so whether the fold stalled where expected has no answer here.
+  - >
+    It does not show foam in the fold's way. The person reports that the foam they had was too soft:
+    in an earlier try the arm squeezed it hard before it stopped, and it could not be pulled out while
+    torque was on. That try is not logged. Firmer foam, not a hand, is the way to run it again.
+  - >
+    It does not show the release's fold meeting something, which is what the card runs: this fold was
+    the run's own, at its end.
+  - >
+    It does not show the question left for its 60 s, or the second question a fold that misses twice
+    asks: the second fold arrived.
+  - >
+    The trace prints no reading of the torque after the run let go of the arm at its disconnect, so
+    the arm resting limp at its pose is quackd's word here. The summary's final state, which reads
+    torque on, was taken after the second fold and before the disconnect.
+  - >
+    No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, and its
+    tokens are that pilot's own estimate. Nothing was billed. The table gives no first motion because
+    no verb moved the arm: the person lifted it, and the fold was the run's own close.
+  - >
+    The GIF plays at 10x, so the countdown, the fold and the hold look far quicker than they were.
