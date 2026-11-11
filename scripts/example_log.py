@@ -80,6 +80,8 @@ NOT_THE_WORD = re.compile(r"\b(?:AI\s+)?models?\b", re.IGNORECASE)
 VLA = "vla"
 """The `provider` of a run `--controller vla` flew. It is `pricing.VLA_PILOT`, spelled here because
 this script imports nothing of quackd's, and a test holds the two together."""
+FAKE = "fake"
+"""The `provider` of a run `--llm fake` flew: the task's scripted pilot, which asks no LLM."""
 TABLE_START = "<!-- example-log table: written by scripts/example_log.py, do not edit by hand -->"
 TABLE_END = "<!-- end of the example-log table -->"
 NOTES = f"""\
@@ -212,7 +214,16 @@ Once it has been run, its log replaces this page.
 TRY_ON_THE_MOCK = """\
 This runs the same {what} with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges."""
+with quackd's `lerobot` extra{needs}"""
+
+AN_LLM = " and the LLM's own SDK and key. It costs what the LLM charges."
+"""What else trying a run on the mock needs when an LLM flew it."""
+
+SCRIPTED = (
+    "Its pilot is a script that ships with quackd in place of an LLM, so it needs no key and costs"
+    " nothing."
+)
+"""What trying a run `--llm fake` flew needs: nothing, since no LLM is asked."""
 
 TRY_ON_THE_SIMULATOR = """\
 This runs the same {what} with no arm attached, on `lerobot:mujoco`, the arm's simulator, against a
@@ -396,18 +407,21 @@ def _try_intro(summary: dict[str, Any], notes: dict[str, Any]) -> str:
             if notes.get("before")
             else ""
         )
-        cost = (
-            "`--llm local` needs quackd's `openai` extra as well, since it speaks OpenAI's"
-            " protocol, but no key, and nothing is billed: it asks whatever answers at the"
-            " `--base-url` the line gives."
-            if summary.get("provider") == "local"
-            else "It needs the LLM's own SDK and key, and costs what the LLM charges."
-        )
+        cost = "It needs the LLM's own SDK and key, and costs what the LLM charges."
+        if summary.get("provider") == "local":
+            cost = (
+                "`--llm local` needs quackd's `openai` extra as well, since it speaks OpenAI's"
+                " protocol, but no key, and nothing is billed: it asks whatever answers at the"
+                " `--base-url` the line gives."
+            )
+        if summary.get("provider") == FAKE:
+            cost = SCRIPTED
         return TRY_AS_IT_RAN.format(beside=beside, cost=cost)
     if summary.get("session") is not None:
         return TRY_A_SESSION
     said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
-    return said.format(what="task file" if _goal(summary) is None else "goal")
+    needs = f".\n{SCRIPTED}" if summary.get("provider") == FAKE else AN_LLM
+    return said.format(what="task file" if _goal(summary) is None else "goal", needs=needs)
 
 
 def _mock(summary: dict[str, Any]) -> bool:
@@ -464,6 +478,12 @@ def _try_the_refusal(summary: dict[str, Any]) -> str:
     return " ".join(f'"{word}"' if " " in word else word for word in [*line, *dry])
 
 
+def _try_llm(summary: dict[str, Any]) -> str:
+    """What a try line gives `--llm`: the pilot that flew, except a scripted one, which `--llm fake`
+    picks by the task and which ignores anything after the colon."""
+    return FAKE if summary.get("provider") == FAKE else _pilot(summary)
+
+
 def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str] = ()) -> str:
     if summary.get("provider") is None:
         return _try_the_refusal(summary)
@@ -473,12 +493,12 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
     words = summary["command"]
     if summary.get("session") is not None:
         # a session's goals are typed at its prompt, and the intro says to type the same lines
-        return f"quackd drive --robot lerobot:mock --llm {_pilot(summary)}"
+        return f"quackd drive --robot lerobot:mock --llm {_try_llm(summary)}"
     task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
     if summary.get("provider") != VLA:
         # without it, a log of a dry run would be tried as a run that sends its moves
         dry = " --dry-run" if "--dry-run" in words else ""
-        return f"quackd run {task} --robot lerobot:mock --llm {_pilot(summary)} --no-memory{dry}"
+        return f"quackd run {task} --robot lerobot:mock --llm {_try_llm(summary)} --no-memory{dry}"
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
     # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
     # are in no record, so its server's line is the one somebody typed, from the notes.
@@ -1031,7 +1051,9 @@ def _killed_record(run_dir: Path) -> str:
     """What a run's transcript recorded up to the moment its process was killed, in the words a
     summary would have used: a killed process writes no summary.json and gives no reason. Its last
     LLM call may have been sent and never answered, so that call counts and its wait and tokens do
-    not. First motion is timed as quackd times it, from the start of the verb that moved."""
+    not. First motion is timed as quackd times it, from the start of the verb that moved. The task
+    is named from the start, as a summary names it, since one that ships with quackd has no file
+    in the command to name it by."""
     lines = _read(run_dir / "transcript.jsonl").splitlines()
     rows: list[dict[str, Any]] = [json.loads(line) for line in lines if line.strip()]
     start = next((row for row in rows if row.get("kind") == "run_start"), None)
@@ -1049,6 +1071,7 @@ def _killed_record(run_dir: Path) -> str:
     state = ((seen[-1].get("features") or {}).get("state") or {}) if seen else {}
     last = answered[-1] if answered else {}
     record = {
+        "duck": start.get("duck"),
         "command": start["command"],
         "version": start["version"],
         "started_at": start["started_at"],

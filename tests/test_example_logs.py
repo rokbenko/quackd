@@ -1105,6 +1105,23 @@ def test_a_run_on_the_mock_is_tried_as_it_ran(tmp_path: Path) -> None:
     assert "lerobot:mujoco" not in text
 
 
+def test_trying_a_run_the_scripted_pilot_flew_needs_no_key(tmp_path: Path) -> None:
+    """`--llm fake` asks no LLM, so trying its run needs no SDK and no key and costs nothing,
+    whether the run was on the arm or on the mock."""
+    root = _tree(tmp_path / "examples")
+    _logged(root, "e001", {**GOOD, "provider": "fake", "model": "scripted:e001-task"})
+    _logged(root, "e002", {**MOCK, "provider": "fake", "model": "scripted:e002-task"})
+    on_the_arm = script.render_log(root, _experiment(root, "E001"))
+    assert f"with quackd's `lerobot` extra.\n{script.SCRIPTED}" in on_the_arm
+    # quackd ignores what follows `fake:`, so the line says what picks the pilot: the task
+    assert "--robot lerobot:mock --llm fake --no-memory" in on_the_arm
+    on_the_mock = script.render_log(root, _experiment(root, "E002"))
+    for text in (on_the_arm, on_the_mock):
+        assert script.SCRIPTED in text
+        assert "SDK and key" not in text
+        assert "costs what the LLM charges" not in text
+
+
 def test_a_trace_too_long_for_a_readme_shows_its_two_ends(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1197,17 +1214,19 @@ def test_add_needs_a_run_that_reached_its_end(tmp_path: Path) -> None:
         script.add_run(root, run, 10.0)
 
 
-def _killed_run(tmp_path: Path, *, ended: bool = False) -> Path:
-    """A run folder as a killed process leaves it: a transcript cut off mid-run, no summary.json."""
+def _killed_run(tmp_path: Path, *, ended: bool = False, bundled: str = "") -> Path:
+    """A run folder as a killed process leaves it: a transcript cut off mid-run, no summary.json.
+    `bundled` runs a task that ships with quackd in place of the example's own file."""
     run = tmp_path / "runs" / "20261110-113231-e001-task"
     run.mkdir(parents=True)
-    command = ["quackd", "run", "D:/co/docs/examples/lerobot/e001/task.duck", "--robot", "arm-01"]
+    task = bundled or "D:/co/docs/examples/lerobot/e001/task.duck"
+    command = ["quackd", "run", task, "--robot", "arm-01"]
     state = {"extras": {"step_deg": 5.0}}
     usage = {"input_tokens": 3500, "output_tokens": 70}
     rows = [
-        {"t": 10.3, "kind": "run_start", "command": command, "version": "0.33.0"}
-        | {"started_at": "2026-11-10T11:32:31.535Z", "provider": "openai", "llm_id": "gpt-6-astra"}
-        | {"transport": "real", "connect_s": 10.322},
+        {"t": 10.3, "kind": "run_start", "duck": bundled or "e001-task", "command": command}
+        | {"version": "0.33.0", "started_at": "2026-11-10T11:32:31.535Z", "provider": "openai"}
+        | {"llm_id": "gpt-6-astra", "transport": "real", "connect_s": 10.322},
         {"t": 10.4, "kind": "observation", "features": {"state": state}},
         {"t": 10.5, "kind": "llm_request"},
         {"t": 14.9, "kind": "llm", "usage_total": usage, "cost_usd_total": 0.0244}
@@ -1221,7 +1240,7 @@ def _killed_run(tmp_path: Path, *, ended: bool = False) -> Path:
         rows.append({"t": 30.0, "kind": "run_end"})
     lines = "".join(json.dumps(row) + "\n" for row in rows)
     (run / "transcript.jsonl").write_text(lines, encoding="utf-8")
-    trace = "$ quackd run D:/co/docs/examples/lerobot/e001/task.duck --robot arm-01\n"
+    trace = f"$ quackd run {task} --robot arm-01\n"
     (run / "terminal.txt").write_text(trace, encoding="utf-8")
     (run / "E001.mp4").write_bytes(b"video")
     return run
@@ -1253,6 +1272,20 @@ def test_a_killed_run_is_logged_from_what_its_transcript_recorded(
     assert "| First motion | 14.9 s after the start |" in text
     assert "| Tokens | 3,500 in, 70 out |" in text
     assert "| Speed cap | 5° per send |" in text
+
+
+def test_a_killed_run_of_a_task_that_ships_with_quackd_names_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task that ships with quackd has no file in the command to name it by, so a killed run
+    keeps its name from the run's start, as a summary would."""
+    _no_media(monkeypatch)
+    root = _tree(tmp_path / "examples")
+    script.add_run(root, _killed_run(tmp_path, bundled="lerobot-lookout"), 3.0)
+    log = root / "e001" / "log"
+    (log / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert "| Task file | `lerobot-lookout`, which ships with quackd |" in text
 
 
 def test_a_run_that_reached_its_end_needs_its_summary(
