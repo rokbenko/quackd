@@ -1,0 +1,103 @@
+{
+  "duck": "lerobot-lookout",
+  "run_name": null,
+  "command": [
+    "quackd",
+    "run",
+    "lerobot-lookout",
+    "--robot",
+    "arm-01",
+    "--by-hand",
+    "--llm",
+    "fake",
+    "--max-steps",
+    "4",
+    "--no-memory"
+  ],
+  "version": "0.34.0",
+  "outcome": "success",
+  "reason": "elbow_flex 18, gripper 1, shoulder_lift -6, shoulder_pan -6, wrist_flex 40, wrist_roll 1; torque on; nothing hot",
+  "steps": 1,
+  "llm_calls": 3,
+  "elapsed_s": 33.11,
+  "started_at": "2026-11-11T14:36:33.725Z",
+  "ended_at": "2026-11-11T14:37:25.318Z",
+  "wall_s": 51.593,
+  "connect_s": 8.02,
+  "llm_latency_s": 0.002,
+  "llm_latency_p50_s": 0.001,
+  "llm_latency_p90_s": 0.001,
+  "llm_latency_max_s": 0.001,
+  "first_motion_s": null,
+  "first_motion_llm_calls": null,
+  "usage": {
+    "input_tokens": 5631,
+    "output_tokens": 48,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "price": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0,
+    "unit": "USD per million tokens",
+    "source": "fake",
+    "checked": null
+  },
+  "cost_usd": 0.0,
+  "provider": "fake",
+  "llm_id": "scripted:lerobot-lookout",
+  "transport": "real",
+  "robot": "arm-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 2605825.0799987,
+    "x": null,
+    "y": null,
+    "theta": null,
+    "policy": "idle",
+    "posture": "unknown",
+    "fallen": false,
+    "battery_percent": null,
+    "holding": false,
+    "extras": {
+      "joints": {
+        "shoulder_pan": -6.1,
+        "shoulder_lift": -100.5,
+        "elbow_flex": 60.6,
+        "wrist_flex": 75.5,
+        "wrist_roll": 0.6,
+        "gripper": 1.0
+      },
+      "torque": false,
+      "temperature_c": {
+        "shoulder_pan": 29,
+        "shoulder_lift": 32,
+        "elbow_flex": 31,
+        "wrist_flex": 32,
+        "wrist_roll": 33,
+        "gripper": 32
+      },
+      "hot": [],
+      "out_of_range": [],
+      "step_deg": 5.0,
+      "range_clips": 0,
+      "assumptions": [
+        "GRIPPER_OPEN_VALUE",
+        "HOLDING_INFERRED",
+        "TEMPERATURE_C"
+      ],
+      "timing": {
+        "bus_call": {
+          "count": 134,
+          "p50_ms": 3.5,
+          "p99_ms": 6.9,
+          "max_ms": 43.9
+        }
+      }
+    }
+  },
+  "log_dropped": 0
+}

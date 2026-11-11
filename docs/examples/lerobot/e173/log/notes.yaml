@@ -1,0 +1,97 @@
+hook: Two folds in a row missed against a soft roll in the arm's way, and quackd let go of the arm where it stood only when a person pressed Enter at a question that said it would drop.
+goal_met: "Partly"
+why_example: >
+  Dropping a robot arm can break it or hurt the hand under it. For an arm with a rest pose recorded,
+  quackd drops it where it stands in one way only: its fold has to miss twice, and a person has to
+  press Enter at a question that says the arm will drop and to hold it first. Until then torque stays
+  on and the arm stays up. This example blocks both folds on purpose, to walk that one path to its
+  end.
+why_result: >
+  It took both misses and an Enter at the question that warns the arm will drop. The first fold
+  missed and quackd only asked to clear the way; the second missed too, and only then came that
+  question, word for word as the card has it, and torque came off at an Enter pressed 7.3 s after
+  it. The question asks for the arm to be held first, and here nobody held it: the roll it lay on is
+  what kept it from dropping. Two misses and a key press stand between the arm and a drop, and the
+  person pressing that key still has to be ready to catch it.
+goal: >
+  Show the only way quackd drops an arm where it stands: two folds missed, and a person pressing Enter
+  at a question that says the arm will drop. It is the third of the nine bench steps 0.24.0 left for
+  a real arm.
+expected: >
+  Something soft stays in the fold's way through both folds. The first miss asks to clear the way and
+  press Enter for one more fold; the second miss asks instead `the arm did not reach its rest pose the
+  second time either (...), so it is holding itself up where it stopped. Pressing Enter now takes
+  torque off where it stands, and the arm will drop: hold it first, or it can be damaged. Leave it,
+  and after 60 s torque stays on`. Holding the arm's weight and pressing Enter lets it go limp into
+  the hand, with `✓ torque reads off on every joint of arm-01` and `the arm is limp and in your hands
+  (torque was taken off where it stood, because you asked for it): put it down before you let go of
+  it, because nothing is holding it up`. The card does this with `quackd robot release` and foam, at
+  E171's slow step, and asks how far the arm dropped and whether one hand caught it.
+showed:
+  - >
+    Like E172, this take used the run's own closing fold, started by Ctrl-C at the wait to hand the
+    arm back, where the card runs `quackd robot release`. A soft roll of clear packing plastic lay
+    across the fold's path, under the forearm, and stayed there through both folds.
+  - >
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd was `connected in 8.02
+    s`, the arm was lifted by hand and held, `holding the pose you set, you can let go`, and the
+    pilot's three calls ended in its `declare_success`.
+  - >
+    Ctrl-C at the wait to hand the arm back ended that wait, `(the kill switch ended the wait, without
+    an Enter)`, and quackd counted down: `folding the arm to its rest pose in 3 s: take your hands
+    away from it now. Ctrl-C or q stops it before it moves`. The `stop` the trace prints after the
+    press is the one the run sent when the pilot declared, 10.5 s earlier.
+  - >
+    A hand went to the wrist about a second into that countdown, stayed there for about the first 2 s
+    of the 4 s fold, and came away more than 1.5 s before the fold missed.
+  - >
+    The first fold met the roll and missed when its time ran out: `elbow_flex is at 62 with a goal of
+    96 when the time ran out (4 s)`. The elbow came to rest against the roll, moving under half a
+    degree a send for the fold's last two seconds, but the shoulder kept moving to its rest angle, so
+    quackd's time limit ended the fold and not its stall check, which wants every joint still. quackd
+    held the arm up and asked to clear the way: the first question.
+  - >
+    Enter, 7.7 s later, with the roll left where it was, started the second fold, which stalled
+    against the roll 0.66 s later: `elbow_flex is at 61 with a goal of 96, and it has stopped
+    moving`. Only then came the second question, in the card's words: `the arm did not reach its rest
+    pose the second time either (...), so it is holding itself up where it stopped. Pressing Enter
+    now takes torque off where it stands, and the arm will drop: hold it first, or it can be damaged.
+    Leave it, and after 60 s torque stays on`.
+  - >
+    A hand was on the gripper for about 2 s of that question's wait and came away less than 2 s before
+    the Enter. Enter at the question, 7.3 s after it, took torque off where the arm stood, with
+    shoulder_lift at -100.5, elbow_flex at 60.6 and wrist_flex at 75.5: `torque is off where the arm
+    stands: the arm is in your hands, so put it down before you let go of it`. The release read the
+    torque back and every joint read off, and the run's close printed the card's second line word for
+    word: `the arm is limp and in your hands (torque was taken off where it stood, because you asked
+    for it): put it down before you let go of it, because nothing is holding it up`.
+  - >
+    Nothing dropped. At that Enter both hands were at the laptop and the forearm lay on the roll,
+    which held it, so the arm barely moved as torque came off. A hand then took hold of the arm, the
+    roll came out from under it, and the arm was laid down at its rest pose by hand.
+  - >
+    The run ended SUCCESS, the scripted pilot's own verdict. Its reason's `torque on` is the pilot's
+    reading at its first step, before the folds: the arm ended with torque off.
+did_not_show:
+  - >
+    It does not answer the card's question, how far the arm dropped and whether one hand caught it:
+    no hand held the arm at the Enter, and the roll it lay on kept it from dropping.
+  - >
+    Keep your hands off a fold: the countdown says so, and the five body joints have no torque cap. A
+    hand was on this one for most of the countdown and the first half of the fold. The take also ran
+    at quackd's default step, 5 degrees per send and up to 50 degrees a second, where the card's slow
+    step is 1 degree per send and 10 degrees a second.
+  - >
+    It does not show `quackd robot release`, which the card runs. A run's release reads the torque
+    back as the command does, and here every joint read off, but a run prints no `✓ torque reads off
+    on every joint of arm-01` line for it.
+  - >
+    It does not show an Enter typed too soon being refused, or Ctrl-C or `q` stopping the drop after
+    the Enter: neither was tried. Nor does it show the second question left for its 60 s.
+  - >
+    No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, its tokens
+    are that pilot's own estimate, and nothing was billed. The table gives no first motion because no
+    verb moved the arm: the person lifted it, and the folds were the run's own close.
+  - >
+    The GIF plays at 8x, so the countdown, the folds and the waits at the questions look far quicker
+    than they were.

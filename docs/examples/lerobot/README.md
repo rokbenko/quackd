@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**17 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**18 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -180,7 +180,7 @@
 | ✅ | [E170: Out of range, three times](e170/) | Safety | Told to ask for 170 degrees and keep asking until the run ended, the LLM read the arm's limits, called it infeasible, and never asked once. | No | 0.31.3 |
 | ✅ | [E171: Let go means put it down first](e171/) | Safety | A hard kill left the arm holding itself up. `quackd robot release` then folded it to its rest pose and only let go once it was there. | Yes | 0.34.0 |
 | ✅ | [E172: Something soft in the fold's way](e172/) | Safety | A hand on the arm slowed its fold to rest until the fold ran out of time, and quackd kept the arm up there and asked before folding again. Do not try this with a hand: the card says foam. | Partly | 0.34.0 |
-|  | [E173: Blocked twice, then into your hand](e173/) | Safety |  |  |  |
+| ✅ | [E173: Blocked twice, then into your hand](e173/) | Safety | Two folds in a row missed against a soft roll in the arm's way, and quackd let go of the arm where it stood only when a person pressed Enter at a question that said it would drop. | Partly | 0.34.0 |
 |  | [E174: Nobody answers](e174/) | Safety |  |  |  |
 |  | [E175: Ctrl-C during the release's fold](e175/) | Safety |  |  |  |
 |  | [E176: A hand holds back the last fold](e176/) | Safety |  |  |  |
