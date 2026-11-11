@@ -1,0 +1,42 @@
+{
+  "duck": "lerobot-lookout",
+  "command": [
+    "quackd",
+    "run",
+    "lerobot-lookout",
+    "--robot",
+    "arm-01",
+    "--by-hand",
+    "--llm",
+    "fake",
+    "--max-steps",
+    "4",
+    "--no-memory"
+  ],
+  "version": "0.34.0",
+  "started_at": "2026-11-11T10:37:18.031Z",
+  "outcome": "killed",
+  "reason": null,
+  "provider": "fake",
+  "llm_id": "scripted:lerobot-lookout",
+  "transport": "real",
+  "robot": "arm-01",
+  "steps": 1,
+  "llm_calls": 3,
+  "connect_s": 5.915,
+  "llm_latency_s": 0.001,
+  "first_motion_s": null,
+  "usage": {
+    "input_tokens": 5631,
+    "output_tokens": 48,
+    "reasoning_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0
+  },
+  "cost_usd": 0.0,
+  "final_state": {
+    "extras": {
+      "step_deg": 5.0
+    }
+  }
+}
