@@ -1025,6 +1025,21 @@ def test_a_gif_already_made_is_used_as_it_is(
     assert (root / "e001" / "log" / "run.gif").read_bytes() == made.read_bytes()
 
 
+def test_a_connect_that_failed_names_the_robot_from_the_command(tmp_path: Path) -> None:
+    """Since 0.30.3 a run whose connect failed writes its summary with no robot, so the log names
+    the one the command asked for, and says its connect failed, rather than printing `None`. A
+    connect can fail after the arm answered, a calibration refused, so it never says more."""
+    root = _tree(tmp_path / "examples")
+    failed = {**WENT_WRONG, "outcome": "error", "robot": None, "steps": 0, "llm_calls": 0}
+    _logged(root, "e001", failed)
+    text = script.render_log(root, _experiment(root, "E001"))
+    assert "| Robot | `arm-01` (real), whose connect failed |" in text
+    assert "`None`" not in text
+    for words in (["-r", "arm-01"], ["--robot=arm-01"]):
+        assert script._robot_asked(["quackd", "run", "task", *words]) == "arm-01"
+    assert script._robot_asked(["quackd", "run", "task"]) is None
+
+
 MOCK = {**GOOD, "transport": "mock"}
 """A run on `lerobot:mock`, an arm in memory."""
 
