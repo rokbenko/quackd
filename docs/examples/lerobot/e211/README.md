@@ -1,14 +1,14 @@
 # E211: A press during a connect that fails
 
-**No motor answered on the arm's port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended.**
+**With the arm's power supply off, no motor answered on its port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended.**
 
-**Part 1 of 2:** Left alone
+**Part 1 of 2:** Left alone, with the power supply off
 
 ![E211, filmed with an external camera](log/part-1/run.gif)
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-**Part 2 of 2:** Ctrl-C during the connect
+**Part 2 of 2:** Ctrl-C during the connect, with the power supply off
 
 ![E211, filmed with an external camera](log/part-2/run.gif)
 
@@ -35,7 +35,7 @@ Show that a connect that fails, left alone or stopped with Ctrl-C, ends the run 
 
 ## What the run showed
 
-* No motor answered on COM3 in either take: every attempt found `{}` where six motors were expected, on a port that opened.
+* The arm's power supply was off in both takes, with the USB cable in, as the card asks. So the port opened and no motor answered on COM3: every attempt found `{}` where six motors were expected.
 * Left alone, quackd tried three times. After each of the first two it said LeRobot closed the port behind its failed handshake, `which writes to no motor, and connect runs again`, and after the third it ended `✗ error: lerobot real: connect failed 3 times`, then the bus's own words and `Check the arm's cables and power, and that nothing else has COM3 open (a teleoperation, a recording or a serial monitor), then connect again.`
 * That run's folder holds a `summary.json` with `outcome` `error`, `robot` null and the error as its reason, beside a `transcript.jsonl` whose one record, and so its last, is `run_end`, 8.0 s after the start.
 * With Ctrl-C pressed during the connect, quackd said `kill switch: Ctrl-C` and ended after the first attempt: `✗ error: lerobot real: connect stopped after attempt 1 of 3, because a stop was asked for`, then the bus's own words, and `connect was not tried again`.
@@ -45,20 +45,19 @@ Show that a connect that fails, left alone or stopped with Ctrl-C, ends the run 
 ## What the run did not show
 
 * The exit code was not printed, so `exit 1` is not shown, and `quackd log` was not run on either folder.
-* The record does not say the servo power was off: it shows only that no motor answered.
 * Ctrl-C landed before the first attempt failed. The take does not show a press during a later attempt, or a `q`.
 * Try it yourself runs the task on the mock arm, which always answers, so it does not show a connect that fails.
 * The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
 
 ## How the run ended
 
-**Part 1 of 2:** Left alone
+**Part 1 of 2:** Left alone, with the power supply off
 
 The run ended with **ERROR**. The reason on record:
 
 > TransportError: lerobot real: connect failed 3 times: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected model: 777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id: model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. Check the arm's cables and power, and that nothing else has COM3 open (a teleoperation, a recording or a serial monitor), then connect again.
 
-**Part 2 of 2:** Ctrl-C during the connect
+**Part 2 of 2:** Ctrl-C during the connect, with the power supply off
 
 The run ended with **ABORTED**. The reason on record:
 
@@ -66,7 +65,7 @@ The run ended with **ABORTED**. The reason on record:
 
 ## The exact command
 
-**Part 1 of 2:** Left alone
+**Part 1 of 2:** Left alone, with the power supply off
 
 The following command was run with quackd 0.34.0:
 
@@ -74,7 +73,7 @@ The following command was run with quackd 0.34.0:
 quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
 ```
 
-**Part 2 of 2:** Ctrl-C during the connect
+**Part 2 of 2:** Ctrl-C during the connect, with the power supply off
 
 The following command was run with quackd 0.34.0:
 
@@ -104,11 +103,11 @@ quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --n
 
 ## What the robot saw
 
-**Part 1 of 2:** Left alone
+**Part 1 of 2:** Left alone, with the power supply off
 
 This run used no camera.
 
-**Part 2 of 2:** Ctrl-C during the connect
+**Part 2 of 2:** Ctrl-C during the connect, with the power supply off
 
 This run used no camera.
 

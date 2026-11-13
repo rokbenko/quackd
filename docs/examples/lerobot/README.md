@@ -218,7 +218,7 @@
 |  | [E208: Ctrl-C all the way to the prompt](e208/) | Safety |  |  |  |
 |  | [E209: A press during the fold it starts with](e209/) | Safety |  |  |  |
 |  | [E210: A press while it connects](e210/) | Safety |  |  |  |
-| ✅ | [E211: A press during a connect that fails](e211/) | Safety | No motor answered on the arm's port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended. | Yes | 0.34.0 |
+| ✅ | [E211: A press during a connect that fails](e211/) | Safety | With the arm's power supply off, no motor answered on its port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended. | Yes | 0.34.0 |
 |  | [E212: Ctrl-C twice with the arm in your hands](e212/) | Safety |  |  |  |
 |  | [E213: Enter held down at the question](e213/) | Safety |  |  |  |
 |  | [E214: A word typed at the question](e214/) | Safety |  |  |  |

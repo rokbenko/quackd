@@ -1,4 +1,4 @@
-hook: "No motor answered on the arm's port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended."
+hook: "With the arm's power supply off, no motor answered on its port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended."
 goal_met: "Yes"
 why_example: >
   An arm that does not answer is the most ordinary failure there is: its power is off, a cable is
@@ -25,8 +25,8 @@ expected: >
   motor is not answering and try again, which is what the press is for.
 showed:
   - >
-    No motor answered on COM3 in either take: every attempt found `{}` where six motors were expected,
-    on a port that opened.
+    The arm's power supply was off in both takes, with the USB cable in, as the card asks. So the port
+    opened and no motor answered on COM3: every attempt found `{}` where six motors were expected.
   - >
     Left alone, quackd tried three times. After each of the first two it said LeRobot closed the port
     behind its failed handshake, `which writes to no motor, and connect runs again`, and after the
@@ -52,8 +52,6 @@ did_not_show:
     The exit code was not printed, so `exit 1` is not shown, and `quackd log` was not run on either
     folder.
   - >
-    The record does not say the servo power was off: it shows only that no motor answered.
-  - >
     Ctrl-C landed before the first attempt failed. The take does not show a press during a later
     attempt, or a `q`.
   - >
@@ -62,5 +60,5 @@ did_not_show:
   - >
     The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
 parts:
-  - "Left alone"
-  - "Ctrl-C during the connect"
+  - "Left alone, with the power supply off"
+  - "Ctrl-C during the connect, with the power supply off"
