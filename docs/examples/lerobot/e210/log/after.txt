@@ -1,0 +1,169 @@
+(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it off, and the arm then folds to its rest pose, closes its
+gripper and is let go of there: support it while it connects, then take your hands away when it says so, before it folds
+fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]: y
+arm-01 (lerobot:real) is at
+shoulder_pan   -5.5
+shoulder_lift  -12.9
+elbow_flex     28.8
+wrist_flex     36.1
+wrist_roll     0.5
+gripper        1.0
+folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
+folding arm-01 to its rest pose and closing its gripper: keep your hands out of its way
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 34.01098901098901},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -17.791208791208792},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 41.08791208791209}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 37.35164835164835},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -19.725274725274723},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 43.9010989010989}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 41.395604395604394},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -22.01098901098901},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 47.32967032967033}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {'original goal_pos': 96.4, 'safe goal_pos': 45.0},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -24.384615384615383},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 50.582417582417584}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 48.956043956043956},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -26.846153846153847},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 53.83516483516483}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 52.73626373626374},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -29.395604395604394},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 57.175824175824175}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 56.69230769230769},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -32.032967032967036},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 60.42857142857143}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 60.38461538461539},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -34.75824175824176},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 63.76923076923077}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 64.16483516483517},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -37.57142857142857},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 67.02197802197801}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 67.94505494505495},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -40.472527472527474},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 70.27472527472527}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 71.63736263736264},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -43.46153846153846},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 73.52747252747253}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 75.32967032967034},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -46.53846153846154},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 76.78021978021978}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 79.10989010989012},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -49.527472527472526}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 82.8021978021978},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -52.86813186813187}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 85.35164835164835},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -56.120879120879124}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 86.93406593406593},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -59.72527472527472}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 87.81318681318682},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -63.24175824175824}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 88.51648351648352},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -66.67032967032966}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 89.21978021978022},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -70.36263736263736}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 90.0989010989011},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -73.87912087912088}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 91.06593406593407},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -77.57142857142857}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 92.20879120879121},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -81.17582417582418}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 93.43956043956044},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -84.86813186813187}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 94.49450549450549},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -88.64835164835165}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -92.34065934065934}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -96.20879120879121}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -99.46153846153847}}
+✓ torque reads off on every joint of arm-01
+  the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and where it still reads: it rests there with no torque, as
+it does at the end of every run
+(lerobot-test) PS D:\Development\lerobot-test\.venv>

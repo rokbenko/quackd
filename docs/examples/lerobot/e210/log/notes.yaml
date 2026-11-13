@@ -1,0 +1,66 @@
+hook: "With the arm's power on this time, unlike E211, Ctrl-C pressed while quackd was still connecting meant no fold and no move: the arm sagged a little as the connect switched its torque off and on, then stayed where a hand had raised it, holding itself up."
+goal_met: "Yes"
+why_example: >
+  A by-hand run starts by folding the arm to its rest pose, and connecting takes torque off every
+  motor for a moment, so a raised arm needs a hand under it while quackd connects. A person who
+  presses Ctrl-C then, with a hand under the arm, means nothing should move after that. Until 0.30.2
+  the fold started all the same. This example presses during the connect, with the arm powered and
+  answering, to see that nothing moves after the press.
+why_result: >
+  quackd sent no move after the press. The run never folded and never handed the arm over, ended `✗
+  ABORTED` on `kill switch` with no step taken, and its close kept torque on, so the arm stayed up
+  where it had been held instead of dropping. The only movement was a small sag as the connect
+  switched torque off and on, the one the card allows for. With the arm powered and answering, which
+  E211's was not, a press during the connect keeps the arm where it is.
+goal: >
+  Show that Ctrl-C pressed while a by-hand run is still connecting to a powered arm keeps the arm
+  still afterwards, with no fold and no hand-over, as it has since 0.30.2.
+expected: >
+  `kill switch: Ctrl-C` comes up while it still says `connecting to arm-01`. No fold, and nothing says
+  the arm is yours. The panel says `✗ ABORTED`, `kill switch`, `steps 0`, and the exit code is 1. The
+  card has the arm held where it is through the connect, and asks whether any joint moved after the
+  press, other than sagging as torque went off and came back.
+showed:
+  - >
+    The arm's power was on this time, unlike in E211, where it was off and nothing answered. Here the
+    arm answered: quackd was `connected in 2.57 s`.
+  - >
+    The arm was lifted by hand into a raised pose and held there while the run started, and Ctrl-C
+    landed during the connect: the trace prints `kill switch: Ctrl-C` before `connected in 2.57 s`.
+  - >
+    quackd sent no move after it. `moving to the rest pose` never came up, nothing folded, and nothing
+    said the arm was yours. The only command the run logged was a `stop`, which holds the arm where it
+    is, and the panel says `✗ ABORTED`, `kill switch`, `steps 0`, 2.9 s after the start.
+  - >
+    Its close kept torque on: `the arm is not at its rest pose (shoulder_lift is at -13 with a goal of
+    -101; nothing moved it there), so torque was left on and it will not fall as it stands`.
+  - >
+    In the video the arm sinks a little under the hand near the end of the connect, about a fifteenth
+    of the gripper's height, as the connect switches torque off and on: the sag the card allows for.
+    Then the hand lets go, and the arm holds still where it is, holding itself up, until the release
+    folds it.
+  - >
+    The arm held there. The run's last reading had shoulder_lift at -13.2 and elbow_flex at 28.0.
+    `quackd robot release arm-01`, run afterwards with nobody supporting the arm through its connect,
+    read -12.9 and 28.8, under a degree away, then counted 3 s, folded the arm to its rest pose with
+    LeRobot clamping 27 of its goals, and let go: `✓ torque reads off on every joint of arm-01`.
+  - >
+    A limp arm cannot hold itself up, so the connect had turned the arm's torque on before the hand let
+    go: the hand was on it through the connect and the press. The video's caption naming the Ctrl-C
+    comes up after the hand has let go, later than the press itself.
+did_not_show:
+  - >
+    The exit code was not printed, so `exit 1` is not shown.
+  - >
+    No reading on record was taken at the press. The first on record is the run's last, taken at its
+    close 2.85 s in, after the sag the video shows. The `connecting to arm-01` line is a live status
+    line the record does not keep, so that the press came while it showed rests on the order of the
+    trace's lines.
+  - >
+    The slow step the card's block asks for was not on: the record gives 5 degrees per send. It made
+    no difference to the run, which sent no move, but the release's fold ran at 5 degrees per send
+    too.
+  - >
+    No LLM was asked: the run ended before its first step, so the table's LLM calls and tokens are 0.
+  - >
+    The GIF plays at 5x.
