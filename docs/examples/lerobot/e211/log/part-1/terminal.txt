@@ -1,0 +1,28 @@
+$ quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+quackd 0.34.0, started 2026-11-13T09:27:20Z, cwd D:\Development\lerobot-test\.venv
+
+╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ provider  fake (scripted:lerobot-lookout)                                                                                                                │
+│ robot     arm-01 (lerobot:real)                                                                                                                          │
+│ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
+╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+WARNING  connect attempt 1 of 3 failed: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected model:
+         777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id:         
+         model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. LeRobot closed the port behind its   
+         failed handshake, which writes to no motor, and connect runs again                                                                                 
+WARNING:quackd.lerobot:connect attempt 1 of 3 failed: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 
+(expected model: 777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id: 
+model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. LeRobot closed the port behind its failed 
+handshake, which writes to no motor, and connect runs again
+WARNING  connect attempt 2 of 3 failed: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected model:
+         777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id:         
+         model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. LeRobot closed the port behind its   
+         failed handshake, which writes to no motor, and connect runs again                                                                                 
+WARNING:quackd.lerobot:connect attempt 2 of 3 failed: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 
+(expected model: 777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id: 
+model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. LeRobot closed the port behind its failed 
+handshake, which writes to no motor, and connect runs again
+✗ error: lerobot real: connect failed 3 times: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected
+model: 777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id: 
+model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. Check the arm's cables and power, and that 
+nothing else has COM3 open (a teleoperation, a recording or a serial monitor), then connect again.

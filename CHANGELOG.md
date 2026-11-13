@@ -11,6 +11,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E211 has a log in two parts: with the arm's power supply off, a connect left alone ended in an
+  error and one stopped with Ctrl-C ended aborted, and each run folder says how it ended.** A run
+  whose connect failed has no robot in its summary, so its log names the robot from the command and
+  says its connect failed, rather than printing `None`.
 - **E171 has a log: after a hard kill left the arm holding itself up, `quackd robot release` folded
   it to its rest pose and let go of it there.** A killed run of a task that ships with quackd now
   names that task in its log, and a run flown by `--llm fake` is tried with `--llm fake` and says

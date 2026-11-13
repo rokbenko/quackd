@@ -380,6 +380,14 @@ def _pilot(summary: dict[str, Any]) -> str:
     return f"{provider}:{llm_id}" if llm_id else str(provider)
 
 
+def _robot_asked(words: list[str]) -> str | None:
+    """The robot a command asked for, as `--robot NAME`, `-r NAME` or `--robot=NAME`, if any."""
+    for word, following in itertools.pairwise(words):
+        if word in ("--robot", "-r"):
+            return str(following)
+    return next((word.split("=", 1)[1] for word in words if word.startswith("--robot=")), None)
+
+
 def _goal(summary: dict[str, Any]) -> str | None:
     """The goal the command gave in place of a task file, if it gave one."""
     words = summary["command"]
@@ -557,10 +565,16 @@ def _numbers(
     # a refused run can name an LLM and a task file on its command line, and use neither
     named = _flag(summary["command"], "--llm")
     llm = f"`{_pilot(summary)}`" if ran else f"`{named}`, never asked" if named else "none"
+    robot = f"`{summary.get('robot')}` ({summary.get('transport')})"
+    if summary.get("robot") is None:
+        # a summary has no robot where the connect failed (0.30.3), so the command names it
+        asked = _robot_asked(summary["command"])
+        asked_for = f"`{asked}`" if asked else "the default robot"
+        robot = f"{asked_for} ({summary.get('transport')}), whose connect failed"
     rows: list[tuple[str, object]] = [
         ("quackd version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
-        ("Robot", f"`{summary['robot']}` ({summary.get('transport')})"),
+        ("Robot", robot),
         ("Pilot" if vla else "LLM", llm),
         ("Task file", _task_file(summary, folder) if ran or _duck_path(summary) else "none"),
         ("Steps", summary.get("steps", "none")),
