@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**19 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**20 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | quackd |
 |---|---|---|---|---|---|
@@ -218,7 +218,7 @@
 |  | [E208: Ctrl-C all the way to the prompt](e208/) | Safety |  |  |  |
 |  | [E209: A press during the fold it starts with](e209/) | Safety |  |  |  |
 |  | [E210: A press while it connects](e210/) | Safety |  |  |  |
-|  | [E211: A press during a connect that fails](e211/) | Safety |  |  |  |
+| ✅ | [E211: A press during a connect that fails](e211/) | Safety | No motor answered on the arm's port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended. | Yes | 0.34.0 |
 |  | [E212: Ctrl-C twice with the arm in your hands](e212/) | Safety |  |  |  |
 |  | [E213: Enter held down at the question](e213/) | Safety |  |  |  |
 |  | [E214: A word typed at the question](e214/) | Safety |  |  |  |

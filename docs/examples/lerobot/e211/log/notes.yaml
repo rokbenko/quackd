@@ -1,0 +1,66 @@
+hook: "No motor answered on the arm's port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended."
+goal_met: "Yes"
+why_example: >
+  An arm that does not answer is the most ordinary failure there is: its power is off, a cable is
+  loose, or another program holds the port. Before 0.30.3 a connect that failed, or a press during
+  one, left a run folder whose record had no end, no `run_end` and no `summary.json`. Only
+  `terminal.txt`, the copy of the screen, said how it ended, so nothing that reads the record could
+  tell a run that never reached the arm from one still going, and a person's stop was in no record.
+  This example fails a connect on purpose, once left alone and once stopped with Ctrl-C.
+why_result: >
+  Both runs ended with an error line in the bus's own words, and both left a `summary.json` beside a
+  `transcript.jsonl` whose last record is `run_end`: the one left alone with `outcome` `error`, the
+  one stopped with `outcome` `aborted` and a reason that starts `kill switch;`, and both with `robot`
+  null, since the arm never answered. A run that never reached the arm now says so in its own record,
+  and so does a person's stop.
+goal: >
+  Show that a connect that fails, left alone or stopped with Ctrl-C, ends the run with a record of how
+  it ended, which is new in 0.30.3.
+expected: >
+  With the servo power off and the USB cable in, the port opens and nothing answers. Both takes print
+  `✗ error:` with the bus's own words and exit 1, and each leaves a `summary.json` beside a
+  `transcript.jsonl` whose last record is `run_end`. Left alone, `outcome` is `error` and `robot` is
+  null; with Ctrl-C pressed during the connect, `outcome` is `aborted` and `reason` starts `kill
+  switch;`. `quackd log` on either folder reads to its end. Before it gives up, the connect may say a
+  motor is not answering and try again, which is what the press is for.
+showed:
+  - >
+    No motor answered on COM3 in either take: every attempt found `{}` where six motors were expected,
+    on a port that opened.
+  - >
+    Left alone, quackd tried three times. After each of the first two it said LeRobot closed the port
+    behind its failed handshake, `which writes to no motor, and connect runs again`, and after the
+    third it ended `✗ error: lerobot real: connect failed 3 times`, then the bus's own words and
+    `Check the arm's cables and power, and that nothing else has COM3 open (a teleoperation, a
+    recording or a serial monitor), then connect again.`
+  - >
+    That run's folder holds a `summary.json` with `outcome` `error`, `robot` null and the error as its
+    reason, beside a `transcript.jsonl` whose one record, and so its last, is `run_end`, 8.0 s after
+    the start.
+  - >
+    With Ctrl-C pressed during the connect, quackd said `kill switch: Ctrl-C` and ended after the
+    first attempt: `✗ error: lerobot real: connect stopped after attempt 1 of 3, because a stop was
+    asked for`, then the bus's own words, and `connect was not tried again`.
+  - >
+    That run's `summary.json` has `outcome` `aborted`, a reason that starts `kill switch;` and `robot`
+    null, and its `transcript.jsonl` again holds one record, `run_end`, 2.8 s after the start.
+  - >
+    Neither run logged any command, so no move reached the motors, and the scripted pilot was never
+    asked: both summaries count no LLM calls.
+did_not_show:
+  - >
+    The exit code was not printed, so `exit 1` is not shown, and `quackd log` was not run on either
+    folder.
+  - >
+    The record does not say the servo power was off: it shows only that no motor answered.
+  - >
+    Ctrl-C landed before the first attempt failed. The take does not show a press during a later
+    attempt, or a `q`.
+  - >
+    Try it yourself runs the task on the mock arm, which always answers, so it does not show a connect
+    that fails.
+  - >
+    The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
+parts:
+  - "Left alone"
+  - "Ctrl-C during the connect"
