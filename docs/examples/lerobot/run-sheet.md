@@ -5238,7 +5238,7 @@ quackd robot release arm-01
 
 Free space, by hand.
 
-**Goal.** `quackd run` says to support the arm while it connects, because connecting takes torque off every motor for a moment. A person who presses Ctrl-C with a hand under it means nothing should move after that. Until 0.30.2 the fold started all the same.
+**Goal.** Connecting takes torque off every motor for a moment, so the LeRobot guide says to support the arm when a session starts, and `quackd robot release` and `quackd doctor` say so before they connect, though `quackd run` does not. A person who presses Ctrl-C with a hand under it means nothing should move after that. Until 0.30.2 the fold started all the same.
 
 **Expect.** `kill switch: Ctrl-C` comes up while it still says `connecting to arm-01`. No fold, and nothing says the arm is yours. The panel says `✗ ABORTED`, `kill switch`, `steps 0`, and the exit code is 1. Report whether any joint moved after the press, other than sagging as torque went off and came back.
 
