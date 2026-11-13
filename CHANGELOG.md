@@ -11,6 +11,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **E210's card no longer says `quackd run` tells you to support the arm while it connects.** It
+  prints no such line. Connecting takes torque off every motor for a moment, so the LeRobot guide
+  says to support the arm when a session starts, and `quackd robot release` and `quackd doctor` say
+  so before they connect.
 - **E211 has a log in two parts: with the arm's power supply off, a connect left alone ended in an
   error and one stopped with Ctrl-C ended aborted, and each run folder says how it ended.** A run
   whose connect failed has no robot in its summary, so its log names the robot from the command and
