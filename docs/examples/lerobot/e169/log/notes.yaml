@@ -1,5 +1,5 @@
 hook: Its first move came back `not sent`, so the LLM refused to fake the fastest swing on the sheet and ended the dry run itself.
-goal_met: "Partly"
+goal_met: "Yes"
 why_example: >
   The fastest swing this arm can do is the worst thing to try on a line nobody has watched. `--dry-run`
   is there to show what an LLM would send before any of it reaches the motors. This example puts the
@@ -12,7 +12,8 @@ why_result: >
   then you never see the rest of what it planned.
 goal: >
   Show the cheapest rehearsal there is on the most alarming file on the sheet: a dry run of the fastest
-  swing the arm can do, where the arm's readings are real and none of its moves goes out.
+  swing the arm can do, where the arm's readings are real, none of its moves goes out, and each move's
+  answer tells the LLM it was not sent.
 expected: >
   The arm reads and reports, because reads still run. Every move is printed and skipped, with
   `dry_run: skipped would run move_joints, sent nothing` and `[dry-run] move_joints not sent`, while the
@@ -33,11 +34,15 @@ showed:
   - >
     The arm never moved. All 4 of the observations in the run read the same joints, the only command
     the run logged was a `stop`, and neither end of the run made a rest move.
+  - >
+    The arm answered every heartbeat. A dry run keeps the heartbeat, which is a round trip to the arm,
+    and one miss prints `heartbeat failed` and stops the run: this trace has no such line, and the run
+    ended on the LLM's own verdict.
 did_not_show:
   - >
-    It does not show the swing. The LLM stopped after its one preparatory move, so the fast move this
-    example is about was never asked for. All it said of the speed was `I can request the shortest
-    allowed duration`.
+    It does not show the swing. The LLM stopped after its one preparatory move, so it never asked for
+    the fast move the task is about. All it said of the speed was `I can request the shortest allowed
+    duration`.
   - >
     It does not show an LLM carrying on through a whole dry run. This one stopped as soon as it was told
     its move was not sent, and another LLM might not.

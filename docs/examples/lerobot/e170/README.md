@@ -8,7 +8,7 @@ Filmed with an external camera. The GIF plays at 5x speed.
 
 | Category | Goal met | The run ended with | Date | quackd |
 |---|---|---|---|---|
-| Safety | No | INFEASIBLE | 2026-11-06 | 0.31.3 |
+| Safety | Partly | INFEASIBLE | 2026-11-06 | 0.31.3 |
 
 The numbers and the trace below are copied from the run's own record.
 [All examples](../README.md)
@@ -21,7 +21,7 @@ The numbers and the trace below are copied from the run's own record.
 
 ## The goal
 
-Show the range refusal and the three-strikes rule in one run: a task that asks for 170 degrees and insists, so that quackd refuses the number and then ends the run.
+Show the range refusal and the three-strikes rule in one run, from a task that asks for 170 degrees and insists. The number must never reach the arm: quackd refuses it, with the real range in the reason, and the third refusal ends the run.
 
 **What we expected:** Each try is refused with the real range in the reason, and nothing reaches the arm. The third refusal fires the task file's `abort_when`, the run ends `ABORTED`, and the arm folds. A pilot may talk itself out of trying, which would say something about the LLM and nothing about the gate.
 

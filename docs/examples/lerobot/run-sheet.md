@@ -4458,7 +4458,7 @@ quit
 
 Free space. Its files are in [e187/](e187/).
 
-**Goal.** E120 ran out of steps. These run out of LLM calls and out of minutes, the two budgets a stuck pilot actually spends. Both end cleanly, with the arm put down.
+**Goal.** E120 is the step budget. These run out of LLM calls and out of minutes, the two budgets a stuck pilot actually spends. Both end cleanly, with the arm put down.
 
 **Expect.** `max_llm_calls (3) reached` in a BUDGET box, partway through the waves, and the arm folds. On the second, a budget of thirty seconds: `max_minutes (0.5) exceeded`, and the arm folds. `move_joints` watches the clock, so a move still running when the minutes are spent ends at its next tick rather than overshooting. A call that hangs is raced against the same minutes now, where it used to be able to hold the arm up for ten.
 

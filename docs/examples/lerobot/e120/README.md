@@ -8,7 +8,7 @@ Filmed with an external camera. The GIF plays at 5x speed.
 
 | Category | Goal met | The run ended with | Date | quackd |
 |---|---|---|---|---|
-| Safety | No | FAILURE | 2026-11-06 | 0.31.3 |
+| Safety | Partly | FAILURE | 2026-11-06 | 0.31.3 |
 
 The numbers and the trace below are copied from the run's own record.
 [All examples](../README.md)

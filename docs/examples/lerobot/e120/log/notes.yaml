@@ -1,5 +1,5 @@
 hook: Given three steps for five waves, the LLM read its budget, said it could not be done, and never moved the arm.
-goal_met: "No"
+goal_met: "Partly"
 why_example: >
   An LLM that can keep calling verbs can keep spending, and a robot that keeps moving because nobody
   told it to stop is the expensive way to find that out. A step budget is meant to be the limit that
