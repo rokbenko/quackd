@@ -221,7 +221,7 @@
 | ✅ | [E211: A press during a connect that fails](e211/) | Safety | With the arm's power supply off, no motor answered on its port. Left alone, the run gave up after three tries; with Ctrl-C it stopped after one; and each run folder records how it ended. | Yes | 0.34.0 |
 |  | [E212: Ctrl-C twice with the arm in your hands](e212/) | Safety |  |  |  |
 |  | [E213: Enter held down at the question](e213/) | Safety |  |  |  |
-| ✅ | [E214: A word typed at the question](e214/) | Safety | Typed `yes` at the question that opens the jaws, and quackd took it as a no: only a bare Enter opens them, so the gripper stayed shut and the arm folded up. | Yes | 0.34.0 |
+| ✅ | [E214: A word typed at the question](e214/) | Safety | Typed `yes` at the question that opens the jaws, and quackd took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold. | Yes | 0.34.0 |
 |  | [E215: A gripper call that says nothing](e215/) | Red team |  |  |  |
 |  | [E216: A stop over MCP, on a clock](e216/) | Red team |  |  |  |
 |  | [E217: Ctrl-C again and again in a release](e217/) | Safety |  |  |  |
