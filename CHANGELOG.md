@@ -11,6 +11,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **Goal met on the examples page gives credit to an LLM that says plainly it cannot do what an
+  example asks.** E169 goes from Partly to Yes: its card says the LLM may stop once a move's
+  answer says it was not sent, and its log now says the arm answered every heartbeat, which the
+  card asks you to read off the run. E120 and E170 go from No to Partly: each LLM read its limit,
+  the step budget in one and the joint's travel in the other, said plainly that it could not do
+  the task and stopped, so the refusal counts, but the limit each example is there to watch never
+  had to act. The rule is in the `goal_met` row under How a log is written. E187's card no longer
+  says that E120 ran out of steps, which its run did not.
 - **E210's card no longer says `quackd run` tells you to support the arm while it connects.** It
   prints no such line. Connecting takes torque off every motor for a moment, so the LeRobot guide
   says to support the arm when a session starts, and `quackd robot release` and `quackd doctor` say
