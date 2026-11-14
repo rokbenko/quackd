@@ -1,8 +1,428 @@
 # E214: A word typed at the question
 
-This example has no log yet, and no file of its own: its lines run a command, a task that ships
-with quackd or another example's task file.
-They are on [its card on the run sheet](../run-sheet.md#e214-a-word-typed-at-the-question).
+**Typed `yes` at the question that opens the jaws, and quackd took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold.**
 
-Once it has been run, its log replaces this page.
+![E214, filmed with an external camera](log/run.gif)
+
+Filmed with an external camera. The GIF plays at 5x speed.
+
+| Category | Goal met | The run ended with | Date | quackd |
+|---|---|---|---|---|
+| Safety | Yes | SUCCESS | 2026-11-14 | 0.34.0 |
+
+The numbers and the trace below are copied from the run's own record.
 [All examples](../README.md)
+
+## Why this matters
+
+**Why this example exists:** At the end of a by-hand run quackd asks the person to take hold of whatever is in the gripper and press Enter, and that Enter opens the jaws on what is in them. Most programs want `yes` typed at a question, so a person may type it out of habit, and until 0.30.1 a typed `yes` counted as yes. Since then only a bare Enter opens the jaws: a line with anything on it is a no. This example types `yes` at that question to check.
+
+**Why this result is important:** The typed word was a no, said in plain words, and the run went on to fold the arm with the jaws shut: `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`. A word typed from habit cannot open the jaws on something a person has not taken hold of yet; only the bare Enter the question asks for does.
+
+## The goal
+
+Show that at the question that opens the jaws, a typed word, even `yes`, counts as no, as it has since 0.30.1, and that quackd says so.
+
+**What we expected:** What you type shows as you type it. After Enter: `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`, with the question on the record as `-> no`. Then the 3 s count, and the fold with the jaws shut.
+
+## What the run showed
+
+* This ran on a computer whose CPU was under heavy load from other work, as a real setup can be. quackd took 20.34 s to connect, where this command connected the same arm in 2.6 to 8 s in its other runs, and its calls to the arm took 9.3 ms at the median, 588.5 ms at the 99th percentile and up to 1.06 s.
+* With no LLM and no key, `--llm fake` flew the task's scripted pilot. The arm was lifted by hand and held, Enter at `the arm is yours`, and the pilot's three calls ended in its `declare_success`.
+* At `Take hold of whatever is in the gripper and press Enter`, `yes` was typed and entered, and quackd answered `(a line was typed rather than a bare Enter, which is a no)`. The question is on the record as `-> no` and the hand-back as `skipped: a line was typed`, and quackd said `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`.
+* Then the 3 s count, `folding the arm to its rest pose in 3 s: take your hands away from it now`, and the fold, with the jaws left shut.
+* The loaded computer slowed that fold: its sends came about 2.5 a second, against about 9 in this arm's other runs, and when its 4 s ran out it had reached only shoulder_lift -32 of -101. Enter at the question that followed tried the fold once more, which stopped at -81, and Enter at the second question took torque off where the arm stood, nearly folded, with both hands at the laptop. It stayed where it stood, and was put down by hand after the run. The run ended SUCCESS, the scripted pilot's own verdict.
+* The video's caption marks only the typed `yes`, the point of the example.
+
+## What the run did not show
+
+* The record does not hold the typed word itself: quackd draws what is typed on the screen as it is typed, but its trace keeps only its own lines, and the camera does not see the screen. So that it showed as it was typed is not on record; the video's caption names the word.
+* It does not show a bare Enter opening the jaws, the other half of the question, or anything held in them: nothing was.
+* The slow step the card's block asks for was not on: the record gives 5 degrees per send.
+* No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, and its tokens are that pilot's own estimate. Nothing was billed. The table gives no first motion because no verb moved the arm: the person lifted it, and the folds were the run's own close.
+* The GIF plays at 5x.
+
+## How the run ended
+
+The run ended with **SUCCESS**. The reason on record:
+
+> elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -5, wrist_flex 30, wrist_roll 0; torque on; nothing hot
+
+## The exact command
+
+The following command was run with quackd 0.34.0:
+
+```text
+quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+```
+
+## The numbers
+
+| | |
+|---|---|
+| quackd version | 0.34.0 |
+| Started | 2026-11-14 11:35:38 UTC |
+| Robot | `arm-01` (real) |
+| LLM | `fake:scripted:lerobot-lookout` |
+| Task file | `lerobot-lookout`, which ships with quackd |
+| Steps | 1 |
+| LLM calls | 3 |
+| Total time | 84.1 s |
+| Connecting | 20.3 s |
+| Waiting for the LLM | 0.0 s |
+| First motion | no verb moved the arm |
+| Tokens | 5,631 in, 48 out |
+| Cost at list price | $0.0000 |
+| Speed cap | 5° per send |
+| Run folder | `runs\20261114-113538-lerobot-lookout` |
+
+## What the robot saw
+
+This run used no camera.
+
+## Try it yourself
+
+This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
+It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
+with quackd's `lerobot` extra.
+Its pilot is a script that ships with quackd in place of an LLM, so it needs no key and costs nothing.
+
+```bash
+quackd run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
+```
+
+## Full terminal trace
+
+<details>
+<summary>Show the full terminal trace (326 lines)</summary>
+
+```text
+$ quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+quackd 0.34.0, started 2026-11-14T11:35:35Z, cwd D:\Development\lerobot-test\.venv
+
+╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ provider  fake (scripted:lerobot-lookout)                                                                                                                │
+│ robot     arm-01 (lerobot:real)                                                                                                                          │
+│ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
+╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+   run     connected in 20.34 s
+   tools   report_state, stop, assess_task, declare_success, declare_failure
+system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): ──────────────────────────────────────────────────────────────────────────────
+   You are the brain of a six-joint desktop robot arm with a parallel gripper (an SO-101 class arm driven by LeRobot), bolted to a table. You are a high-level pilot:
+   you choose ONE verb per turn; the robot's own controllers handle the motion. Do not micro-manage.
+
+   ## Rules (enforced by the executor — not optional)
+   - Call exactly one tool per turn. Never zero, never two.
+   - Only these verbs are allowed: report_state, stop. Anything else is refused.
+   - Budgets: 4 steps, 3 minutes, 12 LLM calls. The run stops when any is hit.
+   - Verbs marked confirm (none) ask a human before running.
+   - Before the first verb that moves the body, call `assess_task` with your verdict on whether this body can do this task at all, judged against its datasheet below: `feasible`, `infeasible` (the run ends, nothing moves) or `uncertain` (a human is asked). The verdict is about the body, not the view: not having found the target yet is not by itself a reason for `uncertain`. It is one when a limit turns on that unseen thing's mass or size, or on a figure the datasheet does not publish. Until then only `report_state` and `stop` run. Assess again later if what you see changes your mind.
+   - When a success criterion is met, call `declare_success`. If the task turns out impossible while doing it, call `declare_failure`.
+
+   ## Success criteria
+   - You have said where the joints are, whether torque is on, and whether anything reads hot.
+
+   ## Abort conditions you must respect yourself
+   - (none beyond the enforced ones)
+
+   ## Verbs
+   - `report_state`: Report the arm: every joint in degrees, whether torque is on, how warm the servos are, and whether anything is held.
+   - `stop`: Stop moving immediately (zero velocity). Always allowed.
+
+   ## Your body: what it can and cannot do
+   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
+   - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
+   - Payload: 0.5 kg (estimate: one vendor's listing)
+   - Reach: 0.4 m (estimate: the maker's URDF, TheRobotStudio/SO-ARM100 Simulation/SO101/so101_new_calib.urdf; link lengths from the shoulder to the gripper frame, summed with the arm straight and rounded down)
+   - Manipulator: one arm with a gripper.
+   - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
+   - Mains powered, so nothing runs down. It does not move: no base and no legs.
+   - quackd clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Senses: joint_state.
+   Whatever the task says, this body cannot:
+   - go anywhere: it is bolted to a table and has no base
+   - lift or hold more than about half a kilogram: a pen, an empty cup or a wooden block weighs far less than that, and a full bottle or a tool may weigh more
+   - reach anything more than about 0.4 m from its shoulder: that is the arm held straight out, and any bent pose reaches less
+   - feel what it holds: nothing reports grip force, so holding is inferred from the gripper stopping short of shut, which an empty hand that binds also does
+   - know its own mass: vendor listings disagree by a factor of three
+   Worth knowing:
+   - How wide the gripper opens and how hard it grips are not published
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+
+   ## Where this run starts
+   A person placed this body by hand before your first turn, and quackd is holding it exactly
+   where they left it. This run does **not** start from the recorded rest pose, so do not assume
+   a folded arm or a known shape: read `report_state` and work from the joint angles it gives you. They
+   are where somebody decided the work should begin.
+
+   The gripper is where their fingers closed it, which is a position and not a grip. Nothing is
+   reported as held, and nothing should be: this task cannot work the gripper, so whatever is between the jaws is held at the squeeze the person left and you cannot tighten it.
+
+   When the run ends, the arm is handed back the same way: it holds where you left it, the person
+   is asked to take whatever is in the gripper, and only then does quackd fold the arm up.
+
+   ## What is a stand-in on this robot
+   The robot reported these itself, and they are in `extras.assumptions` in every observation.
+   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   report one as the robot's own work, and do not read a success from one as evidence that the
+   real skill works.
+   - GRIPPER_OPEN_VALUE
+   - HOLDING_INFERRED
+   - TEMPERATURE_C
+
+   ## Persona
+   A calm lookout. One clear sentence, then stop.
+
+   ## Task file: lerobot-lookout — Move nothing, read the arm back, and report what it says about itself.
+
+   # Task
+
+   You are a six-joint robot arm bolted to a desk. Do not move. Read your own state and report
+   what it says, so that a human can decide whether this arm is fit to be driven.
+
+   ## Strategy
+
+   1. `report_state` gives you every joint in degrees, whether torque is on, and the temperature
+      of each servo.
+   2. Say in one sentence where the joints are, whether torque is on, and whether any joint reads
+      hot. A joint at or above 60 degrees Celsius is hot and worth naming.
+   3. Declare success once you have said all three. Declare failure if `report_state` fails twice:
+      an arm that does not answer is the thing a human needs to know about.
+
+   ## Notes
+
+   - **You cannot move in this task and you should not want to.** Every verb that moves a joint is
+     outside your allowlist. If the reading looks wrong, saying so is the answer.
+   - **You cannot ask for a picture, and you have no voice.** `observe` and `say` are not verbs
+     you have. If somebody plugged a webcam in and named it, you will still see a camera line in
+     your observations, because a frame is taken every step whatever your allowlist says: use it
+     if it is there and do not wait for it if it is not. Reporting means writing it in the reason
+     you declare with.
+   - **Torque off is not a fault you can fix.** no verb can toggle torque either way. A servo
+     that has tripped its own overload protection reads the same way, so name the joint and let a
+     human look at it.
+   - The temperatures come off the servos themselves, which is something the robot's own software
+     does not read. They are the one early warning this body has, so do not skip them.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+·  note    moving to the rest pose
+·  note    already at the rest pose
+·  hand    released: torque is off at the rest pose
+the arm is yours: torque is off at its rest pose, so lift it, put whatever it needs in the gripper, close the gripper on that, hold it where you want the 
+run to start, and press Enter
+(Enter)
+·  asked   hand_off: the arm is yours: torque is off at its rest pose, so lift it, put whatever it needs in the gripper, close the gripper on that, hold it where you want the run to start, and press Enter -> yes
+·  hand    held: holding the pose you set (elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -5, wrist_flex 30, wrist_roll 0)
+holding the pose you set, you can let go. It is at elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -5, wrist_flex 30, wrist_roll 0
+step 0/4 · LLM calls 0/12, 0.0/3 min ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   obs     state: posture=unknown policy=idle stand-ins=3-listed-in-extras.assumptions
+           camera: nothing detected
+           Choose exactly one tool.
+   llm>    step 0: 1 messages (0 with image) to fake scripted:lerobot-lookout
+   think   [scripted] step 0: sees nothing it knows, so the rule picks assess_task
+   tool    assess_task(verdict='feasible', reason='scripted pilot: a rule has no judgement of the body, so i...', limits_consulted=[], estimates=[], needs={})
+   tokens  in=1849 out=16 (run total in=1849 out=16 $0) latency=0.0 s cost=$0 stop=tool_use
+✓  assess  feasible: scripted pilot: a rule has no judgement of the body, so it assumes the task fits
+step 0/4 · LLM calls 1/12, 0.0/3 min ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   obs     state: posture=unknown policy=idle stand-ins=3-listed-in-extras.assumptions
+           camera: nothing detected
+           last verb `assess_task`: ok — recorded feasible: scripted pilot: a rule has no judgement of the body, so it assumes the task fits; verbs that move the body now run
+           Choose exactly one tool.
+   llm>    step 0: 2 messages (0 with image) to fake scripted:lerobot-lookout
+   think   [scripted] step 0: sees nothing it knows after assess_task ok, so the rule picks report_state
+   tool    report_state()
+   tokens  in=1890 out=16 (run total in=3739 out=32 $0) latency=0.0 s cost=$0 stop=tool_use
+▶  verb    report_state()
+✓  result  report_state ok: shoulder_pan -5, shoulder_lift 1, elbow_flex 14, wrist_flex 30, wrist_roll 0, gripper 1; torque on; hottest elbow_flex 29°C; holding nothing (0.1 s, 0 intents)
+step 1/4 · LLM calls 2/12, 0.0/3 min ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   obs     state: posture=unknown policy=idle stand-ins=3-listed-in-extras.assumptions
+           camera: nothing detected
+           last verb `report_state`: ok — shoulder_pan -5, shoulder_lift 1, elbow_flex 14, wrist_flex 30, wrist_roll 0, gripper 1; torque on; hottest elbow_flex 29°C; holding nothing
+           Choose exactly one tool.
+   llm>    step 1: 3 messages (0 with image) to fake scripted:lerobot-lookout
+   think   [scripted] step 1: sees nothing it knows after report_state ok, so the rule picks declare_success
+   tool    declare_success(reason='elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -...')
+   tokens  in=1892 out=16 (run total in=5631 out=48 $0) latency=0.0 s cost=$0 stop=tool_use
+✓  declare success: elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -5, wrist_flex 30, wrist_roll 0; torque on; nothing hot
+the run is over and the arm is holding where it ended. Take hold of whatever is in the gripper and press Enter: the gripper opens all the way, and 3 s later
+the arm folds up and the gripper closes again, so take your hands away as soon as it is open. Leave it and the arm folds up with the gripper shut
+(a line was typed rather than a bare Enter, which is a no)
+→  send    stop
+⚠  asked   hand_off: the run is over and the arm is holding where it ended. Take hold of whatever is in the gripper and press Enter: the gripper opens all the way, and 3 s later the arm folds up and the gripper closes again, so take your hands away as soon as it is open. Leave it and the arm folds up with the gripper shut -> no
+·  hand    skipped: a line was typed
+·  note    a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up
+folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
+·  note    folding the arm to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves
+·  note    moving to the rest pose
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 19.505494505494504},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -3.7252747252747254},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 35.37362637362637}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 23.63736263736264},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -5.65934065934066},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 38.8021978021978}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 28.384615384615383},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -8.032967032967033},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 43.10989010989011}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 33.21978021978022},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -10.670329670329672},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 47.59340659340659}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 36.73626373626374},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -12.692307692307693},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 50.67032967032967}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 41.043956043956044},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -15.153846153846153},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 54.45054945054945}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 44.73626373626374},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -17.7032967032967},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 57.79120879120879}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 49.57142857142857},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -20.86813186813187},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 62.18681318681319}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 52.91208791208791},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -23.32967032967033},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 65.17582417582418}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 57.747252747252745},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -26.75824175824176},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 69.57142857142857}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 62.494505494505496},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -30.186813186813186},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 73.7032967032967}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 66.97802197802199},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -33.527472527472526},
+    'wrist_flex': {   'original goal_pos': 79.2,
+                      'safe goal_pos': 77.57142857142857}}
+·  note    the arm did not reach its rest pose: shoulder_lift is at -32 with a goal of -101 when the time ran out (4 s)
+the arm did not reach its rest pose (shoulder_lift is at -32 with a goal of -101 when the time ran out (4 s)), so it is holding itself up where it stopped. 
+Clear whatever is in its way and keep your hands out of its path, then press Enter and it tries the fold once more. Leave it, and after 60 s it stays that 
+way
+(Enter)
+·  asked   release: the arm did not reach its rest pose (shoulder_lift is at -32 with a goal of -101 when the time ran out (4 s)), so it is holding itself up where it stopped. Clear whatever is in its way and keep your hands out of its path, then press Enter and it tries the fold once more. Leave it, and after 60 s it stays that way -> yes
+·  release refold: Enter, to fold it once more
+·  note    moving to the rest pose
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 71.81318681318682},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -37.21978021978022}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 75.76923076923077},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -40.120879120879124}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 80.34065934065934},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -44.252747252747255}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 82.89010989010988},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -47.68131868131868}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 84.56043956043956},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -51.54945054945055}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 85.79120879120879},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -55.59340659340659}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 86.93406593406593},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -60.34065934065934}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 87.81318681318682},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -64.82417582417582}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 88.6043956043956},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -69.21978021978022}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 89.3076923076923},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -72.73626373626374}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 90.27472527472527},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -77.13186813186813}}
+WARNING:lerobot.robots.utils:Relative goal position magnitude had to be clamped to be safe.
+{   'elbow_flex': {   'original goal_pos': 96.4,
+                      'safe goal_pos': 92.03296703296704},
+    'shoulder_lift': {   'original goal_pos': -100.79120879120879,
+                         'safe goal_pos': -81.96703296703296}}
+·  note    the arm did not reach its rest pose: shoulder_lift is at -81 with a goal of -101 when the time ran out (3 s)
+the arm did not reach its rest pose the second time either (shoulder_lift is at -81 with a goal of -101 when the time ran out (3 s)), so it is holding 
+itself up where it stopped. Pressing Enter now takes torque off where it stands, and the arm will drop: hold it first, or it can be damaged. Leave it, and 
+after 60 s torque stays on
+(Enter)
+·  asked   release: the arm did not reach its rest pose the second time either (shoulder_lift is at -81 with a goal of -101 when the time ran out (3 s)), so it is holding itself up where it stopped. Pressing Enter now takes torque off where it stands, and the arm will drop: hold it first, or it can be damaged. Leave it, and after 60 s torque stays on -> yes
+·  release released: torque is off where the arm stands
+torque is off where the arm stands: the arm is in your hands, so put it down before you let go of it
+·  note    the arm is limp and in your hands (torque was taken off where it stood, because you asked for it): put it down before you let go of it, because nothing is holding it up
+╭─ ✓ SUCCESS ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ elbow_flex 14, gripper 1, shoulder_lift 1, shoulder_pan -5, wrist_flex 30, wrist_roll 0; torque on; nothing hot                                          │
+│ steps 1 · LLM calls 3 · tokens 5631+48 · time 1m 24s (LLM 0.0 s) · LLM calls p50 0.0 s, p90 0.0 s, max 0.0 s · cost $0                                   │
+│ run dir  runs\20261114-113538-lerobot-lookout                                                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+</details>
