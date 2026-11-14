@@ -9,8 +9,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **`quackd list-models --kind policy` lists the policy types again, and `--kind all` lists all three
+  kinds.** These are the rows and the `--json` that `quackd policy list` prints, and it still prints
+  them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
+  now follow them, so a script that reads `--kind all --json` gets rows of a third `kind`, `policy`.
+
+### Removed
+
+- **`quackd list-models` is the command again, and `quackd list-llms` is gone.** It lists every kind of
+  model a run can have, the pilot LLMs, the decision LLMs and with `--kind policy` the policy types,
+  which a name for LLMs leaves out. There is no alias, so a script that still types `list-llms` stops
+  with `No such command`, which suggests `list-models`, and has to change it. Like 0.32.0's rename, this
+  had no release of warning, at the project's owner's word.
+
 ### Documentation
 
+- **`docs/llms/` is `docs/models/` again, and the VLA page is `docs/models/vlas.md`.** The folder has a
+  page for each kind of model a run can have, and where 0.32.0 wrote LLMs and policies for all of them,
+  the pages say models, the README's `Which models work`, `docs/models/README.md` and the index in
+  `docs/README.md` among them. `docs/guides/vlas.md` is back where 0.26.0 to 0.31.3 had it,
+  `scripts/llms_docs.py` is `scripts/models_docs.py`, and ADR-0062's file name says model tables again.
+  A link that a published PyPI page of 0.26.0 to 0.31.3 makes into `docs/models/` resolves again, and
+  one that a page of 0.32.0 to 0.34.0 makes into `docs/llms/` or to `docs/guides/vlas.md` no longer
+  does. What an LLM does still says LLM, as in `LLM calls`, and the decision LLMs keep their name.
+  `tests/test_llm_wording.py` lists each sentence that means every kind of model, and fails on one that
+  counts them as LLMs and policies. The README no longer says an LLM is the pilot on every run, since a
+  scripted pilot flies a run under `--llm fake` or `--controller vla`.
 - **Goal met on the examples page gives credit to an LLM that says plainly it cannot do what an
   example asks.** E169 goes from Partly to Yes: its card says the LLM may stop once a move's
   answer says it was not sent, and its log now says the arm answered every heartbeat, which the
@@ -3246,7 +3272,7 @@ Face alone. What that leaves owed is under Known limitations.
 
 ### Documentation
 
-- **[docs/models/](docs/llms/README.md), the models beside the robots.** Five pages: the three
+- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the three
   roles a model can have in a run side by side, every pilot vendor and every one of the 123 model
   ids with its extra, its key, its address and its rate, the eight decision LLMs, the policy types
   the arm's server serves and the ones it does not, with why, and the companies behind them, each
@@ -3254,7 +3280,7 @@ Face alone. What that leaves owed is under Known limitations.
   `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not what the script
   writes, so a row is changed in the code and never in a table. The guides stay where they were
   and are linked, so no published link moved, and `docs/README.md` maps the folder
-  ([ADR-0062](docs/adr/0062-llm-tables-are-rendered-from-the-catalogues.md)).
+  ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
 - **The README says which models work, right after which robots work.** One table of the three
   roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
   the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer

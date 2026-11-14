@@ -86,12 +86,12 @@ Three other things pointed the same way.
 - **`--model` and `QUACKD_MODEL` are resolved before a key is read or a packet is sent.**
   `resolve_llm_id` raises for an id a cloud vendor does not list, and `make_provider` calls it
   before it imports an SDK or looks at the environment. The refusal lists every valid id, marks the
-  default, and points at `quackd list-llms`. When the id belongs to another vendor in the
+  default, and points at `quackd list-models`. When the id belongs to another vendor in the
   catalogue it says whose it is and which `--provider` to pass, because that is the commonest
   mistake and the hardest to see: the id looks perfectly valid. The message also names where the id
   came from, `--model` or `QUACKD_MODEL`, since a flag just typed and a forgotten line in a `.env`
   want different answers from the reader.
-- **`quackd list-llms [--provider NAME]`** prints the whole table, or one vendor's. A notes column
+- **`quackd list-models [--provider NAME]`** prints the whole table, or one vendor's. A notes column
   says `default`, `Responses API` and `no frames`. `--model` also completes in the shell, following
   whichever `--provider` is already on the command line, so the list is reachable without reading
   it.
@@ -129,7 +129,7 @@ Three other things pointed the same way.
   wrong one, and says which vendor the id belongs to if it belongs to one.
 - **The catalogue is a dated maintenance surface.** It is only as current as its last edit. A vendor
   can retire an id between quackd releases, and the refusal for an LLM that is real but new is the
-  same refusal as for a typo. `quackd list-llms` is how anyone sees what this build knows, the
+  same refusal as for a typo. `quackd list-models` is how anyone sees what this build knows, the
   docstring carries the date the list was checked, and the honest trade is that a stale list refuses
   a good id where free text let it through.
 - **The list was verified rather than guessed.** Eleven parallel checks against the vendors' own
@@ -148,7 +148,7 @@ Three other things pointed the same way.
   module imports nothing heavy — that last one reads the source rather than importing it, because
   by then the suite has imported half of quackd. It also holds the refusal: the list, the owning
   vendor, the source, and that a bad id stops before the key is read. `tests/test_cli.py` holds the
-  user-facing half: the refusal from `--model` and from a pinned `QUACKD_MODEL`, both `list-llms`
+  user-facing half: the refusal from `--model` and from a pinned `QUACKD_MODEL`, both `list-models`
   forms, and `--model` completing against whichever `--provider` is on the line.
   `tests/test_providers.py` holds that each vendor defaults to its catalogue entry, that an
   `api="responses"` LLM opens on Responses with no failed call, and that the 400 reader still

@@ -85,7 +85,7 @@ decision LLM, needs no key for one, and never switches this on because it found 
 | | |
 |---|---|
 | **It is** | a classifier that answers typed questions about a state: which of these calls, is this statement true, where on this rubric |
-| **It is not** | a provider. `--llm` does not take it, `quackd list-llms` does not list it, and it cannot pilot a robot on its own |
+| **It is not** | a provider. `--llm` does not take it, `quackd list-models --kind decision` lists it apart from the pilots, and it cannot pilot a robot on its own |
 | **It decides** | which single verb, out of the ones this body's contract allows *and* whose parameters are a closed set |
 | **The pilot LLM decides** | every pose, every target, every sentence, every feasibility verdict, every `declare_success`, and every turn the stepper is not confident about |
 | **The executor still decides** | whether the verb runs at all: the allowlist, the budgets, the confirm gates, the preconditions and the robot's own safety authority are untouched |

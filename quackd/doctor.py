@@ -72,7 +72,7 @@ from quackd.host import (
 
 # The optional extras table, which is about packages rather than providers: the providers table
 # builds its own rows from SDK_FOR and EXTRA_FOR. One wheel now serves ten vendors, so naming
-# them all here would be a list to keep in step for no gain; `quackd list-llms` and the
+# them all here would be a list to keep in step for no gain; `quackd list-models` and the
 # providers table above already say which vendor wants which install.
 EXTRAS = {
     "anthropic": ("anthropic", "quackd[anthropic]"),
@@ -2232,7 +2232,7 @@ def render(console: Console, report: DoctorReport) -> None:
     console.print(_checks(report.core))
     console.print(Text(f"  {report.bundled_ducks} bundled ducks", style=ui.STYLES["muted"]))
 
-    _section(console, "providers (the LLM ids quackd carries: quackd list-llms)")
+    _section(console, "providers (the LLM ids quackd carries: quackd list-models)")
     console.print(_providers_table(report))
     if report.llm_env_error:
         console.print(Text(report.llm_env_error, style=ui.STYLES["warn"]), soft_wrap=True)

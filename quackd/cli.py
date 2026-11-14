@@ -1122,17 +1122,18 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
     return found
 
 
-# ── list-llms ───────────────────────────────────────────────────────────────────────────
+# ── list-models ─────────────────────────────────────────────────────────────────────────
 
 
-LLM_KINDS = ("pilot", "decision", "all")
-"""What `quackd list-llms --kind` lists: the pilot ids `--llm` takes, the decision LLMs
-`--decision-llm` names, or both. The first is the default, so the command prints what it always
-has. A policy is no LLM, and `quackd policy list` lists those."""
+MODEL_KINDS = ("pilot", "decision", "policy", "all")
+"""What `quackd list-models --kind` lists: the pilot ids `--llm` takes, the decision LLMs
+`--decision-llm` names, the policy types `quackd policy serve` serves and the ones it refuses,
+or all three. The first is the default, so the command prints what it always has. `quackd policy
+list` prints the policy rows as well, beside the other policy commands."""
 
 
-@app.command("list-llms", rich_help_panel="Inspect")
-def list_llms_cmd(
+@app.command("list-models", rich_help_panel="Inspect")
+def list_models_cmd(
     llm: str | None = typer.Option(
         None,
         "--llm",
@@ -1142,25 +1143,22 @@ def list_llms_cmd(
         autocompletion=_complete_llm,
     ),
     kind: str = typer.Option(
-        LLM_KINDS[0],
+        MODEL_KINDS[0],
         "--kind",
-        metavar="pilot|decision|all",
-        help="Which to list. pilot, the default, is the ids --llm takes, decision the decision "
-        "LLMs --decision-llm names, and all is the two.",
+        metavar="pilot|decision|policy|all",
+        help="Which models to list. pilot, the default, is the ids --llm takes, decision the "
+        "decision LLMs --decision-llm names, policy the policy types quackd policy serve serves "
+        "and the ones it refuses, and all is the three.",
     ),
     as_json: bool = _JSON,
 ) -> None:
-    """List the LLMs quackd can use: the ids each cloud vendor offers for --llm VENDOR:LLM, and with
-    --kind the decision LLMs as well. The learned policies are quackd policy list."""
+    """List the models quackd can use: the LLM ids each cloud vendor offers for --llm VENDOR:LLM,
+    and with --kind the decision LLMs and the learned policies as well."""
     wanted = kind.strip().lower()
-    if wanted not in LLM_KINDS:
-        _fail(
-            f"--kind is {', '.join(LLM_KINDS[:-1])} or {LLM_KINDS[-1]}, not {kind!r}",
-            # the kind this flag used to take, in the words of where it went
-            hint="quackd policy list lists the policy types" if wanted == "policy" else None,
-        )
+    if wanted not in MODEL_KINDS:
+        _fail(f"--kind is {', '.join(MODEL_KINDS[:-1])} or {MODEL_KINDS[-1]}, not {kind!r}")
         return
-    if llm is not None and wanted != LLM_KINDS[0]:
+    if llm is not None and wanted != MODEL_KINDS[0]:
         _fail(
             f"--llm narrows the pilot rows only, and --kind {wanted} lists more than those",
             hint="drop --llm, or drop --kind",
@@ -1170,6 +1168,8 @@ def list_llms_cmd(
         _list_pilots(llm, as_json)
     if wanted in ("decision", "all"):
         _list_decision_llms(as_json)
+    if wanted in ("policy", "all"):
+        _list_policies(as_json)
 
 
 def _list_pilots(llm: str | None, as_json: bool) -> None:
@@ -1323,7 +1323,7 @@ def _list_decision_llms(as_json: bool) -> None:
     ui.console.print(
         Text(
             "Off unless a run names one. --decision-mode shadow asks it every turn and changes "
-            "nothing, which is where to start (docs/llms/decision-llms.md).",
+            "nothing, which is where to start (docs/models/decision-llms.md).",
             style=ui.STYLES["muted"],
         ),
         soft_wrap=True,
@@ -1400,7 +1400,7 @@ def _list_policies(as_json: bool) -> None:
         Text(
             f"Each type is served on Python 3.12 with {FAMILIES[0].extra}, in a process of its "
             "own and never the arm's: beside the arm, on a rented GPU or on a Hugging Face "
-            "Endpoint (docs/guides/vlas.md).",
+            "Endpoint (docs/models/vlas.md).",
             style=ui.STYLES["muted"],
         ),
         soft_wrap=True,
@@ -2738,7 +2738,7 @@ def _run_impl(
         _fail(
             f"{pilot.name} {pilot.llm_id} does not take images, so it cannot be given "
             f"{_plural(len(task_images), 'picture')}",
-            hint="quackd list-llms marks the LLMs that take no frames; --vision overrides "
+            hint="quackd list-models marks the LLMs that take no frames; --vision overrides "
             "it where the vendor does take them, and a local LLM needs --vision",
         )
         return
@@ -3525,7 +3525,7 @@ _IMAGE: list[str] = typer.Option(
     help='A picture to hand to the task, e.g. --goal "draw what is in the picture" --image '
     "sketch.png. The pilot gets it on its first turn, labelled with the file's name, and keeps "
     "it for the whole run, which is what makes it different from a camera frame. Repeatable. "
-    "Needs a pilot that takes images: `quackd list-llms` marks the ones that do not, and a "
+    "Needs a pilot that takes images: `quackd list-models` marks the ones that do not, and a "
     "local LLM needs --vision.",
     rich_help_panel="Task",
 )
@@ -3577,7 +3577,7 @@ _LLM = typer.Option(
     "`claude-opus-5-5` works. `ollama:qwen3:8b` is a local server (the split is at the first "
     "colon, so a tag keeps its own), `local` needs --base-url, and `fake` is a scripted pilot "
     "with no key and no network. Vendors: " + " · ".join(PROVIDER_NAMES) + ". `quackd "
-    f"list-llms` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
+    f"list-models` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
     f"{DEFAULT_LLM}.",
     autocompletion=_complete_llm,
     rich_help_panel="Pilot",
@@ -4553,7 +4553,7 @@ def _preflight_impl(
             _fail(
                 f"{probe.name} {probe.llm_id} does not take images, so it cannot be given "
                 f"{_plural(len(task_images), 'picture')}",
-                hint="quackd list-llms marks the LLMs that take no frames",
+                hint="quackd list-models marks the LLMs that take no frames",
             )
             return
     kwargs = here.adapter_kwargs(camera_url=camera_url)

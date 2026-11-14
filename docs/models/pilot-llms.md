@@ -2,9 +2,9 @@
 
 The pilot is the LLM that flies a run. It reads the robot's manifest and datasheet, says
 whether this body can do the task at all, plans, calls the robot's verbs one turn at a time and
-judges whether the task got done. Every run has one, and it is the only LLM a run needs. The
+judges whether the task got done. Every run has one, and it is the only model a run needs. The
 other two kinds a run can have, a decision LLM in front of it and a learned policy that drives
-the arm for it, are on [the LLMs and policies page](README.md).
+the arm for it, are on [the models page](README.md).
 
 ## Naming one
 
@@ -24,12 +24,12 @@ Which pilot a run gets, first match wins:
 An id a cloud vendor does not list is refused before any key is read, and the refusal prints the
 ids that vendor does take. OpenRouter is the one vendor whose list is open: an id quackd does not
 carry is checked against OpenRouter's own LLM list when the run starts
-([OpenRouter](#openrouter) below). `quackd list-llms` prints every id this build carries, and
+([OpenRouter](#openrouter) below). `quackd list-models` prints every id this build carries, and
 `quackd doctor` says which keys and SDKs this machine has.
 
 ## The cloud vendors
 
-<!-- generated: pilot-vendors, by scripts/llms_docs.py from quackd/agent/providers/factory.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-vendors, by scripts/models_docs.py from quackd/agent/providers/factory.py. Change a row there and run the script, not this table. -->
 
 | `--llm` | Who | Extra | Key | Address | Default | Ids |
 |---|---|---|---|---|---|---|
@@ -56,7 +56,7 @@ export the key under a second name, quackd reads that one when the first is empt
 
 ## Local servers
 
-<!-- generated: pilot-local, by scripts/llms_docs.py from quackd/agent/providers/local.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-local, by scripts/models_docs.py from quackd/agent/providers/local.py. Change a row there and run the script, not this table. -->
 
 | `--llm` | Server | Default address | Extra | Key |
 |---|---|---|---|---|
@@ -85,7 +85,7 @@ names a pilot, and what the test suite and the first run in the README use.
 `--controller vla` takes the pilot's seat on the SO-101 arm alone. No LLM is involved: a
 scripted pilot hands the arm's learned policy each instruction the task lists, then asks you
 whether the arm did it. It needs `--policy-url` and a person at the terminal
-([VLAs](../guides/vlas.md), and [the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+([VLAs](vlas.md), and [the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 
 ## Over MCP
 
@@ -109,11 +109,11 @@ Google's embodied-reasoning LLM is a pilot row, `gemini:gemini-robotics-er-2-pre
 preview as Google marks it. It plans and reasons about what a camera sees, as any pilot does, and
 it calls quackd's verbs like any other row. It is not a VLA: it moves no motor itself, and the
 Gemini Robotics model that does is offered to selected partners only
-([VLAs](../guides/vlas.md#not-served-and-why)). Nothing on record has flown a robot with it.
+([VLAs](vlas.md#not-served-and-why)). Nothing on record has flown a robot with it.
 
 ## Every LLM id
 
-<!-- generated: pilot-ids, by scripts/llms_docs.py from quackd/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-ids, by scripts/models_docs.py from quackd/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
 
 124 LLM ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-09-23, `openai:gpt-6.1-sol`'s on 2026-10-26, and OpenRouter's list on 2026-10-06. None is a rate the vendor does not publish, and unpriced an LLM with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
 

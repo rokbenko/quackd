@@ -10,7 +10,7 @@ the LLM catalogue the CLI ships, and `QUACKD_LLM` is ignored
 here even when it is set — because the client's own LLM is the pilot. Whichever LLM you are
 chatting with in Claude Code or Claude Desktop is the one flying the robot, and quackd contributes
 the robot, the verbs and the executor rather than a choice of brain. Everything about `--llm`,
-`quackd list-llms` and the catalogue belongs to `quackd run`.
+`quackd list-models` and the catalogue belongs to `quackd run`.
 
 Works against a simulated duck with no hardware at all. The simulator is the Microduck's own,
 so `quackd[microduck]` is the whole install, and a bare `uvx quackd` has no robot in it to

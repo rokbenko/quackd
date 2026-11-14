@@ -121,7 +121,7 @@ Everything a line can be is in [Driving a robot](drive.md).
 
 ## The pilot
 
-**An LLM** is a vendor and an LLM: for a cloud vendor one of the rows `quackd list-llms`
+**An LLM** is a vendor and an LLM: for a cloud vendor one of the rows `quackd list-models`
 prints, and for a local server the id it serves, typed in. Beside it, the page says whether that
 vendor's key is set and where, masked as `quackd doctor` masks it:
 

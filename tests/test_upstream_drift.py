@@ -44,7 +44,7 @@ CHANGED = PINNED.replace(b"def read():", b"def read(self):")
 
 
 def _script() -> ModuleType:
-    """The script loaded by path, as `tests/test_docs.py` loads `scripts/llms_docs.py`, and
+    """The script loaded by path, as `tests/test_docs.py` loads `scripts/models_docs.py`, and
     registered under its name first: its dataclasses carry string annotations, which the
     standard library resolves through `sys.modules` and cannot for a module that is not there."""
     spec = importlib.util.spec_from_file_location("upstream_drift", SCRIPT)

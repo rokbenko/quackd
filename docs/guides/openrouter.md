@@ -21,7 +21,7 @@ quackd run find-and-kick --llm openrouter --robot microduck:sim2d    # not run h
 ## The rows quackd carries
 
 ```
-$ quackd list-llms --llm openrouter
+$ quackd list-models --llm openrouter
 LLMs (--llm VENDOR:LLM, QUACKD_LLM)
 ┌────────────┬─────────────────────────────┬────────────────────────────────────┬─────────┬─────────┐
 │ provider   │ id                          │ label                              │ status  │ notes   │
@@ -83,7 +83,7 @@ run, for any turn OpenRouter does not bill (below).
 ```
 $ quackd run hello-world --llm openrouter:qwen/qwen3.8-flsh --robot microduck:mock
 ✗ error: openrouter: 'qwen/qwen3.8-flsh' from --llm is not on OpenRouter's LLM list. Nearest on
-the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `quackd list-llms --llm
+the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `quackd list-models --llm
 openrouter` for the ids quackd carries.
 ```
 
@@ -121,7 +121,7 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest LLM of its family, so the LLM that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-llms --llm
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
 openrouter`.
 ```
 

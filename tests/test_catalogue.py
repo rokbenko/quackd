@@ -271,7 +271,7 @@ def test_an_unknown_id_is_refused_with_the_list_and_where_to_find_it() -> None:
     message = str(e.value)
     assert "openai" in message and "gpt-nope" in message
     assert default_llm_for("openai") in message and "(default)" in message
-    assert "list-llms" in message
+    assert "list-models" in message
     for llm_id in llm_ids("openai"):
         assert llm_id in message, f"{llm_id} is valid but the refusal does not offer it"
 
@@ -448,13 +448,13 @@ def test_openrouter_refuses_these_shapes_on_their_spelling(
         resolve_llm_id("openrouter", llm_id, source="robot duck-a (robots.json)")
     message = str(e.value)
     assert why in message and repr(llm_id) in message
-    assert "robot duck-a (robots.json)" in message and "list-llms --llm openrouter" in message
-    # It names the rows quackd carries and points at list-llms, and says nothing of other ids.
+    assert "robot duck-a (robots.json)" in message and "list-models --llm openrouter" in message
+    # It names the rows quackd carries and points at list-models, and says nothing of other ids.
     # 0.17.0 said any other id with tool calling on the list works too, which the refused shape
     # in this very message contradicts when OpenRouter lists it, as it lists `~` aliases, its
     # routers and `:batch` ids.
     rows = ", ".join(llm_ids("openrouter"))
-    assert message.endswith(f". quackd lists {rows}. See `quackd list-llms --llm openrouter`.")
+    assert message.endswith(f". quackd lists {rows}. See `quackd list-models --llm openrouter`.")
     assert "works too" not in message and "other id" not in message.lower()
     with pytest.raises(ProviderError, match="is refused"):
         make_provider("openrouter", llm_id=llm_id)
@@ -680,7 +680,7 @@ def test_an_llm_that_takes_no_image_is_not_sent_one() -> None:
 
 def test_every_vendor_agrees_with_itself_about_images() -> None:
     """Whatever a vendor's entry claims, the provider it builds must report the same thing, or
-    `quackd list-llms` and the run would disagree about what gets sent."""
+    `quackd list-models` and the run would disagree about what gets sent."""
     for name in sorted(OPENAI_COMPATIBLE):
         module = importlib.import_module(f"quackd.agent.providers.{name}")
         vendor = getattr(module, OPENAI_COMPATIBLE[name])

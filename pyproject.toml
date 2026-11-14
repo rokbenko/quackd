@@ -345,7 +345,7 @@ files = [
     "adapters",
     "bridge",
     "docs/assets",
-    "scripts/llms_docs.py",
+    "scripts/models_docs.py",
     "scripts/connect_docs.py",
     "scripts/bodies_docs.py",
     "scripts/example_log.py",

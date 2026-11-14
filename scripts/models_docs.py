@@ -1,15 +1,16 @@
-"""Render the tables in `docs/llms/` and `docs/guides/vlas.md` from the code that decides what
-quackd takes, or check that the pages still hold what the code says.
+"""Render the tables in `docs/models/` from the code that decides what quackd takes, or check
+that the pages still hold what the code says.
 
-Every table on those pages that names an LLM, a vendor, a flag, a key or a rate sits between two
+Every table on those pages that names a model, a vendor, a flag, a key or a rate sits between two
 markers this script owns, and the rows between them are the catalogues rendered:
 `quackd/agent/providers/catalogue.py` and `factory.py` for the pilots, `local.py` for the local
-servers and `quackd/agent/decision/catalogue.py` for the decision LLMs. So a row is changed in
-the code and this script run, never in a table, and a test runs it on every commit and fails
-when a page says something the code no longer does.
+servers, `quackd/agent/decision/catalogue.py` for the decision LLMs and
+`quackd/adapters/policies.py` for the policy types. So a row is changed in the code and this
+script run, never in a table, and a test runs it on every commit and fails when a page says
+something the code no longer does.
 
-    uv run --no-sync python scripts/llms_docs.py          # rewrite the pages
-    uv run --no-sync python scripts/llms_docs.py --check  # exit 1 if any page would change
+    uv run --no-sync python scripts/models_docs.py          # rewrite the pages
+    uv run --no-sync python scripts/models_docs.py --check  # exit 1 if any page would change
 
 It imports the catalogues and nothing that reaches a vendor, and it reads no environment: a
 `QUACKD_LLM` or an `OPENAI_BASE_URL` on the machine that runs it changes nothing it writes.
@@ -141,7 +142,7 @@ def maker(name: str) -> str:
         return MAKERS[name]
     except KeyError:
         raise SystemExit(
-            f"scripts/llms_docs.py has no maker for {name!r}: add it to MAKERS"
+            f"scripts/models_docs.py has no maker for {name!r}: add it to MAKERS"
         ) from None
 
 
@@ -150,7 +151,7 @@ def company(name: str) -> str:
         return COMPANIES[name]
     except KeyError:
         raise SystemExit(
-            f"scripts/llms_docs.py has no company for {name!r}: add it to COMPANIES"
+            f"scripts/models_docs.py has no company for {name!r}: add it to COMPANIES"
         ) from None
 
 
@@ -369,7 +370,7 @@ def roles() -> str:
             "no, and the SO-101 arm alone takes one",
             f"{number_word(len(FAMILIES))} LeRobot policy types, {number_word(vlas)} of them "
             "VLAs, served from the Hub",
-            "[guides/vlas.md](../guides/vlas.md)",
+            "[vlas.md](vlas.md)",
         ],
     ]
     return table(("Role", "Named with", "Required", "What quackd names", "Page"), rows)
@@ -500,11 +501,11 @@ BLOCKS: dict[str, tuple[str, Callable[[], str]]] = {
 
 #: Which blocks each page under `docs/` carries, once each, in this order.
 PAGES: dict[str, tuple[str, ...]] = {
-    "llms/README.md": ("roles",),
-    "llms/pilot-llms.md": ("pilot-vendors", "pilot-local", "pilot-ids"),
-    "llms/decision-llms.md": ("decision-rows",),
-    "guides/vlas.md": ("policy-served", "policy-refused"),
-    "llms/vendors.md": ("vendor-roles",),
+    "models/README.md": ("roles",),
+    "models/pilot-llms.md": ("pilot-vendors", "pilot-local", "pilot-ids"),
+    "models/decision-llms.md": ("decision-rows",),
+    "models/vlas.md": ("policy-served", "policy-refused"),
+    "models/vendors.md": ("vendor-roles",),
 }
 
 _START = re.compile(r"^<!-- generated: ([a-z0-9-]+)\b[^\n]*-->$", re.M)
@@ -516,7 +517,7 @@ _END = re.compile(r"^<!-- end generated: ([a-z0-9-]+) -->$", re.M)
 def start_marker(name: str) -> str:
     source = BLOCKS[name][0]
     return (
-        f"<!-- generated: {name}, by scripts/llms_docs.py from {source}. Change a row there "
+        f"<!-- generated: {name}, by scripts/models_docs.py from {source}. Change a row there "
         "and run the script, not this table. -->"
     )
 
@@ -566,7 +567,7 @@ def main(argv: Sequence[str]) -> int:
                 f.write(new)
     if stale and check:
         print("stale pages in docs/: " + ", ".join(stale))
-        print("run: uv run --no-sync python scripts/llms_docs.py")
+        print("run: uv run --no-sync python scripts/models_docs.py")
         return 1
     for page in stale:
         print(f"rewrote docs/{page}")

@@ -2,7 +2,7 @@
 catalogues quackd already keeps, never copied into the page.
 
 Everything here is data a terminal command already prints in its own way (`list-adapters`,
-`list-llms`, `robot list`, `doctor`), read through the same functions, so the page and the CLI
+`list-models`, `robot list`, `doctor`), read through the same functions, so the page and the CLI
 cannot disagree about what a robot or an LLM is.
 
 **`.env` is read, never loaded.** The page shows which keys are set, and a key a project's `.env`

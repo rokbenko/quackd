@@ -121,7 +121,7 @@ PRESETS: dict[str, DecisionSpec] = {
         llm_id="jev-1.13.0",
         llm_env="TYPESAFE_DEFAULT_MODEL",
         # TypeSafe charge $0.042 per million input tokens and do not charge for output
-        # ([their LLMs page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
+        # ([their models page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
         # two rows here with a published rate, `openai` the other: every other one is a server
         # you run yourself.
         price=Price(input=0.042, output=0.0, source="published"),

@@ -1,4 +1,5 @@
-"""Text that means an LLM says LLM: the owner's rule, for everything here that somebody reads.
+"""Text that means an LLM says LLM, and text about every kind of model says models: the owner's
+rule, for everything here that somebody reads.
 
 `tests/test_example_logs.py` holds the run logs to it, and this holds the rest of the repository.
 What a page quotes is left out the way that test leaves it out: a fenced block, a code span and a
@@ -8,6 +9,11 @@ sentence.
 The word still appears where it means something else: a simulator's, a policy's, a detector's, a
 board's, a pydantic class, a proper name. Each of those is listed below with its reason, so a new
 use fails here until somebody says why it may stay. Adding a sentence to `SENTENCES` is that saying.
+
+It also appears where it means every kind of model at once: the pilot LLM, the decision LLM and
+the learned policy, or the pages, the command and the rows that list all three. A word for one
+kind there would leave the other two out, so those say models, and `MODELS_IN_GENERAL` lists
+each (the owner's word, 2026-11-14).
 """
 
 from __future__ import annotations
@@ -105,6 +111,8 @@ ANYWHERE: dict[str, str] = {
     r"base model": "a learned policy",
     r"/proc/device-tree/model": "a computer's name for itself",
     r"vendor, model\b|maker, model\b|maker and model\b": "a robot's identity",
+    r"list-models": "the command that lists every kind of model",
+    r"\bmodels/[\w./#-]*": "the folder that holds every kind of model",
 }
 ANYWHERE_RE = [re.compile(pattern, re.IGNORECASE) for pattern in ANYWHERE]
 
@@ -394,13 +402,13 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         'the newest concrete model", and',
     ),
     "docs/guides/registry.md": ("it downloads a model, which",),
-    "docs/guides/vlas.md": (
+    "docs/models/pilot-llms.md": ("Gemini Robotics model that does",),
+    "docs/models/vendors.md": ("the NVIDIA Open Model",),
+    "docs/models/vlas.md": (
         "robotics model at all,",
         "refuses in every model it loads",
         "a port whose model loads with",
     ),
-    "docs/llms/pilot-llms.md": ("Gemini Robotics model that does",),
-    "docs/llms/vendors.md": ("the NVIDIA Open Model",),
     "docs/passport/compatibility.md": ("model, a",),
     "docs/passport/naming.md": ("RCP, after the Model Context",),
     "docs/passport/why.md": ("and is a model to follow",),
@@ -412,7 +420,7 @@ SENTENCES: dict[str, tuple[str, ...]] = {
     "quackd/adapters/export.py": ("regenerates  from the model.",),
     "quackd/adapters/passport.py": ("than to its model, comes",),
     "quackd/agent/decision/catalogue.py": (
-        "([their LLMs page](https://docs.typesafe.ai/models), read",
+        "([their models page](https://docs.typesafe.ai/models), read",
     ),
     "quackd/agent/loop.py": (
         "and its detector's model and device.",
@@ -525,6 +533,53 @@ SENTENCES: dict[str, tuple[str, ...]] = {
 """The rest, file by file, as the sentence says it. Each is a simulator's, a policy's, a detector's,
 a board's or a vendor's, and the sort that wrote this list read each one."""
 
+MODELS_IN_GENERAL: dict[str, tuple[str, ...]] = {
+    "CONTRIBUTING.md": ("Then the models pages, which",),
+    "README.md": (
+        "Which models work",
+        "A run has up to three models in it",
+        "in the section on models above",
+    ),
+    "docs/README.md": (
+        "[Models]",
+        "## Models",
+        "which models quackd can fly",
+        "and models have",
+        "roles a model can have",
+        "for which models quackd names",
+        "How to set a model up",
+    ),
+    "docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md": (
+        "The model tables are rendered",
+        "kind of model, so on",
+        "robots there, models here",
+        "says which models work",
+        "everything about models",
+    ),
+    "docs/models/README.md": (
+        "# Models",
+        "up to three models in it",
+        "the other half: the models",
+        "Every table of models",
+        "So a model is added",
+    ),
+    "docs/models/decision-llms.md": ("the optional second model of a run",),
+    "docs/models/pilot-llms.md": ("the only model a run needs", "[the models page]"),
+    "docs/models/vendors.md": ("whose models quackd",),
+    "docs/models/vlas.md": ("the third model a run can have",),
+    "quackd/cli.py": ("Which models to list.", "List the models quackd can use"),
+    "scripts/models_docs.py": ("names a model, a vendor",),
+}
+"""Where the word means every kind of model at once, file by file as the sentence says it: the
+pilot LLM, the decision LLM and the learned policy together, or what lists all three."""
+
+EVERY_KIND = re.compile(
+    r"\bLLMs (?:and|or) (?:learned )?polic(?:y|ies)\b|\ban LLM or a (?:learned )?policy\b"
+    r"|\btwo LLMs and a policy\b",
+    re.IGNORECASE,
+)
+"""What 0.32.0 wrote where it meant every kind of model, which says models again."""
+
 _WHOLE = [re.compile(pattern) for pattern in WHOLE_FILES]
 SPAN = re.compile(r"`[^`\n]*`")
 
@@ -601,7 +656,7 @@ def without_anywhere(words: str) -> str:
 def unexplained(path: str, text: str) -> list[str]:
     """The uses in a file that no list here gives a reason for, as `line: words`."""
     found = []
-    pieces = SENTENCES.get(path, ())
+    pieces = SENTENCES.get(path, ()) + MODELS_IN_GENERAL.get(path, ())
     for number, words in our_words(path, text):
         left = without_anywhere(words)
         for piece in pieces:
@@ -624,7 +679,7 @@ def test_the_text_that_means_an_llm_says_llm() -> None:
 def test_every_sentence_listed_is_still_there() -> None:
     """A list of exemptions nobody prunes ends up excusing whatever somebody writes next."""
     gone = []
-    for path, pieces in SENTENCES.items():
+    for path, pieces in [*SENTENCES.items(), *MODELS_IN_GENERAL.items()]:
         text = read(path) if (REPO / path).exists() else None
         said = "\n".join(without_anywhere(w) for _n, w in our_words(path, text)) if text else ""
         gone += [f"{path}: {piece!r}" for piece in pieces if piece not in said]
@@ -673,10 +728,14 @@ RETIRED_NAMES = {
     "find_model": "find_llm",
     "resolve_model": "resolve_llm_id",
     "resolve_decision_model": "resolve_decision_llm",
-    "MODEL_KINDS": "LLM_KINDS",
-    "list_models_cmd": "list_llms_cmd",
 }
 """A Python name that meant an LLM, and what it is now."""
+
+NAMES_FOR_EVERY_KIND = {
+    "LLM_KINDS": "MODEL_KINDS",
+    "list_llms_cmd": "list_models_cmd",
+}
+"""A Python name that said LLM where it meant every kind of model, and what it is now."""
 
 NAMES_MAY_STAY: dict[str, str] = {
     r"quackd/(radio|boards|perception)/.*": "the radio's model, a computer's, a detector's",
@@ -736,6 +795,8 @@ def test_no_name_in_quackd_says_the_word_where_it_means_an_llm() -> None:
         for number, name, owner, line in _names(path):
             if name in RETIRED_NAMES:
                 found.append(f"{path}:{number}: {name} is {RETIRED_NAMES[name]} now")
+            elif name in NAMES_FOR_EVERY_KIND:
+                found.append(f"{path}:{number}: {name} is {NAMES_FOR_EVERY_KIND[name]} now")
             elif (
                 name in ("model", "models")
                 and not spared
@@ -750,21 +811,59 @@ def test_no_name_in_quackd_says_the_word_where_it_means_an_llm() -> None:
 
 
 def test_the_old_command_name_is_refused_and_the_new_one_lists() -> None:
-    """Renamed with no alias, at the owner's word, so a script that still types `list-models` stops
-    rather than carrying on under a spelling nobody maintains, as one that typed `quackd trace`
-    does. The phrase is asserted and not the styled name, as `tests/test_cli_log.py` says why."""
+    """`quackd list-models` lists every kind of model, so it has the name it had before 0.32.0
+    again, and `list-llms` has no alias, at the owner's word, as `list-models` had none then. A
+    script that still types it stops rather than carrying on under a spelling nobody maintains,
+    as one that typed `quackd trace` does, and Click's refusal names the command it meant. The
+    phrase is asserted and not the styled name, as `tests/test_cli_log.py` says why."""
     from typer.testing import CliRunner
 
     from quackd.cli import app
     from tests.conftest import help_text, plain_text
 
     runner = CliRunner()
-    assert runner.invoke(app, ["list-llms"]).exit_code == 0
-    old = runner.invoke(app, ["list-models"], env={"COLUMNS": "200"})
+    assert runner.invoke(app, ["list-models"]).exit_code == 0
+    old = runner.invoke(app, ["list-llms"], env={"COLUMNS": "200"})
     assert old.exit_code == 2, old.output
-    assert "No such command" in plain_text(old.output), old.output
+    refused = plain_text(old.output)
+    assert "No such command" in refused and "list-models" in refused, old.output
     listed = help_text(["--help"])
-    assert "list-llms" in listed and "list-models" not in listed, listed
+    assert "list-models" in listed and "list-llms" not in listed, listed
+
+
+def test_text_about_every_kind_of_model_says_models() -> None:
+    """0.32.0 wrote `LLMs and policies` where the word meant every kind of model a run can have,
+    and named a folder and a command for LLMs that list policies too. They say models again, and
+    a sentence that counts the kinds as LLMs and a policy fails here. A released section of the
+    changelog and a run's log keep what they said."""
+    kept = re.compile(r"CHANGELOG\.md|docs/examples/lerobot/e\d+/.*|tests/test_llm_wording\.py")
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO,
+        capture_output=True,
+        check=True,
+    ).stdout.decode("utf-8")
+    found = []
+    for path in sorted(set(listed.split("\0"))):
+        if not path or not READ.fullmatch(path) or kept.fullmatch(path):
+            continue
+        text = read(path) if (REPO / path).exists() else None
+        if text is None or not EVERY_KIND.search(text):
+            continue
+        found += [
+            f"{path}:{number}: {words.strip()[:120]}"
+            for number, words in our_words(path, text)
+            if EVERY_KIND.search(words)
+        ]
+    assert not found, "\n".join(found)
+    assert not (REPO / "docs" / "llms").exists(), "the model pages are docs/models/"
+
+
+@pytest.mark.parametrize(
+    "words", ["Which LLMs and policies work", "A run has up to two LLMs and a policy in it."]
+)
+def test_the_kinds_counted_as_llms_are_caught(words: str) -> None:
+    assert EVERY_KIND.search(words)
 
 
 @pytest.mark.parametrize(
