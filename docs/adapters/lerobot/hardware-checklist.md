@@ -364,9 +364,10 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    OpenAI APIs, Gemini, and any OpenAI-compatible local server with `--vision` on. **It costs
    what it sounds like.** The last two exchanges keep their images, so two cameras is four
    pictures in every request rather than two, on every step, for the length of the run, and up
-   to eighteen on Claude Opus 5.5 and Fable 5.1, whose old frames are trimmed every eight
-   exchanges rather than on every one. A local server or an LLM that takes one image per
-   message will refuse outright, and the answer there is a single `--camera-url`.
+   to eighteen on the Claude LLMs that bind their thinking (Opus 5.5, Fable 5.2, Sonnet 5.5,
+   Haiku 5.5 and Fable 5.1), whose old frames are trimmed every eight exchanges rather than on
+   every one. A local server or an LLM that takes one image per message will refuse outright,
+   and the answer there is a single `--camera-url`.
 
 9. **Rehearse the whole thing with `--dry-run`, which sends the arm nothing.** This is the
    last step before anything moves, and it is the one that tells you whether the parts you

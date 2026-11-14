@@ -54,8 +54,8 @@ own. Nobody publishes a latency for it, its README included.
 - **A choice is not one forward pass**: two compiler passes plus an adjudicator when they
   disagree, and questions answered serially, so quackd's four-question turn is 6 to 8 passes
   against a 1.0 s timeout.
-- **Port 8000 is contested**: `von` defaults there, as does quackd's vLLM pilot preset;
-  `--decision-url` moves one.
+- **Port 8000 is contested**: quackd's vLLM pilot preset defaults there too, and
+  `--decision-url` moves this one.
 
 > [!WARNING]
 > **Nothing authenticates this server**: no header is read, no CORS middleware, no rate limit, no
@@ -91,11 +91,12 @@ own. Nobody publishes a latency for it, its README included.
 
 ## Status
 
-It has never answered a real robot: the client is exercised against a stub that speaks the same
-wire format (`tests/stub_decision_llm.py`, `tests/test_decision_llms.py`), which proves quackd's
-half of the conversation and not OpenDecision's. Without the extra, `quackd doctor` prints this
-row as `missing (quackd[decision])`, `none needed` for the key, `opendecision` for the LLM and
-`http://127.0.0.1:8000` for the url. `--decision-mode shadow` changes that.
+It has never answered a real robot: the client is exercised against a stand-in for the SDK it speaks
+through, `tests/fake_systemone.py`, installed in place of `typesafe_sdk`
+(`tests/test_decision_llms.py`), which proves quackd's half of the conversation and not
+OpenDecision's. Without the extra, `quackd doctor` prints this row as `missing (quackd[decision])`,
+`none needed` for the key, `opendecision` for the LLM and `http://127.0.0.1:8000` for the url.
+`--decision-mode shadow` changes that.
 
 ## How to help
 

@@ -2613,14 +2613,14 @@ class AgentLoop:
         history = self.history if history is None else history
         n = self.cfg.keep_images_for_last_n
         # An LLM that binds each replayed thinking block to everything before it (Claude Opus
-        # 5.5, Fable 5.1) is trimmed in steps rather than on every call, because a trim that
-        # takes a frame away edits the older messages and so invalidates the blocks produced
-        # while that frame was still sent. From the trim call on, those blocks are left out,
-        # which Anthropic allows for a leading run of them, so the blocks after them form an
-        # unbroken run that stays valid until the next trim. The latest assistant message is
-        # the one exception: its blocks may not be filtered, so on a trim call the API is asked
-        # to drop them instead (`drop_block`). Every other provider has a period of 1, which is
-        # a trim every call and nothing left out.
+        # 5.5 and the other Claude rows marked `binds_thinking`) is trimmed in steps rather than
+        # on every call, because a trim that takes a frame away edits the older messages and so
+        # invalidates the blocks produced while that frame was still sent. From the trim call on,
+        # those blocks are left out, which Anthropic allows for a leading run of them, so the
+        # blocks after them form an unbroken run that stays valid until the next trim. The
+        # latest assistant message is the one exception: its blocks may not be filtered, so on a
+        # trim call the API is asked to drop them instead (`drop_block`). Every other provider
+        # has a period of 1, which is a trim every call and nothing left out.
         period = max(1, int(getattr(self.cfg.provider, "frame_trim_period", 1) or 1))
         cut = max(0, len(history) - n)
         cut -= cut % period

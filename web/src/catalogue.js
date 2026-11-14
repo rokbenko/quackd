@@ -28,9 +28,33 @@ export const CATALOGUE = {
         "forced_tools": false
       },
       {
+        "id": "claude-fable-5-2",
+        "label": "Claude Fable 5.2",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": false
+      },
+      {
+        "id": "claude-sonnet-5-5",
+        "label": "Claude Sonnet 5.5",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": false
+      },
+      {
+        "id": "claude-haiku-5-5",
+        "label": "Claude Haiku 5.5",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
         "id": "claude-fable-5-1",
         "label": "Claude Fable 5.1",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": false
@@ -38,7 +62,7 @@ export const CATALOGUE = {
       {
         "id": "claude-sonnet-5",
         "label": "Claude Sonnet 5",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -46,7 +70,7 @@ export const CATALOGUE = {
       {
         "id": "claude-haiku-4-5",
         "label": "Claude Haiku 4.5",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -106,31 +130,23 @@ export const CATALOGUE = {
         "vision": true,
         "api": null,
         "forced_tools": true
-      },
-      {
-        "id": "claude-sonnet-4-5",
-        "label": "Claude Sonnet 4.5",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
       }
     ]
   },
   "openai": {
-    "default": "gpt-6-sol",
+    "default": "gpt-6.1-sol",
     "entries": [
       {
-        "id": "gpt-6-sol",
-        "label": "GPT-6 Sol",
+        "id": "gpt-6.1-sol",
+        "label": "GPT-6.1 Sol",
         "status": "current",
         "vision": true,
         "api": "responses",
         "forced_tools": true
       },
       {
-        "id": "gpt-6.1-sol",
-        "label": "GPT-6.1 Sol",
+        "id": "gpt-6.1-terra",
+        "label": "GPT-6.1 Terra",
         "status": "current",
         "vision": true,
         "api": "responses",
@@ -153,9 +169,17 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
+        "id": "gpt-6-sol",
+        "label": "GPT-6 Sol",
+        "status": "legacy",
+        "vision": true,
+        "api": "responses",
+        "forced_tools": true
+      },
+      {
         "id": "gpt-5.6-sol",
         "label": "GPT-5.6 Sol",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -163,7 +187,7 @@ export const CATALOGUE = {
       {
         "id": "gpt-5.6-terra",
         "label": "GPT-5.6 Terra",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -171,7 +195,7 @@ export const CATALOGUE = {
       {
         "id": "gpt-5.6-luna",
         "label": "GPT-5.6 Luna",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -201,56 +225,8 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
-        "id": "gpt-5.4-nano",
-        "label": "GPT-5.4 nano",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
         "id": "gpt-5.2",
         "label": "GPT-5.2",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gpt-5.1",
-        "label": "GPT-5.1",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gpt-4.1",
-        "label": "GPT-4.1",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gpt-4.1-mini",
-        "label": "GPT-4.1 mini",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gpt-4o",
-        "label": "GPT-4o",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gpt-4o-mini",
-        "label": "GPT-4o mini",
         "status": "legacy",
         "vision": true,
         "api": null,
@@ -281,14 +257,6 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
-        "id": "gpt-5.3-codex",
-        "label": "GPT-5.3 Codex",
-        "status": "specialised",
-        "vision": true,
-        "api": "responses",
-        "forced_tools": true
-      },
-      {
         "id": "chat-latest",
         "label": "ChatGPT Instant (moves with ChatGPT)",
         "status": "specialised",
@@ -299,11 +267,27 @@ export const CATALOGUE = {
     ]
   },
   "gemini": {
-    "default": "gemini-3.8-flash",
+    "default": "gemini-4-hydrogen",
     "entries": [
       {
-        "id": "gemini-3.8-flash",
-        "label": "Gemini 3.8 Flash",
+        "id": "gemini-4-hydrogen",
+        "label": "Gemini 4 Hydrogen",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "gemini-4-carbon",
+        "label": "Gemini 4 Carbon",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "gemini-4-argon",
+        "label": "Gemini 4 Argon",
         "status": "current",
         "vision": true,
         "api": null,
@@ -350,8 +334,8 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
-        "id": "gemini-3.7-flash",
-        "label": "Gemini 3.7 Flash",
+        "id": "gemini-3.8-flash",
+        "label": "Gemini 3.8 Flash",
         "status": "legacy",
         "vision": true,
         "api": null,
@@ -360,14 +344,6 @@ export const CATALOGUE = {
       {
         "id": "gemini-3.6-flash",
         "label": "Gemini 3.6 Flash",
-        "status": "legacy",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "gemini-3.5-flash",
-        "label": "Gemini 3.5 Flash",
         "status": "legacy",
         "vision": true,
         "api": null,
@@ -437,19 +413,11 @@ export const CATALOGUE = {
     ]
   },
   "mistral": {
-    "default": "mistral-medium-3-5",
+    "default": "mistral-large-4-0",
     "entries": [
       {
-        "id": "mistral-medium-3-5",
-        "label": "Mistral Medium 3.5",
-        "status": "current",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "mistral-large-2512",
-        "label": "Mistral Large 3",
+        "id": "mistral-large-4-0",
+        "label": "Mistral Large 4",
         "status": "current",
         "vision": true,
         "api": null,
@@ -498,23 +466,15 @@ export const CATALOGUE = {
       {
         "id": "zai-glm-5-3",
         "label": "Z.ai GLM 5.3 (hosted by Mistral)",
-        "status": "preview",
+        "status": "open",
         "vision": false,
         "api": null,
         "forced_tools": true
       },
       {
-        "id": "zai-glm-5-2",
-        "label": "Z.ai GLM 5.2 (hosted by Mistral)",
-        "status": "preview",
-        "vision": false,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "labs-leanstral-1-5",
-        "label": "Leanstral 1.5 (Lean 4 proofs, Mistral labs)",
-        "status": "preview",
+        "id": "zai-glm-5-3-flash",
+        "label": "Z.ai GLM 5.3 Flash (hosted by Mistral)",
+        "status": "open",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -570,7 +530,7 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
-        "id": "north-mini-code-1-0",
+        "id": "north-mini-code-1.0",
         "label": "North Mini Code",
         "status": "specialised",
         "vision": false,
@@ -633,7 +593,7 @@ export const CATALOGUE = {
       {
         "id": "qwen3.7-flash",
         "label": "Qwen3.7 Flash",
-        "status": "current",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -777,36 +737,28 @@ export const CATALOGUE = {
     ]
   },
   "kimi": {
-    "default": "kimi-k3",
+    "default": "kimi-k3.1-pro",
     "entries": [
+      {
+        "id": "kimi-k3.1-pro",
+        "label": "Kimi K3.1 Pro",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "kimi-k3.1-pro-highspeed",
+        "label": "Kimi K3.1 Pro (high speed)",
+        "status": "specialised",
+        "vision": false,
+        "api": null,
+        "forced_tools": true
+      },
       {
         "id": "kimi-k3",
         "label": "Kimi K3",
-        "status": "current",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "kimi-k2.6",
-        "label": "Kimi K2.6",
-        "status": "current",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "kimi-k2.7-code",
-        "label": "Kimi K2.7 Code",
-        "status": "specialised",
-        "vision": true,
-        "api": null,
-        "forced_tools": true
-      },
-      {
-        "id": "kimi-k2.7-code-highspeed",
-        "label": "Kimi K2.7 Code (high speed)",
-        "status": "specialised",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -836,6 +788,14 @@ export const CATALOGUE = {
         "id": "glm-5.3-flashx",
         "label": "GLM-5.3 FlashX",
         "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "glm-5.3-flashx-legal",
+        "label": "GLM-5.3 FlashX Legal",
+        "status": "specialised",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -947,7 +907,7 @@ export const CATALOGUE = {
       {
         "id": "glm-4.6v",
         "label": "GLM-4.6V",
-        "status": "specialised",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -955,7 +915,7 @@ export const CATALOGUE = {
       {
         "id": "glm-4.6v-flash",
         "label": "GLM-4.6V Flash",
-        "status": "specialised",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -963,7 +923,7 @@ export const CATALOGUE = {
       {
         "id": "glm-4.6v-flashx",
         "label": "GLM-4.6V FlashX",
-        "status": "specialised",
+        "status": "legacy",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -977,6 +937,22 @@ export const CATALOGUE = {
         "id": "muse-spark-1.3",
         "label": "Muse Spark 1.3",
         "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "muse-ember-1.0",
+        "label": "Muse Ember",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "muse-wonder-1.0",
+        "label": "Muse Wonder (preview)",
+        "status": "preview",
         "vision": true,
         "api": null,
         "forced_tools": true
@@ -1051,8 +1027,16 @@ export const CATALOGUE = {
         "forced_tools": false
       },
       {
-        "id": "google/gemini-3.8-flash",
-        "label": "Gemini 3.8 Flash (via OpenRouter)",
+        "id": "anthropic/claude-fable-5.2",
+        "label": "Claude Fable 5.2 (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": false
+      },
+      {
+        "id": "google/gemini-4-hydrogen",
+        "label": "Gemini 4 Hydrogen (via OpenRouter)",
         "status": "current",
         "vision": true,
         "api": null,

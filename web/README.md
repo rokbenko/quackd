@@ -104,10 +104,11 @@ to proxy it through. Every call is billed to you.
 
 - **Anthropic** needs the `anthropic-dangerous-direct-browser-access: true` header, which
   the page sends. That header is exactly what its name says: your key is in a web page.
-  Claude Opus 5.5, the default, and Claude Fable 5.1 answer a forced tool call with a 400,
-  so the page asks them with `auto`, as the catalogue marks them, and moves any other Claude
-  LLM there too if it answers the same way. A turn that comes back in prose rather than a
-  call then ends the run, as it does for every vendor the page can only ask.
+  Claude Opus 5.5, the default, Claude Fable 5.2, Claude Sonnet 5.5 and Claude Fable 5.1
+  answer a forced tool call with a 400, so the page asks them with `auto`, as the catalogue
+  marks them, and moves any other Claude LLM there too if it answers the same way. A turn that
+  comes back in prose rather than a call then ends the run, as it does for every vendor the
+  page can only ask.
 - **Gemini** and **OpenAI** work with their normal browser CORS.
 - **Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi and Meta** are all OpenAI-shaped, so each is
   the OpenAI client again with a different base URL, and each answered a CORS preflight from
@@ -126,7 +127,7 @@ to proxy it through. Every call is billed to you.
   `provider: {"require_parameters": true}`, so OpenRouter routes only to an endpoint that
   honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name quackd
   and say nothing about you. It is never moved to the Responses API, and an LLM's
-  `reasoning_details` go back on the turn that made the call. The dropdown holds the six rows
+  `reasoning_details` go back on the turn that made the call. The dropdown holds the seven rows
   the catalogue carries. The CLI can also name an id they leave out, a `:free` one included,
   checked against OpenRouter's list when a run starts unless quackd refuses its spelling first,
   and the page cannot. No OpenRouter LLM has answered a real quackd request, from this page or
@@ -352,7 +353,7 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 - **There is no scripted pilot.** Python's `--llm fake` walks the whole task with no
   LLM. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
-- **OpenRouter's six rows and no others.** The CLI can also name an id the rows leave out,
+- **OpenRouter's seven rows and no others.** The CLI can also name an id the rows leave out,
   checked against OpenRouter's public LLM list when a run starts unless quackd refuses its
   spelling first. The page offers the rows the catalogue carries in a dropdown, with no free text
   for any cloud vendor.

@@ -2,6 +2,12 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-22 · Extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper, its floors and its gates, all unchanged) and borrows the discovery pattern from [ADR-0037](0037-adapters-are-their-own-packages.md) (adapters announce themselves through an entry point group) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (their Jev-specific spellings) · Retires `--jev` outright, with none of the release of grace [ADR-0042](0042-the-log-is-the-whole-screen.md) gave the trace spellings · Also merges `--provider` and `--model` into `--llm`, amending [ADR-0031](0031-llm-catalogue.md) · Implemented in `quackd/agent/decision/` (was `quackd/agent/jev.py`) ([page](../guides/decision-llms/README.md))
 
+**Amended 2026-11-14:** the `von` row is gone. Its README has said "Von is no longer maintained and
+these weights will not be updated" since 2026-10-17, and its repository is archived now, so its row,
+its page and its line in `quackd doctor` went with it. Von is still named below as one of the
+servers the format reached when this was written, and a Von server somebody still runs is
+`--decision-llm local --decision-url` like any other.
+
 **Amended 2026-09-22:** "a section on the page" under Consequences is a page now. Each preset
 has `docs/decision-llms/<name>.md`, in the shape of the adapter pages, with a VERIFIED and an
 UNVERIFIED section and a status line that stays until one has answered a real robot, and the

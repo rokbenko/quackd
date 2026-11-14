@@ -6,11 +6,11 @@ every thinking block's text empty, which would make the log's "what it thought" 
 `display` changes what is shown, never what is thought or billed. An LLM that rejects the
 `thinking` parameter (one older than Claude 4.6) gets one retry without it, and the run goes
 on without thinking text. `output_config.effort` is sent to every LLM that takes it, which is
-every row but Haiku 4.5 and Sonnet 4.5 (`LLMSpec.effort`).
+every row but Haiku 4.5 (`LLMSpec.effort`).
 
 `tool_choice={"type": "any", "disable_parallel_tool_use": True}` guarantees exactly one tool
-call per turn on every LLM that accepts a forced call. Claude
-Opus 5.5 and Claude Fable 5.1 do not, and answer one with a 400, so the catalogue marks them
+call per turn on every LLM that accepts a forced call. Claude Fable 5.2, Opus 5.5, Sonnet 5.5
+and Fable 5.1 do not, and answer one with a 400, so the catalogue marks them
 (`LLMSpec.forced_tools`) and they are asked with `auto` instead, still one call per turn; an
 LLM the catalogue does not mark gets one retry with `auto` when it says the same thing, and
 keeps it. Images ride as base64 PNG blocks, and the assistant's raw content blocks (including

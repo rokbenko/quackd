@@ -33,18 +33,18 @@ carry is checked against OpenRouter's own LLM list when the run starts
 
 | `--llm` | Who | Extra | Key | Address | Default | Ids |
 |---|---|---|---|---|---|---|
-| `anthropic` | Anthropic | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | the SDK's own | `claude-opus-5-5` | [12](#anthropic) |
-| `openai` | OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6-sol` | [22](#openai) |
-| `gemini` | Google | `quackd[gemini]` | `GEMINI_API_KEY`, or `GOOGLE_API_KEY` | the SDK's own | `gemini-3.8-flash` | [9](#gemini) |
+| `anthropic` | Anthropic | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | the SDK's own | `claude-opus-5-5` | [14](#anthropic) |
+| `openai` | OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6.1-sol` | [16](#openai) |
+| `gemini` | Google | `quackd[gemini]` | `GEMINI_API_KEY`, or `GOOGLE_API_KEY` | the SDK's own | `gemini-4-hydrogen` | [10](#gemini) |
 | `grok` | xAI | `quackd[grok]` | `XAI_API_KEY` | `https://api.x.ai/v1` | `grok-4.7` | [7](#grok) |
-| `mistral` | Mistral AI | `quackd[mistral]` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `mistral-medium-3-5` | [10](#mistral) |
+| `mistral` | Mistral AI | `quackd[mistral]` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `mistral-large-4-0` | [8](#mistral) |
 | `deepseek` | DeepSeek | `quackd[deepseek]` | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` | `deepseek-flash` | [2](#deepseek) |
 | `cohere` | Cohere | `quackd[cohere]` | `COHERE_API_KEY`, or `CO_API_KEY` | `https://api.cohere.ai/compatibility/v1` | `command-a-plus-05-2026` | [7](#cohere) |
 | `qwen` | Alibaba Cloud (Qwen) | `quackd[qwen]` | `DASHSCOPE_API_KEY` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `qwen3.8-max` | [21](#qwen) |
-| `kimi` | Moonshot AI (Kimi) | `quackd[kimi]` | `MOONSHOT_API_KEY` | `https://api.moonshot.ai/v1` | `kimi-k3` | [4](#kimi) |
-| `glm` | Z.ai (GLM) | `quackd[glm]` | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` | `glm-5.3` | [19](#glm) |
-| `meta` | Meta | `quackd[meta]` | `META_API_KEY`, or `MODEL_API_KEY` | `https://api.meta.ai/v1` | `muse-spark-1.3` | [5](#meta) |
-| `openrouter` | OpenRouter, other vendors' LLMs behind one key | `quackd[openrouter]` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | `openai/gpt-6-sol` | [6, and ids it lists](#openrouter) |
+| `kimi` | Moonshot AI (Kimi) | `quackd[kimi]` | `MOONSHOT_API_KEY` | `https://api.moonshot.ai/v1` | `kimi-k3.1-pro` | [3](#kimi) |
+| `glm` | Z.ai (GLM) | `quackd[glm]` | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` | `glm-5.3` | [20](#glm) |
+| `meta` | Meta | `quackd[meta]` | `META_API_KEY`, or `MODEL_API_KEY` | `https://api.meta.ai/v1` | `muse-spark-1.3` | [7](#meta) |
+| `openrouter` | OpenRouter, other vendors' LLMs behind one key | `quackd[openrouter]` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | `openai/gpt-6-sol` | [7, and ids it lists](#openrouter) |
 
 <!-- end generated: pilot-vendors -->
 
@@ -115,16 +115,19 @@ Gemini Robotics model that does is offered to selected partners only
 
 <!-- generated: pilot-ids, by scripts/models_docs.py from quackd/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
 
-124 LLM ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-09-23, `openai:gpt-6.1-sol`'s on 2026-10-26, and OpenRouter's list on 2026-10-06. None is a rate the vendor does not publish, and unpriced an LLM with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
+122 LLM ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-11-14, and OpenRouter's list on 2026-11-14. None is a rate the vendor does not publish, and unpriced an LLM with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
 
 ### `anthropic`
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
 | `anthropic:claude-opus-5-5` | Claude Opus 5.5 | current | yes | default, asked with `auto` | 4 / 20 / 0.2 / 5 |
-| `anthropic:claude-fable-5-1` | Claude Fable 5.1 | current | yes | asked with `auto` | 10 / 50 / 0.25 / 12.5 |
-| `anthropic:claude-sonnet-5` | Claude Sonnet 5 | current | yes |  | 2 / 10 / 0.2 / 2.5 |
-| `anthropic:claude-haiku-4-5` | Claude Haiku 4.5 | current | yes |  | 1 / 5 / 0.1 / 1.25 |
+| `anthropic:claude-fable-5-2` | Claude Fable 5.2 | current | yes | asked with `auto` | 8 / 40 / 0.2 / 10 |
+| `anthropic:claude-sonnet-5-5` | Claude Sonnet 5.5 | current | yes | asked with `auto` | 2 / 10 / 0.1 / 2.5 |
+| `anthropic:claude-haiku-5-5` | Claude Haiku 5.5 | current | yes |  | 0.1 / 0.5 / 0.01 / 0.125 |
+| `anthropic:claude-fable-5-1` | Claude Fable 5.1 | legacy | yes | asked with `auto` | 10 / 50 / 0.25 / 12.5 |
+| `anthropic:claude-sonnet-5` | Claude Sonnet 5 | legacy | yes |  | 2 / 10 / 0.2 / 2.5 |
+| `anthropic:claude-haiku-4-5` | Claude Haiku 4.5 | legacy | yes |  | 1 / 5 / 0.1 / 1.25 |
 | `anthropic:claude-fable-5` | Claude Fable 5 | legacy | yes |  | 10 / 50 / 1 / 12.5 |
 | `anthropic:claude-opus-5` | Claude Opus 5 | legacy | yes |  | 5 / 25 / 0.5 / 6.25 |
 | `anthropic:claude-opus-4-8` | Claude Opus 4.8 | legacy | yes |  | 5 / 25 / 0.5 / 6.25 |
@@ -132,48 +135,42 @@ Gemini Robotics model that does is offered to selected partners only
 | `anthropic:claude-opus-4-6` | Claude Opus 4.6 | legacy | yes |  | 5 / 25 / 0.5 / 6.25 |
 | `anthropic:claude-opus-4-5` | Claude Opus 4.5 | legacy | yes |  | 5 / 25 / 0.5 / 6.25 |
 | `anthropic:claude-sonnet-4-6` | Claude Sonnet 4.6 | legacy | yes |  | 3 / 15 / 0.3 / 3.75 |
-| `anthropic:claude-sonnet-4-5` | Claude Sonnet 4.5 | legacy | yes |  | 3 / 15 / 0.3 / 3.75 |
 
 ### `openai`
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
-| `openai:gpt-6-sol` | GPT-6 Sol | current | yes | default, Responses API | 2 / 10 / 0.2 / 2.5 |
-| `openai:gpt-6.1-sol` | GPT-6.1 Sol | current | yes | Responses API | 2 / 10 / 0.1 / 2.5 |
+| `openai:gpt-6.1-sol` | GPT-6.1 Sol | current | yes | default, Responses API | 2 / 10 / 0.1 / 2.5 |
+| `openai:gpt-6.1-terra` | GPT-6.1 Terra | current | yes | Responses API | 1 / 5 / 0.05 / 1.25 |
 | `openai:gpt-6-astra` | GPT-6 Astra | current | yes | Responses API | 10 / 50 / 1 / 12.5 |
 | `openai:gpt-6-luna` | GPT-6 Luna | current | yes | Responses API | 0.1 / 0.5 / 0.01 / 0.125 |
-| `openai:gpt-5.6-sol` | GPT-5.6 Sol | current | yes |  | 4 / 20 / 0.4 / 5 |
-| `openai:gpt-5.6-terra` | GPT-5.6 Terra | current | yes |  | 2 / 12 / 0.2 / 2.5 |
-| `openai:gpt-5.6-luna` | GPT-5.6 Luna | current | yes |  | 0.2 / 1.2 / 0.02 / 0.25 |
+| `openai:gpt-6-sol` | GPT-6 Sol | legacy | yes | Responses API | 2 / 10 / 0.2 / 2.5 |
+| `openai:gpt-5.6-sol` | GPT-5.6 Sol | legacy | yes |  | 4 / 20 / 0.4 / 5 |
+| `openai:gpt-5.6-terra` | GPT-5.6 Terra | legacy | yes |  | 2 / 12 / 0.2 / 2.5 |
+| `openai:gpt-5.6-luna` | GPT-5.6 Luna | legacy | yes |  | 0.2 / 1.2 / 0.02 / 0.25 |
 | `openai:gpt-5.5` | GPT-5.5 | legacy | yes |  | 5 / 30 / 0.5 / none |
 | `openai:gpt-5.4` | GPT-5.4 | legacy | yes |  | 2.5 / 15 / 0.25 / none |
 | `openai:gpt-5.4-mini` | GPT-5.4 mini | legacy | yes |  | 0.75 / 4.5 / 0.075 / none |
-| `openai:gpt-5.4-nano` | GPT-5.4 nano | legacy | yes |  | 0.2 / 1.25 / 0.02 / none |
 | `openai:gpt-5.2` | GPT-5.2 | legacy | yes |  | 1.75 / 14 / 0.175 / none |
-| `openai:gpt-5.1` | GPT-5.1 | legacy | yes |  | 1.25 / 10 / 0.125 / none |
-| `openai:gpt-4.1` | GPT-4.1 | legacy | yes |  | 2 / 8 / 0.5 / none |
-| `openai:gpt-4.1-mini` | GPT-4.1 mini | legacy | yes |  | 0.4 / 1.6 / 0.1 / none |
-| `openai:gpt-4o` | GPT-4o | legacy | yes |  | 2.5 / 10 / 1.25 / none |
-| `openai:gpt-4o-mini` | GPT-4o mini | legacy | yes |  | 0.15 / 0.6 / 0.075 / none |
 | `openai:gpt-5.5-pro` | GPT-5.5 Pro | specialised | yes | Responses API | 30 / 180 / none / none |
 | `openai:gpt-5.4-pro` | GPT-5.4 Pro | specialised | yes | Responses API | 30 / 180 / none / none |
 | `openai:gpt-5.2-pro` | GPT-5.2 Pro | specialised | yes | Responses API | 21 / 168 / none / none |
-| `openai:gpt-5.3-codex` | GPT-5.3 Codex | specialised | yes | Responses API | 1.75 / 14 / 0.175 / none |
 | `openai:chat-latest` | ChatGPT Instant (moves with ChatGPT) | specialised | yes |  | 5 / 30 / 0.5 / none |
 
 ### `gemini`
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
-| `gemini:gemini-3.8-flash` | Gemini 3.8 Flash | current | yes | default | 0.75 / 3.75 / 0.075 / 0 |
+| `gemini:gemini-4-hydrogen` | Gemini 4 Hydrogen | current | yes | default | 1.5 / 7.5 / 0.075 / none |
+| `gemini:gemini-4-carbon` | Gemini 4 Carbon | current | yes |  | 4 / 20 / 0.2 / none |
+| `gemini:gemini-4-argon` | Gemini 4 Argon | current | yes |  | 4 / 20 / 0.2 / none |
 | `gemini:gemini-3.5-flash-lite` | Gemini 3.5 Flash-Lite | current | yes |  | 0.3 / 2.5 / 0.03 / 0 |
 | `gemini:gemini-3.1-pro-preview` | Gemini 3.1 Pro (preview) | preview | yes |  | 2 / 12 / 0.2 / 0 |
 | `gemini:gemini-3.1-pro-preview-customtools` | Gemini 3.1 Pro, custom tools (preview) | preview | yes |  | 2 / 12 / 0.2 / 0 |
 | `gemini:gemini-3-flash-preview` | Gemini 3 Flash (preview) | preview | yes |  | 0.5 / 3 / 0.05 / 0 |
 | `gemini:gemini-robotics-er-2-preview` | Gemini Robotics ER 2 (preview) | preview | yes |  | 1 / 5 / 0.1 / 0 |
-| `gemini:gemini-3.7-flash` | Gemini 3.7 Flash | legacy | yes |  | 0.75 / 3.75 / 0.075 / 0 |
+| `gemini:gemini-3.8-flash` | Gemini 3.8 Flash | legacy | yes |  | 0.75 / 3.75 / 0.075 / 0 |
 | `gemini:gemini-3.6-flash` | Gemini 3.6 Flash | legacy | yes |  | 0.75 / 3.75 / 0.075 / 0 |
-| `gemini:gemini-3.5-flash` | Gemini 3.5 Flash | legacy | yes |  | 1.5 / 9 / 0.15 / 0 |
 
 ### `grok`
 
@@ -191,16 +188,14 @@ Gemini Robotics model that does is offered to selected partners only
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
-| `mistral:mistral-medium-3-5` | Mistral Medium 3.5 | current | yes | default | 1.5 / 7.5 / 0.15 / none |
-| `mistral:mistral-large-2512` | Mistral Large 3 | current | yes |  | 0.5 / 1.5 / 0.05 / none |
+| `mistral:mistral-large-4-0` | Mistral Large 4 | current | yes | default | 0.7 / 2.1 / 0.07 / none |
 | `mistral:mistral-small-2603` | Mistral Small 4 | current | yes |  | 0.15 / 0.6 / 0.015 / none |
 | `mistral:ministral-14b-2512` | Ministral 3 14B | open | yes |  | 0.2 / 0.2 / 0.02 / none |
 | `mistral:ministral-8b-2512` | Ministral 3 8B | open | yes |  | 0.15 / 0.15 / 0.015 / none |
 | `mistral:ministral-3b-2512` | Ministral 3 3B | open | yes |  | 0.1 / 0.1 / 0.01 / none |
 | `mistral:codestral-2508` | Codestral 25.08 | specialised | no |  | 0.3 / 0.9 / 0.03 / none |
-| `mistral:zai-glm-5-3` | Z.ai GLM 5.3 (hosted by Mistral) | preview | no |  | 1.4 / 4.4 / 0.14 / none |
-| `mistral:zai-glm-5-2` | Z.ai GLM 5.2 (hosted by Mistral) | preview | no |  | 1.4 / 4.4 / 0.14 / none |
-| `mistral:labs-leanstral-1-5` | Leanstral 1.5 (Lean 4 proofs, Mistral labs) | preview | yes |  | 0 / 0 / 0 / none |
+| `mistral:zai-glm-5-3` | Z.ai GLM 5.3 (hosted by Mistral) | open | no |  | 1.4 / 4.4 / 0.14 / none |
+| `mistral:zai-glm-5-3-flash` | Z.ai GLM 5.3 Flash (hosted by Mistral) | open | yes |  | 0.15 / 0.5 / 0.03 / none |
 
 ### `deepseek`
 
@@ -216,7 +211,7 @@ Gemini Robotics model that does is offered to selected partners only
 | `cohere:command-a-plus-05-2026` | Command A+ | current | yes | default | unpriced |
 | `cohere:command-a-03-2025` | Command A | current | no |  | unpriced |
 | `cohere:command-a-reasoning-08-2025` | Command A Reasoning | specialised | no |  | unpriced |
-| `cohere:north-mini-code-1-0` | North Mini Code | specialised | no |  | unpriced |
+| `cohere:north-mini-code-1.0` | North Mini Code | specialised | no |  | 0 / 0 / none / none |
 | `cohere:command-r-plus-08-2024` | Command R+ | legacy | no |  | 2.5 / 10 / none / none |
 | `cohere:command-r-08-2024` | Command R | legacy | no |  | 0.15 / 0.6 / none / none |
 | `cohere:command-r7b-12-2024` | Command R7B | legacy | no |  | 0.0375 / 0.15 / none / none |
@@ -225,21 +220,21 @@ Gemini Robotics model that does is offered to selected partners only
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
-| `qwen:qwen3.8-max` | Qwen3.8 Max | current | yes | default | 2 / 6 / none / none |
-| `qwen:qwen3.8-flash` | Qwen3.8 Flash | current | yes |  | 0.15 / 0.47 / none / none |
-| `qwen:qwen3.7-plus` | Qwen3.7 Plus | current | yes |  | 0.4 / 1.6 / none / none |
-| `qwen:qwen3.7-flash` | Qwen3.7 Flash | current | yes |  | 0.03 / 0.13 / none / none |
-| `qwen:qwen3.7-max` | Qwen3.7 Max | legacy | no |  | 2.5 / 7.5 / none / none |
+| `qwen:qwen3.8-max` | Qwen3.8 Max | current | yes | default | 2 / 6 / 0.25 / none |
+| `qwen:qwen3.8-flash` | Qwen3.8 Flash | current | yes |  | 0.15 / 0.47 / 0.016 / none |
+| `qwen:qwen3.7-plus` | Qwen3.7 Plus | current | yes |  | 0.4 / 1.6 / 0.08 / none |
+| `qwen:qwen3.7-flash` | Qwen3.7 Flash | legacy | yes |  | 0.03 / 0.13 / 0.006 / none |
+| `qwen:qwen3.7-max` | Qwen3.7 Max | legacy | no |  | 2.5 / 7.5 / 0.5 / none |
 | `qwen:qwen3.6-plus` | Qwen3.6 Plus | legacy | yes |  | 0.5 / 3 / none / none |
 | `qwen:qwen3.6-flash` | Qwen3.6 Flash | legacy | yes |  | 0.25 / 1.5 / none / none |
 | `qwen:qwen3.5-plus` | Qwen3.5 Plus | legacy | yes |  | 0.4 / 2.4 / none / none |
 | `qwen:qwen3.5-flash` | Qwen3.5 Flash | legacy | yes |  | 0.1 / 0.4 / none / none |
-| `qwen:qwen-max` | Qwen Max | legacy | no |  | 1.6 / 6.4 / none / none |
-| `qwen:qwen-plus` | Qwen Plus | legacy | no |  | 0.4 / 1.2 / none / none |
-| `qwen:qwen-flash` | Qwen Flash | legacy | no |  | 0.05 / 0.4 / none / none |
-| `qwen:qwen3-coder-flash` | Qwen3 Coder Flash | specialised | no |  | 0.3 / 1.5 / none / none |
-| `qwen:qwen3.8-27b` | Qwen3.8 27B | open | yes |  | 0.5 / 3 / none / none |
-| `qwen:qwen3.8-2.4t-a95b` | Qwen3.8 2.4T-A95B | open | no |  | 2 / 6 / none / none |
+| `qwen:qwen-max` | Qwen Max | legacy | no |  | 1.6 / 6.4 / 0.32 / none |
+| `qwen:qwen-plus` | Qwen Plus | legacy | no |  | 0.4 / 1.2 / 0.08 / none |
+| `qwen:qwen-flash` | Qwen Flash | legacy | no |  | 0.05 / 0.4 / 0.01 / none |
+| `qwen:qwen3-coder-flash` | Qwen3 Coder Flash | specialised | no |  | 0.3 / 1.5 / 0.06 / none |
+| `qwen:qwen3.8-27b` | Qwen3.8 27B | open | yes |  | 0.5 / 3 / 0.1 / none |
+| `qwen:qwen3.8-2.4t-a95b` | Qwen3.8 2.4T-A95B | open | no |  | 2 / 6 / 0.25 / none |
 | `qwen:qwen3.6-35b-a3b` | Qwen3.6 35B-A3B | open | yes |  | 0.375 / 2.25 / none / none |
 | `qwen:qwen3.6-27b` | Qwen3.6 27B | open | yes |  | 0.6 / 3.6 / none / none |
 | `qwen:qwen3.5-397b-a17b` | Qwen3.5 397B-A17B | open | yes |  | 0.6 / 3.6 / none / none |
@@ -251,10 +246,9 @@ Gemini Robotics model that does is offered to selected partners only
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
-| `kimi:kimi-k3` | Kimi K3 | current | yes | default | 3 / 15 / 0.3 / 3 |
-| `kimi:kimi-k2.6` | Kimi K2.6 | current | yes |  | 0.95 / 4 / 0.16 / none |
-| `kimi:kimi-k2.7-code` | Kimi K2.7 Code | specialised | yes |  | 0.95 / 4 / 0.19 / none |
-| `kimi:kimi-k2.7-code-highspeed` | Kimi K2.7 Code (high speed) | specialised | yes |  | 1.9 / 8 / 0.38 / none |
+| `kimi:kimi-k3.1-pro` | Kimi K3.1 Pro | current | yes | default | 2 / 10 / 0.2 / 2 |
+| `kimi:kimi-k3.1-pro-highspeed` | Kimi K3.1 Pro (high speed) | specialised | no |  | 4 / 20 / 0.2 / 4 |
+| `kimi:kimi-k3` | Kimi K3 | legacy | yes |  | 3 / 15 / 0.3 / 3 |
 
 ### `glm`
 
@@ -263,6 +257,7 @@ Gemini Robotics model that does is offered to selected partners only
 | `glm:glm-5.3` | GLM-5.3 | current | no | default | 1.4 / 4.4 / 0.26 / none |
 | `glm:glm-5.3-flash` | GLM-5.3 Flash | current | yes |  | 0.15 / 0.5 / 0.03 / none |
 | `glm:glm-5.3-flashx` | GLM-5.3 FlashX | current | yes |  | 0.37 / 1.25 / 0.075 / none |
+| `glm:glm-5.3-flashx-legal` | GLM-5.3 FlashX Legal | specialised | yes |  | 0.37 / 1.25 / 0.075 / none |
 | `glm:glm-5.2` | GLM-5.2 | legacy | no |  | 1.4 / 4.4 / 0.26 / none |
 | `glm:glm-5.1` | GLM-5.1 | legacy | no |  | 1.4 / 4.4 / 0.26 / none |
 | `glm:glm-5` | GLM-5 | legacy | no |  | 1 / 3.2 / 0.2 / none |
@@ -276,15 +271,17 @@ Gemini Robotics model that does is offered to selected partners only
 | `glm:glm-4.5-airx` | GLM-4.5 AirX | legacy | no |  | 1.1 / 4.5 / 0.22 / none |
 | `glm:glm-4.5-flash` | GLM-4.5 Flash | legacy | no |  | 0 / 0 / 0 / 0 |
 | `glm:glm-4-32b-0414-128k` | GLM-4 32B (128k) | legacy | no |  | 0.1 / 0.1 / none / none |
-| `glm:glm-4.6v` | GLM-4.6V | specialised | yes |  | 0.3 / 0.9 / 0.05 / none |
-| `glm:glm-4.6v-flash` | GLM-4.6V Flash | specialised | yes |  | 0 / 0 / 0 / 0 |
-| `glm:glm-4.6v-flashx` | GLM-4.6V FlashX | specialised | yes |  | 0.04 / 0.4 / 0.004 / none |
+| `glm:glm-4.6v` | GLM-4.6V | legacy | yes |  | 0.3 / 0.9 / 0.05 / none |
+| `glm:glm-4.6v-flash` | GLM-4.6V Flash | legacy | yes |  | 0 / 0 / 0 / 0 |
+| `glm:glm-4.6v-flashx` | GLM-4.6V FlashX | legacy | yes |  | 0.04 / 0.4 / 0.004 / none |
 
 ### `meta`
 
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
 | `meta:muse-spark-1.3` | Muse Spark 1.3 | current | yes | default | 1.25 / 4.25 / 0.15 / none |
+| `meta:muse-ember-1.0` | Muse Ember | current | yes |  | 0.1 / 0.5 / 0.004 / none |
+| `meta:muse-wonder-1.0` | Muse Wonder (preview) | preview | yes |  | 4 / 20 / 0.2 / none |
 | `meta:muse-spark-1.2` | Muse Spark 1.2 | legacy | yes |  | 1.25 / 4.25 / 0.15 / none |
 | `meta:muse-spark-1.1` | Muse Spark 1.1 | legacy | yes |  | 1.25 / 4.25 / 0.15 / none |
 | `meta:muse-spark-1.3-contributor` | Muse Spark 1.3 (contributor tier, Meta trains on your prompts) | specialised | yes |  | 0.1 / 0.2 / 0.002 / none |
@@ -296,9 +293,10 @@ Gemini Robotics model that does is offered to selected partners only
 |---|---|---|---|---|---|
 | `openrouter:openai/gpt-6-sol` | GPT-6 Sol (via OpenRouter) | current | yes | default | 2 / 10 / 0.2 / 2.5 |
 | `openrouter:openai/gpt-6-luna` | GPT-6 Luna (via OpenRouter) | current | yes |  | 0.1 / 0.5 / 0.01 / 0.125 |
-| `openrouter:anthropic/claude-sonnet-5.5` | Claude Sonnet 5.5 (via OpenRouter) | current | yes | asked with `auto` | 2 / 10 / 0.2 / 2.5 |
+| `openrouter:anthropic/claude-sonnet-5.5` | Claude Sonnet 5.5 (via OpenRouter) | current | yes | asked with `auto` | 2 / 10 / 0.1 / 2.5 |
 | `openrouter:anthropic/claude-opus-5.5` | Claude Opus 5.5 (via OpenRouter) | current | yes | asked with `auto` | 4 / 20 / 0.2 / 5 |
-| `openrouter:google/gemini-3.8-flash` | Gemini 3.8 Flash (via OpenRouter) | current | yes |  | 0.75 / 3.75 / 0.075 / 0.0416666666666667 |
+| `openrouter:anthropic/claude-fable-5.2` | Claude Fable 5.2 (via OpenRouter) | current | yes | asked with `auto` | 8 / 40 / 0.2 / 10 |
+| `openrouter:google/gemini-4-hydrogen` | Gemini 4 Hydrogen (via OpenRouter) | current | yes |  | 1.5 / 7.5 / 0.075 / 0.0833333333333333 |
 | `openrouter:x-ai/grok-4.7` | Grok 4.7 (via OpenRouter) | current | yes |  | 2 / 6 / 0.5 / none |
 
 <!-- end generated: pilot-ids -->

@@ -143,11 +143,11 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
 
    Check it took. The first line prints the release you got, and this page and the task files are
    `main`'s, which can be ahead of it: [the changelog](../../../CHANGELOG.md) says what each release
-   changed. The first row of the second must be `gpt-6-sol`, marked default, and the third must tick
-   these three rows. The install takes LeRobot 0.7, whose new motor bus, rustypot, is the second
-   row, and no arm has run quackd on it yet: 0.6.1 is the version that has, and quackd no longer
-   installs it. A `not installed` after an install that succeeded usually means the wrong Python,
-   and [Installing it](#installing-it) says why.
+   changed. The first row of the second must be `gpt-6.1-sol`, marked default, and the third must
+   tick these three rows. The install takes LeRobot 0.7, whose new motor bus, rustypot, is the
+   second row, and no arm has run quackd on it yet: 0.6.1 is the version that has, and quackd no
+   longer installs it. A `not installed` after an install that succeeded usually means the wrong
+   Python, and [Installing it](#installing-it) says why.
 
    ```bash
    quackd --version
@@ -1014,10 +1014,10 @@ refusal, because the frames would still arrive and look right.
 
 **The cost is pictures.** Each request carries the images from the last two exchanges, so two
 cameras is four pictures per request where one camera is two, and that is what you pay in tokens
-on every step of every run. On Claude Opus 5.5 and Fable 5.1, whose old frames are trimmed every
-eight exchanges rather than on every one, it is up to eighteen where one camera is nine. It is
-worth it for a wrist view plus an overhead view. It is not worth it for two views of the same
-thing.
+on every step of every run. On the Claude LLMs that bind their thinking (Opus 5.5, Fable 5.2,
+Sonnet 5.5, Haiku 5.5 and Fable 5.1), whose old frames are trimmed every eight exchanges rather
+than on every one, it is up to eighteen where one camera is nine. It is worth it for a wrist
+view plus an overhead view. It is not worth it for two views of the same thing.
 
 > [!NOTE]
 > A local server, or a particular LLM behind one, may accept only one image per message.

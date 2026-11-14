@@ -794,9 +794,9 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     and an LLM used to be two independent flags, so `--model gemini-9` against a robot stored
     as OpenAI meant OpenAI serving a Gemini id -- a combination nobody typed on purpose and
     the parser could not see. One spec cannot be half overridden: `--llm gemini` is Gemini's
-    default, full stop, and the stored `gpt-4o` goes with the vendor it was stored against.
+    default, full stop, and the stored `gpt-5.4-mini` goes with the vendor it was stored against.
     """
-    _seed(tmp_path, llm="openai:gpt-4o")
+    _seed(tmp_path, llm="openai:gpt-5.4-mini")
     seen: list[tuple[str, str | None]] = []
     real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
@@ -819,7 +819,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     ]
     monkeypatch.delenv("QUACKD_LLM", raising=False)
     assert runner.invoke(app, common).exit_code == 0
-    assert seen[-1] == ("openai", "gpt-4o")
+    assert seen[-1] == ("openai", "gpt-5.4-mini")
     assert runner.invoke(app, [*common, "--llm", "gemini"]).exit_code == 0
     assert seen[-1] == ("gemini", None), "a bare vendor on the line is that vendor's default"
     assert runner.invoke(app, [*common, "--llm", "claude-opus-5"]).exit_code == 0
@@ -827,7 +827,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     # the robot was registered by a person who meant it; a variable in their shell was not
     monkeypatch.setenv("QUACKD_LLM", "gemini")
     assert runner.invoke(app, common).exit_code == 0
-    assert seen[-1] == ("openai", "gpt-4o"), "the environment does not beat the robot"
+    assert seen[-1] == ("openai", "gpt-5.4-mini"), "the environment does not beat the robot"
 
 
 def test_a_run_by_name_is_refused_when_the_robots_own_llm_is_no_longer_listed(

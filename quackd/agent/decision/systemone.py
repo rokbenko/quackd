@@ -1,6 +1,6 @@
 """Every decision LLM that speaks `POST /v1/systemone`, over one client.
 
-TypeSafe published the format and the client; Kev, Von, OpenJev, OpenDecision and the rest
+TypeSafe published the format and the client; Kev, OpenJev, OpenDecision and the rest
 implement it and document the same sentence -- point the SDK at our base URL. So this is one
 class with a row of data in front of it rather than a module per vendor, and a server quackd
 has never heard of is `--decision-llm local --decision-url` and no code at all.

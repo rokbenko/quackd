@@ -147,7 +147,7 @@ def test_each_turn_is_recorded_at_what_it_was_billed_and_the_rest_at_the_rate(
         assert call["cost_usd_total"] == running
     summary = _summary(tmp_path)
     assert summary["cost_usd"] == running and summary["billed_calls"] == 3
-    assert events[0]["price"]["checked"] == "2026-10-06", "the row's own date, not the global one"
+    assert events[0]["price"]["checked"] == rate.checked, "the row's own date, not the global one"
     assert calls[1]["usage"]["cache_read_tokens"] == 100, "the cached slice still reaches usage"
 
 

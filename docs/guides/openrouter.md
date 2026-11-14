@@ -30,14 +30,15 @@ LLMs (--llm VENDOR:LLM, QUACKD_LLM)
 │            │ openai/gpt-6-luna           │ GPT-6 Luna (via OpenRouter)        │ current │         │
 │            │ anthropic/claude-sonnet-5.5 │ Claude Sonnet 5.5 (via OpenRouter) │ current │         │
 │            │ anthropic/claude-opus-5.5   │ Claude Opus 5.5 (via OpenRouter)   │ current │         │
-│            │ google/gemini-3.8-flash     │ Gemini 3.8 Flash (via OpenRouter)  │ current │         │
+│            │ anthropic/claude-fable-5.2  │ Claude Fable 5.2 (via OpenRouter)  │ current │         │
+│            │ google/gemini-4-hydrogen    │ Gemini 4 Hydrogen (via OpenRouter) │ current │         │
 │            │ x-ai/grok-4.7               │ Grok 4.7 (via OpenRouter)          │ current │         │
 └────────────┴─────────────────────────────┴────────────────────────────────────┴─────────┴─────────┘
 openrouter: the rows above are a selection. An id quackd does not carry can be named as --llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public LLM list when a run starts. That list has to carry the id with tool calling, and one quackd takes is priced from it.
 ```
 
 A row is an LLM from a vendor quackd already drives on its own API, served by its own maker,
-whose entry in OpenRouter's LLM list on 2026-10-06 named `tools` and `tool_choice` among its
+whose entry in OpenRouter's LLM list on 2026-11-14 named `tools` and `tool_choice` among its
 supported parameters, took `image` input and carried no `expiration_date`. The first row is the
 default, so `--llm openrouter` runs `openai/gpt-6-sol`. Rates are dollars per million tokens,
 OpenRouter's own per-token figures read off its list that day, the base rates rather than the
@@ -47,16 +48,17 @@ higher ones some entries charge past a long prompt:
 |---|---|---|---|
 | `openai/gpt-6-sol` | `tool_choice: "required"` | yes | 2 / 10 / 0.2 / 2.5 |
 | `openai/gpt-6-luna` | `tool_choice: "required"` | yes | 0.1 / 0.5 / 0.01 / 0.125 |
-| `anthropic/claude-sonnet-5.5` | `tool_choice: "auto"` | yes | 2 / 10 / 0.2 / 2.5 |
+| `anthropic/claude-sonnet-5.5` | `tool_choice: "auto"` | yes | 2 / 10 / 0.1 / 2.5 |
 | `anthropic/claude-opus-5.5` | `tool_choice: "auto"` | yes | 4 / 20 / 0.2 / 5 |
-| `google/gemini-3.8-flash` | `tool_choice: "required"` | yes | 0.75 / 3.75 / 0.075 / 0.0416666666666667 |
+| `anthropic/claude-fable-5.2` | `tool_choice: "auto"` | yes | 8 / 40 / 0.2 / 10 |
+| `google/gemini-4-hydrogen` | `tool_choice: "required"` | yes | 1.5 / 7.5 / 0.075 / 0.0833333333333333 |
 | `x-ai/grok-4.7` | `tool_choice: "required"` | yes | 2 / 6 / 0.5 / none listed |
 
-The two Claude rows are asked rather than told because they refuse a forced call. OpenRouter's
-migration guide for Opus 5.5 says a forced `tool_choice` on it "fails at routing with no
-compatible endpoint rather than reaching the provider", and Anthropic lists Sonnet 5.5 beside Opus
-5.5 as refusing forced tool use. A turn answered in prose is the loop's to handle: it asks once
-more, then ends the run.
+The three Claude rows are asked rather than told because they refuse a forced call. OpenRouter's
+migration guide for Claude 5.5 says a forced `tool_choice` on Opus 5.5 or Sonnet 5.5 gets "the
+provider's 400", Anthropic's own sentence, and Anthropic lists Fable 5.2 beside them as refusing
+forced tool use. A turn answered in prose is the loop's to handle: it asks once more, then ends
+the run.
 
 ## Ids quackd does not carry
 
@@ -121,8 +123,8 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest LLM of its family, so the LLM that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
-openrouter`.
+anthropic/claude-opus-5.5, anthropic/claude-fable-5.2, google/gemini-4-hydrogen, x-ai/grok-4.7. See
+`quackd list-models --llm openrouter`.
 ```
 
 ### Free LLMs
@@ -231,13 +233,13 @@ of its own is in [What is not covered](decision-llms/README.md#what-is-not-cover
 `--llm openrouter` is OpenRouter's chat LLMs as the pilot, and nothing on this page touches the
 stepper.
 
-## VERIFIED (read from OpenRouter's documentation on 2026-10-06, and measured the same day)
+## VERIFIED (read from OpenRouter's documentation on 2026-10-06, and measured the same day; the LLM list and the Claude guide read again on 2026-11-14)
 
 | Thing | Value | What quackd does with it |
 |---|---|---|
-| LLM list | `GET /api/v1/models` answered with no key, when it was first read that day: 465 entries, 397 naming `tools`, 390 `tool_choice` and 13 `parallel_tool_calls`, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with quackd's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
+| LLM list | `GET /api/v1/models` answered with no key: 471 entries on 2026-11-14, 407 naming `tools`, 401 `tool_choice` and 19 `parallel_tool_calls`, against 465, 397, 390 and 13 when it was first read on 2026-10-06, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with quackd's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
 | Attribution | "Site URL for rankings on openrouter.ai" and "Site title for rankings", for `HTTP-Referer` and `X-OpenRouter-Title`; `X-Title` "is still supported for backwards compatibility" | both sent on every request, naming quackd |
-| A forced call on Claude | "a forced `tool_choice` on `anthropic/claude-opus-5.5` fails at routing with no compatible endpoint rather than reaching the provider" | the Claude rows are asked with `auto` |
+| A forced call on Claude | its Claude 5.5 migration guide on 2026-11-14: Opus 5.5 rejects a forced `tool_choice` "with the provider's 400", and so does Sonnet 5.5; on 2026-10-06 its Opus 5.5 guide said such a call "fails at routing with no compatible endpoint rather than reaching the provider" | the Claude rows are asked with `auto` |
 | `require_parameters` | routes only to providers that support every parameter in the request | sent on every request, under `--extra-body` |
 | Thinking binding | requests through OpenRouter "are not subject to this enforcement" | frames trimmed on every call |
 | `reasoning_details` | "the entire sequence of consecutive reasoning blocks must match", and they "cannot" be rearranged or modified | replayed verbatim on the assistant turn that produced them |
@@ -247,7 +249,7 @@ stepper.
 | Variants | catalog variants, `:free` and `:batch` among them, are separate entries on the list; routing variants "are accepted on any model ID at request time" and "are not listed" | only `:free` is taken; the rest are refused on their spelling, listed or not |
 | `~` aliases | "always resolve to the newest concrete model", and the list carries them | refused on their spelling |
 | Free LLMs | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 is asked again up to four times, then ends the run |
-| From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the six rows |
+| From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the seven rows |
 | No key | a keyless POST answered `401` | none: a run with no key stops before it posts |
 
 ## UNVERIFIED, and what quackd does about each

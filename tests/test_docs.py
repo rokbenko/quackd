@@ -5056,14 +5056,16 @@ def test_the_arms_steps_name_the_row_list_models_prints_first(
     took, and a new default or a new order in the catalogue would make that a false alarm."""
     from typer.testing import CliRunner
 
+    from quackd.agent.providers.catalogue import default_llm_for
     from quackd.cli import app
 
     monkeypatch.setenv("COLUMNS", "220")
     result = CliRunner().invoke(app, ["list-models", "--llm", "openai"])
     assert result.exit_code == 0, result.output
+    default = default_llm_for("openai")
     first = next(line for line in result.output.splitlines() if "gpt-" in line)
-    assert "gpt-6-sol" in first and "default" in first, first
-    assert "must be `gpt-6-sol`, marked default" in " ".join(_arm_steps().split())
+    assert f" {default} " in first and "default" in first, first
+    assert f"must be `{default}`, marked default" in " ".join(_arm_steps().split())
 
 
 _RUN_SHEET = REPO / "docs" / "examples" / "lerobot" / "run-sheet.md"

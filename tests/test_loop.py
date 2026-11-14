@@ -32,7 +32,7 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
 )
-from quackd.agent.providers.catalogue import Price
+from quackd.agent.providers.catalogue import Price, find_llm
 from quackd.agent.providers.fake import FakeProvider
 from quackd.agent.providers.openai import render_messages
 from quackd.agent.transcript import Transcript
@@ -6394,7 +6394,9 @@ async def test_a_turn_the_vendor_billed_is_recorded_at_what_it_was_billed(
     assert result.outcome == "success", result.reason
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     rate = events[0]["price"]
-    assert rate["source"] == "catalogue" and rate["checked"] == "2026-10-06"
+    row = find_llm("openrouter", "openai/gpt-6-sol")
+    assert row is not None and row.price is not None
+    assert rate["source"] == "catalogue" and rate["checked"] == row.price.checked
     calls = [e for e in events if e["kind"] == "llm"]
     assert [c["cost_usd"] for c in calls] == [0.0011, 0.0025]
     assert all(c["billed"] is True for c in calls)

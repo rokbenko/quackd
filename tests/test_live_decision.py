@@ -5,8 +5,9 @@ today, read off the catalogue, so a hosted row added there is measured here the 
 They are the rows there is an address to reach without standing a server up first, and each has
 a maker who publishes something about its speed to check the measurement against: TypeSafe a
 latency, OpenAI only a ratio to their own Responses API. Nothing here is about either vendor
-otherwise. Adding a name to `ROWS` below -- `kev` on your own GPU, `von` on your own CPU -- is
-the whole of what it takes to point these at it, and that is the point of running them at all.
+otherwise. Adding a name to `ROWS` below -- `kev` on your own GPU, `opendecision` on your own
+CPU -- is the whole of what it takes to point these at it, and that is the point of running them
+at all.
 
 Everything in `tests/test_decision.py` fakes the answer: a stub returns whatever the test
 scripted, which proves the classification, the router and the loop hook and proves nothing at

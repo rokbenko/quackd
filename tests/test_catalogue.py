@@ -73,6 +73,22 @@ GONE = {
     "qwen3-max",  # retires 2026-10-10
     "qwen3-coder-plus",  # retires 2026-10-10
     "qwen3-coder-next",  # retires 2026-10-10
+    # the 2026-11-14 refresh
+    "claude-sonnet-4-5",  # deprecated 2026-09-30, retires 2026-11-30
+    "claude-mythos-5-2",  # verified organisations only
+    "gpt-4o",  # shuts down 2027-01-14, with gpt-4o-mini, gpt-4.1 and gpt-4.1-mini
+    "gpt-4.1",  # the same
+    "gpt-5.1",  # shuts down 2027-04-01, with gpt-5.4-nano and gpt-5.3-codex
+    "gpt-5.3-codex",  # the same
+    "gemini-3.7-flash",  # deprecated 2026-10-08, its calls answered by gemini-3.8-flash
+    "gemini-3.5-flash",  # deprecated 2026-10-08, its calls answered by gemini-3.6-flash
+    "mistral-medium-3-5",  # deprecated 2026-10-31, retires 2027-04-30
+    "mistral-large-2512",  # the same
+    "zai-glm-5-2",  # retired from Mistral 2026-10-31
+    "labs-leanstral-1-5",  # retired 2026-09-30
+    "kimi-k2.6",  # closed to new users since 2026-10-31, to retire late December 2026
+    "kimi-k2.7-code",  # the same
+    "north-mini-code-1-0",  # never the id: Cohere's is north-mini-code-1.0
 }
 
 
@@ -183,12 +199,14 @@ def test_only_anthropic_and_openrouter_mark_an_llm_that_refuses_a_forced_call() 
 
 
 #: The OpenRouter rows that are the same LLM as a row a native vendor carries, spelled the
-#: way each spells it. Sonnet 5.5 has no twin: the Anthropic tuple does not carry it yet.
+#: way each spells it.
 TWINS = {
     "openai/gpt-6-sol": ("openai", "gpt-6-sol"),
     "openai/gpt-6-luna": ("openai", "gpt-6-luna"),
+    "anthropic/claude-sonnet-5.5": ("anthropic", "claude-sonnet-5-5"),
     "anthropic/claude-opus-5.5": ("anthropic", "claude-opus-5-5"),
-    "google/gemini-3.8-flash": ("gemini", "gemini-3.8-flash"),
+    "anthropic/claude-fable-5.2": ("anthropic", "claude-fable-5-2"),
+    "google/gemini-4-hydrogen": ("gemini", "gemini-4-hydrogen"),
     "x-ai/grok-4.7": ("grok", "grok-4.7"),
 }
 
@@ -201,7 +219,7 @@ def test_an_openrouter_row_refuses_a_forced_call_wherever_its_native_twin_does()
         assert row is not None and twin is not None, llm_id
         assert row.forced_tools is twin.forced_tools, llm_id
         assert row.vision is twin.vision, llm_id
-    assert set(TWINS) | {"anthropic/claude-sonnet-5.5"} == set(llm_ids("openrouter"))
+    assert set(TWINS) == set(llm_ids("openrouter"))
 
 
 def test_openrouter_ids_name_their_author_and_no_native_id_has_a_slash() -> None:

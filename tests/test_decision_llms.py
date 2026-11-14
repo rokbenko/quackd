@@ -48,6 +48,7 @@ from quackd.agent.decision.factory import (
     resolve_decision_url,
 )
 from quackd.agent.decision.stepper import MAX_IN_A_ROW, Call, Stepper, verb_class
+from quackd.agent.providers.catalogue import PRICES_CHECKED
 from tests import fake_laya, fake_systemone
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,7 +144,7 @@ def test_the_hosted_llm_is_pinned_and_the_open_ones_are_named() -> None:
     """A moving alias is a run whose transcript describes an LLM that is no longer the one
     that answered. And the open servers do not share an id: OpenJev refuses a pinned Jev
     version with a 400, so a shared default would have been wrong there on every request."""
-    assert PRESETS["jev"].llm_id == "jev-1.13.0"
+    assert PRESETS["jev"].llm_id == "jev-1.14.0"
     assert PRESETS["openai"].llm_id == "gpt-6-luna"
     assert PRESETS["openjev"].llm_id != PRESETS["jev"].llm_id
     assert PRESETS["local"].llm_id is None
@@ -377,13 +378,15 @@ def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
     LLM on your own machine bills you in electricity, and that is the same `$0` the rest of
     quackd already prices a local pilot at.
 
-    OpenAI's rate was read on a day of its own, and the record says which: without its own
-    `checked` it would be stamped with the day the pilots' catalogue was read."""
+    OpenAI's rate was once read on a day of its own and is now read with the pilots' catalogue,
+    so the record carries that day. Its guide prices the cache at gpt-6-luna's own rates, so a
+    cached question is no longer charged as a full one."""
     assert resolve_decision_price(PRESETS["jev"]).input == 0.042
     openai = resolve_decision_price(PRESETS["openai"])
     assert (openai.input, openai.output, openai.source) == (0.10, 0.0, "published")
-    assert openai.record()["checked"] == "2026-10-08"
-    for name in ("kev", "von", "openjev", "opendecision", "local", "laya"):
+    assert (openai.cache_read, openai.cache_write) == (0.01, 0.125)
+    assert openai.record()["checked"] == PRICES_CHECKED
+    for name in ("kev", "openjev", "opendecision", "local", "laya"):
         price = resolve_decision_price(PRESETS[name])
         assert (price.input, price.output) == (0.0, 0.0), name
         assert price.source == "self-hosted", name
@@ -425,7 +428,7 @@ def test_a_server_you_run_needs_no_key_at_all(monkeypatch: pytest.MonkeyPatch) -
     of these off forever, because none of them has a key to miss."""
     fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    for name in ("kev", "von", "openjev", "opendecision", "local"):
+    for name in ("kev", "openjev", "opendecision", "local"):
         ok, why = decision_llm_is_available(PRESETS[name])
         assert ok, f"{name}: {why}"
 

@@ -423,18 +423,18 @@ serves everything, that is another tenant rather than a free lunch, so it belong
 budget as the table above.
 
 `--host` does not move a decision LLM. `--decision-url` does, and it already reaches a server
-anywhere. `von` is the one that fits without asking for anything. It is an encoder rather than
-a generator, it wants no GPU and no key, and it is small beside the LLM doing the piloting.
-On the board:
+anywhere. `opendecision` is the one that wants neither a GPU nor a key: an encoder of about 400M
+parameters rather than a generator, small beside the LLM doing the piloting. It does want Python
+3.13 or newer and torch, which a board's own image may not carry. On the board:
 
 ```bash
-pip install von-sdk
-von serve --host 127.0.0.1 --port 8000     # von's own --host: where it listens
+pip install OpenDecision     # not run here: wants Python 3.13 or newer
+opendecision serve           # not run here: listens on 127.0.0.1:8000 unless --host says otherwise
 ```
 
-Add `-L 8000:127.0.0.1:8000` to the tunnel and `--decision-llm von` finds it where it already
-looks, `http://127.0.0.1:8000`. Bound wide on a network you trust, it is
-`--decision-llm von --decision-url http://jetson.local:8000`.
+Add `-L 8000:127.0.0.1:8000` to the tunnel and `--decision-llm opendecision` finds it where it
+already looks, `http://127.0.0.1:8000`. Bound wide on a network you trust, it is
+`--decision-llm opendecision --decision-url http://jetson.local:8000`.
 
 `laya` runs inside quackd's own process, and that process is on the laptop, so it has nothing
 to do with the board.
