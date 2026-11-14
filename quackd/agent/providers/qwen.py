@@ -4,9 +4,10 @@ The base URL here is Model Studio's international one. Alibaba also issues per-w
 hosts, and a reader on one of those passes `--base-url`, which is why that flag reaches this
 provider at all.
 
-`tool_choice` is left at `auto`: Model Studio documents `tools` without documenting which
-`tool_choice` values it takes, and `auto` is the value that cannot 400. `parallel_tool_calls` is
-not sent for the same reason.
+`tool_choice` is left at `auto`: Model Studio's function calling guide says "The Qwen series
+models do not support setting `tool_choice` to "required"", nor "in thinking mode". Nor is
+`parallel_tool_calls` sent, which that guide says defaults to true: a turn with several calls
+has its first one run and the rest left, which the loop records (`multiple_tool_calls`).
 """
 
 from __future__ import annotations

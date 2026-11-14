@@ -372,6 +372,42 @@ def parse_responses(response: Any) -> ProviderTurn:
     )
 
 
+def _chunk_field(chunk: Any, name: str) -> Any:
+    """A chunk's field, whether the SDK kept it as a dict or as an object."""
+    return chunk.get(name) if isinstance(chunk, Mapping) else getattr(chunk, name, None)
+
+
+def content_parts(content: Any) -> tuple[str | None, str | None]:
+    """A Chat Completions `message.content` as its text and its thinking.
+
+    Every vendor on this path answers with a string, except Mistral with reasoning on. Its
+    reasoning page says `message.content` is then "a list of chunks instead of a plain string":
+    a `thinking` chunk whose `thinking` is itself a list of text chunks, then `text` chunks that
+    carry the answer. It says the same of Z.ai GLM 5.3 there "regardless of the
+    `reasoning_effort` value". The SDK keeps such a list as it came, and joining it as text
+    raised, which ended the run on its first turn. A chunk of any other type is not read."""
+    if content is None or isinstance(content, str):
+        return content or None, None
+    texts: list[str] = []
+    thoughts: list[str] = []
+    for chunk in content if isinstance(content, list) else []:
+        kind = _chunk_field(chunk, "type")
+        if kind == "text":
+            text = _chunk_field(chunk, "text")
+            if isinstance(text, str):
+                texts.append(text)
+        elif kind == "thinking":
+            inner = _chunk_field(chunk, "thinking")
+            for part in inner if isinstance(inner, list) else [inner]:
+                thought = part if isinstance(part, str) else _chunk_field(part, "text")
+                if isinstance(thought, str) and thought.strip():
+                    thoughts.append(thought.strip())
+    # Text chunks are pieces of one answer, so they are joined as they came: a newline between
+    # two of them could cut a sentence in two, and a chunk of spaces is part of the answer.
+    answer = "".join(texts)
+    return (answer if answer.strip() else None), "\n\n".join(thoughts) or None
+
+
 def parse_response(response: Any) -> ProviderTurn:
     choice = response.choices[0]
     message = choice.message
@@ -405,7 +441,8 @@ def parse_response(response: Any) -> ProviderTurn:
     # `content_filter` say, keeps it.
     refusal = getattr(message, "refusal", None)
     said = refusal.strip() if isinstance(refusal, str) else ""
-    parts = [getattr(message, "content", None) or None, f"[refusal] {said}" if said else None]
+    text, chunk_thoughts = content_parts(getattr(message, "content", None))
+    parts = [text, f"[refusal] {said}" if said else None]
     finish = getattr(choice, "finish_reason", None)
     return ProviderTurn(
         tool_calls=tool_calls,
@@ -414,7 +451,7 @@ def parse_response(response: Any) -> ProviderTurn:
         stop_reason="refusal" if said and not tool_calls and finish in (None, "stop") else finish,
         refused=bool(said),
         raw=None,
-        thinking=reasoning.strip() if reasoning else None,
+        thinking=reasoning.strip() if reasoning else chunk_thoughts,
     )
 
 

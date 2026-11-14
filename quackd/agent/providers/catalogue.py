@@ -12,9 +12,9 @@ browser demo, and in `quackd list-models`. When a vendor ships an LLM it is adde
 nowhere else. That is the cost of the promise. The list is only as current as its last edit, and
 `quackd list-models` is how anyone sees what this build knows.
 
-What earns a place, checked 2026-09-12 against each vendor's own documentation and again, every
+What earns a place, checked 2026-09-12 against each vendor's own documentation, again, every
 vendor but OpenRouter, on 2026-09-23 (OpenRouter's rows were read off its own LLM list on
-2026-10-06):
+2026-10-06), and every vendor, OpenRouter's list included, on 2026-11-14:
 
 - callable that day on the vendor's public API by anyone holding a key,
 - a text LLM that can call function tools, because every verb quackd has is a function tool and
@@ -57,11 +57,11 @@ STATUSES: tuple[Status, ...] = get_args(Status)
 #: data rots exactly the way the LLM ids above did, so the date travels with the numbers: it is
 #: written into every `run_start`, and a reader deciding whether to trust a dollar figure can see
 #: how old the rate that produced it is.
-PRICES_CHECKED = "2026-09-23"
+PRICES_CHECKED = "2026-11-14"
 
 #: When OpenRouter's rows below were read off OpenRouter's own LLM list. A date of its own,
 #: because stamping them with `PRICES_CHECKED` would date them to a day nobody had read them.
-OPENROUTER_PRICES_CHECKED = "2026-10-06"
+OPENROUTER_PRICES_CHECKED = "2026-11-14"
 
 #: Vendors whose tuple is a selection rather than everything `--llm` takes after the colon. An id
 #: not listed here is neither refused nor waved through: `factory.resolve_llm_id` checks its shape
@@ -149,33 +149,31 @@ class LLMSpec:
     """Anthropic, and OpenRouter's Claude rows: does the LLM accept a forced tool call,
     `tool_choice` `any` (`required` on OpenRouter)?
 
-    Claude Opus 5.5 and Claude Fable 5.1 answer one with a 400 (`tool_choice: type "tool" and
-    "any" are not supported for this model.`), so a row marked `False` is asked with `auto`
-    instead, still one call per turn. `anthropic.py` reads the 400 as well and moves a run for
-    an LLM this table does not mark, but it pays a failed call to learn it, the same bargain
-    as `api` above. A turn that answers in prose rather than with a call is the loop's to
-    handle: it re-prompts once and then ends the run, which `auto` makes reachable and a forced
-    call never did.
+    Claude Fable 5.2, Opus 5.5, Sonnet 5.5 and Fable 5.1 answer one with a 400 (`tool_choice:
+    type "tool" and "any" are not supported for this model.`), so a row marked `False` is asked
+    with `auto` instead, still one call per turn. `anthropic.py` reads the 400 as well and moves
+    a run for an LLM this table does not mark, but it pays a failed call to learn it, the same
+    bargain as `api` above. A turn that answers in prose rather than with a call is the loop's
+    to handle: it re-prompts once and then ends the run, which `auto` makes reachable and a
+    forced call never did.
 
-    Through OpenRouter the same LLMs refuse the same thing in a different place: its Opus 5.5
-    migration guide says a forced `tool_choice` "fails at routing with no compatible endpoint
-    rather than reaching the provider", and Anthropic lists Sonnet 5.5 beside Opus 5.5 and Fable
-    5.1 as refusing forced tool use. `openrouter.py` has no 400 reader for it, because nobody
-    here has seen that refusal's wording, so the row is the only thing that moves such an LLM
-    to `auto`."""
+    Through OpenRouter the same LLMs refuse the same thing: its Claude 5.5 migration guide says
+    Opus 5.5 and Sonnet 5.5 answer a forced `tool_choice` with "the provider's 400", in the
+    sentence above, and Anthropic lists the four above as refusing forced tool use.
+    `openrouter.py` has no 400 reader for it, so the row is the only thing that moves such an
+    LLM to `auto`."""
 
     effort: bool = True
     """Anthropic and OpenAI only: does the LLM take the vendor's effort, Anthropic's
     `output_config.effort` or OpenAI's reasoning effort?
 
-    Claude Haiku 4.5 and Claude Sonnet 4.5 are missing from the list of supported LLMs on
-    Anthropic's effort page, so a row marked `False` is sent no effort at all. There is no 400
-    reader behind this one, because that page does not print what the API answers, and a
-    reader written against a guessed sentence is exactly how the thinking retry in
-    `anthropic.py` came to miss the sentence the 4.5 LLMs really send. On OpenAI it is read
-    only by `--effort`, which refuses such an LLM before anything connects (`effort_refusal`):
-    GPT-4.1 and GPT-4o and their minis are its LLMs "without a reasoning step", and ChatGPT
-    Instant's page lists no reasoning effort either."""
+    Claude Haiku 4.5 is missing from the list of supported LLMs on Anthropic's effort page, so
+    a row marked `False` is sent no effort at all. There is no 400 reader behind this one,
+    because that page does not print what the API answers, and a reader written against a
+    guessed sentence is exactly how the thinking retry in `anthropic.py` came to miss the
+    sentence the 4.5 LLMs really send. On OpenAI it is read only by `--effort`, which refuses
+    such an LLM before anything connects (`effort_refusal`): ChatGPT Instant's page lists no
+    reasoning effort."""
 
     effort_levels: tuple[str, ...] | None = None
     """The `--effort` levels an LLM takes where it takes fewer than all three, or None for all
@@ -186,17 +184,18 @@ class LLMSpec:
     """Anthropic only: does the LLM refuse a replayed thinking block once anything before it
     has changed?
 
-    Claude Opus 5.5 and Claude Fable 5.1 bind each thinking block to the system prompt, the
-    tools and every message that preceded it, and for accounts created on or after 2026-08-31
-    a block whose earlier history changed is a 400 naming the block. quackd's loop drops the
-    camera frames from all but the last two exchanges to keep the prompt small, which edits an
-    earlier message on every call from the third. For a row marked `True` the provider asks the
-    API to drop such a block rather than refuse the request (`block_binding` with
-    `drop_block`, behind the `thinking-binding-controls-2026-08-01` beta), and the loop trims in
-    steps of eight exchanges instead of on every call and, from each trim on, leaves out the
-    blocks it invalidated, so the LLM keeps the reasoning it produced since the last trim.
-    Keeping every frame instead would have no ceiling: a long run on a two-camera body passes
-    the API's 32 MB request limit."""
+    The five Claude LLMs on Anthropic's preserved thinking list, Fable 5.2, Opus 5.5, Sonnet
+    5.5, Haiku 5.5 and Fable 5.1, bind each thinking block to the system prompt, the tools and
+    every message that preceded it, and for accounts created on or after 2026-08-31, and on
+    Fable 5.2 for every account, a block whose earlier history changed is a 400 naming the
+    block. quackd's loop drops the camera frames from all but the last two exchanges to keep
+    the prompt small, which edits an earlier message on every call from the third. For a row
+    marked `True` the provider asks the API to drop such a block rather than refuse the request
+    (`block_binding` with `drop_block`, behind the `thinking-binding-controls-2026-08-01`
+    beta), and the loop trims in steps of eight exchanges instead of on every call and, from
+    each trim on, leaves out the blocks it invalidated, so the LLM keeps the reasoning it
+    produced since the last trim. Keeping every frame instead would have no ceiling: a long run
+    on a two-camera body passes the API's 32 MB request limit."""
 
     price: Price | None = None
     """What the vendor charges for it, read off the vendor's own page on `PRICES_CHECKED`.
@@ -220,51 +219,64 @@ class LLMSpec:
 #   each is a choice the caller makes and quackd cannot see which was made. Off-peak discounts
 #   are ignored too, although they are the clock's rather than the caller's; DeepSeek's comment
 #   says when its half price applies.
-# - **The SHORT context band.** Several vendors charge more above a threshold (200k on xAI and
-#   Gemini 3.1 Pro, 272k on ten of OpenAI's) and reprice the WHOLE request when it is crossed
-#   rather than just the excess. The multiplier is not one number: xAI double both sides,
-#   while Gemini and OpenAI double the input and cache rates and charge 1.5x the output. A
-#   long-prompt run is therefore under-costed here, and the vendor comments name the thresholds
-#   so a reader knows when to distrust the figure.
-# - **The five minute cache-write TTL**, where a vendor sells two. On Anthropic, which caches
-#   only what a request marks, quackd marks the system prompt with the five minute lifetime these
-#   write rates are (`AnthropicProvider._system`). The other vendors are marked nothing, and by
-#   their own pages OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and Meta cache a repeated prompt
-#   without being asked, and so does Alibaba for the LLMs its implicit cache covers, so a run
-#   on one of them pays the cached-input rate on ordinary turns.
+# - **The SHORT context band.** Several vendors charge more above a threshold (100k on Claude
+#   Haiku 5.5, 200k on xAI, Gemini 3.1 Pro and Meta's Muse Ember, 272k on twelve of OpenAI's)
+#   and reprice the WHOLE request when it is crossed rather than just the excess. The multiplier
+#   is not one number: Anthropic charge five times every rate on Haiku 5.5 and Meta three times
+#   on Muse Ember, xAI double both sides, while Gemini and OpenAI double the input and cache
+#   rates and charge 1.5x the output. A long-prompt run is therefore under-costed here, and the
+#   vendor comments name the thresholds so a reader knows when to distrust the figure.
+# - **The shorter cache-write lifetime**, where a vendor sells two: five minutes on Anthropic
+#   and Kimi, the default 30 on OpenAI. On Anthropic, which caches only what a request marks,
+#   quackd marks the system prompt with the five minute lifetime these write rates are
+#   (`AnthropicProvider._system`). The other vendors are marked nothing, and by their own pages
+#   OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and Meta cache a repeated prompt without being
+#   asked, and so does Alibaba for the LLMs its implicit cache covers, so a run on one of them
+#   pays the cached-input rate on ordinary turns.
 #   Two of them write a cache unasked and bill the write as well: OpenAI on GPT-5.6 and later,
-#   at 1.25x input once a prompt passes 1,024 tokens, and Kimi on K3, at its 5 minute rate. A
-#   vendor that sells no cache write at all, billing the tokens that fill a cache at the input
-#   rate, carries `None` there rather than 0: 0 would make those tokens free.
-# - **`None` is not free.** Four Cohere LLMs have no published per-token rate and carry no
+#   at 1.25x input once a prompt passes 1,024 tokens, and Kimi on its K3 series, at its 5 minute
+#   rate. A vendor that sells no cache write at all, billing the tokens that fill a cache at the
+#   input rate, carries `None` there rather than 0: 0 would make those tokens free.
+# - **`None` is not free.** Three Cohere LLMs have no published per-token rate and carry no
 #   `price` at all; a run on one records `cost_usd: null` and says `cost unpriced`. An LLM whose
 #   vendor genuinely charges nothing is `Price(0.0, 0.0, ...)` and says `$0`.
 
 CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
-    # platform.claude.com models overview and model-deprecations. Claude Mythos is invitation only
-    # (Project Glasswing). Opus 4.1 and everything 4.0 or older is retired. Three of these ids are
-    # aliases onto a dated snapshot (haiku-4-5, opus-4-5, sonnet-4-5); the rest are dateless ids
-    # that are a pinned snapshot themselves, with no dated form to pin to.
+    # platform.claude.com: its overview of the LLMs, its pricing and its deprecations. The Claude
+    # Mythos LLMs are limited availability, open only to organisations Anthropic has verified
+    # through one of its programmes, so none of them is here. Opus 4.1 and everything 4.0 or older
+    # is retired, and Sonnet 4.5 is gone too: deprecated on 2026-09-30, it retires on 2026-11-30.
+    # Two of these ids are aliases onto a dated snapshot (haiku-4-5, opus-4-5); the rest are
+    # dateless ids that are a pinned snapshot themselves, with no dated form to pin to. The
+    # overview's newest four are Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5, the four
+    # `current` rows, and every other row is an older LLM it still lists.
     #
-    # Three things about how an LLM has to be asked differ by row. Opus 5.5 and Fable 5.1 will
-    # not be forced to call a tool: they answer `tool_choice` `any` with a 400, so they carry
-    # `forced_tools=False` and are asked with `auto`. Haiku 4.5 and Sonnet 4.5 are missing from
-    # the effort page's list of supported LLMs, so they carry `effort=False` and are sent none.
-    # And the three 4.5 LLMs take only the older extended thinking, which `anthropic.py` learns
-    # from the 400 on the first turn and goes without for the rest of the run. Opus 5.5 and Fable
-    # 5.1 also bind every thinking block to all that came before it, so they carry
-    # `binds_thinking=True`: the loop trims their old frames every eight exchanges rather than on
-    # every call and leaves out the blocks each trim invalidates from that call on, and the API is
-    # asked to drop the latest turn's, which may not be left out.
+    # Three things about how an LLM has to be asked differ by row. Fable 5.2, Opus 5.5, Sonnet 5.5
+    # and Fable 5.1 will not be forced to call a tool: they answer `tool_choice` `any` with a 400,
+    # so they carry `forced_tools=False` and are asked with `auto`. Haiku 5.5 takes a forced call,
+    # and by Anthropic's tool page a forced call skips thinking on every LLM that takes one. Haiku
+    # 4.5 is missing from the effort page's list of supported LLMs, so it carries `effort=False`
+    # and is sent none. And the two 4.5 LLMs take only the older extended thinking, which
+    # `anthropic.py` learns from the 400 on the first turn and goes without for the rest of the
+    # run. The five LLMs on the preserved thinking page's list, Fable 5.2, Opus 5.5, Sonnet 5.5,
+    # Haiku 5.5 and Fable 5.1, also bind every thinking block to all that came before it, so they
+    # carry `binds_thinking=True`: the loop trims their old frames every eight exchanges rather
+    # than on every call and leaves out the blocks each trim invalidates from that call on, and the
+    # API is asked to drop the latest turn's, which may not be left out. Haiku 5.5 is forced, so it
+    # does not think, and on it the flag changes only when its old frames are cut: the cost is the
+    # frames the longer period keeps.
     #
     # Prices: cache writes are the 5 minute TTL rate (1.25x input); the 1 hour rate is 2x input
-    # and is not here. Cache reads are a tenth of input on every LLM except three Anthropic
-    # footnote: Fable 5.1 and Mythos 5.1 at 0.025x (only the first has a row here, Mythos being
-    # invitation only) and Opus 5.5 at 0.05x. So a Fable 5 read costs four times what a Fable 5.1
-    # read does, and an Opus 5 read two and a half times what an Opus 5.5 read does: do not copy
-    # one row of either pair onto the other. Neither pricing page prints an API id, but the models
-    # overview carries a Claude API ID row under each current LLM's label and price, and every
-    # LLM's own page prints its id beside all four rates used here.
+    # and is not here. Cache reads are a tenth of input on every LLM except where the pricing page
+    # footnotes them: Fable 5.2 and Fable 5.1 at 0.025x, Opus 5.5 and Sonnet 5.5 at 0.05x. So a
+    # Fable 5 read costs four times what a Fable 5.1 read does, an Opus 5 read two and a half times
+    # what an Opus 5.5 read does, and a Sonnet 5 read twice what a Sonnet 5.5 read does: do not copy
+    # one row of any such pair onto the other. Haiku 5.5 alone has two rate cards, and its row is
+    # the one for a prompt of up to 100,000 tokens. A request whose prompt is longer, cache reads
+    # and writes counted in, pays five times every one of these rates for the whole request.
+    # Sonnet 5's $2/$10, an introductory rate at its launch, is now its standard one. The pricing
+    # page names each LLM rather than its id; the overview prints the API id beside each latest
+    # LLM's price.
     "anthropic": (
         LLMSpec(
             "claude-opus-5-5",
@@ -274,15 +286,40 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             price=Price(4.0, 20.0, 0.2, 5.0),
         ),
         LLMSpec(
+            "claude-fable-5-2",
+            "Claude Fable 5.2",
+            forced_tools=False,
+            binds_thinking=True,
+            price=Price(8.0, 40.0, 0.2, 10.0),
+        ),
+        LLMSpec(
+            "claude-sonnet-5-5",
+            "Claude Sonnet 5.5",
+            forced_tools=False,
+            binds_thinking=True,
+            price=Price(2.0, 10.0, 0.1, 2.5),
+        ),
+        LLMSpec(
+            "claude-haiku-5-5",
+            "Claude Haiku 5.5",
+            binds_thinking=True,
+            price=Price(0.1, 0.5, 0.01, 0.125),
+        ),
+        LLMSpec(
             "claude-fable-5-1",
             "Claude Fable 5.1",
+            "legacy",
             forced_tools=False,
             binds_thinking=True,
             price=Price(10.0, 50.0, 0.25, 12.5),
         ),
-        LLMSpec("claude-sonnet-5", "Claude Sonnet 5", price=Price(2.0, 10.0, 0.2, 2.5)),
+        LLMSpec("claude-sonnet-5", "Claude Sonnet 5", "legacy", price=Price(2.0, 10.0, 0.2, 2.5)),
         LLMSpec(
-            "claude-haiku-4-5", "Claude Haiku 4.5", effort=False, price=Price(1.0, 5.0, 0.1, 1.25)
+            "claude-haiku-4-5",
+            "Claude Haiku 4.5",
+            "legacy",
+            effort=False,
+            price=Price(1.0, 5.0, 0.1, 1.25),
         ),
         LLMSpec("claude-fable-5", "Claude Fable 5", "legacy", price=Price(10.0, 50.0, 1.0, 12.5)),
         LLMSpec("claude-opus-5", "Claude Opus 5", "legacy", price=Price(5.0, 25.0, 0.5, 6.25)),
@@ -293,60 +330,49 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         LLMSpec(
             "claude-sonnet-4-6", "Claude Sonnet 4.6", "legacy", price=Price(3.0, 15.0, 0.3, 3.75)
         ),
-        LLMSpec(
-            "claude-sonnet-4-5",
-            "Claude Sonnet 4.5",
-            "legacy",
-            effort=False,
-            price=Price(3.0, 15.0, 0.3, 3.75),
-        ),
     ),
-    # developers.openai.com models and deprecations. The gpt-5 and o-series generation has
-    # shutdown dates in 2026, so none of it is here. The one exception is `gpt-5-search-api`,
-    # still priced with no shutdown, whose own LLM page no longer loads, so nothing here can
-    # say it takes function tools. The Daybreak, Cyber and Rosalind LLMs need their own
-    # approval. `gpt-oss-*` are weights, not an endpoint. The four GPT-6 LLMs open on the
-    # Responses API: Sol and Luna take function tools on Chat Completions only at
-    # `reasoning_effort` none and default to medium, OpenAI's Astra release note says its tool
-    # calling requires the Responses API, and 6.1 Sol's own page says Chat Completions is
-    # "supported without tool calling" and lists no `reasoning_effort` none at all. 6.1 Sol was
-    # read on 2026-10-26, which its rate says (`checked`); 6 Sol is still served, with no
-    # shutdown date, so it stays the default.
+    # developers.openai.com: its LLMs, pricing and deprecations pages. The gpt-5 and o-series
+    # generation shuts down on 2026-12-11, so none of it is here, and nor is any other LLM with a
+    # shutdown date: GPT-4.1, GPT-4o and their minis go on 2027-01-14, and gpt-5.1, gpt-5.4-nano
+    # and gpt-5.3-codex on 2027-04-01. The one exception is `gpt-5-search-api`, still priced with
+    # no shutdown, whose own LLM page no longer loads, so nothing here can say it takes function
+    # tools. The Daybreak, Cyber and Rosalind LLMs need their own approval, and
+    # `gpt-6-astra-law` is priced but has no LLM page of its own. `gpt-oss-*` are weights, not an
+    # endpoint. The five GPT-6 LLMs open on the Responses API: 6 Sol and 6 Luna take function
+    # tools on Chat Completions only at `reasoning_effort` none and default to medium, and
+    # OpenAI's guide says "GPT-6 Astra, GPT-6.1 Sol, and GPT-6.1 Terra support Chat Completions,
+    # but tool calling requires Responses". The LLMs page's flagships are Astra, 6.1 Sol, 6.1
+    # Terra and 6 Luna, and it lists 6 Sol and the three 5.6 LLMs outside that group, with the
+    # rows already `legacy` in this file, so those four are `legacy` too. 6.1 Sol is the default;
+    # 6 Sol is still served, with no shutdown date, and its own page sends a reader on to 6.1 Sol.
     #
     # Prices: the short-context band. A prompt over 272k tokens is billed at 2x input and cache
     # rates and 1.5x output for the WHOLE request, and nothing here sees that coming. That band
-    # is not only the flagships: the page carried long-context columns for ten of these ids on
-    # `PRICES_CHECKED`, the six 5.6-and-later LLMs plus gpt-5.5, gpt-5.4, gpt-5.5-pro and
-    # gpt-5.4-pro, while gpt-5.2-pro had none, and 6.1 Sol has them too. Cache writes are 1.25x
-    # input on GPT-5.6 and later. Before it there is no write rate at all (a dash on the page,
-    # and "No additional cache-write charge" in the caching guide), so those rows carry None and
-    # a written token is charged at the input rate, which is what OpenAI bills. gpt-5.6-sol's
-    # rate is promotional, and OpenAI promise it only "at least through November 21, 2026".
+    # is not only the flagships: the page carries long-context columns for twelve of these ids,
+    # the eight 5.6-and-later LLMs plus gpt-5.5, gpt-5.4, gpt-5.5-pro and gpt-5.4-pro, while
+    # gpt-5.2-pro has none. Cache writes are 1.25x input on GPT-5.6 and later, the rate of the
+    # default 30 minute lifetime; the 12 hour one, 2.5x and on the Responses API only, is never
+    # asked for. Before 5.6 there is no write rate at all (a dash on the page, and "No additional
+    # cache-write charge" in the caching guide), so those rows carry None and a written token is
+    # charged at the input rate, which is what OpenAI bills. gpt-5.6-sol's rate is promotional,
+    # and OpenAI now say it is "available until November 30, 2026" and publish no rate after it.
     "openai": (
-        LLMSpec("gpt-6-sol", "GPT-6 Sol", api="responses", price=Price(2.0, 10.0, 0.2, 2.5)),
+        LLMSpec("gpt-6.1-sol", "GPT-6.1 Sol", api="responses", price=Price(2.0, 10.0, 0.1, 2.5)),
         LLMSpec(
-            "gpt-6.1-sol",
-            "GPT-6.1 Sol",
-            api="responses",
-            price=Price(2.0, 10.0, 0.1, 2.5, checked="2026-10-26"),
+            "gpt-6.1-terra", "GPT-6.1 Terra", api="responses", price=Price(1.0, 5.0, 0.05, 1.25)
         ),
         LLMSpec("gpt-6-astra", "GPT-6 Astra", api="responses", price=Price(10.0, 50.0, 1.0, 12.5)),
         LLMSpec("gpt-6-luna", "GPT-6 Luna", api="responses", price=Price(0.1, 0.5, 0.01, 0.125)),
-        LLMSpec("gpt-5.6-sol", "GPT-5.6 Sol", price=Price(4.0, 20.0, 0.4, 5.0)),
-        LLMSpec("gpt-5.6-terra", "GPT-5.6 Terra", price=Price(2.0, 12.0, 0.2, 2.5)),
-        LLMSpec("gpt-5.6-luna", "GPT-5.6 Luna", price=Price(0.2, 1.2, 0.02, 0.25)),
+        LLMSpec(
+            "gpt-6-sol", "GPT-6 Sol", "legacy", api="responses", price=Price(2.0, 10.0, 0.2, 2.5)
+        ),
+        LLMSpec("gpt-5.6-sol", "GPT-5.6 Sol", "legacy", price=Price(4.0, 20.0, 0.4, 5.0)),
+        LLMSpec("gpt-5.6-terra", "GPT-5.6 Terra", "legacy", price=Price(2.0, 12.0, 0.2, 2.5)),
+        LLMSpec("gpt-5.6-luna", "GPT-5.6 Luna", "legacy", price=Price(0.2, 1.2, 0.02, 0.25)),
         LLMSpec("gpt-5.5", "GPT-5.5", "legacy", price=Price(5.0, 30.0, 0.5)),
         LLMSpec("gpt-5.4", "GPT-5.4", "legacy", price=Price(2.5, 15.0, 0.25)),
         LLMSpec("gpt-5.4-mini", "GPT-5.4 mini", "legacy", price=Price(0.75, 4.5, 0.075)),
-        LLMSpec("gpt-5.4-nano", "GPT-5.4 nano", "legacy", price=Price(0.2, 1.25, 0.02)),
         LLMSpec("gpt-5.2", "GPT-5.2", "legacy", price=Price(1.75, 14.0, 0.175)),
-        LLMSpec("gpt-5.1", "GPT-5.1", "legacy", price=Price(1.25, 10.0, 0.125)),
-        LLMSpec("gpt-4.1", "GPT-4.1", "legacy", effort=False, price=Price(2.0, 8.0, 0.5)),
-        LLMSpec("gpt-4.1-mini", "GPT-4.1 mini", "legacy", effort=False, price=Price(0.4, 1.6, 0.1)),
-        LLMSpec("gpt-4o", "GPT-4o", "legacy", effort=False, price=Price(2.5, 10.0, 1.25)),
-        LLMSpec(
-            "gpt-4o-mini", "GPT-4o mini", "legacy", effort=False, price=Price(0.15, 0.6, 0.075)
-        ),
         LLMSpec(
             "gpt-5.5-pro",
             "GPT-5.5 Pro",
@@ -372,13 +398,6 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             price=Price(21.0, 168.0),
         ),
         LLMSpec(
-            "gpt-5.3-codex",
-            "GPT-5.3 Codex",
-            "specialised",
-            api="responses",
-            price=Price(1.75, 14.0, 0.175),
-        ),
-        LLMSpec(
             "chat-latest",
             "ChatGPT Instant (moves with ChatGPT)",
             "specialised",
@@ -386,32 +405,43 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             price=Price(5.0, 30.0, 0.5),
         ),
     ),
-    # ai.google.dev models and deprecations. Gemini 3.1 Flash-Lite has a shutdown date already
-    # (2027-05-07), and so does Robotics ER 1.6 (2026-08-31), while the 2.0 family and the
-    # Gemini 3 Pro preview are gone. ER 2 is here because quackd drives robots and that is its
-    # subject. The 2.5 family is out as well, although Google has not deprecated it: since
-    # 2026-09-18 Google is "limiting access to the 2.5 models to users who have actively used
-    # them in the past", and an LLM a new user cannot call does not belong here.
-    # `gemini-3.1-pro-preview-customtools` is 3.1 Pro preview at the same price under its own id,
-    # which Google's page says is "better at prioritizing your custom tools", and every quackd
-    # verb is one. The LLMs page
-    # calls 3.5 Flash "our legacy Flash model" and 3.7 and 3.6 Flash "our previous-generation
-    # Flash model", and names 3.8 Flash and 3.5 Flash-Lite as its latest, so the three older
-    # Flash LLMs sit in legacy. The pricing page words it differently, calling 3.5 Flash "our
-    # earlier Flash model" and giving "our legacy Flash model" to Gemini 3 Flash Preview, which
-    # stays a preview because that is Google's own label for it.
+    # aistudio.google.com/docs, where every ai.google.dev/gemini-api docs page now redirects: its
+    # LLMs, pricing, deprecations and changelog pages. Gemini 3.1 Flash-Lite has a shutdown date
+    # already (2027-05-07), Robotics ER 1.6 shut down on 2026-08-31, and the 2.0 family and the
+    # Gemini 3 Pro preview are gone. Google deprecated 3.7 Flash and 3.5 Flash on 2026-10-08 and
+    # routes their ids to 3.8 Flash and 3.6 Flash, so a call to either is answered by another LLM
+    # and neither is here. ER 2 is here because quackd drives robots and that is its subject. The
+    # 2.5 family is out as well: 2.5 Pro and 2.5 Flash are deprecated, routed to 3.8 Flash and 3.5
+    # Flash-Lite from 2026-12-01, and 2.5 Flash-Lite, which is not, is still behind the rule by
+    # which Google has been "limiting access to the 2.5 models to users who have actively used them
+    # in the past" since 2026-09-18; an LLM a new user cannot call does not belong here. Gemma 4 is
+    # out: the pricing page prices it on the free tier and marks every paid-tier cell
+    # "Not available". Gemini 4 Carbon and Argon are on the paid tier only, which takes billing and
+    # no approval. `gemini-3.1-pro-preview-customtools` is 3.1 Pro preview at the same price under
+    # its own id, which Google's page says is "better at prioritizing your custom tools", and every
+    # quackd verb is one. The LLMs page names "Gemini 4 Hydrogen or 3.5 Flash-Lite" as the ones for
+    # new work and calls 3.8 and 3.6 Flash "Our previous-generation Flash model", so those two sit
+    # in legacy and Hydrogen is the default. The pricing page gives "our legacy Flash model" to
+    # Gemini 3 Flash Preview, which stays a preview because that is Google's own label for it.
     #
-    # Prices: 3.8, 3.7 and 3.6 Flash and Robotics ER 2 are on an introductory rate that DOUBLES
-    # on 2027-01-01: the pricing page prints each of their rates as good "through December 31,
-    # 2026" beside a rate twice as high after it. From that date those four under-report by
-    # half until somebody re-reads it. Both 3.1 Pro rows are the short band; above 200k their
-    # input and cache rates double and their output goes to 1.5x, and the rest are flat.
-    # Google charge nothing to create a cache, billing storage by the hour instead, which is not
-    # a per-token rate and is not costed here. Every LLM here publishes a cached-input rate,
-    # 3.5 Flash-Lite's $0.03 included: it sits in the paid column beside a free-tier "Not
-    # available", which is easy to read as no rate at all.
+    # Prices: 3.8 and 3.6 Flash and Robotics ER 2 are on an introductory rate that DOUBLES on
+    # 2027-01-01: the pricing page prints each of their rates as good "through December 31, 2026"
+    # beside a rate twice as high after it, and from that day those three under-report by half
+    # until somebody re-reads it. Gemini 4 Carbon and Argon are the other way round. Their
+    # introductory $2/$10 runs "through November 30, 2026", sixteen days after this read, so they
+    # carry the $4/$20 the page prints from 2026-12-01, which reports twice the cost until then
+    # rather than under-reporting for good after it. Both 3.1 Pro rows are the short band; above
+    # 200k their input and cache rates double and their output goes to 1.5x, and the rest are
+    # flat. On the 3.x rows Google charge nothing to create a cache, billing storage by the hour
+    # instead, which is not a per-token rate and is not costed here. The Gemini 4 rows have
+    # "Implicit caching only (explicit caching is not supported)", no cache to create or store, so
+    # a prompt that fills one is billed as ordinary input and their write rate is None. Every LLM
+    # here publishes a cached-input rate, 3.5 Flash-Lite's $0.03 included: it sits in the paid
+    # column beside a free-tier "Not available", which is easy to read as no rate at all.
     "gemini": (
-        LLMSpec("gemini-3.8-flash", "Gemini 3.8 Flash", price=Price(0.75, 3.75, 0.075, 0.0)),
+        LLMSpec("gemini-4-hydrogen", "Gemini 4 Hydrogen", price=Price(1.5, 7.5, 0.075)),
+        LLMSpec("gemini-4-carbon", "Gemini 4 Carbon", price=Price(4.0, 20.0, 0.2)),
+        LLMSpec("gemini-4-argon", "Gemini 4 Argon", price=Price(4.0, 20.0, 0.2)),
         LLMSpec("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", price=Price(0.3, 2.5, 0.03, 0.0)),
         LLMSpec(
             "gemini-3.1-pro-preview",
@@ -438,23 +468,25 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             price=Price(1.0, 5.0, 0.1, 0.0),
         ),
         LLMSpec(
-            "gemini-3.7-flash", "Gemini 3.7 Flash", "legacy", price=Price(0.75, 3.75, 0.075, 0.0)
+            "gemini-3.8-flash", "Gemini 3.8 Flash", "legacy", price=Price(0.75, 3.75, 0.075, 0.0)
         ),
         LLMSpec(
             "gemini-3.6-flash", "Gemini 3.6 Flash", "legacy", price=Price(0.75, 3.75, 0.075, 0.0)
         ),
-        LLMSpec("gemini-3.5-flash", "Gemini 3.5 Flash", "legacy", price=Price(1.5, 9.0, 0.15, 0.0)),
     ),
-    # docs.x.ai. grok-4 and the whole grok-3 and grok-4-fast line were retired on 2026-05-15 and
-    # now answer as grok-4.3 without saying so, which is the kind of silence a catalogue exists
-    # to stop; grok-code-fast-1 went the same day and answers as grok-build-0.1. All seven here
+    # docs.x.ai. grok-4-0709, grok-3 and the grok-4-fast and grok-4-1-fast slugs were retired on
+    # 2026-05-15, and a request to one is now served by grok-4.3 at grok-4.3's rates, which is
+    # the kind of quiet substitution a catalogue exists to stop; grok-code-fast-1 went the same
+    # day and is routed to grok-build-0.1, whose card now lists it as an alias. All seven here
     # take an image and all seven do function calling. Grok 4.20 multi-agent is not here even
     # though its model card says function calling: xAI's multi-agent guide says it takes no
     # client-side function tools and does not work on Chat Completions, which is the API quackd
     # calls. Grok 4.7 Fast is sold only through Cursor and Grok Build, not on the public API.
     # xAI's LLM chooser names Grok 4.7 alone for code and chat, so it is the default; 4.6
-    # charges the same, and 4.5 the same apart from a cheaper cached read. xAI now calls Chat
-    # Completions a legacy endpoint, with no shutdown date, and `grok.py` still rides it.
+    # charges the same, and 4.5 the same apart from a cheaper cached read. xAI now say "The Chat
+    # Completions API is deprecated", offered "as a legacy endpoint" with no shutdown date, and
+    # that "every multi-turn or tool-calling conversation sent through it discards the model's
+    # earlier thinking"; every quackd turn is one, and `grok.py` still rides it.
     #
     # Prices: the band below 200k prompt tokens. Above it xAI charge 2x for the whole request.
     # They publish a cached-input rate and bill the request that sets up a cache as ordinary
@@ -479,23 +511,34 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         ),
         LLMSpec("grok-build-0.1", "Grok Build 0.1", "specialised", price=Price(1.0, 2.0, 0.2)),
     ),
-    # docs.mistral.ai. Magistral, Devstral, Pixtral, and Medium 3 and 3.1 are all past the
-    # retirement dates Mistral's table of deprecated and retired LLMs gives them. Medium 3.5, both
-    # GLM rows and Leanstral do not follow the dated pattern: the lifecycle page has moved to
-    # name-major-minor (`mistral-medium-3-5`), Public Preview ids use it too, and Labs ids add a
-    # `labs-` prefix. The two GLM rows are Z.ai's open-weight LLMs, which Mistral lists as
-    # third-party hosted and serves "without Mistral modifications" at its own address under its own
-    # ids. Leanstral is Mistral's own, from its Leanstral team.
+    # docs.mistral.ai: its LLMs, lifecycle, changelog and pricing pages (mistral.ai/pricing/api
+    # redirects to docs.mistral.ai/inference/pricing). Magistral, Devstral, Pixtral, and Medium 3
+    # and 3.1 are all past the retirement dates Mistral's table of deprecated and retired LLMs
+    # gives them, Z.ai GLM 5.2 retired on 2026-10-31 and Leanstral 1.5 on 2026-09-30, and Medium
+    # 3.5 and Large 3 were deprecated on 2026-10-31 to retire on 2027-04-30, so none of them is
+    # here. Large 4 is the replacement both of those name, and the default. Large 4 and both GLM
+    # rows do not follow the dated pattern: the lifecycle page has moved to name-major-minor,
+    # `mistral-large-4-0` being the "Fixed major and minor version" behind the `mistral-large-4`
+    # alias, and Public Preview ids use it too. The two GLM rows are Z.ai's open-weight LLMs, which
+    # Mistral lists as third-party hosted and serves "without Mistral modifications" at its own
+    # address under its own ids. DeepSeek V4.1 Flash 1017 is hosted the same way, in Public
+    # Preview, and is not here: it thinks by default, DeepSeek's own API refuses a forced call in
+    # thinking mode, which is why quackd turns that off there, and nothing on Mistral's pages says
+    # how to turn it off on Mistral or whether a forced call works with it on.
     #
-    # Prices: the standard tier, with cached input a tenth of input across the board. Batch is
-    # half and priority is 1.75x, and neither is here. Mistral publish no cache-write rate and
-    # bill the tokens that fill a cache at the standard input price, so `cache_write` is None and
-    # such tokens are charged at the input rate. Leanstral is listed at Free with no end date
-    # attached, which is a real zero rather than a missing rate, and also the kind of zero that
-    # can stop being one without an announcement.
+    # With reasoning on, Mistral's reasoning page says `message.content` comes back as a list of
+    # chunks rather than a string, and always so on GLM 5.3, and `openai.content_parts` reads it.
+    # Large 4 and GLM 5.3 Flash take no `none` reasoning effort, so both reason on every turn.
+    # The page asks for the thinking chunks to be sent back on later turns, and quackd sends the
+    # text and the call only.
+    #
+    # Prices: the standard tier. Cached input is a tenth of input on every LLM Mistral trained and
+    # on GLM 5.3, and a fifth on GLM 5.3 Flash. Batch is half and priority is 1.75x, and neither
+    # is here. Mistral publish no cache-write rate and bill the tokens that fill a cache at the
+    # standard input price, so `cache_write` is None and such tokens are charged at the input
+    # rate.
     "mistral": (
-        LLMSpec("mistral-medium-3-5", "Mistral Medium 3.5", price=Price(1.5, 7.5, 0.15)),
-        LLMSpec("mistral-large-2512", "Mistral Large 3", price=Price(0.5, 1.5, 0.05)),
+        LLMSpec("mistral-large-4-0", "Mistral Large 4", price=Price(0.7, 2.1, 0.07)),
         LLMSpec("mistral-small-2603", "Mistral Small 4", price=Price(0.15, 0.6, 0.015)),
         LLMSpec("ministral-14b-2512", "Ministral 3 14B", "open", price=Price(0.2, 0.2, 0.02)),
         LLMSpec("ministral-8b-2512", "Ministral 3 8B", "open", price=Price(0.15, 0.15, 0.015)),
@@ -510,27 +553,21 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         LLMSpec(
             "zai-glm-5-3",
             "Z.ai GLM 5.3 (hosted by Mistral)",
-            "preview",
+            "open",
             vision=False,
             price=Price(1.4, 4.4, 0.14),
         ),
         LLMSpec(
-            "zai-glm-5-2",
-            "Z.ai GLM 5.2 (hosted by Mistral)",
-            "preview",
-            vision=False,
-            price=Price(1.4, 4.4, 0.14),
-        ),
-        LLMSpec(
-            "labs-leanstral-1-5",
-            "Leanstral 1.5 (Lean 4 proofs, Mistral labs)",
-            "preview",
-            price=Price(0.0, 0.0, 0.0),
+            "zai-glm-5-3-flash",
+            "Z.ai GLM 5.3 Flash (hosted by Mistral)",
+            "open",
+            price=Price(0.15, 0.5, 0.03),
         ),
     ),
-    # api-docs.deepseek.com. The API reference lists exactly these two ids. `deepseek-v4-flash`
-    # and `deepseek-v4-flash-vision-exp` are legacy names the API still accepts but only routes to
-    # V4.1 Flash for now, so they are not listed, and `deepseek-chat` and `deepseek-reasoner`
+    # api-docs.deepseek.com. The API reference lists exactly these two ids, and `deepseek-flash`
+    # has served DeepSeek-V4.1-Flash-1017 since 2026-10-17, at the same price. `deepseek-v4-flash`
+    # and `deepseek-v4-flash-vision-exp` are legacy names the API still accepts but serves with
+    # that same LLM, so they are not listed, and `deepseek-chat` and `deepseek-reasoner`
     # stopped answering after 2026-07-24. DeepSeek's release post says it is phasing V4 Pro out
     # and announced it would be routed to Flash from 2026-09-14; its change log then kept serving
     # it at its own rate and said it "will provide further notice should there be any changes".
@@ -554,33 +591,43 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         ),
     ),
     # docs.cohere.com, reached through the OpenAI compatibility endpoint. Command A Vision is out
-    # because its own page says "tool use isn't supported with this model", and Command A
-    # Translate is out as a translation LLM whose page says nothing about tool use at all.
-    # North Small Translate and the Aya LLMs are out for the same silence. North Mini Code is
-    # in as a specialised coding LLM: Cohere's own model card says it "has been specifically
-    # trained with tool-use capabilities for agentic coding", and it is served on the Chat API,
-    # which the LLMs page offers "for evaluation".
+    # because its own page says "tool use isn't supported with this model", and Command A Translate
+    # is out as a translation LLM whose page says nothing about tool use at all. North Small
+    # Translate and the Aya LLMs are out for the same silence. North Mini Code is in as a
+    # specialised coding LLM: Cohere's own model card says it "has been specifically trained with
+    # tool-use capabilities for agentic coding", and it is served on the Chat API, which the LLMs
+    # page offers "for evaluation". Its id has a dot, `north-mini-code-1.0`, as the id on its own
+    # page and the LLMs page spell it; the hyphens are only its changelog entry's address.
     #
-    # Prices: THE COMMAND A FAMILY HAS NO PUBLISHED PER-TOKEN RATE, the default included, and
-    # neither does North Mini Code. Every per-token generative price on Cohere's page belongs to an
-    # older LLM. The three rates below are its Command R line (Command R and R7B on the page's
-    # cards, Command R+ 08-2024 only in a legacy FAQ headed "For existing customers"), and the rest
-    # are the original Command and Command Light and Aya Expanse, none of them here. Cohere's
-    # pricing doc says the Command LLMs are "priced on a per-token basis" and publishes no rate
-    # for them, and its Model Vault docs sell the Command A family and North as dedicated instances
-    # by the hour, which cannot be turned into a per-token figure. Command A+ and North Mini Code
-    # are on the pricing page as "Free", $0 against "API key" with no key type named, while the
-    # page's own FAQ says a production key is billed pay as you go at a rate it does not state, and
-    # the rate-limits page puts newer LLMs such as Command A Reasoning under trial-key terms even
-    # on a production key. Nothing there settles what a production call to either costs, so both are
-    # left unpriced rather than recorded as free. A default Cohere run therefore reports `cost_usd:
-    # null` and says `cost unpriced`, and `--price` is how you tell quackd your own rate. This is
-    # the case the null was built for.
+    # Prices: THE COMMAND A FAMILY HAS NO PUBLISHED PER-TOKEN RATE, the default included. Every
+    # per-token generative price on Cohere's page belongs to an older LLM. The three rates below
+    # are its Command R line (Command R and R7B on the page's cards, Command R+ 08-2024 only in
+    # the FAQ "Where do I find pricing for our legacy models?", whose answer opens "For existing
+    # customers:"), and the rest are the original Command and Command Light and Aya Expanse, none
+    # of them here. Cohere's pricing doc says the Command LLMs are "priced on a per-token basis"
+    # and publishes no rate for them, and its Model Vault docs sell the Command A family and North
+    # as dedicated instances by the hour, which cannot be turned into a per-token figure. Command
+    # A+ and North Mini Code are on the pricing page as "Free", $0 against "API key" with no key
+    # type named, while the page's own FAQ says a production key is billed pay as you go at a rate
+    # it does not state, and the rate-limits page puts newer LLMs such as Command A Reasoning under
+    # trial-key terms even on a production key. North Mini Code's own page settles it for that
+    # one: "For both trial keys and production keys, North Mini Code is free until rate limits are
+    # reached", so it is a real zero, of the kind that can stop being one without an announcement.
+    # Nothing settles what a production call to Command A+ costs, so it is left unpriced rather
+    # than recorded as free. A default Cohere run therefore reports `cost_usd: null` and says
+    # `cost unpriced`, and `--price` is how you tell quackd your own rate. This is the case the
+    # null was built for.
     "cohere": (
         LLMSpec("command-a-plus-05-2026", "Command A+"),
         LLMSpec("command-a-03-2025", "Command A", vision=False),
         LLMSpec("command-a-reasoning-08-2025", "Command A Reasoning", "specialised", vision=False),
-        LLMSpec("north-mini-code-1-0", "North Mini Code", "specialised", vision=False),
+        LLMSpec(
+            "north-mini-code-1.0",
+            "North Mini Code",
+            "specialised",
+            vision=False,
+            price=Price(0.0, 0.0),
+        ),
         LLMSpec(
             "command-r-plus-08-2024", "Command R+", "legacy", vision=False, price=Price(2.5, 10.0)
         ),
@@ -590,55 +637,65 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         ),
     ),
     # Alibaba Cloud Model Studio. Only the rolling ids are here: the dated snapshots behind them
-    # (`qwen3.7-plus-2026-05-26` and the rest) are a pinning mechanism, not a menu, and Alibaba
-    # gives them a month of notice against three for a rolling id. `qwen3-max`,
-    # `qwen3-coder-plus` and `qwen3-coder-next` are still on the price list and are not here:
-    # Alibaba retire all three on 2026-10-10. Qwen3.7 Max is `legacy` because the text generation
-    # page files it, alone of the 3.7 LLMs, under "Legacy models"; 3.7 Plus and Flash stay
-    # `current` because that
-    # page and the visual understanding page both keep them under "Recommended models", though
-    # the visual understanding page also lists them under its own Legacy heading. Model Studio
-    # also serves DeepSeek, Kimi and GLM LLMs, some under those vendors' own ids, which are
-    # listed under those vendors here because an id may belong to one vendor only, and some under
-    # ids of Alibaba's own, which are not listed anywhere yet. `qwen3.8-omni-flash`
-    # (2026-09-17) takes function tools and is not here: no Omni LLM ever has been, and whether
-    # one belongs is a decision rather than a refresh.
+    # (`qwen3.7-plus-2026-05-26` and the rest) are a pinning mechanism, not a menu. `qwen3-max`,
+    # `qwen3-coder-plus` and `qwen3-coder-next` were taken offline on 2026-10-10 and are on no
+    # list now. The text generation page, which now covers visual understanding as well, keeps
+    # Qwen3.8 Max and Flash and Qwen3.7 Plus under "Recommended models" and files the rest of
+    # Alibaba's own LLMs under "Older models" ("These models are no longer the first
+    # recommendation"), so Qwen3.7 Flash joins Qwen3.7 Max in `legacy`. `qwen4-max-preview` is not
+    # here: it "is available through Token Plan only", a plan with a key and an address of its own
+    # that is "Not permitted for automated scripts or application backends", and it is retired
+    # when its preview ends on 2026-11-25. The own pages of `qwen-max`, `qwen-plus`, `qwen-flash`
+    # and `qwen3-coder-flash` mark Function Calling "Unsupported" in Singapore, the region quackd
+    # calls, while the text generation page and the function calling guide list all four with
+    # tools and the Qwen-Coder guide calls tools on `qwen3-coder-flash` at a Singapore address, so
+    # they stay until a real call settles it. Model Studio also serves DeepSeek, Kimi and GLM
+    # LLMs, some under those vendors' own ids, which are listed under those vendors here because
+    # an id may belong to one vendor only, and some under ids of Alibaba's own, which are not
+    # listed anywhere yet. `qwen3.8-omni-flash` (2026-09-17) takes function tools and is not here:
+    # no Omni LLM ever has been, and whether one belongs is a decision rather than a refresh.
     #
     # Prices: the Singapore international catalogue at the FIRST input-length tier, which is the
-    # sharpest under-report in this file. `qwen3-coder-flash` goes from $0.3/$1.5 to $1.6/$9.6
-    # above 256k, more than six times the output rate, `qwen3.7-flash` more than triples both
-    # rates past just 32k, and the China region is priced differently again. Where an LLM splits
-    # its output rate by thinking mode this is the non-thinking one (`qwen-plus` is $1.2 against
-    # $4 thinking). Alibaba publish no per-LLM cache rate for any LLM here, only rules: an
-    # implicit cache, on by itself, whose hits cost 20% of input on most of the LLMs it lists
-    # but a rate Alibaba leave to the console on three rows here, `qwen3.8-max`, `qwen3.8-flash`
-    # and `qwen3.8-2.4t-a95b`, and an explicit one quackd never asks for. A rate derived from a
-    # rule is not a rate read off a page, so every cache field here is None, and an implicit hit
-    # is charged at the full input rate: an overstatement, up to five times on the cached part on
-    # the 20% rows and by an unpublished factor on those three, never an understatement.
+    # sharpest under-report in this file. `qwen3-coder-flash` steps up from $0.3/$1.5 past 32k
+    # and reaches $1.6/$9.6 above 256k, more than six times the output rate, `qwen3.7-flash` more
+    # than triples both rates past just 32k, and the China region is priced differently again.
+    # Where an LLM splits its output rate by thinking mode this is the non-thinking one
+    # (`qwen-plus` is $1.2 against $4 thinking). The cache read is the "Input(Implicit Cache)"
+    # rate each LLM's own page now prints, on the eleven rows the implicit cache covers: it is on
+    # by itself and bills no write, so their write rate is None. It is a fifth of input on most of
+    # them and less on three Qwen3.8 rows, whose pages print 0.25, 0.016 and 0.25 where the context
+    # cache page still sends a reader to the console, and `qwen3.8-2.4t-a95b`'s page labels its rate
+    # "Input (Cache Hit)", beside an "Explicit Cache Hit" of 0.17 quackd never asks for. The other
+    # ten print no implicit rate, only an explicit cache quackd never asks for or none at all, so
+    # their cache fields are None and a cached token is charged at the full input rate, an
+    # overstatement and never an understatement.
     "qwen": (
-        LLMSpec("qwen3.8-max", "Qwen3.8 Max", price=Price(2.0, 6.0)),
-        LLMSpec("qwen3.8-flash", "Qwen3.8 Flash", price=Price(0.15, 0.47)),
-        LLMSpec("qwen3.7-plus", "Qwen3.7 Plus", price=Price(0.4, 1.6)),
-        LLMSpec("qwen3.7-flash", "Qwen3.7 Flash", price=Price(0.03, 0.13)),
-        LLMSpec("qwen3.7-max", "Qwen3.7 Max", "legacy", vision=False, price=Price(2.5, 7.5)),
+        LLMSpec("qwen3.8-max", "Qwen3.8 Max", price=Price(2.0, 6.0, 0.25)),
+        LLMSpec("qwen3.8-flash", "Qwen3.8 Flash", price=Price(0.15, 0.47, 0.016)),
+        LLMSpec("qwen3.7-plus", "Qwen3.7 Plus", price=Price(0.4, 1.6, 0.08)),
+        LLMSpec("qwen3.7-flash", "Qwen3.7 Flash", "legacy", price=Price(0.03, 0.13, 0.006)),
+        LLMSpec("qwen3.7-max", "Qwen3.7 Max", "legacy", vision=False, price=Price(2.5, 7.5, 0.5)),
         LLMSpec("qwen3.6-plus", "Qwen3.6 Plus", "legacy", price=Price(0.5, 3.0)),
         LLMSpec("qwen3.6-flash", "Qwen3.6 Flash", "legacy", price=Price(0.25, 1.5)),
         LLMSpec("qwen3.5-plus", "Qwen3.5 Plus", "legacy", price=Price(0.4, 2.4)),
         LLMSpec("qwen3.5-flash", "Qwen3.5 Flash", "legacy", price=Price(0.1, 0.4)),
-        LLMSpec("qwen-max", "Qwen Max", "legacy", vision=False, price=Price(1.6, 6.4)),
-        LLMSpec("qwen-plus", "Qwen Plus", "legacy", vision=False, price=Price(0.4, 1.2)),
-        LLMSpec("qwen-flash", "Qwen Flash", "legacy", vision=False, price=Price(0.05, 0.4)),
+        LLMSpec("qwen-max", "Qwen Max", "legacy", vision=False, price=Price(1.6, 6.4, 0.32)),
+        LLMSpec("qwen-plus", "Qwen Plus", "legacy", vision=False, price=Price(0.4, 1.2, 0.08)),
+        LLMSpec("qwen-flash", "Qwen Flash", "legacy", vision=False, price=Price(0.05, 0.4, 0.01)),
         LLMSpec(
             "qwen3-coder-flash",
             "Qwen3 Coder Flash",
             "specialised",
             vision=False,
-            price=Price(0.3, 1.5),
+            price=Price(0.3, 1.5, 0.06),
         ),
-        LLMSpec("qwen3.8-27b", "Qwen3.8 27B", "open", price=Price(0.5, 3.0)),
+        LLMSpec("qwen3.8-27b", "Qwen3.8 27B", "open", price=Price(0.5, 3.0, 0.1)),
         LLMSpec(
-            "qwen3.8-2.4t-a95b", "Qwen3.8 2.4T-A95B", "open", vision=False, price=Price(2.0, 6.0)
+            "qwen3.8-2.4t-a95b",
+            "Qwen3.8 2.4T-A95B",
+            "open",
+            vision=False,
+            price=Price(2.0, 6.0, 0.25),
         ),
         LLMSpec("qwen3.6-35b-a3b", "Qwen3.6 35B-A3B", "open", price=Price(0.375, 2.25)),
         LLMSpec("qwen3.6-27b", "Qwen3.6 27B", "open", price=Price(0.6, 3.6)),
@@ -647,34 +704,45 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         LLMSpec("qwen3.5-27b", "Qwen3.5 27B", "open", price=Price(0.3, 2.4)),
         LLMSpec("qwen3.5-35b-a3b", "Qwen3.5 35B-A3B", "open", price=Price(0.25, 2.0)),
     ),
-    # platform.kimi.ai. Everything before K2.6 is discontinued: kimi-k2.5 and every moonshot-v1
-    # LLM on 2026-08-31, which now answer 404, the kimi-k2 series on 2026-05-25, and
-    # kimi-latest and kimi-thinking-preview before that. Only K3 accepts `required`: the other
-    # three return an error for it. Naming a single function is refused whenever thinking is on,
-    # which is always on K3 and K2.7 Code and by default on K2.6, which is why `kimi.py` asks
-    # rather than insists.
+    # platform.kimi.ai. Everything before the K3 series is gone or going: K2.6, K2.7 Code and its
+    # high speed variant are "No longer available to newly registered users" since 2026-10-31, with
+    # "Deprecation expected in late December 2026", kimi-k2.5 and every moonshot-v1 LLM were
+    # retired in August 2026 and now answer 404, the kimi-k2 series in May 2026, and kimi-latest
+    # and kimi-thinking-preview before that. The LLM list calls K3 "Kimi's previous-generation
+    # flagship", so K3.1 Pro is the default and K3 `legacy`. The vision guide names K3.1 Pro and K3
+    # as the ones that take images, so the high speed variant is sent the detections as text. Every
+    # K3-series LLM accepts `required`, and naming a single function is refused whenever thinking
+    # is on, which is always on all three; `kimi.py` asks with `auto` all the same.
     #
-    # Prices: `input` is cache-miss and `cache_read` cache-hit. Only K3 publishes a cache-write
-    # rate, at the 5 minute TTL; the K2 table has no such column, so those three are None. Kimi
-    # writes that 5 minute cache by default when a request does not say otherwise, so K3's write
-    # rate is charged on ordinary runs, and it equals K3's input rate.
+    # Prices: `input` is cache-miss and `cache_read` cache-hit, and the high speed variant's
+    # cache hit costs what K3.1 Pro's does. Each publishes a cache-write rate at the 5 minute TTL
+    # (the 1 hour one is not here), and Kimi writes that cache by default when a request does not
+    # say otherwise, so the write rate is charged on ordinary runs, and on each it equals the
+    # input rate.
     "kimi": (
-        LLMSpec("kimi-k3", "Kimi K3", price=Price(3.0, 15.0, 0.3, 3.0)),
-        LLMSpec("kimi-k2.6", "Kimi K2.6", price=Price(0.95, 4.0, 0.16)),
-        LLMSpec("kimi-k2.7-code", "Kimi K2.7 Code", "specialised", price=Price(0.95, 4.0, 0.19)),
+        LLMSpec("kimi-k3.1-pro", "Kimi K3.1 Pro", price=Price(2.0, 10.0, 0.2, 2.0)),
         LLMSpec(
-            "kimi-k2.7-code-highspeed",
-            "Kimi K2.7 Code (high speed)",
+            "kimi-k3.1-pro-highspeed",
+            "Kimi K3.1 Pro (high speed)",
             "specialised",
-            price=Price(1.9, 8.0, 0.38),
+            vision=False,
+            price=Price(4.0, 20.0, 0.2, 4.0),
         ),
+        LLMSpec("kimi-k3", "Kimi K3", "legacy", price=Price(3.0, 15.0, 0.3, 3.0)),
     ),
-    # docs.z.ai. GLM-5.3-Flash, GLM-5.3-FlashX and the `v` LLMs take images, and the rest are
-    # text only. GLM-4.5V is not here: the API reference gives `tools` only to the GLM-5.3-Flash
-    # series, the GLM-4.6V series and AutoGLM-Phone among the vision LLMs, and AutoGLM-Phone is
-    # a phone-automation agent with no row on the pricing page. GLM-5.2 stays `legacy` although
-    # the pricing page still lists it among its latest: the overview's own Latest Models are
-    # GLM-5.3 and GLM-5.3-Flash, and Z.ai's migration guide moves callers off 5.2.
+    # docs.z.ai. The GLM-5.3-Flash series (Flash, FlashX and FlashX Legal) and the `v` LLMs take
+    # images, and the rest are text only. FlashX Legal is "optimized for professional legal
+    # workflows", so `specialised`; the API reference puts it in the vision request and the pricing
+    # page among its text LLMs, and the reference is what says what it takes. The API reference now
+    # gives `tools` to no vision LLM but the GLM-5.3-Flash series ("Only supported by
+    # `GLM-5.3-Flash` series"), and the GLM-4.6V rows' tools rest on their own guide, which says
+    # they "integrate native Function Calling capabilities"; the pricing page has moved them to its
+    # other pricing, so they are `legacy` now. GLM-4.5V is not here: its own guide says nothing of
+    # function calling. GLM-5.2 stays `legacy`: the overview's own Latest Models are GLM-5.3 and
+    # GLM-5.3-Flash, and Z.ai's migration guide moves callers off 5.2, though the API reference
+    # still calls GLM-5.3, 5.2 and 5.1 "the latest flagship model series". Eight older ids,
+    # `glm-4.5-x` and the other 4.5, 4.7 and 4.6V variants, are spelled on no page today, only
+    # named, and stand as they were read before.
     #
     # Prices are flat, with no context bands on the page today, not even for the 1M-context
     # GLM-5.3 line, though earlier GLM generations had them and a refresh should look again.
@@ -688,6 +756,12 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         LLMSpec("glm-5.3", "GLM-5.3", vision=False, price=Price(1.4, 4.4, 0.26)),
         LLMSpec("glm-5.3-flash", "GLM-5.3 Flash", price=Price(0.15, 0.5, 0.03)),
         LLMSpec("glm-5.3-flashx", "GLM-5.3 FlashX", price=Price(0.37, 1.25, 0.075)),
+        LLMSpec(
+            "glm-5.3-flashx-legal",
+            "GLM-5.3 FlashX Legal",
+            "specialised",
+            price=Price(0.37, 1.25, 0.075),
+        ),
         LLMSpec("glm-5.2", "GLM-5.2", "legacy", vision=False, price=Price(1.4, 4.4, 0.26)),
         LLMSpec("glm-5.1", "GLM-5.1", "legacy", vision=False, price=Price(1.4, 4.4, 0.26)),
         LLMSpec("glm-5", "GLM-5", "legacy", vision=False, price=Price(1.0, 3.2, 0.2)),
@@ -719,18 +793,29 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
         LLMSpec(
             "glm-4-32b-0414-128k", "GLM-4 32B (128k)", "legacy", vision=False, price=Price(0.1, 0.1)
         ),
-        LLMSpec("glm-4.6v", "GLM-4.6V", "specialised", price=Price(0.3, 0.9, 0.05)),
-        LLMSpec("glm-4.6v-flash", "GLM-4.6V Flash", "specialised", price=Price(0.0, 0.0, 0.0, 0.0)),
-        LLMSpec("glm-4.6v-flashx", "GLM-4.6V FlashX", "specialised", price=Price(0.04, 0.4, 0.004)),
+        LLMSpec("glm-4.6v", "GLM-4.6V", "legacy", price=Price(0.3, 0.9, 0.05)),
+        LLMSpec("glm-4.6v-flash", "GLM-4.6V Flash", "legacy", price=Price(0.0, 0.0, 0.0, 0.0)),
+        LLMSpec("glm-4.6v-flashx", "GLM-4.6V FlashX", "legacy", price=Price(0.04, 0.4, 0.004)),
     ),
-    # Meta retired the hosted Llama API in July 2026. What replaced it is the Meta Model API,
-    # which is OpenAI shaped and serves Muse Spark. The contributor tier is cheaper because Meta
-    # trains on what you send it, which is why the label says so rather than the release notes.
-    # Meta price per TIER rather than per LLM, so 1.1 costs exactly what 1.3 does; if they
-    # ever split those rows these constants go stale in silence. There is no long-context
-    # premium on the 1M window, which is unusual enough to be worth writing down.
+    # dev.meta.ai: its LLMs, pricing and rate limits, and tool calling pages. Meta serve no Llama
+    # on an API of their own any more: the old Llama API's pages redirect to the Meta Model API's,
+    # and Llama is weights to download and other hosts' endpoints. The Meta Model API is OpenAI
+    # shaped and serves Muse Wonder, Muse Spark and Muse Ember. "Muse Spark 1.3 is recommended for
+    # new work", so it stays the default; "Muse Wonder is in preview", and it is not offered in
+    # South Korea. The contributor tier, on Spark 1.3 and 1.2 only, is cheaper because Meta trains
+    # on what you send it, which is why the label says so rather than the release notes.
+    #
+    # Prices: Meta price Muse Spark per TIER rather than per version, so 1.1 costs exactly what
+    # 1.3 does; if they ever split those rows these constants go stale in silence. Muse Wonder and
+    # Muse Ember have rates of their own. There is no long-context premium on Muse Wonder and Muse
+    # Spark across the 1M window, which is unusual enough to be worth writing down, but Muse Ember
+    # bills a request over 200K input tokens at three times every rate, for the whole request.
+    # No cache-write rate is published for any of them: the cache fills itself, and the tokens
+    # that fill it are billed as ordinary input.
     "meta": (
         LLMSpec("muse-spark-1.3", "Muse Spark 1.3", price=Price(1.25, 4.25, 0.15)),
+        LLMSpec("muse-ember-1.0", "Muse Ember", price=Price(0.1, 0.5, 0.004)),
+        LLMSpec("muse-wonder-1.0", "Muse Wonder (preview)", "preview", price=Price(4.0, 20.0, 0.2)),
         LLMSpec("muse-spark-1.2", "Muse Spark 1.2", "legacy", price=Price(1.25, 4.25, 0.15)),
         LLMSpec("muse-spark-1.1", "Muse Spark 1.1", "legacy", price=Price(1.25, 4.25, 0.15)),
         LLMSpec(
@@ -748,21 +833,24 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
     ),
     # OpenRouter is a router, not a lab, and this is not its whole list (`OPEN_ENDED`): an id
     # this tuple leaves out is checked against that list when a run starts, unless its spelling
-    # is refused first, and priced from it when taken (ADR-0050). What earns one of these six rows
-    # is narrower than the rule at the top: an LLM from a vendor quackd already drives
+    # is refused first, and priced from it when taken (ADR-0050). What earns one of these seven
+    # rows is narrower than the rule at the top: an LLM from a vendor quackd already drives
     # natively, served by its own maker, whose entry in OpenRouter's `GET /api/v1/models` on
-    # 2026-10-06 named `tools` and `tool_choice` among its supported parameters, took `image`
-    # input and carried no `expiration_date`.
+    # `OPENROUTER_PRICES_CHECKED` named `tools` and `tool_choice` among its supported
+    # parameters, took `image` input and carried no `expiration_date`. On 2026-11-14 Gemini 4
+    # Hydrogen took the place of Gemini 3.8 Flash, which Google now calls previous-generation, and
+    # Claude Fable 5.2 joined; GPT-6 Sol stays the default here, though OpenRouter's own alias
+    # for the newest Sol now points at 6.1 Sol.
     #
     # Rates are OpenRouter's own per-token strings times a million, read off that list on
     # `OPENROUTER_PRICES_CHECKED`. They are the base rates: the GPT-6 and Grok entries also
     # carry `overrides` that charge more past a long-prompt threshold, the SHORT band rule
-    # above. Gemini 3.8 Flash's cache write is OpenRouter's `input_cache_write` of
-    # 0.0000000416666666666667 a token, where Google's own page lists none; it is copied as
-    # listed rather than rounded. A turn on OpenRouter is normally costed at what OpenRouter
-    # says it billed (`usage.cost`), and these rates are what it falls back to.
+    # above. Gemini 4 Hydrogen's cache write is OpenRouter's `input_cache_write` of
+    # 0.0000000833333333333333 a token, where Google's own page lists none; it is copied as
+    # listed rather than rounded. A turn on OpenRouter is normally costed at what OpenRouter says
+    # it billed (`usage.cost`), and these rates are what it falls back to.
     #
-    # The two Claude rows will not be forced to call a tool (see `forced_tools`), so they are
+    # The three Claude rows will not be forced to call a tool (see `forced_tools`), so they are
     # asked with `auto`. None of them names an `api`: OpenRouter is only ever asked on Chat
     # Completions, whatever OpenAI's own API wants for the same LLM.
     "openrouter": (
@@ -780,7 +868,7 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             "anthropic/claude-sonnet-5.5",
             "Claude Sonnet 5.5 (via OpenRouter)",
             forced_tools=False,
-            price=Price(2.0, 10.0, 0.2, 2.5, checked=OPENROUTER_PRICES_CHECKED),
+            price=Price(2.0, 10.0, 0.1, 2.5, checked=OPENROUTER_PRICES_CHECKED),
         ),
         LLMSpec(
             "anthropic/claude-opus-5.5",
@@ -789,9 +877,15 @@ CATALOGUE: dict[str, tuple[LLMSpec, ...]] = {
             price=Price(4.0, 20.0, 0.2, 5.0, checked=OPENROUTER_PRICES_CHECKED),
         ),
         LLMSpec(
-            "google/gemini-3.8-flash",
-            "Gemini 3.8 Flash (via OpenRouter)",
-            price=Price(0.75, 3.75, 0.075, 0.0416666666666667, checked=OPENROUTER_PRICES_CHECKED),
+            "anthropic/claude-fable-5.2",
+            "Claude Fable 5.2 (via OpenRouter)",
+            forced_tools=False,
+            price=Price(8.0, 40.0, 0.2, 10.0, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        LLMSpec(
+            "google/gemini-4-hydrogen",
+            "Gemini 4 Hydrogen (via OpenRouter)",
+            price=Price(1.5, 7.5, 0.075, 0.0833333333333333, checked=OPENROUTER_PRICES_CHECKED),
         ),
         LLMSpec(
             "x-ai/grok-4.7",

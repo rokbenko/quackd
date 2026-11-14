@@ -148,9 +148,9 @@ The rules the urls themselves keep, a `?name=` on each, unique names and no inde
 are the arm's and are in [adapters/lerobot/README.md](../adapters/lerobot/README.md): the registry
 stores what you gave it and the arm refuses at connect. A second camera also costs what a second
 camera costs: the last two exchanges keep their images, so a two-camera run carries four pictures in
-every request where a one-camera run carries two. On Claude Opus 5.5 and Fable 5.1, whose old
-frames are trimmed every eight exchanges rather than on every one, that is up to eighteen where
-one camera is nine.
+every request where a one-camera run carries two. On the Claude LLMs that bind their thinking
+(Opus 5.5, Fable 5.2, Sonnet 5.5, Haiku 5.5 and Fable 5.1), whose old frames are trimmed every eight
+exchanges rather than on every one, that is up to eighteen where one camera is nine.
 
 ## A board it uses
 

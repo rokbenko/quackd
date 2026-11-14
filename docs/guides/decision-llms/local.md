@@ -97,10 +97,11 @@ names both ways of supplying one. That deserves the honest caveat, because it is
 machine shows you: the refusal is raised before the client is built and needs nothing installed,
 but on a machine without `quackd[decision]` the run never reaches it, because availability is
 checked first and the run says so once and carries on without a stepper. Install the extra and the
-refusal is what you get. The client itself is exercised against a stub speaking the same wire
-format (`tests/stub_decision_llm.py`, `tests/test_decision_llms.py`), which proves quackd's half
-of the conversation and not yours; without the extra, `quackd doctor` prints this row as `missing
-(quackd[decision])`, `none needed` for the key, `auto (the server names it)` for the LLM and
+refusal is what you get. The client itself is exercised against a stand-in for the SDK it speaks
+through, `tests/fake_systemone.py`, installed in place of `typesafe_sdk`
+(`tests/test_decision_llms.py`), which proves quackd's half of the conversation and not yours;
+without the extra, `quackd doctor` prints this row as `missing (quackd[decision])`,
+`none needed` for the key, `auto (the server names it)` for the LLM and
 `unset: --decision-url or QUACKD_DECISION_URL` for the url. `--decision-mode shadow` is how that
 changes.
 

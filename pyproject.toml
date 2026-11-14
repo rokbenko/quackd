@@ -18,7 +18,7 @@ keywords = [
   "mcp", "model-context-protocol", "mujoco",
   "claude", "openai", "gemini", "grok", "mistral", "deepseek", "cohere", "qwen", "kimi", "glm", "meta",
   "openrouter",
-  "jev", "kev", "von", "openjev", "opendecision", "laya",
+  "jev", "kev", "openjev", "opendecision", "laya",
   "vla", "vision-language-action", "huggingface", "gr00t", "smolvla", "pi0",
   "ollama", "vllm", "llama-cpp", "local-llm", "jetson",
 ]
@@ -82,7 +82,7 @@ openrouter = ["openai>=1.66,<4"]
 # The System One protocol client: the optional discrete stepper in front of the pilot LLM
 # (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
 # Every decision LLM quackd knows that is a System One server is reached by repointing its base
-# URL, so this one wheel covers Jev, Kev, Von, OpenJev, OpenDecision and whatever else answers
+# URL, so this one wheel covers Jev, Kev, OpenJev, OpenDecision and whatever else answers
 # at `--decision-url`. That is why the extra is named for the protocol and not for a vendor.
 # `--decision-llm openai` speaks OpenAI's own format instead, through the `openai` extra above.
 # Not a provider, and deliberately not in `all`: it answers typed questions about a state and

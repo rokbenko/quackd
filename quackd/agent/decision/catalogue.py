@@ -117,13 +117,15 @@ PRESETS: dict[str, DecisionSpec] = {
         key_env="TYPESAFE_API_KEY",
         # Pinned, not `jev-latest`. The aliases move, and a run whose decision LLM changed
         # under it is a run whose transcript describes an LLM that is no longer the one that
-        # answered. `--decision-llm jev:jev-latest` is how you ask for a moving one.
-        llm_id="jev-1.13.0",
+        # answered. `--decision-llm jev:jev-latest` is how you ask for a moving one. The pin is
+        # 1.14.0, "the newest Jev release, available from October 14, 2026", since 2026-11-14,
+        # and `jev:jev-1.13.0`, still current, is how you ask for the one it moved from.
+        llm_id="jev-1.14.0",
         llm_env="TYPESAFE_DEFAULT_MODEL",
-        # TypeSafe charge $0.042 per million input tokens and do not charge for output
-        # ([their models page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
-        # two rows here with a published rate, `openai` the other: every other one is a server
-        # you run yourself.
+        # TypeSafe charge $0.042 per million input tokens and do not charge for output, the
+        # same for 1.14 and 1.13 ([their models page](https://docs.typesafe.ai/models), read
+        # 2026-09-21 and again 2026-11-14). One of the two rows here with a published rate,
+        # `openai` the other: every other one is a server you run yourself.
         price=Price(input=0.042, output=0.0, source="published"),
     ),
     "openai": DecisionSpec(
@@ -143,19 +145,20 @@ PRESETS: dict[str, DecisionSpec] = {
         # also what lets `doctor` print where the key goes.
         url="https://api.openai.com",
         key_env="OPENAI_API_KEY",
-        # The only LLM the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08.
-        # Whether the name moves under a run is on the row's page as an assumption.
+        # The only LLM the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08 and
+        # again 2026-11-14, the API generally available since 2026-10-22. Whether the name moves
+        # under a run is on the row's page as an assumption.
         llm_id="gpt-6-luna",
-        # OpenAI charge $0.10 per million input tokens and nothing for output, cache reads or
-        # cache writes, by the same guide on the same day:
+        # OpenAI charge $0.10 per million input tokens and nothing for output, by the same guide:
         # https://developers.openai.com/api/docs/guides/decisions
-        # `checked` is spelled out because a published rate without one is stamped with the day
-        # the pilots' catalogue was read, which is not the day this one was. The guide adds that
-        # regional processing premiums and long-context multipliers apply and publishes neither
-        # for this endpoint, so a run at any of OpenAI's regional hosts
-        # (`openai_headers.OPENAI_HOSTS`) is costed at this rate, and `QUACKD_DECISION_PRICE` is
-        # how you say otherwise.
-        price=Price(input=0.10, output=0.0, source="published", checked="2026-10-08"),
+        # It now prices the cache too: "Cache-read and cache-write rates match the standard
+        # `gpt-6-luna` prompt caching rates", which are the `gpt-6-luna` pilot row's, $0.01 to read
+        # and $0.125 to write. This guide names no cache lifetime, so the $0.125 is an inference:
+        # the write rate OpenAI's caching guide gives the default 30 minute one. The guide adds that
+        # regional processing premiums and long-context multipliers apply and publishes neither for
+        # this endpoint, so a run at any of OpenAI's regional hosts (`openai_headers.OPENAI_HOSTS`)
+        # is costed at this rate, and `QUACKD_DECISION_PRICE` is how you say otherwise.
+        price=Price(input=0.10, output=0.0, cache_read=0.01, cache_write=0.125, source="published"),
         extra="openai",
         sdk="openai",
         # The one row that may be shown the camera, and only on a run that says so, at OpenAI's
@@ -167,30 +170,23 @@ PRESETS: dict[str, DecisionSpec] = {
         backend=SYSTEM_ONE,
         summary="Kev, self-hosted: Qwen3.5 with a decision head, on your own GPU",
         install=(
-            # `cd kev` and not only the clone: without it `uv sync` runs in whatever
-            # directory the reader was standing in, which is the one mistake a copied
-            # command should not be able to make.
-            "git clone https://github.com/jaredpalmer/kev && cd kev && "
+            # Kev 1.0 pinned twice: the server at the `kev-1.0` tag and the weights at the `v1.0`
+            # tag Kev 1.0 put on each of its four checkpoints, so what runs is what the page
+            # read. Its own release notes pin the weights alone and clone `main`, whose later
+            # commits are fixes this pin leaves out. No `KEV_DTYPE=bf16`: bf16 is the server's
+            # own default on a GPU. `cd kev` and not only the clone: without it `uv sync` runs
+            # in whatever directory the reader was standing in, which is the one mistake a
+            # copied command should not be able to make.
+            "git clone --branch kev-1.0 https://github.com/jaredpalmer/kev && cd kev && "
             "uv sync --extra serve && "
-            "KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve "
-            "--run jaredpalmer/kev-4b --port 8009"
+            "uv run --extra serve python -m kev.serve "
+            "--run jaredpalmer/kev-4b@v1.0 --port 8009"
         ),
         # 8009 because its own README says so on every line that starts it. Its code default
         # is 8008, so a reader who runs it bare lands elsewhere and `--decision-url` is how
         # they say where.
         url="http://127.0.0.1:8009",
         llm_id="kev-latest",
-    ),
-    "von": DecisionSpec(
-        name="von",
-        backend=SYSTEM_ONE,
-        summary="Von, self-hosted: a 395M encoder, about 18 ms on a GPU, runs on CPU too",
-        # `--host 127.0.0.1` because its own default is `0.0.0.0`, which is every
-        # interface on the machine, and it authenticates nothing unless `VON_API_KEY`
-        # is set. A command a reader copies should not open a port to the network.
-        install="pip install von-sdk && von serve --host 127.0.0.1 --port 8000",
-        url="http://127.0.0.1:8000",
-        llm_id="von-latest",
     ),
     "openjev": DecisionSpec(
         name="openjev",
@@ -199,13 +195,14 @@ PRESETS: dict[str, DecisionSpec] = {
         install=(
             # Its own README's command, verbatim, and nothing but the command: a reader
             # copies this cell. `--ipc=host` because vLLM needs the shared memory, and the
-            # mount because the weights are about 18 GB: without it every restart of the
-            # container downloads them again. On Apple silicon it is
+            # mount because the weights are about 18 GB: without it every new container
+            # downloads them again. On Apple silicon it is
             # `OPENJEV_BACKEND=mlx python -m openjev` instead, which the page says and this
             # line deliberately does not, because the two are alternatives rather than one
-            # command.
+            # command. 0.7.0 is the newest tag of this image and the one the README names;
+            # never `:latest`, which Docker Hub still points at 0.2.0.
             "docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 "
-            "-v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.3.0"
+            "-v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.7.0"
         ),
         url="http://127.0.0.1:8080",
         # Its accepted set is closed -- `openjev-latest`, `openjev-0.1`, `jev-latest`,

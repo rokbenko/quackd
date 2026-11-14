@@ -27,7 +27,6 @@ that fills two roles, as OpenAI does, is one row.
 | LM Studio | `lmstudio` |   |   | none needed | `quackd[openai]` |
 | TypeSafe |   | `jev` |   | `TYPESAFE_API_KEY` | `quackd[decision]` |
 | Kev (jaredpalmer/kev) |   | `kev` |   | none needed | `quackd[decision]` |
-| Von (von-sdk) |   | `von` |   | none needed | `quackd[decision]` |
 | OpenJev (razorback16/openjev) |   | `openjev` |   | none needed | `quackd[decision]` |
 | OpenDecision |   | `opendecision` |   | none needed | `quackd[decision]` |
 | any server that speaks System One |   | `local` |   | none needed | `quackd[decision]` |
@@ -100,8 +99,8 @@ grants non-commercial use, with commercial use a question for its makers
 
 ### Local servers and your own decision LLMs
 
-Ollama, vLLM, llama.cpp, LM Studio and any other server that speaks OpenAI's API serve the pilot
-on your own machine with no key ([guides/local-llms.md](../guides/local-llms.md)). Kev, Von,
-OpenJev and OpenDecision are decision LLMs you run yourself, `local` is any other server that
-speaks System One, and Laya runs inside quackd's own process
+Ollama, vLLM, llama.cpp, LM Studio and any other server that speaks OpenAI's API serve the pilot on
+your own machine with no key ([guides/local-llms.md](../guides/local-llms.md)). Kev, OpenJev and
+OpenDecision are decision LLMs you run yourself, `local` is any other server that speaks System One,
+and Laya runs inside quackd's own process
 ([guides/decision-llms/README.md](../guides/decision-llms/README.md)).

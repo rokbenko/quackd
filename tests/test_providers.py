@@ -1392,26 +1392,27 @@ async def test_each_claude_row_is_asked_the_way_the_catalogue_says(spec: Any) ->
 
 
 def test_the_claude_llms_that_refuse_a_forced_call_are_marked() -> None:
-    """Both are documented by the vendor, and one of them is the default: left unmarked, every
-    bare `--llm anthropic` run would open on a failed call."""
+    """All four are on the vendor's own list, and one of them is the default: left unmarked,
+    every bare `--llm anthropic` run would open on a failed call. Haiku 5.5 takes a forced call,
+    so it is still made to make one."""
     assert default_llm_for("anthropic") == "claude-opus-5-5"
-    for llm_id in ("claude-opus-5-5", "claude-fable-5-1"):
+    refusing = ("claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-fable-5-1")
+    for llm_id in refusing:
         spec = find_llm("anthropic", llm_id)
         assert spec is not None and spec.forced_tools is False, llm_id
+    assert {m.id for m in llms_for("anthropic") if not m.forced_tools} == set(refusing)
 
 
 @pytest.mark.parametrize("spec", llms_for("anthropic"), ids=lambda m: m.id)
 async def test_effort_goes_only_to_the_claude_rows_that_take_it(spec: Any) -> None:
-    """Haiku 4.5 and Sonnet 4.5 are not on Anthropic's list of LLMs that take
-    `output_config.effort`, and quackd sent it to them on every call."""
+    """Haiku 4.5 is not on Anthropic's list of LLMs that take `output_config.effort`, and quackd
+    once sent it to Haiku 4.5 on every call."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
     await AnthropicProvider(llm_id=spec.id, client=client, effort="medium").step(
         "S", history()[:1], TOOLS
     )
     assert ("output_config" in client.kwargs) is spec.effort
-    assert {"claude-haiku-4-5", "claude-sonnet-4-5"} == {
-        m.id for m in llms_for("anthropic") if not m.effort
-    }
+    assert {"claude-haiku-4-5"} == {m.id for m in llms_for("anthropic") if not m.effort}
 
 
 async def test_the_sentence_the_4_5_llms_send_about_thinking_is_read_as_a_refusal() -> None:
@@ -1429,11 +1430,18 @@ async def test_the_sentence_the_4_5_llms_send_about_thinking_is_read_as_a_refusa
 
 
 def test_the_claude_llms_that_bind_their_thinking_are_trimmed_in_steps() -> None:
-    """Opus 5.5 and Fable 5.1 refuse a replayed thinking block once anything before it has
-    changed, and the loop's frame trim changes earlier messages from the third call on. Those
-    two, and only those, ask the loop to trim in steps rather than every call."""
+    """The five LLMs on Anthropic's preserved thinking list refuse a replayed thinking block once
+    anything before it has changed, and the loop's frame trim changes earlier messages from the
+    third call on. Those five, and only those, ask the loop to trim in steps rather than every
+    call."""
     marked = {m.id for m in llms_for("anthropic") if m.binds_thinking}
-    assert marked == {"claude-opus-5-5", "claude-fable-5-1"}
+    assert marked == {
+        "claude-opus-5-5",
+        "claude-fable-5-2",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+    }
     for spec in llms_for("anthropic"):
         p = AnthropicProvider(llm_id=spec.id, client=FakeAnthropic(None))
         assert p.binds_thinking is spec.binds_thinking, spec.id
@@ -1730,6 +1738,65 @@ async def test_openai_ignores_a_non_string_reasoning_field() -> None:
         "S", history()[:1], TOOLS
     )
     assert turn.thinking is None
+
+
+def _mistral_chunks(*, as_objects: bool) -> list[Any]:
+    """`message.content` as Mistral's reasoning page shows it with reasoning on: a `thinking`
+    chunk whose `thinking` is a list of text chunks, then the answer as a `text` chunk. The SDK
+    keeps the list as it came, as dicts; objects are the same chunks read by attribute."""
+    if as_objects:
+        inner = [NS(type="text", text="  The ball is to the left.  ")]
+        return [NS(type="thinking", thinking=inner), NS(type="text", text="turning left")]
+    inner_d = [{"type": "text", "text": "  The ball is to the left.  "}]
+    return [{"type": "thinking", "thinking": inner_d}, {"type": "text", "text": "turning left"}]
+
+
+@pytest.mark.parametrize("as_objects", [False, True], ids=["dicts", "objects"])
+async def test_mistral_content_chunks_are_read_as_text_and_thinking(as_objects: bool) -> None:
+    """Mistral answers with `message.content` as a list of chunks when reasoning is on, and
+    always on Z.ai GLM 5.3. The list was joined as text, which raised, so a run on such an LLM
+    ended on its first turn. The call is kept, the text chunk is the text and the thinking chunk
+    the thinking."""
+    from quackd.agent.providers.mistral import MistralProvider
+
+    response = openai_response("walk", "{}")
+    response.choices[0].message.content = _mistral_chunks(as_objects=as_objects)
+    turn = await MistralProvider(llm_id="zai-glm-5-3", client=FakeOpenAI(response)).step(
+        "S", history()[:1], TOOLS
+    )
+    assert [tc.name for tc in turn.tool_calls] == ["walk"]
+    assert turn.text == "turning left"
+    assert turn.thinking == "The ball is to the left."
+
+
+def test_content_that_is_a_string_reads_as_it_always_did() -> None:
+    """The chunk reader changes nothing for the vendors that answer with a string, and reads
+    no chunk type it was not written for."""
+    from quackd.agent.providers.openai import content_parts
+
+    assert content_parts("walking") == ("walking", None)
+    assert content_parts(None) == (None, None)
+    assert content_parts("") == (None, None)
+    assert content_parts([]) == (None, None)
+    reference = {"type": "reference", "reference_ids": [1]}
+    assert content_parts([reference, {"type": "text", "text": "a"}]) == ("a", None)
+    assert content_parts([{"type": "thinking", "thinking": " plain "}]) == (None, "plain")
+
+
+def test_text_chunks_are_one_answer_joined_as_they_came() -> None:
+    """Text chunks are pieces of one answer: a newline between two of them would cut a sentence
+    in two, and a chunk of nothing but spaces is part of the answer rather than a missing one."""
+    from quackd.agent.providers.openai import content_parts
+
+    split = [{"type": "text", "text": "The ball is "}, {"type": "text", "text": "to the left."}]
+    assert content_parts(split) == ("The ball is to the left.", None)
+    spaced = [
+        {"type": "text", "text": "turn"},
+        {"type": "text", "text": " "},
+        {"type": "text", "text": "left"},
+    ]
+    assert content_parts(spaced) == ("turn left", None)
+    assert content_parts([{"type": "text", "text": "  "}]) == (None, None)
 
 
 async def test_local_splits_inline_think_tags_out_of_the_answer() -> None:
@@ -2303,7 +2370,7 @@ def test_openrouter_builds_its_client_with_quackds_attribution(
 
 @pytest.mark.parametrize("spec", llms_for("openrouter"), ids=lambda m: m.id)
 def test_a_curated_openrouter_row_never_asks_the_network(spec: Any) -> None:
-    """The six rows the catalogue carries are priced and described already. The conftest guard
+    """The seven rows the catalogue carries are priced and described already. The conftest guard
     fails a fetch from openrouter.ai, so building one here proves it reached for nothing."""
     p = OpenRouterProvider(llm_id=spec.id, client=FakeOpenAI(None))
     assert p.listed is None and p.listed_price is None

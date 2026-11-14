@@ -120,7 +120,7 @@ command that fixes it: the provider one names `quackd[anthropic]`, the robot one
 extra for itself, but it does need a body to drive.
 
 **Which LLMs can I pick?** Whatever the catalogue lists for the vendor you named. It is one
-hand-written table of 124 ids across twelve cloud vendors, and `quackd list-models` prints it,
+hand-written table of 122 ids across twelve cloud vendors, and `quackd list-models` prints it,
 `--llm mistral` (or any other name) narrowing it to one vendor. Every row carries a status
 — `current`, `legacy`, `preview`, `specialised` or `open` — and a notes column that marks three
 things worth knowing before you pass an id: `default`, `Responses API` for the OpenAI LLMs
@@ -146,17 +146,16 @@ checks before it reads a key or opens a connection, so nothing was sent anywhere
 
 ```
 $ quackd run hello-world --llm openai:gpt-5 --robot microduck:mock
-✗ error: openai: unknown LLM 'gpt-5' from --llm. Valid ids: gpt-6-sol (default), gpt-6.1-sol,
-gpt-6-astra, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini,
-gpt-5.4-nano, gpt-5.2, gpt-5.1, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro,
-gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex, chat-latest. See `quackd list-models --llm openai`.
+✗ error: openai: unknown LLM 'gpt-5' from --llm. Valid ids: gpt-6.1-sol (default), gpt-6.1-terra,
+gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4,
+gpt-5.4-mini, gpt-5.2, gpt-5.5-pro, gpt-5.4-pro, gpt-5.2-pro, chat-latest. See `quackd list-models
+--llm openai`.
 
 $ quackd run hello-world --llm openai:grok-4.6 --robot microduck:mock
-✗ error: openai: unknown LLM 'grok-4.6' from --llm ('grok-4.6' is a grok LLM: --llm
-grok:grok-4.6). Valid ids: gpt-6-sol (default), gpt-6.1-sol, gpt-6-astra, gpt-6-luna, gpt-5.6-sol,
-gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.2, gpt-5.1,
-gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro, gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex,
-chat-latest. See `quackd list-models --llm openai`.
+✗ error: openai: unknown LLM 'grok-4.6' from --llm ('grok-4.6' is a grok LLM: --llm grok:grok-4.6).
+Valid ids: gpt-6.1-sol (default), gpt-6.1-terra, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-5.6-sol,
+gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.2, gpt-5.5-pro, gpt-5.4-pro,
+gpt-5.2-pro, chat-latest. See `quackd list-models --llm openai`.
 ```
 
 Ids are unique across the catalogue, so an id that belongs to somebody else is named as such
@@ -174,8 +173,8 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest LLM of its family, so the LLM that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
-openrouter`.
+anthropic/claude-opus-5.5, anthropic/claude-fable-5.2, google/gemini-4-hydrogen, x-ai/grok-4.7. See
+`quackd list-models --llm openrouter`.
 ```
 
 An id quackd does not carry that passes that spelling check is then looked up in OpenRouter's
@@ -213,7 +212,8 @@ body goes in with `--extra-body`, which is how Qwen3 is told not to think on vLL
 ## Seeing what happened
 
 **How does the LLM "see"?** Providers with vision get the duck-cam PNG for the last two turns,
-or up to the last nine on Claude Opus 5.5 and Fable 5.1; every provider gets a text line like
+or up to the last nine on the Claude LLMs that bind their thinking (Opus 5.5, Fable 5.2,
+Sonnet 5.5, Haiku 5.5 and Fable 5.1); every provider gets a text line like
 `ball at bearing 12° left, ~0.80 m` from the detector. Composite verbs steer on detections at
 10 Hz and never wait for the LLM.
 
@@ -372,7 +372,7 @@ text.
 tokens (mostly the system prompt and one image) and a short tool call. quackd works the
 dollars out itself rather than leaving you to multiply a token count by a rate you looked up:
 the catalogue carries a price per LLM in USD per million tokens, read off that vendor's own
-pricing page and dated with the day it was read, and 120 of the 124 ids have one. So every
+pricing page and dated with the day it was read, and 119 of the 122 ids have one. So every
 `llm` record in `transcript.jsonl` carries `cost_usd` for that call and `cost_usd_total` for
 the run so far, `summary.json` carries the run's `cost_usd` beside its `usage` and the exact
 rate it was charged at, and the counters under the verdict print the total:

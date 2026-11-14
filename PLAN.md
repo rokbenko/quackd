@@ -242,7 +242,7 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   its note, [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md), is
   kept as the record of what was planned.
 - ⬜ **Nobody has run the discrete stepper against a real decision LLM.** Not TypeSafe's hosted
-  API, not OpenAI's Decisions API, not a `kev`, `von`, `openjev` or `opendecision` server, not
+  API, not OpenAI's Decisions API, not a `kev`, `openjev` or `opendecision` server, not
   `laya` in this process, and not on hardware in any of those shapes. `--decision-llm` ships off
   unless you name one and is exercised against stubs and fakes, so there is no agreement rate and
   no calibration curve, and the only latency figure anywhere is TypeSafe's own, on TypeSafe's own
@@ -317,15 +317,14 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   has run beside a policy, so those records hold no agreement rate. Promoting it needs one
   measured from real runs, and a decision of its own, not a floor.
 - ⬜ **No `cost_usd` quackd reports has been checked against an invoice.** Every rate in
-  `quackd/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, most on
-  2026-09-23, OpenRouter's six on 2026-10-06 and `gpt-6.1-sol`'s on 2026-10-26, and a rate read
-  by hand is wrong from the day the vendor edits the page until somebody reads it again. What
-  would close this is one run on a metered account, reconciled against that account's own billing
-  page, on any vendor. Until then `--price` is the answer to a disagreement and the catalogue is
-  a table rather than a bill. Since 0.27.0 a Claude run's requests are marked for Anthropic's
-  cache, so its `cost_usd` rests on the cache's read and write rates as well. On OpenRouter a
-  turn is costed at the `usage.cost` it reports instead, which nobody has yet set beside what
-  OpenRouter's activity page charged for the same run.
+  `quackd/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, every one of
+  them again on 2026-11-14, and a rate read by hand is wrong from the day the vendor edits the page
+  until somebody reads it again. What would close this is one run on a metered account, reconciled
+  against that account's own billing page, on any vendor. Until then `--price` is the answer to a
+  disagreement and the catalogue is a table rather than a bill. Since 0.27.0 a Claude run's requests
+  are marked for Anthropic's cache, so its `cost_usd` rests on the cache's read and write rates as
+  well. On OpenRouter a turn is costed at the `usage.cost` it reports instead, which nobody has yet
+  set beside what OpenRouter's activity page charged for the same run.
 
 - ⬜ **No OpenRouter LLM has answered a real quackd request.** `--llm openrouter` was written
   from OpenRouter's documentation and run against a stand-in on 127.0.0.1 through the real

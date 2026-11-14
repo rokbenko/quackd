@@ -134,15 +134,15 @@ export const PROVIDERS = {
     needsKey: true,
   },
   meta: {
-    label: "Meta (Muse Spark)",
+    label: "Meta (Muse)",
     keyPlaceholder: "your Meta Model API key",
     baseUrl: "https://api.meta.ai/v1",
     toolChoice: "auto",
     needsKey: true,
     note:
-      "The Meta Model API, which replaced the hosted Llama API in July 2026. The key is the " +
-      "one Meta's own examples export as MODEL_API_KEY. Two Muse Spark LLMs are " +
-      "contributor tier: cheaper, and Meta trains on what you send them.",
+      "The Meta Model API, serving Muse Wonder, Spark and Ember; Meta host no Llama API any " +
+      "more. The key is the one Meta's own examples export as MODEL_API_KEY. Two Muse Spark " +
+      "LLMs are contributor tier: cheaper, and Meta trains on what you send them.",
   },
   openrouter: {
     label: "OpenRouter",
@@ -153,7 +153,7 @@ export const PROVIDERS = {
     // Claude rows that refuse a forced one, OpenRouter told to route only to an endpoint that
     // honours every parameter sent, quackd named in the two headers OpenRouter credits an app
     // by, no move to Responses, and an LLM's `reasoning_details` handed back on the turn that
-    // made the call. The dropdown holds the six rows the catalogue carries and no others.
+    // made the call. The dropdown holds the seven rows the catalogue carries and no others.
     toolChoice: "required",
     extraBody: { provider: { require_parameters: true } },
     headers: { "HTTP-Referer": "https://github.com/rokbenko/quackd", "X-OpenRouter-Title": "quackd" },
@@ -236,11 +236,11 @@ export function wantsTheResponsesApi(status, detail) {
 /**
  * Is this the 400 a Claude LLM answers a forced tool call with?
  *
- * Claude Opus 5.5 and Claude Fable 5.1 refuse `tool_choice` `any`, in a sentence that opens
- * with the parameter and says the type is not supported. Both halves are matched, because a
- * 400 about a tool the request never declared also opens with `tool_choice`, and asking again
- * with `auto` would not fix that one. This is `_refuses_forced_tools` in
- * `quackd/agent/providers/anthropic.py`, in JavaScript.
+ * Claude Fable 5.2, Opus 5.5, Sonnet 5.5 and Fable 5.1 refuse `tool_choice` `any`, in a
+ * sentence that opens with the parameter and says the type is not supported. Both halves are
+ * matched, because a 400 about a tool the request never declared also opens with
+ * `tool_choice`, and asking again with `auto` would not fix that one. This is
+ * `_refuses_forced_tools` in `quackd/agent/providers/anthropic.py`, in JavaScript.
  */
 export function refusesForcedTools(status, detail) {
   if (status !== 400) return false;

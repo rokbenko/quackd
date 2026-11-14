@@ -4,9 +4,10 @@ TypeSafe's Jev, hosted: the System One LLM the format is named after. It is made
 ([typesafe.ai](https://typesafe.ai/)), the weights are closed and the only interface is an API, so
 what quackd installs is not the LLM but its client,
 [`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/): MIT-licensed, read here at **0.7.1**
-(published to PyPI 2026-09-21, read 2026-09-22), against the pinned LLM id `jev-1.13.0`. A
-decision LLM has no `upstream_api.py` the way a robot adapter does: every name quackd spells for
-it lives in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
+(published to PyPI 2026-09-21, read 2026-09-22), against the LLM id `jev-1.13.0` the row then
+pinned. It pins `jev-1.14.0`, TypeSafe's newest, since 2026-11-14. A decision LLM has no
+`upstream_api.py` the way a robot adapter does: every name quackd spells for it lives in its row
+in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
 **Nothing here has ever answered a real robot.**
 
@@ -26,7 +27,7 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm jev --decision-mod
 | `install` | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` |
 | `url` | `none`, the SDK holds TypeSafe's own address, and `TYPESAFE_BASE_URL` is how you move it |
 | `key_env` | `TYPESAFE_API_KEY` |
-| `llm_id` | `jev-1.13.0` |
+| `llm_id` | `jev-1.14.0` |
 | `llm_env` | `TYPESAFE_DEFAULT_MODEL`, honoured here alone because the SDK owns this row's address too |
 | `price` | `Price(input=0.042, output=0.0, source="published")` |
 | `extra` | `decision`, so `quackd[decision]` |
@@ -35,16 +36,18 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm jev --decision-mod
 That is `PRESETS["jev"]` in `catalogue.py`. A test reads the LLM id, the key variable, the
 install line and the extra back off this page and compares them with the row, so a cell that
 drifts fails the suite. `--decision-url` overrides the address for one run and `--decision-llm
-jev:jev-1.14.0` the id.
+jev:jev-1.13.0`, the version the pin moved from, the id.
 
 ## What it is
 
 A hosted System One LLM, and the one every other row is imitating. TypeSafe publish no parameter
 count, no architecture and no weights: it is an API and nothing else, so the hardware it needs is
-a network connection and a key, and the only thing running on your machine is an HTTP client. Text
-only, with **32k tokens for the state plus the longest question, under a 64k request cap**, so a
-turn whose state will not fit is a gate on the record rather than a truncation nobody sees. The
-latency figure is theirs: **TypeSafe's own worked example puts one call at 0.114 s and $0.000081**
+a network connection and a key, and the only thing running on your machine is an HTTP client.
+TypeSafe's page now lists text and images as its input, for 1.14 and 1.13 alike, and quackd sends
+it text alone, because `sees` is false on every row but `openai`. It has **32k tokens for the
+state plus the longest question, under a 64k request cap**, so a turn whose state will not fit is
+a gate on the record rather than a truncation nobody sees. The latency figure is theirs:
+**TypeSafe's own worked example puts one call at 0.114 s and $0.000081**
 against 8.566 s and $0.013880 for an LLM, and their front page turns that into a
 headline of **193.6x faster and 444.6x cheaper**. The two do not agree, because the example
 divides out to 75x and 171x, so the headline is a range over their tasks rather than a constant
@@ -74,7 +77,7 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
   quackd bounds the turn itself, with `asyncio.timeout` around `decide()`, and gives the client a
   clock of twice that second, so the stepper's bound is the one that ends a turn rather than a
   second clock that comes due with it.
-- **The id is pinned to `jev-1.13.0` rather than `jev-latest`**: a run whose decision LLM changed
+- **The id is pinned to `jev-1.14.0` rather than `jev-latest`**: a run whose decision LLM changed
   under it describes an LLM that is no longer the one that answered, and `jev:jev-latest` asks
   for a moving one.
 - **This is the LLM the floors were shaped around, which is not the same as the LLM they were
@@ -106,7 +109,7 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 | Plain dicts are questions | `Noul`, `Choice` and `Score` plus the three TypedDicts; a noul dict needs only `{"type": "noul"}`, while choice and score require criteria | the four questions are built once as dicts and reach every backend unrebuilt |
 | Response | `SystemOneResponse` has exactly `model`, `usage` and `answers`, plus `nouls`, `choices` and `scores` views; missing `model` or `usage` raises `TypeSafeAPIResponseValidationError`, though contents are lenient and `usage: {}` parses. There is no `latency` attribute, contrary to the docs site, which is wrong there. Answers parse `strict=True`: a noul spelled `"0.9"` is rejected, an int `1` widens to `1.0`, and unknown answer types are dropped with a warning rather than failing the response | `stepper._answer` reads it as an object or as a plain mapping and quackd times the call itself into `latency_s`; a partly answered turn costs the turn as `gate: unreadable` rather than moving the body on two questions nobody answered |
 | Error taxonomy | `TypeSafeError`, `TypeSafeAPIError(status, body, headers, endpoint, .request_id)` with per-status subclasses (400, 401, 403, 404, 422, 429, 5xx), plus connection, timeout and response-validation errors | `Stepper.advise` catches everything and records `gate: error`; a decision LLM may never end a run |
-| Price | $0.042 per million input tokens, output not charged ([their models page](https://docs.typesafe.ai/models), read 2026-09-21) | one of the two rows with a published rate, `openai` the other; carried as `Price` and stamped on `run_start` beside the name, LLM and url |
+| Price | $0.042 per million input tokens, output not charged, the same for 1.14 and 1.13 ([their models page](https://docs.typesafe.ai/models), read 2026-09-21 and again 2026-11-14) | one of the two rows with a published rate, `openai` the other; carried as `Price` and stamped on `run_start` beside the name, LLM and url |
 
 ## UNVERIFIED, and what quackd does about each
 
@@ -122,12 +125,12 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 ## Status
 
 It has never answered a real robot, and this page says so until somebody reports that it has. The
-client is exercised against a stub rather than against TypeSafe: `tests/stub_decision_llm.py`
-stands in for the server and `tests/test_decision_llms.py` drives the row, the key rule, the two
-clocks and every gate an unreadable answer can fall into. Without the extra, `quackd doctor`
-prints this row as `missing (quackd[decision])`, `TYPESAFE_API_KEY unset`, `jev-1.13.0`, and an
-empty url, which is the hosted address the SDK owns. `--decision-mode shadow` is how that status
-changes.
+client is exercised against a stand-in rather than against TypeSafe: `tests/fake_systemone.py` takes
+the place of the `typesafe_sdk` it speaks through, so no request leaves the process, and
+`tests/test_decision_llms.py` drives the row, the key rule, the two clocks and every gate an
+unreadable answer can fall into. Without the extra, `quackd doctor` prints this row as
+`missing (quackd[decision])`, `TYPESAFE_API_KEY unset`, `jev-1.14.0`, and an empty url, which is the
+hosted address the SDK owns. `--decision-mode shadow` is how that status changes.
 
 ## How to help
 

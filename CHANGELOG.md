@@ -9,12 +9,62 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **Sixteen pilot LLM ids the catalogue lacked, read off each vendor's own pages on 2026-11-14.**
+  Anthropic's Claude Fable 5.2, Sonnet 5.5 and Haiku 5.5, OpenAI's GPT-6.1 Terra, Google's Gemini 4
+  Hydrogen, Carbon and Argon, Mistral Large 4 and Z.ai's GLM 5.3 Flash as Mistral hosts it, Kimi
+  K3.1 Pro and its high speed variant, Z.ai's GLM-5.3 FlashX Legal, Meta's Muse Ember and Muse
+  Wonder, which Meta calls a preview, and through OpenRouter Claude Fable 5.2 and Gemini 4 Hydrogen.
+  Fable 5.2 and Sonnet 5.5 refuse a forced tool call, so they are asked with `auto`, and all three
+  new Claude LLMs bind their thinking, so their old frames are trimmed every eight exchanges, as
+  Opus 5.5's are. `quackd list-models` prints them all.
+- **`quackd policy list` names three more policies people ask about, and why none is served.**
+  NVIDIA announced GR00T 2 on 2026-11-09 with its code due in December and no weights yet, Runway's
+  Praxis-1 is a LeRobot type only on LeRobot's main branch, and NVIDIA's Cosmos 3 policies are
+  LeRobot types since 0.7.0 whose base checkpoints' action modules, by LeRobot's own page,
+  "are not trained for a robot yet". GR00T N1.7 is still the GR00T quackd serves.
+
 ### Changed
 
 - **`quackd list-models --kind policy` lists the policy types again, and `--kind all` lists all three
   kinds.** These are the rows and the `--json` that `quackd policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
   now follow them, so a script that reads `--kind all --json` gets rows of a third `kind`, `policy`.
+- **Four vendors' defaults moved to a newer LLM, and Jev's pin moved with them.** A bare
+  `--llm openai` is `gpt-6.1-sol` (it was `gpt-6-sol`, which OpenAI no longer lists among its
+  flagships), `--llm gemini` is `gemini-4-hydrogen` (it was `gemini-3.8-flash`, which Google now
+  calls previous-generation), `--llm mistral` is `mistral-large-4-0` (it was `mistral-medium-3-5`,
+  deprecated on 2026-10-31) and `--llm kimi` is `kimi-k3.1-pro` (it was `kimi-k3`). A bare
+  `--decision-llm jev` asks `jev-1.14.0`, TypeSafe's newest, where it asked `jev-1.13.0`. The older
+  ids that are still served still work by name, and the OpenRouter default stays `openai/gpt-6-sol`.
+  What changes for you: a robot or a `QUACKD_LLM` that names only a vendor now gets the newer LLM,
+  at its rate.
+- **The `kev` and `openjev` install lines get Kev 1.0 and OpenJev 0.7.0.** Kev's clones its
+  `kev-1.0` tag rather than `main` and asks for `jaredpalmer/kev-4b@v1.0`, the weights Kev 1.0 fixed
+  behind a `v1.0` tag on 2026-10-01, and drops `KEV_DTYPE=bf16`, the server's own default on a GPU;
+  OpenJev's runs `razorback16/openjev:0.7.0` where it ran `0.3.0`. Both pages were read again at
+  those pins: Kev batches up to 64 requests on a CUDA GPU, refuses a state over 65,536 tokens with a
+  422 rather than cutting it, takes `--host` and `KEV_API_KEY`, and computes confidence as
+  TypeSafe's reference adapter does; OpenJev takes up to 255 options a choice, rides upstream vLLM
+  rather than a fork, bills one read where it re-reads an uncertain answer, and answers OpenAI's
+  Decisions API as well. The addresses and the LLM ids are unchanged. What changes for you: the
+  install lines the pages print get you those versions. quackd sends these rows what it always has,
+  `local` as their key, which the pages now say a Kev or an OpenJev started with a key of its own
+  refuses.
+- **Seventeen ids are refused now, each one deprecated, retired or closing.** `claude-sonnet-4-5`
+  retires on 2026-11-30. `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o` and `gpt-4o-mini` shut down on
+  2027-01-14, and `gpt-5.1`, `gpt-5.4-nano` and `gpt-5.3-codex` on 2027-04-01. Google has routed
+  `gemini-3.7-flash` and `gemini-3.5-flash` to other LLMs since 2026-10-08. Mistral deprecated
+  `mistral-medium-3-5` and `mistral-large-2512` and retired `zai-glm-5-2` and `labs-leanstral-1-5`.
+  Kimi closed `kimi-k2.6`, `kimi-k2.7-code` and `kimi-k2.7-code-highspeed` to new users on
+  2026-10-31. What changes for you: a run that names one is refused before it connects, with the ids
+  that vendor does take, as an id quackd never carried always was.
+- **`google/gemini-4-hydrogen` takes `google/gemini-3.8-flash`'s place among OpenRouter's rows.**
+  The old id still runs, checked against OpenRouter's own LLM list when a run starts, as any
+  OpenRouter id the catalogue does not carry is. What changes for you: `quackd list-models`, TAB
+  completion and the browser demo no longer offer it, and a run on it asks for its call with `auto`
+  rather than insisting on one with `required`.
 
 ### Removed
 
@@ -23,6 +73,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   which a name for LLMs leaves out. There is no alias, so a script that still types `list-llms` stops
   with `No such command`, which suggests `list-models`, and has to change it. Like 0.32.0's rename, this
   had no release of warning, at the project's owner's word.
+- **The `von` decision LLM.** Its README has said "Von is no longer maintained and these weights
+  will not be updated" since 2026-10-17, and its repository is archived now, so its row, its page
+  and its line in `quackd doctor` are gone. What changes for you: `--decision-llm von` is refused as
+  an unknown name, and a Von server you still run is reached as
+  `--decision-llm local --decision-url http://127.0.0.1:8000`.
+
+### Fixed
+
+- **A Mistral LLM with its reasoning on no longer ends a run on its first turn.** Mistral answers
+  with `message.content` as a list of chunks then, a thinking chunk and the text, and always so on
+  Z.ai's GLM 5.3, which quackd has carried since 0.13.0. quackd joined that content as a string,
+  which raised, so the run ended at its first call. The chunks are now read as the turn's text and
+  its thinking.
+- **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
+  `north-mini-code-1-0`, its changelog entry's address, and it is priced at $0 now that its own
+  page says it is free on trial and production keys alike.
+- **Rates and statuses read again on 2026-11-14.** Gemini 4 Carbon and Argon carry the rate their
+  page prints from 2026-12-01, since the introductory one ends sixteen days after the read. Eleven
+  Qwen rows carry the cached-input rate their own pages now print, OpenAI's Decisions API prices its
+  cache as gpt-6-luna does, and OpenRouter's Claude Sonnet 5.5 row reads its cache at the $0.10
+  OpenRouter now lists, where it carried $0.20. Claude Fable 5.1, Sonnet 5 and Haiku 4.5, GPT-6 Sol
+  and the three GPT-5.6 LLMs, Gemini 3.8 Flash, Qwen3.7 Flash, Kimi K3 and the GLM-4.6V rows are
+  `legacy` now, by where their vendors' pages place them, and Z.ai's GLM 5.3 on Mistral is `open`,
+  generally available since 2026-09-28.
 
 ### Documentation
 
@@ -45,6 +119,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the task and stopped, so the refusal counts, but the limit each example is there to watch never
   had to act. The rule is in the `goal_met` row under How a log is written. E187's card no longer
   says that E120 ran out of steps, which its run did not.
+- **The Jetson guide puts `opendecision` on the board now that Von is gone, and the OpenRouter guide
+  quotes OpenRouter's Claude 5.5 guide as it reads today.** That guide says a forced `tool_choice`
+  on Opus 5.5 or Sonnet 5.5 gets "the provider's 400", where on 2026-10-06 it said a forced call on
+  Opus 5.5 failed at routing. The pages that said only Opus 5.5 and Fable 5.1 keep up to nine
+  exchanges' frames now name all five Claude LLMs that bind their thinking. SECURITY.md and Kev's
+  page say what Kev's README now does: `--host 0.0.0.0` moves it off `127.0.0.1`, and `KEV_API_KEY`
+  makes it ask for a key quackd has no way to send.
+- **The decision LLM pages name the stand-in their tests use.** Each said
+  `tests/stub_decision_llm.py` stood in for the server, and that is the example plugin: the client
+  is tested against `tests/fake_systemone.py`, installed in place of `typesafe_sdk`, or
+  `tests/fake_laya.py` in place of `laya`, and no request crosses a wire.
 - **E210's card no longer says `quackd run` tells you to support the arm while it connects.** It
   prints no such line. Connecting takes torque off every motor for a moment, so the LeRobot guide
   says to support the arm when a session starts, and `quackd robot release` and `quackd doctor` say

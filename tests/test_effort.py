@@ -100,9 +100,10 @@ def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.Mo
         pytest.param(
             "anthropic", "claude-haiku-4-5", "low", "takes no effort setting", id="haiku-4-5"
         ),
-        pytest.param("openai", "gpt-4o", "low", "takes no effort setting", id="gpt-4o"),
-        pytest.param("openai", "gpt-4.1", "medium", "takes no effort setting", id="gpt-4.1"),
-        pytest.param("openai", "chat-latest", "high", "takes no effort setting", id="chat-latest"),
+        pytest.param("openai", "chat-latest", "low", "takes no effort setting", id="chat-latest"),
+        pytest.param(
+            "openai", "chat-latest", "high", "takes no effort setting", id="chat-latest-high"
+        ),
         pytest.param(
             "openai", "gpt-5.5-pro", "low", "takes --effort medium or high and not low", id="pro"
         ),

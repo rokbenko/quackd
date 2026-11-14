@@ -479,22 +479,21 @@ def test_the_date_the_rates_were_checked_is_a_real_date() -> None:
     assert checked.year >= 2025
 
 
-def test_four_cohere_llms_are_the_only_unpriced_ones() -> None:
-    """The case `None` was built for, rather than four rows somebody forgot.
+def test_three_cohere_llms_are_the_only_unpriced_ones() -> None:
+    """The case `None` was built for, rather than three rows somebody forgot.
 
-    Cohere sell Command A, A+, A Reasoning and North Mini Code as dedicated instances by the
-    hour and publish no per-token rate for any of them, which cannot honestly be turned into
-    one. The pricing page shows A+ and North as "Free", $0 against "API key" with no key type
-    named, and its own FAQ bills production-key calls pay as you go at a rate it does not
-    state. Everything else in the catalogue is priced off its vendor's own page, so
-    this list is the exception and stating it here is what stops a future edit quietly filling
-    the gap with a zero."""
+    Cohere sell Command A, A+ and A Reasoning as dedicated instances by the hour and publish no
+    per-token rate for any of them, which cannot honestly be turned into one. The pricing page
+    shows A+ as "Free", $0 against "API key" with no key type named, and its own FAQ bills
+    production-key calls pay as you go at a rate it does not state. North Mini Code was the
+    fourth, until its own page said it is free on trial and production keys alike. Everything
+    else in the catalogue is priced off its vendor's own page, so this list is the exception and
+    stating it here is what stops a future edit quietly filling the gap with a zero."""
     unpriced = {m.id for name in cat.CLOUD_NAMES for m in cat.llms_for(name) if m.price is None}
     assert unpriced == {
         "command-a-plus-05-2026",
         "command-a-03-2025",
         "command-a-reasoning-08-2025",
-        "north-mini-code-1-0",
     }
 
 
@@ -510,10 +509,10 @@ def test_coheres_default_llm_is_one_of_the_unpriced_ones() -> None:
 
 
 def test_an_llm_that_is_genuinely_free_is_priced_at_zero_rather_than_left_unpriced() -> None:
-    """The other half of the same distinction. Several GLM Flash LLMs and Mistral's Leanstral
-    really are free, and they carry a `Price(0, 0)` so a run on one prints `$0` instead of
+    """The other half of the same distinction. Several GLM Flash LLMs and Cohere's North Mini
+    Code really are free, and they carry a `Price(0, 0)` so a run on one prints `$0` instead of
     refusing to answer."""
-    for provider, llm_id in (("glm", "glm-4.7-flash"), ("mistral", "labs-leanstral-1-5")):
+    for provider, llm_id in (("glm", "glm-4.7-flash"), ("cohere", "north-mini-code-1.0")):
         price = price_for(provider, llm_id)
         assert price is not None, f"{llm_id} is free, which is not the same as unpriced"
         assert (price.input, price.output) == (0.0, 0.0)

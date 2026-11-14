@@ -1,9 +1,10 @@
 """Meta as the duck's brain, over the Meta Model API.
 
-Not Llama. Meta retired the hosted Llama API in July 2026 and what stands at
-`https://api.meta.ai/v1` now serves Muse Spark, drop-in compatible with the OpenAI SDK. The
-catalogue carries the LLM names, including the contributor-tier ones, whose labels say plainly
-that the discount is paid for by letting Meta train on what you send.
+Not Llama. Meta serve no Llama on an API of their own any more, the old Llama API's pages
+redirecting to this one's, and what stands at `https://api.meta.ai/v1` serves Muse Wonder, Muse
+Spark and Muse Ember, drop-in compatible with the OpenAI SDK. The catalogue carries the LLM
+names, including the contributor-tier ones, whose labels say plainly that the discount is paid
+for by letting Meta train on what you send.
 
 `tool_choice` is left at `auto`, the only value Meta's tool-calling page accepts (`none`,
 `required` and a named choice each return a 400), so the LLM is allowed a call rather than

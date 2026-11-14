@@ -142,19 +142,20 @@ Also in scope:
   say it is not used for training and is kept in abuse-monitoring logs for 30 days. Every other
   server row, `local` included, is a server you run, so it goes wherever `--decision-url` points,
   which is a port on your own machine unless you moved it. What each one binds and whether anything
-  authenticates it is on its own page, and the two are not the same answer:
-  [kev](docs/guides/decision-llms/kev.md) binds `127.0.0.1` and authenticates nothing, while
-  [von](docs/guides/decision-llms/von.md) binds every interface unless you pass `--host`, which is
-  why the catalogue's own command passes it. `laya` runs inside this process, so nothing leaves it
-  at all ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is
-  ever sent a system prompt, and none is sent an API key but its own vendor's, at that vendor's
-  address. The one way round that is the SDK's own: with no `--decision-url`, TypeSafe's client
-  sends `jev`'s key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd neither reads nor
-  sets, so setting it is choosing where that key goes. A camera frame reaches a decision LLM only
-  with `--decision-frames` (or `QUACKD_DECISION_FRAMES`), only for a row that can see, which is
-  `openai` alone, and only at OpenAI's own hosts, the ones its key goes to: then that row is shown
-  the robot's primary camera beside the state on each turn it is asked about, as one JPEG at most
-  512 pixels on its longest side
+  authenticates it is on its own page: [kev](docs/guides/decision-llms/kev.md) binds `127.0.0.1`
+  until somebody passes `--host 0.0.0.0` and checks no key unless `KEV_API_KEY` is set, while
+  [opendecision](docs/guides/decision-llms/opendecision.md) binds `127.0.0.1` until somebody passes
+  `--host 0.0.0.0`, and then nothing stands between a network and it. `laya` runs inside this
+  process, so nothing leaves it at all
+  ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is ever
+  sent a system prompt, and none is sent an API key but its own vendor's, at that vendor's address.
+  The one way round that is the SDK's own: with no `--decision-url`, TypeSafe's client sends `jev`'s
+  key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd neither reads nor sets, so
+  setting it is choosing where that key goes. A camera frame reaches a decision LLM only with
+  `--decision-frames` (or `QUACKD_DECISION_FRAMES`), only for a row that can see, which is `openai`
+  alone, and only at OpenAI's own hosts, the ones its key goes to: then that row is shown the
+  robot's primary camera beside the state on each turn it is asked about, as one JPEG at most 512
+  pixels on its longest side
   ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md)). A run that asks for
   frames with no decision LLM named, with any other row or a plugin, or with a `--decision-url` that
   is not one of those hosts, a server of your own included, stops before the robot connects, and

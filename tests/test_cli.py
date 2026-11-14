@@ -753,7 +753,7 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
 
 
 def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> None:
-    """After the colon, the six rows the catalogue carries and no more: completion runs on
+    """After the colon, the seven rows the catalogue carries and no more: completion runs on
     every TAB and reads nothing but the catalogue, so OpenRouter's list stays out of it."""
     from quackd.cli import _complete_llm
 

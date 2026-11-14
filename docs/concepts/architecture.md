@@ -248,11 +248,11 @@ draws or a robot is missing from a box.
    `tell` in a pilot flock, plus `remember` when memory is on). With memory on the prompt also
    carries what this robot remembers from earlier runs. Only the last two observations keep
    their images, which is two pictures per request on a body with one camera and four on a body
-   with two, and up to nine observations on Claude Opus 5.5 and Fable 5.1, whose old frames are
-   trimmed every eight exchanges rather than on every one. A task picture is not one of those:
-   it rides on the first observation and only that one, and the trim never takes it, so the
-   thing the task is about is still in front of the LLM at the last step. The provider must
-   return one tool call.
+   with two, and up to nine observations on the Claude LLMs that bind their thinking (Opus 5.5,
+   Fable 5.2, Sonnet 5.5, Haiku 5.5 and Fable 5.1), whose old frames are trimmed every eight
+   exchanges rather than on every one. A task picture is not one of those: it rides on the first
+   observation and only that one, and the trim never takes it, so the thing the task is about is
+   still in front of the LLM at the last step. The provider must return one tool call.
 
    With `--decision-llm` the optional discrete stepper is asked first (in `--decision-mode
    shadow`, where its answer changes nothing, beside the provider's call instead), and only ever
@@ -497,9 +497,9 @@ regional hosts, whose premium OpenAI publish for no Decisions row
 ([guides/decision-llms/README.md](../guides/decision-llms/README.md)).
 
 > [!NOTE]
-> A rate quackd does not have records `null` and prints `cost unpriced`, never `0`. Four of
-> the catalogue's 124 LLMs are unpriced today, all of them Cohere's, the Command A family and
-> North Mini Code, for which Cohere publish no per-token rate at all. An LLM that is genuinely free is a rate of
+> A rate quackd does not have records `null` and prints `cost unpriced`, never `0`. Three of
+> the catalogue's 122 LLMs are unpriced today, all of them Cohere's Command A family, for
+> which Cohere publish no per-token rate at all. An LLM that is genuinely free is a rate of
 > zero and prints `$0`, which is a different claim from "nobody knows". Where a rate is missing
 > but the tokens are not, the estimate goes up rather than down: an unpublished cache rate is
 > billed at the full input rate, because a bill that is too low is the one that gets believed.

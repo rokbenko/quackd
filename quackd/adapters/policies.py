@@ -75,7 +75,7 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         gpu="wants one: it took minutes a chunk on a laptop's CPU",
         licence="Apache-2.0",
         licence_url="https://huggingface.co/lerobot/smolvla_base",
-        licence_read="2026-10-25",
+        licence_read="2026-11-14",
         ran=(
             "lerobot/smolvla_base loaded on a laptop's CPU on 2026-09-28 and never answered a "
             "step in time"
@@ -94,7 +94,7 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         gpu="wants one (not measured)",
         licence="gemma on its card, Apache 2.0 on LeRobot's page",
         licence_url="https://huggingface.co/lerobot/pi05_base",
-        licence_read="2026-10-25",
+        licence_read="2026-11-14",
         ran="has not run",
     ),
     PolicyFamily(
@@ -110,7 +110,7 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         gpu="wants one (not measured)",
         licence="gemma on its card, Apache 2.0 on LeRobot's page",
         licence_url="https://huggingface.co/lerobot/pi0_base",
-        licence_read="2026-10-25",
+        licence_read="2026-11-14",
         ran="has not run",
     ),
     PolicyFamily(
@@ -123,7 +123,7 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         gpu="wants one (not measured)",
         licence="Apache-2.0",
         licence_url="https://huggingface.co/lerobot/xvla-base",
-        licence_read="2026-10-25",
+        licence_read="2026-11-14",
         ran=(
             "CI serves a tiny random one, and no trained one has run, and only its auto action "
             "mode is served"
@@ -143,7 +143,7 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         gpu="wants one (not measured)",
         licence="NVIDIA Open Model License",
         licence_url="https://huggingface.co/nvidia/GR00T-N1.7-3B",
-        licence_read="2026-10-25",
+        licence_read="2026-11-14",
         ran="has not run, and only checkpoints whose every action group is joints are served",
     ),
 )
@@ -171,7 +171,8 @@ NOT_SERVED: tuple[NotServed, ...] = (
         why=(
             "it is a LeRobot policy type since 0.7.0 that quackd has not read, and it needs Linux, "
             "an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built "
-            "for that machine"
+            "for that machine, which publishes no wheel yet for the torch 2.15 LeRobot 0.7.0 "
+            "installs; its weights are gated under the FLUX Kommunity License"
         ),
         would_change=(
             "a spike on a rented Linux GPU showing that `quackd policy check --bench` holds its "
@@ -198,8 +199,9 @@ NOT_SERVED: tuple[NotServed, ...] = (
             "in every model it loads"
         ),
         would_change=(
-            "a decision to read that code and exempt it, or a port whose model loads with code "
-            "transformers already has"
+            "a decision to accept the auto_map of a checkpoint whose LeRobot loader ignores it, as "
+            "LeRobot 0.7.0's MolmoAct2 loader does, fetching none of the repository's Python and "
+            "building LeRobot's own copy of its code, which quackd would read first"
         ),
     ),
     NotServed(
@@ -227,11 +229,55 @@ NOT_SERVED: tuple[NotServed, ...] = (
         maker="Google DeepMind",
         type=None,
         why=(
-            "it is offered to partners only. Gemini Robotics-ER 2, which is public, is a planner, "
-            "and quackd already carries it as a pilot row (gemini-robotics-er-2-preview), which "
-            "nothing on record has flown"
+            "it is offered to partners only: Gemini Robotics 2.5, its newest, has been rolling out "
+            "to robotics partners since 2026-11-10, with a waitlist for early access. Gemini "
+            "Robotics-ER 2, which is public, is a planner, and quackd already carries it as a "
+            "pilot row (gemini-robotics-er-2-preview), which nothing on record has flown"
         ),
         would_change="public access to the VLA itself",
+    ),
+    NotServed(
+        name="GR00T 2",
+        maker="NVIDIA",
+        type=None,
+        why=(
+            "it was announced on 2026-11-09 with no weights to fetch: NVIDIA's page says its code "
+            "comes in December, no licence has been named for it, and it is no LeRobot policy "
+            "type at 0.7.0"
+        ),
+        would_change=(
+            "NVIDIA publishing its weights under a licence that allows it, a LeRobot port in a "
+            "release quackd pins, and quackd reading that port's processors there; GR00T N1.7 is "
+            "the GR00T quackd serves until then"
+        ),
+    ),
+    NotServed(
+        name="Praxis-1",
+        maker="Runway",
+        type="praxis",
+        why=(
+            "its open weights came on 2026-11-11, and it is a LeRobot policy type only on "
+            "LeRobot's main branch since that day, in no release quackd can pin; it needs one GPU "
+            "with 80 GB by LeRobot's own page, and its SO-101 checkpoint is in Runway's own "
+            "format, not LeRobot's"
+        ),
+        would_change=(
+            "a LeRobot release that carries it, quackd's pin moving to that release and reading "
+            "its processors there, and an SO-101 checkpoint in LeRobot's format"
+        ),
+    ),
+    NotServed(
+        name="the Cosmos 3 policies",
+        maker="NVIDIA",
+        type="cosmos3_edge",
+        why=(
+            "Cosmos3 Edge and Nano (`cosmos3_edge`, `cosmos3_nano`) are LeRobot policy types "
+            "since 0.7.0 that quackd has not read, and LeRobot's own page says the base "
+            "checkpoints' action modules are not trained for a robot yet"
+        ),
+        would_change=(
+            "quackd reading their processors at the pin, and a checkpoint of them trained on an arm"
+        ),
     ),
     NotServed(
         name="vLLM-Omni and the OpenPI wire",

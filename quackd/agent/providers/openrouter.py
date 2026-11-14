@@ -5,7 +5,7 @@ OpenRouter is a router rather than a lab. Its ids name another vendor's LLM
 provider serves the call. So it is the OpenAI provider with a different base URL and key, like
 every OpenAI-shaped vendor here, plus five things none of the others needs (ADR-0050):
 
-- **Ids it lists and quackd does not.** The catalogue carries six (`OPEN_ENDED`). An id it does
+- **Ids it lists and quackd does not.** The catalogue carries seven (`OPEN_ENDED`). An id it does
   not carry is refused on its spelling alone where quackd will not take it whatever the list
   says (`factory._open_ended_refusal`), and otherwise checked here against OpenRouter's public
   LLM list before the first paid call. That list needs no key, and the same entry says whether the

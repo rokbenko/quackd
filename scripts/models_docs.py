@@ -97,7 +97,6 @@ COMPANIES: dict[str, str] = {
     "decision:jev": "TypeSafe",
     "decision:openai": "OpenAI",
     "decision:kev": "Kev (jaredpalmer/kev)",
-    "decision:von": "Von (von-sdk)",
     "decision:openjev": "OpenJev (razorback16/openjev)",
     "decision:opendecision": "OpenDecision",
     "decision:local": "any server that speaks System One",

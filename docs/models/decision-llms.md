@@ -20,10 +20,9 @@ decided and what it is never allowed to do are in
 
 | `--decision-llm` | What it is | Wire | Runs | Key | Extra | Address | Default LLM | Frames | USD per Mtok in / out | Guide |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `jev` | TypeSafe's Jev, hosted: the System One LLM the format is named after | System One, `POST /v1/systemone` | hosted, by its maker | `TYPESAFE_API_KEY` | `quackd[decision]` | the SDK's own | `jev-1.13.0` | no | 0.042 / 0, published | [jev](../guides/decision-llms/jev.md) |
+| `jev` | TypeSafe's Jev, hosted: the System One LLM the format is named after | System One, `POST /v1/systemone` | hosted, by its maker | `TYPESAFE_API_KEY` | `quackd[decision]` | the SDK's own | `jev-1.14.0` | no | 0.042 / 0, published | [jev](../guides/decision-llms/jev.md) |
 | `openai` | OpenAI's Decisions API, hosted: gpt-6-luna over POST /v1/decisions | OpenAI's Decisions API, `POST /v1/decisions` | hosted, by its maker | `OPENAI_API_KEY` | `quackd[openai]` | `https://api.openai.com` | `gpt-6-luna` | with `--decision-frames` | 0.1 / 0, published | [openai](../guides/decision-llms/openai.md) |
 | `kev` | Kev, self-hosted: Qwen3.5 with a decision head, on your own GPU | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8009` | `kev-latest` | no | nothing billed: it is yours | [kev](../guides/decision-llms/kev.md) |
-| `von` | Von, self-hosted: a 395M encoder, about 18 ms on a GPU, runs on CPU too | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8000` | `von-latest` | no | nothing billed: it is yours | [von](../guides/decision-llms/von.md) |
 | `openjev` | OpenJev, self-hosted: DiffusionGemma behind vLLM, or MLX on Apple silicon | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8080` | `openjev-latest` | no | nothing billed: it is yours | [openjev](../guides/decision-llms/openjev.md) |
 | `opendecision` | OpenDecision, self-hosted: a zero-shot encoder that runs without a GPU | System One, `POST /v1/systemone` | a server you run | none | `quackd[decision]` | `http://127.0.0.1:8000` | `opendecision` | no | nothing billed: it is yours | [opendecision](../guides/decision-llms/opendecision.md) |
 | `local` | any other server that speaks /v1/systemone, at --decision-url | System One, `POST /v1/systemone` | a server you run, at `--decision-url` | none | `quackd[decision]` | the one you give | the server's own | no | nothing billed: it is yours | [local](../guides/decision-llms/local.md) |
@@ -46,8 +45,8 @@ http://host:port`, and a decision LLM with an API of its own can add itself thro
 
 - **Hosted, nothing to run:** `jev`, with `TYPESAFE_API_KEY`, or `openai`, which uses the
   `OPENAI_API_KEY` and the `openai` SDK the pilot may already use.
-- **A server of your own:** `kev` and `openjev` want a GPU, `von` and `opendecision` run on a
-  CPU too, and `local` is any other server that speaks the same wire format.
+- **A server of your own:** `kev` and `openjev` want a GPU, `opendecision` runs on a CPU too,
+  and `local` is any other server that speaks the same wire format.
 - **No server at all:** `laya` loads an encoder into this process and pulls torch to do it.
 
 Which turns a decision LLM may answer depends on the body, and on the SO-101 arm it is few of

@@ -118,12 +118,13 @@ and up.
 
 ## Status
 
-It has never answered a real robot. The client is exercised against a stub rather than the real
-package: `tests/stub_decision_llm.py` stands in for it and `tests/test_decision_llms.py` drives
-the seam, the lazy load, the remembered failure and the `to_thread` hop included. On a machine
-without the extra, `quackd doctor` prints the row as `missing (quackd[laya])`, `none needed` for
-the key, `typed-decisions` for the LLM and `in this process` where every other row has a URL.
-`--decision-mode shadow` is how that changes: it asks every turn and acts on nothing.
+It has never answered a real robot. The client is exercised against a stand-in rather than the real
+package: `tests/fake_laya.py`, installed in its place, loads no weights, and
+`tests/test_decision_llms.py` drives the seam, the lazy load, the remembered failure and the
+`to_thread` hop included. On a machine without the extra, `quackd doctor` prints the row as
+`missing (quackd[laya])`, `none needed` for the key, `typed-decisions` for the LLM and
+`in this process` where every other row has a URL. `--decision-mode shadow` is how that changes: it
+asks every turn and acts on nothing.
 
 ## How to help
 
