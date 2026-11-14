@@ -120,7 +120,7 @@ command that fixes it: the provider one names `quackd[anthropic]`, the robot one
 extra for itself, but it does need a body to drive.
 
 **Which LLMs can I pick?** Whatever the catalogue lists for the vendor you named. It is one
-hand-written table of 124 ids across twelve cloud vendors, and `quackd list-llms` prints it,
+hand-written table of 124 ids across twelve cloud vendors, and `quackd list-models` prints it,
 `--llm mistral` (or any other name) narrowing it to one vendor. Every row carries a status
 — `current`, `legacy`, `preview`, `specialised` or `open` — and a notes column that marks three
 things worth knowing before you pass an id: `default`, `Responses API` for the OpenAI LLMs
@@ -149,14 +149,14 @@ $ quackd run hello-world --llm openai:gpt-5 --robot microduck:mock
 ✗ error: openai: unknown LLM 'gpt-5' from --llm. Valid ids: gpt-6-sol (default), gpt-6.1-sol,
 gpt-6-astra, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini,
 gpt-5.4-nano, gpt-5.2, gpt-5.1, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro,
-gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex, chat-latest. See `quackd list-llms --llm openai`.
+gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex, chat-latest. See `quackd list-models --llm openai`.
 
 $ quackd run hello-world --llm openai:grok-4.6 --robot microduck:mock
 ✗ error: openai: unknown LLM 'grok-4.6' from --llm ('grok-4.6' is a grok LLM: --llm
 grok:grok-4.6). Valid ids: gpt-6-sol (default), gpt-6.1-sol, gpt-6-astra, gpt-6-luna, gpt-5.6-sol,
 gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.2, gpt-5.1,
 gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro, gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex,
-chat-latest. See `quackd list-llms --llm openai`.
+chat-latest. See `quackd list-models --llm openai`.
 ```
 
 Ids are unique across the catalogue, so an id that belongs to somebody else is named as such
@@ -174,7 +174,7 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest LLM of its family, so the LLM that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-llms --llm
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
 openrouter`.
 ```
 
@@ -196,7 +196,7 @@ that vendor wants and quackd never sends, on the same terms.
 function tools on `/v1/chat/completions` at every reasoning effort and name `/v1/responses` in
 the 400. Every verb is a function tool, so quackd reads that answer, moves the run to the
 Responses API and stays there. The catalogue already knows which LLMs those are, so `quackd
-list-llms` marks them `Responses API` and a run on one opens there without spending a call to
+list-models` marks them `Responses API` and a run on one opens there without spending a call to
 find out; reading the 400 is what still covers an LLM the catalogue has not been told about.
 `QUACKD_OPENAI_API=responses` starts there in every case, and `QUACKD_OPENAI_REASONING_EFFORT`
 sets the effort on either API. The browser demo does the same on both counts, with nothing to
@@ -474,10 +474,10 @@ its fall detector — see [concepts/safety.md](concepts/safety.md).
 them (Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and
 OpenRouter) send
 the prompt to that vendor's API over the network, under its own terms, and the camera frame
-with it wherever the LLM takes an image — `quackd list-llms` marks the ones that do not
+with it wherever the LLM takes an image — `quackd list-models` marks the ones that do not
 with `no frames`, and those get the text detections instead. One vendor is worth reading the
 labels for: two of Meta's Muse Spark LLMs are a *contributor tier*, discounted in exchange
-for Meta training on your prompts, and `quackd list-llms` says so on those rows. OpenRouter
+for Meta training on your prompts, and `quackd list-models` says so on those rows. OpenRouter
 is the one that does not run the LLM itself: it is a router, so a run on it sends the prompt
 and the frame to OpenRouter and on to whichever provider it picks for that LLM, under both
 their terms. OpenRouter's FAQ said on 2026-10-06 that it logs no prompt or completion unless

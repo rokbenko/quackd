@@ -1,17 +1,16 @@
-# LLMs and policies
+# Models
 
-A quackd run has up to two LLMs and a policy in it, and only the first is required. The robots are in
-[adapters/](../adapters/status.md), one page per body. This folder is the other half: the LLMs
-that plan, the ones that decide, and how to name each one. The policies that move the arm are no
-LLMs, and their page is [guides/vlas.md](../guides/vlas.md).
+A quackd run has up to three models in it, and only the first is required. The robots are in
+[adapters/](../adapters/status.md), one page per body. This folder is the other half: the models
+that plan, the ones that decide, the ones that move the arm, and how to name each one.
 
-<!-- generated: roles, by scripts/llms_docs.py from quackd/agent/providers/catalogue.py and quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
+<!-- generated: roles, by scripts/models_docs.py from quackd/agent/providers/catalogue.py and quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Role | Named with | Required | What quackd names | Page |
 |---|---|---|---|---|
 | **Pilot LLM** | `--llm VENDOR[:LLM]` | yes, and `fake`, the scripted pilot, flies when nothing names one | 124 ids from twelve cloud vendors, more through OpenRouter's own list, and five local presets | [pilot-llms.md](pilot-llms.md) |
 | **Decision LLM** | `--decision-llm NAME[:LLM]` | no, and off unless a run names one | eight decision LLMs, hosted or your own | [decision-llms.md](decision-llms.md) |
-| **Learned policy** | `--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME` | no, and the SO-101 arm alone takes one | six LeRobot policy types, five of them VLAs, served from the Hub | [guides/vlas.md](../guides/vlas.md) |
+| **Learned policy** | `--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME` | no, and the SO-101 arm alone takes one | six LeRobot policy types, five of them VLAs, served from the Hub | [vlas.md](vlas.md) |
 
 <!-- end generated: roles -->
 
@@ -46,7 +45,7 @@ travel before it is sent.
 - **Fewer, cheaper pilot turns:** a decision LLM in front of the pilot, in shadow first
   ([decision-llms.md](decision-llms.md)).
 - **Contact work on the arm:** a learned policy, served beside the arm, on a rented GPU or on a
-  Hugging Face Endpoint ([guides/vlas.md](../guides/vlas.md)).
+  Hugging Face Endpoint ([vlas.md](vlas.md)).
 
 None of this is a ranking. Which LLM flies a given body best is not something quackd has
 measured, and the pages say what has actually run.
@@ -58,10 +57,9 @@ the three roles it can fill, the key and the extra it needs.
 
 ## Where the lists live
 
-Every table of LLMs and policies on these pages and on [guides/vlas.md](../guides/vlas.md) is
-rendered from the code that decides what quackd takes, by
-[`scripts/llms_docs.py`](../../scripts/llms_docs.py), and a test fails when a page and the code
-disagree:
+Every table of models on these pages is rendered from the code that decides what quackd
+takes, by [`scripts/models_docs.py`](../../scripts/models_docs.py), and a test fails when a
+page and the code disagree:
 
 - the pilots: [`quackd/agent/providers/catalogue.py`](../../quackd/agent/providers/catalogue.py),
   with the keys, extras and addresses in
@@ -71,9 +69,9 @@ disagree:
 - the learned policies: [`quackd/adapters/policies.py`](../../quackd/adapters/policies.py), held
   by a test to the types the policy server reads.
 
-So an LLM or a policy is added, renamed or repriced there, and the script run, never in a table here. `quackd
-list-llms` prints the LLMs' rows on a terminal, `--kind decision` for the decision LLMs, and
-`quackd policy list` the policies'.
+So a model is added, renamed or repriced there, and the script run, never in a table here. `quackd
+list-models` prints the same rows on a terminal, `--kind decision` and `--kind policy` for the
+other two.
 
 ## The guides
 

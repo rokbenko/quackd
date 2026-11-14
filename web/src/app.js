@@ -607,7 +607,7 @@ for (const [id, spec] of Object.entries(PROVIDERS)) {
  * The field used to be free text with one id pre-filled, so every other LLM this build knows
  * was something you had to have read the source to name, and a typo reached the vendor before
  * anything said so. The list is `catalogue.js`, generated from the Python that is the single
- * source of truth, so the page offers exactly what `quackd list-llms` does.
+ * source of truth, so the page offers exactly what `quackd list-models` does.
  *
  * createElement throughout. A label is vendor copy — "Z.ai GLM 5.2 (hosted by Mistral)" — and
  * innerHTML would make a `<` in one of them markup.

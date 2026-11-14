@@ -1,6 +1,6 @@
 # VLAs and the other learned policies
 
-A run can have a learned policy besides its two LLMs, and only the SO-101 arm takes one. When the
+A learned policy is the third model a run can have, and only the SO-101 arm takes one. When the
 pilot calls `manipulate` or `pick`, the arm is handed to the policy for one short segment: the
 policy reads the arm and its cameras many times a second and answers with a goal for every
 motor, and quackd paces those goals on the arm's clock and holds each one to the arm's rules
@@ -32,9 +32,10 @@ Hugging Face rents by the hour. Why it is shaped this way is
 
 ## The families quackd serves
 
-`quackd policy list` prints these rows on a terminal, and `--json` for a script.
+`quackd list-models --kind policy` prints these rows on a terminal, as `quackd policy list` does,
+and `--json` for a script.
 
-<!-- generated: policy-served, by scripts/llms_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
+<!-- generated: policy-served, by scripts/models_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Type | Family | Maker | Told the subtask in words | Needs besides the extra | GPU | Licence | How far it has got |
 |---|---|---|---|---|---|---|---|
@@ -55,7 +56,7 @@ X-VLA in an end-effector mode or a GR00T that decodes an end effector's pose. No
 loads a checkpoint in the process that owns the arm's serial bus: the server runs in a process of
 its own, and the arm checks at connect that the policy fits it before any motor is energised.
 What each family needs, what it refuses and why, and its licence in full are in
-[policies.md](policies.md#the-policies).
+[guides/policies.md](../guides/policies.md#the-policies).
 
 ## Using one, end to end
 
@@ -85,11 +86,11 @@ serves and pauses it if it fails, and `quackd policy endpoint pause NAME` stops 
 Hugging Face token goes to Hugging Face's own API and to the endpoint's own address and nowhere
 else, and the server's own token goes to Hugging Face once, as the endpoint's secret, and
 otherwise stays on this machine. How each is set up is in
-[policies.md](policies.md#on-a-hugging-face-endpoint).
+[guides/policies.md](../guides/policies.md#on-a-hugging-face-endpoint).
 
 ## Not served, and why
 
-<!-- generated: policy-refused, by scripts/llms_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
+<!-- generated: policy-refused, by scripts/models_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Not served | Maker | LeRobot type | Why not | What would change that |
 |---|---|---|---|---|

@@ -166,8 +166,8 @@ one, and a catalogue id unique to its vendor needs no vendor in front of it, so
 `--llm gpt-6-astra` is the same run.
 
 `quackd doctor` prints a row per provider with the extra, the key it found and the LLM it
-would use, and `quackd list-llms` prints every LLM id quackd knows for every vendor.
-OpenRouter can also take an id `list-llms` does not print, checked against OpenRouter's own
+would use, and `quackd list-models` prints every LLM id quackd knows for every vendor.
+OpenRouter can also take an id `list-models` does not print, checked against OpenRouter's own
 LLM list when a run starts unless quackd refuses its spelling first
 ([guides/openrouter.md](../../guides/openrouter.md)). No OpenRouter LLM has answered a real
 quackd request, on this arm or anywhere else.
@@ -275,7 +275,7 @@ Whether the camera frame reaches the LLM at all is a per-provider default:
 | Any local preset | **No by default.** `--vision` turns it on |
 | `--llm fake` | Never. It is a rule, not an LLM |
 
-`quackd list-llms` prints `no frames` in the notes column for the LLMs that do not take
+`quackd list-models` prints `no frames` in the notes column for the LLMs that do not take
 images, and it is worth reading before you promise yourself the arm will see anything. One
 vendor's own default LLM is marked that way, so a bare `--llm glm` run never sees the
 webcam.
@@ -1420,7 +1420,7 @@ directory exists:
 
 ```
 ✗ error: fake scripted:goal does not take images, so it cannot be given 1 picture
-  quackd list-llms marks the LLMs that take no frames; --vision overrides it where
+  quackd list-models marks the LLMs that take no frames; --vision overrides it where
 the vendor does take them, and a local LLM needs --vision
 ```
 
@@ -1431,7 +1431,7 @@ pilots this page has already met. `--llm fake` never takes images, so the script
 needs `--vision` before it will accept one, and it still does nothing with it. A local LLM
 needs `--vision`, or `QUACKD_VISION=1` in the environment, and it needs an actual
 vision-capable LLM loaded in the server behind that flag. A cloud LLM marked `no frames`
-in `quackd list-llms` needs `--vision` too, and only where the vendor really does take them.
+in `quackd list-models` needs `--vision` too, and only where the vendor really does take them.
 
 Both starts take a picture, and the second is the one this flag was written for:
 
@@ -2083,7 +2083,7 @@ LLM gets a turn, and a session that cannot reach it refuses to open.
 **The LLM in your client is the pilot.** Your client spawns `quackd serve-mcp` as a
 subprocess and talks to it over stdio, so the thinking happens in the session you are already
 sitting in. quackd chooses no LLM here and reads no API key. There is no `--llm`,
-and `quackd list-llms` has nothing to say about an MCP session, because both
+and `quackd list-models` has nothing to say about an MCP session, because both
 belong to the commands that bring an LLM of their own. [Choosing a pilot](#03-choose-your-pilot)
 is a decision you do not make in this part. You made it when you opened Claude Code or Claude
 Desktop.
@@ -2479,7 +2479,7 @@ File modified: C:\Users\<you>\.claude.json [project: D:\Development\quackd]
 > the verdict gate again.
 
 > [!NOTE]
-> `--llm` and `quackd list-llms` play no part here. They belong to `quackd
+> `--llm` and `quackd list-models` play no part here. They belong to `quackd
 > run`, and `serve-mcp` takes neither. The consequence is worth spelling out: whichever
 > LLM you are chatting with is flying the arm, and an LLM that cannot accept images cannot
 > use the frame `robot_observe` hands back. [Section M09](#m09-add-the-camera) is where that

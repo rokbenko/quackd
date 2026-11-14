@@ -150,7 +150,7 @@ to proxy it through. Every call is billed to you.
 
 The LLM field is a dropdown, not a text box. It is grouped by the catalogue's own statuses —
 current, legacy, preview, specialised, open — and it opens on the vendor's default, so the
-page offers exactly what `quackd list-llms` does and a typo cannot reach a vendor at all.
+page offers exactly what `quackd list-models` does and a typo cannot reach a vendor at all.
 
 `quackd/agent/providers/catalogue.py` is the only place an LLM is ever added. `web/src/catalogue.js`
 is generated from it:

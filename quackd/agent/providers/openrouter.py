@@ -100,7 +100,7 @@ REFUSED_BODY_KEYS: dict[str, str] = {
 RESPONSES_HINT = (
     "OpenRouter passed on OpenAI's refusal of function tools on Chat Completions for this "
     "LLM, and quackd does not move an OpenRouter run to the Responses API: pick another "
-    "LLM, `quackd list-llms --llm openrouter`."
+    "LLM, `quackd list-models --llm openrouter`."
 )
 
 LIST_TIMEOUT_S = 10.0
@@ -309,7 +309,7 @@ def admit(
         nearest = f" Nearest on the list: {', '.join(near)}." if near else ""
         raise ProviderError(
             f"openrouter: {llm_id!r} from {source} is not on OpenRouter's LLM list.{nearest} "
-            "See `quackd list-llms --llm openrouter` for the ids quackd carries."
+            "See `quackd list-models --llm openrouter` for the ids quackd carries."
         )
     supported = entry.get("supported_parameters")
     supported = supported if isinstance(supported, list) else []

@@ -195,7 +195,7 @@ def _unknown_llm_id(provider: str, llm_id: str, source: str) -> str:
         whose = ""
     return (
         f"{provider}: unknown LLM {llm_id!r} from {source}{whose}. "
-        f"Valid ids: {listed}. See `quackd list-llms --llm {provider}`."
+        f"Valid ids: {listed}. See `quackd list-models --llm {provider}`."
     )
 
 
@@ -204,7 +204,7 @@ def _refused_open_ended(provider: str, llm_id: str, source: str, why: str) -> st
     listed = ", ".join(llm_ids(provider))
     return (
         f"{provider}: {llm_id!r} from {source} is refused: {why}. quackd lists {listed}. "
-        f"See `quackd list-llms --llm {provider}`."
+        f"See `quackd list-models --llm {provider}`."
     )
 
 

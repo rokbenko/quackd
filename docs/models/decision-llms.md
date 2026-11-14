@@ -1,6 +1,6 @@
 # Decision LLMs
 
-A decision LLM is the optional second LLM of a run. It sits in front of the pilot as a
+A decision LLM is the optional second model of a run. It sits in front of the pilot as a
 discrete stepper and answers the turns that are a choice among calls the body already has, a
 read, the brake, the gripper or a gaze, with a typed value and a probability for each option.
 It writes nothing: no joint angle, no sentence and no verdict, all of which stay the pilot's. A
@@ -16,7 +16,7 @@ decided and what it is never allowed to do are in
 
 ## The ones quackd names
 
-<!-- generated: decision-rows, by scripts/llms_docs.py from quackd/agent/decision/catalogue.py. Change a row there and run the script, not this table. -->
+<!-- generated: decision-rows, by scripts/models_docs.py from quackd/agent/decision/catalogue.py. Change a row there and run the script, not this table. -->
 
 | `--decision-llm` | What it is | Wire | Runs | Key | Extra | Address | Default LLM | Frames | USD per Mtok in / out | Guide |
 |---|---|---|---|---|---|---|---|---|---|---|

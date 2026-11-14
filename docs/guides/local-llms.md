@@ -19,7 +19,7 @@ One flag carries both halves: `--llm ollama:qwen3:8b` is the preset before the f
 the LLM after it, and a tag with a colon of its own survives that, because the split is at the
 first colon only. Leave the LLM half off, as in `--llm llamacpp`, and quackd asks the server
 for its LLM list and takes the first one. The LLM half is free text here: any id your server
-serves is accepted, because the LLM catalogue `quackd list-llms` prints, and that a cloud
+serves is accepted, because the LLM catalogue `quackd list-models` prints, and that a cloud
 vendor's id is checked against, covers the cloud vendors only. A local preset is never refused
 for naming something the catalogue has not heard of.
 

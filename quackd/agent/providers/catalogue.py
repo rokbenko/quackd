@@ -8,9 +8,9 @@ four defaults quackd shipped were wrong by the time anyone checked them, which i
 nobody validates does.
 
 So the list lives here instead, and a user picks from it: on the CLI, in shell completion, in the
-browser demo, and in `quackd list-llms`. When a vendor ships an LLM it is added here and
+browser demo, and in `quackd list-models`. When a vendor ships an LLM it is added here and
 nowhere else. That is the cost of the promise. The list is only as current as its last edit, and
-`quackd list-llms` is how anyone sees what this build knows.
+`quackd list-models` is how anyone sees what this build knows.
 
 What earns a place, checked 2026-09-12 against each vendor's own documentation and again, every
 vendor but OpenRouter, on 2026-09-23 (OpenRouter's rows were read off its own LLM list on
@@ -48,7 +48,7 @@ from typing import Any, Literal, get_args
 
 Status = Literal["current", "legacy", "preview", "specialised", "open"]
 
-#: Every status there is, in the order a list of LLMs should be shown in. `list-llms` prints
+#: Every status there is, in the order a list of LLMs should be shown in. `list-models` prints
 #: them in this order and the browser demo groups its dropdown by it.
 STATUSES: tuple[Status, ...] = get_args(Status)
 

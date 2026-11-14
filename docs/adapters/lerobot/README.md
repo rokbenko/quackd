@@ -151,7 +151,7 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
 
    ```bash
    quackd --version
-   quackd list-llms --llm openai
+   quackd list-models --llm openai
    quackd doctor
    ```
 
@@ -193,7 +193,7 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    [E158](../../examples/lerobot/run-sheet.md#e158-cheap-pilot--jev-vs-flagship-alone) to E161, and a
    vendor's key for its lines in E019, E020, E029, E030, E150 and E151. Each such line names the key it
    needs. `quackd doctor` prints the key it found, masked, which is the quickest way to see that the
-   file was read at all, and `quackd list-llms` lists the LLMs quackd carries.
+   file was read at all, and `quackd list-models` lists the LLMs quackd carries.
 
    Then rehearse on the mock arm, so your first LLM call is not on hardware. This spends a few LLM
    calls on your key and moves nothing. The second line is the same rehearsal for Jev, in shadow: with
@@ -1169,7 +1169,7 @@ and the only sign of why would be a line in a transcript nobody reads twice:
 
 ```
 ✗ error: fake scripted:goal does not take images, so it cannot be given 1 picture
-  quackd list-llms marks the LLMs that take no frames; --vision overrides it where
+  quackd list-models marks the LLMs that take no frames; --vision overrides it where
 the vendor does take them, and a local LLM needs --vision
 ```
 

@@ -74,7 +74,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `quackd/onboard/`, `quackd/boards/`, `quackd/radio/` | Robot Passport on a robot's own computer, the one part of quackd that runs there: `quackd onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `quackd/passport/`, which imports nothing else from quackd |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
-| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `llms_docs.py`, which renders the tables in `docs/llms/` and `docs/guides/vlas.md` from the catalogues |
+| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
 
 A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass
@@ -300,9 +300,8 @@ factory and against the vendor's own public list in the provider, rather than re
 ([ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md)). A vendor
 that is a lab, which is every other one, gets no such mark.
 
-Then the LLMs pages, which render every row: run `uv run --no-sync python
-scripts/llms_docs.py` and commit what it rewrites under `docs/llms/` and in
-`docs/guides/vlas.md`, or the drift test in
+Then the models pages, which render every row: run `uv run --no-sync python
+scripts/models_docs.py` and commit what it rewrites under `docs/models/`, or the drift test in
 `tests/test_docs.py` fails. A vendor the script has no name for in `MAKERS` and `COMPANIES` is
 refused there rather than printed unnamed.
 
@@ -347,8 +346,8 @@ that answers a question rather than writing an answer, none of the six entries a
 id, key variable if it wants one, price if anybody publishes one), one page under
 `docs/guides/decision-llms/`, and one row in the table in
 [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md), and
-`scripts/llms_docs.py` run once to render the row onto
-[docs/llms/decision-llms.md](docs/llms/decision-llms.md). No new file under
+`scripts/models_docs.py` run once to render the row onto
+[docs/models/decision-llms.md](docs/models/decision-llms.md). No new file under
 `quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
 already moves it off the port its row expects. The three shapes that are not just a row: one with
 a Python API of its own rather than a server, which is a plugin announcing itself under the

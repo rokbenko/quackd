@@ -664,8 +664,8 @@ def test_the_commands_that_register_a_board_say_so_in_their_own_help(command: li
     assert "never reaches the run record" not in text
 
 
-@pytest.mark.parametrize("command", [["record"], ["list-llms"]], ids=" ".join)
+@pytest.mark.parametrize("command", [["record"], ["list-models"]], ids=" ".join)
 def test_the_commands_with_no_board_to_use_do_not_offer_one(command: list[str]) -> None:
-    """`record` pins the simulator and `list-llms` reads a catalogue; neither has a camera,
+    """`record` pins the simulator and `list-models` reads a catalogue; neither has a camera,
     a detector or a board's health to use."""
     assert "--host" not in help_text([*command, "--help"])
