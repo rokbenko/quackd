@@ -17,7 +17,7 @@ from roboglot import dotenv_names
 from roboglot.command import command_text
 from roboglot.webui import catalog, jobs, launch, widgets
 from roboglot.webui.options import DECISION_OPTIONS, LLM_OPTIONS, SECRET_ENV, argv_for, by_panel
-from roboglot.webui.state import setup
+from roboglot.webui.state import FIRST_ROBOT, setup
 
 CURATED = frozenset(
     {
@@ -105,7 +105,7 @@ def _robot() -> None:
             "_adapter",
             "Adapter",
             names,
-            default="microduck",
+            default=FIRST_ROBOT.split(":")[0],
             shown=lambda n: n if n in here else f"{n} (not installed)",
         )
         row = next(r for r in rows if r["name"] == adapter)

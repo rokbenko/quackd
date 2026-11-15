@@ -302,14 +302,15 @@ def test_a_chat_under_a_vla_pilot_is_drive_flying_it(
 
 def test_a_goal_runs_from_the_page_to_its_outcome() -> None:
     at = _screen("goal")
-    at.text_area[0].input("find the ball and kick it").run()
+    at.text_area[0].input("look around and tell me what you see").run()
     next(b for b in at.button if b.label == "Run").click().run()
     table = jobs.table()
     (job,) = table.all()
     assert job.kind == "goal" and job.argv[3:5] == ["roboglot", "run"]
     _until(at, lambda: not job.running)
     at.run()
-    assert [s.value for s in at.success] == ["success: ball displaced by the kick"]
+    assert job.argv[job.argv.index("--robot") + 1] == state.FIRST_ROBOT, job.argv
+    assert [s.value for s in at.success] == ["success: scripted pilot: nothing more to do"]
 
 
 def test_a_chat_starts_takes_a_line_and_ends_in_order() -> None:
@@ -332,7 +333,7 @@ def test_the_floating_stop_stops_a_run_waiting_on_a_question(page: Path) -> None
     table = jobs.table(page)
     job = table.start(
         "goal",
-        ["run", str(duck), "--robot", "microduck:mock", "--llm", "fake", "--no-gif"],
+        ["run", str(duck), "--robot", "microduck:mock", "--llm", "fake"],
         robot="microduck:mock",
     )
     at = _screen("goal")

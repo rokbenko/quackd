@@ -36,8 +36,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   (below). With one adapter installed it takes that adapter's first backend, as before, and that
   is its `mock` for every adapter now: a bare `--robot microduck` or `--robot open_duck` means the
   mock, where it meant the simulator. `roboglot doctor` on a machine with no adapter says
-  `uv pip install "roboglot[microduck]" for one`. A run on `lerobot:mock` names its policy's clock
-  `mock` in `summary.json`, where it said `sim`.
+  `uv pip install "roboglot[microduck]" for one`. The page `roboglot ui` serves names the robot
+  on every goal and chat it starts: the one Setup shows first, `microduck:mock`, until another is
+  chosen. A run on `lerobot:mock` names its policy's clock `mock` in `summary.json`, where it
+  said `sim`.
 - **The project is now Roboglot, the communication layer between people and robots, and between
   robots.** The old one-liner described the first way in rather than what the project is: there
   are four ways in now, part of it runs on the robot, and Robot Passport is about robots that are
