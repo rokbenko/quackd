@@ -60,8 +60,8 @@ MAX_BYTES = 256_000
 """The most a frame may come to as a JPEG, in bytes, 256 kB. Over it, the frame is not sent and
 the turn records why (`frame_skipped`). At today's size and quality no picture comes near it:
 random noise filling a 512 by 512 frame, the hardest thing there is to compress, came to 198,928
-bytes on 2026-10-19, and a simulator's 256 pixel frame to under 2,000. So it is a backstop, which
-holds the size of a request if `MAX_SIDE_PX` or `JPEG_QUALITY` is ever raised."""
+bytes on 2026-10-19, and a 256 pixel frame of a drawn scene to under 2,000. So it is a backstop,
+which holds the size of a request if `MAX_SIDE_PX` or `JPEG_QUALITY` is ever raised."""
 
 
 def may_send_frames(llm: Any) -> bool:

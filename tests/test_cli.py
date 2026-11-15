@@ -49,8 +49,7 @@ def _one_command(tmp_path: Path, monkeypatch, *args: str, env: str | None = "") 
 
 
 def _log_run(tmp_path: Path, monkeypatch, *flags: str, env: str | None = "") -> str:
-    """One `run` on the mock, which sends no frames and writes no GIF: the log itself is
-    what these tests read."""
+    """One `run` on the mock: the log itself is what these tests read."""
     return _one_command(
         tmp_path,
         monkeypatch,
@@ -60,21 +59,6 @@ def _log_run(tmp_path: Path, monkeypatch, *flags: str, env: str | None = "") -> 
         "fake",
         "--robot",
         "microduck:mock",
-        "--no-gif",
-        *flags,
-        env=env,
-    )
-
-
-def _log_record(tmp_path: Path, monkeypatch, *flags: str, env: str | None = "") -> str:
-    """The same run through `record`, which pins the simulator and always writes a GIF."""
-    return _one_command(
-        tmp_path,
-        monkeypatch,
-        "record",
-        "hello-world",
-        "--llm",
-        "fake",
         *flags,
         env=env,
     )
@@ -139,21 +123,10 @@ def test_verbose_is_the_compact_view_and_does_not_double_the_log(
     assert "→ quack" in compact and "send sound" not in compact
 
 
-def test_record_writes_a_gif_and_a_transcript(tmp_path: Path, monkeypatch) -> None:
-    """Every GIF in the README and every launch post comes out of `record`, and no test
-    ever ran the command: it pins its own robot, always renders, and could have been broken
-    for a whole release without a single failure to say so."""
-    out = _log_record(tmp_path, monkeypatch)
-    assert "SUCCESS" in out
-    gif = next(tmp_path.rglob("run.gif"))
-    assert gif.stat().st_size > 0, "an empty GIF is a README with a broken image in it"
-    assert {"run_start", "llm", "verb_end", "run_end"} <= set(_kinds(tmp_path))
-
-
-def test_record_no_log_still_writes_every_event(tmp_path: Path, monkeypatch) -> None:
+def test_no_log_still_writes_every_event(tmp_path: Path, monkeypatch) -> None:
     """The switch is about the console and nothing else (ADR-0029). The transcript is the
-    record, and a run recorded quietly must be as complete as a noisy one."""
-    out = _log_record(tmp_path, monkeypatch, "--no-log")
+    record, and a quiet run's must be as complete as a noisy one's."""
+    out = _log_run(tmp_path, monkeypatch, "--no-log")
     assert "send sound" not in out and "SUCCESS" in out
     kinds = _kinds(tmp_path)
     assert "intent" in kinds and "verb_end" in kinds
@@ -240,7 +213,6 @@ def test_the_outcome_line_prints_the_llms_reason_verbatim(tmp_path: Path, monkey
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     # not the exit code: it is 1 both for the failure outcome and for the old traceback
@@ -261,8 +233,8 @@ def test_list_verbs_prints_a_description_with_brackets_verbatim(monkeypatch) -> 
     assert "[left]" in result.output
 
 
-def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None:
-    """The team's planner logs an LLM's raw tool arguments through this line."""
+def test_a_verbose_line_survives_a_bracket_an_llm_wrote(monkeypatch) -> None:
+    """The executor logs an LLM's raw tool arguments through this line: `→ say({...})`."""
     import io
 
     from rich.console import Console
@@ -273,7 +245,7 @@ def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None
     buf = io.StringIO()
     # the consoles live on `ui` so `--no-color` can replace them; `cli` reads them from there
     monkeypatch.setattr(ui, "err_console", Console(file=buf, force_terminal=False, width=200))
-    cli_mod._verbose_line("planner: [/think] chose [bold]walk")
+    cli_mod._verbose_line("→ say({'text': '[/think] chose [bold]walk'})")
     out = buf.getvalue()
     assert "[/think]" in out and "[bold]walk" in out
 
@@ -285,20 +257,6 @@ def test_validate_starter_ducks() -> None:
     assert f"{len(files)} files valid" in result.output
 
 
-def test_validate_checks_a_task_against_a_simulator_laid_out_in_a_room() -> None:
-    """A task that needs a room's verbs is valid for the duck's simulator in a room, refused for
-    the same simulator in none, and `--room` with no robot to lay it out for is refused."""
-    duck = str(TASKS / "find-the-ball.glot")
-    roomy = runner.invoke(
-        app, ["validate", duck, "--robot", "microduck:sim2d", "--room", "two-rooms"]
-    )
-    assert roomy.exit_code == 0, roomy.output
-    bare = runner.invoke(app, ["validate", duck, "--robot", "microduck:sim2d"])
-    assert bare.exit_code == 1 and "requires find, but microduck" in bare.output, bare.output
-    nobody = runner.invoke(app, ["validate", duck, "--room", "two-rooms"])
-    assert nobody.exit_code == 1 and "this file names no robot" in nobody.output, nobody.output
-
-
 def test_validate_expands_globs_itself() -> None:
     result = runner.invoke(app, ["validate", str(TASKS / "*.glot")])
     assert result.exit_code == 0, result.output
@@ -308,7 +266,7 @@ def test_a_pattern_written_with_forward_slashes_expands_to_paths_written_that_wa
     tmp_path: Path,
 ) -> None:
     """On Windows `glob` joined what a wildcard matched with backslashes and kept the part
-    typed before it as typed, so `roboglot preflight "docs/examples/e00[1-5]/*.glot"` labelled
+    typed before it as typed, so `roboglot validate "docs/examples/e00[1-5]/*.glot"` labelled
     its files in two slash styles at once. Anywhere else this holds as it always did."""
     from roboglot.cli import _expand
 
@@ -356,7 +314,6 @@ def test_run_hello_world_on_mock(tmp_path: Path) -> None:
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -414,25 +371,29 @@ def test_run_goal_builds_an_ad_hoc_duck(tmp_path: Path) -> None:
 
 
 def test_goal_picks_a_matching_scripted_strategy(tmp_path: Path) -> None:
+    """The scripted pilot picks its strategy by the goal's words. On the mock, whose grey
+    frames hold no ball to kick, the goal is a patrol, and the duck walks the lap."""
+    from roboglot.agent.transcript import Transcript
+
     result = runner.invoke(
         app,
         [
             "run",
             "--goal",
-            "find the ball and kick it",
+            "patrol the hall",
             "--llm",
             "fake",
-            "--seed",
-            "4",
+            "--robot",
+            "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "scripted:goal:find-and-kick" in result.output
-    transcript = next(tmp_path.rglob("transcript.jsonl")).read_text(encoding="utf-8")
-    assert '"name": "kick"' in transcript  # it really kicked, not just "nothing more to do"
+    assert "scripted:goal:patrol" in result.output
+    events = Transcript.read(next(tmp_path.rglob("transcript.jsonl")))
+    walked = [e["name"] for e in events if e["kind"] == "verb_end" and e.get("ok")]
+    assert walked == ["walk"] * 3, walked  # it really walked, not just "nothing more to do"
 
 
 def test_run_needs_exactly_one_of_duck_or_goal(tmp_path: Path) -> None:
@@ -464,7 +425,6 @@ def _run_hello(tmp_path: Path, *flags: str) -> object:
             "fake",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             *flags,
         ],
     )
@@ -506,7 +466,6 @@ def test_a_second_camera_url_is_refused_by_a_one_camera_body_before_anything_run
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             "--camera-url",
             "http://10.0.0.5:9872/snapshot.jpg",
             "--camera-url",
@@ -516,7 +475,7 @@ def test_a_second_camera_url_is_refused_by_a_one_camera_body_before_anything_run
     assert result.exit_code == 1, result.output
     out = " ".join(result.output.split())  # the console wraps the line at the terminal width
     assert "microduck:mock takes one --camera-url and 2 were given" in out
-    assert "only lerobot:real and lerobot:mujoco take several" in out
+    assert "only lerobot:real takes several" in out
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
@@ -550,14 +509,14 @@ def test_doctor_json_reports_a_second_camera_url_inside_its_document(
     probe = report["robot"]["probe"]
     assert probe["ok"] is False and probe["rows"] == []
     assert "takes one --camera-url and 2 were given" in probe["error"]
-    assert "only lerobot:real and lerobot:mujoco take several" in probe["error"]
+    assert "only lerobot:real takes several" in probe["error"]
     assert report["ok"] is False  # and the exit code follows the report, as it always did
 
 
 def test_list_adapters() -> None:
     result = runner.invoke(app, ["list-adapters"])
     assert result.exit_code == 0, result.output
-    for needle in ("microduck", "sim2d", "mock", "jsonrpc", "open_duck", "bridge"):
+    for needle in ("microduck", "mock", "jsonrpc", "open_duck", "bridge"):
         assert needle in result.output
 
 
@@ -954,7 +913,6 @@ def test_run_refuses_a_duck_the_robot_cannot_do(tmp_path: Path) -> None:
             "open_duck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == 1
@@ -978,14 +936,13 @@ def test_run_still_starts_when_the_duck_fits(tmp_path: Path) -> None:
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == 0, result.output
 
 
-def test_a_camera_robot_that_is_not_the_simulator_still_gets_a_detector(tmp_path: Path) -> None:
-    """The detector used to be attached only for sim2d, so every hardware backend with a
+def test_a_camera_robot_gets_a_detector(tmp_path: Path) -> None:
+    """The detector used to be attached for one backend alone, so every hardware backend with a
     camera ran blind: it fetched frames, detected nothing because nothing was detecting,
     and reported that it could not see the ball."""
     result = runner.invoke(
@@ -999,7 +956,6 @@ def test_a_camera_robot_that_is_not_the_simulator_still_gets_a_detector(tmp_path
             "open_duck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -1020,16 +976,6 @@ def test_a_console_that_raises_is_reported_once_at_the_end(tmp_path: Path, monke
     assert "could not be shown" in out
     assert "transcript.jsonl has them" in out
     assert "SUCCESS" in out, "a broken console must not change the outcome"
-
-
-def test_a_gif_pane_larger_than_the_offscreen_buffer_is_refused_before_anything_runs() -> None:
-    """The physics model compiles a 1024 px offscreen buffer, so a larger pane fails inside
-    MuJoCo halfway through a run. Typer refuses it at the boundary instead, and the number is
-    spelled in `cli.py` because `cli.py` must not import `sim3d`. `tests/test_sim3d.py` pins
-    the two to each other."""
-    result = runner.invoke(app, ["run", "hello-world", "--gif-size", "4096"])
-    assert result.exit_code == 2
-    assert "1024" in result.output
 
 
 # ── --json and --no-color: the output a script reads ────────────────────────────────────
@@ -1066,8 +1012,8 @@ def test_validate_json_is_one_object_per_file_and_still_exits_one() -> None:
 
 
 def test_validate_json_reports_a_team_as_a_count() -> None:
-    (row,) = _objects(CliRunner().invoke(app, ["validate", "team-kick", "--json"]).output)
-    assert row["team"] == 3
+    (row,) = _objects(CliRunner().invoke(app, ["validate", "team-hello", "--json"]).output)
+    assert row["team"] == 2
 
 
 def test_list_verbs_json_carries_what_the_table_shows() -> None:
@@ -1084,7 +1030,7 @@ def test_list_adapters_json_is_the_registry_rows() -> None:
     rows = _objects(CliRunner().invoke(app, ["list-adapters", "--json"]).output)
     assert [row["name"] for row in rows][:2] == ["microduck", "lerobot"]
     assert rows[0]["installed"] is True
-    assert "sim2d" in rows[0]["backends"]
+    assert "mock" in rows[0]["backends"] and "jsonrpc" in rows[0]["backends"]
 
 
 def test_json_never_carries_a_rich_tag() -> None:
@@ -1108,7 +1054,7 @@ def test_no_color_strips_the_colour_and_keeps_the_words() -> None:
     plain = runner.invoke(app, ["--no-color", "list-adapters"])
     assert plain.exit_code == 0
     assert ui.console.no_color is True and ui.err_console.no_color is True
-    assert "microduck" in plain.output and "sim2d" in plain.output
+    assert "microduck" in plain.output and "jsonrpc" in plain.output
 
 
 def test_no_color_reaches_the_help_typer_renders_for_itself() -> None:
@@ -1123,20 +1069,17 @@ def test_no_color_reaches_the_help_typer_renders_for_itself() -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        ["run", "hello-world", "--robot", "microduck:mock", "--no-gif"],
-        ["record", "hello-world", "--gif-size", "64"],
-        ["run", "team-hello", "--no-gif"],
-        ["run", "team-kick", "--no-gif"],
+        ["run", "hello-world", "--robot", "microduck:mock"],
+        ["run", "team-hello"],
     ],
-    ids=["run", "record", "pilot-team", "coordinator-team"],
+    ids=["run", "pilot-team"],
 )
 def test_extra_body_reaches_every_provider_a_run_builds(
     argv: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A team builds one provider per member, so a flag that only reached the single-robot
-    path would be a silent no-op on the very runs that cost the most. The two kinds of team
-    are two call sites: `team-hello` is `method: pilots` and goes through `_run_pilots_impl`,
-    `team-kick` is `method: auction` and goes through `_run_team_impl`."""
+    path would be a silent no-op on the very runs that cost the most. `team-hello` is a
+    pilot team and goes through `_run_pilots_impl`."""
     body = '{"chat_template_kwargs": {"enable_thinking": false}}'
     seen: list[object] = []
     real = __import__("roboglot.agent.providers.factory", fromlist=["make_provider"]).make_provider
@@ -1152,8 +1095,7 @@ def test_extra_body_reaches_every_provider_a_run_builds(
     assert result.exit_code == 0, result.output
     assert seen, "no provider was built"
     assert all(s == body for s in seen), "the factory is handed the text as it was typed"
-    # a pilot team is one whole pilot per body; a coordinator team is one referee for all
-    # of them, so only the first should build more than one provider
+    # a pilot team is one whole pilot per body
     if "team-hello" in argv:
         assert len(seen) > 1, "a pilot team is one provider per member"
 
@@ -1172,7 +1114,6 @@ def test_a_bad_extra_body_stops_before_anything_connects(
         "vllm",
         "--robot",
         "microduck:mock",
-        "--no-gif",
         "--runs-dir",
         str(runs),
         "--memory-dir",
@@ -1192,7 +1133,7 @@ def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     """Twenty eight flags in one flat list is a list nobody reads. And `rich_markup_mode`
     reads `roboglot[lan]` as markup, which printed an install that does not exist."""
     out = _help(["run", "--help"])
-    assert "roboglot[live]" in out, "an extra a reader is meant to type must survive"
+    assert "roboglot[yolo]" in out, "an extra a reader is meant to type must survive"
     for group in ("Task", "Pilot", "Robot", "Output", "Memory"):
         assert group in out, group
     # Two flags became one, and half a rename is worse than either shape on its own: a help
@@ -1204,7 +1145,7 @@ def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     assert "--no-color" in root
     for group in ("Inspect", "Run a task", "Serve", "LAN", "Memory"):
         assert group in root, group
-    assert "roboglot run find-and-kick --llm fake" in root, "the epilog offers a first command"
+    assert "roboglot run microduck-lookout --llm fake" in root, "the epilog offers a first command"
     # the same markup trap, one level up: the core installs no robot, so the first command the
     # epilog offers has to carry the extra that makes it work, and Rich would eat the brackets
     assert "roboglot[microduck]" in root, "the epilog's install line lost its extra to markup"
@@ -1296,7 +1237,6 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     assert result.exit_code == EXIT_INFEASIBLE == 3, result.output
@@ -1433,7 +1373,7 @@ def plan(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _picture_run(tmp_path: Path, *flags: str, robot: str | None = "microduck:mock") -> Any:
-    """`hello-world` on the simulated duck, with the runs directory pointed at `tmp_path`
+    """`hello-world` on the mock duck, with the runs directory pointed at `tmp_path`
     itself so that "nothing was written" is a question about one directory."""
     argv = [
         "run",
@@ -1442,7 +1382,6 @@ def _picture_run(tmp_path: Path, *flags: str, robot: str | None = "microduck:moc
         "fake",
         "--runs-dir",
         str(tmp_path),
-        "--no-gif",
         "--no-log",
         *flags,
     ]
@@ -1513,10 +1452,23 @@ def test_a_picture_that_is_not_there_is_refused_before_anything_runs(tmp_path: P
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
+def _stored_pair() -> None:
+    """Two mock ducks stored as the team `pair`, in the registry the suite points at."""
+    from roboglot.registry import Registry, RobotEntry, StoredTeam
+
+    registry = Registry()
+    for name in ("duck-a", "duck-b"):
+        registry.add_robot(RobotEntry(name=name, spec="microduck:mock"))
+    registry.add_team(StoredTeam(name="pair", members=["duck-a", "duck-b"]))
+
+
 def test_a_picture_is_refused_for_a_team(tmp_path: Path, sketch: Path) -> None:
     """One picture and several bodies is a question the flag cannot answer: whose task is it
     about? Dropping it silently is the failure the flag exists to prevent."""
-    result = _picture_run(tmp_path, "--vision", "--team", "2", "--image", str(sketch))
+    _stored_pair()
+    result = _picture_run(
+        tmp_path, "--vision", "--team", "pair", "--image", str(sketch), robot=None
+    )
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "--image is for one robot, and this run has several" in flat, flat
@@ -1525,7 +1477,7 @@ def test_a_picture_is_refused_for_a_team(tmp_path: Path, sketch: Path) -> None:
 
 
 def test_a_picture_is_refused_when_robots_names_two_bodies(tmp_path: Path, sketch: Path) -> None:
-    """The same refusal by the other door: `--team N` is not the only way to end up with more
+    """The same refusal by the other door: `--team NAME` is not the only way to end up with more
     than one body on the line, and `--robots` reaches a different branch of the dispatch."""
     result = _picture_run(
         tmp_path,
@@ -1574,7 +1526,6 @@ def _by_hand_run(tmp_path: Path, *flags: str, duck: str = "hello-world") -> Any:
             "fake",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             "--no-log",
             "--by-hand",
             *flags,
@@ -1597,7 +1548,8 @@ def test_by_hand_and_dry_run_are_refused_as_opposites(tmp_path: Path) -> None:
 def test_by_hand_is_refused_for_a_team(tmp_path: Path) -> None:
     """One person cannot place four arms at once, and an arm nobody was asked to place would
     be released limp at its rest pose and left there for the length of the run."""
-    result = _by_hand_run(tmp_path, "--robot", "microduck:mock", "--team", "2")
+    _stored_pair()
+    result = _by_hand_run(tmp_path, "--team", "pair")
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "--by-hand is one person placing one arm, and this run has several robots" in flat, flat
@@ -1647,7 +1599,6 @@ def test_by_hand_needs_a_rest_pose_to_let_go_at(
             str(reg),
             "--runs-dir",
             str(runs),
-            "--no-gif",
             "--no-log",
             "--by-hand",
         ],
@@ -1684,7 +1635,6 @@ def test_by_hand_with_no_terminal_to_ask_on_is_refused(tmp_path: Path) -> None:
             str(reg),
             "--runs-dir",
             str(runs),
-            "--no-gif",
             "--no-log",
             "--by-hand",
         ],
@@ -1733,7 +1683,6 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
             str(reg),
             "--runs-dir",
             str(runs),
-            "--no-gif",
             "--no-log",
             "--by-hand",
         ],
@@ -2803,7 +2752,6 @@ def _missed_rest_run(
             str(reg),
             "--runs-dir",
             str(runs),
-            "--no-gif",
             # the log on: the close's own line is a note, and a run with the log off prints
             # no note at all
             "--log",
@@ -3025,14 +2973,12 @@ def test_doctor_builds_a_registered_arm_under_its_name_and_warns_before_it_conne
     assert "connecting takes torque off" not in " ".join(duck.output.split()), duck.output
 
 
-def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
+def test_the_hardware_warnings_say_what_connecting_does_to_the_arm() -> None:
     """`doctor --robot` and `robot release` warn a person before they connect a body that is
     handed to people, and tell them to support it, and for the release, to take their hands
-    away before it folds. The arm's simulator is handed over as the arm is, and nobody can hold
-    it, so each line says it is the simulator instead."""
+    away before it folds."""
     from roboglot import cli
     from roboglot.adapters.base import CONNECTING_TAKES_TORQUE_OFF
-    from roboglot.adapters.factory import make_adapter
 
     real = f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
     assert cli._connect_warning() == real
@@ -3065,32 +3011,10 @@ def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
         "there: support it while it connects, then take your hands away when it says so, before "
         "it folds"
     )
-    assert cli._release_warning(simulator=True, closes_gripper=True).endswith(
-        "and the simulated arm then folds to its rest pose, closes its gripper and is let go of "
-        "there, with no arm to hold"
-    )
     assert cli._release_warning(folds=False) == (
         f"{real}, and with no rest pose recorded there is nothing to fold it to: you are asked "
         "before anything connects"
     )
-    simulated = (
-        cli._connect_warning(simulator=True),
-        cli._doctor_warning(simulator=True),
-        cli._release_warning(simulator=True),
-        cli._release_warning(simulator=True, folds=False),
-    )
-    for line in simulated:
-        assert line.startswith("this is the arm's simulator: "), line
-        assert "support the arm until" not in line and "take your hands away" not in line, line
-    assert simulated[1].endswith("and there is no arm to support")
-    assert simulated[2].endswith("with no arm to hold") and "folds to its rest pose" in simulated[2]
-    assert simulated[3].endswith("with no arm to hold") and "fall" in simulated[3]
-
-    # asked of the built adapter, and a body that does not say is not a simulator
-    assert not cli._is_simulator(make_adapter("lerobot:mock"))
-    assert not cli._is_simulator(make_adapter("microduck:mock"))
-    assert cli._is_simulator(make_adapter("lerobot:mujoco"))
-    assert not cli._is_simulator(SimpleNamespace(is_simulator="yes"))
 
 
 # ── doctor, the probe and rest-pose over a real arm with no rest pose ───────────────────
@@ -3338,7 +3262,7 @@ def test_a_press_past_the_end_of_a_run_loses_no_verdict(
         printed(*args, **kwargs)
 
     monkeypatch.setattr(cli, "_print_outcome", pressed_then_printed)
-    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-gif"]
+    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake"]
     result = runner.invoke(app, [*task, "--runs-dir", str(tmp_path)])
     assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
     assert "steps" in result.output, result.output
@@ -3348,11 +3272,10 @@ def test_a_press_past_the_end_of_a_run_loses_no_verdict(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["run", "hello-world", "--robot", "microduck:mock", "--no-gif"],
-        ["run", "team-hello", "--no-gif"],
-        ["run", "team-kick", "--no-gif"],
+        ["run", "hello-world", "--robot", "microduck:mock"],
+        ["run", "team-hello"],
     ],
-    ids=["run", "pilot-team", "coordinator-team"],
+    ids=["run", "pilot-team"],
 )
 def test_a_run_leaves_a_press_doing_nothing_as_it_ends(argv: list[str], tmp_path: Path) -> None:
     result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(tmp_path)])
@@ -3372,45 +3295,6 @@ def test_a_release_and_a_doctor_leave_a_press_doing_nothing_as_they_end(
     signal.signal(signal.SIGINT, before)
     result = runner.invoke(app, ["doctor", "--robot", "arm-p", "--registry-dir", str(reg)])
     assert isinstance(signal.getsignal(signal.SIGINT), AfterTheClose), result.output
-
-
-def test_a_press_while_the_gif_is_made_leaves_out_the_gif_and_keeps_the_verdict(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """It can be minutes on a long run, so it is the one thing a press still ends after the run."""
-    from roboglot import cli
-
-    class Pressed:
-        def save_gif(self, path: Path) -> Path:
-            path.write_bytes(b"half a gif")
-            signal.raise_signal(signal.SIGINT)
-            raise AssertionError("the press did not end it")
-
-    class Finished:
-        def save_gif(self, path: Path) -> Path:
-            path.write_bytes(b"a gif")
-            return path
-
-    monkeypatch.setattr(AfterTheClose, "heard", 0)
-    after = AfterTheClose()
-    after.since = 0.0  # a long way back: the picture is what took the time
-    before = signal.signal(signal.SIGINT, after)
-    try:
-        whole = tmp_path / "whole.gif"
-        assert cli._gif_a_press_can_leave_out(Finished(), whole) == whole
-        assert signal.getsignal(signal.SIGINT) is after
-        assert after.since > 0.0, "the time it took looks like a process stuck on something"
-        assert AfterTheClose.heard == 0
-
-        after.since = 0.0
-        half = tmp_path / "half.gif"
-        assert cli._gif_a_press_can_leave_out(Pressed(), half) is None
-        assert not half.exists(), "half a picture was left where the whole one goes"
-        assert signal.getsignal(signal.SIGINT) is after, "a press means nothing again"
-        assert after.since > 0.0
-        assert AfterTheClose.heard == 1, "it is still somebody saying stop"
-    finally:
-        signal.signal(signal.SIGINT, before)
 
 
 def _pressed_while_connecting(tty: Any) -> Any:
@@ -3526,7 +3410,6 @@ def test_a_press_says_stopping_on_the_status_line_of_a_run(
             "hello-world",
             "--robot",
             "microduck:mock",
-            "--no-gif",
             "--no-memory",
             "--runs-dir",
             str(tmp_path),
@@ -3565,7 +3448,7 @@ def test_a_by_hand_run_stays_from_the_start_and_its_panel_says_so(
     monkeypatch.setattr(KillSwitch, "wait_for_enter", pressed)
     told = _switch_told_to_stay(monkeypatch)
     reg = _arm_registry(tmp_path, rest_pose=True)
-    argv = ["run", "lerobot-lookout", "--llm", "fake", "--robot", "arm-01", "--no-gif"]
+    argv = ["run", "lerobot-lookout", "--llm", "fake", "--robot", "arm-01"]
     argv += ["--registry-dir", str(reg), "--runs-dir", str(tmp_path / "runs"), "--no-memory"]
     held = runner.invoke(app, [*argv, "--by-hand"])
     said = " ".join(held.output.split())
@@ -3801,7 +3684,6 @@ def _verdict_run(tmp_path: Path, *flags: str) -> Any:
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             *flags,
         ],
         env={"COLUMNS": "200"},
@@ -3893,17 +3775,12 @@ def test_the_help_offers_the_name_on_disk_and_the_price_of_the_llm() -> None:
     """A flag nobody can find is a flag nobody uses, and `--price` is the one that decides
     whether a run can be costed at all.
 
-    `--price` is on `run` and not on `record`: a recording is a GIF for a README, and its
-    cost is not what anybody reaches for the command to learn. The brackets of the optional
-    cache rates are the same markup trap as `roboglot[live]` a few tests up, which is why the
-    example is asserted whole."""
+    The brackets of the optional cache rates are the same markup trap as `roboglot[yolo]` a
+    few tests up, which is why the example is asserted whole."""
     run_help = _help(["run", "--help"])
     assert "--run-name" in run_help and "--price" in run_help
     assert '"Example 1" becomes example-1' in run_help, "the help must show the name on disk"
     assert "in=3,out=15[,cache_read=0.3,cache_write=3.75]" in run_help, "markup ate the brackets"
-    record_help = _help(["record", "--help"])
-    assert "--run-name" in record_help
-    assert "--price" not in record_help
 
 
 def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
@@ -3942,7 +3819,6 @@ def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
             "fake",
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--no-gif",
             "--no-memory",
         ],
     )
@@ -3984,7 +3860,6 @@ def _typed_run(
         "microduck:mock",
         "--runs-dir",
         str(tmp_path / "runs"),
-        "--no-gif",
         *flags,
     ]
     monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/roboglot", *args])
@@ -4085,12 +3960,12 @@ def test_the_record_says_what_was_asked_for_and_which_roboglot_ran_it(
     The first word is `roboglot` and not the path that was really invoked, which is an
     absolute path to a console script on one machine and `__main__.py` under `python -m`,
     and neither is what was typed or what a reader wants."""
-    result = _typed_run(tmp_path, monkeypatch, "--seed", "7")
+    result = _typed_run(tmp_path, monkeypatch, "--max-steps", "7")
     assert result.exit_code == 0, result.output
     start = _events(tmp_path)[0]
     assert start["kind"] == "run_start"
     assert start["command"][:2] == ["roboglot", "run"], start["command"]
-    assert start["command"][-2:] == ["--seed", "7"]
+    assert start["command"][-2:] == ["--max-steps", "7"]
     assert "/opt/venv/bin" not in " ".join(start["command"])
     assert start["version"] == __version__
     summary = _summary(tmp_path)
@@ -4220,7 +4095,7 @@ def test_a_run_nobody_watched_ends_in_its_sentence_rather_than_a_traceback(
         raise Aborted("nobody confirmed they were watching a robot that cannot see a fall")
 
     monkeypatch.setattr(AgentLoop, "run", nobody_watching)
-    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-gif"]
+    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake"]
     result = runner.invoke(app, [*task, "--runs-dir", str(tmp_path)])
     assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
     assert "nobody confirmed they were watching" in " ".join(result.output.split())

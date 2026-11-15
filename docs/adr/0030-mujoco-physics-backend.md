@@ -1,7 +1,13 @@
 # ADR-0030: a MuJoCo backend that runs the Microduck's own walking policy
 
-**Status:** accepted, amended · **Date:** 2026-09-07 · Amends [ADR-0007](0007-sim2d-cartoon.md) ·
+**Status:** superseded · **Date:** 2026-09-07 · Amends [ADR-0007](0007-sim2d-cartoon.md) ·
 Implemented in 0.8 (`--robot microduck:mujoco`, and `web/` in a browser)
+
+**Superseded 2026-11-15:** `microduck:mujoco` was removed from Roboglot with every other
+simulator, and so were the browser demo that ran the same duck in a page (`web/`),
+`roboglot[mujoco]` and the fetch of upstream's files at run time. Everything below, the
+amendment of 2026-09-27 included, is left as the record of what 0.8 to 0.34 shipped, and none of
+it applies to the current tree. See the CHANGELOG's Unreleased entry for the removal.
 
 **Amended 2026-09-27 by [ADR-0047](0047-the-arms-simulator-runs-the-real-backend.md):** this is
 no longer the only MuJoCo backend. `lerobot:mujoco` is the SO-101 arm's simulator, in the arm's

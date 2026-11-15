@@ -64,7 +64,7 @@ verbs all work.
 
 **It does not exercise the camera.** `--fake` synthesises a JPEG directly, so none of the
 resize, the red/blue swap, the rotation or the JPEG encode that a real capture goes through
-are running, and the detector's field of view is still the simulator's. Those are what step
+are running, and the detector's field of view is still a mock's. Those are what step
 5b checks, and they are the difference between `go_to` arriving and announcing it from half a
 metre away.
 
@@ -124,7 +124,7 @@ order, and a field of view that is not yours. Detections say `(uncalibrated: dis
 rough guess)` until you pass `--fov-deg`; a Pi Camera Module 2 is about 62.
 
 > Abort on any label but `ball`, or a distance more than about 30 percent from the tape.
-> The detector's default geometry is the *simulator's* 90 degree lens, which reads roughly
+> The detector's default geometry is a *mock's* 90 degree lens, which reads roughly
 > half the true distance — enough for `go_to` to announce it has arrived from half a metre
 > away, and for `open-duck-scout` to report success on a run its own criterion failed.
 
@@ -265,7 +265,7 @@ chose and a default someone measured.
    whole walking run and report the minimum you saw.
 
 4. **Your camera's field of view and colour**, from step 5b. `--fov-deg` defaults to the
-   simulator's 90; a Pi Camera Module 2 is about 62. Report the tape-measured distance and
+   mock's 90; a Pi Camera Module 2 is about 62. Report the tape-measured distance and
    what `observe` said, at two distances if you can.
 
 5. **The accelerometer, upright and on its side.** This is the one that would give this

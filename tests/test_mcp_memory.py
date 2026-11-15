@@ -14,7 +14,7 @@ from tests.test_mcp_fleet import _data, connected
 
 def two_robots() -> dict[str, Any]:
     """Two distinct bodies, so memory keyed by adapter:backend lands in two files."""
-    duck = make_adapter(RobotSpec("microduck", "sim2d", "duck"), seed=1)
+    duck = make_adapter(RobotSpec("microduck", "mock", "duck"))
     other = make_adapter(RobotSpec("open_duck", "mock", "other"))
     return {"duck": duck, "other": other}
 
@@ -46,11 +46,11 @@ async def test_remember_then_recall_per_robot(tmp_path: Path) -> None:
         other = _data(await client.call_tool("robot_recall", {"robot": other_robot}))
         assert other["ok"] and other["notes"] == []
         assert fleet.sessions["duck"].memory is not None
-        assert fleet.sessions["duck"].memory.path == tmp_path / "microduck-sim2d.jsonl"
+        assert fleet.sessions["duck"].memory.path == tmp_path / "microduck-mock.jsonl"
         assert fleet.sessions[other_robot].memory is not None
         assert fleet.sessions[other_robot].memory.path != fleet.sessions["duck"].memory.path
     # and it survives the server: a CLI run on the same robot would read the same file
-    assert [e.text for e in RobotMemory("microduck:sim2d", tmp_path).notes()] == [
+    assert [e.text for e in RobotMemory("microduck:mock", tmp_path).notes()] == [
         "the ball hides behind the sofa"
     ]
 

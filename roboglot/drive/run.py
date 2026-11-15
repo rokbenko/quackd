@@ -105,12 +105,10 @@ class DriveArgs:
     host: str | None = None
     host_token: str | None = None
     detector: str | None = None
-    seed: int | None = None
     llm: str | None = None
     decision_llm: str | None = None
     decision_url: str | None = None
     glotfile: str | None = None
-    room: str | None = None
     map_address: str | None = None
     yes: bool = False
     dry_run: bool = False
@@ -229,7 +227,6 @@ async def run_drive(
         robot=args.robot,
         registry_dir=args.registry_dir,
         glotfile=args.glotfile,
-        seed=args.seed,
         address=args.address,
         camera_url=list(args.camera_url) or None,
         token=args.token,
@@ -240,7 +237,6 @@ async def run_drive(
         policy_token=args.policy_token,
         accept_other_frame=args.accept_other_frame,
         async_chunks=args.async_chunks,
-        room=args.room,
         map_address=args.map_address,
         fov_deg=args.fov_deg,
     )
@@ -362,14 +358,6 @@ async def run_drive(
         record=transcript.sink, observers=[observe] if front is None else [observe, front.view]
     )
     detector = plan.detector
-    if detector is None and backend_name(adapter) in ("sim2d", "mujoco"):
-        from roboglot.perception.color_blob import ColorBlobDetector
-
-        # through `--fov-deg` where it was given, as `roboglot run` builds its detector through it:
-        # this one learns no lens at connect, so the lens it is built with is the one it keeps
-        detector = (
-            ColorBlobDetector(fov_deg=float(args.fov_deg)) if args.fov_deg else ColorBlobDetector()
-        )
     executor = Executor(
         registry=default_registry(),
         transport=adapter,

@@ -1,6 +1,12 @@
 # ADR-0055: A pilot can play a part
 
-**Status:** accepted · **Date:** 2026-10-08 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a task that gives the pilot a part is judged by whether the body can act it out, and the needs of what it plays are not the body's) and the `.glot` spec, which gains `glot: 4` ([ADR-0019](0019-glot-spec-v1.md)) · Keeps [ADR-0035](0035-one-cli-for-all-your-robots.md)'s "You are the brain of" and [ADR-0005](0005-glot-spec-v0.md)'s rule that the executor enforces the contract and the prompt does not · Implemented in `roboglot/agent/prompts.py` (`play_paragraphs`, `play_section`), with changes in the schema, the loop, the CLI, pilot teams, preflight, the MCP server, the log and the OpenAI provider · Documented in [docs/guides/play.md](../guides/play.md)
+**Status:** accepted, amended · **Date:** 2026-10-08 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a task that gives the pilot a part is judged by whether the body can act it out, and the needs of what it plays are not the body's) and the `.glot` spec, which gains `glot: 4` ([ADR-0019](0019-glot-spec-v1.md)) · Keeps [ADR-0035](0035-one-cli-for-all-your-robots.md)'s "You are the brain of" and [ADR-0005](0005-glot-spec-v0.md)'s rule that the executor enforces the contract and the prompt does not · Implemented in `roboglot/agent/prompts.py` (`play_paragraphs`, `play_section`), with changes in the schema, the loop, the CLI, pilot teams, preflight, the MCP server, the log and the OpenAI provider · Documented in [docs/guides/play.md](../guides/play.md)
+
+**Amended 2026-11-15:** `record` and `preflight` are gone with the simulators, so of the three
+commands the decision below gives `--play`, `run` is left, and the coordinator team it refuses
+play for is gone too. The colour detector finds the orange ball alone now, so it reads no person
+at all, and of the detectors only YOLO and a `--host` board's find one. See the CHANGELOG's
+Unreleased entry.
 
 ## Context
 

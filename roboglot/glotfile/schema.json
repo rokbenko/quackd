@@ -359,142 +359,21 @@
     },
     "TeamAllocation": {
       "additionalProperties": false,
-      "description": "Which kind of team this is, and how an auction team decides who kicks.\n\n`auction` is the 0.3 coordinator: deterministic Contract Net, the LLM never runs it, and\nevery knob below is its. `pilots` (0.9) is the other kind entirely: one LLM pilot per\nbody, on wall-clock time, deciding by talking to each other rather than by bidding, so\nthe coordinator never runs and the rest of this block is ignored (ADR-0034).",
+      "description": "Which kind of team this is. One is left: `pilots`, one LLM pilot per body, on wall-clock\ntime, dividing the work by talking to each other (ADR-0034). The coordinator team that\n`auction` named is gone.",
       "properties": {
         "method": {
-          "default": "auction",
-          "enum": [
-            "auction",
-            "pilots"
-          ],
+          "const": "pilots",
+          "default": "pilots",
           "title": "Method",
           "type": "string"
-        },
-        "bid": {
-          "const": "ball_distance",
-          "default": "ball_distance",
-          "title": "Bid",
-          "type": "string"
-        },
-        "tie_break": {
-          "const": "duck_id",
-          "default": "duck_id",
-          "title": "Tie Break",
-          "type": "string"
-        },
-        "hysteresis_pct": {
-          "default": 20.0,
-          "description": "A challenger must bid this much lower to unseat the current claimant.",
-          "maximum": 100,
-          "minimum": 0,
-          "title": "Hysteresis Pct",
-          "type": "number"
-        },
-        "claim_lease_s": {
-          "default": 6.0,
-          "description": "Longest a claim may be held before re-auction (sim clock). A fixed fuse from the moment the claim is granted, not a progress timer.",
-          "exclusiveMinimum": 0,
-          "maximum": 60,
-          "title": "Claim Lease S",
-          "type": "number"
         }
       },
       "title": "TeamAllocation",
       "type": "object"
     },
-    "TeamRole": {
-      "additionalProperties": false,
-      "description": "A role in a heterogeneous team (v1): who may take it is decided by capability.\n\nv2 adds a second half to that: a role may also state what the body has to be able to do\nphysically, in the datasheet's own words. A robot whose datasheet does not say is not\noffered the role, because a robot that cannot say what it carries is not the one to ask\nto carry something.",
-      "properties": {
-        "requires": {
-          "description": "Verbs a robot must provide to bid for this role.",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Requires",
-          "type": "array"
-        },
-        "needs": {
-          "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
-          },
-          "description": "v2: what the body must be, in the datasheet vocabulary (payload_kg, carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody published counts as not met.",
-          "title": "Needs",
-          "type": "object"
-        },
-        "count": {
-          "const": 1,
-          "default": 1,
-          "description": "Robots per role. Only 1 so far.",
-          "title": "Count",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "requires"
-      ],
-      "title": "TeamRole",
-      "type": "object"
-    },
-    "TeamSafety": {
-      "additionalProperties": false,
-      "properties": {
-        "min_separation_m": {
-          "default": 0.4,
-          "maximum": 2.0,
-          "minimum": 0.1,
-          "title": "Min Separation M",
-          "type": "number"
-        },
-        "one_claimant": {
-          "default": true,
-          "description": "At most one duck approaches the ball at a time. Always enforced in v0.3; false is rejected rather than silently ignored.",
-          "title": "One Claimant",
-          "type": "boolean"
-        },
-        "per_duck_heartbeat_s": {
-          "default": 1.0,
-          "exclusiveMinimum": 0,
-          "maximum": 10,
-          "title": "Per Duck Heartbeat S",
-          "type": "number"
-        }
-      },
-      "title": "TeamSafety",
-      "type": "object"
-    },
-    "TeamSearch": {
-      "additionalProperties": false,
-      "properties": {
-        "partition": {
-          "const": "heading",
-          "default": "heading",
-          "title": "Partition",
-          "type": "string"
-        },
-        "restart_s": {
-          "default": 8.0,
-          "description": "Re-scan the sector when nothing was found for this long.",
-          "exclusiveMinimum": 0,
-          "maximum": 120,
-          "title": "Restart S",
-          "type": "number"
-        }
-      },
-      "title": "TeamSearch",
-      "type": "object"
-    },
     "TeamSection": {
       "additionalProperties": false,
-      "description": "Cooperating robots. `allocation.method` says which kind of team this is: `auction`\n(the coordinator enforces this block, simulator only) or `pilots` (one LLM per body, any\nbackend, and only `members` is read).",
+      "description": "Cooperating robots: a team of pilots, one LLM per body, on any backend.",
       "properties": {
         "members": {
           "anyOf": [
@@ -509,44 +388,11 @@
             }
           ],
           "default": 3,
-          "description": "Count (named duck-0..) or a list of unique slugs. 2-4 for an auction (the arena holds four), 2-8 for pilots.",
+          "description": "Count (named duck-0..) or a list of unique slugs, 2 to 8.",
           "title": "Members"
         },
         "allocation": {
           "$ref": "#/$defs/TeamAllocation"
-        },
-        "safety": {
-          "$ref": "#/$defs/TeamSafety"
-        },
-        "search": {
-          "$ref": "#/$defs/TeamSearch"
-        },
-        "roles": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/TeamRole"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "v1: named roles (spotter, kicker) with the verbs each requires.",
-          "title": "Roles"
-        },
-        "frame_hints": {
-          "default": "auto",
-          "description": "v1: share arena-frame target hints between robots. auto = only when every member runs in sim2d (there is no shared frame on hardware).",
-          "enum": [
-            "auto",
-            "on",
-            "off"
-          ],
-          "title": "Frame Hints",
-          "type": "string"
         }
       },
       "title": "TeamSection",
@@ -585,7 +431,7 @@
   "description": "The contract. This is what `schema.json` describes and what the executor enforces.",
   "properties": {
     "glot": {
-      "description": "Spec version: 0 (Roboglot 0.1 to 0.3), 1 (0.4: requires, robots, team.roles, team.frame_hints; 0.9: team.allocation.method: pilots), 2 (0.9: datasheet, team.roles.needs), 3 (0.16: policy) or 4 (0.19: play). Older files parse unchanged.",
+      "description": "Spec version: 0 (Roboglot 0.1 to 0.3), 1 (0.4: requires, robots, team; 0.9: team.allocation.method: pilots), 2 (0.9: datasheet), 3 (0.16: policy) or 4 (0.19: play). Older files parse unchanged, but for the coordinator team's settings.",
       "enum": [
         0,
         1,

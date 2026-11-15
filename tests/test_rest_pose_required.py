@@ -4,8 +4,8 @@ With no pose there is nothing to fold the arm to at the end, and its close keeps
 than let it fall where it stands, so each would leave the arm holding itself up wherever it
 stopped (ADR-0058); the close used to let go of it there, and the arm fell. The refusal comes
 before anything is built or connected, so these patch the arm's builder to fail the test if a
-refused arm is ever built, and check that no run directory was made. The mock and the simulator
-have no arm to drop and still run without a pose, and `doctor` and `rest-pose` never ask."""
+refused arm is ever built, and check that no run directory was made. The mock has no arm to drop
+and still runs without a pose, and `doctor` and `rest-pose` never ask."""
 
 from __future__ import annotations
 
@@ -59,9 +59,7 @@ def never_built(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     [
         ("lerobot:real", True),
         ("lerobot:mock", False),
-        ("lerobot:mujoco", False),
         ("microduck:mock", False),
-        ("microduck:sim2d", False),
         ("no-such-adapter:real", False),
         ("not a spec at all", False),
     ],
@@ -113,7 +111,7 @@ def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_bui
     _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
     _add(tmp_path, "arm-m", "lerobot:mock")
     runs = tmp_path / "runs"
-    common = ["--llm", "fake", "--runs-dir", str(runs), "--no-gif", *_reg(tmp_path)]
+    common = ["--llm", "fake", "--runs-dir", str(runs), *_reg(tmp_path)]
     if how == "registered":
         args = ["run", "lerobot-lookout", "--robot", "arm-r", *common]
     elif how == "bare":
@@ -154,7 +152,6 @@ def test_a_mock_arm_with_no_rest_pose_still_runs(tmp_path: Path) -> None:
             "fake",
             "--runs-dir",
             str(runs),
-            "--no-gif",
             "--no-memory",
         ],
     )
@@ -288,7 +285,6 @@ def test_a_registered_arm_named_in_a_pilot_team_is_built_with_its_pose_and_addre
             "fake",
             "--yes",
             "--no-memory",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path / "runs"),
             *_reg(tmp_path),
@@ -305,7 +301,7 @@ def test_a_spec_in_a_fleet_is_sent_to_a_stored_team_and_a_solo_one_keeps_its_cam
     and recording its pose would change nothing those spellings run: the way out goes on to a
     stored team. A solo spec's way out keeps the cameras it was given, so the command it
     prints registers the arm the run was asked for."""
-    common = ["--llm", "fake", "--no-gif", "--runs-dir", str(tmp_path / "runs"), *_reg(tmp_path)]
+    common = ["--llm", "fake", "--runs-dir", str(tmp_path / "runs"), *_reg(tmp_path)]
     fleet = runner.invoke(
         app, ["run", "team-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
     )
@@ -364,7 +360,6 @@ def test_a_task_that_cannot_run_on_the_arm_says_so_before_the_pose_is_asked_for(
             "arm-r",
             "--llm",
             "fake",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path / "runs"),
             *_reg(tmp_path),
@@ -404,7 +399,6 @@ def test_an_adapter_from_another_release_is_refused_before_it_is_described(
             "arm-r",
             "--llm",
             "fake",
-            "--no-gif",
             *_reg(tmp_path),
         ],
     )

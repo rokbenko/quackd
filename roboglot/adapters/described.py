@@ -39,7 +39,6 @@ from roboglot.verbs.registry import NoParams, Precondition, Verb, VerbContext, V
 BACKENDS: tuple[str, ...] = DESCRIBED_BODIES
 """The bodies, as the factory reads a module's backends: the catalogue's list, which a test
 holds equal to the files in `bodies/`."""
-SIMULATOR_BACKENDS: tuple[str, ...] = ()
 
 VERBS = ("report_state", "stop")
 """All a described body can be asked: say how it is, and stop saying so."""

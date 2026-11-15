@@ -1,16 +1,14 @@
 # Microduck
 
-A 25 cm biped from Pollen Robotics, installed with `roboglot[microduck]`. `microduck:sim2d` is
-the cartoon simulator and the default, `microduck:mujoco` is the same robot in MuJoCo, walking
-on `alpha_walking.onnx`, which Pollen trained before the `velstand.onnx` a stock robot walks on
-now (`roboglot[mujoco]`), and `microduck:jsonrpc` is the real one, over `robotd`, which Roboglot has
-never run on a duck. Every backend's row, and how far it has got, is in
-[adapters/status.md](../status.md). The order to try a real one in is
-[adapters/microduck/hardware-checklist.md](hardware-checklist.md).
+A 25 cm biped from Pollen Robotics, installed with `roboglot[microduck]`. `microduck:mock` is the
+core's scripted body under the duck's manifest, with grey frames and a scripted pose, and
+`microduck:jsonrpc` is the real one, over `robotd`, which Roboglot has never run on a duck. Every
+backend's row, and how far it has got, is in [adapters/status.md](../status.md). The order to try
+a real one in is [adapters/microduck/hardware-checklist.md](hardware-checklist.md).
 
 The rest of this page is the robot's upstreams, read at pinned commits: `robotd`'s API and what
-Roboglot never sends it, what the robot is as numbers, how to get a picture off one, and the model
-and policies the physics simulator runs.
+Roboglot never sends it, what the robot is as numbers, how to get a picture off one, and the twist
+its walking policy is trained to follow.
 
 Its verbs and its transport also drive [Huebot](../huebot/README.md), whose shim is to answer the
 same calls. What differs is one record each, `roboglot_microduck/body.py` and `roboglot_huebot/body.py`
@@ -109,7 +107,7 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 | `robot.sound` | request `{tag, hold?}`; tags `alarm \| greet \| inquire \| peck \| chirp \| coo \| wheee` — no TTS | `quack` and `say` (text → tag) |
 | `robot.subscribe` → `robot.state` | request `{hz?}`, then notifications `{t, move{requested,applied,limited_by}, head[4], policy, safety{fallen,limp,gravity,gain?,picked_up}, loop{hz,missed}, joints, targets, velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}`. `head` is robotd's head slot, smoothed, and taken over by the idle look-around while it runs | state |
 | `robot.state is not pushed until robot.subscribe` | the loop publishes into a bounded broadcast and never waits on a subscriber, so a slow client gets a gap rather than backpressure | why the transport subscribes inside `connect()` |
-| `robot.state.odom` | `{position: [x, y, z], yaw}`: contact odometry, the trunk's pose in the frame the IMU chose at boot, "wherever the robot was when it came up", with no magnetometer and no absolute reference. A robotd from before the estimator sends no key | where the duck is. Roboglot reads it as a pose, `extras.where` and `where=odometry(...)` in the state's line, whose frame lasts one connection and begins again whenever the duck is picked up, falls or rides a fall down, or makes a step longer than its walking policy could in the time between two frames. `x`, `y` and `theta` stay empty, since the team reads those as one arena all its members share. A robotd whose odometry stays at zero through a second of a walk its state showed it taking is read as reporting no odometry at all |
+| `robot.state.odom` | `{position: [x, y, z], yaw}`: contact odometry, the trunk's pose in the frame the IMU chose at boot, "wherever the robot was when it came up", with no magnetometer and no absolute reference. A robotd from before the estimator sends no key | where the duck is. Roboglot reads it as a pose, `extras.where` and `where=odometry(...)` in the state's line, whose frame lasts one connection and begins again whenever the duck is picked up, falls or rides a fall down, or makes a step longer than its walking policy could in the time between two frames. `x`, `y` and `theta` stay empty. A robotd whose odometry stays at zero through a second of a walk its state showed it taking is read as reporting no odometry at all |
 | `robot.state.t_ns` | CLOCK_MONOTONIC at the tick, in nanoseconds, the clock `tof.frame` is stamped on too; zero from a daemon predating it | what odometry is timed by, and `t`, the loop's own seconds, on a robotd that sends no `t_ns` |
 | `robot.subscribe -> SubscribeResult.skills` | the answer carries `{accepted, walk?, stand?, unavailable?, sitstand?, ground_pick?, skills[]}`, what is constant for the process. From `daemon-v0.18.8` `skills` lists the robot's emotions after its skills: "The emotions in `[emotions] dir` come last", and robotd lists the release's own with them | posture: a label that is one of the robot's own skills reads as `unknown`, a skill named `walk` included. The verbs still send the names a stock robot answers to, `kick_left`, `kick_right`, `ground_pick` and `sit_toggle` |
 | `robot.state.policy`: `walk, stand, ground_pick, sit, rise, <skill>, <skill>:unwind, skill` while a network drives, `held, homing, rest, limp_fall, limp_pose` while none does | read in robotd's `control.rs` and `main.rs`. The label names what drove the tick, not where the duck is, but which of the first five it is follows the controller's seat latch: `sit` while it holds the seat, `rise` on the way up, `walk` or `stand` once the duck is up. `held` is also what a duck somebody holds reports. Every label but `rest`, the end of a shutdown, was there at `bc41fb5` too | `jsonrpc` reads `walk` and `stand` as standing and `sit`, matched exactly, as sitting. Every other label, a skill's own name, and a label Roboglot has never read are `unknown`, and so are a duck somebody holds (`safety.picked_up`, read before `safety.fallen`) and a limp one that has not fallen (`safety.limp`), with `extras.posture_reason` saying which. Every verb that walks refuses on `unknown`, `go_to`, `search_scan` and `approach_and` included. `sit`/`stand` read posture first and **refuse** when it is unknown, because upstream has one `sit_toggle` rather than a sit and a stand: firing it unaimed is a coin flip whose losing side sits a standing duck down |
@@ -120,15 +118,15 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 | `robot.mode` / `robot.setMode` | `{mode}`, `walk` or `roller` | (not used yet) |
 | `robot.policies` | request → `{mode, enabled, slots, skills, homed?, sitting?}`: what each policy slot runs, whether the duck has reached its home pose, and whether it is "parked in its seat" | documented, not called: every state frame's label already says `sit` and `homing`, so asking would cost a request per state read for nothing new |
 | `tof.stream` → `tof.frame` | 8×8 depth on tofd's socket | (not used yet) |
-| `the head's ToF sees 45 degrees per axis` | "The sensor's square field of view, degrees per axis", 45 by 45 "per ST's datasheet for both generations", across an 8 by 8 grid of zones | the field the simulators' stand-in for `mapd` reveals from each stop, in a room given with `--room` |
+| `the head's ToF sees 45 degrees per axis` | "The sensor's square field of view, degrees per axis", 45 by 45 "per ST's datasheet for both generations", across an 8 by 8 grid of zones | how wide a stop's look is, which a walk to a place takes with `mapd`'s range (`MapdSource.view`): it does not look again where its last stop already looked the same way |
 | `pad.input` | the raw input stream of the pad `padd` drives from, which `padd` answers itself on its own socket. It is there because "`padd` polls the last known stick value and keeps sending it at 50 Hz": a radio that stops delivering still looks like a live driver to robotd, and only this stream shows the gap. A tap: nothing on the driving path depends on it | documented, not used |
 | `padd drives while a pad is connected` | from the moment a gamepad connects, `padd` sends `robot.move` on every tick its sticks ask for motion, fifty a second, and re-sends an unchanged stop every 100 ms while they do not, so robotd's twist never ages past its deadman while a pad sits idle. What a pad asks for is worked out in `pad-map` since `daemon-v0.17.0`, a crate `netpadd` runs too, which drives robotd from a pad over UDP in `padd`'s place when `[netpad] enabled` says so. robotd keeps one twist and ranks no client above another: `robot.move` sets it whoever sent it, and a continuous intent is "last-writer-wins". The pad's buttons are `robot.do` requests, and a pad nobody has configured runs `sit_toggle` on A, the ground pick on B and the emotions `excited`, `yes` and `no` on Y and the two bumpers. With the pad gone, `padd` sends nothing, and 1 s later asks robotd to sit a duck that is not sitting already, asking again every 100 ms for 5 s more while robotd refuses | nothing: Roboglot sends `padd` nothing and does not try to out-rank it. A connected pad whose sticks nobody touches sends its stop every 100 ms and Roboglot re-sends its twist as often, so the twist the duck walks on flips between the two, and once three state frames after robotd's answer show the pad's twist and not Roboglot's, Roboglot holds the walk back (`robot.state.move.requested`). A stick that asks for motion goes out more often than Roboglot's twist, so it takes the walk over, and Roboglot's verb fails the same way soon after. Roboglot sends no walk to a duck the pad's sit button has sat, nor to one `padd` sat after the pad went |
 | `robotd intent deadman` | "if intents stop arriving, the velocity goes to zero. Stop is not limp". robotd zeroes a twist older than `[safety] deadman_ms`, 500 ms by default | why `move` re-sends: every 100 ms while a verb walks, so the deadman does not fire during a Roboglot walk. It stops the legs once Roboglot's twists stop arriving, a tunnel pulled out or a process killed, and the [hardware checklist](hardware-checklist.md#8-pull-the-tunnel-out-mid-walk-with-the-pad-switched-off) tests it with no pad connected, since a pad's stops would halt the legs first |
 | `robotd clamps no twist` | what limits a tick, `move.limited_by` in `robot.state`, is the deadman, a joint target past the actuator's travel, or one that is not finite, and nothing else. While the walking policy drives, it is handed the twist `robot.move` last asked for, smoothed toward each new value, until the deadman zeroes a stale one, an emotion plays (`robot.state.move.requested`, above), or a client holds the body-pose mode (`robot.pose` with `active` true), in which the controller zeroes it. The controller zeroes its own copy, so `move.requested` and `move.applied` never show that zero. From `daemon-v0.18.6` the smoothing can be held to an acceleration too, `[policy] accel_vx` and its two siblings, and only the roller's forward and back has one by default: "walking never asked for a limit". `padd` sends a zero twist with every pose in its own body-pose mode, which `move.requested` does show, as it shows a pad's stops. And the policy "only follows commands inside the range it was trained on". `[pad_drive]`, what a gamepad's full stick asks for, is "what the *pad* asks for, not a limit on the robot": 0.4 m/s forward and back, 0.3 m/s sideways and 1.0 rad/s of turn since the `v8` velstand, "what that policy follows well on the robot", as it has been from `daemon-v0.16.2`. It was 0.3 m/s forward and back and 1.5 rad/s of turn to `daemon-v0.16.1` | the Microduck's speed caps are Roboglot's own: the manifest's `limits`, 0.3 m/s forward, 0.2 m/s sideways and 1.0 rad/s of turn, the turn the pad asks for, which every verb that walks is held to and the datasheet calls Roboglot's clamp |
-| `RobotState.frames` | where the camera and the ToF sensor are in the trunk frame at the measured head joints, the camera in OpenCV axes (+x right, +y down, +z along the optical axis). On the stream since API v24, first released in `daemon-v0.12.0` | the camera's optical axis is `extras.head_yaw_deg` and `head_pitch_deg`: where the camera points from the trunk, in degrees, positive left and up, the convention the simulators have always published `head_yaw_deg` in, with `extras.head_pose_from` saying `frames.camera`. Each `/frame` also carries the yaw the newest state showed when Roboglot asked for it, the head the picture was taken through. `extras.robotd.state_frames` records whether a robot reports it, since the floor serves robots that do not |
+| `RobotState.frames` | where the camera and the ToF sensor are in the trunk frame at the measured head joints, the camera in OpenCV axes (+x right, +y down, +z along the optical axis). On the stream since API v24, first released in `daemon-v0.12.0` | the camera's optical axis is `extras.head_yaw_deg` and `head_pitch_deg`: where the camera points from the trunk, in degrees, positive left and up, with `extras.head_pose_from` saying `frames.camera`. Each `/frame` also carries the yaw the newest state showed when Roboglot asked for it, the head the picture was taken through. `extras.robotd.state_frames` records whether a robot reports it, since the floor serves robots that do not |
 | `+head_yaw looks left (+y) on alpha` | upstream's own test of its head FK pins this sign, and that "+head_pitch looks DOWN (-z) on alpha", so that an update to the model cannot make the robot nod the wrong way | on a robotd that reports no `frames`, the measured head_yaw joint is `extras.head_yaw_deg`, and `head_pose_from` says `joints`. No pitch comes that way: the camera's pitch is the neck and head pitch joints through the FK together, and robotd's home pose holds both at 0.3491 rad |
 | `robotd's idle look-around` | new in `daemon-v0.16.1`, the first release with it, on API v41. robotd counts the duck still once nothing asks it to move and nobody has steered its head for 2 s, and once it has counted it still for 2 s more it takes the head over: it eases the commanded head back to the middle and glances around there, up to 0.6 rad of yaw and 0.2 rad of pitch, leaning the neck a little, now and then tilting the head, and after 45 s now and then yawning. On a duck that stands still, that is about 4 s after the last `robot.look` or `robot.head`, and the look-around fades in rather than jumping, reaching its full size 1.5 s later. A `robot.look` or `robot.head` from anyone, or a twist, ends the count, and the look-around fades out over the same 1.5 s, handing the head back. By default it runs while the duck walks and not on the roller, and its 2 s and 1.5 s are `[idle] after_s` and `fade_s`, which no call reports | Roboglot holds a gaze against it (`robot.head`, above). On a robotd from API v41 up, `go_to` and `search_scan` wait 1.5 s after centring the head, sending nothing that moves the duck, since a glance under way when the look arrived takes that long to fade out, and on `/frame` the first frame they act on is one taken after the wait (`a frame asked for is taken after it is asked for`, below). There `search_scan` also centres the head again after each turn, since the stop that ends a turn ends the gaze hold too. `daemon-v0.16.0`, on API v39, has no look-around, and neither verb waits there. An `observe` with no gaze held can still see a glancing head: the first of a run, on a duck that stood still before Roboglot connected, and any made once 3 to 4 s have passed since a stop, which ends the hold at most 1 s after the head last went out |
-| `velstand.onnx` | the walk a stock robotd loads at this pin: one network that "walks on a twist and stands still at zero command", so no standing network is loaded by default. That is why `limp_fall`, whose stand-up hands the duck to the standing network, was off from `daemon-v0.13.0` to `daemon-v0.16.1`. It is on from `daemon-v0.16.2`, and with no standing network loaded "the hand-back is to velstand at zero command, which stands still". A robot is seeded with upstream's policy set `v8`, as it has been since `daemon-v0.16.2`, where `daemon-v0.16.1` seeded `v7`, and a board on an older official set is moved up to it on update. `v8` changes no policy but `velstand.onnx`, and upstream says that from it velstand "gets up from a fall smoothly and reliably instead of violently or getting stuck on its back, and yaw commands are tracked" | what a real duck walks on. Nobody has seen either set get a duck up under Roboglot. `microduck:mujoco` still runs `alpha_walking` and `alpha_stand` ([below](#the-ducks-physics-upstreams)) |
+| `velstand.onnx` | the walk a stock robotd loads at this pin: one network that "walks on a twist and stands still at zero command", so no standing network is loaded by default. That is why `limp_fall`, whose stand-up hands the duck to the standing network, was off from `daemon-v0.13.0` to `daemon-v0.16.1`. It is on from `daemon-v0.16.2`, and with no standing network loaded "the hand-back is to velstand at zero command, which stands still". A robot is seeded with upstream's policy set `v8`, as it has been since `daemon-v0.16.2`, where `daemon-v0.16.1` seeded `v7`, and a board on an older official set is moved up to it on update. `v8` changes no policy but `velstand.onnx`, and upstream says that from it velstand "gets up from a fall smoothly and reliably instead of violently or getting stuck on its back, and yaw commands are tracked" | what a real duck walks on. Nobody has seen either set get a duck up under Roboglot |
 | `GET :8080/frame` | `mediad`'s console port answers with one upright PNG per request, encoded from the whole picture on the robot with "No downscale", uncached and at most four at a time. When it cannot hand one out, four being encoded already or no frame from its capture within 3 s, it answers `503` "Camera snapshot unavailable; retry when capture is running." Port 8080 on every address by default, with no authentication. New since `bc41fb5`, where the port served the console page alone, and first released in `daemon-v0.13.0`. From `daemon-v0.17.3` `mediad` counts every PNG it serves as a photo taken, which it adds to the robot's vet book once a minute | the camera this page starts with ([below](#getting-a-picture-off-a-real-microduck)): pulled at a rate of its own, waited for through a `503` at connect, and its first frame's shape taken for the lens. `extras.robotd.mediad_frame` says whether the route has answered. Each frame Roboglot pulls is one more photo in the robot's vet book, which its owner can publish |
 | `a frame asked for is taken after it is asked for` | `mediad` copies a frame out of its capture only for a reader that has asked for one, and "A reader waits for the next frame rather than taking the last one. The demand has to be answered by a capture that happens *after* it". `GET /frame` asks for its picture that way, through `media.frame`, once the request has reached it, so the PNG it answers with was taken after the request went out. The PNG carries no capture time | Roboglot stamps each `/frame` with the moment its request went out, which the picture is no older than. A frame's age runs from then, so one slow to come down the tunnel is as old as it is, and one slower to come than the 2 s Roboglot steers on is not handed out. `go_to` and `search_scan` act first on a frame taken after the head was centred and a glance waited out, and after each turn `search_scan` looks, and `go_to` steers, only on a frame taken once the turn had settled. Each frame also carries the head's yaw from the newest state then (`RobotState.frames`, above). Any other HTTP camera may hand out a picture it took before it was asked, and a WebRTC frame arrives some unknown while after it was taken, so on those the verbs act on the newest frame, as before |
 | `media.frame` | one raw UYVY frame on `mediad`'s local socket: a JSON header `{width, height, format, bytes, captured_at_unix_us, rotate}`, then the bytes. "Deliberately not a `Call`", so it never reaches the WebRTC control datachannel | not called |
@@ -156,9 +154,7 @@ why it does not know. It is on the `maploc-v2` branch, read at `7e0be18` on 2026
 has no `map.*`. So every row is UNVERIFIED. Roboglot speaks to it where it answers beside robotd,
 at `--map-address` or at its own socket beside robotd's, and walks by its map from then on;
 where nothing answers, places are by contact odometry
-([concepts/places.md](../../concepts/places.md)). The simulators' stand-in for it, a map of a
-room given with `--room`, keeps to the same numbers: it looks only at stops, after the stillness
-below, and is lost until two stops agree.
+([concepts/places.md](../../concepts/places.md)).
 
 What Roboglot does with it, beside the rows:
 
@@ -180,8 +176,7 @@ What Roboglot does with it, beside the rows:
   answers at an address you named.
 
 The real duck's body radius is published nowhere, so a walk by `mapd`'s map still goes straight,
-capped as a blind one, and `explore` and `find`, which plan by it, are not offered, until somebody
-cites one.
+capped as a blind one, until somebody cites one.
 
 | Thing | What upstream says | What Roboglot takes from it |
 |---|---|---|
@@ -197,7 +192,7 @@ cites one.
 | `a keyframe after 0.4 s of stillness` | `settle_s` 0.4, still below 0.03 m/s and 0.08 rad/s of odometry. Pollen's post says half a second, the code says 0.4 | how long a walk stands at a stop for the map to take its view |
 | `a correction within 10 cm and 3 degrees` | a match moving a stop further than that "from where odometry put it is not believed" | a correction inside it is believed and re-planned on, a jump beyond it ends a walk |
 | `two stops agree within 25 cm and 4 degrees` | a relocalization is "Accepted only when two consecutive stops agree on the same correction" | a lost duck stops twice before it knows where it is again |
-| `mapd places returns 0.08 to 2.0 m away` | `min_range_m` 0.08 and `max_range_m` 2.0, ranges taken as axial | how far the simulators' stand-in reveals a cell |
+| `mapd places returns 0.08 to 2.0 m away` | `min_range_m` 0.08 and `max_range_m` 2.0, ranges taken as axial | the farthest a return marks a cell, which goes with the ToF's field as how far the map sees from a stop (`MapdSource.view`) |
 
 ## What this robot is, as numbers
 
@@ -342,7 +337,7 @@ $ roboglot run microduck-watch --llm fake --no-memory
 It needs a camera that worked at connect, as `observe` does, whose frames are upright, since it
 turns the head by where a thing is across the picture, and known to be taken after the head settled,
 since a frame from before would steer a look behind. mediad's `/frame` is both, Roboglot stamping each
-frame with when it asked for it, and both simulators draw each frame when it is asked for. mediad's
+frame with when it asked for it, and a mock draws each frame when it is asked for. mediad's
 WebRTC track is turned upright but hands out frames up to 2 s old with no time on them, so on it, as
 on any other `--camera-url`, `watch` is withdrawn when the duck connects, and the note says to use
 `--camera-url http://127.0.0.1:8080/frame`. The head is moved only on a duck that reads as standing
@@ -351,12 +346,12 @@ and one held, partway through a skill or on a label Roboglot has not read may no
 
 | | |
 |---|---|
-| What it asks | `where`, one of `far_left`, `left`, `middle`, `right`, `far_right` and `out_of_view`, the fifths of the picture's width, and `height`, one of `top`, `middle`, `bottom` and `out_of_view`, its thirds. The target goes in the state as a description somebody wrote, and never in the instructions, which are fixed and ask for the thing nearest the middle where more than one fits. `microduck:sim2d` is asked no height, since its world is flat |
+| What it asks | `where`, one of `far_left`, `left`, `middle`, `right`, `far_right` and `out_of_view`, the fifths of the picture's width, and `height`, one of `top`, `middle`, `bottom` and `out_of_view`, its thirds. The target goes in the state as a description somebody wrote, and never in the instructions, which are fixed and ask for the thing nearest the middle where more than one fits |
 | How it reads the answer | by the distribution, and never by OpenAI's `confidence`, which OpenAI do not define and which the record keeps: 0.5 or more on `out_of_view` is not seen, 0.6 or more on the fifths spread no wider than a quarter of the picture is seen at their mean weighted by probability, and anything else holds the head still |
 | How far it turns | 0.6 of the angle the answer puts the thing at through the lens, nothing within 0.08 of the picture's middle, and at most 15° of yaw and 8° of pitch a look. The claim at the start is no look: a head something else turned past the envelope, as a `gaze` to 90° does, is brought back inside it in one move |
 | Where the head may go | 45° either way, 14° up and 11.5° down: as far as `gaze`'s own `left`, `right` and `up` turn it, half the 90° its `bearing_deg` may ask for, and as far down as robotd's own idle glances tilt it, until a duck is measured |
 | The lens | `--fov-deg`, else the camera's own, which on an alpha's `/frame` is the 37.3° and on a beta's the 85.2° assumed from the picture's shape, each named as assumed in the record and the result, else an assumed 40°, named too. A lens more than 1.5 times wider than the one the camera reports is warned about once, before the run starts |
-| How often | one request out at a time, a look at most every 0.5 s on the robot's clock and a request at most every 0.5 s on the wall's, so a simulator stepped faster than real time sends no more either, 60 looks a call, and each answer bounded at 1.5 s |
+| How often | one request out at a time, a look at most every 0.5 s on the robot's clock and a request at most every 0.5 s on the wall's, so a mock, whose clock runs only as fast as something sleeps on it, sends no more either, 60 looks a call, and each answer bounded at 1.5 s |
 
 robotd glances around on its own once nobody has steered the head for a while (`robotd's idle
 look-around`, above), so `watch` claims the head before its first look and waits out the 1.5 s
@@ -401,121 +396,29 @@ time, its tokens and its cost, written whatever ended the look. `run_start.watch
 was held to and through which lens, and the summary's `decision` block gains `watch`, whose bill is
 in that block's totals ([architecture](../../concepts/architecture.md#transcript-format)).
 
-Nothing of this has run on a duck or against OpenAI. In the suite the head closes on the ball on
-both simulators through Roboglot's own client for OpenAI's Decisions API, on a fake of its SDK that
-finds the ball in each JPEG it is handed. How long a look takes over a tunnel, what it costs, the
-head's real reach and settle, and whether robotd takes a look while somebody holds the duck are
-owed to the bench.
+Nothing of this has run on a duck or against OpenAI. The suite runs it on a mock body, and through
+Roboglot's own client for OpenAI's Decisions API on a fake of its SDK. How long a look takes over a
+tunnel, what it costs, the head's real reach and settle, and whether robotd takes a look while
+somebody holds the duck are owed to the bench.
 
-## `explore`: walking to what its map has not seen
+## The walk's training ranges
 
-`explore(minutes=1)` walks the duck to what its own map has not seen and stops so the map can look,
-again and again, until nothing is left that it can reach or its minutes run out, at most 8. It plans
-its way round a room by a map and by the duck's body radius, and only a simulator given `--room`
-has both. A real duck is not offered it yet: on odometry alone it keeps no map, and beside `mapd`
-(UNVERIFIED, above) its radius is published nowhere. It says why beside its body, where the pilot
-judges a task, and a run that requires it is refused in those words
-([ADR-0071](../../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
-
-- **Where it goes.** To the floor the map has seen beside floor it has not, the stretch of it
-  nearest by the way over floor the map has seen, and only a stretch whose opening is as wide as
-  the duck: a gap it cannot pass, it cannot see past either. It walks there by `go_to_place`'s
-  walk, which stops to look before its front reaches floor nobody has seen.
-- **How it looks.** A look is the map's keyframe, 45° across as the head's ToF sees (`TOF_FOV`)
-  and out to the 2 m `mapd` places returns at. The first stop looks all the way round, in views
-  40° apart, the step `search_scan` turns a camera by for a lens that wide, and every later stop
-  only the ways a look would see as many cells nobody has seen as the duck is wide. Each look
-  waits for the map's keyframe, and the head is straightened before the first, wherever another
-  verb left it. The simulators' stand-in takes its keyframe from where the head looks, so there
-  the head turns, 45° either way as `watch` holds it, and the body past that. Whether `mapd`
-  does is UNVERIFIED, so a real duck would turn its body for every view.
-- **What it gives up.** A stretch it walked to and looked at without seeing past, under a sofa or
-  behind glass, is not walked to again in that map while the duck stays connected. A spot it
-  could not get to, lost, stalled or refused on the way, it tries once more after the rest, and
-  then leaves the floor within a body's width of it for the rest of the call: a person in a
-  doorway moves, a pane it walks into does not, and the next `explore` tries it again.
-- **Where it begins.** It marks the place `start` where it begins, so `go_to_place start` brings
-  it back. Its words say so only when it did: its minutes can run out before it knows where it
-  stands, and a duck keeps 100 places at most.
-- **How it ends.** `done`, when nothing is left that it can reach, and `minutes` succeed, saying
-  what it could not get to, or that the nearest floor it has not seen is further than its time
-  left would walk. A stop, the run's budget, a map it cannot find itself in after a whole turn of
-  looks, a twist refused, and a duck held, fallen, sitting or one nothing says is upright fail,
-  each saying so, and every way stops the duck. The run's rules, the battery's among them, are
-  read at every stop.
-
-It asks first (`confirm`): it walks into rooms nobody has looked at, and the ToF faces forward and
-cannot see a step down, so keep it to one flat floor.
-
-## `find`: looking for something by exploring
-
-`find(target="ball", minutes=1)` explores as `explore` does, with a camera frame at every look,
-the stop's own view among them, and every stop looks all the way round, since what it seeks may
-stand on floor the map has already seen from elsewhere, in views no further apart than the
-narrower of a look of the map's and the camera's lens. A frame's way is the body's heading and
-the head's yaw it was taken through, as the body reports it. What the detector takes for the
-target, once in frames that overlap, is faced once the stop's looks are done, the head finishing
-the turn, and seen again in the middle half of the view, or it is passed by, as a frame the
-detector misread is. Seen again, it marks the place named after the target where the duck
-stands, facing it, which is floor it stood on where the thing's own spot is not, and it ends
-there. It marks `start` where it begins, as `explore` does.
-
-- **What it looks for.** A label the detector gives. The simulators' colour detector gives
-  `ball`, `person`, `pet` and `duck`, and a YOLO model `ball`, `person` and `pet`. Any other is
-  refused before anything moves, and so is a run with no detector.
-- **How it ends.** `found` succeeds. Nothing seen anywhere it can reach, its minutes running out,
-  a camera that gives no frame and a detector that cannot read one fail, each saying so, as do the
-  ways `explore` fails, and every way stops the duck. A search that ends before it has faced
-  something it took for the target says so, and from where and which way, rather than that the
-  target was not seen.
-- **What it leaves to the pilot.** It does not walk up to what it found, which `go_to` does, and
-  writes no memory: `remember`, said where the duck stands, keeps a note with where that is.
-
-It is offered where `explore` is and the duck has a camera, and it asks first (`confirm`).
-
-## The duck's physics upstreams
-
-`microduck:mujoco` runs the robot Pollen trains, on the pair of policies Pollen trained before
-`velstand.onnx`. Two upstreams, both pinned, both fetched at run time into `~/.roboglot/cache` and
-checked against a recorded sha256, and neither shipped: the meshes are CC BY-NC-SA 4.0
-([reference/licenses.md](../../reference/licenses.md)). Every name Roboglot relies on lives in
-[`adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py`](../../../adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py), and
-[ADR-0030](../../adr/0030-mujoco-physics-backend.md) is the reasoning.
-
-**What `microduck:mujoco`'s ✅ rests on.** Two `find-and-kick` sweeps over the same ten seeds: one on
-the kinematic stand-in, which CI's `physics` job runs on every push against a software rasteriser,
-and one on the trained gait, which needs upstream's model and so runs nightly, fetched the way a
-first run fetches it. The real duck's other tests — that it walks, turns, stays upright, refuses
-to sit and stands itself up — go with the second. The gait numbers below are still one machine's
-word; the sweeps are not.
+`microduck_rl` is where Pollen Robotics trains the Microduck's walking policy, and Roboglot reads
+one fact there: the velocity commands the walking task trains with, 0.4 m/s forward and back,
+0.3 m/s sideways and 1.0 rad/s of turn. The turn is the Microduck's turning cap, and the forward
+and sideways ranges are the fastest the contact odometry on `jsonrpc` takes the duck to walk,
+0.40 and 0.30 m/s (`CMD_MAX_VX`, `CMD_MAX_VY`): a step longer than those speeds allow between two
+readings is no walk, and the odometry's frame begins again. Roboglot never imports `microduck_rl`,
+which needs Python 3.12 exactly, torch, warp and mjlab, and a CUDA GPU to train. What it reads
+there is in
+[`adapters/microduck/src/roboglot_microduck/rl_upstream_api.py`](../../../adapters/microduck/src/roboglot_microduck/rl_upstream_api.py).
 
 Read: 2026-11-08, pinned at
 [`bae39f5`](https://github.com/pollen-robotics/microduck_rl/tree/bae39f5900b318f7e87fc485c30a31213cfa14eb)
-(`develop`, 2026-10-27) and policies at
-[`6677ec0`](https://huggingface.co/pollen-robotics/microduck-policies/tree/6677ec007142bbaf05123a468f6ae58d13808786)
-(`v7`, 2026-10-05), the set daemon-v0.16.1 seeds a robot with. The first read, on 2026-09-07,
-pinned `microduck_rl` at `2b25a48` and the policies at `088524a`, from before `v5`, and
-`alpha_walking.onnx` and `alpha_stand.onnx` are the same bytes at both, so the simulator walks as
-it did. `develop` had moved on to `273afe0` by the read on 2026-10-09, and every file Roboglot
-fetches from it is the same bytes there, so the model's commit stayed. It moved on 2026-11-08, to
-`bae39f5`, though `robot_walk.xml` and its 38 meshes are the same bytes there too: upstream's
-README now names CC BY-NC-SA 4.0 for the meshes and a new `LICENSE-MODELS.md` puts the XML under
-Apache-2.0, and the notice Roboglot writes beside the files quotes the README of the commit they
-came from. The cache is named after the commit, so the first run after the move fetches the same
-files again. daemon-v0.16.2 and later seed a robot with `v8`, which changes no policy but
-`velstand.onnx`, so the simulator's pair is the same bytes there too.
+(`develop`, 2026-10-27). Source:
+[src/mjlab_microduck/tasks/microduck_velocity_env_cfg.py](https://github.com/pollen-robotics/microduck_rl/blob/bae39f5900b318f7e87fc485c30a31213cfa14eb/src/mjlab_microduck/tasks/microduck_velocity_env_cfg.py).
 
-| What | Status | Why it matters |
+| Thing | Status | What Roboglot does with it |
 |---|---|---|
-| `robot_walk.xml` and its 38 STL meshes | **VERIFIED** | the body: one free joint, 14 hinges, position actuators, an IMU and a head camera |
-| `alpha_walking.onnx`, `alpha_stand.onnx` | **VERIFIED** | `obs[1,61] → actions[1,14]`, the normaliser baked in, Apache-2.0 on the Hub. Not what a stock robot runs: every robotd from daemon-v0.13.0 walks and stands on `velstand.onnx` (the robot's own row above), and keeps this pair in the set "for a board that loads them back by hand" |
-| observation layout, 13-value command, `ctrl = default_pose + action`, 50 Hz | **VERIFIED** | read from `scripts/infer_policy.py`; the same layout appears in the daemon and in Pollen's own browser simulator |
-| projected gravity is the world's `-z` in the trunk frame | **VERIFIED** | get its sign wrong and the duck braces and stands still for every command, silently |
-| the gait floor: `no gait below vx 0.24 m/s or wz 1.2 rad/s; above it about 0.38x the commanded speed` | **UNVERIFIED** | measured here on one machine with the XML's own actuators, re-measured on 2026-09-17 when MuJoCo 3.13 moved it up from 0.22, and again on 2026-10-26 on 3.16 from a stand, where a duck the stand policy had held still did not step at 0.23 at all, and turning in place at 1.0 turned right no more than sixteen degrees in five seconds, from a stand or a reset: the floor belongs to the physics build as much as to the policy. Upstream trains and deploys with a different actuator model, so a real duck may track commands directly |
-| `a positive head_pitch in the command vector tilts the camera down` | **UNVERIFIED** | measured by driving the command and watching the rendered head camera, not read anywhere, so Roboglot negates its own pitch to make looking up positive. `neck_pitch` and `head_roll` are left at zero: Roboglot's gaze has one pitch and no roll, so nothing has exercised them |
-| the four stand-ins, in place of `ball_kick_left.onnx, ball_kick_right.onnx, alpha_ground_pick.onnx, alpha_sitstand.onnx` | **UNVERIFIED** | upstream's episodic policies did nothing from a standing pose when tried and the sit-stand one toppled the model, so these four are Roboglot's stand-ins and say so in `extras.assumptions`. The sit-stand file tried was the one before `v6`, which replaced it with one upstream says "no longer tips over backward when the head moves abruptly while seated", and that one has not been tried |
-
-The head camera is the one place Roboglot deliberately does not do what the file says: upstream's
-`<camera>` quaternion is not MuJoCo's viewing convention, so rendering through it looks
-backwards into the duck's own shell. Roboglot renders from the camera's position along the head
-body's forward axis instead.
+| `vx ±0.4, vy ±0.3, wz ±1.0 (rehearsal keyboard: ±0.3, ±0.3, ±1.5)` | **VERIFIED** | the velocity command ranges the walking task trains with, and the rehearsal script's full-scale keys. The Microduck's 1.0 rad/s turning cap is the turn in them, and the contact odometry's top speed is their forward and sideways ranges |
+| `the policy a robotd walks on is asked for no faster twist than TRAINING_TWIST` | **UNVERIFIED** | these are the velocity task's ranges, and a robotd from `daemon-v0.13.0` walks on `velstand.onnx` from `pollen-robotics/microduck-policies`, which Roboglot has not traced to this config. Roboglot's own caps, 0.3 m/s forward, 0.2 m/s sideways and 1.0 rad/s of turn, stay inside them, and its contact odometry takes the duck's top speed from them |

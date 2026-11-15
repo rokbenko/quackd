@@ -5,16 +5,17 @@ tools works: llama.cpp's `llama-server`, vLLM, Ollama, LM Studio, and any other
 OpenAI-compatible endpoint. No API key is needed.
 
 ```bash
-uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm ollama:qwen3:8b
-uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B
-uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm llamacpp
-uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm lmstudio
-uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm local --base-url http://gpu-box:8000/v1
+uvx --from "roboglot[openai,microduck]" roboglot run hello-world --llm ollama:qwen3:8b --robot microduck:mock
+uvx --from "roboglot[openai,microduck]" roboglot run hello-world --llm vllm:Qwen/Qwen3-8B --robot microduck:mock
+uvx --from "roboglot[openai,microduck]" roboglot run hello-world --llm llamacpp --robot microduck:mock
+uvx --from "roboglot[openai,microduck]" roboglot run hello-world --llm lmstudio --robot microduck:mock
+uvx --from "roboglot[openai,microduck]" roboglot run hello-world --llm local --base-url http://gpu-box:8000/v1 --robot microduck:mock
 ```
 
 The `openai` extra is the `openai` Python package, which is the client for all of these. The
-`microduck` extra is there because a bare `roboglot` carries no robot at all: `find-and-kick`
-means the cartoon duck, and that is the package the duck lives in.
+`microduck` extra is there because a bare `roboglot` carries no robot at all, and
+`microduck:mock` is the Microduck's mock: an in-memory test double, which shows the LLM, the
+gates and the CLI working and not how a robot behaves.
 One flag carries both halves: `--llm ollama:qwen3:8b` is the preset before the first colon and
 the LLM after it, and a tag with a colon of its own survives that, because the split is at the
 first colon only. Leave the LLM half off, as in `--llm llamacpp`, and Roboglot asks the server
@@ -110,7 +111,7 @@ Tool calling has to be switched on in some servers. These are the flags that mat
 ```bash
 ollama pull qwen3:8b          # any LLM whose card says it supports tools
 ollama serve                  # usually already running as a service
-roboglot run find-and-kick --llm ollama:qwen3:8b
+roboglot run hello-world --llm ollama:qwen3:8b --robot microduck:mock
 ```
 
 On a Jetson, install it with the official script rather than a tarball: the script reads
@@ -122,14 +123,14 @@ processor a loaded LLM is on, which is where you find out.
 
 ```bash
 llama-server -m model.gguf --jinja --port 8080     # --jinja enables the tool-calling chat templates
-roboglot run find-and-kick --llm llamacpp
+roboglot run hello-world --llm llamacpp --robot microduck:mock
 ```
 
 **vLLM**
 
 ```bash
 vllm serve Qwen/Qwen3-8B --enable-auto-tool-choice --tool-call-parser hermes
-roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B
+roboglot run hello-world --llm vllm:Qwen/Qwen3-8B --robot microduck:mock
 ```
 
 The `--tool-call-parser` value depends on the LLM family (`hermes` for Qwen and Hermes
@@ -137,9 +138,8 @@ LLMs, `llama3_json` for Llama 3.x, `mistral` for Mistral). vLLM's docs list the 
 
 Qwen3 thinks before it answers unless the request says otherwise, and the switch is a chat
 template argument rather than a sampling parameter. One reported step of `find-and-kick` spent
-150 s and 1717 output tokens on the reasoning before deciding (#12), and the measured pair under
-*Honest notes* below puts the same five decisions at 1,290 output tokens with it on against 263
-with it off. There are two places to turn it off. On a server you run yourself, do it once at serve time:
+150 s and 1717 output tokens on the reasoning before deciding (#12). There are two places to
+turn it off. On a server you run yourself, do it once at serve time:
 
 ```bash
 vllm serve Qwen/Qwen3-8B --enable-auto-tool-choice --tool-call-parser hermes \
@@ -149,7 +149,7 @@ vllm serve Qwen/Qwen3-8B --enable-auto-tool-choice --tool-call-parser hermes \
 On a server somebody else runs, or when you want it per run, send it with the request:
 
 ```bash
-roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B \
+roboglot run hello-world --llm vllm:Qwen/Qwen3-8B --robot microduck:mock \
   --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}'
 ```
 
@@ -168,7 +168,7 @@ without setting it, and the run then thinks out loud as though you had never wri
 **LM Studio**
 
 Developer tab → Start Server (default port 1234), load an LLM that supports tools, then
-`roboglot run find-and-kick --llm lmstudio`.
+`roboglot run hello-world --llm lmstudio --robot microduck:mock`.
 
 ## What to expect from small LLMs
 
@@ -257,155 +257,19 @@ OpenAI's API, and there is no per robot value in the registry. On OpenRouter a s
 `models`, is refused as well, and a `provider` object is merged beside the `require_parameters`
 Roboglot sends rather than replacing it ([openrouter.md](openrouter.md)).
 
-Add physics by asking for both extras and naming the backend:
-
-```bash
-uvx --from "roboglot[openai,mujoco]" roboglot run find-and-kick --llm ollama:qwen3:8b --robot microduck:mujoco
-```
-
-The duck then walks on upstream's own trained policy instead of sliding around a cartoon. It
-also undershoots what it is asked for, which is a harder task for a small LLM and which the
-run states in `report_state` ([ADR-0030](../adr/0030-mujoco-physics-backend.md)).
-
-## The same duck in a browser, with no Roboglot installed
-
-[`web/`](../../web/README.md) is a static page that runs the physics simulator through MuJoCo's
-WebAssembly build and drives it from any OpenAI compatible server, so a local LLM can pilot
-the duck with no key and no `pip install`. It is live at <https://www.roboglot.org/simulator>, and
-that copy asks nothing of you first: same page, same Local option, same base-URL box, no checkout.
-
-If your LLM server is on the same machine, a checkout is still the more reliable route, because
-that live copy is served over https and your server is not. Browsers disagree about that pairing:
-`http://localhost` counts as a trustworthy origin, so some of them let an https page call a
-plaintext server on your own machine and others refuse it as mixed content or want a permission
-first. A copy you serve yourself is plain http at both ends, so there is no such argument to have,
-and it is also what you run when you are changing the page. `web/serve.py` is the server it
-needs, stdlib only, so it is Python but not Roboglot ([web/README.md](../../web/README.md) says
-why a plain `http.server` will not do):
-
-```bash
-python web/serve.py            # then open http://localhost:8000/simulator/
-```
-
-If port 8000 is already a vLLM, which the table above assumes it is, then
-`python web/serve.py 8001` moves the page rather than the LLM server.
-
-Either copy is driven the same way. Pick Local in the page and give it your base URL. Ollama has
-to be told to accept the page (`OLLAMA_ORIGINS=* ollama serve`), and llama.cpp, vLLM and LM
-Studio need the same CORS permission, whichever copy you opened. The keyboard beside the sentence
-box is live at the same time as the LLM, so you can take the duck off a stalled local LLM
-mid-run with `W` and the transcript records the handover.
-What the page has and has not been run against is in [web/README.md](../../web/README.md).
-
 ## Honest notes
 
 - Which local LLM pilots the duck well is an open question we have barely measured. The
   loop was designed so that a weak planner degrades the task, never the robot's balance.
-  Four transcripts are published here and not one of them is ours: two contributors, two
-  servers, two machines nothing in this project has ever run on. They are in
-  [`assets/transcripts/`](../assets/transcripts/), and they are two pairs that answer different
-  questions.
+  If you run a local LLM through Roboglot, please share the transcript in a Discussion: it is
+  the cheapest way to make this section shorter.
 
-  **Qwen 2.5 Coder 14B on LM Studio**, Apple M2 Pro, 2026-09-03, from the contributor who
-  built memory between runs. They are two runs out of more than two:
-  [docs/design/memory.md](../design/memory.md) records the same LLM reading the memory block
-  and never writing to it *across four runs* before `remember` was moved into the numbered
-  strategy. These two were kept, so read them as a selection rather than as the sample:
+- The next two notes are one contributor's, from runs with no robot in them, on a backend
+  Roboglot no longer ships. They are kept for what they say about the pilot's verdicts, and
+  neither can be run again as it was.
 
-  | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
-  |---|---|---|---|---|---|---|---|
-  | [`…seed6-memory-read.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed6-memory-read.jsonl) | 6 | success | 8 | 9 | 29,403 + 244 | 0 | the system prompt carries an earlier run's episode under *What you remember*; the LLM never calls `remember`; two kicks fall short before the third connects |
-  | [`…seed5-remember.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.glot` body now says `remember` in strategy step 5; after the kick the LLM returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
-
-  These two are not a chain, and nothing here should be read as one: they ran against
-  different memory directories (`memory-qwen3` and `memory-qwen2`), seed 5 started from an
-  empty memory block, and the episode seed 6 remembers was written by a run that is not in
-  this repository. Seed 5 shows the write and seed 6 shows the read. Neither shows the
-  other's half.
-
-  Every turn was a native tool call, none needed the JSON text fallback. The simulator
-  clock (`elapsed_s` in `run_end`, which is what the budget counts on `sim2d`) says 14 s and
-  11 s; the transcript timestamps say 33 s and 29 s of wall clock, three to nine seconds per
-  LLM call. What this pair cannot show: anything about another LLM, another machine, or a
-  harder task than the starter task.
-
-  **Qwen3-32B-AWQ on vLLM 0.27.2.dev**, an NVIDIA GB10 that is `aarch64`, 2026-09-14, from
-  the contributor who asked for `--extra-body` (#12). Not a selection this time but a pair:
-  the same build (`739ff84`), the same server, and the same seed on the contributor's word,
-  because no transcript records one. The flag is the difference the pair was built around,
-  and not the only one: the second run's prompt had grown by two lines in the meantime,
-  which is the chain at the end of this section and the reason that run skips `remember`.
-  It is still the only measurement anybody has of what the flag actually stops, because
-  every test in this repository proves the object reaches the SDK call and none of them
-  proves the thinking stops:
-
-  | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
-  |---|---|---|---|---|---|---|---|
-  | [`…seed1-thinking-on.jsonl`](../assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-on.jsonl) | 1 | success | 4 | 8 | 35,416 + 2,049 | 0 | Qwen3 with its factory default: all eight calls deliberate in the open, 599 to 1,446 characters of it in each row's `thinking` field, 165 to 402 output tokens each. One of the eight bought nothing: it asked for `search_scan` before recording a verdict and the gate refused it. It calls `remember`, and the note it saves is what the other run reads |
-  | [`…seed1-thinking-off.jsonl`](../assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-off.jsonl) | 1 | success | 3 | 5 | 21,802 + 263 | 0 | the same run with `--extra-body '{"chat_template_kwargs": {"enable_thinking": false}}'`: not one `thinking` field in the file, 19 to 130 output tokens a call. Its prompt carries the note and the episode the other run wrote. It skips the `quack` the persona asks for |
-
-  **The drop is real and it is smaller than 2,049 → 263.** The two runs did not take the
-  same path, so the totals are not comparable. Five decisions are common to both, and those
-  are the honest comparison:
-
-  | decision | thinking on | thinking off |
-  |---|---|---|
-  | `assess_task` | 373 | 130 |
-  | `search_scan` | 297 | 37 |
-  | `walk_to` | 263 | 40 |
-  | `kick` | 172 | 19 |
-  | `declare_success` | 185 | 37 |
-  | **the same five** | **1,290** | **263** |
-
-  A factor of 4.9, not 7.8. Everything above that is path, and the path difference is not
-  the flag's doing either. The quiet run skipped `remember` because its prompt already held
-  the fact it would have saved, and the duck's *Memory* section tells it to: *"Skip it if
-  the prompt already remembers the same thing."* It skipped `quack`, which strategy step 5
-  and the persona both ask for, and that one is an instruction missed rather than a step
-  saved. The thinking run made the opposite mistake: its first call asked for `search_scan`
-  before recording a feasibility verdict, the gate refused it, and one of its eight calls
-  bought nothing. Neither run followed the contract better than the other.
-
-  **The expensive first call is the verdict, not a warm-up for thinking.** With the flag on
-  it is 130 output tokens and 16.0 s, against 19 to 40 tokens and 1.9 to 3.9 s afterwards.
-  That first call is `assess_task`, whose `reason` argument is a five sentence paragraph and
-  the longest single answer in the quiet run. Every call in that run decodes at 8.1 to 10.2
-  tokens a second, the first one included, so its own length accounts for about 13 of those
-  16 seconds. What is left over is what a first call costs before a server is warm, and the
-  thinking run's first call also runs long past what its own length explains, so the cost
-  sits with the first call rather than with the flag.
-
-  **`reasoning_tokens` reads 0 in both, and the thought is still in the file.** vLLM ran
-  without `--reasoning-parser`, so the server left the thinking inside `content` and billed
-  it as output, which is why output tokens is the column to read. Roboglot then split the
-  `<think>` block out itself before anything else saw the text, so in the transcript it is
-  the `llm` row's `thinking` field: 599 to 1,446 characters of it on every one of the eight
-  calls with the flag off, and not one such field in the other file. That split is a safety
-  property rather than a cosmetic one, because the JSON text fallback reads `turn.text`, and
-  an LLM that weighs a verb inside its reasoning and then rejects it would otherwise have
-  that call parsed out of a discarded thought (`roboglot/agent/providers/local.py`).
-
-  **This pair is also the first published chain.** The thinking run called `remember` and
-  saved *"The ball was found at 43° left, ~0.85 m during initial scan."* That sentence is in
-  the other run's `system_prompt` verbatim, under *What you remember*, next to an episode
-  Roboglot wrote from the same run, and the counters move from 1 note and 2 episodes to 2 and
-  3, so exactly one of each separates them and no run sat in between. A note written by one
-  run, read by the next, both ends in this repository. The Qwen 2.5 pair could not show that
-  and neither could anything else here.
-
-  The simulator clock says 6.7 s for both, because the robot did the same thing at the same
-  speed, and the transcript timestamps say 195.9 s and 29.6 s of wall clock. On a server you
-  run yourself the same result is available once at serve time, with `--reasoning-parser
-  qwen3` beside `--default-chat-template-kwargs '{"enable_thinking": false}'`, and that is
-  the better answer for a box you own. The flag is what you have on one you do not.
-
-  What this pair cannot show: anything about a harder task than the starter task, about an
-  LLM this size on a machine that is not a GB10, or about whether the quiet run's missed
-  `quack` is a pattern or one run's slip. If you run one, please share the transcript in a
-  Discussion or a PR into that folder: it is the cheapest way to make this section shorter.
-
-- **What the same LLM did at the feasibility gate, over 108 runs.** From the same
-  contributor as that pair, on the same GB10, and the largest measurement anybody has made of
+- **What Qwen3-32B-AWQ did at the feasibility gate, over 108 runs.** From the contributor who
+  asked for `--extra-body`, on an NVIDIA GB10, and the largest measurement anybody has made of
   this gate: nine tasks in five classes, three repeats each with thinking on and off, before
   and after the patch in [#24](https://github.com/rokbenko/quackd/pull/24), memory off so that
   each verdict came from the datasheet rather than from yesterday's answer. The transcripts are

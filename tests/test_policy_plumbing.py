@@ -6,10 +6,11 @@ LeRobot adapter turns into the client of the server (`RemoteRunner`) and every o
 refuses, and through `describe(policy=...)`, which lets a task that allows `manipulate` be
 judged before anything connects. The server here is the real one, in-process on loopback,
 serving a scripted policy, as in `tests/test_policy_contract.py`, and the end-to-end run is
-`roboglot run --goal` on `lerobot:mujoco` over the stand-in model with the scripted pilot taught
-to call `manipulate` once.
+`roboglot run --goal` on `lerobot:real`, registered with a rest pose and built over the suite's
+fake arm (`tests/test_lerobot_adapter.py`), with the scripted pilot taught to call `manipulate`
+once.
 
-No number here comes off an arm: the travel is the stand-in's generic calibration, the policy
+No number here comes off an arm: the travel is the fake arm's synthetic calibration, the policy
 is `scripted:hold`, and every figure checked is one the run itself counted.
 """
 
@@ -41,12 +42,21 @@ from roboglot.cli import _policy_counter, app, run_counters
 from roboglot.command import HIDDEN, redacted_url
 from roboglot.glotfile.parser import glot_from_goal
 from roboglot.glotfile.validate import validate_glot
+from roboglot.registry import Registry, RobotEntry
+from roboglot_lerobot.mock import REST
 from roboglot_lerobot.policy import protocol as wire
 from roboglot_lerobot.policy import server as S
 from roboglot_lerobot.policy.client import RemoteRunner, policy_address
-from roboglot_lerobot.verbs import MANIPULATE_S
-from tests.gl import REQUIRE_ENV
-from tests.test_policy_contract import TOKEN, Serving, _arm_on, _as_checkpoint, _serving
+from roboglot_lerobot.verbs import JOINTS, MANIPULATE_S
+from tests.test_lerobot_adapter import _segment_arm, built_arm
+from tests.test_policy_contract import (
+    TOKEN,
+    Serving,
+    _arm_on,
+    _as_checkpoint,
+    _quantiles,
+    _serving,
+)
 
 runner = CliRunner()
 
@@ -58,6 +68,29 @@ sentences: a refused connection where the OS refuses one at once, and on Windows
 a refused loopback connect again for about two seconds, a connect that timed out."""
 KEYS = ("instruction", "seconds", "ended", "chunks", "clips", "hz", "skipped", "starved")
 """What a `manipulate` result carries besides its `timing`: counts and names, never an action."""
+ARM_NAME = "arm"
+"""`lerobot:real`, the one body that takes `--policy-url`, as a registered arm."""
+
+
+def _register_arm(where: str | Path) -> str:
+    """The arm a command names, registered in `where` with the mock's rest pose, at a port nothing
+    here opens: a real arm with no rest pose is refused a run, a dry run and an MCP session before
+    anything connects (ADR-0058), and before its policy server is asked anything."""
+    Registry(where).add_robot(
+        RobotEntry(
+            name=ARM_NAME,
+            spec="lerobot:real",
+            address="COM5",
+            rest_pose={joint: angle for joint, angle in REST.items() if joint != "gripper"},
+        )
+    )
+    return ARM_NAME
+
+
+@pytest.fixture
+def registered_arm(_registry_in_tmp: None) -> str:
+    """The arm, in the registry the suite gives every test of its own."""
+    return _register_arm(os.environ["ROBOGLOT_REGISTRY_DIR"])
 
 
 @pytest.fixture
@@ -108,7 +141,7 @@ def test_an_address_redaction_cannot_read_is_refused_without_being_quoted(
         with pytest.raises(ValueError, match="--policy-url is not a URL") as refused:
             build(typed)
         assert "hunter2" not in str(refused.value)
-    result = _run(tmp_path, "--robot", "lerobot:mujoco", "--policy-url", typed)
+    result = _run(tmp_path, "--robot", "lerobot:real", "--policy-url", typed)
     assert result.exit_code == 1 and "--policy-url is not a URL" in _flat(result.output)
     assert "hunter2" not in result.output
     checked = runner.invoke(app, ["policy", "check", "--policy-url", typed])
@@ -143,7 +176,7 @@ def test_a_policy_puts_pick_and_manipulate_in_the_arms_static_manifest(spec: str
 
 
 def test_the_arm_is_built_with_the_servers_client(held: Serving) -> None:
-    adapter = make_adapter("lerobot:mujoco", policy=PolicyChoice(held.url, TOKEN), seed=0)
+    adapter = make_adapter("lerobot:real", address="COM5", policy=PolicyChoice(held.url, TOKEN))
     loop = adapter.transport.policy_loop  # type: ignore[attr-defined]
     assert isinstance(loop.runner, RemoteRunner) and loop.runner.url == held.url
     # asked what it serves, as `roboglot run` asks it before the header, and named as the
@@ -159,7 +192,7 @@ def test_the_mock_and_every_body_that_runs_no_policy_refuse_one() -> None:
         make_adapter("lerobot:mock", policy=choice)
     with pytest.raises(AdapterError, match="lerobot:mock runs its own scripted policy"):
         describe(parse_robot_spec("lerobot:mock"), policy=choice)
-    for spec in ("microduck:sim2d", "rosbridge:mock"):
+    for spec in ("microduck:mock", "rosbridge:mock"):
         refusals = []
         with pytest.raises(AdapterError) as built:
             make_adapter(spec, policy=choice)
@@ -201,7 +234,7 @@ def _plugin(monkeypatch: pytest.MonkeyPatch, make: Any) -> str:
     """A third party's adapter, installed here as `toybot` with one backend, whose `make()` is
     `make` and whose `describe()` takes no policy either."""
     module = ModuleType("roboglot_toybot")
-    module.BACKENDS = ("sim",)  # type: ignore[attr-defined]
+    module.BACKENDS = ("usb",)  # type: ignore[attr-defined]
     module.make = make  # type: ignore[attr-defined]
 
     def describe(backend: str, robot_id: str | None = None) -> Any:
@@ -211,7 +244,7 @@ def _plugin(monkeypatch: pytest.MonkeyPatch, make: Any) -> str:
     monkeypatch.setitem(sys.modules, "roboglot_toybot", module)
     installed = {**factory._installed(), "toybot": "roboglot_toybot"}
     monkeypatch.setattr(factory, "_installed", lambda: installed)
-    return "toybot:sim"
+    return "toybot:usb"
 
 
 def test_a_third_party_adapter_is_called_as_it_always_was_and_refuses_a_policy(
@@ -226,9 +259,7 @@ def test_a_third_party_adapter_is_called_as_it_always_was_and_refuses_a_policy(
         backend: str,
         *,
         robot_id: str | None = None,
-        seed: int | None = None,
         address: str | None = None,
-        live: bool = False,
         camera_url: Any = None,
         token: str | None = None,
         rest_pose: Any = None,
@@ -238,12 +269,12 @@ def test_a_third_party_adapter_is_called_as_it_always_was_and_refuses_a_policy(
 
     spec = _plugin(monkeypatch, make)
     make_adapter(spec, address="toy://1")
-    assert calls == [{"backend": "sim", "address": "toy://1"}]
+    assert calls == [{"backend": "usb", "address": "toy://1"}]
     describe(parse_robot_spec(spec))
     choice = PolicyChoice("http://127.0.0.1:9875", TOKEN)
-    with pytest.raises(AdapterError, match="toybot:sim runs no policy"):
+    with pytest.raises(AdapterError, match="toybot:usb runs no policy"):
         make_adapter(spec, policy=choice)
-    with pytest.raises(AdapterError, match="toybot:sim runs no policy"):
+    with pytest.raises(AdapterError, match="toybot:usb runs no policy"):
         describe(parse_robot_spec(spec), policy=choice)
     assert len(calls) == 1, "the refusal called make() anyway"
 
@@ -312,12 +343,12 @@ def test_the_prompt_of_a_goal_run_with_a_policy_tells_the_pilot_its_executor() -
     safe = _safe("lerobot:real", policy=choice)
     duck = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
     verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
-    prompt = build_system_prompt(duck, verbs, "real", manifest=describe(robot, policy=choice))
+    prompt = build_system_prompt(duck, verbs, manifest=describe(robot, policy=choice))
     assert "## Your executor" in prompt
     assert "Verbs marked confirm (manipulate) ask a human" in prompt
     plain = glot_from_goal("stack the blocks", _safe("lerobot:real"))
     verbs = [registry.view(n) for n in plain.frontmatter.verbs.allow]
-    assert "## Your executor" not in build_system_prompt(plain, verbs, "real")
+    assert "## Your executor" not in build_system_prompt(plain, verbs)
 
 
 def test_a_pilot_that_sees_the_arms_camera_judges_the_frame_after_each_segment() -> None:
@@ -328,16 +359,16 @@ def test_a_pilot_that_sees_the_arms_camera_judges_the_frame_after_each_segment()
     from roboglot_lerobot import lerobot_manifest
 
     choice = PolicyChoice("http://127.0.0.1:9875", TOKEN)
-    robot = parse_robot_spec("lerobot:mujoco")
+    robot = parse_robot_spec("lerobot:real")
     registry = registry_for(robot, describe(robot, policy=choice))
-    safe = _safe("lerobot:mujoco", policy=choice)
+    safe = _safe("lerobot:real", policy=choice)
     duck = glot_from_goal("put the block in the bowl", safe, confirm=["manipulate"])
     verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
     assert "observe" not in {v.name for v in verbs} and "manipulate" in {v.name for v in verbs}
 
     def executor(camera: bool, sees: bool) -> str:
-        manifest = lerobot_manifest("mujoco", camera=camera)
-        prompt = build_system_prompt(duck, verbs, "mujoco", manifest, adapter="lerobot", sees=sees)
+        manifest = lerobot_manifest("real", camera=camera)
+        prompt = build_system_prompt(duck, verbs, manifest, sees=sees)
         return _flat(prompt.split("## Your executor")[1].split("\n## ")[0])
 
     assert "the fresh frame your next observation brings" in executor(camera=True, sees=True)
@@ -428,15 +459,15 @@ def test_the_counter_line_says_what_the_policy_did_and_nothing_without_one() -> 
     assert "policy 0 segments" in idle and "policy 0" not in idle[3], idle
 
 
-def test_the_simulators_policy_seconds_are_its_own_and_never_split_the_wall() -> None:
-    """On the simulator the arm's clock is the simulator's, which runs as fast as it steps, so
-    a run's policy can have many more of its seconds than the run had of the wall's. The time
-    split takes the wall's, and the counter says whose the others are and the rate on them."""
+def test_a_lockstep_clocks_policy_seconds_are_its_own_and_never_split_the_wall() -> None:
+    """On the mock the arm's clock is a lockstep one, which runs as fast as it steps, so a run's
+    policy can have many more of its seconds than the run had of the wall's. The time split
+    takes the wall's, and the counter says whose the others are and the rate on them."""
     end: dict[str, Any] = {"steps": 2, "llm_calls": 4, "usage": {}, "wall_s": 5.5}
     block = {
         "segments": 2,
         "seconds": 20.5,
-        "clock": "sim",
+        "clock": "mock",
         "wall_s": 2.5,
         "chunks": 41,
         "hz": 10.0,
@@ -446,7 +477,7 @@ def test_the_simulators_policy_seconds_are_its_own_and_never_split_the_wall() ->
     }
     (spent,) = [c for c in run_counters({**end, "policy": block}) if c.startswith("time")]
     assert spent == "time 5.5 s (policy 2.5 s)", spent
-    assert _policy_counter(block) == "policy 2 segments, 41 chunks, 20.5 s sim at 10 Hz"
+    assert _policy_counter(block) == "policy 2 segments, 41 chunks, 20.5 s mock at 10 Hz"
 
 
 async def test_a_segment_through_the_server_is_counted_on_the_arms_record(
@@ -505,28 +536,30 @@ def _run(tmp_path: Path, *argv: str) -> Any:
             ["--robots", "a=lerobot:mock,b=lerobot:mock", "--policy-url", DEAD],
             "--policy-url is one arm's policy server, and a fleet has several bodies",
         ),
-        (["--robot", "microduck:sim2d", "--policy-url", DEAD], "microduck:sim2d runs no policy"),
+        (["--robot", "microduck:mock", "--policy-url", DEAD], "microduck:mock runs no policy"),
         (["--robot", "lerobot:mock", "--policy-url", DEAD], "runs its own scripted policy"),
-        (["--robot", "lerobot:mujoco", "--policy-token", TOKEN], "goes with --policy-url"),
+        (["--robot", ARM_NAME, "--policy-token", TOKEN], "goes with --policy-url"),
         (
-            ["--robot", "lerobot:mujoco", "--policy-url", "http://localhost:9875"],
+            ["--robot", ARM_NAME, "--policy-url", "http://localhost:9875"],
             "write 127.0.0.1",
         ),
         (
-            ["--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKEN],
+            ["--robot", ARM_NAME, "--policy-url", DEAD, "--policy-token", TOKEN],
             UNANSWERED,
         ),
     ],
 )
 def test_a_run_refuses_a_policy_it_cannot_use_before_anything_connects(
-    tmp_path: Path, argv: list[str], needle: str
+    tmp_path: Path, registered_arm: str, argv: list[str], needle: str
 ) -> None:
     result = _run(tmp_path, *argv)
     assert result.exit_code == 1 and needle in _flat(result.output), result.output
     assert not (tmp_path / "runs").exists() or not any((tmp_path / "runs").iterdir())
 
 
-def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(tmp_path: Path) -> None:
+def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(
+    tmp_path: Path, registered_arm: str
+) -> None:
     """`--policy-url` is the only way the arm has `pick` or `manipulate`, so a task that allows
     either, run, validated or served without it, is refused with a line saying how to give it
     one, rather than only sent to `roboglot list-verbs`, which never lists them. Nothing else
@@ -540,31 +573,31 @@ def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(tmp_path:
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
         encoding="utf-8",
     )
-    said = "manipulate on lerobot:mujoco comes from a policy server: start one with roboglot"
+    said = "manipulate on lerobot:real comes from a policy server: start one with roboglot"
     ran = runner.invoke(
         app,
         [
-            *("run", str(duck), "--robot", "lerobot:mujoco", "--llm", "fake", "--no-memory"),
+            *("run", str(duck), "--robot", "lerobot:real", "--llm", "fake", "--no-memory"),
             *("--runs-dir", str(tmp_path / "runs")),
         ],
     )
     out = _flat(ran.output)
     assert ran.exit_code == 1 and "manipulate is not provided by" in out, ran.output
     assert said in out and "give roboglot run its address with --policy-url" in out, out
-    checked = runner.invoke(app, ["validate", str(duck), "--robot", "lerobot:mujoco"])
+    checked = runner.invoke(app, ["validate", str(duck), "--robot", "lerobot:real"])
     assert checked.exit_code == 1 and said in _flat(checked.output), checked.output
     with pytest.raises(SystemExit, match="give roboglot serve-mcp its address with --policy-url"):
-        fleet_from_flags(robot="lerobot:mujoco", glotfile=str(duck))
+        fleet_from_flags(robot=registered_arm, glotfile=str(duck))
     # a verb no policy gives, and a body that runs no policy, are refused as they always were
-    assert policy_hint(["observe"], ["lerobot:mujoco"], "roboglot run") is None
-    assert policy_hint(["manipulate"], ["microduck:sim2d"], "roboglot run") is None
+    assert policy_hint(["observe"], ["lerobot:real"], "roboglot run") is None
+    assert policy_hint(["manipulate"], ["microduck:mock"], "roboglot run") is None
     both = policy_hint(["pick", "manipulate"], ["lerobot:real"], "roboglot run")
     assert both is not None and both.startswith("pick and manipulate on lerobot:real come from")
 
 
-def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path) -> None:
+def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path, registered_arm: str) -> None:
     result = _run(
-        tmp_path, "--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKEN
+        tmp_path, "--robot", registered_arm, "--policy-url", DEAD, "--policy-token", TOKEN
     )
     out = _flat(result.output)
     assert result.exit_code == 1 and UNANSWERED in out, result.output
@@ -572,7 +605,7 @@ def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path) -> None:
 
 
 def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_fleet(
-    held: Serving,
+    held: Serving, registered_arm: str
 ) -> None:
     from roboglot.mcp_server import fleet_from_flags
 
@@ -580,44 +613,31 @@ def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_fleet(
         fleet_from_flags(
             robots="a=lerobot:mock,b=lerobot:mock", policy_url=held.url, policy_token=TOKEN
         )
-    with pytest.raises(AdapterError, match="microduck:sim2d runs no policy"):
-        fleet_from_flags(robot="microduck:sim2d", policy_url=held.url, policy_token=TOKEN)
+    with pytest.raises(AdapterError, match="microduck:mock runs no policy"):
+        fleet_from_flags(robot="microduck:mock", policy_url=held.url, policy_token=TOKEN)
     with pytest.raises(SystemExit, match=UNANSWERED):
-        fleet_from_flags(robot="lerobot:mujoco", policy_url=DEAD, policy_token=TOKEN)
-    plan = fleet_from_flags(robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN)
+        fleet_from_flags(robot=registered_arm, policy_url=DEAD, policy_token=TOKEN)
+    plan = fleet_from_flags(robot=registered_arm, policy_url=held.url, policy_token=TOKEN)
     ((name, manifest),) = plan.manifests.items()
     assert manifest.provides("manipulate") and manifest.provides("pick")
     served = plan.adapters[name].policy_served
     assert served["server"] == held.url and served["policy"] == "scripted:hold"
-    refused = runner.invoke(app, ["serve-mcp", "--robot", "lerobot:mujoco", "--controller", "vla"])
+    refused = runner.invoke(app, ["serve-mcp", "--robot", registered_arm, "--controller", "vla"])
     assert refused.exit_code != 0 and "--controller" in _flat(refused.output)
 
 
 def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, registered_arm: str
 ) -> None:
     """The connect's refusal of a policy that does not fit the arm is raised as the server
     starts, inside the task group the MCP SDK serves in, and used to print as a traceback with
     the sentence buried in it while the client saw only a closed connection. It is said as
     `roboglot run` says it, one sentence and exit 1. The policy here learned from an arm whose
     shoulder_lift went past this one's ceiling, by twice the slack a reading is forgiven."""
-    pytest.importorskip("mujoco")
-    from roboglot_lerobot.real import OUT_OF_RANGE_DEG, joint_ranges
-    from roboglot_lerobot.sim import standin
-    from roboglot_lerobot.sim.model import generic_calibration, load
-    from roboglot_lerobot.verbs import JOINTS
-
-    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
-    travel = joint_ranges(generic_calibration(load(standin.mjcf(), seed=0)))
-    q01, q99 = [], []
-    for motor in JOINTS:
-        low, high = travel[motor]
-        middle, quarter = (low + high) / 2, (high - low) / 4
-        q01.append(middle - quarter)
-        q99.append(high + 2 * OUT_OF_RANGE_DEG if motor == "shoulder_lift" else middle + quarter)
+    arm = built_arm(monkeypatch, _segment_arm())
     serving = _as_checkpoint(
         features={"state": len(JOINTS), "action": len(JOINTS), "images": []},
-        state_quantiles={"q01": q01, "q99": q99},
+        state_quantiles=_quantiles(arm, above="shoulder_lift"),
     )
     try:
         result = runner.invoke(
@@ -625,7 +645,7 @@ def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
             [
                 "serve-mcp",
                 "--robot",
-                "lerobot:mujoco",
+                registered_arm,
                 "--policy-url",
                 serving.url,
                 "--policy-token",
@@ -637,8 +657,6 @@ def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
     finally:
         serving.http.shutdown()
         serving.http.server_close()
-    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
-        pytest.skip("no OpenGL context for offscreen rendering")
     out = _flat(result.output)
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output and "ExceptionGroup" not in result.output, out
@@ -647,7 +665,7 @@ def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
 
 
 def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
-    tmp_path: Path, held: Serving
+    tmp_path: Path, held: Serving, registered_arm: str
 ) -> None:
     """`--accept-other-frame` lets a policy learned on an arm calibrated another way connect,
     and means nothing without a server to accept it of: refused alone on all three commands
@@ -656,28 +674,17 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
         policy_choice(None, accept_other_frame=True)
     assert policy_choice(held.url, TOKEN) is not None
     refusals = [
-        _run(tmp_path, "--robot", "lerobot:mujoco", "--accept-other-frame"),
+        _run(tmp_path, "--robot", "lerobot:real", "--accept-other-frame"),
         runner.invoke(
-            app,
-            [
-                "preflight",
-                "hello-world",
-                "--robot",
-                "lerobot:mujoco",
-                "--llm",
-                "fake",
-                "--accept-other-frame",
-                "--runs-dir",
-                str(tmp_path / "runs"),
-            ],
+            app, ["drive", "--robot", "lerobot:real", "--llm", "fake", "--accept-other-frame"]
         ),
-        runner.invoke(app, ["serve-mcp", "--robot", "lerobot:mujoco", "--accept-other-frame"]),
+        runner.invoke(app, ["serve-mcp", "--robot", "lerobot:real", "--accept-other-frame"]),
     ]
     for refused in refusals:
         assert refused.exit_code != 0, refused.output
         assert "--accept-other-frame goes with --policy-url" in _flat(refused.output)
     choice = PolicyChoice(held.url, TOKEN, accept_other_frame=True)
-    adapter = make_adapter("lerobot:mujoco", policy=choice, seed=0)
+    adapter = make_adapter("lerobot:real", address="COM5", policy=choice)
     client = adapter.transport.policy_loop.runner  # type: ignore[attr-defined]
     assert isinstance(client, RemoteRunner) and client.accept_other_frame
     said = adapter.ask_policy()  # type: ignore[attr-defined]
@@ -685,16 +692,16 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
     from roboglot.mcp_server import fleet_from_flags
 
     plan = fleet_from_flags(
-        robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN, accept_other_frame=True
+        robot=registered_arm, policy_url=held.url, policy_token=TOKEN, accept_other_frame=True
     )
     (served,) = [a.policy_served for a in plan.adapters.values()]
     assert served is not None and served["accept_other_frame"] is True
-    plain = make_adapter("lerobot:mujoco", policy=PolicyChoice(held.url, TOKEN), seed=0)
+    plain = make_adapter("lerobot:real", address="COM5", policy=PolicyChoice(held.url, TOKEN))
     assert plain.ask_policy()["accept_other_frame"] is False  # type: ignore[attr-defined]
 
 
 def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
-    tmp_path: Path, held: Serving
+    tmp_path: Path, held: Serving, registered_arm: str
 ) -> None:
     """`--no-async-chunks` has the arm wait for every chunk of a policy server's, and means
     nothing without a server: refused alone on all three commands that take `--policy-url`, and
@@ -703,22 +710,11 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
     with pytest.raises(ValueError, match="--no-async-chunks goes with --policy-url"):
         policy_choice(None, async_chunks=False)
     refusals = [
-        _run(tmp_path, "--robot", "lerobot:mujoco", "--no-async-chunks"),
+        _run(tmp_path, "--robot", "lerobot:real", "--no-async-chunks"),
         runner.invoke(
-            app,
-            [
-                "preflight",
-                "hello-world",
-                "--robot",
-                "lerobot:mujoco",
-                "--llm",
-                "fake",
-                "--no-async-chunks",
-                "--runs-dir",
-                str(tmp_path / "runs"),
-            ],
+            app, ["drive", "--robot", "lerobot:real", "--llm", "fake", "--no-async-chunks"]
         ),
-        runner.invoke(app, ["serve-mcp", "--robot", "lerobot:mujoco", "--no-async-chunks"]),
+        runner.invoke(app, ["serve-mcp", "--robot", "lerobot:real", "--no-async-chunks"]),
     ]
     for refused in refusals:
         assert refused.exit_code != 0, refused.output
@@ -726,65 +722,37 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
     check = runner.invoke(app, ["policy", "check", "--policy-url", held.url, "--no-async-chunks"])
     assert check.exit_code != 0 and "--no-async-chunks goes with --bench" in _flat(check.output)
     choice = PolicyChoice(held.url, TOKEN, async_chunks=False)
-    adapter = make_adapter("lerobot:mujoco", policy=choice, seed=0)
+    adapter = make_adapter("lerobot:real", address="COM5", policy=choice)
     assert adapter.transport.policy_loop.async_chunks is False  # type: ignore[attr-defined]
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["async_chunks"] is False
     from roboglot.mcp_server import fleet_from_flags
 
     plan = fleet_from_flags(
-        robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN, async_chunks=False
+        robot=registered_arm, policy_url=held.url, policy_token=TOKEN, async_chunks=False
     )
     (served,) = [a.policy_served for a in plan.adapters.values()]
     assert served is not None and served["async_chunks"] is False
-    plain = make_adapter("lerobot:mujoco", policy=PolicyChoice(held.url, TOKEN), seed=0)
+    plain = make_adapter("lerobot:real", address="COM5", policy=PolicyChoice(held.url, TOKEN))
     assert plain.ask_policy()["async_chunks"] is True  # type: ignore[attr-defined]
-
-
-def test_preflight_refuses_a_policy_server_that_is_not_there(tmp_path: Path) -> None:
-    duck = tmp_path / "hold.glot"
-    duck.write_text(
-        "---\nglot: 2\nname: hold\ndescription: hold\nverbs:\n  allow: [report_state, stop]\n"
-        "success: [the arm is still]\n---\nHold still.\n",
-        encoding="utf-8",
-    )
-    result = runner.invoke(
-        app,
-        [
-            "preflight",
-            str(duck),
-            "--robot",
-            "lerobot:mujoco",
-            "--llm",
-            "fake",
-            "--policy-url",
-            DEAD,
-            "--policy-token",
-            TOKEN,
-            "--runs-dir",
-            str(tmp_path / "runs"),
-        ],
-    )
-    assert result.exit_code == 1 and UNANSWERED in _flat(result.output), result.output
 
 
 # ── a run, end to end ───────────────────────────────────────────────────────────────────
 
 
 def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving, registered_arm: str
 ) -> None:
-    """`roboglot run --goal` on the simulator's stand-in, with `--policy-url`: the header names
-    the server and its checkpoint, the goal allows `manipulate` behind a person's yes (`--yes`
-    here), the prompt tells the pilot its executor, the pilot calls `manipulate` once, and the
-    summary's policy block counts the segment the server drove and says the run took a policy
-    learned on another arm's frame (`--accept-other-frame`), which this one never needed."""
-    pytest.importorskip("mujoco")
+    """`roboglot run --goal` on the registered arm over the suite's fake one, with `--policy-url`:
+    the header names the server and its checkpoint, the goal allows `manipulate` behind a
+    person's yes (`--yes` here), the prompt tells the pilot its executor, the pilot calls
+    `manipulate` once, and the summary's policy block counts the segment the server drove and
+    says the run took a policy learned on another arm's frame (`--accept-other-frame`), which
+    this one never needed."""
     from roboglot.agent.providers import fake
     from roboglot.agent.providers.base import ToolCall
-    from roboglot_lerobot.sim import standin
 
-    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
+    built_arm(monkeypatch, _segment_arm())
 
     def strategy(_obs: Any, step: int, _history: Any) -> ToolCall:
         if step == 0:
@@ -795,7 +763,7 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
     result = _run(
         tmp_path,
         "--robot",
-        "lerobot:mujoco",
+        registered_arm,
         "--policy-url",
         held.url,
         "--policy-token",
@@ -803,8 +771,6 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
         "--accept-other-frame",
         "--yes",
     )
-    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
-        pytest.skip("no OpenGL context for offscreen rendering")
     out = _flat(result.output)
     assert result.exit_code == 0, result.output
     assert f"policy {held.url} scripted:hold" in out, "the header names the server and checkpoint"
@@ -815,10 +781,9 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
     assert block["accept_other_frame"] is True
     assert block["segments"] == 1 and block["chunks"] >= 1 and block["ticks"] >= 1
     assert block["loaded"] == [] and block["round_trip_ms"]["count"] >= 1
-    # the simulator's seconds are its own and say so, and its wall seconds fit inside the run's
-    assert block["clock"] == "sim" and 0 <= block["wall_s"] <= summary["wall_s"], block
+    # the arm's seconds are the wall's, so no clock is named, and they fit inside the run's
+    assert "clock" not in block and 0 <= block["wall_s"] <= summary["wall_s"], block
     assert "policy 1 segment" in out, "the counter line under the verdict"
-    assert "s sim at" in out, "the counter names the clock its rate was taken on"
     records = [
         json.loads(line)
         for line in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
@@ -922,7 +887,7 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
     )
     assert client.record()["endpoint"] == "hf:arm" and client.record()["server"] == ENDPOINT_URL
     typed = PolicyChoice("hf:arm", "f" * 64, registry_dir=str(tmp_path))
-    made = make_adapter("lerobot:mujoco", policy=typed, seed=0)
+    made = make_adapter("lerobot:real", address="COM5", policy=typed)
     assert made.transport.policy_loop.runner._token == "f" * 64  # type: ignore[attr-defined]
     assert len(hf_api.sent("/v2/endpoint/rok/arm")) == 2
 
@@ -932,16 +897,18 @@ def test_a_run_reads_hf_name_from_no_registry_a_dotenv_names(
 ) -> None:
     """`roboglot run --policy-url hf:arm` in a project whose `.env` names the registry, and so the
     record, refuses the arm before anything connects: it says so, and asks nobody anything,
-    which the suite's guard on Hugging Face's hosts would otherwise have written down."""
+    which the suite's guard on Hugging Face's hosts would otherwise have written down. The arm
+    is registered there too, with its rest pose: robots may live in such a registry."""
     planted = tmp_path / "planted"
     _recorded(planted)
+    _register_arm(planted)
     project = tmp_path / "project"
     project.mkdir()
     (project / ".env").write_text(f"ROBOGLOT_REGISTRY_DIR={planted.as_posix()}\n", encoding="utf-8")
     monkeypatch.chdir(project)
     monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
     monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
-    result = _run(tmp_path, "--robot", "lerobot:mujoco", "--policy-url", "hf:arm")
+    result = _run(tmp_path, "--robot", ARM_NAME, "--policy-url", "hf:arm")
     said = _flat(result.output)
     assert result.exit_code == 1 and "ROBOGLOT_REGISTRY_DIR comes from a .env file here" in said, (
         said
@@ -964,7 +931,7 @@ def test_hf_name_with_no_record_or_no_account_token_refuses_the_arm_before_it_co
     result = _run(
         tmp_path,
         "--robot",
-        "lerobot:mujoco",
+        _register_arm(tmp_path),
         "--policy-url",
         "hf:arm",
         "--registry-dir",

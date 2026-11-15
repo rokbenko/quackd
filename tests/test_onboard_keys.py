@@ -539,7 +539,6 @@ _PATHS = (
     "met_log",
     "runs",
     "memory",
-    "cache",
     "lock",
 )
 """What the rest of `roboglot onboard` reads off an `OnboardDir`."""
@@ -557,7 +556,7 @@ def test_every_path_is_its_own_inside_the_directory_and_nothing_is_made_until_as
     assert not robot.root.exists()
     robot.ensure()
     robot.ensure()  # and again, over what is there
-    for folder in (robot.root, robot.keys, robot.runs, robot.memory, robot.cache):
+    for folder in (robot.root, robot.keys, robot.runs, robot.memory):
         assert folder.is_dir()
         if os.name != "nt":
             assert _mode(folder) == 0o700, folder

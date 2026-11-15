@@ -2,6 +2,11 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-03 · Extends ADR-0017 (the manifest is the vocabulary; memory is not a verb) · Documented in [docs/memory.md](../guides/memory.md)
 
+**Amended 2026-11-15:** the simulators and the coordinator team are gone, so where the decision
+below names a simulator or `microduck:sim2d`, the body kept apart from a real duck is its mock,
+`microduck:mock`, which has a file of its own, and every team member now runs the loop and may
+remember. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** the key
 is `adapter:backend` for a robot Roboglot knows only as a spec, and the **registered name** for
 one added with `roboglot robot add`. The argument below, that a simulated duck must not inherit a

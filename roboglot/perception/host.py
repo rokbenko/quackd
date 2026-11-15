@@ -55,7 +55,7 @@ from PIL import Image
 
 from roboglot.host import HostClient, HostError, confidence_floor
 from roboglot.perception.base import Detection
-from roboglot.perception.yolo import LABELS, detections_from_boxes
+from roboglot.perception.yolo import detections_from_boxes
 
 logger = logging.getLogger("roboglot.perception")
 
@@ -110,8 +110,6 @@ class HostDetector:
     It is what `observe` and the loop read to say why nothing was seen."""
 
     name = "yolo@host"
-    labels = LABELS
-    """The board's boxes become a local model's labels (`detections_from_boxes`)."""
     blocking = True
     """`detect` waits on the network, so `detect_off_loop` runs it in a worker thread."""
     lens_at_connect = False
@@ -157,7 +155,7 @@ class HostDetector:
 
         `fov_deg` is the field of view somebody gave (`--fov-deg`, the body's own
         `camera_fov_deg`, or the one the board's daemon was started with when its camera is the
-        primary view). With none on a simulator, the simulator's own camera is known and the
+        primary view). With none on a mock, the mock's own camera is known and the
         detections are calibrated. With none on a real body, the lens is a guess, and with one
         the body assumed (`assumed`) it is that one: the detections still point the right way,
         carry `calibrated=False`, and this says so once, as the colour detector does."""

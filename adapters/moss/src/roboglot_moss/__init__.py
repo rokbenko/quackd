@@ -29,7 +29,7 @@ sent as the maker's own pulses, because this body cannot turn slowly in place.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -480,18 +480,6 @@ class MossAdapter:
     def mobility(self) -> str:
         return "wheeled"
 
-    @property
-    def world(self) -> Any:
-        return getattr(self.transport, "world", None)
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
@@ -514,9 +502,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,

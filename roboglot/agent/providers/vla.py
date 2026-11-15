@@ -16,8 +16,7 @@ So this pilot claims none of those either:
   yes from a person really asked is success. A no, an answer no person gave, a prompt that
   raised before anybody answered, nobody to ask, or a segment that did not end ok is failure.
 
-What it reads is the observation's `last_result` and that answer, and nothing else: never the
-simulator's own truth about the table, which `roboglot preflight` judges on its own. It calls no
+What it reads is the observation's `last_result` and that answer, and nothing else. It calls no
 LLM, so it spends no tokens and is priced as the scripted pilot is, at nothing
 (`providers.pricing`).
 """

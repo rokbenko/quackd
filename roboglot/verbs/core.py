@@ -22,7 +22,6 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from roboglot.perception.base import Detection, detect_off_loop, summarize_detections
-from roboglot.space.frontier import views_round
 from roboglot.transport.base import (
     Intent,
     camera_names_of,
@@ -245,8 +244,8 @@ async def _look_ahead(ctx: VerbContext) -> float:
     acted on could still be from mid-glance, or from before the look, with the head where a
     `gaze` had left it. The moment returned is when the wait ended, and on a body that says when
     its frames were taken the first frame acted on is one taken after it. A body that does not
-    say hands out the newest frame, as before, and on the simulators that is drawn when it is
-    asked for.
+    say hands out the newest frame, as before, and on a mock that is drawn when it is asked
+    for.
     """
     await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
     fade = _head_fade_s(ctx)
@@ -554,6 +553,14 @@ def _lens_deg(ctx: VerbContext) -> float | None:
     return None
 
 
+def views_round(width_deg: float) -> tuple[float, int]:
+    """The step between the views of a sensor `width_deg` wide that turns a whole circle in whole
+    steps, each view overlapping the next, and how many views make the circle: one more than fit
+    into it edge to edge. `scan_steps` turns a camera by this rule."""
+    per_turn = math.floor(360.0 / width_deg) + 1
+    return 360.0 / per_turn, per_turn
+
+
 def scan_steps(p: SearchScanParams, lens_deg: float | None) -> tuple[float, int]:
     """The step `search_scan` turns by and how many it takes, for a lens `lens_deg` wide.
 
@@ -785,8 +792,8 @@ def _measures_first(ctx: VerbContext) -> bool:
     branch then turned away from it. On such a camera `go_to` turns no further than each
     measurement calls for, and measures again only on a frame taken once the turn had settled.
 
-    A body that does not say how often its frames come keeps the law as it was: the simulators,
-    which draw a frame when it is asked for, and a stream, which comes faster than a tick."""
+    A body that does not say how often its frames come keeps the law as it was: a mock, which
+    draws a frame when it is asked for, and a stream, which comes faster than a tick."""
     period = frame_period_of(ctx.transport)
     return period is not None and 2 * period > STEER_TURN_S
 

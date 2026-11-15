@@ -34,7 +34,7 @@ BOM and no software Roboglot uses. Every name Roboglot spells lives in
 uv pip install 'roboglot[alohamini]'    # Roboglot's own adapter package, plus pyzmq
 
 # offline
-roboglot run alohamini-lookout --robot alohamini:sim2d --llm fake
+roboglot run alohamini-lookout --robot alohamini:mock --llm fake
 
 # a real robot, once Roboglot's host is running on its Raspberry Pi
 roboglot run alohamini-lookout --robot alohamini:zmq --address tcp://192.168.1.50:5555
@@ -45,7 +45,6 @@ roboglot run alohamini-lookout --robot alohamini:zmq --address tcp://192.168.1.5
 | `--robot` | What it is | Status |
 |---|---|---|
 | `alohamini:mock` | base, lift and arms in memory, with a synthetic camera | ✅ every verb runs offline in the test suite |
-| `alohamini:sim2d` | the cartoon world, which already integrates a holonomic base, plus a lift | ✅ `alohamini-lookout` 10 of 10 seeds |
 | `alohamini:zmq` | the real robot, over the ZeroMQ host it ships | 🧪 wire format VERIFIED at the pin, exercised against a fake host over loopback, **never run on a robot** |
 
 ## Why Roboglot does not import it

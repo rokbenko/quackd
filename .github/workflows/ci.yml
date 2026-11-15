@@ -53,16 +53,12 @@ jobs:
         run: uv run ruff format --check .
       - name: Types
         run: uv run mypy
-      - name: Tests (no network, no API keys; seeded sweeps must be 10 of 10)
+      - name: Tests (no network, no API keys)
         run: uv run pytest -n auto -m "not serial"
-        env:
-          ROBOGLOT_STRICT_SEEDS: "1"
       - name: The tests that hold a margin on a wall clock, on their own
         # Whatever the stage above did: a run that failed there still says how these went.
         if: ${{ !cancelled() }}
         run: uv run pytest -m serial
-        env:
-          ROBOGLOT_STRICT_SEEDS: "1"
       - name: Validate starter tasks
         # bash explicitly: pwsh is the default shell on the Windows runner and does not expand
         # a glob for an external command, so this would hand Roboglot the literal `tasks/*.glot`.
@@ -144,55 +140,6 @@ jobs:
           ! grep -q introspect verbs.txt
           ./cell/bin/roboglot doctor --robot rosarm:mock --json > report.json
 
-  physics:
-    name: physics · mujoco + osmesa
-    runs-on: ubuntu-latest
-    # The files that need the physics extra, with it actually installed: the Microduck's two
-    # and the arm simulator's, which runs on its primitives-only stand-in. Nothing else in the
-    # suite behaves differently when mujoco is present, and `test` already runs it six times.
-    #
-    # Not a matrix. sim3d has no OS branch; what differs between platforms is the GL stack,
-    # and of the three runners only Linux gives a software rasteriser worth testing against.
-    # macOS would exercise its own GPU and the Windows image's software GL cannot make an
-    # offscreen context at all, so both cells would be skip factories.
-    timeout-minutes: 25
-    env:
-      # Software OpenGL, rendering into process memory. A runner has no GPU, no display and
-      # no /dev/dri, and OSMesa is the one mujoco backend that needs none of the three: it
-      # dlopens libOSMesa.so.8. `egl` would ask Mesa to enumerate a device that is not there,
-      # and glfw under xvfb would add an X server to reach the same llvmpipe. mujoco's OSMesa
-      # context is PyOpenGL's, and pyopengl is already one of mujoco's dependencies, so
-      # libosmesa6 is the only thing the image is missing.
-      MUJOCO_GL: osmesa
-      PYOPENGL_PLATFORM: osmesa
-      ROBOGLOT_STRICT_SEEDS: "1"
-      # Without this a runner that cannot make a context turns every rendering test into a
-      # skip and the job goes green having proved nothing, which is the state it exists to end.
-      ROBOGLOT_REQUIRE_GL: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - name: OSMesa, the software rasteriser mujoco renders through
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libosmesa6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-      - name: Sync (dev + the physics extra — mujoco and onnxruntime, about 42 MB cold)
-        run: uv sync --python 3.12 --extra dev --extra mujoco
-      - name: Prove the context exists before blaming the physics
-        # The cheapest failure first, as toddlerbot-contract.yml proves its imports: a missing
-        # system library says so here instead of arriving as a dozen skips further down.
-        run: |
-          uv run python -c "import mujoco; mujoco.Renderer(mujoco.MjModel.from_xml_string('<mujoco/>'), 64, 64); print('osmesa ok')"
-      - name: The physics world, the transport, the renders and the seeded sweep
-        # `not real_duck` is the honest half: those need upstream's CC BY-NC-SA 4.0 meshes, and
-        # this job fetches nothing. The nightly `microduck-assets` job runs them, as a user
-        # would, into a runner that is then destroyed. `not so101_model` is the same half for
-        # the arm: those need SO-ARM100's model, which this job does not fetch either, and the
-        # nightly `lerobot-sim-assets` job runs them the same way.
-        run: uv run pytest tests/test_sim3d.py tests/test_acceptance_mujoco.py tests/test_lerobot_sim.py tests/test_lerobot_sim_parity.py tests/test_preflight.py -m "not real_duck and not so101_model"
-
   ui:
     name: ui · the page roboglot ui serves
     runs-on: ubuntu-latest
@@ -248,7 +195,7 @@ jobs:
         python: ["3.11", "3.12"]
     env:
       # without it a runner where dbus-fast or the bus went missing would skip the D-Bus tests
-      # and go green having proved nothing, as ROBOGLOT_REQUIRE_GL is for the physics job
+      # and go green having proved nothing
       ROBOGLOT_REQUIRE_DBUS: "1"
     steps:
       - uses: actions/checkout@v7
@@ -298,9 +245,8 @@ jobs:
     env:
       # anything the test's own cache cannot answer is refused rather than fetched
       HF_HUB_OFFLINE: "1"
-      ROBOGLOT_STRICT_SEEDS: "1"
       # without it a runner where torch did not install would skip the half that matters and
-      # go green having proved nothing, as ROBOGLOT_REQUIRE_GL is for the physics job
+      # go green having proved nothing
       ROBOGLOT_REQUIRE_TORCH: "1"
       # the same for the arm's bus: no rustypot is a failure here, not a skip
       ROBOGLOT_REQUIRE_LEROBOT_BUS: "1"

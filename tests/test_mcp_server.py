@@ -21,10 +21,10 @@ from PIL import Image
 from roboglot.mcp_server import DuckSession, build_server
 from roboglot.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, TransportError
 from roboglot.transport.mock import MockTransport
-from roboglot.transport.sim2d import Sim2DTransport
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import REST, LeRobotMock
 from roboglot_lerobot.verbs import TOL_DEG
+from roboglot_open_duck.mock import OpenDuckMock
 
 TOOLS = {
     # 0.4: six fleet tools
@@ -46,9 +46,10 @@ TOOLS = {
 async def connected(
     transport: Any = None, **kwargs: Any
 ) -> AsyncIterator[tuple[ClientSession, DuckSession, Any]]:
-    """The server over one robot, driven by a real client. `transport` defaults to the
-    simulator; a test that needs a body which misbehaves on purpose passes its own."""
-    transport = Sim2DTransport(seed=1) if transport is None else transport
+    """The server over one robot, driven by a real client. `transport` defaults to a bare mock,
+    which says nothing of itself and accepts every intent; a test that needs a body which moves,
+    or misbehaves on purpose, passes its own."""
+    transport = MockTransport() if transport is None else transport
     server, session = build_server(transport, heartbeat_period_s=0.05, **kwargs)
     async with create_client_server_memory_streams() as (client_streams, server_streams):
         low = server._lowlevel_server
@@ -80,7 +81,8 @@ def _data(result: Any) -> dict[str, Any]:
 
 
 async def test_tools_and_basic_calls() -> None:
-    async with connected() as (client, session, transport):
+    # a bare body that walks: the Open Duck's mock integrates the twist it is given
+    async with connected(OpenDuckMock()) as (client, session, transport):
         tools = await client.list_tools()
         assert {t.name for t in tools.tools} == TOOLS
         from roboglot.mcp_server import TOOL_NAMES
@@ -108,7 +110,7 @@ async def test_tools_and_basic_calls() -> None:
             )
         )
         assert quack["ok"] and "greet" in quack["summary"]
-        assert transport.world.quacks
+        assert transport.sounds
 
         frame = await client.call_tool("robot_observe", {})
         kinds = [c.type for c in frame.content]
@@ -119,7 +121,7 @@ async def test_tools_and_basic_calls() -> None:
         state = _data(await client.call_tool("robot_run_verb", {"verb": "report_state"}))
         assert state["ok"] and "standing" in state["summary"]
 
-        before = (transport.world.duck.x, transport.world.duck.y)
+        before = (transport.x, transport.y)
         assert (await _cleared(client))["verdict"] == "feasible"
         moved = _data(
             await client.call_tool(
@@ -127,7 +129,7 @@ async def test_tools_and_basic_calls() -> None:
             )
         )
         assert moved["ok"]
-        assert (transport.world.duck.x, transport.world.duck.y) != before
+        assert (transport.x, transport.y) != before
         assert _data(await client.call_tool("robot_run_verb", {"verb": "stop"}))["ok"]
         # quack, observe, report_state, move and stop all go through the executor. The 0.3
         # duck_get_frame bypassed it; robot_observe is a verb like any other.
@@ -190,7 +192,7 @@ async def test_reloading_a_duck_keeps_the_failure_tally() -> None:
 async def test_load_glotfile_refuses_team_ducks() -> None:
     # regression: only serve() guarded team tasks; the load tool adopted them silently
     async with connected() as (client, session, _transport):
-        res = _data(await client.call_tool("robot_load_glotfile", {"path": "team-kick"}))
+        res = _data(await client.call_tool("robot_load_glotfile", {"path": "team-hello"}))
         assert res["ok"] is False and "team" in res["error"]
         assert session.duck is None  # nothing was adopted
 
@@ -204,7 +206,7 @@ async def test_dry_run_sends_nothing() -> None:
             )
         )
         assert res["ok"] and res["data"].get("dry_run") is True
-        assert not transport.world.moving and transport.world.steps == 0
+        assert transport.intents == [], "an intent reached the body"
 
 
 async def test_confirm_gated_verbs_need_yes() -> None:
@@ -382,9 +384,11 @@ async def test_cap_lines_at_the_real_defaults_through_a_long_call(caplog: Any) -
     one call. stderr keeps every line; the result keeps the first few, the last many, and a
     line saying how many are missing so the reader knows to go and look."""
     from roboglot.log import MCP_LOG_MAX_LINES
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     caplog.set_level(logging.INFO, logger="roboglot.mcp")
-    async with connected() as (client, _session, _transport):
+    # a bare mock says nothing of a camera, so it is handed the detector a body with one gets
+    async with connected(detector=ColorBlobDetector()) as (client, _session, _transport):
         await _cleared(client)
         caplog.clear()  # the verdict is not part of the call being measured
         # a full turn looking for something that is not there: sixteen turn-and-stop pairs,
@@ -518,7 +522,7 @@ async def test_nothing_moves_until_the_pilot_has_judged_the_task() -> None:
         assert "robot_assess_task" in refused["summary"]
         assert "moves the body" in refused["summary"]
         assert any("verdict" in line for line in refused["log"])
-        assert transport.world.steps == 0, "nothing was sent"
+        assert transport.intents == [], "nothing was sent"
 
         # looking and speaking are how a pilot works out what it is being asked to do
         assert _data(await client.call_tool("robot_run_verb", {"verb": "report_state"}))["ok"]
@@ -537,7 +541,7 @@ async def test_nothing_moves_until_the_pilot_has_judged_the_task() -> None:
 async def test_a_new_task_file_is_a_new_question_about_the_body() -> None:
     from roboglot.adapters.factory import make_adapter
 
-    async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, session, _t):
+    async with connected(make_adapter("microduck:mock")) as (client, session, _t):
         await _cleared(client)
         loaded = _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))
         assert loaded["ok"]
@@ -570,7 +574,7 @@ async def test_an_uncertain_verdict_waits_for_the_person_in_the_chat() -> None:
             await client.call_tool("robot_run_verb", {"verb": "move", "params": {"vx": 0.1}})
         )
         assert refused["ok"] is False and "uncertain" in refused["summary"]
-        assert transport.world.steps == 0
+        assert transport.intents == []
         assert session.executor.verdict is not None
 
 
@@ -651,11 +655,11 @@ async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> Non
     """The loop's check, on the other surface. `robot_assess_task` matched `needs` against
     every OTHER robot in the fleet to fill in `could`, and recorded a `feasible` against this
     robot's own sheet without ever looking at it, so over MCP a body still moved on a need
-    nobody published. The default body here is a bare simulator with no manifest, which is
+    nobody published. The default body here is a bare mock with no manifest, which is
     structurally why nothing at this level had ever had a datasheet in hand."""
     from roboglot.adapters.factory import make_adapter
 
-    async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, session, adapter):
+    async with connected(make_adapter("microduck:mock")) as (client, session, adapter):
         refused = _data(
             await client.call_tool(
                 "robot_assess_task",
@@ -676,7 +680,7 @@ async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> Non
             await client.call_tool("robot_run_verb", {"verb": "move", "params": {"vx": 0.1}})
         )
         assert moved["ok"] is False and "robot_assess_task" in moved["summary"]
-        assert adapter.transport.world.steps == 0, "nothing was sent"
+        assert adapter.transport.intents == [], "nothing was sent"
 
         # and a need this body's own sheet does meet still clears the gate
         accepted = _data(
@@ -717,7 +721,7 @@ async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> Non
 async def test_the_robot_list_row_carries_the_body_as_data_and_as_a_sentence() -> None:
     from roboglot.adapters.factory import make_adapter
 
-    async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, _s, _t):
+    async with connected(make_adapter("microduck:mock")) as (client, _s, _t):
         row = _data(await client.call_tool("robot_list", {}))["robots"][0]
         assert row["datasheet"]["mass_kg"]["value"] == 0.8
         assert row["datasheet"]["payload_kg"] is None  # nobody published one

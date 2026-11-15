@@ -6,13 +6,13 @@ The verdict is the LLM's own judgement and is recorded as such: what it estimate
 read, and what the task would need, so a transcript shows the reasoning rather than only the
 refusal.
 
-`needs` is the one vocabulary three readers share: the tool schema the LLM fills in, the
-matcher that says which other body could, and a team role that asks for a body that can
-carry. A number is a minimum (a working height is a point inside a band), a word must match,
-and a figure the maker never published is not met: a robot that cannot say what it carries is
-not offered a task that carries something. `missing_needs_in` carries the four exceptions to
-that last rule, and the one place a pilot judging its own body is read more kindly than a
-coordinator judging a stranger's bid, and says why it has each of them.
+`needs` is the one vocabulary two readers share: the tool schema the LLM fills in, and the
+matcher that says which other body could. A number is a minimum (a working height is a point
+inside a band), a word must match, and a figure the maker never published is not met: a robot
+that cannot say what it carries is not offered a task that carries something.
+`missing_needs_in` carries the four exceptions to that last rule, and the one place a pilot
+judging its own body is read more kindly than the matcher judging another's, and says why it
+has each of them.
 """
 
 from __future__ import annotations
@@ -91,7 +91,6 @@ MOVES_THE_BODY = frozenset(
         "perform",
         "drive_to",
         "explore",
-        "find",
         "collect_litter",
         "pick_and_drop",
         "stow_arm",
@@ -167,7 +166,7 @@ NEEDS_WORDS: dict[str, tuple[str, ...]] = {
 
 
 def check_needs(value: Mapping[str, Any]) -> dict[str, float | str]:
-    """What the task demands of a body, validated. Shared by `assess_task` and a team role."""
+    """What the task demands of a body, validated, as a verdict's `needs` takes it."""
     out: dict[str, float | str] = {}
     for key, want in value.items():
         if key in NEEDS_NUMBERS:
@@ -242,11 +241,10 @@ def missing_needs_in(
 ) -> list[str]:
     """One line per unmet need, sorted by key; empty means this body can be asked.
 
-    `facts` is a datasheet dumped to a dict, which is what a team bid carries, so a
-    coordinator can judge a bid from a robot it does not run. A figure nobody published is
-    unmet rather than assumed. The reader and the text the pilot reads have to agree, or a
-    pilot is refused for doing as it was told, so there are four exceptions, each of which
-    would otherwise refuse an honest answer:
+    `facts` is a datasheet dumped to a dict, so a body Roboglot does not run can be judged by
+    its sheet. A figure nobody published is unmet rather than assumed. The reader and the text
+    the pilot reads have to agree, or a pilot is refused for doing as it was told, so there are
+    four exceptions, each of which would otherwise refuse an honest answer:
 
     - A zero asks for nothing, for every number. The tool asks the pilot to fill `needs` in
       even when the verdict is feasible and to give 0 for what the task does not turn on, so
@@ -274,7 +272,7 @@ def missing_needs_in(
     (`own_sheet_objection`) and `solo_hint`'s last sentence about the pilot's own body read it
     that way.
     Everything that names a body to hand a task to reads it strictly, which is the default:
-    `bodies_that_could`, the MCP `could` list, a team role and the coordinator judging a bid.
+    `bodies_that_could` and the MCP `could` list.
     There an unknown is not a yes, and a body that never said how high it works is not the one
     to offer a task at a height. A body with no datasheet is told height is not published, so
     it gets no leniency either way."""
@@ -367,8 +365,8 @@ def own_sheet_objection(
 ) -> str | None:
     """Why a `feasible` verdict cannot stand on this body's own datasheet, or None when it can.
 
-    `missing_needs` held another robot's bid to its sheet at the coordinator, and nothing held
-    a pilot's verdict about its own body to its own sheet, so a `feasible` whose `needs` named
+    `missing_needs` held another body's sheet to a task's needs, and nothing held a pilot's
+    verdict about its own body to its own sheet, so a `feasible` whose `needs` named
     a figure nobody published went straight through and the body moved. The agent loop and the
     MCP session both refuse with this one sentence, so a pilot hears the same words wherever
     it is driving from.

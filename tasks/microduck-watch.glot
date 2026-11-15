@@ -1,13 +1,13 @@
 # Lavender's reflex, on a Microduck: keep the orange ball in view with the head alone, by asking
 # a decision LLM where it is in each camera frame. Nothing in its allowlist moves a leg. It needs
 # --decision-llm openai --decision-frames, which sends each frame it looks at to OpenAI, and
-# without them it stops before anything moves. --robot microduck:mujoco tilts the head as well.
+# without them it stops before anything moves.
 ---
 glot: 1
 name: microduck-watch
 description: Keep the orange ball in view with the head for fifteen seconds, then say where it is.
 author: rok
-robots: microduck:sim2d
+robots: microduck:mock
 requires: [watch, say]
 verbs:
   allow: [watch, gaze, observe, say, quack, report_state, stop]

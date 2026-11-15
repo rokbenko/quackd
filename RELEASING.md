@@ -18,8 +18,7 @@ program relies on without reading Roboglot's source.
 - **The CLI:** its commands and flags, their defaults, its exit codes, the refusals a script
   relies on to stop, and what `--json` prints for a script: each object's keys and the types
   of their values.
-- **Task files:** a `.glot`, which carries its own version in its `glot:` field, and the
-  `.sim.yaml` sidecar beside one.
+- **Task files:** a `.glot`, which carries its own version in its `glot:` field.
 - **What Roboglot keeps between runs:** the robot registry, `robots.json`, and the memory files,
   including whether an older Roboglot can read what a newer one wrote.
 - **The MCP server:** its tools and their parameters.
@@ -39,8 +38,8 @@ program relies on without reading Roboglot's source.
 
 Not part of it: the README and the pages under `docs/`, the images, the examples under
 `docs/examples/`, the wording of a terminal line written for a person to read, the internal
-modules, the tests, `scripts/`, the web demo, `uv.lock` and the repository's CI and Dependabot
-configuration. Any release may change those.
+modules, the tests, `scripts/`, `uv.lock` and the repository's CI and Dependabot configuration.
+Any release may change those.
 
 ## While Roboglot is 0.x
 
@@ -77,17 +76,17 @@ what the release is:
 | `Removed` | something gone from the surface | a minor |
 | `Fixed` | shipped behaviour brought back to what the docs or Roboglot's own output said it would do, a refusal of what never did, catalogue data that changes no default, a dependency or packaging fix nobody has to act on, and the safety fixes below | a patch |
 | `Security` | a vulnerability closed | a patch |
-| `Documentation` | the README, the pages under `docs/`, the examples, the images, the web demo, a CI job or nightly that stands on its own, and a refresh of `uv.lock` or of the tooling that makes one | no bump of its own |
+| `Documentation` | the README, the pages under `docs/`, the examples, the images, a CI job or nightly that stands on its own, and a refresh of `uv.lock` or of the tooling that makes one | no bump of its own |
 | `Known limitations` | what the release does not do, written as it ships | no bump of its own |
 
 So `[Unreleased]` with an entry under any of the first four is a minor, and with only `Fixed`,
 `Security` and `Documentation` it is a patch. An entry about the docs, the examples or the
 images goes under `Documentation` whatever it does to them, a new page, a corrected sentence or
-a deleted picture, so it never raises the bump. That is where the bench steps, the two grasp
-sidecars and the corrected pages written after 0.16.0 are filed. A test, a CI job or a script is
-said in the entry of the change it checks. One that stands on its own, such as a new nightly
-job, goes under `Documentation` too, since what it changes is the evidence the pages cite and
-not what Roboglot does. So does a refresh of `uv.lock`, a Dependabot pull request among them, and
+a deleted picture, so it never raises the bump. That is where the bench steps and the corrected
+pages written after 0.16.0 are filed. A test, a CI job or a script is said in the entry of the
+change it checks. One that stands on its own, such as a new nightly job, goes under
+`Documentation` too, since what it changes is the evidence the pages cite and not what
+Roboglot does. So does a refresh of `uv.lock`, a Dependabot pull request among them, and
 a change to the tooling that makes one. The lock is what a checkout and CI install, and a
 wheel's requirements are its `pyproject.toml`'s, so a refresh changes no requirement a user
 installs against. A floor raised in a `pyproject.toml` does, and is filed by what it asks of a
@@ -144,8 +143,8 @@ minor is the one trade these rules will not make.
 4. **The registry and the records carry a version that an older file is read by.**
    `robots.json` carries `"version": 1` and has never moved it, while Roboglot since 0.15.0 can
    write a registry that older releases cannot read: one holding a robot stored with a host is
-   unreadable to 0.12 to 0.14, and one holding a `lerobot:mujoco` twin to 0.14 and earlier.
-   `summary.json` carries the version of Roboglot that wrote it, and the memory files carry none.
+   unreadable to 0.12 to 0.14. `summary.json` carries the version of Roboglot that wrote it, and
+   the memory files carry none.
 
 After 1.0.0 it is Semantic Versioning proper: a major for anything that breaks the surface, a
 minor for additions and deprecations that break nothing, and a patch for fixes. The safety
@@ -175,8 +174,8 @@ exception still holds.
   shipped.
 - **A fix found while a release is still local goes into that release.** Nothing is public
   until the tag is pushed, so the release commit is written again on top of the fix. 0.15.0's
-  release commit was written on 2026-09-27 and held for the fixes the first real pilot on the
-  arm's simulator found, and 0.15.0 shipped with them on 2026-09-29.
+  release commit was written on 2026-09-27 and held for fixes found after it, and 0.15.0 shipped
+  with them on 2026-09-29.
 - **A published version is never uploaded again.** PyPI refuses a file name it has had once,
   even after the file is deleted. A broken release is yanked on PyPI, which leaves it
   installable by an exact pin and hides it from every other resolve, and the next patch fixes
@@ -258,10 +257,10 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    uv run --no-sync python -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'
    uv run --no-sync mypy
    UV_PROJECT_ENVIRONMENT=.venv312 uv run --no-sync mypy
-   ROBOGLOT_STRICT_SEEDS=1 uv run --no-sync pytest -n auto -m "not serial"
-   ROBOGLOT_STRICT_SEEDS=1 uv run --no-sync pytest -m serial
-   ROBOGLOT_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -n auto -m "not serial"
-   ROBOGLOT_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -m serial
+   uv run --no-sync pytest -n auto -m "not serial"
+   uv run --no-sync pytest -m serial
+   GITHUB_ACTIONS=true uv run --no-sync pytest -n auto -m "not serial"
+   GITHUB_ACTIONS=true uv run --no-sync pytest -m serial
    uv run --no-sync roboglot validate tasks/*.glot
    ```
 
@@ -281,7 +280,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    gh run watch -R rokbenko/quackd
    ```
 
-   Every job of `main`'s run has to pass: the six test jobs, `packaging`, `physics` and
+   Every job of `main`'s run has to pass: the six test jobs, `packaging`, `ui`, `onboard` and
    `policy`. A red one stops the release here, with nothing tagged.
 
    **A patch cut from the last tag** skips those four commands, because `main` carries work the
@@ -374,9 +373,9 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
 
     ```bash
     export UV_CACHE_DIR="$(mktemp -d)" ROBOGLOT_MEMORY_DIR="$(mktemp -d)"
-    uvx --refresh --from "roboglot[microduck]==$v" roboglot run find-and-kick --robot microduck:sim2d --llm fake
-    uvx --refresh --from "roboglot[microduck]==$v" roboglot run find-and-kick --robot microduck:sim2d --llm fake
-    uvx --refresh --from "roboglot==$v" roboglot run find-and-kick
+    uvx --refresh --from "roboglot[microduck]==$v" roboglot run hello-world --robot microduck:mock --llm fake
+    uvx --refresh --from "roboglot[microduck]==$v" roboglot run hello-world --robot microduck:mock --llm fake
+    uvx --refresh --from "roboglot==$v" roboglot run hello-world
     ```
 
     The first run's header says `0 notes, 0 earlier runs` on its `memory` line, and the
@@ -386,15 +385,12 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     nothing. A release that touched the arm's policy path also runs
     `uvx --refresh --from "roboglot[lerobot]==$v" roboglot policy check --policy scripted:sweep`,
     whose `policy` line names the new version.
-16. **Dispatch the nightlies on `main`** when the release touched what they cover:
-    `lerobot-sim-assets.yml` for the arm's simulator and the model it fetches,
-    `microduck-assets.yml` for the duck's physics model and its trained gait,
-    `toddlerbot-contract.yml` for the ToddlerBot's daemon against upstream, and
-    `upstream-drift.yml` when a release moved a pin or a `READ_ON`, so the issue it keeps for
-    that upstream closes the same day rather than the next night.
+16. **Dispatch the drift job on `main`** when the release moved a pin or a `READ_ON`, so the
+    issue `upstream-drift.yml` keeps for that upstream closes the same day rather than the next
+    night.
 
     ```bash
-    gh workflow run lerobot-sim-assets.yml --ref main -R rokbenko/quackd
+    gh workflow run upstream-drift.yml --ref main -R rokbenko/quackd
     ```
 
 17. **The About text and the topics** change only for a minor or a major whose positioning

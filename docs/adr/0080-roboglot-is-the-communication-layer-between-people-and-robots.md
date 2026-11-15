@@ -2,6 +2,11 @@
 
 **Status:** proposed · **Date:** 2026-11-14 · Supersedes [ADR-0002](0002-name.md) and the one-liner in [ADR-0035](0035-one-cli-for-all-your-robots.md), whose other decisions stand · Documented in the README and the [FAQ](../faq.md#the-name)
 
+**Amended 2026-11-15:** the browser simulator is gone from this repository with every other
+simulator, so it is no longer one of the ways in the Context counts, and "a duck in the
+simulator" and the simulator's domain below name nothing Roboglot has. See the CHANGELOG's
+Unreleased entry.
+
 ## Context
 
 [ADR-0035](0035-one-cli-for-all-your-robots.md) set the one-liner *One CLI for all your robots*

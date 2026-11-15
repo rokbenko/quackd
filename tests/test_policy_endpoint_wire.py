@@ -1166,7 +1166,8 @@ def test_a_run_reaches_an_endpoint_by_its_name_and_the_record_names_both(
     assert _cli(*UP, "--yes").exit_code == 0
     record = _store().get("arm")
     assert record is not None
-    adapter = make_adapter("lerobot:mujoco", policy=PolicyChoice("hf:arm"), seed=0)
+    # the real arm, the one body that runs a policy, built and never connected: no port opens
+    adapter = make_adapter("lerobot:real", address="COM9", policy=PolicyChoice("hf:arm"))
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["server"] == record.url and said["endpoint"] == "hf:arm"
     assert said["policy"] == "scripted:sweep"

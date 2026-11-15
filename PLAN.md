@@ -26,8 +26,8 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   Roboglot deliberately does not guess it, because a wrong fall detector fails as a confident
   "not fallen".
 - ⏸ **A Microduck.** Run `--robot microduck:jsonrpc` against a real `robotd` and work through
-  [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), whose step 0
-  now rehearses the whole pilot in the physics simulator first. The path is built and audited:
+  [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md).
+  The path is built and audited:
   read at daemon-v0.16.1 on API v41, a `robotd` on any version from API v23 up served with a
   warning when it is not v41 (the handshake used to refuse every release from daemon-v0.12.0 on),
   posture failing closed on every label but `walk`, `stand` and `sit`, state actually subscribed
@@ -40,7 +40,7 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   is held to are starting values to measure on the duck. 0.21.0's `stand_up` waits up to ten
   seconds for the duck to stand, and how long the policy takes to get a real duck up is the number
   to measure against it. Re-read `robotd` at the release the duck arrives on before its first walk.
-  0.27.0's `roboglot drive` has driven only the mock and `microduck:sim2d`: on the duck, the
+  0.27.0's `roboglot drive` has never driven a real duck: on one, the
   milliseconds from a typed line to `robotd` taking its twist, an empty Enter stopping a walk,
   and how far the preset walks and the 45 degree turn really carry it are the numbers to bring
   back. 0.28.0 reads the duck's contact odometry as where it is, so `mark_place` and `go_to_place`
@@ -95,9 +95,9 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   missed, the `--by-hand` refusal over a joint past its travel, the paced `move_joints` and the
   connect retries have run only against a fake arm, `lerobot:mock` and the test suite, and what
   0.15.0 changes in `lerobot:real`, the follower that keeps torque on a disconnect Roboglot did
-  not ask for among it, only against a fake arm or the simulator. What 0.16.0 changes there has
-  run only against those too, and most of it is the policy segment the learned-policy item below
-  takes to the arm. So has what 0.16.1 changes there: the connect refusing a policy server whose
+  not ask for among it, has never met the arm either. What 0.16.0 changes there has not met it
+  either, and most of it is the policy segment the learned-policy item below takes to the arm.
+  Nor has what 0.16.1 changes there: the connect refusing a policy server whose
   declared latency no chunk can carry, the tick a segment asks for its next chunk on, the tick
   its time runs out on, and the travel row of `roboglot doctor`. The seven bench steps that would
   settle 0.14.0's, in order, are under *Known limitations* in [CHANGELOG.md](CHANGELOG.md) for
@@ -133,51 +133,25 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   still builds. In 0.34.0 it builds over LeRobot 0.7.0's bus and reads its encoder ticks, its heat
   limit and its motor table from its type, and none of that has met the arm either: the item on
   LeRobot 0.7.0 below says what it owes.
-- ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
-  maker's model, and what it assumes about the arm only the arm can settle
-  ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a
-  bench step of its own, and none of them replaces the seven above:
-  - joint signs and zero offsets: nudge each real joint by a small positive angle and check that
-    it turns the same way in the simulator, and read the calibrated value at each mechanical stop
-    against the model's stop, which also says whether a recorded fold can be represented at all
-    (`JOINT_SIGN`, `JOINT_ZERO`). `arm-01`'s recorded fold puts the model's fingers into the
-    table and its lower arm into its shoulder, and the simulator starts it settled clear of both,
-    and parks it where it settles at the edge of `shoulder_lift`'s travel, with a note, so this
-    step also says whether the model's frame or the table's height is what is wrong;
-  - the rest move pressing the gripper into the table: in the model, the rest goal the
-    calibration clips (`shoulder_lift` clipped to its travel, the elbow and the wrist held where
-    they were recorded) puts the gripper below the table top. Before trusting a rest move on the
-    arm, watch one from a raised pose with a hand on the switch and check that the gripper stops
-    above the bench rather than pressing into it, beside the step above that settles whether the
-    model's frame is right at all;
-  - the gripper on a real pen: what it reads against the band that infers holding, which the
-    simulator's pen cannot say;
-  - the front and wrist cameras' placement and field of view, measured, to replace the
-    simulator's default mounts (`WRIST_CAMERA_POSE`);
-  - the policy loop's achieved rate on the real bus, which the next item measures and the
-    simulator's lockstep clock never can.
-
-  Until then the simulator's ✅ says it does what it says, not that it moves like an arm, and it
-  never raises `lerobot:real`'s row.
 - ⬜ **A learned policy on the real SO-101.** `manipulate`, `pick` through a policy server and
-  `--controller vla` have run against a fake arm and on the simulator, and nowhere else
+  `--controller vla` have run against stand-ins for the arm, and nowhere else
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md)). Nobody has handed the arm to a
   policy through Roboglot. Besides the tiny random ACT and X-VLA CI builds, one trained ACT from
-  the Hub has been served, on the laptop's CPU on 2026-09-28, and drove the arm's twin on the
-  simulator. SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05, pi0,
-  GR00T N1.7 and a trained X-VLA have not run, on a GPU or anywhere else
+  the Hub has been served, on the laptop's CPU on 2026-09-28. SmolVLA took minutes a chunk on
+  that CPU and wants the rented GPU, and pi05, pi0, GR00T N1.7 and a trained X-VLA have not run,
+  on a GPU or anywhere else
   ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
   [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md) is the order: a run
   with `scripted:hold`, then `scripted:sweep`, then a checkpoint checked with
-  `roboglot policy check --bench`, each rehearsed on the arm's twin first, with a hand on the
-  switch. Then the number nothing else can give: how fast the policy loop runs on the real bus
-  with a server inferring on the same laptop, where torch's threads and the bus's worker share
-  one CPU. It is the `hz`, `late_ticks`, `starved_ticks` and `round_trip_ms` of the `policy`
-  block in that run's `summary.json`, with `extras.timing` beside it, and until somebody sends
-  it back the rate a policy is served at is a claim about its training data and not about this
-  arm. Since 0.25.0 that block's `async_chunks` says which way the run played its chunks, and
-  the checkpoint served with no `--latency-s`, run once as it is and once with
-  `--no-async-chunks`, says what 0.25.0's change is worth on the arm.
+  `roboglot policy check --bench`, with a hand on the switch. Then the number nothing else can
+  give: how fast the policy loop runs on the real bus with a server inferring on the same
+  laptop, where torch's threads and the bus's worker share one CPU. It is the `hz`,
+  `late_ticks`, `starved_ticks` and `round_trip_ms` of the `policy` block in that run's
+  `summary.json`, with `extras.timing` beside it, and until somebody sends it back the rate a
+  policy is served at is a claim about its training data and not about this arm. Since 0.25.0
+  that block's `async_chunks` says which way the run played its chunks, and the checkpoint
+  served with no `--latency-s`, run once as it is and once with `--no-async-chunks`, says what
+  0.25.0's change is worth on the arm.
 - ⬜ **A first real Hugging Face Endpoint.** `roboglot policy endpoint` and `--policy-url hf:NAME`
   have run against the test suite's stand-ins on 127.0.0.1 alone, and no endpoint has been
   created or paid for ([ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-roboglot-starts.md)).
@@ -195,8 +169,8 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   account of yours then settles whether the API keeps one account's endpoints from another's
   token, which the refusal of a planted record rests on.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
-  with neither a lookout task nor a checklist. A coordinator team across two machines needs a
-  distributed clock first; a pilot team needs none and has simply never been tried across two.
+  with neither a lookout task nor a checklist. A team needs no distributed clock to span two
+  machines, and has simply never been tried on two.
 - ⬜ **Robot Passport on two Jetsons with Bluetooth.** 0.29.0's `roboglot onboard` has run on the
   `sim` board alone, two simulated robots on one laptop, and nothing of it on a Jetson, over a
   real Bluetooth radio or between two machines
@@ -284,14 +258,12 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   Linux machine with an NVIDIA GPU, about 32 GB of it in BF16 by Black Forest Labs' own report,
   LeRobot 0.7.0 or later, the first release with it, and a NATTEN built for that machine's torch
   and CUDA, which had no wheel for the torch 2.15 LeRobot 0.7.0 installs. The spike is to serve
-  the official `flux-3-action-so101` there behind `ssh -L`, and it has to show three things
+  the official `flux-3-action-so101` there behind `ssh -L`, and it has to show two things
   before Roboglot claims the policy: that `roboglot policy check --bench` holds the checkpoint's rate
-  through the tunnel, that its delta actions stay anchored when Roboglot clips a goal, and that the
-  checkpoint at a pinned revision drives the simulator end to end, on the generic arm or with
-  the frame check accepted. Whatever it shows, passed or not, gets written down, and only a pass
-  gives it refs of its own and a place in the server's list of policy types. Until then its
-  page says what running it takes and that nobody has
-  ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
+  through the tunnel, and that its delta actions stay anchored when Roboglot clips a goal.
+  Whatever it shows, passed or not, gets written down, and only a pass gives it refs of its own
+  and a place in the server's list of policy types. Until then its page says what running it
+  takes and that nobody has ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
 - ⏸ **Pi0-FAST is refused, and stays refused while LeRobot loads its tokenizer's own code.**
   Its policy loads the FAST action tokenizer with `trust_remote_code=True`, hard-wired in its
   constructor at LeRobot 0.7.0, so serving one would run the Python its tokenizer's repository
@@ -309,13 +281,9 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   choice, and the stepper is offered it and never takes it, in `--decision-mode on` as in
   shadow, because under `--yes` nobody is asked at its confirm gate
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md)). Every turn that offered one
-  writes a `decision_shadow` record beside the pilot LLM's choice. The only ones outside the test
-  suite come from runs by hand on the arm's twin, on 2026-09-28 and on the released 0.16.0 on
-  2026-09-29, with the trained ACT served, `gpt-6-sol` piloting and a stub decision LLM loaded
-  as a plugin. A stub that always picks `manipulate` chose it on every turn that offered it and
-  ended on `gate: shadow_only` each time, with the pilot LLM taking the turn. No real decision LLM
-  has run beside a policy, so those records hold no agreement rate. Promoting it needs one
-  measured from real runs, and a decision of its own, not a floor.
+  writes a `decision_shadow` record beside the pilot LLM's choice. No real decision LLM has run
+  beside a policy, so no record holds an agreement rate yet. Promoting it needs one measured from
+  real runs, and a decision of its own, not a floor.
 - ⬜ **No `cost_usd` Roboglot reports has been checked against an invoice.** Every rate in
   `roboglot/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, every one of
   them again on 2026-11-14, and a rate read by hand is wrong from the day the vendor edits the page
@@ -359,22 +327,10 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   passed 6 of 6, and the allowlist width is the measured cause. The description it read has
   been corrected rather than the allowlist narrowed, and nobody here runs that LLM, so the
   six cells want running again on a build that carries the change (#25).
-- ⏸ **A team role can ask for a body, and no coordinator team can have two different ones.**
-  `team.roles.<role>.needs` validates, and the coordinator matches it against the datasheet a
-  bid carries, tested at that level. But `team/runner.py` still knows only the Microduck, so
-  nothing Roboglot can start exercises the matching end to end. It waits on the same work as the
-  rest of heterogeneous coordinator teams, including the latent bug
-  [ADR-0020](docs/adr/0020-heterogeneous-teams.md) records: the coordinator judges eligibility
-  before members report their vocabulary, and `needs` inherits that. A **pilot** team does put
-  two different bodies on one task, and it uses no roles: each pilot reads its own datasheet and
-  its peers', and they divide the work by talking ([ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 - ⏸ **No pilot team has been driven by a real LLM, or by a real robot.** `team-hello` runs
-  on `mock` and `sim2d` bodies with the scripted rule, which cannot reason about a datasheet, so
+  on `mock` bodies with the scripted rule, which cannot reason about a datasheet, so
   what a frontier LLM does with the `Your team` section and `tell` is unknown. Needs a key,
   and then two robots.
-- ⏸ **N simulated pilots are N separate worlds.** Two `microduck:sim2d` members of a pilot team
-  cannot see each other, so nothing checks a claimed success against ground truth the way the
-  coordinator's arena does. A shared arena for pilots is unbuilt.
 - ⏸ **Nobody has asked a real bridge what its robot is.** `rosbridge:ws` reads the topic list
   and the URDF at connect, from the parameter and from the latched topic, and every name is
   VERIFIED at a pin. All of it is exercised with fake services and fake topics. What a real
@@ -382,86 +338,40 @@ the job that runs now, `rosarm contract`, meets a real rosbridge and a stand-in 
   expect, and what a real robot's inertials add up to, is unknown until somebody points it at
   one.
 
-- 🔨 **Somebody has to drive `web/` in a browser, and record it.** The page itself is no longer
-  unopened: it booted clean twice on the machine that wrote it (`8d72a2a`, `a9fea18`), with the
-  fonts and the mark loaded and a held `W` walking the duck. What that leaves is everything past
-  the boot — a full LLM-driven run, a key barging in out of one, the Record button, the switch
-  thrown mid-run, and any browser or machine but that one. None of it was recorded, so there is
-  no asset and nothing anybody else can check. Separately, the four measured claims in
-  `web/README.md` come from a scratch harness that is not in the repository, and both files it
-  measured have changed since, in the abort path and in the arena's geometry, so nothing here can
-  re-run it. Locally it is `python web/serve.py`, then <http://localhost:8000/simulator/>.
-- ⬜ The coordinator team does not know `open_duck` yet (`team/runner.py` knows one adapter).
-  A pilot team knows all ten. A hardware team of either kind waits on robots shipping.
-- ⏸ **A real LLM recording**, in either simulator, to replace a scripted-pilot asset and drop
-  the label (see [docs/assets](docs/assets/README.md)). Needs a key.
-- ⬜ **The browser demo is not at parity with the backend.** Seven of the manifest's fifteen
-  verbs and none of the three composites, a contract of its own, an arena that is not upstream's
-  scene, geometric perception, no hash check on anything it fetches, a seed that means the same
-  distributions and not the same layout, and no scripted pilot. It also has no datasheet and no
-  feasibility gate: `web/src/pilot.js` is a second loop with its own hardcoded prompt, so a page
-  asked to carry something will try. `web/README.md` holds that list in full and is the one place
-  it is kept; this bullet is the reminder that it is a list of open gaps and not just a
-  disclosure.
-- ⬜ **`GAIT_FLOOR_VY` was never measured.** The forward and turning floors were; the sideways
-  one is assumed equal to the training maximum, so every lateral request is sent at full
-  scale. The assumption is in `GAIT_THRESHOLD`'s note and in the state's `assumptions`, and
-  the fix is the same script that produced the other two.
 - 🔨 **A transcript from a live local server Roboglot has not seen yet** (Ollama,
   llama.cpp). Still none on the dev machine, and that has not changed. LM Studio was covered
   by #7 and vLLM by #23, which also closed the other half of this item: its two Qwen3-32B-AWQ
   runs are a chain, the note the first one saved is in the second one's `system_prompt`
   verbatim, and the memory counters move by exactly one note and one episode, so nothing ran
-  between them. Both ends are in `docs/assets/transcripts/`, read in
-  [docs/local-llms.md](docs/guides/local-llms.md). What is still open is Ollama, llama.cpp, a run on
-  this machine, and any task harder than the starter task.
-- ✅ **Both nightly jobs are green, and 0.10.0 is what made them so.** Neither had ever
-  passed a scheduled run: `microduck assets` red since 2026-09-09, `toddlerbot contract` since
-  2026-09-07. Four failures, and every one of them was the job telling the truth.
-  The gait sweep went 9 of 10 because the physics backend raises a small twist to a gait floor
-  measured at 0.22 on MuJoCo 3.12, and the lock resolves 3.13, where 0.22 walks the duck
-  thirteen millimetres in ten seconds. A ball dead ahead was unreachable. The floor is 0.23,
-  re-measured across all ten seeds, and the achieved fraction with it is 0.38 where it was 0.42.
-  The fall-recovery test asserted a heading of π on a pose that is exactly the gimbal
-  singularity, so both arguments to the yaw's `atan2` are zero and the sign is the last bit of a
-  subtraction: π here, 0.0 on the runner. It asserts the degeneracy itself now. `stand` never
-  finished on the ToddlerBot because the slew advanced from the measured pose each tick, which
-  pins the position error at one step and starves a position-controlled motor of torque; it
-  advances from the last commanded target now and completes in the 5.2 seconds its own
-  arithmetic predicts. And the deadman test asked for the daemon's health over the very socket
-  it had just killed on purpose.
-  The record is worth stating as it is: both jobs went green on a manual run on 2026-09-17,
-  the day the fixes landed, and every scheduled run since, seven each from 2026-09-18 to
-  2026-09-24, has been green for both.
+  between them. What is still open is Ollama, llama.cpp, a run on this machine, and any task
+  harder than the starter task.
 
 - ✅ **Exercise `remember` against a cloud LLM.** `gpt-6-astra` called it in seven of its
   twelve runs on the arm on 2026-09-15, for five distinct notes, and the last run of that
-  afternoon read all five back out of its own prompt. Still open in a simulator, where the scripted pilot has no
-  script for it, so `--llm fake` writes episodes and never a note.
-- ⏸ **No asset shows a team of pilots.** `team.gif` is the coordinator: three identical ducks
-  auctioning a kick. The kind of team the README now leads with is two different bodies talking,
-  and it has no recording, because a pilot team writes no GIF (N members are N worlds).
+  afternoon read all five back out of its own prompt. Still open for the scripted pilot, which has
+  no script for it, so `--llm fake` writes episodes and never a note.
+- ⬜ **No asset shows a team of pilots.** The kind of team the README now leads with is two
+  different bodies talking, and nothing in [docs/assets](docs/assets/README.md) shows one.
 - ⬜ **What the page `roboglot ui` does not do yet.** A chat flies its goals with what a goal takes
-  since `roboglot drive` took run's flags for them (ADR-0072), all but a GIF, a picture and
-  `--talk`, which drive does not take. Left out on purpose until somebody needs them: `--by-hand`
-  and the end-of-run questions about an arm, which wait for somebody at the arm; teams; a picture
-  with a chat line; `--live`; a lock on a robot across processes, so a run started from a terminal
-  beside the page is not seen; HTTPS on a LAN, which Streamlit can serve through its own settings;
-  and an app to install on a phone. The JSON front end stays a hidden flag until a second program
-  needs it.
+  since `roboglot drive` took run's flags for them (ADR-0072), all but a picture, which drive
+  does not take. Left out on purpose until somebody needs them: `--by-hand` and the end-of-run
+  questions about an arm, which wait for somebody at the arm; teams; a picture with a chat line;
+  a lock on a robot across processes, so a run started from a terminal beside the page is not
+  seen; HTTPS on a LAN, which Streamlit can serve through its own settings; and an app to install
+  on a phone. The JSON front end stays a hidden flag until a second program needs it.
 - ⬜ **A VLA pilot in a drive session, on the arm.** `roboglot drive --controller vla` has flown its
-  lines on the LeRobot mock's scripted policy alone. Owed: a session on `lerobot:mujoco` with
+  lines on the LeRobot mock's scripted policy alone. Owed: a session on the arm with
   `roboglot policy serve --policy scripted:sweep`, three lines with a brake mid-segment, from the
-  keyboard and from the page, then the same on the arm with a trained checkpoint.
+  keyboard and from the page, then the same with a trained checkpoint.
 - ⬜ **LeRobot 0.7.0 on the arm.** `roboglot-lerobot`'s extras take LeRobot 0.7.0 and nothing past it,
   below 0.7.1, with rustypot below 1.14, the motor bus 0.7.0 puts under one `SerialMotorsBus` (its
   #4672). Shipped in 0.34.0. Both `upstream_api.py` files were read at the `v0.7.0` tag, `doctor`
-  has a rustypot row, `real.py` names the joints in 0.7.0's words, `sim/follower.py` stands in for
-  the new bus, Dependabot's ignore moved with the ceiling, `override-dependencies` is gone and the
-  core's Pillow floor is 13, so `roboglot[lerobot]` is off Pillow 12.3.0. Owed: the arm, which has
-  only ever run 0.6.1, through the steps CHANGELOG.md's Known limitations lists, with a release over
-  silent motors timed against `TORQUE_CALL_S`. The lock moved past the last five Dependabot alerts
-  in the same release, to torch 2.15.0, setuptools 84.2.1 and transformers 5.22.2, on Rok's word.
+  has a rustypot row, `real.py` names the joints in 0.7.0's words, Dependabot's ignore moved
+  with the ceiling, `override-dependencies` is gone and the core's Pillow floor is 13, so
+  `roboglot[lerobot]` is off Pillow 12.3.0. Owed: the arm, which has only ever run 0.6.1,
+  through the steps CHANGELOG.md's Known limitations lists, with a release over silent motors
+  timed against `TORQUE_CALL_S`. The lock moved past the last five Dependabot alerts in the same
+  release, to torch 2.15.0, setuptools 84.2.1 and transformers 5.22.2, on Rok's word.
 
 ## Open elsewhere
 
@@ -477,11 +387,6 @@ Things no commit in this repository can finish.
   `public/og.png`, the card a social network shows for roboglot.org. It is a designed asset with
   no generator, and its headline is set in a display weight of Nunito Sans that Google now
   serves only as a variable font, so it needs whoever made it rather than a script.
-- ✅ **`web/` is on the web.** <https://www.roboglot.org/simulator> answers. That address belongs to
-  roboglot-web, a separate Vercel project serving the landing page, and its build now fetches this
-  directory into its own `/simulator` at a pinned commit — so a change here reaches the page on
-  that project's next deploy, and `/simulator/source.json` records which commit the live copy came
-  from. The landing page points at the demo from five places; the demo's header points back.
 
 ## Release checklist
 

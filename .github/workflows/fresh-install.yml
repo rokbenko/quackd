@@ -24,8 +24,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12"]
-    env:
-      ROBOGLOT_STRICT_SEEDS: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -80,7 +78,7 @@ jobs:
           run() { "$PY" -P -c "from roboglot.cli import main; main()" "$@"; }
           run --version
           run doctor
-          run list-verbs --robot microduck:sim2d
+          run list-verbs --robot microduck:mock
           run validate tasks/hello-world.glot
           mkdir first-run && cd first-run
-          run run hello-world --llm fake --robot microduck:sim2d --no-memory
+          run run hello-world --llm fake --robot microduck:mock --no-memory

@@ -58,32 +58,26 @@ def test_v1_requires_is_what_is_checked_and_allow_is_advisory() -> None:
     assert "kick is not provided by head-01" in problems[0].message
 
 
-def test_team_requires_is_a_union_and_roles_must_be_fillable() -> None:
+def test_team_requires_is_a_union() -> None:
     duck = parse_glot_text(
         "---\nglot: 1\nname: t\ndescription: d\nrequires: [observe, kick]\n"
         "verbs:\n  allow: [observe, gaze, go_to, kick, stop, express]\nsuccess: [x]\n"
-        "team:\n  members: [head-01, duck-01]\n  roles:\n"
-        "    spotter: {requires: [observe, gaze]}\n    kicker: {requires: [go_to, kick]}\n"
-        "---\n# T\nx\n"
+        "team:\n  members: [head-01, duck-01]\n---\n# T\nx\n"
     )
     assert validate_glot(duck, [HEAD, DUCK]) == []
     only_heads = validate_glot(duck, [HEAD])
-    assert any(p.field == "team.roles.kicker" for p in only_heads)
     assert any(p.field == "requires" and p.verb == "kick" for p in only_heads)
     two_ducks = validate_glot(duck, [DUCK, microduck_manifest("mock", "duck-02")])
-    assert [p.field for p in two_ducks] == ["verbs.allow"]  # two ducks can spot AND kick
+    assert [p.field for p in two_ducks] == ["verbs.allow"]  # all it requires; no head to express
 
 
 def test_the_registry_vocabulary_rules_stay_worded_as_before() -> None:
     duck = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [fly, kick]\n  confirm: [kick]\n"
-        "success: [x]\nteam:\n  members: 2\n---\n# T\nx\n"
+        "success: [x]\n---\n# T\nx\n"
     )
     messages = [str(p) for p in validate_glot(duck)]
-    assert messages == [
-        "verbs.allow: unknown verbs: fly",
-        "verbs.confirm: a team cannot prompt y/N per duck: empty verbs.confirm",
-    ]
+    assert messages == ["verbs.allow: unknown verbs: fly"]
 
 
 PAYLOAD_DUCK = """\
@@ -118,54 +112,6 @@ def test_a_correction_a_body_can_carry_is_no_problem() -> None:
     assert validate_glot(duck, [DUCK]) == []  # a beak is a manipulator, so a payload is sayable
 
 
-CARRY_TEAM = """---
-glot: 2
-name: two-body-kick
-description: One spots, the one that can carry kicks.
-verbs:
-  allow: [observe, gaze, go_to, kick, stop]
-success: [The ball moved.]
-team:
-  members: [eye, arm]
-  roles:
-    spotter: {requires: [observe, gaze]}
-    kicker:
-      requires: [go_to, kick]
-      needs: {payload_kg: 1.0}
----
-# Task
-Do it.
-"""
-
-
-def test_a_role_nobody_can_carry_for_is_refused_before_the_run_starts() -> None:
-    duck = parse_glot_text(CARRY_TEAM)
-    problems = validate_glot(duck, [HEAD, DUCK])
-    needs = [p for p in problems if p.field == "team.roles.kicker.needs"]
-    assert len(needs) == 1
-    assert "no robot meets its needs" in needs[0].message
-    assert "payload_kg >= 1 (not published)" in needs[0].message
-    assert "duck-01" in needs[0].message
-
-
-def test_a_role_one_robot_can_carry_for_is_fine() -> None:
-    from roboglot.adapters.manifest import Datasheet, Figure
-
-    assert DUCK.datasheet is not None
-    strong = DUCK.model_copy(
-        update={
-            "id": "cart-01",
-            "datasheet": Datasheet(
-                manipulator="gripper",
-                arms=2,
-                payload_kg=Figure(value=1.0, confidence="official", source="the docs"),
-            ),
-        }
-    )
-    duck = parse_glot_text(CARRY_TEAM)
-    assert [p.field for p in validate_glot(duck, [HEAD, strong])] == []
-
-
 def test_the_team_keyword_forces_union_semantics() -> None:
     """A task file with no `team:` block, run against a stored team, is a team all the
     same. Checked robot by robot it would refuse the camera for having no legs."""
@@ -174,13 +120,21 @@ def test_the_team_keyword_forces_union_semantics() -> None:
     assert [p.field for p in alone] == ["requires", "requires"]
     assert validate_glot(duck, [HEAD, DUCK], team=True) == []
     # and the override works the other way: a team task judged one body at a time
-    team_duck = load_glot("team-kick")
-    assert validate_glot(team_duck, [HEAD], team=False)
+    team_duck = parse_glot_text(
+        "---\nglot: 1\nname: t\ndescription: d\nrequires: [walk, quack]\n"
+        "verbs:\n  allow: [walk, quack, stop]\nsuccess: [x]\n"
+        "team:\n  members: [head-01, duck-01]\n---\n# T\nx\n"
+    )
+    assert validate_glot(team_duck, [HEAD, DUCK]) == []
+    assert [p.field for p in validate_glot(team_duck, [HEAD, DUCK], team=False)] == [
+        "requires",
+        "requires",
+    ]
 
 
-def test_a_pilot_team_may_gate_a_verb_and_an_auction_may_not() -> None:
-    """An auction member has nobody to ask, so a gated verb there can only be refused. A
-    pilot team has pilots, and `--yes` answers for all of them at the run."""
+def test_a_pilot_team_may_gate_a_verb() -> None:
+    """A pilot team has pilots, and `--yes` answers for all of them at the run, so a gated verb
+    is no problem in one, whether its allocation is left out or says pilots."""
     text = (
         "---"
         + chr(10)
@@ -209,8 +163,8 @@ def test_a_pilot_team_may_gate_a_verb_and_an_auction_may_not() -> None:
         + "x"
         + chr(10)
     )
-    auction = parse_glot_text(text.format(alloc=""))
-    assert [p.field for p in validate_glot(auction)] == ["verbs.confirm"]
+    left_out = parse_glot_text(text.format(alloc=""))
+    assert [p.field for p in validate_glot(left_out)] == []
     pilots_alloc = "  allocation:" + chr(10) + "    method: pilots" + chr(10)
     pilots = parse_glot_text(text.format(alloc=pilots_alloc))
     assert [p.field for p in validate_glot(pilots)] == []

@@ -27,9 +27,6 @@ from roboglot.space.source import SpatialSource
 
 PLACE_NAME_MAX = 32
 MAX_PLACES = 100
-RESERVED_PLACES = frozenset({"start"})
-"""Names Roboglot marks itself: `start` is where an `explore` or a `find` began, so going back is
-`go_to_place start`. A pilot or a person cannot take one."""
 
 _NAME = re.compile(r"\w[\w '\-]*")
 
@@ -239,16 +236,10 @@ class PlaceStore:
 
     # ── writing ─────────────────────────────────────────────────────────────────────
 
-    def mark(self, place: Place, *, reserved_ok: bool = False) -> Place | None:
+    def mark(self, place: Place) -> Place | None:
         """Keep `place`, replacing one of the same name in any case, and return the one it
-        replaced, or None. Refuses a reserved name unless Roboglot itself is marking it, and a
-        hundred and first place."""
+        replaced, or None. Refuses a hundred and first place."""
         place.name = clean_name(place.name)
-        if place.name.lower() in RESERVED_PLACES and not reserved_ok:
-            raise ValueError(
-                f"{place.name!r} is a place Roboglot marks itself, where an explore or a find "
-                "began: choose another name"
-            )
         records = self._records()
         old = next(
             (r for r in records if isinstance(r, Place) and r.name.lower() == place.name.lower()),
@@ -345,6 +336,11 @@ class PlaceBook:
     ) -> PlaceView:
         frame = self.frame() if frame is None else frame
         fix = self.source.fix() if fix is None else fix
+        record = self.store.frame_record(place.frame)
+        if record is not None and record.wiped:
+            # a wiped map never comes back, so its places are orphaned whatever map the robot is
+            # in now, and before it is in any: right after a wipe, mapd names no map yet
+            return PlaceView(place, "orphaned", "its map was wiped")
         if frame is None:
             return PlaceView(
                 place, "lost", "the robot's map is not known yet, so nothing is known of it"
@@ -385,7 +381,6 @@ class PlaceBook:
         name: str,
         note: str | None = None,
         *,
-        reserved_ok: bool = False,
         turned: float = 0.0,
     ) -> tuple[Place, Place | None]:
         """Mark where the robot stands now as `name`, from its own reading and never from
@@ -416,7 +411,7 @@ class PlaceBook:
             note=" ".join(note.split())[:200] if note else None,
             walked_m=fix.walked_m if fix.kind == "odometry" else None,
         )
-        old = self.store.mark(place, reserved_ok=reserved_ok)
+        old = self.store.mark(place)
         return place, old
 
     def where_words(self, where: dict[str, Any]) -> str | None:

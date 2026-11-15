@@ -46,7 +46,7 @@ robot's body when its file names an adapter (below).
 
 Also in scope:
 
-- API keys leaking into transcripts, GIFs, logs, run directories, or a robot's memory file.
+- API keys leaking into transcripts, logs, run directories, or a robot's memory file.
   `TYPESAFE_API_KEY`, which the optional discrete stepper reads for the `jev` preset
   ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), is one of these, and so
   is `OPENAI_API_KEY` when the `openai` preset reads it
@@ -229,74 +229,10 @@ Also in scope:
   command asks at a terminal unless `--yes` is on its command line, and the offer waits for
   Enter and is never made on a dry run, over MCP or in a team. Neither is a verb, an MCP tool
   or on the `RobotAdapter` protocol. A way round any of that is in scope.
-- **The browser demo** (`web/`), which is now publicly reachable at
-  <https://www.roboglot.org/simulator> rather than only a directory you serve yourself. That
-  changes the assessment: anybody can be linked to a page that asks them to paste an API key.
-  The key is read from an input, sent from the browser straight to the vendor, and never
-  stored, never logged and never proxied: there is no server here to proxy it through, and
-  nothing in `web/src` writes to browser storage. The vendors a key can reach are exactly the
-  entries of `PROVIDERS` in `web/src/providers.js`, each one contacted only once the visitor
-  picks it, and the LLM list offered beside them is generated from the same catalogue the CLI
-  ships (`web/src/catalogue.js`, written by `web/build_catalogue.py`), so the page cannot name
-  an address or an LLM this repository does not. What that leaves is the page itself. It
-  loads three payloads from `cdn.jsdelivr.net` at pinned versions, plus a stylesheet from
-  `fonts.googleapis.com` and the two webfonts it names from `fonts.gstatic.com`, all with no
-  subresource integrity and no content security policy, and any script running in the page can
-  read that input. Google Fonts serves CSS and font files rather than script, so it cannot
-  execute in the document the way the jsDelivr tags can — but it is still an origin that sees
-  every visit. So the risk is not Roboglot holding your key, it is a third party executing in the
-  same document as it: a bad CDN response, an injected script, or a copy of the page served
-  from somewhere you do not control. <https://www.roboglot.org/simulator> is the one copy Roboglot
-  controls, and `/simulator/source.json` names the commit it was built from, so you can check
-  it against this repository; the same files served from anywhere else are somebody else's and
-  can differ from what is here. Being deployed adds nowhere for a key to be kept: the deployed
-  copy is the same static files, fetched into roboglot-web's build at a pinned commit, so no
-  Roboglot server sits between the input and the vendor there either. Anthropic's
-  `anthropic-dangerous-direct-browser-access` header, which the page sends, is opting out of
-  the vendor's own guard against exactly this. OpenRouter is a router, so what a visitor
-  sends it also reaches the provider it picks for the LLM, and the page names Roboglot to it
-  in two headers (`HTTP-Referer` and `X-OpenRouter-Title`) and says nothing about the visitor.
-  Use a key with a spend cap, or pick Local and
-  nothing leaves the machine. What the demo cannot do: it is a simulation with no transport to
-  any robot, so nothing in it moves hardware.
-- **The model and the policies the physics backend fetches** (`adapters/microduck/src/roboglot_microduck/sim3d/assets.py`).
-  `--robot microduck:mujoco` downloads upstream's MJCF and 38 meshes from codeload.github.com
-  and two ONNX policies from huggingface.co, both pinned, and then runs the policy. The defences
-  are worth naming because they are the answer: only paths in a fixed allowlist are extracted
-  from the tarball, so a crafted archive cannot write outside the cache, and every file is
-  checked against a recorded sha256 before MuJoCo or onnxruntime sees it, so a substituted mesh
-  or policy fails the run instead of loading. Both are tested rather than merely claimed:
-  `tests/test_sim3d_assets.py` builds hostile archives — a traversal path, a sibling directory,
-  a symlink, a tampered mesh — and asserts that none of them lands. An ONNX file is data that
-  onnxruntime parses, not Python that Roboglot executes, so the exposure is that parser and not
-  arbitrary code. The one
-  path around the hashes is deliberate: `ROBOGLOT_MICRODUCK_ASSETS` warns rather than refuses,
-  because a newer export from your own checkout is the point of it. Point it at a checkout you
-  built, never at one you were sent.
-- **The model the arm's simulator fetches** (`adapters/lerobot/src/roboglot_lerobot/sim/assets.py`).
-  `--robot lerobot:mujoco`, and any robot `roboglot robot twin` registered, downloads the SO-101's
-  model from TheRobotStudio/SO-ARM100 the first time it connects: `so101_new_calib_camera.xml`
-  and the 15 STL meshes it names, about 16 MB, one file at a time from raw.githubusercontent.com
-  at a pinned commit. There is no archive to unpack. Every URL is built from a fixed list of names
-  Roboglot holds, every file is written under a name on that list, so nothing upstream sends can
-  choose a path, and each is checked against a recorded sha256 as it arrives, so the first file
-  that does not match stops the fetch and nothing is installed. A reply larger than 16 MiB, or
-  shorter than the length it declared, is refused as well. The set is checked again, installed
-  into `~/.roboglot/cache/so-arm100/<pin>` in one rename under a lock, and checked against the same
-  hashes every time it is used, so a file changed on disk is fetched again rather than loaded.
-  `ROBOGLOT_CACHE_DIR` moves the cache. The model includes no other file, and MJCF and STL are data
-  that MuJoCo parses rather than code Roboglot runs, so the exposure is MuJoCo's parser.
-  `tests/test_lerobot_sim_assets.py` drives all of it with the network stubbed, a file that does
-  not match its pin and an oversized reply among the cases. The one path around the hashes is
-  deliberate, as it is for the duck: `ROBOGLOT_LEROBOT_SIM_ASSETS` points at the `Simulation/SO101`
-  directory of a checkout of your own, and warns rather than refuses when it differs from the
-  pin. Point it at a checkout you made, never at one you were sent. The simulator itself opens no
-  port and imports no LeRobot, and an address shaped like a serial port is refused before
-  anything looks at it, so nothing it is given reaches a real arm.
 - The LAN surfaces behind `roboglot[lan]`: zeroconf TXT records advertise a robot's identity
-  to anything on the network, and the MQTT team bus carries messages that command robots
-  with no authentication of its own. Both are off by default and neither has a threat model
-  yet, so treat them as trusted-network only.
+  to anything on the network, and the MQTT team bus carries what one robot's pilot tells
+  another, which that pilot may act on, with no authentication of its own. Both are off by
+  default and neither has a threat model yet, so treat them as trusted-network only.
 - **Robot Passport** ([docs/passport/security.md](docs/passport/security.md) is its whole threat
   model). It runs in `roboglot onboard`, a service on a robot's own computer, and in nothing else,
   since `roboglot passport check` only reads a passport. A read follows no redirects, reads no more

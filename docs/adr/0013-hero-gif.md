@@ -2,6 +2,11 @@
 
 **Status:** superseded by [ADR-0038](0038-the-readme-hero-is-a-real-run.md) · **Date:** 2026-08-28
 
+**Amended 2026-11-15:** `docs/assets/hero.gif` is deleted, with the simulator it was recorded in
+and `roboglot record`, which recorded it. `docs/assets/transcript-example.jsonl` moved to
+`tests/golden/transcript-before-verb-end.jsonl`, because it is the one transcript from before the
+log's own kinds, and `roboglot log` still has to read one. See the CHANGELOG's Unreleased entry.
+
 ## Context
 
 The brief asks for one recorded real-provider `find-and-kick` run under `docs/assets/`

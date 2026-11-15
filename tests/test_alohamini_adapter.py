@@ -36,7 +36,6 @@ from roboglot_alohamini import (
     parse_model,
 )
 from roboglot_alohamini.mock import AlohaMiniMock
-from roboglot_alohamini.sim2d import AlohaMiniSim2D
 from roboglot_alohamini.verbs import (
     GRIPPER_CLOSED,
     JOINTS_5DOF,
@@ -227,7 +226,7 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
     m = alohamini_manifest("mock", camera=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
     allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], "mock", manifest=m)
+    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
     for verb in ABSENT:
         with pytest.raises(VerbNotFound):
@@ -237,7 +236,7 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
-    assert validate_glot(DUCK, [alohamini_manifest("sim2d", camera=True)]) == []
+    assert validate_glot(DUCK, [alohamini_manifest("mock", camera=True)]) == []
     allowed = set(DUCK.frontmatter.verbs.allow)
     assert not (allowed & {"move", "lift", "move_joints", "go_to", "approach_and", "search_scan"})
 
@@ -355,37 +354,10 @@ async def test_a_silent_host_refuses_every_moving_verb_but_never_stop() -> None:
     assert (await ex.run_verb("report_state", {})).ok
 
 
-# ── the simulator ──────────────────────────────────────────────────────────────────────
-
-
-async def test_the_simulated_robot_drives_lifts_and_sees() -> None:
-    adapter = AlohaMiniAdapter(AlohaMiniSim2D(seed=3))
-    manifest = await adapter.connect()
-    ex = _executor(adapter, manifest)
-    sim = adapter.transport
-    assert isinstance(sim, AlohaMiniSim2D)
-
-    assert (await ex.run_verb("observe", {})).ok
-    assert (await ex.run_verb("move", {"vx": 0.2, "duration_s": 0.5})).ok
-    lifted = await ex.run_verb("lift", {"height_mm": 250.0})
-    assert lifted.ok and abs(sim.lift_height_mm - 250.0) <= 3.0
-    assert (await ex.run_verb("gripper", {"side": "both", "open": False})).ok
-    assert sim.holding == {"left": True, "right": True}
-    assert (await ex.run_verb("stop", {})).ok
-
-
-async def test_the_simulator_refuses_the_intents_this_body_has_not_got() -> None:
-    """A bug that somehow sent one should fail loudly in sim, not only on hardware."""
-    sim = AlohaMiniSim2D(seed=1)
-    await sim.connect()
-    for intent in (Intent.sound("chirp"), Intent.look(1.0, 0.0, 0.0), Intent.do("kick_left")):
-        assert not (await sim.send_intent(intent)).accepted
-
-
 # ── the factory ────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("backend", ["mock", "sim2d", "zmq"])
+@pytest.mark.parametrize("backend", ["mock", "zmq"])
 def test_the_factory_builds_every_backend(backend: str) -> None:
     adapter = make_adapter(f"alohamini:{backend}")
     assert adapter.name == "alohamini" and adapter.backend == backend
@@ -427,7 +399,7 @@ def test_the_llm_hint_comes_off_the_address(address: str | None, expected: str) 
 
 async def test_the_camera_composites_run_through_the_executor() -> None:
     """`search_scan`, `go_to` and `approach_and` are in this manifest, so they get driven
-    rather than assumed: they are the verbs that would drive the base across a room."""
+    rather than assumed: they are the verbs that would drive the base across the floor."""
     adapter = AlohaMiniAdapter(AlohaMiniMock())
     manifest = await adapter.connect()
     ex = _executor(adapter, manifest)

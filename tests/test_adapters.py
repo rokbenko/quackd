@@ -70,7 +70,7 @@ async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> No
     manifest = await MicroduckAdapter(reporting).connect()
     assert manifest.limits["camera_fov_deg"] == 41.5
     plain = await MicroduckAdapter(MockTransport()).connect()
-    assert set(plain.limits) == {"max_vx", "max_vy", "max_wz"}, "the simulators report no lens"
+    assert set(plain.limits) == {"max_vx", "max_vy", "max_wz"}, "the mock reports no lens"
     for odd in (0, -37.4, 180, 360.0, float("nan"), float("inf"), "37.4", True):
         garbled = MockTransport()
         garbled.camera_fov_deg = odd  # type: ignore[attr-defined]
@@ -211,8 +211,8 @@ async def test_the_verbs_that_walk_on_what_the_camera_sees_need_the_duck_standin
 
 
 async def test_a_posture_nobody_can_vouch_for_refuses_every_verb_that_walks() -> None:
-    """`unknown` used to pass `standing`. The simulators and the mock never report it, but a
-    real robot does for everything Roboglot cannot vouch for, and says why in `posture_reason`.
+    """`unknown` used to pass `standing`. The mock never reports it, but a real robot does for
+    everything Roboglot cannot vouch for, and says why in `posture_reason`.
     The mock here would take every twist it was sent, so only the precondition stands between
     an unknown duck and a walk."""
     why = "robotd reports policy 'homing' (the joints are ramping to the home pose)"
@@ -242,23 +242,26 @@ def test_robot_spec_parsing() -> None:
     from roboglot.adapters.factory import RobotSpec, parse_robot_spec, parse_robots
 
     assert parse_robot_spec("microduck:mock") == RobotSpec("microduck", "mock")
-    assert parse_robot_spec("microduck") == RobotSpec("microduck", "sim2d")  # first backend
-    assert parse_robot_spec(" Microduck:SIM2D ").key == "microduck:sim2d"
+    assert parse_robot_spec("microduck") == RobotSpec("microduck", "mock")  # first backend
+    assert parse_robot_spec(" Microduck:JSONRPC ").key == "microduck:jsonrpc"
     with pytest.raises(AdapterError, match="unknown adapter 'bogus'; choose one of"):
         parse_robot_spec("bogus:mock")
-    with pytest.raises(AdapterError, match="unknown backend 'usb' for microduck"):
+    with pytest.raises(
+        AdapterError, match=r"unknown backend 'usb' for microduck; choose one of mock, jsonrpc$"
+    ):
         parse_robot_spec("microduck:usb")
-    specs = parse_robots("duck=microduck:sim2d, other=microduck:mock")
+    specs = parse_robots("duck=microduck:jsonrpc, other=microduck:mock")
     assert [s.robot_id for s in specs] == ["duck", "other"]
     assert specs[1].key == "microduck:mock"
     with pytest.raises(AdapterError, match="name=<adapter>"):
-        parse_robots("microduck:sim2d")
+        parse_robots("microduck:jsonrpc")
     with pytest.raises(AdapterError, match="duplicate robot name"):
-        parse_robots("a=microduck:sim2d,a=microduck:mock")
+        parse_robots("a=microduck:jsonrpc,a=microduck:mock")
 
 
-def test_resolve_robot_is_the_flag_then_the_duck_then_the_simulator() -> None:
-    """0.4's `--transport X` alias was promised for removal in 0.5, and is gone."""
+def test_resolve_robot_is_the_flag_then_the_duck_then_whatever_is_installed() -> None:
+    """0.4's `--transport X` alias was promised for removal in 0.5, and is gone. With nothing
+    named, and every adapter installed as it is here, there is no body to fall back to."""
     import inspect
 
     from roboglot.adapters import factory
@@ -266,7 +269,8 @@ def test_resolve_robot_is_the_flag_then_the_duck_then_the_simulator() -> None:
 
     assert resolve_robot("microduck:mock").key == "microduck:mock"
     assert resolve_robot(None, duck_default="microduck:mock").key == "microduck:mock"
-    assert resolve_robot(None).key == "microduck:sim2d"
+    with pytest.raises(factory.NoRobotNamed, match="no robot named: --robot <adapter>:<backend>"):
+        resolve_robot(None)
     assert "transport" not in inspect.signature(resolve_robot).parameters
     assert not hasattr(factory, "warn_once") and not hasattr(factory, "reset_warnings")
 
@@ -283,8 +287,8 @@ async def test_factory_describes_and_makes_adapters() -> None:
     spec = parse_robot_spec("microduck:mock")
     static = describe(spec)
     assert static.model == "microduck" and static.backend == "mock" and static.id == "microduck"
-    # the default is the simulator's vocabulary, and the mock says where the duck is, which the
-    # simulator does only in a room: the place verbs and nothing else
+    # the default is the mock's vocabulary without its places, and the mock says where the duck
+    # is: the place verbs and nothing else
     assert set(registry_for(spec).names()) == set(default_registry().names()) | {
         "map",
         "mark_place",
@@ -308,7 +312,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "rosarm",
         "described",
     ]
-    assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
+    assert rows[0]["installed"] and rows[0]["backends"] == ["mock", "jsonrpc"]
     assert rows[1]["extra"] == "roboglot[lerobot]" and "real" in rows[1]["backends"]
 
 
@@ -347,7 +351,6 @@ ADDRESSES = {"huebot:jsonrpc": "tcp://127.0.0.1:9870"}
 since Roboglot knows no default for its shim. Building one connects to nothing."""
 
 ONE_CAMERA = (
-    "microduck:sim2d",
     "microduck:mock",
     "open_duck:mock",
     "rosbridge:mock",
@@ -358,8 +361,8 @@ ONE_CAMERA = (
     "huebot:jsonrpc",
     "lerobot:mock",
 )
-"""Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real` and its
-simulator `lerobot:mujoco`, and nothing else, but MOSS's two: its cameras come from the rover
+"""Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real`, and
+nothing else, but MOSS's two: its cameras come from the rover
 itself, so it takes no `--camera-url` at all, and tests/test_moss_adapter.py says so. rosarm's two
 read no camera either, and tests/test_rosarm_adapter.py says so."""
 
@@ -395,6 +398,5 @@ def test_a_one_camera_body_refuses_a_second_camera_url_instead_of_dropping_it(sp
     with pytest.raises(AdapterError) as refusal:
         make_adapter(spec, camera_url=["opencv://0?name=top", "opencv://1?name=side"])
     assert str(refusal.value) == (
-        f"{spec} takes one --camera-url and 2 were given; "
-        "only lerobot:real and lerobot:mujoco take several"
+        f"{spec} takes one --camera-url and 2 were given; only lerobot:real takes several"
     )

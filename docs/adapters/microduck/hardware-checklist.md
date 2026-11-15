@@ -26,34 +26,23 @@ Somebody should be holding the pad all the same, and should know which of these 
 for. Roboglot's `stop` is a request over a socket, and step 8 is where you find out what happens when
 that socket is not there.
 
-## 0. Rehearse in the physics simulator first
-
-`microduck:mujoco` is upstream's own model walking on upstream's own `alpha_walking.onnx`, so
-the two tasks you will run on the robot run against it unchanged:
+## 0. Rehearse on the mock
 
 ```bash
-uv pip install 'roboglot[mujoco,anthropic]'   # the duck's package with its simulator, and your provider
-roboglot run microduck-lookout --robot microduck:mujoco --llm anthropic
-roboglot run find-and-kick --robot microduck:mujoco --llm anthropic
+uv pip install 'roboglot[microduck,anthropic]'   # the duck's package, and your provider
+roboglot run microduck-lookout --robot microduck:mock --llm anthropic
 ```
 
-`roboglot[mujoco]` is `roboglot-microduck[mujoco]`, the duck's own package plus its physics
-simulator, so this one install is also what puts `microduck:jsonrpc` on the laptop for every
-step below. A plain `uv pip install roboglot` carries no robot at all and would get you to
-step 1 with nothing to connect with.
+`roboglot[microduck]` is `roboglot-microduck`, the duck's own package, so this one install is
+also what puts `microduck:jsonrpc` on the laptop for every step below. A plain
+`uv pip install roboglot` carries no robot at all and would get you to step 1 with nothing to
+connect with.
 
-The first run fetches the model and the policies into `~/.roboglot/cache`, so do that before you
-are standing next to somebody else's robot rather than on their Wi-Fi.
-
-What it rehearses is the pilot, your provider, each task's allowlist, and reading a run's log
-while it happens. It touches nothing below: no socket, no `hello` handshake, no `robot.health`,
-no camera transport and no deadman. Four skills there are Roboglot's own stand-ins rather than the
-robot's, and say so in `state.extras.assumptions`: `kick` and `grab` use the cartoon's contact
-rules, `sit` is refused, and a fall is recovered by resetting the model. The gait floor in the
-simulator was measured on one machine with the XML's own actuators, and upstream deploys a
-different actuator model and, from daemon-v0.13.0, a different network too: a robot walks and
-stands on `velstand.onnx`, where the simulator runs `alpha_walking.onnx` and `alpha_stand.onnx`.
-So the speeds that walk there are not the speeds that will walk here.
+`microduck:mock` is the core's scripted body under the duck's manifest, so it rehearses the pilot,
+your provider, each task's allowlist and reading a run's log while it happens. It touches nothing
+below: no socket, no `hello` handshake, no `robot.health`, no camera transport and no deadman.
+Its frames are grey and its pose is scripted, so it says nothing of how the duck walks or what
+its camera sees.
 
 ## 1. Reach the daemon at all
 
@@ -107,14 +96,6 @@ roboglot doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 --map-a
 The `mapd` row says whether it answered, how many stops its map holds and whether it knows where
 the duck is. Given an address nothing answers at, doctor exits 1. Everything Roboglot reads of
 `mapd` is UNVERIFIED, and this is where it is first read off a robot.
-
-`explore` and `find` are not offered on a real duck. On odometry alone it keeps no map, and
-beside `mapd` they would plan their way round a room by the duck's body radius, which nothing
-publishes yet. Once one is cited, they will turn the duck's body for every view, because nothing
-says whether `mapd` takes a keyframe when only the head turns. To find out, with the duck
-standing still, read the keyframes the `mapd` row counts, turn the head with `gaze left`, wait a
-second and read them again. One more keyframe means a head turn alone is a view there, as it is
-in the simulators, and both could look with the head on a real duck too: say so in an issue.
 
 > **Abort if the handshake is refused.** Roboglot refuses a robotd older than API v23, the oldest
 > it has read end to end, and one whose `hello` names no version, and it prints why. A robot on
@@ -279,7 +260,7 @@ roboglot run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:9
 ```
 
 The camera is step 6's, through the same tunnel. Start with `--no-memory` for a clean first run,
-then `--memory-dir` so the campaign's notes stay out of your simulator's.
+then `--memory-dir` so the campaign's notes stay in a folder of their own.
 
 With the pad on and its sticks untouched, `padd` sends robotd a stop every 100 ms and Roboglot
 sends its twist as often, so the twist the duck walks on flips between the two, and nobody knows

@@ -15,7 +15,7 @@ payload above all, stays unknown, and `introspect` asks again (ADR-0032).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from PIL import Image
@@ -244,14 +244,6 @@ class RosbridgeAdapter:
     def mobility(self) -> str:
         return "wheeled"
 
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
@@ -284,9 +276,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,

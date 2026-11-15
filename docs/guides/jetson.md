@@ -313,12 +313,12 @@ answers describe an Orin Nano with a camera and a CUDA detector, and whose board
 `tegrastats` line are the ones in `tests/jetson_fixtures.py`.
 [What roboglot doctor shows](#what-roboglot-doctor-shows) goes through it row by row.
 
-Then the cartoon duck, with the LLM on the board. It needs no robot, and it is the honest
-first test of the arrangement: if the duck kicks the ball, the LLM on the board is answering
-the Roboglot on your laptop.
+Then the Microduck's mock, with the LLM on the board. It needs no robot, and it is the honest
+first test of the arrangement: if the run gets past its first LLM call, the LLM on the board is
+answering the Roboglot on your laptop.
 
 ```bash
-roboglot run find-and-kick --robot microduck:sim2d --llm ollama:qwen3:4b --host 127.0.0.1
+roboglot run hello-world --robot microduck:mock --llm ollama:qwen3:4b --host 127.0.0.1
 ```
 
 > [!IMPORTANT]
@@ -332,9 +332,9 @@ fake board, with its memory row left out because that row names a path on the ma
 printed it:
 
 ```
-┌─ 🦆 find-and-kick ──────────────────────────────────────────────────────────────────────┐
+┌─ 🦆 hello-world ────────────────────────────────────────────────────────────────────────┐
 │ provider  ollama (qwen3:4b)                                                             │
-│ robot     microduck:sim2d                                                               │
+│ robot     microduck:mock                                                                │
 │ detector  color_blob on this machine                                                    │
 │ host      127.0.0.1:9874  daemon 0.1.0  camera as an extra view, detect, tegra          │
 └─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
@@ -342,8 +342,8 @@ printed it:
 
 No LLM server was listening there, so that run stopped at its first LLM call with
 `ollama: APIConnectionError: Connection error.` The header still holds. The detector is the
-colour one on the laptop, because the body is a simulator. The board's camera joined as an
-extra view named `host`, and the run directory keeps its frames beside the simulator's, as
+colour one on the laptop, because the body is a mock. The board's camera joined as an extra
+view named `host`, and the run directory keeps its frames beside the mock's, as
 `frames/0000-host.png` and on.
 
 Then a real body. The Open Duck Mini makes a good first one, because it brings a camera and
@@ -374,11 +374,11 @@ field of view was given for a bridge camera, so the host detector uses 62 degree
 distances will be out by tens of percent. `--fov-deg` is how you say what the lens really is.
 
 The rule for the detector is short. With `--host` and no `--detector`, a real body uses the
-board's detector, `yolo@host`, whenever the daemon says it can detect. A simulated body
-(`sim2d`, `mujoco` or `mock`) never does by itself, because YOLO does not see a cartoon ball and
-the colour detector is tuned for what a simulator draws. `--detector color` opts out and keeps
-the colour detector on the laptop. `--detector host` asks for the board's even on a simulator,
-and is refused before anything connects when the daemon cannot detect. `--detector yolo` is
+board's detector, `yolo@host`, whenever the daemon says it can detect. A mock, the `mock`
+backend every adapter has, never does by itself, because YOLO does not see a painted ball and
+the colour detector is tuned for what a mock draws. `--detector color` opts out and keeps
+the colour detector on the laptop. `--detector host` asks for the board's even on a mock, and is
+refused before anything connects when the daemon cannot detect. `--detector yolo` is
 YOLO on the laptop and needs `roboglot[yolo]`. Whichever it is, the run keeps it: a board that
 stops answering mid-run gives each frame no detections and a reason, never the colour
 detector in its place. The two do not label the same things on a real camera, and a quiet
@@ -717,5 +717,4 @@ If you run it, please open a Discussion or an issue with:
   meeting, the signal strength another robot was heard at 1, 3 and 10 m, and a `tegrastats` line
   captured while the two talked
 
-A transcript is the most useful thing of all, and
-[`docs/assets/transcripts/`](../assets/transcripts/) is where the contributor ones live.
+A transcript is the most useful thing of all.

@@ -24,9 +24,8 @@ roboglot run fetch --robot scout
 ```
 
 `--robot NAME` works wherever a robot is run or inspected: `run`, `validate`, `list-verbs`,
-`doctor`, `serve-mcp` and `roboglot memory`. Two commands take `--robot` and not a registered
-name: `record`, which pins the simulator, and `announce`, which advertises a static manifest
-and so wants an `<adapter>:<backend>` spec.
+`doctor`, `serve-mcp` and `roboglot memory`. One command takes `--robot` and not a registered
+name: `announce`, which advertises a static manifest and so wants an `<adapter>:<backend>` spec.
 
 ## The commands
 
@@ -38,7 +37,6 @@ roboglot robot edit NAME [--field X] [--clear F] # change it
 roboglot robot rest-pose NAME [--clear]         # read where this arm rests, off the arm
 roboglot robot release NAME [--yes]             # fold the arm to its rest pose, let go there
 roboglot robot remove NAME [--force]            # forget it
-roboglot robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehearse on
 ```
 
 `add` takes `--address`, `--map-address`, `--camera-url`, `--token`, `--host` and `--host-token`
@@ -135,13 +133,12 @@ detections line reports, and the only one the verbs that steer by sight read. Ev
 reaches a provider that takes images, each labelled with its camera's name, which is also what
 `frames/NNNN-<name>.png` in the run directory is named by.
 
-Only the LeRobot arm reads several, on the desk (`lerobot:real`) or in its simulator
-(`lerobot:mujoco`). Every other body refuses a second one where it is registered, rather than
-opening the first and dropping the rest:
+Only the LeRobot arm on the desk, `lerobot:real`, reads several. Every other body refuses a
+second one where it is registered, rather than opening the first and dropping the rest:
 
 ```
 $ roboglot robot add duck-a microduck:mock --camera-url a --camera-url b
-x error: microduck:mock takes one camera url; only lerobot:real and lerobot:mujoco take several
+x error: microduck:mock takes one camera url; only lerobot:real takes several
 ```
 
 The rules the urls themselves keep, a `?name=` on each, unique names and no index used twice,
@@ -450,50 +447,6 @@ What each other ending means, and the same two questions a run puts at its own t
 rest move missed, is
 [adapters/lerobot/README.md](../adapters/lerobot/README.md#releasing-it-where-it-stands).
 
-## A simulator of an arm
-
-`roboglot robot twin SOURCE [NAME]` registers NAME, `SOURCE-sim` unless you give one, as
-`lerobot:mujoco`: the real backend's own code over a physics model of the arm. Its address is
-the calibration file SOURCE's runs read, found where LeRobot keeps it under SOURCE's name, so
-the simulated arm has the travel the real one has. SOURCE's rest pose and pilot are copied
-with it, and so is each camera the simulator renders, which is one named front, top or wrist.
-Any other camera is left out and named in the output, because the simulator would refuse it on
-every run. Its memory is its own, kept under NAME.
-
-```
-$ roboglot robot twin arm-01
-+ added arm-01-sim: lerobot:mujoco, a simulator of arm-01 on
-/home/you/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json
-  copied from arm-01: rest pose, pilot openai:gpt-6-sol, 2 camera urls
-! robots.json now holds a lerobot:mujoco robot, and Roboglot 0.14 and earlier cannot read the file at all: roboglot robot remove arm-01-sim before going back to one
-  roboglot preflight <task> --robot arm-01-sim
-```
-
-An arm registered with a rest pose and neither a pilot nor a camera, as the lab's `arm-01` is,
-gets `copied from arm-01: rest pose` and then `arm-01 has no pilot or camera to copy`, and a
-hint that ends `--llm VENDOR[:LLM]`, since its twin has no pilot to rehearse with until you
-name one.
-
-That warning is the one cost of a twin. Roboglot 0.14 and earlier check every robot in the file
-against the backends they know, and `lerobot:mujoco` is not one of them, so one of those
-installs sharing `~/.roboglot` refuses every command that reads the registry until every
-`lerobot:mujoco` robot in it is removed, not only the twin just made. Where the file holds more
-than one, the warning names them all. To try a twin while an older Roboglot still reads
-`~/.roboglot`, give this one a registry of its own with `ROBOGLOT_REGISTRY_DIR` or `--registry-dir`,
-and register the arm there as well.
-
-`--address PATH` names the calibration file instead, for an arm calibrated under another id or
-on another machine. A source that is not registered, is not a LeRobot arm or has no
-calibration file is refused, and so is a NAME that is the source's own. For every other LeRobot
-robot the address is the serial port, so a port given here, such as `COM5` or `/dev/ttyACM0`, is
-refused on its shape before anything opens it or looks for it. The simulator does the same with
-a `lerobot:mujoco` robot registered on a port by `robot add`, as `run`, `preflight` or any other
-command builds it. A NAME that is already
-registered is refused as `add` refuses it. `--force` replaces it, and only where it is already a
-`lerobot:mujoco` robot, so no real arm is ever overwritten by its own simulator.
-`roboglot preflight` is what the twin is for: it rehearses task files on it, and refuses any robot
-that is not a simulator.
-
 ## Probing
 
 `--probe` connects to every registered robot, asks how it is, and closes.
@@ -511,8 +464,7 @@ robots (--robot NAME)
 ```
 
 A robot that did not answer shows the reason and the command exits 1, so a script can branch
-on it. `--timeout` is per robot and they are probed at once. `microduck:mujoco` is skipped:
-connecting to it downloads a model, which is not a liveness check. Every backend named `mock`
+on it. `--timeout` is per robot and they are probed at once. Every backend named `mock`
 always answers, which is what the rows above are.
 
 A probe reads and lets go: it never drives an arm to its rest pose. So an arm that is not at
@@ -547,9 +499,9 @@ else on a command line:
 
 | Refused | Because |
 |---|---|
-| any number (`3`, `42`, `007`) | `--team 3` already means three simulated ducks |
-| any adapter name (`microduck`, `lerobot`, ...) | `--robot microduck` already means `microduck:sim2d` |
-| any `adapter-backend` slug (`microduck-sim2d`, ...) | that is the memory file an unregistered run of that body already opens |
+| any number (`3`, `42`, `007`) | a number reads as a count, not a name |
+| any adapter name (`microduck`, `lerobot`, ...) | `--robot microduck` already means `microduck:mock` |
+| any `adapter-backend` slug (`microduck-mock`, ...) | that is the memory file an unregistered run of that body already opens |
 
 A colon is what tells the two vocabularies apart: `--robot duck-a` is a name, `--robot
 microduck:mock` is a spec, and a bare word that is neither says so in one line.
@@ -620,8 +572,8 @@ and `remove` work on it. Anything that builds it, a run, a team, `doctor`, `serv
 ```
 $ roboglot run hello-world --robot kitchen
 x error: kitchen is registered as microduck:websocket, which this Roboglot cannot build (unknown
-backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc): roboglot robot edit
-kitchen --spec microduck:<backend>, or roboglot robot remove kitchen
+backend 'websocket' for microduck; choose one of mock, jsonrpc): roboglot robot edit kitchen --spec
+microduck:<backend>, or roboglot robot remove kitchen
 ```
 
 For an adapter that is missing, it says to install the package that provides it first. `add` and

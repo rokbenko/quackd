@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from PIL import Image
@@ -276,14 +276,6 @@ class RosArmAdapter:
     def mobility(self) -> str:
         return "none"
 
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────────
 
@@ -337,9 +329,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
@@ -349,8 +339,8 @@ def make(
     says. `ws` is refused for every arm nobody has named a date for (`refusal`), before anything
     is built. A rest pose is refused, since Roboglot parks none of these arms, and so is a camera
     url, which has nowhere to go: a `--host` board's camera gives this body `observe`, as it gives
-    any. `token`, `seed` and `live` are accepted and unused, as the factory calls every adapter's
-    `make` with the same keywords: rosbridge has no authentication of its own."""
+    any. `token` is accepted and unused, as the factory calls every adapter's `make` with the
+    same keywords: rosbridge has no authentication of its own."""
     body = arm_body(robot_type or ROBOT_TYPE)
     if backend not in BACKENDS:
         raise ValueError(f"unknown rosarm backend {backend!r}; choose one of {BACKENDS}")

@@ -1,11 +1,7 @@
 """The default detector: an HSV threshold. No model, no download, a few ms per frame.
 
-The duck's two simulators draw the ball in a known orange, and the cartoon draws its person in
-a known blue, so this works out of the box. The person target stays for the cartoon's sake:
-nobody stands in the duck's physics arena, which is why that one renders its head camera over a
-colourless floor rather than let upstream's blue checker forge the target nothing there can
-match. The arm's simulator draws nothing in a detector's colour unless a sidecar names one. On a
-real camera you tune the HSV ranges to *your* ball (see
+A mock's camera paints the ball in a known orange (`roboglot.perception.palette`), so this works
+out of the box there. On a real camera you tune the HSV range to *your* ball (see
 `docs/faq.md`); the geometry — bearing from horizontal position, distance from apparent
 size — is the same either way, which is the whole point of sharing one perception path.
 """
@@ -21,7 +17,7 @@ from PIL import Image
 from roboglot.perception.base import Detection
 from roboglot.perception.blobs import Candidates, biggest_blobs
 
-DEFAULT_FOV_DEG = 90.0  # matches the sim camera; a real IMX219 is ~62°
+DEFAULT_FOV_DEG = 90.0  # matches a mock's camera; a real IMX219 is ~62°
 
 
 @dataclass(frozen=True)
@@ -44,15 +40,7 @@ class Target:
 
 
 DEFAULT_TARGETS: tuple[Target, ...] = (
-    Target("ball", HSVRange(5, 22), 0.05, round=True),  # sim orange (255,140,0) → H≈16
-    Target("person", HSVRange(100, 130), 0.12, round=False),  # sim blue (60,90,220) → H≈112
-    Target("pet", HSVRange(50, 80), 0.10, round=False),  # sim green (60,180,80) → H≈65
-    # the four Microduck colorways, one Target each so a team member can see its peers
-    # (max_per_label applies per Target, so this yields up to one blob per colorway)
-    Target("duck", HSVRange(23, 34), 0.08, round=False),  # cream (250,210,40) → H≈24
-    Target("duck", HSVRange(86, 98), 0.08, round=False),  # sky (70,210,225) → H≈93
-    Target("duck", HSVRange(133, 148), 0.08, round=False),  # lavender (185,105,235) → H≈138
-    Target("duck", HSVRange(152, 172), 0.08, round=False),  # graphite (140,60,110) → H≈161
+    Target("ball", HSVRange(5, 22), 0.05, round=True),  # the palette's orange (255,140,0) → H≈16
 )
 
 
@@ -62,7 +50,7 @@ class ColorBlobDetector:
     targets: tuple[Target, ...] = DEFAULT_TARGETS
     fov_deg: float = DEFAULT_FOV_DEG
     calibrated: bool = True
-    """False when `fov_deg` is the simulator default on a real lens, or a lens the body
+    """False when `fov_deg` is the default on a real lens, or a lens the body
     assumed rather than measured."""
     min_area_px: int = 12
     max_per_label: int = 1
@@ -72,11 +60,6 @@ class ColorBlobDetector:
     loop and the MCP server set again from what the body reported. One built anywhere else, such
     as one handed to a run from Python, keeps the lens it was built with."""
     _told_lens: str | None = field(default=None, init=False, repr=False, compare=False)
-
-    @property
-    def labels(self) -> frozenset[str]:
-        """The labels its targets give (`labels_of`)."""
-        return frozenset(target.label for target in self.targets)
 
     def calibrate(
         self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
@@ -92,7 +75,7 @@ class ColorBlobDetector:
             self,
             backend,
             f"no camera field of view given for a {backend} camera, so detections use the "
-            f"simulator's {self.fov_deg:.0f} degrees. Distances will be out by tens of percent: "
+            f"default {self.fov_deg:.0f} degrees. Distances will be out by tens of percent: "
             "pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.",
             assumed=assumed,
         )

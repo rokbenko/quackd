@@ -4,7 +4,7 @@
 
 <!-- example-log table: written by scripts/example_log.py, do not edit by hand -->
 
-**22 of 220 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
+**22 of 219 examples have a log.** A ✅ means the example's folder holds a log of how it really went: why it matters, the command, a video, what it showed and the full terminal trace. Goal met is whether the run showed what the example set out to show, which is a different question from whether the run ended in success.
 
 | Done | Example | Category | What it showed | Goal met | Roboglot |
 |---|---|---|---|---|---|
@@ -206,7 +206,6 @@
 |  | [E196: Stop from the chat, mid-move](e196/) | Red team |  |  |  |
 |  | [E197: A policy that holds still](e197/) | Hardware |  |  |  |
 |  | [E198: A policy that sweeps](e198/) | Hardware |  |  |  |
-|  | [E199: The arm against its twin](e199/) | Hardware |  |  |  |
 |  | [E200: Smooth or staircase](e200/) | Hardware |  |  |  |
 |  | [E201: The worst frame](e201/) | Hardware |  |  |  |
 |  | [E202: How hard it thinks](e202/) | Speed |  |  |  |
@@ -302,9 +301,9 @@ Three rules hold for all of it:
 
 ## Running them
 
-One folder per experiment on [the run sheet](run-sheet.md), `e001` to `e220`. The 34 with no file of their
-own hold a page pointing at their card until they have a log, because they are commands, or run a
-bundled task or another experiment's file: `e068`, `e119`, `e167`
+One folder per experiment on [the run sheet](run-sheet.md), `e001` to `e220` but for `e199`. The 34
+with no file of their own hold a page pointing at their card until they have a log, because they
+are commands, or run a bundled task or another experiment's file: `e068`, `e119`, `e167`
 to `e169`, `e171` to `e175`, `e177`, `e178`, `e181`, `e185`, `e186`, `e190`, `e192`, `e197`, `e198`,
 `e203`, `e205` to `e214` and `e217` to `e220`. `e126` and `e215` hold a stand-in for an LLM beside
 their task files, `e216` a script and no task file, and `e201` a script and two pictures to print
@@ -374,15 +373,14 @@ are meant to shrink. That step and the section are requests no gate reads, and n
 played arm away from a person ([guides/play.md](../../guides/play.md#what-does-not-change)), so
 keep people beyond the arm's reach in these as in any played run. Run one with `--no-play` to
 see it without the section. The lines they had before are in this folder's git history. The
-other 129 do not play. 105 of them keep every line they had and read what they always did: most
+other 128 do not play. 105 of them keep every line they had and read what they always did: most
 ask for a result on the table, a high five, a guess or a question answered in words, a stillness
-test, a trap or a benchmark. The other 24 came with 0.30.0 and 0.30.3, below.
+test, a trap or a benchmark. The other 23 came with 0.30.0 and 0.30.3, below.
 `e004/royalty`, `e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23
-September, are among the 118 and no longer read what they read that day, and the 29 September
-rehearsal below ran the five `e004` files as they read before.
+September, are among the 118 and no longer read what they read that day.
 
 The aim is that 90 to 95 percent of these files run as asked on the arm. By the run sheet's own
-expectations 208 of the 247, 84 percent, should, short of the aim, and the other 39 are meant to
+expectations 207 of the 246, 84 percent, should, short of the aim, and the other 39 are meant to
 fall short: the sheet expects the arm not to do what they ask, and in most of them the miss is the
 point. An entry that hedges, or expects some of a set to fall short without saying which, as the
 idioms of `e079` do, counts as running. Eleven meet a limit of the arm or of how Roboglot drives it:
@@ -405,54 +403,18 @@ against the reach. Three ask for a
 guess the sheet expects the pilot to refuse, on principle, in `e085`. Two end on an answer the
 sheet expects to be wrong: `e131/my-left`, the harder of two runs it expects at least one wrong
 answer from, and `e073`, whose header leaves the pilot only the colour detector, which reads orange
-as a ball and blue as a person. Whether the other 208 run as asked has not been measured. That
+as a ball and blue as a person. Whether the other 207 run as asked has not been measured. That
 takes every file once on a release, counting the runs that started, moved as asked and did not
 disown a part.
 
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
 any LLM. Each file opens with a comment carrying its first command. Check them all against the
-arm's manifest before a session, which should say `247 files valid`:
+arm's manifest before a session, which should say `246 files valid`:
 
 ```bash
 roboglot validate "docs/examples/lerobot/*/*.glot" --robot lerobot:real
 ```
-
-And rehearse them at home first, on the arm's simulator, which runs a file through the code that
-drives the arm without the arm: `roboglot robot twin arm-01` registers `arm-01-sim` on the arm's
-own calibration, and `roboglot preflight` runs each file on it once per seed
-([adapters/lerobot/first-run.md](../../adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator)).
-With a real pilot every seed costs what a run costs. Only `e162` and `e165` have a
-`<task>.sim.yaml` beside them, so every other run is judged on whether nothing escaped it and its
-close reached the rest pose.
-
-```bash
-roboglot preflight "docs/examples/lerobot/e00[1-5]/*.glot" --robot arm-01-sim --llm openai:gpt-6-sol --camera-url "opencv://1?name=front" --seeds 2
-```
-
-On 29 September that line passed all 12 files on the lab arm's twin, 24 runs for $1.06 of
-`gpt-6-sol`. A pass says the code survived the file, not that the task was done. The simulator's
-table holds a red cube and a pen and nothing else, so the `e001` drawings found no marker in the
-gripper and no paper and their pilots declared failure. Both `e002` pilots said a switch sat
-right below the gripper, where the table has none, and kept looking until their fourteen steps
-ran out, which is how that task says to end. `e005/do-nothing` ends on its budget every time,
-since its ten steps are the whole of it. And `e001/duck-picture` needs its picture: `--image`
-would hand it to every file the pattern matches, so rehearse that one on its own, with the
-`--image` in its header.
-
-The two sidecars lay the cube their tasks start with between the open jaws, and check that it
-was lifted as far as the task says, two centimetres for `e162` and a little for `e165`. `e163`
-starts with the jaws open around a cube as well, but asks only whether the gripper holds it,
-which no sidecar check measures, so it has none. Neither sidecar lays out on the lab arm's twin.
-That arm's fold puts the jaws down at the table with the gripper shut, so every connect is
-refused:
-`the scene lays cube between the jaws, and as the arm starts they are open narrower than cube`.
-The same fold with the gripper open is refused as well, since closing the gripper from there
-never brings the moving finger onto the cube:
-`closing the gripper stops its moving finger 0.4 mm clear of cube, which it never touches on the way`.
-Each sidecar says at its top what it needs, and each refusal says it too: an arm that starts with
-its open jaws pointing down at the table around the cube, which neither the twin nor the generic
-arm does.
 
 `e145` and `e152` are the two exceptions: an MCP session loads them from the chat with
 `robot_load_glotfile`, which is how their longer budgets reach a session that would otherwise
@@ -503,15 +465,15 @@ stop, and in a terminal `roboglot drive`'s Enter ends the move (`e186`).
 
 `e126` flies a stand-in for an LLM, `e126/monkey.py`, which answers every turn with a random call:
 verbs the run offered and verbs it did not, joints that do not exist, angles past every travel, NaN
-and strings where numbers go. It runs on the mock or the twin and never on the arm, with no key. On
+and strings where numbers go. It runs on the mock and never on the arm, with no key. On
 Roboglot 0.30.0, 1000 turns of seed 1 on `lerobot:mock` came to about 860 calls stopped at a gate,
 nearly all at `params` and `allowlist`, with none outside the contract and none past a joint's
 travel. The seed does not make a run repeat exactly, so rerun it rather than quote these. It also
 found that a `stop` sent with junk arguments was refused at `params` and stopped nothing, and that
 arguments that were no object ended the run. Neither does now.
 
-`e197` and `e198` hand the arm to a scripted policy, which needs no torch, `e199` sets the arm
-beside its twin joint by joint, `e200` asks whether a slow move is smooth, and `e201` times the
+`e197` and `e198` hand the arm to a scripted policy, which needs no torch, `e200` asks whether a
+slow move is smooth, and `e201` times the
 colour detector on a real camera, which 0.30.0's numbers never met. `e202` to `e204` are what the
 seconds went on: `--effort`, a verb typed by name against the same request in words, and OpenAI's
 Decisions API. `e205` and `e206` are what 0.19.0 and 0.14.0 still owe the arm, from files already

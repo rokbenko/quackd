@@ -32,7 +32,7 @@ and turns the camera verbs on). Two more name where the robot's own description 
 
 | `--robot` | Status | What it is |
 |---|---|---|
-| `rosbridge:mock` | ✅ | a planar kinematic integrator with the simulator's deadman semantics (a Twist holds for half a second, then the base coasts to zero), integrated odometry, a synthetic camera with an orange disc at a fixed spot |
+| `rosbridge:mock` | ✅ | a planar kinematic integrator with a deadman (a Twist holds for half a second, then the base coasts to zero), integrated odometry, a synthetic camera with an orange disc at a fixed spot |
 | `rosbridge:ws` | 🧪 | roslibpy 2.x to a rosbridge server (extra `roboglot[rosbridge]`); every roslibpy, rosbridge protocol and message name VERIFIED against pinned commits, never run against a bridge |
 
 ## The manifest

@@ -18,10 +18,8 @@ A body's transport carries a reading, its `spatial` source, for the life of one 
 | Microduck `mock` | the mock's scripted pose | the mock's own, for as long as it runs |
 | MOSS (`cockpit`, `mock`) | the cockpit's pose, the stack's odometry, dated on the rover's clock | the stack's run, `odom:moss:<run_id>`, over every connection to it, and begun again by nothing else; its own `go_to_place` drives by the planner |
 | rosbridge (`ws`, `mock`) | `/odom`, dated by its header stamp, or by its arrival when the stack stamps nothing | one connection |
-| Microduck `sim2d` or `mujoco` in a room, with `--room` | Roboglot's stand-in for the duck's own map, `mapd`, kept to the numbers Roboglot read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
 
-Every other body says nothing of where it is yet, and the place verbs are not offered on it. The
-simulator without a room is one of them. A
+Every other body says nothing of where it is yet, and the place verbs are not offered on it. A
 robotd from before the estimator sends no `odom`, and one whose odometry stays at zero through a
 walk its own state showed it taking (`robotd --fake`, which has no servos to read) gives no
 reading either.
@@ -37,8 +35,8 @@ pilot is told how far the duck has walked in it.
 
 - **The state line** says where the robot is and how it knows, as `where=odometry(x, y, yaw rad,
   walked N m)` or `where=lost(why)`, beside `extras.where`, the same reading as data:
-  `{kind, frame, x, y, yaw, walked_m}`. A Microduck's `x`, `y` and `theta` stay empty: those are
-  the simulators' plain truth, which a team reads as one arena every member shares.
+  `{kind, frame, x, y, yaw, walked_m}`. A Microduck's `x`, `y` and `theta` stay empty: where it
+  is goes in `extras.where`, with the frame it was read in.
 - **Every observation** lists the nearest places as `places: kitchen 1.2 m +38°, door 0.6 m -95°`,
   each with how far it is and which way, in degrees from where the robot faces, positive to its
   left, or `door here` for the one it stands on, then the names of the places it cannot reach now
@@ -83,10 +81,10 @@ In `<memory dir>/<robot slug>.places.jsonl`, beside the robot's memory file and 
 ([guides/memory.md](../guides/memory.md)), one JSON record a line: the places, and the frames
 they were marked in. Like memory, every write goes to a temporary file renamed over the old one,
 and nothing is locked. A robot keeps at most 100 places, a name is 1 to 32 letters, digits, spaces,
-hyphens or apostrophes, names are the same in any case, and `start` is a name Roboglot keeps for
-itself. With `--no-memory`, places last as long as the run or the session and nothing is written.
-A dry run reads the places a robot has and changes none, as it runs no `mark_place` or
-`forget_place`. `roboglot drive` keeps them as a run does.
+hyphens or apostrophes, and names are the same in any case. With `--no-memory`, places last as
+long as the run or the session and nothing is written. A dry run reads the places a robot has
+and changes none, as it runs no `mark_place` or `forget_place`. `roboglot drive` keeps them as
+a run does.
 
 ## Walking to a place
 
@@ -132,60 +130,6 @@ is what `go_to` steers by.
 It says how close it got and by what, `0.07 m from 'far' by its map`, and on odometry that the
 reading drifts. It never says the robot is at a place.
 
-## Exploring
-
-A Microduck in a simulator given a room can `explore`: walk to the nearest floor its map has seen
-beside floor it has not, stop so the map can look, and go again, until nothing is left it can
-reach or its minutes run out. It walks by the walk above and marks `start` where it begins, so
-`go_to_place start` is the way back. `find` explores the same way with a camera frame at every
-look, and marks where it saw what it was looking for as a place named after it. A real duck can
-do neither yet: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body
-radius, which a way round a room is planned by.
-Its rules are on [the Microduck's page](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
-why it stops to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md),
-and [guides/explore.md](../guides/explore.md) runs both with two starter tasks.
-
-## A room for the simulator
-
-`--room` lays a room out in either of the Microduck's simulators, `sim2d` and `mujoco`, on `run`,
-`record`, `drive` and `serve-mcp`, for one duck: `arena`, `two-rooms`, `hall`, `sofa-gap`, or a
-`.yaml` file of your own. This is `two-rooms`:
-
-```yaml
-name: two-rooms
-size: [3.0, 2.0]
-walls:
-  - [0.0, -1.0, 0.0, -0.3]
-  - [0.0, 0.3, 0.0, 1.0]
-boxes:
-  - [1.0, 0.6, 0.4, 0.3]
-start: [-1.0, 0.0, 0.0]
-ball: {region: [0.3, -0.8, 1.4, 0.3], hidden: true}
-person: [-1.2, 0.7]
-```
-
-`size` is the outer walls, in metres across and centred on the origin. Each wall runs from `x0, y0`
-to `x1, y1`, 4 cm thick unless a fifth number says, and each box is a centre and a size, `cx, cy,
-width, depth`. `start` is where the duck stands and which way it faces, and `ball` a spot or a
-region the seed draws it in, with `hidden: true` only where something solid stands in each of
-three straight lines from the start, to the ball's middle and to its two sides, so the duck,
-turned whichever way it likes where it starts, cannot see it and has to go and look. `two-rooms`
-hides it in the far room, and `sofa-gap` behind an armchair. `sofa-gap` has a sofa against its
-far wall too, with a gap behind it narrower than the duck, which a map sees into only from its
-ends. A mistake in a file is refused with the file and the key named.
-
-In a room, a wall holds a walking duck where it is and counts a bump, and the ball rolls back off
-it. The duck's camera sees the walls and the furniture, in greys no detector takes for anything,
-and nothing behind them. On `mujoco` they are solid geoms 30 cm tall: the puppet is held off
-them as the cartoon's duck is, and the walking duck meets them with its own feet, each touch
-counted as a bump. And the duck keeps a map of the room the way its own `mapd` keeps one,
-kept to the numbers Roboglot read of `mapd` ([the Microduck's page](../adapters/microduck/README.md#mapd-the-onboard-map-unverified-an-upstream-branch-in-no-release)):
-it looks only from a stop, once the duck has stood still for 0.4 s, as far as the head's ToF sees,
-45° across and 2 m out, and it is lost at the start and after a bump or a fall until two stops
-agree. `map` draws it. Every state says the map is Roboglot's stand-in, so a walk in a room is no
-measure of the real map's errors. Without `--room` the simulator is the arena it always was, and
-says nothing of where the duck is.
-
 ## Memory that knows where
 
 A note a pilot saves with `remember` keeps where the robot stood, read off the robot, when it knew.
@@ -196,8 +140,7 @@ note saved before places, or where the robot did not know, reads as it always di
 ## What Roboglot does not do
 
 - **Make a map.** A map is the robot's own work: a Microduck's `mapd`, when a robotd release
-  carries it. The simulator's map of a room is a stand-in for that one, and knows the room's walls
-  exactly.
+  carries it.
 - **Share a frame between robots.** Two robots that have just met share no frame of reference
   ([ADR-0020](../adr/0020-heterogeneous-teams.md)), so their places stay their own.
 

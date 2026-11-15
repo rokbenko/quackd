@@ -101,7 +101,7 @@ on a camera that is fetched one frame at a time, a period of its rate plus `FETC
 newest fetch (`frame_window_s`), since the first frame whose fetch began after the settle can be
 a whole fetch away from its start and another from its arrival."""
 WALL_SLACK_S = 5.0
-"""How much longer than its duration a call may run on the wall's clock. On a simulator whose
+"""How much longer than its duration a call may run on the wall's clock. On a robot whose
 clock runs slower than the wall, the duration alone would let a call outlive its timeout."""
 POLL_S = 0.1
 """The slice every wait is taken in: between two, the head is sent again when it is due and the
@@ -478,12 +478,12 @@ class Lens:
 
 def watch_lens(manifest: RobotManifest | None, detector: Any) -> Lens:
     """The lens across the frame `watch` measures angles through: the one the detector measures
-    through when that is known, `--fov-deg`, a lens the body measured or a simulator's own; else
+    through when that is known, `--fov-deg`, a lens the body measured or a mock's own; else
     the body's own when it reported one, with the assumption it rests on, such as the lens a
     Microduck takes from the shape of mediad's `/frame`; else `ASSUMED_FOV_DEG`, assumed and said
     so. A lens more than `LENS_WARN_RATIO` times wider than the one the camera itself reports, or
-    a simulator's own, carries a warning."""
-    from roboglot.perception import ASSUMED_LENS, is_simulated
+    a mock's own, carries a warning."""
+    from roboglot.perception import ASSUMED_LENS, is_mock
 
     body = _degrees(manifest.limits.get("camera_fov_deg")) if manifest is not None else None
     said = manifest.extras.get(ASSUMED_LENS) if manifest is not None else None
@@ -499,7 +499,7 @@ def watch_lens(manifest: RobotManifest | None, detector: Any) -> Lens:
             f"{ASSUMED_FOV_DEG:g} degrees across the frame: pass --fov-deg"
         )
     reference = body
-    if reference is None and is_simulated(manifest.backend if manifest is not None else None):
+    if reference is None and is_mock(manifest.backend if manifest is not None else None):
         from roboglot.perception.color_blob import DEFAULT_FOV_DEG
 
         reference = DEFAULT_FOV_DEG
@@ -639,7 +639,7 @@ def frame_window_s(transport: Any) -> float:
 def why_not_offered(eyes: Eyes | None, transport: Any) -> str | None:
     """Why a run cannot offer `watch`, or None when it can: nothing to look through, or frames
     nobody can say are upright and fresh. A body says so with `frames_upright`: true where every
-    frame is upright and either drawn when it is asked for, as a simulator's are, or stamped with
+    frame is upright and either drawn when it is asked for, as a mock's are, or stamped with
     when it was taken (`frame_taken_at`), and one that does not say is taken for one whose frames
     may be neither (`NOT_UPRIGHT`)."""
     if eyes is None:
@@ -937,9 +937,9 @@ class _Watch:
                     await task
 
     async def _replay(self, asked_at: float, latency: float) -> None:
-        """Let a simulator's clock run for as long as the answer took, so its world goes on while
-        the head waits, as a robot's does. A clock that ran on its own meanwhile, the robot's, is
-        left as it is."""
+        """Let a clock that moves only when something sleeps on it, a mock's, run for as long as
+        the answer took, so its world goes on while the head waits, as a robot's does. A clock
+        that ran on its own meanwhile, the robot's, is left as it is."""
         advanced = self.now() - asked_at
         if advanced >= latency / 2:
             return

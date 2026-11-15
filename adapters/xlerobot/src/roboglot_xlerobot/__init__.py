@@ -21,7 +21,7 @@ once a camera has actually been seen on the wire.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -243,7 +243,7 @@ def xlerobot_manifest(
                 "holding is what Roboglot commanded, never what the robot felt: nothing on the "
                 "wire reports grip force or contact",
                 "camera frames are assumed BGR inside the host's JPEG and swapped to RGB",
-                "bearings assume a 90 degree field of view, which is the simulator's camera; "
+                "bearings assume a 90 degree field of view, the colour detector's default; "
                 "a real webcam is narrower, so distances and angles are approximate",
                 "the head's two motors are on the wire but Roboglot never moves them: which one "
                 "is yaw and which is pitch is stated nowhere upstream",
@@ -348,14 +348,6 @@ class XLerobotAdapter:
     def mobility(self) -> str:
         return "wheeled"
 
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
@@ -383,9 +375,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,

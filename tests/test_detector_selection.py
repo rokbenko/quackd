@@ -1,8 +1,8 @@
 """Which detector a run uses, who chose it, and where the run says so.
 
 The policy: the board's detector is used by itself only on a real body whose `--host` daemon can
-detect, never on a simulator; `--detector color` opts out, `--detector host` is honoured even on
-a simulator, and `--detector yolo` runs YOLO on this machine. A choice that cannot run here is
+detect, never on a mock; `--detector color` opts out, `--detector host` is honoured even on a
+mock, and `--detector yolo` runs YOLO on this machine. A choice that cannot run here is
 refused before anything connects, as is a `--host` whose daemon does not answer. The header, the
 record and the MCP server all name the detector.
 
@@ -47,7 +47,7 @@ from tests.test_mcp_fleet import _data, connected
 runner = CliRunner()
 
 REAL = ("bridge", "real", "ws", "zmq", "jsonrpc")
-SIMULATED = ("sim2d", "mujoco", "mock")
+MOCKS = ("mock",)
 
 
 @pytest.fixture
@@ -91,7 +91,6 @@ def _run(tmp_path: Path, *args: str, log: bool = False, task: str = "hello-world
             task,
             "--llm",
             "fake",
-            "--no-gif",
             "--log" if log else "--no-log",
             "--runs-dir",
             str(tmp_path / "runs"),
@@ -194,12 +193,10 @@ def test_the_board_detects_by_itself_on_a_real_body(hostd: FakeHostd, backend: s
     assert (chosen.fov_deg, chosen.calibrated) == (62.2, True)
 
 
-@pytest.mark.parametrize("backend", [*SIMULATED, None])
-def test_the_board_never_detects_by_itself_on_a_simulator(
-    hostd: FakeHostd, backend: str | None
-) -> None:
-    """YOLO does not see a cartoon ball, and the colour detector is tuned for exactly what a
-    simulator draws, so a board that can detect still leaves a simulator to the colour one."""
+@pytest.mark.parametrize("backend", [*MOCKS, None])
+def test_the_board_never_detects_by_itself_on_a_mock(hostd: FakeHostd, backend: str | None) -> None:
+    """YOLO does not see a painted ball, and the colour detector is tuned for exactly what a
+    mock draws, so a board that can detect still leaves a mock to the colour one."""
     client, hello = _board(hostd)
     assert (
         explicit_detector(None, client=client, hello=hello, fov_deg=None, backend=backend) is None
@@ -221,10 +218,10 @@ def test_detector_color_opts_out_of_the_boards_detector(hostd: FakeHostd) -> Non
     assert isinstance(fallback, ColorBlobDetector)
 
 
-def test_detector_host_is_honoured_on_a_simulator(hostd: FakeHostd) -> None:
-    """Asked for by name it runs, and the simulator's own lens is known, so it is calibrated."""
+def test_detector_host_is_honoured_on_a_mock(hostd: FakeHostd) -> None:
+    """Asked for by name it runs, and the mock's own lens is known, so it is calibrated."""
     client, hello = _board(hostd)
-    chosen = explicit_detector("host", client=client, hello=hello, fov_deg=None, backend="sim2d")
+    chosen = explicit_detector("host", client=client, hello=hello, fov_deg=None, backend="mock")
     assert isinstance(chosen, HostDetector)
     assert (chosen.fov_deg, chosen.calibrated) == (90.0, True)
 
@@ -343,7 +340,7 @@ def test_a_board_nobody_typed_is_refused_by_where_it_was_named(
 def test_the_header_and_run_start_name_the_boards_detector(
     hostd: FakeHostd, tmp_path: Path
 ) -> None:
-    """Asked for on a simulator, which the header says, beside the board: its daemon, and what
+    """Asked for on a mock, which the header says, beside the board: its daemon, and what
     it has. The record keeps the same, with the role the board's camera took at connect, and
     the log's run line names the detector."""
     result = _run(
@@ -358,9 +355,9 @@ def test_the_header_and_run_start_name_the_boards_detector(
     )
     assert result.exit_code == 0, result.output
     flat = _flat(result)
-    assert (
-        f"detector yolo@host {hostd.address} yolov8n.pt on cuda (asked for on a simulator)" in flat
-    ), flat
+    assert f"detector yolo@host {hostd.address} yolov8n.pt on cuda (asked for on a mock)" in flat, (
+        flat
+    )
     assert f"host {hostd.address} daemon 0.1.0 camera as an extra view, detect, tegra" in flat
     start = _start(tmp_path)
     assert _run_line(start).endswith("robot=microduck:mock detector=yolo@host connected in 0.00 s")
@@ -375,7 +372,7 @@ def test_the_header_and_run_start_name_the_boards_detector(
     assert hostd.requests_to("/detect"), "and the frames went to the board"
 
 
-def test_a_simulator_with_a_board_keeps_the_colour_detector_and_says_so(
+def test_a_mock_with_a_board_keeps_the_colour_detector_and_says_so(
     hostd: FakeHostd, tmp_path: Path
 ) -> None:
     result = _run(tmp_path, "--robot", "microduck:mock", "--host", hostd.address, log=True)
@@ -716,8 +713,8 @@ def test_build_fleet_server_is_given_the_plans_detector(
 
 
 def _toddlerbot(backend: str) -> ToddlerBotAdapter:
-    """A ToddlerBot with a camera and no field of view anybody gave: the mock as the simulator
-    it is, or on its bridge, which Roboglot treats as the real body it stands for."""
+    """A ToddlerBot with a camera and no field of view anybody gave: on its mock, or on its
+    bridge, which Roboglot treats as the real body it stands for."""
     return ToddlerBotAdapter((_BridgeMock if backend == "bridge" else ToddlerBotMock)(camera=True))
 
 
@@ -774,7 +771,7 @@ async def test_a_yolo_handed_to_a_run_from_python_keeps_the_lens_it_was_built_wi
 ) -> None:
     """`YoloDetector(fov_deg=70.0)` in a `RunConfig` is how YOLO was reached before `--detector`
     existed, and still is from Python. The loop told every detector it was given the lens it
-    found at connect, so this one's 70 degrees became the simulator's 90 on the mock and, on
+    found at connect, so this one's 70 degrees became the mock's own 90 on the mock and, on
     the bridge, the 62-degree guess, uncalibrated, with a warning to pass --fov-deg to somebody
     who never used the command line. Bearings and distances, which `go_to` steers by, changed
     with no `--host` anywhere. Only a detector `explicit_detector` built is told the lens."""
@@ -916,7 +913,7 @@ async def test_a_run_measures_through_the_lens_its_body_reports_when_it_connects
 ) -> None:
     """`roboglot run` builds its colour detector before the body connects, from the body's own
     description, and a Microduck describes a camera with no lens, which its camera reports only
-    once a frame has come. The detector kept the simulator's 90 degrees for the whole run, the
+    once a frame has come. The detector kept a mock's 90 degrees for the whole run, the
     lens the camera reported unread, while the YOLO and board detectors learned it at connect.
     The colour detector learns it then too: calibrated when the camera reported it, and
     uncalibrated, with the assumption named, when the camera assumed it. Nothing calls the lens

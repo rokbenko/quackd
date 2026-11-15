@@ -232,14 +232,14 @@ async def test_two_different_bodies_talk_and_both_declare(tmp_path: Path) -> Non
 
 
 async def test_two_bodies_of_one_kind_are_a_team_too(tmp_path: Path) -> None:
-    """The case the auction could always do and nothing else could: same body, twice."""
-    twins = _roster(
+    """Same body, twice."""
+    pair = _roster(
         {
             "duck-a": RobotSpec("microduck", "mock", "duck-a"),
             "duck-b": RobotSpec("microduck", "mock", "duck-b"),
         }
     )
-    result = await _run(tmp_path, twins)
+    result = await _run(tmp_path, pair)
     assert result.outcome == "success", result.reason
     assert list(result.per_member) == ["duck-a", "duck-b"]
 
@@ -337,10 +337,24 @@ async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
     assert start["contracts"]["arm"]["allow"] == ["report_state", "observe", "stop", "move_joints"]
 
 
-async def test_a_mixed_team_reports_its_backends_as_mixed(tmp_path: Path) -> None:
+async def test_a_mixed_team_reports_its_backends_as_mixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every body a test can build offline is a `mock`, so the duck is named on its real
+    backend and built over the core's mock: the summary reads the backends the roster names."""
+    from roboglot.adapters import factory
+
+    real = factory.make_adapter
+
+    def on_a_mock(spec: Any, **kw: Any) -> Any:
+        if spec.key == "microduck:jsonrpc":
+            spec = RobotSpec(spec.adapter, "mock", spec.name)
+        return real(spec, **kw)
+
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", on_a_mock)
     roster = _roster(
         {
-            "duck": RobotSpec("microduck", "sim2d", "duck"),
+            "duck": RobotSpec("microduck", "jsonrpc", "duck"),
             "arm": RobotSpec("lerobot", "mock", "arm"),
         }
     )

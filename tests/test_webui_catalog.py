@@ -21,9 +21,9 @@ def test_the_robots_are_list_adapters_own_rows() -> None:
 
     assert catalog.adapters() == list_adapters()
     microduck = next(row for row in catalog.adapters() if row["name"] == "microduck")
-    assert "sim2d" in microduck["backends"]
-    assert catalog.is_simulated("sim2d") and catalog.is_simulated("mock")
-    assert not catalog.is_simulated("jsonrpc")
+    assert "mock" in microduck["backends"]
+    assert catalog.is_mock("mock")
+    assert not catalog.is_mock("jsonrpc")
 
 
 def test_the_pilots_are_the_catalogues_own() -> None:
@@ -147,7 +147,7 @@ def test_a_registered_name_and_its_spec_at_the_same_address_are_one_robot(tmp_pa
     assert named == spelled == "lerobot:real@com5"
     other = catalog.robot_identity("lerobot:real", "COM6", registry_dir=str(tmp_path))
     assert other != named
-    assert catalog.robot_identity("microduck:sim2d", None, registry_dir=str(tmp_path)) == (
-        "microduck:sim2d"
+    assert catalog.robot_identity("microduck:mock", None, registry_dir=str(tmp_path)) == (
+        "microduck:mock"
     )
     assert catalog.robot_identity(None) is None

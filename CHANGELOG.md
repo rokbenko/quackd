@@ -27,9 +27,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Changed
 
+- **`roboglot policy check --bench` says what a declared latency is for on the arm.** Its advice
+  says `so the arm asks for each chunk in time`, where it said the simulator holds each chunk back
+  as long.
+- **No robot is the default any more, and every adapter's first backend is its mock.** A command
+  that names no robot, on a machine with several adapters installed, refuses and lists them, where
+  with the Microduck among them it used to take `microduck:sim2d`, the 2D simulator, which is gone
+  (below). With one adapter installed it takes that adapter's first backend, as before, and that
+  is its `mock` for every adapter now: a bare `--robot microduck` or `--robot open_duck` means the
+  mock, where it meant the simulator. `roboglot doctor` on a machine with no adapter says
+  `uv pip install "roboglot[microduck]" for one`. The page `roboglot ui` serves names the robot
+  on every goal and chat it starts: the one Setup shows first, `microduck:mock`, until another is
+  chosen. A run on `lerobot:mock` names its policy's clock `mock` in `summary.json`, where it
+  said `sim`.
 - **The project is now Roboglot, the communication layer between people and robots, and between
   robots.** The old one-liner described the first way in rather than what the project is: there
-  are five ways in now, part of it runs on the robot, and Robot Passport is about robots that are
+  are four ways in now, part of it runs on the robot, and Robot Passport is about robots that are
   not yours. The README opens with *Talk to your robots. Let them talk to each other.*, and PyPI,
   the `--help` banner and the package docstring carry the short form
   ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)). The name is Roboglot in prose and
@@ -42,7 +55,7 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   home directory, `.env` variables and an MCP configuration from before need renaming to match,
   and what older entries below say about files in the home directory, the keys 0.23 to 0.28 left
   there among them, means the renamed one. A robot on an earlier release does not discover one on
-  this release. The browser simulator moves to roboglot.org.
+  this release.
 - **A task file is a `.glot` file, and a group of robots is a team.** A task file ends in `.glot`,
   and `.task` and `.brief` are read the same way. Its first key, the version of the format, is
   `glot:`, the bundled tasks live in `tasks/`, and the MCP tool that loads one is
@@ -84,12 +97,64 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   that vendor does take, as an id Roboglot never carried always was.
 - **`google/gemini-4-hydrogen` takes `google/gemini-3.8-flash`'s place among OpenRouter's rows.**
   The old id still runs, checked against OpenRouter's own LLM list when a run starts, as any
-  OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models`, TAB
-  completion and the browser demo no longer offer it, and a run on it asks for its call with `auto`
-  rather than insisting on one with `required`.
+  OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models` and
+  TAB completion no longer offer it, and a run on it asks for its call with `auto` rather than
+  insisting on one with `required`.
 
 ### Removed
 
+- **Breaking. Every simulator, and what only ran on one.** The 2D world the duck was tried in,
+  `microduck:sim2d`, `open_duck:sim2d`, `toddlerbot:sim2d` and `alohamini:sim2d`, the physics
+  ones, `microduck:mujoco` and `lerobot:mujoco`, the browser demo that ran the Microduck in MuJoCo
+  in a web page (`web/`), and the ToddlerBot daemon's `--sim`, whose `mujoco` ran upstream's physics
+  in place of the robot, are gone, with the extras that installed them. The daemon drives the real
+  robot, which `--sim real` chose and was its default, and refuses `--sim` now. The extras:
+  `roboglot[mujoco]`, `roboglot[lerobot-sim]`, `roboglot[live]`, `roboglot-microduck[mujoco]` and
+  `roboglot-lerobot[sim]`. A command line or a `.glot` that names one of those backends fails at
+  `--robot` now, saying which backends the adapter has, and `roboglot robot list` says of a robot
+  registered on one, an arm's twin among them, that this Roboglot cannot build it, and that
+  `roboglot robot edit NAME --spec` or `roboglot robot remove NAME` mends it. A stored team with
+  such a robot in it says so in `roboglot team list` and `team show`, where it said `ok`, and its
+  `--json` says `runnable: false` and names it under `unbuildable`. What ran only on a simulator
+  went with them:
+  - `roboglot robot twin`, `roboglot preflight` with its `.sim.yaml` sidecars and its `--faults`,
+    `--seeds` and `--connect-cycles`, and `roboglot record`;
+  - `--seed`, `--live`, `--gif/--no-gif`, `--gif-size` and `--room`, wherever `run`, `drive`,
+    `serve-mcp`, `map`, `places add` and `validate` took them. `onboard serve --seed`, which seeds
+    the stand-in radio, and `onboard preflight --live` stay;
+  - the coordinator team, which ran two to four simulated Microducks in one arena and let an
+    auction choose who kicked, with `--team N`, now refused in one line, and the task-file settings
+    only it read: `team.roles`, `team.safety`, `team.search`, `team.frame_hints`, and
+    `team.allocation`'s `bid`, `tie_break`, `hysteresis_pct`, `claim_lease_s` and
+    `method: auction`. A file that still carries one is refused, naming it, and so is a `glot: 0`
+    file with a team. A team is a team of pilots, one LLM per body, and a `glot: 1` team that says
+    no `allocation:`, which was a coordinator team, runs as a team of pilots now;
+  - the Microduck's `explore` and `find`, which only a simulator given a room could offer, the
+    rooms and the simulated map, and the place `start` they marked, which is an ordinary name
+    again. MOSS's own `explore` stays;
+  - the bundled tasks `team-kick`, `find-the-ball` and `favourite-spot`. `microduck-lookout`,
+    `microduck-watch`, `open-duck-lookout`, `open-duck-scout` and `team-hello` run on mocks;
+  - the colour detector's person, pet and duck colours, which matched what the 2D world drew: it
+    finds the orange ball alone, as the mocks draw it. YOLO and a `--host` board's detector still
+    find people and pets;
+  - `seed` and `live` in what an adapter's `make()` is passed, which only the simulators read. An
+    adapter of your own that takes them is called as before, without them. Gone with them, for
+    an adapter of your own: `post_sleep`, `roboglot.adapters.factory.is_simulator`,
+    `roboglot.perception.base.labels_of`, and `FRAME_HEAD_YAW_DEG` and `frame_head_yaw_of` in
+    `roboglot.transport.base`, the head a frame was taken through, which only the coordinator's
+    members and `explore` read;
+  - the variables `ROBOGLOT_MUJOCO_BODY`, `ROBOGLOT_MUJOCO_SHADOWS`, `ROBOGLOT_MICRODUCK_ASSETS`,
+    `ROBOGLOT_LEROBOT_SIM_ASSETS`, `ROBOGLOT_CACHE_DIR`, `ROBOGLOT_STRICT_SEEDS` and
+    `ROBOGLOT_REQUIRE_GL`. The service `roboglot onboard` installs no longer sets
+    `ROBOGLOT_CACHE_DIR`;
+  - the PyPI keyword `mujoco`.
+
+  What a simulator left on your machine stays where it is: `~/.roboglot/cache` holds the models
+  and policies it fetched, and the memory and places of a simulated body, in files named after it
+  such as `microduck-sim2d.jsonl`, are in `~/.roboglot/memory`. Delete them by hand. The ADRs that decided the
+  simulators keep their text, marked superseded or amended, as the earlier entries here and
+  `docs/design/` keep theirs. RELEASING.md announces a removal a minor ahead, and this one had no
+  release of warning, at the project's owner's word, as the rename had none.
 - **`roboglot list-models` is the command again, and `roboglot list-llms` is gone.** It lists every kind of
   model a run can have, the pilot LLMs, the decision LLMs and with `--kind policy` the policy types,
   which a name for LLMs leaves out. There is no alias, so a script that still types `list-llms` stops
@@ -103,22 +168,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Fixed
 
+- **A team run that names one member's robot takes the others' from the task file.** `roboglot
+  run team-hello --robot arm`, with `arm` a registered robot, gave `arm` its registered body and
+  every other member the machine's default, where the file's `robots:` named one: a member was
+  read from the command line or from the file, never from both. Each member is read in turn now:
+  the command line first, then the file, then the machine. Without that, a run like this one would
+  not start at all, now that there is no default robot.
+- **A pilot team on an MQTT bus hears the runner's own notices once.** The runner tells the
+  team when a member ends under the name `team`, which no member subscribes as, so the bus took
+  the broker's echo of each notice for a new message: the members heard it twice and
+  `team.jsonl` kept it twice. A name the bus has published under is its own now, and its echo is
+  dropped as a member's always was. The bus is a library's (`bus_factory=`), with no flag.
+- **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
+  mapd names no map yet, and the place read as waiting for the robot's map to be known until the
+  next session found it orphaned. It says `its map was wiped` from the moment of the wipe.
 - **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
   went straight on to the next leg before the walker looked at the shape, so a square was judged
   from the end of a fifth leg, a whole side from where it began, and passed or failed by a few
   centimetres either side of the half-metre bound: a body that walks exactly what it is told
-  passed by a fraction of a millimetre, and the README's simulator figure failed at 0.59 m.
-  `tests/test_fake_provider.py` walks a true one now and counts four legs, and the closure the
-  bound's comment quotes is measured again: on seed 0 the trained gait closes 0.09 m from its
-  start and the kinematic stand-in 0.25 m.
-- **`docs/assets/hero3d.py` runs again, and the README's simulator figure is a square.** The
-  script allowed every safe verb, `watch` among them, which a goal may only allow on a run with a
-  decision LLM that can see, so the run was refused before it began; it allows what
-  `roboglot run --goal` does now. The figure 0.8.0 shipped on 2026-09-09 was not a square: by the
-  path it drew its corners turned about 75 degrees, and the fifth leg the walker should never
-  have taken closed the shape as a pentagon, 0.14 m from its start. Recorded again at the same
-  seed, 6, it walks four legs and four right-angle corners and closes 0.11 m from its start, and
-  its caption says Roboglot.
+  passed by a fraction of a millimetre. `tests/test_fake_provider.py` walks a true one now and
+  counts four legs.
 - **A Mistral LLM with its reasoning on no longer ends a run on its first turn.** Mistral answers
   with `message.content` as a list of chunks then, a thinking chunk and the text, and always so on
   Z.ai's GLM 5.3, which Roboglot has carried since 0.13.0. Roboglot joined that content as a string,
@@ -138,6 +207,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Documentation
 
+- **The documentation says nothing of a simulator.** The README, the guides, the adapter pages,
+  the passport pages and the examples offer the mocks where they offered a simulator, and the
+  guide to exploring is gone with the verbs. The pictures and records made on a simulator are
+  deleted: `roboglot-on-off.gif`, `lerobot-sim.gif`, `team.gif`, `open-duck.gif`, `explore.gif`,
+  `hero.gif` and the local LLMs' transcripts in `docs/assets/transcripts/`. The run sheet loses
+  E199, the arm against its twin, which needs the twin, and E197 its step on the twin. CI loses
+  the jobs that fetched, refreshed or ran a simulator: `physics`, `microduck-assets`,
+  `lerobot-sim-assets`, `refresh-the-simulator` and `toddlerbot-contract`.
 - **`docs/llms/` is `docs/models/` again, and the VLA page is `docs/models/vlas.md`.** The folder has a
   page for each kind of model a run can have, and where 0.32.0 wrote LLMs and policies for all of them,
   the pages say models, the README's `Which models work`, `docs/models/README.md` and the index in
@@ -2776,7 +2853,7 @@ Known limitations.
   start and after a bump or a fall until two stops agree. `map` draws it, the place verbs mark
   places in it, and a recorded GIF of the cartoon shades the floor it has not seen. Without `--room`
   each simulator lays out the walled arena it always has, and keeps no map
-  ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
+  ([docs/concepts/places.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/concepts/places.md#a-room-for-the-simulator)).
 - **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
   camera: round what its map has seen to be solid when it keeps a map and its size is known,
   crossing unseen floor only where no seen way goes, and straight otherwise, never further blind
@@ -2816,7 +2893,7 @@ Known limitations.
   why: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body radius.
   The pilot reads why beside the body, and a task that needs `explore` is refused in those words
   by `roboglot run`, `roboglot validate` and MCP alike
-  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
+  ([docs/adapters/microduck/README.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
   [ADR-0071](docs/adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
 - **`find`: a Microduck explores until it sees what it was asked for.** `find(target,
   minutes)` explores as `explore` does, with a camera frame at every look and a whole turn of
@@ -2826,13 +2903,13 @@ Known limitations.
   for the target says so rather than that it saw none. A label the detector never gives is
   refused before anything moves, now that detectors say which labels they give. It is offered
   where `explore` is and the duck has a camera, and asks first
-  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#find-looking-for-something-by-exploring)).
+  ([docs/adapters/microduck/README.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/microduck/README.md#find-looking-for-something-by-exploring)).
 - **Two starters that explore: `find-the-ball` and `favourite-spot`.** `find-the-ball` finds the
   ball hidden in the room the duck does not start in, walks up to it, says where it was and walks
   back to `start`. `favourite-spot` marks where the duck stands, explores, and walks back to it.
   Both run in the duck's simulator given a room, `roboglot run find-the-ball --room two-rooms --yes`,
   and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
-  ([docs/guides/explore.md](docs/guides/explore.md)).
+  ([docs/guides/explore.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/guides/explore.md)).
 - **`roboglot validate --room`.** Checks a task against the robot's simulator laid out in a room,
   which offers the place verbs, `explore` and `find`. A task that names no robot is checked
   against every verb something installed here offers, now a simulator in a room among them.
@@ -6521,7 +6598,7 @@ below, lists what only the hardware can settle.
   and it and `roboglot robot release` say it is the simulator rather than asking anybody to hold an
   arm. Its ✅ rests on a seeded grasp sweep on the maker's model, judged by the world's truth,
   and it never raises `lerobot:real`'s
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-simulator-lerobotmujoco)).
+  ([docs/adapters/lerobot.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/lerobot/README.md#the-simulator-lerobotmujoco)).
 - **`roboglot robot twin SOURCE [NAME]` registers a simulator of a registered arm.** NAME is
   `SOURCE-sim` unless given, its address is the calibration file SOURCE's runs read, and it
   copies SOURCE's rest pose, pilot and each camera the simulator renders, naming any it leaves
@@ -6529,7 +6606,7 @@ below, lists what only the hardware can settle.
   registered LeRobot arm, a missing calibration file, a serial port where the file goes, and
   `--force` over anything but a `lerobot:mujoco` robot, so no arm is ever overwritten by its own
   simulator. `--robot arm-01:mujoco` does not parse, and this is the command instead
-  ([docs/registry.md](docs/guides/registry.md#a-simulator-of-an-arm)).
+  ([docs/registry.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/guides/registry.md#a-simulator-of-an-arm)).
 - **`roboglot preflight FILES --robot NAME --llm VENDOR[:MODEL]` rehearses task files on a
   simulator.** A robot that is not a simulator is refused before it is built, with a pointer to
   `robot twin`, and so is a pilot nobody named: the scripted one runs only when typed as
@@ -6552,7 +6629,7 @@ below, lists what only the hardware can settle.
   checks read the transcript. Object checks read the simulator's truth, latched on the way into
   the teardown's stop or at its peak before then, which is kept off the state's extras, so the
   pilot and an MCP client never see it. It is never the frontmatter, which an MCP pilot is
-  handed whole ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-sidecar)).
+  handed whole ([docs/adapters/lerobot.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/lerobot/README.md#the-sidecar)).
 - **`roboglot[lerobot-sim]` installs the simulator.** It is `roboglot-lerobot[sim]`, the arm's
   package with MuJoCo and without LeRobot, so it needs no torch and installs on Python 3.11.
   `roboglot doctor` gains a `lerobot-sim (mujoco)` row, and a row in its transports table saying

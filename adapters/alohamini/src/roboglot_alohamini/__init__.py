@@ -7,8 +7,8 @@ Roboglot and the first with a lift, so `pose` joins `twist`, `joint` and `grippe
 Roboglot never imports it. The project is a fork of LeRobot that calls itself `lerobot`, is not
 on PyPI, and installs only from a large git clone on Python 3.12 with torch, so the adapter
 speaks its ZeroMQ host protocol instead and needs `pyzmq` alone (ADR-0027, `upstream_api.py`).
-Three backends: `mock` (offline), `sim2d` (the cartoon world, with a lift) and `zmq` (the real
-host behind `roboglot[alohamini]`, never run against a robot by us).
+Two backends: `mock` (offline) and `zmq` (the real host behind `roboglot[alohamini]`, never run
+against a robot by us).
 
 Two things this robot has not got shape the manifest. There is no speaker and no head, so
 `say` and `gaze` are not declared. And there is no odometry anywhere in the observation, only
@@ -23,7 +23,7 @@ advertises itself; without that wrapper the three arm verbs refuse rather than p
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -57,7 +57,7 @@ __version__ = "0.34.0"
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""
 
-BACKENDS = ("mock", "sim2d", "zmq")
+BACKENDS = ("mock", "zmq")
 DEFAULT_ID = "alohamini-01"
 
 # Upstream's own fast tier is 0.25 m/s and 75 deg/s (`upstream_api.SPEED_LEVELS`). Roboglot's
@@ -228,7 +228,7 @@ def alohamini_manifest(
 
 
 class AlohaMiniAdapter:
-    """A `RobotAdapter` over the mock, sim2d or zmq backend."""
+    """A `RobotAdapter` over the mock or zmq backend."""
 
     name = "alohamini"
 
@@ -323,35 +323,14 @@ class AlohaMiniAdapter:
     def mobility(self) -> str:
         return "wheeled"
 
-    @property
-    def world(self) -> Any:
-        """The simulated world, for the GIF recorder. None on the backends that have none.
-
-        Every adapter with a sim2d backend forwards this; without it the recorder gets no
-        world, records nothing, and fails saving an empty GIF at the end of an otherwise
-        successful run."""
-        return getattr(self.transport, "world", None)
-
-    @property
-    def duck_index(self) -> int:
-        return int(getattr(self.transport, "duck_index", 0))
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
 
 def describe(backend: str, robot_id: str | None = None) -> RobotManifest:
-    """Static: the offline backends have their camera and their arm torque; the real host
+    """Static: the mock has its camera and its arm torque; the real host
     claims neither until connect() has seen them on the wire."""
-    offline = backend in ("mock", "sim2d")
+    offline = backend == "mock"
     return alohamini_manifest(
         backend,
         robot_id,
@@ -373,25 +352,19 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
 ) -> AlohaMiniAdapter:
     refuse_rest_pose("alohamini", rest_pose)
-    # No backend here opens a camera by url: mock and sim2d carry their own, and the zmq host
+    # No backend here opens a camera by url: the mock carries its own, and the zmq host
     # publishes whichever it has. A second one is still refused rather than silently dropped.
     _url = one_camera_url(camera_url, spec=f"alohamini:{backend}")
     if backend == "mock":
         from roboglot_alohamini.mock import AlohaMiniMock
 
         return AlohaMiniAdapter(AlohaMiniMock(model=parse_model(address)), robot_id=robot_id)
-    if backend == "sim2d":
-        from roboglot_alohamini.sim2d import AlohaMiniSim2D
-
-        return AlohaMiniAdapter(AlohaMiniSim2D(seed=seed or 0), robot_id=robot_id)
     if backend == "zmq":
         from roboglot_alohamini.zmq_host import AlohaMiniZmq
 

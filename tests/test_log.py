@@ -31,7 +31,6 @@ from roboglot.log import (
     render_call,
     render_events,
     render_lines,
-    team_caption,
     thinking_limit_default,
 )
 from roboglot.transport.base import Ack, Intent
@@ -256,8 +255,8 @@ def test_a_long_burst_is_shown_as_it_happens() -> None:
 
 
 def test_a_burst_that_stalls_is_not_split_by_the_count_alone() -> None:
-    """A free-running simulator crosses twenty robot seconds in under two wall ones, so the
-    count is the bound that matters there."""
+    """A mock's clock crosses twenty robot seconds in no wall time at all, so the count is the
+    bound that matters there."""
     stalled = _burst(150, every=0.0)
     assert len(lines(stalled)) == 1
     assert len(lines(stalled, max_burst=100)) == 2
@@ -306,14 +305,14 @@ def test_an_intent_line_still_drops_null_parameters() -> None:
 
 
 def test_a_note_with_several_lines_is_indented_under_its_label() -> None:
-    """A planner's multi-line log ran into the label column and was unreadable: every line
+    """A multi-line note ran into the label column and was unreadable: every line
     after the first started at column zero, exactly where a reader looks for the next
     event's label, so a three-line note read as three separate events."""
-    text = "planner: it can see the ball\nbearing +12 deg, 0.8 m away\nnext: go_to, then kick"
+    text = "pilot: it can see the ball\nbearing +12 deg, 0.8 m away\nnext: go_to, then kick"
     ((rendered, style),) = render_lines(LogEvent("note", 0.0, {"text": text}))
     first, *rest = rendered.splitlines()
-    assert first.startswith("note") and first.endswith("planner: it can see the ball")
-    pad = len(first) - len("planner: it can see the ball")
+    assert first.startswith("note") and first.endswith("pilot: it can see the ball")
+    pad = len(first) - len("pilot: it can see the ball")
     assert pad == 8, "the label column"
     assert rest == [" " * pad + "bearing +12 deg, 0.8 m away", " " * pad + "next: go_to, then kick"]
     assert style == "dim"
@@ -736,21 +735,6 @@ def test_the_verb_end_line_counts_the_intents_and_the_seconds() -> None:
     assert "go_to ok: reached the ball (12.5 s, 121 intents)" in text and style == "green"
 
 
-def test_the_verb_end_line_shows_both_clocks_only_when_they_disagree() -> None:
-    """A free-running simulator crosses twenty of the robot's seconds in one of ours. One
-    line saying `1.4 s` for that walk is wrong, and two numbers on every sub-second verb is
-    noise, so both a half second and a fifth have to separate them."""
-
-    def line(**extra: Any) -> str:
-        data = {"name": "go_to", "ok": True, "outcome": "ok", "summary": "there", **extra}
-        ((text, _),) = render_lines(LogEvent("verb_end", 0.0, data))
-        return text
-
-    assert "20.0 s sim, 1.4 s wall" in line(elapsed_s=1.4, transport_s=20.0, clock="sim")
-    assert "(1.0 s," in line(elapsed_s=1.0, transport_s=1.1, clock="sim")  # too close to say
-    assert "(1.4 s," in line(elapsed_s=1.4, transport_s=20.0)  # no clock: hardware, one number
-
-
 def test_a_burst_spans_the_robots_clock_when_it_has_one() -> None:
     """`move x200 over 1.4 s` implies 140 Hz to a reader when the commanded rate was 10."""
     event_log = EventLog()
@@ -777,7 +761,7 @@ def test_run_start_shows_the_prompt_once_and_can_be_asked_not_to() -> None:
             "glot": "find-and-kick",
             "provider": "anthropic",
             "model": "claude-opus-5",
-            "transport": "sim2d",
+            "transport": "mock",
             "adapter": "microduck",
             "tools": ["walk", "kick"],
             "system_prompt": "You are the brain of a duck.\nRules follow.",
@@ -786,7 +770,7 @@ def test_run_start_shows_the_prompt_once_and_can_be_asked_not_to() -> None:
     )
     with_prompt = [text for text, _ in render_lines(event)]
     assert any("You are the brain of a duck." in line for line in with_prompt)
-    assert any("robot=microduck:sim2d" in line for line in with_prompt)
+    assert any("robot=microduck:mock" in line for line in with_prompt)
     without = [text for text, _ in render_lines(event, prompt=False)]
     assert not any("brain of a duck" in line for line in without)
 
@@ -878,13 +862,15 @@ def test_every_kind_of_moment_keeps_the_mark_its_glyph_is_chosen_from() -> None:
     # a failure Roboglot asks the same turn again after is a warning: the run goes on
     assert marks["llm_error_asked_again"] == ["warn"]
     assert marks["observation_error"] == ["fail"] and marks["enforce"] == ["warn"]
-    assert marks["team_claim"] == ["team"] and marks["member_end"] == ["end"]
+    assert marks["team_talk"] == ["team"] and marks["member_end"] == ["end"]
     assert marks["note"] == ["note"] and marks["memory"] == ["note"]
     assert marks["assess_feasible"] == ["ok"], "a verdict that clears the way reads like one"
     assert marks["assess_infeasible"] == ["warn"], "nothing broke: this body cannot"
     assert marks["assess_uncertain_human_no"] == ["warn"]
     assert marks["assess_invalid"] == ["fail"]
-    assert marks["tool_result"] == ["ok"] and marks["tool_result_sim"] == ["fail"]
+    assert marks["tool_result"] == ["ok"]
+    failed = LogEvent("tool_result", 1.3, {"ok": False, "elapsed_s": 0.2})
+    assert [line.mark for line in render_events(failed) if line.mark] == ["fail"]
     # and nothing invents a mark the glyph table has no field for
     from roboglot import ui
 
@@ -1185,7 +1171,7 @@ def test_a_replay_introduces_the_run_because_nothing_else_did() -> None:
                 "provider": "anthropic",
                 "model": "claude-opus-5",
                 "adapter": "microduck",
-                "transport": "sim2d",
+                "transport": "mock",
                 "tools": ["kick"],
                 "connect_s": 0.5,
                 "memory": {"notes": 3, "episodes": 5},
@@ -1196,7 +1182,7 @@ def test_a_replay_introduces_the_run_because_nothing_else_did() -> None:
     for needle in (
         "find-and-kick",
         "anthropic (claude-opus-5)",
-        "microduck:sim2d",
+        "microduck:mock",
         "3 notes, 5 earlier runs",
         "connected in 0.50 s",
     ):
@@ -1217,7 +1203,7 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
 
     def panel(**extra: Any) -> str:
         view, buffer = console_log(header=True)
-        data = {"glot": "find-and-kick", "provider": "fake", "transport": "sim2d", **extra}
+        data = {"glot": "find-and-kick", "provider": "fake", "transport": "mock", **extra}
         view(LogEvent("run_start", 0.0, data))
         return buffer.getvalue()
 
@@ -1425,41 +1411,10 @@ def test_a_prefixed_view_names_its_robot_on_every_line_including_continuations()
     assert any("second line" in line for line in printed)
 
 
-def test_the_coordinators_events_render_as_team_lines_in_the_recorders_words() -> None:
-    cases = [
-        (
-            LogEvent("auction", 0.0, {"first_bid": "duck-1", "dist": 0.42}),
-            "auction first bid duck-1 0.42 m",
-        ),
-        (
-            LogEvent("claim", 0.0, {"kicker": "duck-1", "dist": 0.62, "spotter": "r-2"}),
-            "claim   duck-1 (0.62 m), spotter r-2",
-        ),
-        (LogEvent("miss", 0.0, {"duck": "duck-0"}), "miss    duck-0, re-searching"),
-        (LogEvent("kick_done", 0.0, {"kicker": "duck-2"}), "kicked  by duck-2, the spotter"),
-        (
-            LogEvent("verdict", 0.0, {"verdict": "moved", "moved_m": 0.51, "spotter": "r-1"}),
-            "verdict moved 0.51 m by r-1",
-        ),
-        (LogEvent("member_dead", 0.0, {"duck": "duck-2", "last_hb": 3.0}), "dead    duck-2"),
-        (
-            LogEvent("member_end", 0.0, {"status": "stopped", "steps": 7}),
-            "end     stopped after 7",
-        ),
-    ]
-    for event, needle in cases:
-        ((text, _),) = render_lines(event)
-        assert text.startswith(needle), (event.kind, text)
-    # the GIF's caption and the console line are the same words, one upper and one lower
-    word, detail = team_caption("claim", {"kicker": "duck-1", "dist": 0.62}) or ("", "")
-    assert word == "CLAIM" and detail.startswith("duck-1 (0.62 m)")
-    assert team_caption("verb_end", {}) is None
-
-
 def test_a_verb_ended_by_another_layer_is_yellow_and_keeps_its_own_word() -> None:
-    data = {"name": "search_scan", "outcome": "preempted", "summary": "role change to kicker"}
+    data = {"name": "search_scan", "outcome": "preempted", "summary": "stopped for a new goal"}
     ((text, style),) = render_lines(LogEvent("verb_end", 0.0, data))
-    assert "PREEMPTED: role change to kicker" in text
+    assert "PREEMPTED: stopped for a new goal" in text
     assert style == "yellow", "a routine handover must not read as the red that means a bug"
     ((_, style),) = render_lines(LogEvent("verb_end", 0.0, {**data, "outcome": "error"}))
     assert style == "red"
@@ -1490,19 +1445,6 @@ def test_the_reprompt_line_quotes_what_the_llm_was_told() -> None:
     ((text, _),) = render_lines(event)
     assert "no tool call: re-prompting once" in text
     assert "(You must call exactly one tool.)" in text
-
-
-def test_the_done_line_says_sim_seconds_on_a_simulator() -> None:
-    """An MCP client reading `done ok in 0.2 s` after a twenty second approach would think
-    the robot teleported. On a simulator the two clocks are different numbers, and both."""
-    sim = LogEvent(
-        "tool_result", 0.0, {"ok": True, "elapsed_s": 0.2, "transport_s": 20.0, "clock": "sim"}
-    )
-    ((text, _),) = render_lines(sim)
-    assert "20.0 s sim, 0.2 s wall" in text
-    hardware = LogEvent("tool_result", 0.0, {"ok": True, "elapsed_s": 0.2, "transport_s": 0.2})
-    ((text, _),) = render_lines(hardware)
-    assert "in 0.2 s" in text and "sim" not in text
 
 
 def test_a_watch_look_is_one_line_saying_what_it_was_told_and_what_it_did() -> None:

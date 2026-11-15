@@ -63,13 +63,6 @@ def validate_glot(
         problems.append(
             Problem("learned_verbs", "must be empty (executing policies is a v2 feature)")
         )
-    if fm.team is not None and fm.team.allocation.method == "auction" and fm.verbs.confirm:
-        # An auction member is a state machine with nobody to ask, so a gated verb there can
-        # only ever be refused. A pilot team has pilots, and `--yes` is the answer for all of
-        # them at once, so the refusal belongs at the run rather than in the contract.
-        problems.append(
-            Problem("verbs.confirm", "a team cannot prompt y/N per duck: empty verbs.confirm")
-        )
     if not manifests:
         return problems
 
@@ -112,29 +105,6 @@ def validate_glot(
                     Problem(
                         "requires", f"requires {verb}, but none of {ids} provides it", verb=verb
                     )
-                )
-        roles = fm.team.roles if fm.team is not None else None
-        for role, spec in (roles or {}).items():
-            fillers = [m for m in manifests if all(m.provides(v) for v in spec.requires)]
-            if not fillers:
-                problems.append(
-                    Problem(
-                        f"team.roles.{role}",
-                        f"no robot provides all of {', '.join(spec.requires)}",
-                    )
-                )
-                continue
-            if not spec.needs:
-                continue
-            from roboglot.team.capability import missing_needs
-
-            lacking = {m.id: missing_needs(spec.needs, m) for m in fillers}
-            if all(lacking.values()):
-                why = "; ".join(
-                    f"{m.id} ({m.model}) lacks {', '.join(lacking[m.id])}" for m in fillers
-                )
-                problems.append(
-                    Problem(f"team.roles.{role}.needs", f"no robot meets its needs: {why}")
                 )
     # the weaker line: an allowed verb no robot has (a v1 task may allow more than it needs)
     for verb in fm.verbs.allow:

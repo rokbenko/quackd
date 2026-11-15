@@ -28,10 +28,10 @@ COMMANDS = ("run", "drive")
 PANELS = ("Task", "Robot", "Pilot", "Output", "Host", "Memory")
 """The order the page shows the panels in, `--help`'s own. Any other panel follows them."""
 
-LEFT_OUT = frozenset({"front", "live", "verbose", "log", "log_prompt", "team", "robots", "by_hand"})
-"""Options the page does not offer, each for a reason. `--front` is the page's own. `--live`
-opens a window on the page's computer rather than in the page, and `--verbose`, `--log` and
-`--log-prompt` shape a terminal's narration, which the page draws its own way. `--team` and
+LEFT_OUT = frozenset({"front", "verbose", "log", "log_prompt", "team", "robots", "by_hand"})
+"""Options the page does not offer, each for a reason. `--front` is the page's own, and
+`--verbose`, `--log` and `--log-prompt` shape a terminal's narration, which the page draws its
+own way. `--team` and
 `--robots` drive several robots, and `--by-hand` waits for Enter from somebody at the arm: the
 page refuses all three (ADR-0069), so it does not offer them."""
 
@@ -52,7 +52,7 @@ class Option:
     flag: str | None
     """The flag that turns it on or takes its value: None for the task argument."""
     off_flag: str | None
-    """The flag that turns it off, where it has one (`--no-gif`)."""
+    """The flag that turns it off, where it has one (`--no-memory`)."""
     kind: str
     default: Any
     help: str

@@ -943,7 +943,7 @@ VLA_PIPELINE = UpstreamRef(
     "`auto` action mode alone (XVLA_ACTION_MODES), taken to answer in the joints of the arm it "
     "learned from. Roboglot loads them through the allowlist each type has and the pins and "
     "refusals ACT's go through, says in /v1/policy which images go padded, and a first run "
-    "should be on the simulator with `roboglot policy check --bench` first",
+    "should be `roboglot policy check --bench`, before the arm",
 )
 TICK_MODE = UpstreamRef(
     "TICK_MODE",

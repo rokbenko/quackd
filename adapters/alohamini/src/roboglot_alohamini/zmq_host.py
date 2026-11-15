@@ -208,7 +208,6 @@ class AlohaMiniZmq:
         self.arm_torque = False
         self.calibrated = False
         self.holding: dict[str, bool] = dict.fromkeys(ARMS, False)
-        self.post_sleep: Any = None
 
     # ── the payload, which is the whole safety story ────────────────────────────────
 
@@ -579,8 +578,6 @@ class AlohaMiniZmq:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
 
 __all__ = [

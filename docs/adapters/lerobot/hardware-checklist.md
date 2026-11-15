@@ -323,8 +323,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    ```
 
    Then `robot_observe` from the client. What comes back is the frame and a line of
-   detections, and on a real desk that line is usually nothing: the detector's colour ranges
-   are the simulator's, which [the adapter page](README.md#camera) explains.
+   detections, and on a real desk that line is usually nothing: the detector looks for the
+   orange ball a mock draws, which [the adapter page](README.md#camera) explains.
 
    Aim it at what you want watched, and check what it crops. On the bench it framed the
    gripper and cut off the raised arm, so the LLM ended up verifying its own waves from the
@@ -400,8 +400,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    because the pilot answered `uncertain` to the feasibility question and the human at the
    keyboard said no.
 
-   One way that heartbeat failure could have happened was found on the simulator afterwards and
-   closed in 0.15.0: a call to the arm spent its deadline on whatever the event loop's thread was
+   One way that heartbeat failure could have happened was found afterwards and closed in
+   0.15.0: a call to the arm spent its deadline on whatever the event loop's thread was
    doing, a pilot's SDK parsing its first response or a frame being encoded among it, so a
    heartbeat the arm had answered in time could stop the run. Now only time the bus is busy
    spends it. Nothing says it is the one that happened, so give this dry run the camera from
@@ -706,10 +706,9 @@ stopped
     `manipulate` reach this arm through a policy server, a process of its own that no
     checkpoint ever leaves: `roboglot policy serve` in a second terminal, with
     `roboglot[lerobot-vla]` in a Python 3.12 environment, and `--policy-url
-    http://127.0.0.1:9875` on the run ([guides/policies.md](../../guides/policies.md)). Rehearse
-    each command on the arm's twin first
-    ([section 17 of the first run](first-run.md#17-optional-hand-the-arm-to-a-learned-policy)), then
-    run it on the arm. Start with a scripted policy that needs no torch and moves nothing,
+    http://127.0.0.1:9875` on the run ([guides/policies.md](../../guides/policies.md), and
+    [section 16 of the first run](first-run.md#16-optional-hand-the-arm-to-a-learned-policy)).
+    Start with a scripted policy that needs no torch and moves nothing,
     `roboglot policy serve --policy scripted:hold`, which holds the arm where it reads, and a pilot
     that asks no LLM:
 
@@ -831,17 +830,9 @@ only against `lerobot:mock` and the test suite:
   creeps. Say whether a move of several seconds looked like one motion or a staircase, and
   whether it arrived when the time was up.
 
-**And four the simulator and the policy server brought with them**, which only an arm can
-answer. Each is an open item in PLAN.md:
+**And two more that only an arm can answer:**
 
-- **Whether each joint turns the way the simulator's does.** Nudge each joint a few degrees in
-  the positive direction on the arm and on its twin, and say whether they agree. Then read the
-  calibrated value at each mechanical stop, which is what says whether a fold recorded past the
-  travel can be put on the simulator at all.
-- **What the gripper reads on a real pen**, against the band that infers holding. The
-  simulator's pen is a shape in a model and says nothing about that band.
-- **Where your front and wrist cameras really are**, their placement and field of view, which
-  would replace the simulator's default views.
+- **What the gripper reads on a real pen**, against the band that infers holding.
 - **How fast a policy's loop runs on the real bus** with the server inferring on the same
   laptop, step 18's number.
 

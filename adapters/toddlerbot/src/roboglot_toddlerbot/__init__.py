@@ -17,13 +17,13 @@ depend on what the owner actually has:
 `say` is absent for good: the speaker plays audio and nothing at this pin synthesises speech.
 A battery is absent too, so a battery abort can never fire here.
 
-Backends: `mock` and `sim2d` run offline; `bridge` talks to the daemon Roboglot ships in
+Backends: `mock` runs offline; `bridge` talks to the daemon Roboglot ships in
 `bridge/toddlerbot/`, which is the only thing that ever touches a motor.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from PIL import Image
@@ -56,7 +56,7 @@ __version__ = "0.34.0"
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""
 
-BACKENDS = ("mock", "sim2d", "bridge")
+BACKENDS = ("mock", "bridge")
 DEFAULT_ID = "toddlerbot"
 
 ROBOTS: tuple[str, ...] = (
@@ -87,7 +87,7 @@ STALE_LIMIT_MS = 1000.0
 def _reported_motions(transport: object) -> tuple[str, ...]:
     """What the daemon said it loaded, or Roboglot's own list where nothing reports.
 
-    `mock` and `sim2d` do not carry the attribute at all and get the full list. A
+    `mock` does not carry the attribute at all and gets the full list. A
     `bridge` that reports an empty list gets an empty list, and `perform` goes with
     it."""
     reported = getattr(transport, "motions", None)
@@ -239,7 +239,7 @@ def toddlerbot_manifest(
         # There is no watchdog, no timeout, no e-stop and no deadman anywhere upstream, and
         # silence on this robot means "hold the last target forever" rather than "stop". The
         # only deadman that can exist is the one Roboglot's own daemon runs, so `deadman` is
-        # true wherever something is actually running one: the offline doubles emulate
+        # true wherever something is actually running one: the mock emulates
         # it, and `:bridge` is false until the daemon has answered the handshake and
         # said otherwise, because before that there is nothing on the other end.
         safety_authority=SafetyAuthority(native="none", deadman=deadman, heartbeat_hz=HEARTBEAT_HZ),
@@ -282,7 +282,7 @@ def toddlerbot_manifest(
 
 
 class ToddlerBotAdapter:
-    """A `RobotAdapter` over the mock, sim2d or bridge backend."""
+    """A `RobotAdapter` over the mock or bridge backend."""
 
     name = "toddlerbot"
 
@@ -380,31 +380,14 @@ class ToddlerBotAdapter:
     def mobility(self) -> str:
         return str(self.manifest.mobility) if self.manifest else "legged"
 
-    @property
-    def world(self) -> Any:
-        """The simulated world, for the GIF recorder. None on the backends that have none."""
-        return getattr(self.transport, "world", None)
-
-    @property
-    def duck_index(self) -> int:
-        return int(getattr(self.transport, "duck_index", 0))
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
 
 def describe(backend: str, robot_id: str | None = None) -> RobotManifest:
-    """Static: the offline backends describe a fully built robot with a staged walk policy;
+    """Static: the mock describes a fully built robot with a staged walk policy;
     the bridge claims nothing until the daemon has said what is actually there."""
-    offline = backend in ("mock", "sim2d")
+    offline = backend == "mock"
     return toddlerbot_manifest(
         backend,
         robot_id,
@@ -428,9 +411,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
@@ -444,10 +425,6 @@ def make(
         from roboglot_toddlerbot.mock import ToddlerBotMock
 
         return ToddlerBotAdapter(ToddlerBotMock(), robot_id=robot_id)
-    if backend == "sim2d":
-        from roboglot_toddlerbot.sim2d import ToddlerBotSim2D
-
-        return ToddlerBotAdapter(ToddlerBotSim2D(seed=seed or 0), robot_id=robot_id)
     if backend == "bridge":
         from roboglot_toddlerbot.bridge import ToddlerBotBridge
 

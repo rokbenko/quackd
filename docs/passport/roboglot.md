@@ -310,7 +310,7 @@ the robot's folder as the only place it may write:
 | `User=`, `SupplementaryGroups=bluetooth` | your user, plus the group BlueZ lets advertise. With no such group the line is left out, with a warning |
 | `Wants=` and `After=` `network-online.target bluetooth.service` | it starts once the network and BlueZ are up |
 | `EnvironmentFile=` the robot's `robot.env` | the brain's key, from the file only you can read |
-| `ROBOGLOT_ONBOARD_DIR`, `ROBOGLOT_CACHE_DIR`, `ROBOGLOT_MEMORY_DIR` | all inside the robot's folder |
+| `ROBOGLOT_ONBOARD_DIR`, `ROBOGLOT_MEMORY_DIR` | both inside the robot's folder |
 | `Restart=on-failure`, with a start limit | back after a crash, and not in a loop |
 | `Nice=10`, `MemoryMax=1G`, `OOMScoreAdjust=300` | the robot's own control loop comes first |
 | `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=`, `PrivateTmp` | it can change nothing outside the robot's folder |
@@ -672,10 +672,9 @@ file, then `~/.roboglot/onboard/`.
 | the service's state, every 2 seconds | `status.json` |
 | the robots met and refused, at most 30 refusals a minute, and cut to its newest rows past 1 MB | `met.jsonl` |
 | each run's record, the newest 200 | `runs/` |
-| what the robot remembers, and Roboglot's cache | `memory/` and `cache/` |
+| what the robot remembers | `memory/` |
 
-The unit points `ROBOGLOT_MEMORY_DIR` and `ROBOGLOT_CACHE_DIR` into the folder, so a robot's service
-writes nowhere else.
+The unit points `ROBOGLOT_MEMORY_DIR` into the folder, so a robot's service writes nowhere else.
 
 > [!WARNING]
 > On Linux Roboglot makes the files that hold secrets readable by their owner alone. On Windows, which

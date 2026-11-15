@@ -5,7 +5,7 @@ of the family says it changed no description: a digest changes with anything a p
 reads off a manifest, and the verb list says in what order. Run
 `uv run python -m tests.golden.manifest_digests` only when a manifest is meant to change, and say
 why in the commit: a digest is the fingerprint a LAN announce carries (`roboglot.lan.txt`).
-This is on its own and not in `generate.py` because that one rewrites the simulators' goldens too.
+This is on its own and not in `generate.py`, which writes the task files' hashes and the log lines.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ def digests() -> dict[str, Any]:
     microduck: dict[str, str] = {}
     huebot: dict[str, str] = {}
     verbs: dict[str, list[str]] = {}
-    for backend, camera, places, mapped, sized, fov in itertools.product(
-        BACKENDS, (True, False), TRI, TRI, TRI, (None, 62.2)
+    for backend, camera, places, fov in itertools.product(
+        BACKENDS, (True, False), TRI, (None, 62.2)
     ):
         manifest = microduck_manifest(
             backend,
@@ -41,11 +41,9 @@ def digests() -> dict[str, Any]:
             camera_fov_deg=fov,
             camera_fov_assumed="the words of an assumption" if fov else None,
             places=places,
-            mapped=mapped,
-            sized=sized,
         )
         digest = manifest.digest()
-        microduck[f"{backend} {camera} {places} {mapped} {sized} {fov}"] = digest
+        microduck[f"{backend} {camera} {places} {fov}"] = digest
         verbs[digest] = manifest.verb_names()
     kicks = tuple(KICK_SKILLS.values())
     for backend, camera, skills in itertools.product(

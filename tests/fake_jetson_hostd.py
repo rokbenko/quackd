@@ -75,8 +75,9 @@ COMPATIBLE = board_files.COMPATIBLE.replace(NUL, "")
 FRAME_SIZE = (640, 480)
 #: The default ball's box, in the default frame's pixels: the default `/detect` reply names it.
 BALL_BOX = (300.0, 200.0, 340.0, 240.0)
-SIM_ORANGE = (255, 140, 0)
-"""The simulators' ball colour, which `ColorBlobDetector`'s default ball range is tuned to."""
+BALL_ORANGE = (255, 140, 0)
+"""The mocks' ball colour (`roboglot.perception.palette.BALL`), which `ColorBlobDetector`'s
+default ball range is tuned to."""
 
 
 def jpeg_bytes(
@@ -88,7 +89,7 @@ def jpeg_bytes(
     """A JPEG of a grey floor, with an orange ball filling `ball` unless it is None."""
     image = Image.new("RGB", size, (110, 110, 110))
     if ball is not None:
-        ImageDraw.Draw(image).ellipse(ball, fill=SIM_ORANGE)
+        ImageDraw.Draw(image).ellipse(ball, fill=BALL_ORANGE)
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()

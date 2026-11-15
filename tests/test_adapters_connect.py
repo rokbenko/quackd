@@ -11,17 +11,17 @@ import pytest
 
 from roboglot.adapters.catalogue import ADAPTERS, BY_NAME, Connect
 from roboglot.adapters.factory import _connect_of
-from roboglot.perception import is_simulated
+from roboglot.perception import is_mock
 
 BLOCKS = {info.name: info.connect for info in ADAPTERS}
 
 
-def test_every_real_backend_of_the_ten_says_how_to_connect_it_and_no_simulator_does() -> None:
+def test_every_real_backend_of_the_ten_says_how_to_connect_it_and_no_mock_does() -> None:
     for info in ADAPTERS:
         # a backend described on an adapter is bound code its make() refuses until somebody names
         # a date (ADR-0076): there is nothing to connect yet, so the page offers no fields for it
         refused = {b for b, tier in info.tiers.items() if tier.name == "described"}
-        real = sorted(b for b in info.backends if not is_simulated(b) and b not in refused)
+        real = sorted(b for b in info.backends if not is_mock(b) and b not in refused)
         assert sorted(info.connect) == real, info.name
         # ADR-0076: a backend with a connect block is one that reaches a robot, which is what
         # the bound and verified tiers mean, so the two lists are one list
@@ -45,7 +45,7 @@ def test_the_described_row_connects_nothing() -> None:
     page offering an address field for one would be a claim the body cannot keep."""
     described = BY_NAME["described"]
     assert described.kind == "described" and not described.connect
-    assert not any(is_simulated(b) for b in described.backends)
+    assert not any(is_mock(b) for b in described.backends)
 
 
 def test_each_block_names_its_own_adapters_page() -> None:

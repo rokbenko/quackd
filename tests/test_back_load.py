@@ -4,22 +4,20 @@
 its dump when nobody said it, so a body with none serialises as it did before the field
 existed (ADR-0079). What these tests hold: it is allowed with nothing to hold with and
 payload's rule is left alone, the prompt shows it and never lists it as a gap, a task that
-needs it is judged against it and a silence is not a yes, a peer on an older release is
-handed nothing new and refuses only what it cannot read, a passport stays as the spec wrote
-it, and the two quadrupeds say what their maker's page said on the day.
+needs it is judged against it and a silence is not a yes, a sheet that says nothing dumps
+nothing new, a passport stays as the spec wrote it, and the two quadrupeds say what their
+maker's page said on the day.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
-from roboglot import verdict as verdict_module
 from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
 from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from roboglot.adapters.manifest import (
@@ -34,17 +32,14 @@ from roboglot.adapters.manifest import (
 from roboglot.adapters.passport import passport_from_manifest
 from roboglot.agent.prompts import ASSESS_TASK, body_lines, body_summary
 from roboglot.glotfile.parser import parse_glot_text
-from roboglot.glotfile.schema import DatasheetOverride, GlotFrontmatter, TeamRole
+from roboglot.glotfile.schema import DatasheetOverride, GlotFrontmatter
 from roboglot.mcp_server import NEEDS_WORDS_TEXT
 from roboglot.onboard import config
 from roboglot.passport import document
-from roboglot.team.messages import BidMsg, TaskMsg, TeamTask
-from roboglot.team.mqtt_bus import MqttBus, decode, encode
 from roboglot.verdict import (
     Verdict,
     check_needs,
     missing_needs,
-    missing_needs_in,
     needs_properties,
     own_sheet_objection,
     solo_hint,
@@ -261,68 +256,6 @@ def test_a_body_that_says_it_dumps_the_figure_and_its_digest_is_its_own() -> Non
     assert _hound(said).digest() != _hound().digest()
     # and the round trip an in-process merge does (the host camera, a task file) keeps it
     assert Datasheet.model_validate(said.model_dump()).carries_kg == BACK
-
-
-def _bid(sheet: Datasheet) -> BidMsg:
-    return BidMsg(
-        t=0.0,
-        src="hound-01",
-        task_id="t",
-        ball_dist_m=1.0,
-        role="hauler",
-        provides=["move"],
-        datasheet=sheet.model_dump(mode="json"),
-        mobility="legged",
-    )
-
-
-def test_a_bid_from_a_body_that_says_nothing_carries_nothing_new() -> None:
-    assert b"carries_kg" not in encode(_bid(_sheet()))
-
-
-def test_a_bid_that_says_it_reads_fine_at_a_coordinator_that_never_heard_of_it() -> None:
-    """A bid's `datasheet` is a dict: no release runs it back through `Datasheet`, so its
-    `extra="forbid"` has never judged a peer, and a key the reader does not know is read past."""
-    bid = _bid(_sheet(carries_kg=BACK))
-    assert bid.datasheet is not None
-    bid.datasheet["a_figure_from_next_year"] = 1.0
-    back = decode(encode(bid))
-    assert isinstance(back, BidMsg) and back.datasheet == bid.datasheet
-    lacking = missing_needs_in({"payload_kg": 1.0}, back.datasheet or {}, back.mobility)
-    assert lacking == ["payload_kg >= 1 (not published)"], "read as any bid has always been read"
-
-
-def test_a_bid_from_an_older_peer_is_a_body_that_said_nothing() -> None:
-    older_sheet = {"manipulator": "none", "tethered": False, "mass_kg": None}
-    assert missing_needs_in({"carries_kg": 5.0}, older_sheet, "legged") == [
-        "carries_kg >= 5 (not published)"
-    ]
-
-
-def test_a_task_naming_the_need_is_dropped_by_a_release_that_cannot_read_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The one thing that does reach `extra="forbid"`'s vocabulary on the wire is a role's
-    `needs`, through `check_needs`. A release that does not know the word cannot decode the
-    TASK, so the bus counts it and drops it, as any message it cannot read, and that member
-    takes no part in a task it could not have judged."""
-    role = TeamRole(requires=["move"], needs={"carries_kg": 5})
-    payload = encode(
-        TaskMsg(
-            t=0.0,
-            src="coordinator",
-            task_id="t",
-            members=["a", "b"],
-            task=TeamTask(task_id="t", name="haul", goal="carry it", roles={"hauler": role}),
-        )
-    )
-    older = tuple(key for key in verdict_module.NEEDS_NUMBERS if key != "carries_kg")
-    monkeypatch.setattr(verdict_module, "NEEDS_NUMBERS", older)
-    with pytest.raises(ValidationError, match="datasheet vocabulary"):
-        decode(payload)
-    bus = MqttBus("t", client=SimpleNamespace())  # type: ignore[arg-type]
-    bus._on_message(None, None, SimpleNamespace(topic="roboglot/t/ctl", payload=payload))
-    assert bus.rejected == 1 and bus.received == 0
 
 
 def test_a_passport_keeps_to_the_specs_own_list() -> None:

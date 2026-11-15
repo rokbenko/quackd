@@ -16,7 +16,7 @@ keywords = [
   # "robot-fleet" is a PyPI search term people type, and the one place the retired word stays on purpose.
   "robotics", "embodied-ai", "physical-ai", "llm-agents", "multi-robot", "robot-fleet",
   "robot-communication", "human-robot-interaction", "robot-to-robot", "robot-passport",
-  "mcp", "model-context-protocol", "mujoco",
+  "mcp", "model-context-protocol",
   "claude", "openai", "gemini", "grok", "mistral", "deepseek", "cohere", "qwen", "kimi", "glm", "meta",
   "openrouter",
   "jev", "kev", "openjev", "opendecision", "laya",
@@ -33,7 +33,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # The default install must stay light so `uvx roboglot` is fast.
-# Provider SDKs, YOLO and the live window are extras.
+# Provider SDKs and YOLO are extras.
 dependencies = [
   "typer>=0.12",
   "rich>=13.7",
@@ -94,20 +94,13 @@ openrouter = ["openai>=1.66,<4"]
 # minor is allowed to break it.
 decision = ["typesafe-sdk>=0.7,<1"]
 # The one decision LLM that runs in this process rather than behind a server: no port, no key,
-# and no request leaving the machine. It pulls torch and transformers, so it is out of `all`
-# for the same reason the robot simulators are.
+# and no request leaving the machine. It pulls torch and transformers, so it is out of `all`.
 laya = ["laya>=0.3,<1"]
 all = ["anthropic>=1.0,<2", "openai>=1.66,<4", "google-genai>=1.0,<3"]
 # ultralytics brings `opencv-python`, the build that wants a display's libraries, and a headless
 # Linux box has none. The core's own headless wheel used to answer `import cv2` there, so the wheel
 # comes with this extra now that the core has no use for it.
 yolo = ["ultralytics>=8.2", "opencv-python-headless>=4.9"]
-live = ["pygame>=2.5"]
-# The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
-# onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
-# velstand a stock robot runs; the Microduck's meshes and those policies are fetched at run time
-# and never shipped here (docs/reference/licenses.md).
-mujoco = ["roboglot-microduck[mujoco]>=0.34.0,<0.35"]
 microduck = ["roboglot-microduck>=0.34.0,<0.35"]
 # Every robot Roboglot publishes, each with the SDK its real backend needs. The honest "all":
 # it pulls torch on Python 3.12 because the arm does.
@@ -147,10 +140,6 @@ onboard = [
 # lerobot). Without it `import lerobot` succeeds and opening the arm's port fails, so it belongs
 # in the extra rather than in a paragraph somebody has to read.
 lerobot = ["roboglot-lerobot[sdk]>=0.34.0,<0.35"]
-# The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
-# of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
-# fetched at run time and never shipped (docs/reference/licenses.md).
-lerobot-sim = ["roboglot-lerobot[sim]>=0.34.0,<0.35"]
 # The arm's policy server (`roboglot policy serve`), which loads LeRobot checkpoints in a process
 # of its own: LeRobot, torch and transformers on Python 3.12, and nothing the arm's own process
 # imports. Install it where the policy runs, on the laptop beside the arm or on a rented GPU.
@@ -285,8 +274,8 @@ exclude = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-# `docs/assets` held two scripts that nothing linted, formatted or type-checked, one of which
-# builds the README's simulator figure. Only the binaries are excluded now.
+# `docs/assets` holds scripts that ruff lints, formats and mypy type-checks like the rest; only
+# its binaries are excluded.
 extend-exclude = ["runs"]
 
 # The adapter packages are Roboglot's own code in their own distributions, so they sort with
@@ -322,13 +311,6 @@ ignore = ["RUF012", "B008"]
 "scripts/*.py" = ["T20"]
 # The run sheet's two helpers are run by hand too, and what they print is what they are for.
 "docs/examples/**/*.py" = ["T20"]
-# The browser demo's dev server. It is a command a person runs, and printing the URL it
-# mounted on is the whole of its user interface.
-"web/serve.py" = ["T20"]
-# The same, for the generator beside it: it is run by hand and reports what it wrote.
-"web/build_catalogue.py" = ["T20"]
-# And the third: it cuts the mark out of roboglot-web's duck and says where it put it.
-"web/make_mark.py" = ["T20"]
 # Prose-heavy files: upstream citations and LLM-facing prompt text read better unwrapped.
 "adapters/microduck/src/roboglot_microduck/upstream_api.py" = ["E501"]
 "roboglot/agent/prompts.py" = ["E501"]
@@ -368,13 +350,6 @@ markers = [
     # Each holds a margin on a wall clock, so on a machine that workers have filled it fails for
     # the machine's reasons. CI runs these after the rest, on their own (ci.yml).
     "serial: holds a margin on a wall clock, and runs alone on CI, after the parallel stage",
-    # The tests allowed to read the developer's own asset cache, with so101_model below: the
-    # conftest does not redirect them to a throwaway one. They never fetch: an empty cache skips.
-    "real_duck: needs upstream's Microduck model and policies already cached",
-    # The arm simulator's counterpart: the SO-101's model from SO-ARM100, fetched at run time
-    # and never shipped. The conftest leaves them the real cache too, and they never fetch
-    # either: an empty cache, with no ROBOGLOT_LEROBOT_SIM_ASSETS checkout, skips them.
-    "so101_model: needs the SO-101's MuJoCo model from SO-ARM100 already fetched",
     # Cost money and reach the network. Opt-in twice: this marker and ROBOGLOT_LIVE_LLM=1, so a
     # bare `pytest -m live_llm` on a machine with a key still skips until it is asked for.
     "live_llm: calls a real LLM over the network (needs OPENAI_API_KEY and ROBOGLOT_LIVE_LLM=1)",

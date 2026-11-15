@@ -3,7 +3,7 @@
 This is the second wow-demo — "I asked Claude to make the duck patrol my desk" — and it
 goes through the *same* `Executor` as `.glot` runs, so allowlists, confirm gates, budgets
 and the heartbeat apply to an interactive session too. Since 0.4 one server can front
-several robots (`--robots duck=microduck:sim2d,arm=lerobot:mock`): eight `robot_*`
+several robots (`--robots duck=microduck:mock,arm=lerobot:mock`): eight `robot_*`
 tools take a robot name and every robot has its own executor, budget, heartbeat and
 contract. stdout is the wire, and every log line goes to stderr.
 
@@ -72,7 +72,6 @@ from roboglot.safety import (
 )
 from roboglot.space.places import PlaceStore
 from roboglot.space.pose import where_record
-from roboglot.space.room import RoomError, load_room
 from roboglot.transport.base import (
     CameraFrame,
     DuckTransport,
@@ -276,8 +275,6 @@ class RobotSession:
             robot_now = self.executor._robot_now()
             if robot_started is not None and robot_now is not None:
                 clocks["transport_s"] = round(robot_now - robot_started, 3)
-                if (label := self.executor._clock()) is not None:
-                    clocks["clock"] = label
             self.event_log.emit(
                 "tool_result",
                 tool=tool,
@@ -353,10 +350,8 @@ class RobotSession:
 
     async def connect(self) -> None:
         await self._adopt(await self.transport.connect())
-        # The budget's clock is the transport's, and a simulator's is the wall's until it
-        # connects and its world's from then on. Started when the server was built, the minutes
-        # were the world's seconds less the wall's, which ran negative and never reached
-        # `max_minutes`. Started again here, on the clock the session is timed by, with the
+        # The budget's clock is the transport's, which a body may only keep once it has
+        # connected. Started again here, on the clock the session is timed by, with the
         # counts a `--glotfile` carried kept: nothing has run to count yet.
         if self.executor.budget is not None:
             self.executor.budget.start()
@@ -724,8 +719,9 @@ class RobotSession:
             return {
                 "ok": False,
                 "error": (
-                    "team tasks are not available over MCP (this session is one pilot, "
-                    f"a team needs a coordinator). Run it with: roboglot run {path}"
+                    "team tasks are not available over MCP (this session is one pilot, and a "
+                    "team has one LLM per robot rather than one for all of them). Run it "
+                    f"with: roboglot run {path}"
                 ),
             }
         if self.manifest is not None:
@@ -923,7 +919,7 @@ def session_memory_key(
 ) -> str:
     """The key a session keeps a robot's memory and places under: its registered name where
     `memory_keys` gives one, so two registered robots of one kind keep their own, and
-    adapter:backend otherwise, so a simulated body never inherits a real one's."""
+    adapter:backend otherwise, so a mock never inherits a real body's."""
     return (memory_keys or {}).get(name) or (
         f"{adapter_name(transport) or name}:{backend_name(transport)}"
     )
@@ -951,8 +947,8 @@ def build_fleet_server(
 
     `--yes` and `--dry-run` are global; contracts, budgets and abort flags are per robot.
     A `.glot` given at startup is adopted by the default robot. With `memory` on, each
-    robot gets its `RobotMemory` (keyed adapter:backend, so a simulated body never
-    inherits a real one's notes, or by its registered name where `memory_keys` gives one,
+    robot gets its `RobotMemory` (keyed adapter:backend, so a mock never inherits a real
+    body's notes, or by its registered name where `memory_keys` gives one,
     so two registered robots of one kind keep separate notes) behind `robot_recall` /
     `robot_remember`. With `log` on,
     each robot narrates its calls: a `log` list in every result that reached its executor,
@@ -972,11 +968,6 @@ def build_fleet_server(
             # the vocabulary a session shows before its robot connects has no `watch` either
             withdraw_watch(reg, eyes=None, transport=transport)
         det = detector
-        if det is None and backend_name(transport) in ("sim2d", "mujoco"):
-            # a bare transport has no manifest to ask; an adapter is upgraded after connect
-            from roboglot.perception.color_blob import ColorBlobDetector
-
-            det = ColorBlobDetector()
         # A session with no `.glot` has no contract, and used to have no Budget either — so
         # `roboglot serve-mcp --robot open_duck:bridge`, which is the setup this module's own
         # docstring advertises, handed an MCP client unlimited, uncounted control of a
@@ -1297,7 +1288,6 @@ def fleet_from_flags(
     team: str | None = None,
     registry_dir: str | None = None,
     glotfile: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
@@ -1308,7 +1298,6 @@ def fleet_from_flags(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
-    room: str | None = None,
     map_address: str | None = None,
     fov_deg: float | None = None,
 ) -> FleetPlan:
@@ -1323,9 +1312,9 @@ def fleet_from_flags(
     The board is asked what it is before any body is built, and a board that does not answer
     refuses the server, as it refuses a run. `--detector` is for one robot too.
 
-    So is `--room`, the room a simulator lays out, `--map-address`, where one robot's own map
-    answers, and `--policy-url`, the policy server an arm hands its `pick` and `manipulate`
-    segments to, by the same rule and in `roboglot run`'s words.
+    So are `--map-address`, where one robot's own map answers, and `--policy-url`, the policy
+    server an arm hands its `pick` and `manipulate` segments to, by the same rule and in
+    `roboglot run`'s words.
     The server is asked what it serves once the arm is built, and one that does not answer
     refuses the server, as the board does. Both verbs are confirm gated, so an MCP client
     reaches them only on a server started with `--yes`.
@@ -1357,14 +1346,7 @@ def fleet_from_flags(
         )
     except ValueError as e:
         raise SystemExit(str(e)) from e
-    if room is not None:
-        try:
-            load_room(room)
-        except RoomError as e:
-            raise SystemExit(str(e)) from e
     body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
-    if room is not None:
-        body_kw["room"] = room
     if team and (address or camera_url or token or map_address):
         raise SystemExit(
             "--team takes every member's address, map address, token and camera from the "
@@ -1376,9 +1358,9 @@ def fleet_from_flags(
         probe = load_glot(glotfile)
         if probe.frontmatter.team is not None:
             raise SystemExit(
-                "team tasks are not available over MCP yet (the MCP client is one pilot, "
-                "a team needs a coordinator, and a pilot team has one LLM per robot "
-                "rather than one for all of them). Run it with: roboglot run " + glotfile
+                "team tasks are not available over MCP (the MCP client is one pilot, and "
+                "a team has one LLM per robot rather than one for all of them). Run it "
+                "with: roboglot run " + glotfile
             )
         if isinstance(probe.frontmatter.robots, str):
             default = probe.frontmatter.robots
@@ -1436,11 +1418,6 @@ def fleet_from_flags(
         raise SystemExit(
             "--policy-url is one arm's policy server, and a fleet has several bodies: drop "
             "--policy-url, or serve one arm"
-        )
-    if fleet and room is not None:
-        raise SystemExit(
-            "--room lays out one simulator's room, and a fleet has several bodies: drop --room, "
-            "or serve one duck"
         )
     if fleet and map_address is not None:
         raise SystemExit(
@@ -1536,7 +1513,6 @@ def fleet_from_flags(
         )
         adapters[name] = make_adapter(
             spec,
-            seed=seed if seed is not None else 0,
             address=where["address"],
             camera_url=where["camera_url"],
             token=where["token"],
@@ -1577,7 +1553,6 @@ def fleet_from_flags(
 
 def serve(
     glotfile: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
@@ -1599,7 +1574,6 @@ def serve(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
-    room: str | None = None,
     map_address: str | None = None,
     lock_glotfile: bool = False,
 ) -> None:
@@ -1609,7 +1583,6 @@ def serve(
         team=team,
         registry_dir=registry_dir,
         glotfile=glotfile,
-        seed=seed,
         address=address,
         camera_url=camera_url,
         token=token,
@@ -1620,7 +1593,6 @@ def serve(
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
         async_chunks=async_chunks,
-        room=room,
         map_address=map_address,
     )
     logging.basicConfig(

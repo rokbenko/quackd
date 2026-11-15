@@ -30,7 +30,7 @@ module, and that module carries `describe`, `make`, `implementations` and `condi
 TierName = Literal["described", "rehearsed", "bound", "verified"]
 TIERS: tuple[TierName, ...] = ("described", "rehearsed", "bound", "verified")
 """How far a backend has got, in one word (ADR-0076). `described`: a body Roboglot lists and
-reasons about from one YAML and drives no part of. `rehearsed`: a mock or a simulator, run in
+reasons about from one YAML and drives no part of. `rehearsed`: a mock, run in
 the suite. `bound`: a backend that reaches a real robot, whose upstream names were read at a
 pin, and that has never met one. `verified`: run on hardware, by a named person, on a date."""
 
@@ -103,7 +103,7 @@ class AdapterInfo:
     """The import name that says whether that extra is installed here."""
     connect: Mapping[str, Connect] = field(default_factory=dict)
     """What connecting each real backend takes, by backend: the page `roboglot ui` shows it beside
-    the address field. A simulator or a mock needs nothing, and has no entry."""
+    the address field. A mock needs nothing, and has no entry."""
     kind: Kind = "adapter"
     """`adapter` for a package that drives a robot; `described` for the one row whose backends
     are bodies Roboglot describes and drives no part of."""
@@ -141,7 +141,7 @@ def tier_groups(backends: tuple[str, ...], tiers: Mapping[str, Tier]) -> list[st
     described, each tier's backends in the row's own order, with each backend's note and who
     answers for it in brackets after it.
 
-    `✅ rehearsed: sim2d, mock` and `🧪 bound: jsonrpc (never run on a duck; grandfathered
+    `✅ rehearsed: mock` and `🧪 bound: jsonrpc (never run on a duck; grandfathered
     0.33.0)`. A grandfathered backend prints no date, since its date is the day the rule was
     adopted and says nothing of that backend. A tier that holds every backend of the row names
     none of them, which is the described row: its backends are already the column beside it."""
@@ -215,20 +215,13 @@ class Connect:
 
 
 OFFICIAL: tuple[AdapterInfo, ...] = (
-    # No extra and no SDK probe, even though `mujoco` needs one: these columns ask whether the
-    # *adapter* is usable here, and the Microduck's is. Probing for mujoco made `list-adapters`
-    # report the whole robot as missing on a machine that can still run sim2d, mock and a real
-    # duck. The extra is named in the status line, in the transports table and in `doctor`'s
-    # optional extras, which is where a per-backend answer belongs.
     AdapterInfo(
         name="microduck",
-        backends=("sim2d", "mujoco", "mock", "jsonrpc"),
+        backends=("mock", "jsonrpc"),
         status="",
         summary="a 25 cm biped duck from Pollen Robotics",
         extra="roboglot[microduck]",
         tiers={
-            "sim2d": _rehearsed(),
-            "mujoco": _rehearsed("physics, needs roboglot[mujoco]"),
             "mock": _rehearsed(),
             "jsonrpc": _bound("every method VERIFIED at a pin, never run on a duck"),
         },
@@ -237,7 +230,7 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     ),
     AdapterInfo(
         name="lerobot",
-        backends=("mock", "real", "mujoco"),
+        backends=("mock", "real"),
         status="",
         summary="an SO-101 class desktop arm driven by LeRobot",
         extra="roboglot[lerobot]",
@@ -253,11 +246,6 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
                 note="one SO-101, driven on LeRobot 0.6.1 on 2026-09-15 and again on 2026-09-23, "
                 "and LeRobot 0.7.0's bus has not met it; an SO-100 runs the same code and none "
                 "has; Python 3.12+",
-            ),
-            "mujoco": _rehearsed(
-                "the real backend over a physics model of the SO-101, needs "
-                "roboglot[lerobot-sim]; passes a seeded grasp sweep on the maker's model, never "
-                "compared against the arm"
             ),
         },
         family=("arm",),
@@ -282,12 +270,11 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     # own runtime is not installable here.
     AdapterInfo(
         name="open_duck",
-        backends=("sim2d", "mock", "bridge"),
+        backends=("mock", "bridge"),
         status="",
         summary="an Open Duck Mini v2, the one you can build yourself",
         extra="roboglot[open_duck]",
         tiers={
-            "sim2d": _rehearsed(),
             "mock": _rehearsed(),
             "bridge": _bound("Roboglot's own daemon on the duck's Pi, never run on a robot"),
         },
@@ -317,14 +304,13 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     # on PyPI, so Roboglot speaks its ZeroMQ host protocol too (ADR-0027).
     AdapterInfo(
         name="alohamini",
-        backends=("mock", "sim2d", "zmq"),
+        backends=("mock", "zmq"),
         status="",
         summary="two arms on a lift, on a wheeled base",
         extra="roboglot[alohamini]",
         sdk="zmq",
         tiers={
             "mock": _rehearsed(),
-            "sim2d": _rehearsed(),
             "zmq": _bound(
                 "wire format VERIFIED at a pinned commit, exercised against a fake host over "
                 "loopback, never run on a robot"
@@ -340,13 +326,12 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     # daemon, as it does for the Open Duck Mini, and the client is stdlib (ADR-0028).
     AdapterInfo(
         name="toddlerbot",
-        backends=("mock", "sim2d", "bridge"),
+        backends=("mock", "bridge"),
         status="",
         summary="a small open-source humanoid",
         extra="roboglot[toddlerbot]",
         tiers={
             "mock": _rehearsed(),
-            "sim2d": _rehearsed(),
             "bridge": _bound("Roboglot's own daemon on the robot, never run on a robot"),
         },
         family=("humanoid",),

@@ -1,9 +1,9 @@
 """The command line is the product's front door.
 
-`uvx --from "roboglot[microduck]" roboglot run find-and-kick --llm anthropic --robot
-microduck:sim2d` is the north-star demo; every command here exists to make that line, and the
-debugging around it, boring. The `--from` is there because the core ships no robot and the
-demo needs one. Commands are thin: they parse, load `.env`, wire objects together, hand off.
+`roboglot run --goal "Wave to the camera with an extended arm" --robot arm-01` is the north-star
+demo, the run the README opens on; every command here exists to make that line, and the
+debugging around it, boring. Commands are thin: they parse, load `.env`, wire objects together,
+hand off.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import io
 import json
 import os
 import re
-import signal
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
@@ -46,8 +45,6 @@ from roboglot.agent.providers.catalogue import (
 )
 from roboglot.answers import DID_IT, GO_AHEAD, WATCHING
 from roboglot.command import command_text
-from roboglot.preflight_defaults import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
-from roboglot.space.room import BUILT_IN as BUILT_IN_ROOMS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
     from roboglot.adapters.base import RestResult
@@ -81,8 +78,9 @@ app = typer.Typer(
         # the backslash is Rich's escape: an unescaped [microduck] is a style tag, and Typer
         # renders this epilog as markup, so it would print the install line without the extra
         # that makes it work
-        r"uv pip install 'roboglot\[microduck]' && roboglot run find-and-kick --llm fake" + "\n\n"
-        "roboglot run --goal 'walk in a square' --llm anthropic --robot microduck:mujoco"
+        r"uv pip install 'roboglot\[microduck]' && roboglot run microduck-lookout --llm fake"
+        + "\n\n"
+        "roboglot run --goal 'walk in a square' --llm fake --robot rosbridge:mock"
     ),
 )
 
@@ -120,9 +118,8 @@ def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
     refused before it connects. `run` asks for its one robot once the last thing that can refuse
     the run is behind it, just before its header panel. A pilot team asks for every member
     once all of them are built, the last thing that can refuse it before they connect together
-    (`run_pilot_team`'s `before_connect`), which is after its header. A coordinator team
-    connects nothing but `microduck:sim2d` bodies, refusing any other, and that backend is not
-    one the Microduck retires, so it has nothing to ask. `doctor` asks just before its probe
+    (`run_pilot_team`'s `before_connect`), which is after its header. `doctor` asks just before
+    its probe
     connects, and `robot list --probe` just before it connects each robot it probes.
     `serve-mcp` connects its robots inside `roboglot.mcp_server`, which says the line through the
     `_deprecated` it is handed, just before its start connects each robot. The line goes to
@@ -358,9 +355,9 @@ def _expand(patterns: list[str]) -> list[str]:
 
 
 def _verbose_line(msg: str) -> None:
-    """A `--verbose` line, as plain text. A message can carry brackets Rich reads as markup:
-    the executor's own `[dry-run] would run ...`, and the team planner logging an LLM's raw
-    tool arguments. Rich deletes `[bold]` silently and raises on an unpaired `[/think]`."""
+    """A `--verbose` line, as plain text. A message can carry brackets Rich reads as markup,
+    such as the executor's own `[dry-run] would run ...`. Rich deletes `[bold]` silently and
+    raises on an unpaired `[/think]`."""
     ui.err_console.print(msg, style="dim", markup=False, highlight=False, soft_wrap=True)
 
 
@@ -374,7 +371,6 @@ def _print_outcome(
     *,
     counters: Sequence[str],
     run_dir: Path | str,
-    gif_path: Path | str | None = None,
     log_dropped: int = 0,
 ) -> None:
     """How the run ended, in the one place a person looks after looking away.
@@ -382,9 +378,7 @@ def _print_outcome(
     `roboglot log` prints it from the transcript too, so a replay ends exactly the way the
     run itself did rather than in a second dialect somebody has to keep in step. `counters`
     is a list because a team counts different things than a solo run does."""
-    ui.console.print(
-        ui.verdict(outcome, reason, counters=counters, run_dir=run_dir, gif_path=gif_path)
-    )
+    ui.console.print(ui.verdict(outcome, reason, counters=counters, run_dir=run_dir))
     if log_dropped:
         # a console that raised on every event produced a silent log and no sign of it
         ui.err_console.print(
@@ -456,8 +450,8 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
         ) is not None:
             spent.append(f"watch {fmt_duration(watched)}")
         # and the seconds the arm's policy drove it, when it had one and it ran, on the wall's
-        # clock as the rest of the split is: on the simulator the policy's own `seconds` are
-        # the simulator's, and a split can never be larger than the whole
+        # clock as the rest of the split is: on a mock the policy's own `seconds` are the
+        # mock's, and a split can never be larger than the whole
         if policy_s := _number(_block(end, "policy").get("wall_s")):
             spent.append(f"policy {fmt_duration(policy_s)}")
         # and the seconds spent waiting to ask the API again, in which no LLM was asked
@@ -538,9 +532,9 @@ def _policy_counter(block: Any) -> str | None:
     which is every run whose arm had no policy, so their counters are what they were, and the
     segments alone for a run whose policy was never handed the arm.
 
-    On the simulator the rate is the simulator clock's, which the ticks were paced on, so it is
-    said with the simulator's seconds and the clock's name (`20.1 s sim at 10 Hz`), as a verb's
-    seconds are (`roboglot.log`), and the wall's share of them is in the time split."""
+    On a mock the rate is its clock's, which the ticks were paced on, so it is said with the
+    mock's seconds and the clock's name (`20.1 s mock at 10 Hz`), and the wall's share of them
+    is in the time split."""
     from roboglot.log import fmt_duration
 
     if not isinstance(block, Mapping):
@@ -582,7 +576,7 @@ def _detector_row(detector: Any, hello: Any, backend: str | None, *, sees: bool 
     `sees` is whether the body, with the board's camera if it has one, is described with a
     camera. A body described without one may report a camera when it connects, and the row
     says that its detector reads nothing until then."""
-    from roboglot.perception import is_simulated
+    from roboglot.perception import is_mock
     from roboglot.perception.color_blob import ColorBlobDetector
     from roboglot.perception.host import HostDetector
 
@@ -592,10 +586,10 @@ def _detector_row(detector: Any, hello: Any, backend: str | None, *, sees: bool 
         text = f"{detector.name}  {detector.address}"
         if hello is not None and (label := hello.label()):
             text += f"  {label}"
-        if is_simulated(backend):
-            # never chosen by itself on a simulator, so a reader seeing it there is told it
-            # was asked for, and that it is not what this simulator's colours are tuned for
-            text += "  (asked for on a simulator)"
+        if is_mock(backend):
+            # never chosen by itself on a mock, so a reader seeing it there is told it was
+            # asked for, and that it is not what a mock's colours are tuned for
+            text += "  (asked for on a mock)"
     else:
         text = f"{getattr(detector, 'name', type(detector).__name__)} on this machine"
     if not sees:
@@ -692,7 +686,6 @@ def _header_rows(
     *,
     provider: Any,
     robot: str,
-    seed: int | None,
     dry_run: bool,
     memory: Any,
     detector: Any = None,
@@ -719,7 +712,7 @@ def _header_rows(
     # what it was; the record has the level and where it came from on every run (`run_start`)
     if effort is not None:
         rows.append(("effort", f"{effort.strip().lower()} (--effort)"))
-    rows.append(("robot", robot + (f"  seed {seed}" if seed is not None else "")))
+    rows.append(("robot", robot))
     rows.append(("detector", _detector_row(detector, hello, backend, sees=sees)))
     if board is not None and hello is not None:
         rows.append(("host", _host_row(board, hello, host_camera)))
@@ -784,7 +777,7 @@ def _robot_specs(
     robot: str | None, robots: str | None, duck: Any, *, registry_dir: str | None = None
 ) -> list[Any]:
     """The robots a command talks about, as `Resolved`: --robots, else --robot (a registered
-    name or a spec), else the task file's own `robots:` default, else the Microduck simulator."""
+    name or a spec), else the task file's own `robots:` default, else this machine's default."""
     from roboglot.adapters.factory import RobotSpec, parse_robot_spec, parse_robots
     from roboglot.registry import Registry, Resolved, resolve_robot_ref
 
@@ -826,12 +819,6 @@ def validate(
     robots: str | None = typer.Option(
         None, "--robots", help="Check against a team: name=<adapter>:<backend>,..."
     ),
-    room: str | None = typer.Option(
-        None,
-        "--room",
-        help="Check against the robot's simulator laid out in this room, as `run --room` lays "
-        "it out, which offers the place verbs, explore and find.",
-    ),
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Validate .glot files against the spec and a robot's verbs. Exits 1 on any failure."""
@@ -872,12 +859,7 @@ def validate(
                 resolved = _robot_specs(None, None, duck)
             else:
                 resolved = []
-            if room is not None and not resolved:
-                raise AdapterError(
-                    "--room lays out a room for a robot's simulator, and this file names no "
-                    "robot: name one with --robot"
-                )
-            manifests = [describe(r.spec, room=room) for r in resolved]
+            manifests = [describe(r.spec) for r in resolved]
         except (AdapterError, RegistryError) as e:
             # a registered name means reading robots.json, and a broken one refuses
             row.update(ok=False, problems=[str(e)], summary=[str(e)])
@@ -1719,54 +1701,9 @@ def _warn(text: str) -> None:
         _FRONT.notice(text)
 
 
-def _gif_a_press_can_leave_out(recorder: Any, path: Path) -> Path | None:
-    """The run's GIF, or none where somebody pressed Ctrl-C while it was made. Nothing else after
-    the end of a run hears a press (`KillSwitch.uninstall`), but a long run can be minutes of this,
-    with nothing moving, so it is the one thing a press still ends, and the verdict still prints."""
-    from roboglot.safety import AfterTheClose
-
-    save: Callable[[Path], Path | None] = recorder.save_gif
-    before = signal.getsignal(signal.SIGINT)
-    try:
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-    except ValueError:  # not the main thread, so nothing a press could reach
-        return save(path)
-    try:
-        try:
-            return save(path)
-        finally:
-            if isinstance(before, AfterTheClose):
-                before.took_its_time()
-            signal.signal(signal.SIGINT, before)
-    except KeyboardInterrupt:
-        if isinstance(before, AfterTheClose):
-            before.took_its_time()
-            AfterTheClose.heard += 1
-        signal.signal(signal.SIGINT, before)
-        with contextlib.suppress(OSError):
-            path.unlink(missing_ok=True)
-        ui.err_console.print(Text("  run.gif was left out", style=ui.STYLES["muted"]))
-        return None
-
-
-def _frame_hook(recorder: Any, front: Front | None) -> Any:
-    """The run's frame callback: the GIF recorder's, the page's, both, or none."""
-    hooks = [
-        hook
-        for hook in (
-            recorder.capture if recorder is not None else None,
-            front.frame if front is not None else None,
-        )
-        if hook is not None
-    ]
-    if len(hooks) < 2:
-        return hooks[0] if hooks else None
-
-    def both(image: Any, caption: str) -> None:
-        for hook in hooks:
-            hook(image, caption)
-
-    return both
+def _frame_hook(front: Front | None) -> Any:
+    """The run's frame callback: the page's, or none."""
+    return front.frame if front is not None else None
 
 
 def _a_person_is_there() -> bool:
@@ -1826,7 +1763,7 @@ def _vla_refusal(
         return (
             "--controller vla asks whether the arm did the task, and --dry-run moves nothing "
             "for anybody to judge",
-            "rehearse it on the arm's simulator instead: --robot lerobot:mujoco",
+            "drop --dry-run: a policy run is judged on the arm",
         )
     if ignored:
         return (
@@ -1854,24 +1791,27 @@ def _vla_refusal(
     return None
 
 
-def _parse_team_flag(team: str | None, registry_dir: str | None) -> tuple[int | None, Any]:
-    """`--team` is either a count of simulated ducks or the name of a stored team.
+def _parse_team_flag(team: str | None, registry_dir: str | None) -> Any:
+    """`--team NAME`: the stored team's roster, read now rather than at the first connection,
+    so a team with a hole in it refuses before a run directory exists.
 
-    All digits is the count, because that is what it has always meant and `check_name` refuses
-    to register anything that could be read as one. Anything else is a name, and its roster is
-    read now rather than at the first connection, so a team with a hole in it refuses before
-    a run directory exists."""
+    A number is refused in one line: `--team 3` was a coordinator team of three ducks, and
+    `check_name` refuses to register anything that could be read as one."""
     from roboglot.registry import Registry, RegistryError
 
     if team is None:
-        return None, None
+        return None
     team = team.strip()
     if team.isdigit():
-        return int(team), None
+        _fail(
+            f"--team {team} was a coordinator team of {team} ducks, which Roboglot no longer has",
+            hint="name a stored team: roboglot team list",
+        )
+        raise typer.Exit(code=1)  # _fail has exited; this is for the type checker
     try:
-        return None, Registry(registry_dir).roster(team)
+        return Registry(registry_dir).roster(team)
     except RegistryError as e:
-        _fail(str(e), hint="roboglot team list, or a number for N simulated ducks")
+        _fail(str(e), hint="roboglot team list")
         raise
 
 
@@ -1879,18 +1819,14 @@ def _run_impl(
     glotfile: str | None,
     goal: str | None,
     llm: str | None,
-    seed: int | None,
     dry_run: bool,
     max_steps: int | None,
     runs_dir: str,
     yes: bool,
-    live: bool,
     address: str | None,
     camera_url: list[str],
     token: str | None,
     fov_deg: float | None,
-    gif: bool,
-    gif_size: int,
     verbose: bool,
     base_url: str | None = None,
     api_key: str | None = None,
@@ -1920,7 +1856,6 @@ def _run_impl(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
-    room: str | None = None,
     map_address: str | None = None,
     controller: str | None = None,
     play: bool | None = None,
@@ -1952,7 +1887,7 @@ def _run_impl(
     from roboglot.agent.providers.pricing import parse_price as _parse_price
     from roboglot.agent.transcript import run_label
     from roboglot.glotfile.parser import GlotParseError, glot_from_goal, load_glot
-    from roboglot.glotfile.schema import AUCTION_MAX_MEMBERS, PILOTS_MAX_MEMBERS
+    from roboglot.glotfile.schema import PILOTS_MAX_MEMBERS
     from roboglot.glotfile.validate import validate_glot
     from roboglot.host import (
         HostChoice,
@@ -1974,9 +1909,7 @@ def _run_impl(
     from roboglot.perception import DETECTOR_CHOICES, detector_for, explicit_detector
     from roboglot.registry import RegistryError, Resolved, no_rest_pose_refusal
     from roboglot.safety import Aborted, KillSwitch, allow_all
-    from roboglot.space.room import RoomError, load_room
-    from roboglot.team.pilots import ADVISORY_FIELDS, roster_from_specs
-    from roboglot.team.runner import member_specs
+    from roboglot.team.pilots import ADVISORY_FIELDS, member_specs, roster_from_specs
     from roboglot.transport.base import TransportError
 
     if (glotfile is None) == (goal is None):
@@ -2023,18 +1956,9 @@ def _run_impl(
     except ValueError as e:
         _fail(str(e))
         return
-    # A room is read before anything is built, so a name nobody ships costs one sentence.
-    if room is not None:
-        try:
-            load_room(room)
-        except RoomError as e:
-            _fail(str(e))
-            return
-    # the policy server and the room, each passed to `describe` and `make_adapter` only when
-    # there is one, so every other body is asked exactly as it always was
+    # the policy server, passed to `describe` and `make_adapter` only when there is one, so
+    # every other body is asked exactly as it always was
     body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
-    if room is not None:
-        body_kw["room"] = room
     # any spelling of nothing is the default, as a blank --detector is
     flown_by = (controller or "").strip().lower() or CONTROLLERS[0]
     if flown_by not in CONTROLLERS:
@@ -2068,7 +1992,7 @@ def _run_impl(
         if refused is not None:
             _fail(refused[0], hint=refused[1])
             return
-    team_n, roster = _parse_team_flag(team, registry_dir)
+    roster = _parse_team_flag(team, registry_dir)
     team_name = team if roster is not None else None
     if roster is not None and (robot or robots):
         _fail("--team NAME brings its own robots: drop --robot and --robots")
@@ -2126,8 +2050,7 @@ def _run_impl(
     # one silently is the failure both of them exist to prevent: a task about a picture that
     # never arrived, and an arm nobody was asked to place. A goal is never a team.
     several = (
-        team_n is not None
-        or roster is not None
+        roster is not None
         or (duck is not None and duck.frontmatter.team is not None)
         or len(specs) > 1
     )
@@ -2167,13 +2090,6 @@ def _run_impl(
         _fail(
             "--policy-url is one arm's policy server, and a fleet has several bodies",
             hint="drop --policy-url, or run the task on one arm at a time",
-        )
-        return
-    if fleet and room is not None:
-        # every team path builds its own members in the arena, so it would be dropped too
-        _fail(
-            "--room lays out one simulator's room, and a fleet has several bodies",
-            hint="drop --room, or run the task on one duck",
         )
         return
     if fleet and map_address is not None:
@@ -2255,11 +2171,7 @@ def _run_impl(
         if hello is not None:
             manifests[0] = with_host_camera(described, hello)
         section = duck.frontmatter.team
-        method = (
-            section.allocation.method
-            if section is not None
-            else ("pilots" if roster is not None else None)
-        )
+        pilots = section is not None or roster is not None
         # a task file with no `team:` block, run against a stored team, is still a team:
         # judged body by body the arm would be refused for not being able to walk. And a
         # pilot team drops the advisory `verbs.allow` line, because trimming each member to
@@ -2267,7 +2179,7 @@ def _run_impl(
         problems = [
             p
             for p in validate_glot(duck, manifests, team=True if roster is not None else None)
-            if not (method == "pilots" and p.field in ADVISORY_FIELDS)
+            if not (pilots and p.field in ADVISORY_FIELDS)
         ]
     except (GlotParseError, TransportError, RegistryError) as e:
         _fail(str(e))
@@ -2283,9 +2195,6 @@ def _run_impl(
                 [p.verb for p in problems if p.verb], [s.key for s in specs], "roboglot run"
             ),
         )
-        return
-    if team_n is not None and not 2 <= team_n <= 4:
-        _fail("a team needs 2 to 4 ducks (drop --team for a single run)")
         return
     if detector_choice is not None and fleet:
         # every team path builds its own members' detectors, so a choice made here would be
@@ -2390,27 +2299,7 @@ def _run_impl(
             hint="drop it, or pass --decision-llm off for this run",
         )
         return
-    if team_n is not None or roster is not None or duck.frontmatter.team is not None:
-        if method != "pilots":
-            # A coordinator team's members follow its plan, and none of them is a pilot a part
-            # could reach, so a part, and either flag about one, is refused rather than dropped.
-            # The file first, since no flag lifts its refusal, and both before the warning
-            # below, which would otherwise speak of a run that never starts.
-            if duck.frontmatter.play:
-                _fail(
-                    f"{duck.name} gives its pilot a part to play, and a coordinator team has "
-                    "no pilot to play it",
-                    hint="run it on one robot, or as a pilot team with "
-                    "team.allocation.method: pilots",
-                )
-                return
-            if play is not None:
-                _fail(
-                    "a coordinator team has no pilot for --play or --no-play to reach: its "
-                    "members follow the team's plan",
-                    hint="drop the flag, or run the task as a pilot team",
-                )
-                return
+    if roster is not None or duck.frontmatter.team is not None:
         if (decision != "off" or frames) and named_decision is not None:
             # One loop per member, each with its own executor and budget, and the stepper is
             # built per loop. Wiring it through a team is a thing to do deliberately with a
@@ -2425,132 +2314,73 @@ def _run_impl(
                 ),
                 soft_wrap=True,
             )
-        if method == "pilots":
-            if roster is None and section is not None:
-                # `team.members` plus `robots:` or `--robots` names the bodies without a
-                # registry; a stored team names them with one
-                try:
-                    roster = roster_from_specs(
-                        member_specs(
-                            section.member_names,
-                            {s.name: s.key for s in specs if s.name} or None,
-                            duck.frontmatter.robots,
-                            # a pilot team is N bodies of any kind, so an unnamed member gets
-                            # this machine's default rather than the simulated duck a
-                            # coordinator team is made of
-                            fallback=None,
-                        )
+        if roster is None and section is not None:
+            # `team.members` plus `robots:` or `--robots` names the bodies without a
+            # registry; a stored team names them with one
+            try:
+                roster = roster_from_specs(
+                    member_specs(
+                        section.member_names,
+                        {s.name: s.key for s in specs if s.name} or None,
+                        duck.frontmatter.robots,
                     )
-                except _AdapterError as e:
-                    # a member nothing named, on a machine that will not guess: the refusal
-                    # names what to install or what to type. It is caught here because this
-                    # call sits past the validation block's own handler, and an uncaught
-                    # NoRobotNamed reaches the user as a traceback rather than one line.
-                    _fail(str(e), hint="name every member's body in the task file's robots:")
-                    return
-                # A member named after a registered robot, as `--robot NAME` names one, is that
-                # robot: its address, its cameras and its rest pose are kept under the name, and
-                # a bare spec of its kind has none of them. It used to run as the bare spec, so a
-                # registered arm lost the pose its close would have folded it to.
-                registered = {r.entry.name: r.entry for r in resolved if r.entry is not None}
-                roster = {
-                    name: (
-                        registered[name]
-                        if name in registered
-                        and registered[name].robot_spec.key == member.robot_spec.key
-                        else member
-                    )
-                    for name, member in roster.items()
-                }
-            if roster is None:
-                _fail(
-                    "allocation.method: pilots needs members: name them in team.members, "
-                    "or run a stored team with --team NAME"
                 )
+            except _AdapterError as e:
+                # a member nothing named, on a machine that will not guess: the refusal
+                # names what to install or what to type. It is caught here because this
+                # call sits past the validation block's own handler, and an uncaught
+                # NoRobotNamed reaches the user as a traceback rather than one line.
+                _fail(str(e), hint="name every member's body in the task file's robots:")
                 return
-            if team_n is not None:
-                _fail(
-                    "--team N is the coordinator, and this task file runs pilots",
-                    hint="name the members in team.members, or run a stored team: --team NAME",
+            # A member named after a registered robot, as `--robot NAME` names one, is that
+            # robot: its address, its cameras and its rest pose are kept under the name, and
+            # a bare spec of its kind has none of them. It used to run as the bare spec, so a
+            # registered arm lost the pose its close would have folded it to.
+            registered = {r.entry.name: r.entry for r in resolved if r.entry is not None}
+            roster = {
+                name: (
+                    registered[name]
+                    if name in registered
+                    and registered[name].robot_spec.key == member.robot_spec.key
+                    else member
                 )
-                return
-            if not 2 <= len(roster) <= PILOTS_MAX_MEMBERS:
-                _fail(
-                    f"a pilot team needs 2 to {PILOTS_MAX_MEMBERS} members; "
-                    f"{team_name or 'this task file'} names {len(roster)}"
-                )
-                return
-            _run_pilots_impl(
-                duck,
-                roster,
-                llm=llm,
-                seed=seed,
-                dry_run=dry_run,
-                runs_dir=runs_dir,
-                yes=yes,
-                live=live,
-                verbose=verbose,
-                goal=goal,
-                base_url=base_url,
-                api_key=api_key,
-                vision=vision,
-                extra_body=extra_body,
-                max_steps=max_steps,
-                fov_deg=fov_deg,
-                memory=memory,
-                memory_dir=memory_dir,
-                team_name=team_name,
-                log_on=log_on,
-                log_prompt=log_prompt,
-                run_name=run_name,
-                price=price,
-                play=play,
-                effort=effort,
+                for name, member in roster.items()
+            }
+        if roster is None:
+            _fail(
+                "a team needs members: name them in team.members, "
+                "or run a stored team with --team NAME"
             )
             return
-        if roster is not None:
-            wrong = [n for n, e in roster.items() if e.robot_spec.key != "microduck:sim2d"]
-            if wrong:
-                _fail(
-                    f"a coordinator team is sim2d Microducks only (docs/guides/team.md): "
-                    f"{wrong[0]} is {roster[wrong[0]].robot_spec.key}",
-                    hint="set team.allocation.method: pilots to run other bodies",
-                )
-                return
-            if not 2 <= len(roster) <= AUCTION_MAX_MEMBERS:
-                # both bounds, because the members are folded in with `model_copy`, which
-                # skips the field validator that would otherwise have caught one of them
-                _fail(
-                    f"a coordinator team is 2 to {AUCTION_MAX_MEMBERS} ducks "
-                    f"(the arena holds {AUCTION_MAX_MEMBERS}): {team_name} has "
-                    f"{_plural(len(roster), 'robot')}"
-                )
-                return
-        _run_team_impl(
+        if not 2 <= len(roster) <= PILOTS_MAX_MEMBERS:
+            _fail(
+                f"a pilot team needs 2 to {PILOTS_MAX_MEMBERS} members; "
+                f"{team_name or 'this task file'} names {len(roster)}"
+            )
+            return
+        _run_pilots_impl(
             duck,
+            roster,
             llm=llm,
-            specs=specs,
-            members=list(roster) if roster is not None else None,
-            team_name=team_name,
-            seed=seed,
             dry_run=dry_run,
             runs_dir=runs_dir,
             yes=yes,
-            live=live,
-            gif=gif,
-            gif_size=gif_size,
             verbose=verbose,
             goal=goal,
             base_url=base_url,
             api_key=api_key,
             vision=vision,
             extra_body=extra_body,
-            n_override=team_n,
             max_steps=max_steps,
+            fov_deg=fov_deg,
+            memory=memory,
+            memory_dir=memory_dir,
+            team_name=team_name,
             log_on=log_on,
             log_prompt=log_prompt,
             run_name=run_name,
             price=price,
+            play=play,
             effort=effort,
         )
         return
@@ -2623,8 +2453,6 @@ def _run_impl(
             )
         duck_transport = make_adapter(
             spec,
-            seed=seed,
-            live=live,
             # the board's camera joins the body here when it has one; the board has answered
             # its hello already, so building this asks it nothing
             host=board,
@@ -2744,9 +2572,8 @@ def _run_impl(
         )
         return
 
-    recorder = None
-    # Any robot with a camera needs something to look at its frames with, not just the
-    # simulator. This is the static manifest, so it is only a head start: the loop asks
+    # Any robot with a camera needs something to look at its frames with. This is the static
+    # manifest, so it is only a head start: the loop asks
     # again with the live one at connect, where a robot may report a camera this does not
     # know about (a rosbridge base) or lack one this promises (a duck built without a head).
     # A detector chosen above is kept as it is, here and at connect. The body's own
@@ -2755,15 +2582,6 @@ def _run_impl(
     detector = detector_for(
         described.sensors, asked_detector, fov_deg=lens_fov, backend=spec.backend
     )
-    # The recorder draws a simulator's world, so it needs a body that has one. The backend
-    # name alone no longer says so, because the LeRobot arm's simulator is `mujoco` too and
-    # keeps its world as `sim_world`, which is not a world this can draw. `hasattr` and not
-    # the value: the Microduck's physics transport builds its world in connect(), after this.
-    if spec.backend in ("sim2d", "mujoco") and gif and hasattr(duck_transport, "world"):
-        from roboglot.sim2d.recorder import FrameRecorder
-
-        recorder = FrameRecorder(duck_transport, size=gif_size)
-
     # The flag wins; else ROBOGLOT_LOG, read here rather than at import so a `.env` line
     # counts (the root callback loads it after the option defaults exist).
     log_on = log_on if log_on is not None else log_enabled_default()
@@ -2800,7 +2618,7 @@ def _run_impl(
     if memory:
         from roboglot.memory import RobotMemory
 
-        # keyed by adapter:backend, so a simulated duck never inherits a real one's notes,
+        # keyed by adapter:backend, so a mock never inherits a real body's notes,
         # or by the registered name, so two ducks of one kind keep separate notes
         robot_memory = RobotMemory(here.memory_key, memory_dir)
     front = _FRONT
@@ -2816,8 +2634,7 @@ def _run_impl(
         price=price,
         max_steps=max_steps,
         log=log,
-        on_frame=_frame_hook(recorder, front),
-        on_caption=recorder.set_caption if recorder is not None else None,
+        on_frame=_frame_hook(front),
         memory=robot_memory,
         fov_deg=fov_deg,
         acknowledge=None
@@ -2849,7 +2666,6 @@ def _run_impl(
             _header_rows(
                 provider=pilot,
                 robot=here.label,
-                seed=seed,
                 dry_run=dry_run,
                 memory=robot_memory,
                 detector=detector,
@@ -2953,12 +2769,6 @@ def _run_impl(
         front.finished("aborted", stopped)
         _fail(f"stopped before the robot connected ({stopped})")
         return
-    if recorder is not None:
-        # after the status line rather than under it: Rich 13.7 refuses a second live region
-        # on one console, and a long run can be a thousand frames to quantise
-        with ui.spinner(f"encoding {len(recorder.frames)} frames into run.gif"):
-            gif_path = _gif_a_press_can_leave_out(recorder, result.run_dir / "run.gif")
-        result.gif_path = gif_path
     if front is not None:
         front.finished(
             result.outcome, result.reason, run_dir=result.run_dir, summary=result.summary
@@ -2968,7 +2778,6 @@ def _run_impl(
         result.reason,
         counters=run_counters(result.summary),
         run_dir=result.run_dir,
-        gif_path=result.gif_path,
         log_dropped=result.log_dropped,
     )
     if result.summary.get("cost_usd") is None and result.summary.get("provider") not in (
@@ -3001,8 +2810,7 @@ def _member_views(
 ) -> tuple[dict[str, Any], Any]:
     """One console view per member, coloured and prefixed by name, plus the team's own.
 
-    Shared by both kinds of team, because a person reading either one needs the same thing:
-    several robots narrating at once stay several readable columns rather than one
+    Several robots narrating at once stay several readable columns rather than one
     interleaving. Returns the views (so the caller can flush them) and the `view(name)`
     factory the runner takes."""
     from roboglot.log import (
@@ -3012,7 +2820,7 @@ def _member_views(
         prompt_shown_default,
         thinking_limit_default,
     )
-    from roboglot.team.runner import TEAM_LOG
+    from roboglot.team.pilots import TEAM_LOG
 
     views: dict[str, ConsoleLog] = {}
     width = max(len(name) for name in [*member_names, TEAM_LOG])
@@ -3046,11 +2854,9 @@ def _run_pilots_impl(
     roster: Any,
     *,
     llm: str | None,
-    seed: int | None,
     dry_run: bool,
     runs_dir: str,
     yes: bool,
-    live: bool,
     verbose: bool,
     goal: str | None,
     base_url: str | None,
@@ -3153,11 +2959,9 @@ def _run_pilots_impl(
                 duck,
                 roster,
                 providers=providers,
-                seed=seed,
                 runs_dir=runs_dir,
                 dry_run=dry_run,
                 max_steps=max_steps,
-                live=live,
                 yes=yes,
                 memories=memories,
                 fov_deg=fov_deg,
@@ -3271,245 +3075,6 @@ def _pilot_header_rows(
     return rows
 
 
-def _run_team_impl(
-    duck: Any,
-    *,
-    llm: str | None,
-    specs: list[Any],
-    members: list[str] | None = None,
-    team_name: str | None = None,
-    seed: int | None,
-    dry_run: bool,
-    runs_dir: str,
-    yes: bool,
-    live: bool,
-    gif: bool,
-    gif_size: int,
-    verbose: bool,
-    goal: str | None,
-    base_url: str | None,
-    api_key: str | None,
-    vision: bool | None,
-    extra_body: str | None,
-    n_override: int | None,
-    max_steps: int | None,
-    log_on: bool | None = None,
-    log_prompt: bool | None = None,
-    run_name: str | None = None,
-    price: str | None = None,
-    effort: str | None = None,
-) -> None:
-    import asyncio
-
-    from roboglot.agent.providers.base import ProviderError
-    from roboglot.agent.providers.factory import make_provider, resolve_llm
-    from roboglot.log import (
-        ConsoleLog,
-        Sink,
-        fan_out,
-        log_enabled_default,
-        prompt_shown_default,
-        team_caption,
-        thinking_limit_default,
-    )
-    from roboglot.safety import KillSwitch
-    from roboglot.sim2d.recorder import FrameRecorder
-    from roboglot.team.runner import TEAM_LOG, run_team
-
-    if any(spec.backend != "sim2d" for spec in specs):
-        _fail(
-            "team mode is simulator only (docs/guides/team.md); "
-            "every member must be an <adapter>:sim2d robot"
-        )
-        return
-    if duck.frontmatter.verbs.confirm and not yes:
-        _fail("a team cannot prompt y/N per duck: empty verbs.confirm or pass --yes")
-        return
-    roles = duck.frontmatter.team.roles if duck.frontmatter.team is not None else None
-    if n_override is not None and roles:
-        _fail("--team N cannot be combined with team.roles; the task file names its members")
-        return
-    if members is not None:
-        # a stored team supplies the members the way `--team N` supplies the count. The
-        # size and the bodies were checked by the caller, so this skips the field validator
-        # rather than re-deriving a task file that never named them.
-        from roboglot.glotfile.schema import TeamSection
-
-        section = (duck.frontmatter.team or TeamSection()).model_copy(update={"members": members})
-        duck = duck.model_copy(
-            update={"frontmatter": duck.frontmatter.model_copy(update={"team": section})}
-        )
-    robots = {spec.name: spec.key for spec in specs if spec.name} or None
-    try:
-        vendor, llm_id, llm_source = resolve_llm(llm)
-        pilot = make_provider(
-            vendor,
-            llm_id=llm_id,
-            source=llm_source,
-            duck_name=duck.name,
-            goal=goal,
-            base_url=base_url,
-            api_key=api_key,
-            vision=vision,
-            extra_body=extra_body,
-            effort=effort,
-        )
-    except (ProviderError, ImportError) as e:
-        _fail(str(e))
-        return
-
-    if n_override is not None:
-        count = n_override
-    elif duck.frontmatter.team is not None:
-        count = len(duck.frontmatter.team.member_names)
-    else:
-        count = 3
-    member_names = (
-        duck.frontmatter.team.member_names[:count]
-        if duck.frontmatter.team is not None
-        else [f"duck-{i}" for i in range(count)]
-    )
-    prefix_width = max(len(name) for name in [*member_names, TEAM_LOG])
-    log_on = log_on if log_on is not None else log_enabled_default()
-
-    def log(msg: str) -> None:
-        # the log says all of this and more, so two views of one line is noise
-        if verbose and not log_on:
-            _verbose_line(msg)
-
-    views: dict[str, ConsoleLog] = {}
-
-    def view_for(name: str) -> Sink | None:
-        """One view per robot, its name on every line. A shared view would coalesce two
-        robots' intents into one line and attribute them to whichever spoke last."""
-        if name not in views:
-            # a colour per member as well as a name, because three robots moving at once
-            # interleave and the eye finds a colour faster than it reads a prefix
-            order = member_names.index(name) if name in member_names else -1
-            views[name] = ConsoleLog(
-                ui.err_console,
-                thinking_chars=thinking_limit_default(),
-                prompt=log_prompt if log_prompt is not None else prompt_shown_default(),
-                prefix=f"{name:<{prefix_width}}  ",
-                prefix_style=ui.MEMBER_STYLES[order % len(ui.MEMBER_STYLES)]
-                if order >= 0
-                else ui.STYLES["key"],
-            )
-        return fan_out(views[name], status.sink)
-
-    def status_only(_name: str) -> Sink | None:
-        """With --no-log nothing narrates, but the status line still has to say which duck
-        is doing what, or a team is a minute of nothing at all."""
-        return status.sink
-
-    status = ui.RunStatus()
-    ui.install_logging()
-    holder: dict[str, Any] = {}
-
-    def killed(msg: str) -> None:
-        status.stopping()
-        log(msg)
-
-    def on_ready(transport0: Any, coordinator: Any) -> None:
-        ks = KillSwitch(coordinator.abort, log=killed)
-        ks.install()
-        holder["ks"] = ks
-        if not gif:
-            return
-        rec = FrameRecorder(transport0, size=gif_size)
-        holder["rec"] = rec
-        names = sorted(coordinator.members)
-
-        def on_event(kind: str, data: dict[str, Any]) -> None:
-            if kind == "claim":
-                entity = data.get("entity")
-                if entity:
-                    rec.set_focus(entity[1])
-                else:
-                    rec.set_focus(names.index(data["kicker"]))
-            # the same function the terminal renders with, so a frame in the GIF and a
-            # line on screen say the same thing about the same moment
-            if kind in ("auction", "claim", "miss", "kick_done", "verdict"):
-                caption = team_caption(kind, data)
-                if caption is not None:
-                    rec.set_caption(f"{caption[0]} {caption[1]}")
-
-        coordinator.on_event = on_event
-
-    rows: list[tuple[str, Any]] = [
-        ("provider", f"{pilot.name} ({pilot.llm_id or 'the first LLM it serves'})"),
-        (
-            "team",
-            (f"{team_name}: " if team_name else "")
-            + f"{count} ducks in sim2d"
-            + (f"  seed {seed}" if seed is not None else ""),
-        ),
-        ("status", Text("EXPERIMENTAL", style=ui.STYLES["warn"])),
-    ]
-    if dry_run:
-        rows.append(("mode", Text("DRY RUN: nothing is sent", style=ui.STYLES["warn"])))
-    ui.console.print(ui.run_header(duck.name, rows, hint="Ctrl-C or q stops every duck."))
-    try:
-        with status:
-            status.update(f"starting {count} ducks")
-            result = asyncio.run(
-                run_team(
-                    duck,
-                    provider=pilot,
-                    seed=seed if seed is not None else 0,
-                    runs_dir=runs_dir,
-                    n_override=n_override,
-                    dry_run=dry_run,
-                    max_steps=max_steps,
-                    live=live,
-                    gif_size=gif_size,
-                    on_recorder=on_ready,
-                    log=log,
-                    robots=robots,
-                    view=view_for if log_on else status_only,
-                    run_name=run_name,
-                    price=price,
-                    on_run_dir=ui.attach_capture,
-                )
-            )
-    except ValueError as e:
-        _fail(str(e))
-        return
-    finally:
-        if "ks" in holder:
-            holder["ks"].uninstall(nothing_left_to_stop=True)
-        # a member's last event is the stop it was accepted for, and a pending burst is
-        # only written by the next event that is not an intent: without this, never
-        for pending in views.values():
-            pending.flush()
-    if "rec" in holder:
-        rec = holder["rec"]
-        with ui.spinner(f"encoding {len(rec.frames)} frames into run.gif"):
-            result.gif_path = _gif_a_press_can_leave_out(rec, result.run_dir / "run.gif")
-    counters = [f"kicker {result.kicker}"]
-    if result.spotter:
-        counters.insert(0, f"spotter {result.spotter}")
-    counters += [
-        f"auctions {result.auctions}",
-        f"bids {result.bids}",
-        f"ball moved {result.ball_displacement_m:.2f} m in {result.sim_elapsed_s:.1f} s sim",
-    ]
-    _print_outcome(
-        result.outcome,
-        result.reason,
-        counters=counters,
-        run_dir=result.run_dir,
-        gif_path=result.gif_path,
-        log_dropped=result.log_dropped,
-    )
-    if result.outcome == "infeasible":
-        # its own code: 1 means the run happened and did not succeed, and a script trying one
-        # body after another branches on "this body could not, try the next"
-        raise typer.Exit(code=EXIT_INFEASIBLE)
-    if result.outcome != "success":
-        raise typer.Exit(code=1)
-
-
 _DUCK_ARG = typer.Argument(
     None, help="Path to a .glot file, or a bundled name (hello-world, find-and-kick, ...)."
 )
@@ -3530,20 +3095,11 @@ _IMAGE: list[str] = typer.Option(
     "local LLM needs --vision.",
     rich_help_panel="Task",
 )
-_GIFSIZE = typer.Option(
-    256,
-    "--gif-size",
-    min=64,
-    max=1024,  # `sim3d.scene.OFFSCREEN_PX`; spelled here because cli.py must not import sim3d
-    help="Simulators: pixel size of each GIF pane, 64 to 1024.",
-    rich_help_panel="Output",
-)
 _TEAM = typer.Option(
     None,
     "--team",
-    help="EXPERIMENTAL: a number N runs N cooperating ducks (2-4) in sim2d under the "
-    "deterministic coordinator; a name from `roboglot team list` runs that team's registered "
-    "robots, one LLM pilot each. Either overrides the file's team members.",
+    help="EXPERIMENTAL: a name from `roboglot team list` runs that team's registered robots, "
+    "one LLM pilot each, in place of the file's team members.",
     rich_help_panel="Robot",
 )
 _MEMORY = typer.Option(
@@ -3831,22 +3387,19 @@ _ROBOT = typer.Option(
     None,
     "--robot",
     "-r",
-    help="<adapter>:<backend>, e.g. microduck:sim2d · lerobot:real · microduck:mock, or a "
+    help="<adapter>:<backend>, e.g. lerobot:real · microduck:jsonrpc · microduck:mock, or a "
     "name from `roboglot robot add`, which brings its own address, token and camera. The core "
-    "installs no robot, so the default is whatever is here: the only adapter installed, or "
-    "microduck:sim2d where the duck is one of several. With several and no duck, name a "
-    "body. See `roboglot list-adapters` and `roboglot robot list`.",
+    "installs no robot, so the default is whatever is here: the only adapter installed, on its "
+    "first backend. With several, name a body. See `roboglot list-adapters` and "
+    "`roboglot robot list`.",
     rich_help_panel="Robot",
 )
 _ROBOTS = typer.Option(
     None,
     "--robots",
-    help="A team: name=<adapter>:<backend>,... A coordinator team needs every "
-    "member to be microduck:sim2d, and a pilot team or serve-mcp takes any of them.",
+    help="A team: name=<adapter>:<backend>,..., one LLM pilot each, of any kind, and "
+    "serve-mcp takes the same.",
     rich_help_panel="Robot",
-)
-_SEED = typer.Option(
-    None, "--seed", help="Simulator seed (deterministic runs).", rich_help_panel="Task"
 )
 _DRY = typer.Option(
     False, "--dry-run", help="Print every intent, send nothing.", rich_help_panel="Task"
@@ -3881,15 +3434,6 @@ _DRIVE_PLAY = typer.Option(
     "--play, and no variable sets it.",
     rich_help_panel="Task",
 )
-# preflight has no --goal, and rehearses many runs rather than one
-_PLAY_PREFLIGHT = typer.Option(
-    None,
-    "--play/--no-play",
-    help="--play rehearses every file with a part for its pilot to play, and --no-play without "
-    "the one a file gives it, as a run would. Without either each file decides. It adds one "
-    "section to the system prompt and changes no gate. No variable sets it.",
-    rich_help_panel="Task",
-)
 _RUNS = typer.Option(
     "runs", "--runs-dir", help="Where run directories go.", rich_help_panel="Output"
 )
@@ -3917,13 +3461,6 @@ _YES = typer.Option(
         "hardware)."
     ),
     rich_help_panel="Task",
-)
-_LIVE = typer.Option(
-    False,
-    "--live",
-    help="Simulators: watch the run in real time. sim2d opens a pygame window (needs "
-    r"roboglot\[live]); mujoco opens MuJoCo's own viewer.",
-    rich_help_panel="Output",
 )
 _ADDR = typer.Option(
     None,
@@ -4003,7 +3540,7 @@ _POLICY_URL = typer.Option(
     help="The policy server the arm hands pick and manipulate to, as http://127.0.0.1:PORT, or "
     "https:// for one behind TLS: the address roboglot policy serve printed, or hf:NAME for one "
     "roboglot policy endpoint up started on a Hugging Face GPU. A LeRobot arm only, "
-    "lerobot:real or lerobot:mujoco, and one robot only. It is asked what it serves before the "
+    "lerobot:real, and one robot only. It is asked what it serves before the "
     "arm connects, and the connect checks that the policy fits the arm before any torque. No "
     "variable sets it, so a policy drives the arm only when a command names one.",
     rich_help_panel="Robot",
@@ -4034,20 +3571,11 @@ _ASYNC_CHUNKS = typer.Option(
     "chunks: slower by a round trip a chunk, and the run's record says it was given.",
     rich_help_panel="Robot",
 )
-_ROOM = typer.Option(
-    None,
-    "--room",
-    help=f"A room for the duck's simulator to lay out: {', '.join(BUILT_IN_ROOMS)}, or a .yaml "
-    "file of your own. The duck keeps a map of it the way its own mapd would, revealed where it "
-    "stops and looks, and can mark places in it. microduck:sim2d or microduck:mujoco, and one "
-    "robot only.",
-    rich_help_panel="Robot",
-)
 _FOV = typer.Option(
     None,
     "--fov-deg",
     help="Horizontal field of view of the camera actually on your robot, in degrees. The "
-    "default is the simulator's 90; a Pi Camera Module 2 is about 62. Getting it wrong "
+    "default is a mock's 90; a Pi Camera Module 2 is about 62. Getting it wrong "
     "scales every bearing and distance, so detections say so until you set it.",
     rich_help_panel="Robot",
 )
@@ -4095,13 +3623,11 @@ def run(
     llm: str | None = _LLM,
     robot: str | None = _ROBOT,
     robots: str | None = _ROBOTS,
-    seed: int | None = _SEED,
     dry_run: bool = _DRY,
     max_steps: int | None = _MAXSTEPS,
     play: bool | None = _PLAY,
     runs_dir: str = _RUNS,
     yes: bool = _YES,
-    live: bool = _LIVE,
     address: str | None = _ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
@@ -4113,16 +3639,7 @@ def run(
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
-    room: str | None = _ROOM,
     map_address: str | None = _MAP_ADDR,
-    gif: bool = typer.Option(
-        True,
-        "--gif/--no-gif",
-        help="Simulators: write run.gif into the run dir. The arm's simulator, "
-        "lerobot:mujoco, writes none.",
-        rich_help_panel="Output",
-    ),
-    gif_size: int = _GIFSIZE,
     verbose: bool = _VERBOSE,
     base_url: str | None = _BASEURL,
     api_key: str | None = _APIKEY,
@@ -4156,13 +3673,11 @@ def run(
             llm=llm,
             robot=robot,
             robots=robots,
-            seed=seed,
             dry_run=dry_run,
             max_steps=max_steps,
             play=play,
             runs_dir=runs_dir,
             yes=yes,
-            live=live,
             address=address,
             camera_url=camera_url,
             token=token,
@@ -4174,10 +3689,7 @@ def run(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
-            room=room,
             map_address=map_address,
-            gif=gif,
-            gif_size=gif_size,
             verbose=verbose,
             base_url=base_url,
             api_key=api_key,
@@ -4210,13 +3722,11 @@ def _run_command(
     llm: str | None,
     robot: str | None,
     robots: str | None,
-    seed: int | None,
     dry_run: bool,
     max_steps: int | None,
     play: bool | None,
     runs_dir: str,
     yes: bool,
-    live: bool,
     address: str | None,
     camera_url: list[str],
     token: str | None,
@@ -4228,10 +3738,7 @@ def _run_command(
     policy_token: str | None,
     accept_other_frame: bool,
     async_chunks: bool,
-    room: str | None,
     map_address: str | None,
-    gif: bool,
-    gif_size: int,
     verbose: bool,
     base_url: str | None,
     api_key: str | None,
@@ -4258,18 +3765,14 @@ def _run_command(
             glotfile,
             goal,
             llm,
-            seed,
             dry_run,
             max_steps,
             runs_dir,
             yes,
-            live,
             address,
             camera_url,
             token,
             fov_deg,
-            gif,
-            gif_size,
             verbose,
             base_url=base_url,
             api_key=api_key,
@@ -4298,403 +3801,10 @@ def _run_command(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
-            room=room,
             map_address=map_address,
             controller=controller,
             play=play,
             effort=effort,
-        )
-
-
-@app.command(rich_help_panel="Run a task")
-def record(
-    glotfile: str | None = _DUCK_ARG,
-    goal: str | None = _GOAL,
-    llm: str | None = _LLM,
-    seed: int | None = typer.Option(0, "--seed"),
-    max_steps: int | None = _MAXSTEPS,
-    play: bool | None = _PLAY,
-    runs_dir: str = _RUNS,
-    run_name: str | None = _RUN_NAME,
-    gif_size: int = _GIFSIZE,
-    verbose: bool = _VERBOSE,
-    base_url: str | None = _BASEURL,
-    api_key: str | None = _APIKEY,
-    vision: bool | None = _VISION,
-    extra_body: str | None = _EXTRA_BODY,
-    team: str | None = typer.Option(
-        None,
-        "--team",
-        help="EXPERIMENTAL: N cooperating ducks (2-4) in sim2d. A count only: this command "
-        "pins the simulator, so a stored team belongs to `roboglot run`.",
-        rich_help_panel="Robot",
-    ),
-    room: str | None = _ROOM,
-    log: bool | None = _LOG,
-    log_prompt: bool | None = _LOG_PROMPT,
-) -> None:
-    """Like `run` on sim2d, but always writes a GIF (for READMEs and launches)."""
-    with _terminal_record():
-        if team is not None and not team.strip().isdigit():
-            _fail(
-                "record pins the simulator: --team takes a count here, not a stored team",
-                hint="roboglot run <task> --team NAME",
-            )
-            return
-        _run_impl(
-            glotfile,
-            goal,
-            llm,
-            seed=seed,
-            dry_run=False,
-            max_steps=max_steps,
-            runs_dir=runs_dir,
-            yes=True,
-            live=False,
-            address=None,
-            camera_url=[],
-            token=None,
-            fov_deg=None,
-            gif=True,
-            gif_size=gif_size,
-            verbose=verbose,
-            base_url=base_url,
-            api_key=api_key,
-            vision=vision,
-            extra_body=extra_body,
-            team=team,
-            robot="microduck:sim2d",
-            # Pinned off, not merely absent. `record` makes the recordings in this repository and
-            # has to be reproducible without a network call, and leaving this to default meant
-            # `ROBOGLOT_DECISION_LLM` in somebody's environment quietly switched one on. Frames
-            # too, which the mode does not decide: a `ROBOGLOT_DECISION_FRAMES=1` there would
-            # otherwise build a decision LLM for a run that asks it nothing.
-            decision_mode="off",
-            decision_frames=False,
-            log_on=log,
-            log_prompt=log_prompt,
-            run_name=run_name,
-            play=play,
-            room=room,
-        )
-
-
-# ── preflight: task files rehearsed on the arm's simulator ─────────────────────────────
-
-
-@app.command(rich_help_panel="Run a task")
-def preflight(
-    glotfiles: list[str] = typer.Argument(
-        ...,
-        help=".glot files or globs to rehearse. A <task>.sim.yaml beside a file, if there is "
-        "one, lays out the table for it and says what has to be so when each run ends.",
-    ),
-    robot: str = typer.Option(
-        ...,
-        "--robot",
-        "-r",
-        help="The simulator to rehearse on: a robot registered as lerobot:mujoco, which "
-        "`roboglot robot twin` makes of a registered arm, or lerobot:mujoco itself for the "
-        "generic arm. Anything else is refused before it is built.",
-        rich_help_panel="Robot",
-    ),
-    llm: str | None = typer.Option(
-        None,
-        "--llm",
-        "-l",
-        help="The pilot to rehearse with, as VENDOR[:LLM]. Default: the robot's own, then "
-        f"{LLM_ENV}, and preflight refuses where neither names one: the scripted pilot runs "
-        "only when typed as --llm fake.",
-        autocompletion=_complete_llm,
-        rich_help_panel="Pilot",
-    ),
-    effort: str | None = _EFFORT,
-    camera_url: list[str] = typer.Option(
-        [],
-        "--camera-url",
-        help="A camera the simulator renders, as opencv://N?name=front, top or wrist, with "
-        "?width, ?height and ?fov. The index is ignored. Repeatable, and replaces the robot's "
-        "registered cameras, as it does on run.",
-        rich_help_panel="Robot",
-    ),
-    image: list[str] = _IMAGE,
-    max_steps: int | None = _MAXSTEPS,
-    play: bool | None = _PLAY_PREFLIGHT,
-    seeds: int = typer.Option(
-        DEFAULT_SEEDS,
-        "--seeds",
-        min=1,
-        help="Runs per file, the first on seed 0 and each after it on the next.",
-        rich_help_panel="Task",
-    ),
-    connect_cycles: int = typer.Option(
-        DEFAULT_CONNECT_CYCLES,
-        "--connect-cycles",
-        min=0,
-        help="Connects and closes per file before its first run, the first on seed 0. An error "
-        "that escapes any of them fails the file and no run is made. A connect that gives up "
-        "in words on the --faults it met is noted and fails nothing.",
-        rich_help_panel="Task",
-    ),
-    faults: str | None = typer.Option(
-        None,
-        "--faults",
-        metavar="SPEC",
-        help="Bus faults for the connect cycles to meet, seeded by each cycle's seed: rates "
-        "for handshake, configure, write, torque, torque_read and temperature_read, and "
-        "read_loss_from=N, as handshake=0.2,configure=0.3. A connect that retries and then "
-        "gives up on them, as the arm's does, is noted rather than failed, and the runs after "
-        "the cycles meet no faults.",
-        rich_help_panel="Task",
-    ),
-    policy_url: str | None = _POLICY_URL,
-    policy_token: str | None = _POLICY_TOKEN,
-    accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
-    async_chunks: bool = _ASYNC_CHUNKS,
-    runs_dir: str = _RUNS,
-    registry_dir: str | None = _REGISTRY_DIR,
-    as_json: bool = _JSON,
-) -> None:
-    """Rehearse task files on the arm's simulator, and exit 1 unless every run passed."""
-    _preflight_impl(
-        glotfiles,
-        robot=robot,
-        llm=llm,
-        camera_url=camera_url,
-        images=image,
-        max_steps=max_steps,
-        seeds=seeds,
-        connect_cycles=connect_cycles,
-        faults=faults,
-        runs_dir=runs_dir,
-        registry_dir=registry_dir,
-        as_json=as_json,
-        policy_url=policy_url,
-        policy_token=policy_token,
-        accept_other_frame=accept_other_frame,
-        async_chunks=async_chunks,
-        play=play,
-        effort=effort,
-    )
-
-
-def _preflight_impl(
-    glotfiles: list[str],
-    *,
-    robot: str,
-    llm: str | None,
-    camera_url: list[str],
-    images: Sequence[str],
-    max_steps: int | None,
-    seeds: int,
-    connect_cycles: int,
-    faults: str | None,
-    runs_dir: str,
-    registry_dir: str | None,
-    as_json: bool,
-    policy_url: str | None = None,
-    policy_token: str | None = None,
-    accept_other_frame: bool = False,
-    async_chunks: bool = True,
-    play: bool | None = None,
-    effort: str | None = None,
-) -> None:
-    import asyncio
-
-    from roboglot.adapters.base import AdapterError, policy_choice
-    from roboglot.adapters.factory import describe, make_adapter
-    from roboglot.agent.images import TaskImageError, load_task_images
-    from roboglot.agent.providers.base import ProviderError
-    from roboglot.agent.providers.factory import make_provider, resolve_llm
-    from roboglot.preflight import PreflightError, Rehearsal, refuse_default_pilot, refuse_real
-    from roboglot.registry import Registry, RegistryError, resolve_robot_ref
-    from roboglot.transport.base import TransportError
-
-    try:
-        policy = policy_choice(
-            policy_url,
-            policy_token,
-            accept_other_frame=accept_other_frame,
-            async_chunks=async_chunks,
-            registry_dir=registry_dir,
-        )
-    except ValueError as e:
-        _fail(str(e))
-        return
-    # Which robot, and that it is a simulator, before anything is built: a real arm refused
-    # after it was made would already have had its port opened by somebody's typo.
-    try:
-        here = resolve_robot_ref(robot, Registry(registry_dir))
-        refuse_real(here.spec, here.label)
-    except PreflightError as e:
-        _fail(str(e), hint="then roboglot preflight FILES --robot NAME-sim")
-        return
-    except (AdapterError, RegistryError) as e:
-        _fail(str(e))
-        return
-    try:
-        vendor, llm_id, source = resolve_llm(
-            llm, here.llm, robot=here.entry.name if here.entry is not None else None
-        )
-        refuse_default_pilot(source)
-        # one pilot built now and thrown away: a missing key or extra is a sentence before any
-        # world is loaded, rather than the same error on every seed of every file
-        probe = make_provider(vendor, llm_id=llm_id, source=source, effort=effort)
-    except (PreflightError, ProviderError) as e:
-        _fail(str(e))
-        return
-    task_images: list[Any] = []
-    if images:
-        try:
-            task_images = load_task_images(list(images))
-        except TaskImageError as e:
-            _fail(str(e))
-            return
-        if not probe.supports_vision:
-            _fail(
-                f"{probe.name} {probe.llm_id} does not take images, so it cannot be given "
-                f"{_plural(len(task_images), 'picture')}",
-                hint="roboglot list-models marks the LLMs that take no frames",
-            )
-            return
-    kwargs = here.adapter_kwargs(camera_url=camera_url)
-    if policy is not None:
-        # every connect cycle and every run is built with it, and checks it at connect
-        kwargs["policy"] = policy
-    try:
-        # built once and never connected, so a camera, a fault spec or a stored field the
-        # simulator refuses is one sentence now rather than a failed connect on every file
-        built = make_adapter(here.spec, seed=0, faults=faults, **kwargs)
-        manifest = describe(here.spec, policy=policy)
-    except (AdapterError, TransportError, ImportError, ValueError) as e:
-        _fail(str(e))
-        return
-    if policy is not None:
-        # and a policy server that is not there is one sentence now too, as it is for a run
-        ask = getattr(built, "ask_policy", None)
-        try:
-            if callable(ask):
-                ask()
-        except RuntimeError as e:
-            _fail(
-                str(e),
-                hint=f"roboglot policy check --policy-url {policy.url} asks it what it serves",
-            )
-            return
-
-    def pilot(duck: Any) -> Any:
-        return make_provider(
-            vendor, llm_id=llm_id, source=source, duck_name=duck.name, effort=effort
-        )
-
-    rehearsal = Rehearsal(
-        spec=here.spec,
-        manifest=manifest,
-        pilot=pilot,
-        adapter_kwargs=kwargs,
-        seeds=seeds,
-        connect_cycles=connect_cycles,
-        faults=faults,
-        max_steps=max_steps,
-        runs_dir=runs_dir,
-        task_images=task_images,
-        play=play,
-    )
-    files = _expand(glotfiles)
-    ui.install_logging()
-
-    async def main() -> list[Any]:
-        # one file at a time, and one run at a time within it: the simulator's clock is seeded
-        # and deterministic only for runs that do not overlap
-        return [await rehearsal.file(path) for path in files]
-
-    with ui.spinner(f"rehearsing {_plural(len(files), 'file')} on {here.label}") as say:
-        rehearsal.progress = say
-        reports = asyncio.run(main())
-    failed = [r for r in reports if not r.ok]
-    if as_json:
-        for report in reports:
-            print(json.dumps(report.public(), ensure_ascii=False))
-        raise typer.Exit(code=1 if failed else 0)
-    for report in reports:
-        _print_preflight(report)
-    runs = [run for report in reports for run in report.runs]
-    costs = [run.cost_usd for run in runs]
-    if runs:
-        from roboglot.agent.providers.pricing import fmt_usd
-
-        cost = (
-            f"LLM cost {fmt_usd(sum(c for c in costs if c is not None))} over "
-            f"{_plural(len(runs), 'run')}"
-            if all(c is not None for c in costs)
-            else f"LLM cost unpriced over {_plural(len(runs), 'run')}: Roboglot has no rate "
-            f"for {probe.name} {probe.llm_id}"
-        )
-        ui.console.print(Text(cost, style=ui.STYLES["muted"]), soft_wrap=True)
-    dt = next((r.sim_dt_s for r in reports if r.sim_dt_s is not None), None)
-    if dt is not None:
-        ui.console.print(Text(f"sim dt {dt:g} s", style=ui.STYLES["muted"]))
-    if failed:
-        _fail(
-            f"{len(failed)} of {len(reports)} {_files(len(reports))} failed preflight",
-            hint="each run's directory has its transcript, and roboglot log DIR replays it",
-        )
-    ui.console.print(_ok_line(f"{len(reports)} {_files(len(reports))} passed preflight"))
-
-
-def _print_preflight(report: Any) -> None:
-    """One file: a row per run, then every reason one of them failed, as plain lines."""
-    from roboglot.agent.providers.pricing import fmt_usd
-    from roboglot.preflight import sidecar_path
-
-    title = f"roboglot preflight {report.file}"
-    if report.runs:
-        table = ui.table(title)
-        table.add_column("seed", justify="right")
-        table.add_column("outcome")
-        table.add_column("steps", justify="right")
-        table.add_column("close", ratio=2, overflow="fold")
-        table.add_column("checks", justify="right")
-        table.add_column("cost", justify="right")
-        table.add_column("result")
-        for run in report.runs:
-            checks = [v for v in run.verdicts if v.check != "close"]
-            close = next((v for v in run.verdicts if v.check == "close"), None)
-            ok = run.ok
-            table.add_row(
-                str(run.seed),
-                Text(run.outcome),
-                str(run.steps),
-                Text(close.detail if close is not None else "-"),
-                f"{sum(v.ok for v in checks)} of {len(checks)}" if checks else "-",
-                fmt_usd(run.cost_usd) if run.cost_usd is not None else "unpriced",
-                Text("pass" if ok else "FAIL", style=ui.STYLES["ok" if ok else "fail"]),
-            )
-        ui.console.print(table)
-    else:
-        ui.console.print(Text(title, style=ui.STYLES["key"]))
-    lines = [f"{report.file}: {p}" for p in report.problems]
-    lines += [f"connect on seed {c.seed}: {c.error}" for c in report.cycles if not c.ok]
-    lines += [f"seed {run.seed}: {why}" for run in report.runs for why in run.failures]
-    for line in lines:
-        ui.console.print(Text(f"  {line}"), soft_wrap=True)
-    for cycle in report.cycles:
-        if cycle.gave_up is not None:
-            ui.console.print(
-                Text(
-                    f"  connect on seed {cycle.seed} gave up on the faults, as it should: "
-                    f"{cycle.gave_up}",
-                    style=ui.STYLES["muted"],
-                ),
-                soft_wrap=True,
-            )
-    if report.sidecar is None and not report.problems:
-        ui.console.print(
-            Text(
-                f"  no {sidecar_path(report.file).name} beside it, so only the close was judged",
-                style=ui.STYLES["muted"],
-            ),
-            soft_wrap=True,
         )
 
 
@@ -4822,7 +3932,6 @@ def drive_cmd(
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
-    seed: int | None = _SEED,
     llm: str | None = _LLM,
     controller: str | None = _DRIVE_CONTROLLER,
     base_url: str | None = _BASEURL,
@@ -4841,7 +3950,6 @@ def drive_cmd(
         help="Adopt a .glot's contract for the session: its allowlist, gates and budgets. Its "
         "body is not run.",
     ),
-    room: str | None = _ROOM,
     map_address: str | None = _MAP_ADDR,
     yes: bool = _YES,
     dry_run: bool = _DRY,
@@ -4872,7 +3980,6 @@ def drive_cmd(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
-            seed=seed,
             llm=llm,
             controller=controller,
             base_url=base_url,
@@ -4886,7 +3993,6 @@ def drive_cmd(
             decision_mode=decision_mode,
             decision_frames=decision_frames,
             glotfile=glotfile,
-            room=room,
             map_address=map_address,
             yes=yes,
             dry_run=dry_run,
@@ -5014,7 +4120,6 @@ def _drive_command(
     policy_token: str | None,
     accept_other_frame: bool,
     async_chunks: bool,
-    seed: int | None,
     llm: str | None,
     controller: str | None,
     base_url: str | None,
@@ -5028,7 +4133,6 @@ def _drive_command(
     decision_mode: str | None,
     decision_frames: bool | None,
     glotfile: str | None,
-    room: str | None,
     map_address: str | None,
     yes: bool,
     dry_run: bool,
@@ -5098,12 +4202,10 @@ def _drive_command(
         host=host,
         host_token=host_token,
         detector=detector,
-        seed=seed,
         llm=llm,
         decision_llm=decision_llm,
         decision_url=decision_url,
         glotfile=glotfile,
-        room=room,
         map_address=map_address,
         yes=yes,
         dry_run=dry_run,
@@ -5227,7 +4329,10 @@ def log_cmd(
     if end is None:
         _fail("no run_end: the run did not finish, or is still running")
         return
-    if "kicker" in end:  # a team counts different things, and its summary is the only source
+    if "kicker" in end:
+        # a coordinator team's run, recorded before Roboglot stopped running coordinator teams:
+        # its summary counts different things and is the only source of them, and its
+        # `policy` is the team's own settings, which no arm's policy counter may read
         counters = [f"spotter {end['spotter']}"] if end.get("spotter") else []
         counters += [
             f"kicker {end.get('kicker')}",
@@ -5241,7 +4346,6 @@ def log_cmd(
         str(end.get("reason", "")),
         counters=counters,
         run_dir=run_dir,
-        gif_path=gif if (gif := run_dir / "run.gif").exists() else None,
         # `trace_dropped` is still read, so a run directory recorded before the rename
         # replays and its counter still reaches the panel. The value goes through `_number`
         # because this is the path an old run directory takes, and those are hand-edited,
@@ -5278,8 +4382,7 @@ def doctor(
     """Check the environment: keys, optional extras, adapters, upstream assumptions.
 
     With `--robot X --address Y` it also connects, which is the only way to see what a
-    robot actually reports before a run does. A registered simulator is connected without
-    an address too, because nothing real moves. With `--host` it asks the daemon on that board
+    robot actually reports before a run does. With `--host` it asks the daemon on that board
     what it is, reads the board's health over the network, and probes the local LLM
     presets there."""
     from roboglot.doctor import HostReport, collect, refused_host, render
@@ -5374,10 +4477,8 @@ def doctor(
         # whose connect takes torque off: the arm's close note sends a person here when it is
         # holding itself up away from its fold. On stderr under --json, whose stdout is one
         # JSON document and nothing else.
-        # A simulator of such a body says it is one instead of asking for a hand under it.
         if getattr(adapter, "supports_hand_off", False):
             line = _doctor_warning(
-                simulator=_is_simulator(adapter),
                 folds=getattr(adapter, "rest_pose", None) is not None,
                 keeps=hands.unposed,
                 asks=hands.prompting,
@@ -5537,7 +4638,6 @@ def serve_mcp(
         help="Hold the robot to the --glotfile contract: robot_load_glotfile refuses a file that "
         "asks for more than it. Off, a file the client loads replaces the contract.",
     ),
-    seed: int | None = _SEED,
     address: str | None = _ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
@@ -5548,7 +4648,6 @@ def serve_mcp(
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
-    room: str | None = _ROOM,
     map_address: str | None = _MAP_ADDR,
     dry_run: bool = _DRY,
     yes: bool = typer.Option(
@@ -5603,7 +4702,6 @@ def serve_mcp(
             registry_dir=registry_dir,
             glotfile=glotfile,
             lock_glotfile=lock_glotfile,
-            seed=seed,
             address=address,
             camera_url=camera_url,
             token=token,
@@ -5619,7 +4717,6 @@ def serve_mcp(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
-            room=room,
             map_address=map_address,
             # the robots are connected in there, so a retiring backend is said from there,
             # just before the server's start connects a robot on it, in the line `run` and
@@ -5683,8 +4780,8 @@ _POLICY_CAMERAS = typer.Option(
 _POLICY_LATENCY = typer.Option(
     None,
     "--latency-s",
-    help="How long the policy takes to answer a step, declared. The simulator holds each "
-    "chunk back that long, and roboglot policy check --bench measures the real one. It has to "
+    help="How long the policy takes to answer a step, declared, which roboglot policy check "
+    "--bench measures. It has to "
     "be shorter than the 5 s a segment waits for its first chunk, and no longer than half a "
     "chunk's actions, rounded down, take to play, since the next chunk is asked for only once "
     "the last has landed.",
@@ -6771,8 +5868,8 @@ def _entry_rows(entry: Any, *, teams: list[str]) -> list[tuple[str, Any]]:
 
 _ROBOT_NAME = typer.Argument(
     ...,
-    help="A slug: lowercase letters, digits and hyphens. Not a number (--team N already "
-    "means N simulated ducks) and not an adapter name.",
+    help="A slug: lowercase letters, digits and hyphens. Not a number, which reads as a "
+    "count, and not an adapter name.",
 )
 _PROBE = typer.Option(
     False,
@@ -6827,7 +5924,7 @@ def _token_from(flag: str, name: str | None, given: str | None, *, instead_of: s
 def robot_add(
     name: str = _ROBOT_NAME,
     spec: str = typer.Argument(
-        ..., help="<adapter>[:<backend>], e.g. microduck:sim2d. See `roboglot list-adapters`."
+        ..., help="<adapter>[:<backend>], e.g. lerobot:real. See `roboglot list-adapters`."
     ),
     address: str | None = _ADDR,
     map_address: str | None = _MAP_ADDR,
@@ -6911,242 +6008,9 @@ def _one_line(e: Exception) -> Exception:
     return e
 
 
-_TWIN_SPEC = "lerobot:mujoco"
-"""What `roboglot robot twin` registers: the arm's simulator, the real backend's own code over a
-physics model of the arm, which reads the arm's travel off the calibration file it is given."""
-
-
-def _twin_address(entry: Any, address: str | None) -> str | None:
-    """The calibration file a twin of this arm is told to read, as it was given: `--address`,
-    else the file a simulator given as the source already reads, else None for the one LeRobot
-    keeps under the arm's registered name."""
-    if address:
-        return address
-    if entry.key == _TWIN_SPEC and entry.address:
-        return str(entry.address)
-    return None
-
-
-def _twin_calibration(given: str | None, name: str) -> Path:
-    """The calibration file a twin reads, as an absolute path so the twin reads it from any
-    directory: the one given (`_twin_address`), else the one LeRobot keeps under the arm's
-    registered name, found as the simulator finds it
-    (`roboglot_lerobot.sim.model.calibration_path`). Never called on an address shaped like a
-    port, which resolving would already reach for."""
-    if given:
-        return Path(given).expanduser().resolve()
-    from roboglot_lerobot.sim.model import calibration_path
-
-    return calibration_path(name).resolve()
-
-
-def _twin_cameras(urls: Sequence[str]) -> tuple[list[str], list[tuple[str, str]]]:
-    """The source's camera urls a simulator renders, and each one it does not, with why. The
-    simulator renders only the views its scene mounts (`roboglot_lerobot.sim.model.MOUNTS`), and
-    a twin that stored another would be refused by every run and preflight on it, naming a
-    --camera-url nobody typed."""
-    from roboglot.transport.base import TransportError
-    from roboglot_lerobot.real import parse_camera_url
-    from roboglot_lerobot.sim.model import MOUNTS
-
-    kept: list[str] = []
-    left: list[tuple[str, str]] = []
-    for url in urls:
-        try:
-            view = parse_camera_url(url, label="mujoco").name
-        except (TransportError, ValueError) as e:
-            left.append((url, " ".join(str(e).split()).rstrip(".")))
-            continue
-        if view in MOUNTS:
-            kept.append(url)
-        else:
-            left.append((url, f"it is named {view}, and the simulator renders only {_and(MOUNTS)}"))
-    return kept, left
-
-
 def _and(items: Sequence[str]) -> str:
     """`a`, `a and b`, `a, b and c`."""
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
-
-
-@robot_app.command("twin")
-def robot_twin(
-    source: str = typer.Argument(..., help="The registered LeRobot arm to make a simulator of."),
-    name: str | None = typer.Argument(
-        None, help="What to register the simulator as. Default: SOURCE-sim."
-    ),
-    address: str | None = typer.Option(
-        None,
-        "--address",
-        help="The calibration file to give it, where it is not the one LeRobot keeps under "
-        "SOURCE's name.",
-    ),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        help="Replace NAME where it is already a lerobot:mujoco robot. Anything else "
-        "registered under NAME is never replaced.",
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Register a simulator of a registered arm, on its calibration, to rehearse its tasks on."""
-    from roboglot.adapters.base import AdapterError, AdapterNotInstalled
-    from roboglot.agent.providers.base import ProviderError
-    from roboglot.registry import RegistryError, RobotEntry
-
-    target = name or f"{source}-sim"
-    if target == source:
-        _fail(
-            f"{source} cannot be its own twin: the simulator is registered beside the arm it "
-            "copies, never over it",
-            hint=f"leave NAME out for {source}-sim, or name another",
-        )
-        return
-    try:
-        registry = _registry(registry_dir)
-        entry = registry.get_robot(source)
-        existing = registry.get_robot(target)
-    except RegistryError as e:
-        _registry_fail(e)
-        return
-    if entry is None:
-        _fail(
-            f"no robot called {source!r} is registered, so there is no arm to twin",
-            hint="roboglot robot list",
-        )
-        return
-    if entry.adapter != "lerobot":
-        _fail(
-            f"{source} is {entry.key}, and only a LeRobot arm has a simulator to be twinned on",
-            hint="roboglot robot twin takes a robot registered as lerobot:real",
-        )
-        return
-    if entry.robot_type is not None:
-        # stored only when it is not the default (`_check_robot_type`), and the simulator is the
-        # default's physics: a twin would rehearse this arm's task on another arm's reach
-        _fail(
-            f"{source} is an {entry.robot_type}, and {_TWIN_SPEC} is the physics model of an "
-            f"{BY_NAME['lerobot'].robot_types[0]}, so a twin would rehearse its task on another "
-            "arm's reach and payload",
-            hint="rehearse it on lerobot:mock, which takes its figures, or on the arm",
-        )
-        return
-    if existing is not None and force and existing.key != _TWIN_SPEC:
-        _fail(
-            f"{target} is registered as {existing.key}, and --force replaces only a "
-            f"{_TWIN_SPEC} robot",
-            hint=f"roboglot robot remove {target} first, if you mean to lose it",
-        )
-        return
-    given = _twin_address(entry, address)
-    try:
-        from roboglot_lerobot.sim.model import names_a_port
-
-        if given and names_a_port(given):
-            # for every other lerobot robot the address is the port, so this is an easy slip,
-            # and it is refused on its shape before anything opens or even looks for the file
-            whose = "--address" if address else f"{source}'s own address"
-            _fail(
-                f"{whose} {given} is a serial port, and a twin reads the arm's calibration "
-                "file, never its port, so nothing was opened there",
-                hint="give --address PATH the file lerobot-calibrate wrote for the arm",
-            )
-            return
-        calibration = _twin_calibration(given, entry.name)
-        cameras, left_out = _twin_cameras(entry.camera_urls)
-    except ImportError:
-        _fail(str(AdapterNotInstalled("lerobot", "roboglot[lerobot-sim]")))
-        return
-    if not calibration.is_file():
-        where = (
-            ("--address names" if address else "its own address names")
-            if given
-            else "LeRobot would keep one for it at"
-        )
-        _fail(
-            f"{source} has no calibration file for its twin to read: {where} {calibration}, "
-            "and nothing is there",
-            hint="give --address PATH the file lerobot-calibrate wrote for the arm",
-        )
-        return
-    fields: dict[str, Any] = {
-        "spec": _TWIN_SPEC,
-        "address": str(calibration),
-        "camera_url": cameras or None,
-        "rest_pose": dict(entry.rest_pose) if entry.rest_pose else None,
-        "llm": entry.llm,
-    }
-    try:
-        if existing is not None and force:
-            # every field, the ones the source leaves empty included, so what was under the
-            # name before is gone rather than half kept
-            registry.update_robot(
-                target,
-                {**fields, "token": None, "host": None, "host_token": None, "note": None},
-            )
-        else:
-            registry.add_robot(RobotEntry(name=target, **fields))
-    except (RegistryError, AdapterError, ValueError, ProviderError) as e:
-        _registry_fail(_one_line(e))
-        return
-    kept = (
-        ("rest pose", "rest pose", entry.rest_pose),
-        ("pilot", f"pilot {entry.llm}", entry.llm),
-        ("camera", _plural(len(cameras), "camera url"), cameras),
-    )
-    copied = [said for _, said, present in kept if present]
-    # a source whose every camera was left out had cameras, and the lines below say why
-    missing = [
-        what for what, _, present in kept if not present and not (what == "camera" and left_out)
-    ]
-    replaced = existing is not None and force
-    ui.console.print(
-        _ok_line(
-            f"{'replaced' if replaced else 'added'} {target}: {_TWIN_SPEC}, a simulator of "
-            f"{source} on {calibration}"
-        )
-    )
-    said = []
-    if copied:
-        said.append(f"copied from {source}: {', '.join(copied)}")
-    if missing:
-        said.append(f"{source} has no {' or '.join(missing)} to copy")
-    for line in said:
-        ui.console.print(Text(f"  {line}", style=ui.STYLES["muted"]), soft_wrap=True)
-    for url, why in left_out:
-        ui.console.print(
-            _warn_line(
-                f"{source}'s camera {url} was not copied: {why}. roboglot robot edit {target} "
-                "--camera-url sets the twin's cameras"
-            ),
-            soft_wrap=True,
-        )
-    # every simulator in the file, not only this one: one is enough for 0.14 to refuse it
-    twins = [target]
-    with contextlib.suppress(RegistryError):
-        twins = sorted(n for n, e in registry.robots().items() if e.key == _TWIN_SPEC) or twins
-    holds, remove = (
-        (f"a {_TWIN_SPEC} robot", f"roboglot robot remove {twins[0]}")
-        if len(twins) == 1
-        else (
-            f"{len(twins)} {_TWIN_SPEC} robots, {_and(twins)}",
-            "roboglot robot remove each of them",
-        )
-    )
-    ui.console.print(
-        _warn_line(
-            f"robots.json now holds {holds}, and Roboglot 0.14 and earlier cannot read the file "
-            f"at all: {remove} before going back to one"
-        ),
-        soft_wrap=True,
-    )
-    ui.console.print(
-        Text(
-            f"  roboglot preflight <task> --robot {target}"
-            + ("" if entry.llm else " --llm VENDOR[:LLM]"),
-            style=ui.STYLES["muted"],
-        )
-    )
 
 
 @robot_app.command("list")
@@ -7464,7 +6328,7 @@ def robot_rest_pose(
         from roboglot.adapters.factory import needs_rest_pose
 
         # a real arm with no pose is refused a run altogether (ADR-0058), rather than being let
-        # go of where it stands at the end of one, which is what a mock or a simulator still is.
+        # go of where it stands at the end of one, which is what a mock still is.
         # The way back is a line of its own, as robot add's next command is, so that a wrap at
         # the terminal's width never splits the command a person copies.
         after = (
@@ -7619,35 +6483,17 @@ def robot_rest_pose(
     )
 
 
-def _is_simulator(adapter: Any) -> bool:
-    """Whether this body is a simulator of a real one (`lerobot:mujoco`), asked of the built
-    adapter, which says so itself. A body that does not say is not one, so every real arm
-    keeps the warnings it had."""
-    return getattr(adapter, "is_simulator", False) is True
-
-
-def _connect_warning(*, simulator: bool = False) -> str:
+def _connect_warning() -> str:
     """What connecting does to a body that is handed to a person, and why, in the one wording
     `roboglot robot release`, `roboglot doctor` and the arm's own close note share
     (`adapters.base.CONNECTING_TAKES_TORQUE_OFF`). Imported here rather than at the top, like
-    every other `roboglot.adapters` import in this file, so `roboglot --help` stays quick.
-
-    A simulator's connect does the same to its model, because it runs the real backend's
-    connect, and says it is the simulator: a line telling somebody to hold an arm that is a
-    picture on their screen teaches them to skim the line that matters when the arm is real."""
-    if simulator:
-        return (
-            "this is the arm's simulator: connecting takes torque off every simulated motor "
-            "for a moment, as LeRobot's connect does on a real arm"
-        )
+    every other `roboglot.adapters` import in this file, so `roboglot --help` stays quick."""
     from roboglot.adapters.base import CONNECTING_TAKES_TORQUE_OFF
 
     return f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
 
 
-def _release_warning(
-    *, simulator: bool = False, folds: bool = True, closes_gripper: bool = False
-) -> str:
+def _release_warning(*, folds: bool = True, closes_gripper: bool = False) -> str:
     """Said before anything connects, and before the question, because the connect happens to
     an arm a person has to be supporting already. That half is upstream's (`configure()` runs
     inside `torque_disabled()`), and it is the reason this cannot wait until after the
@@ -7657,21 +6503,10 @@ def _release_warning(
     to it, has its gripper closed where it has one (`closes_gripper`), and is let go of there, so
     the person is told to take their hands away before it moves: a hand still under it is in the
     fold's path, and the fold is the part that moves. One with none has nothing to fold to, and
-    its own question, which says it drops, comes before the connect. On a simulator the simulated
-    arm folds, or falls, and nobody holds it."""
+    its own question, which says it drops, comes before the connect."""
     then = "folds to its rest pose and"
     if closes_gripper:
         then = "folds to its rest pose, closes its gripper and"
-    if simulator:
-        if folds:
-            return (
-                f"{_connect_warning(simulator=True)}, and the simulated arm then {then} is "
-                "let go of there, with no arm to hold"
-            )
-        return (
-            f"{_connect_warning(simulator=True)}, and the release then lets the simulated arm "
-            "fall from wherever it is, with no arm to hold"
-        )
     if folds:
         return (
             f"{_connect_warning()}, and the arm then {then} is let go of there: support it "
@@ -7683,9 +6518,7 @@ def _release_warning(
     )
 
 
-def _doctor_warning(
-    *, simulator: bool = False, folds: bool = True, keeps: bool = True, asks: bool = False
-) -> str:
+def _doctor_warning(*, folds: bool = True, keeps: bool = True, asks: bool = False) -> str:
     """`_release_warning`'s first half, for `doctor --robot` on a body handed to people. A
     probe connects, and an arm left holding itself up is limp for that moment like any other,
     so the person is told to support it before the connect rather than finding out during it.
@@ -7697,10 +6530,7 @@ def _doctor_warning(
     A real arm with none is kept powered where it stands (`keeps`, ADR-0058), and the person is
     told doctor will ask whether to drop it into their hands only where it will (`asks`: a
     terminal, and no `--json`). The mock with none is let go of where it stands at the end, as
-    every arm with none was until 0.24. A simulator has no arm to support, and the line says so
-    rather than asking for a hand under one."""
-    if simulator:
-        return f"{_connect_warning(simulator=True)}, and there is no arm to support"
+    every arm with none was until 0.24."""
     if folds:
         return (
             f"{_connect_warning()}: support the arm while it connects, then take your hands away "
@@ -7731,8 +6561,8 @@ class _DoctorHands:
     rest pose, whose close keeps its torque rather than let it go where it stands (ADR-0058), one
     question before the probe lets go of the bus, at a terminal and without `--json`: whether to
     drop it into the person's hands (`DROP_UNPOSED`), which at first contact is how an arm comes
-    to be limp for folding by hand. A simulator and a body nobody holds get none of it, and keep
-    the Ctrl-C that ends doctor."""
+    to be limp for folding by hand. A body nobody holds gets none of it, and keeps the Ctrl-C that
+    ends doctor."""
 
     def __init__(self, label: str, *, prompting: bool, unposed: bool) -> None:
         self.label = label
@@ -7753,8 +6583,6 @@ class _DoctorHands:
         from roboglot.safety import KillSwitch
 
         if self.switch is not None or not getattr(adapter, "supports_hand_off", False):
-            return
-        if _is_simulator(adapter):
             return
         switch = KillSwitch(asyncio.Event(), log=_switch_pressed)
         person = _TerminalHandOff()
@@ -7954,13 +6782,10 @@ def robot_release(
         return
 
     label = f"{entry.name} ({entry.key})"
-    # the arm's simulator releases a simulated arm, and every line said before its connect
-    # says so rather than asking for a hand under an arm that is not there
-    simulated = _is_simulator(adapter)
     rest = getattr(adapter, "rest_pose", None)
     prompting = _can_prompt()
     muted = ui.STYLES["muted"]
-    if rest is None and not simulated and not prompting:
+    if rest is None and not prompting:
         # Nothing to fold to, so the one way this command could take torque off is where the
         # arm stands, which drops it, and that is Enter at a terminal or nothing. Refused before
         # the warning and whatever --yes says: its close would let go of the arm too.
@@ -7984,13 +6809,9 @@ def robot_release(
     # a body that can close a gripper carries the method, which is known before anything connects
     closes_gripper = callable(getattr(adapter, "close_gripper", None))
     ui.console.print(
-        _warn_line(
-            _release_warning(
-                simulator=simulated, folds=rest is not None, closes_gripper=closes_gripper
-            )
-        )
+        _warn_line(_release_warning(folds=rest is not None, closes_gripper=closes_gripper))
     )
-    if not yes and (rest is not None or simulated):
+    if not yes and rest is not None:
         # Asked before the key thread exists, so nothing races `input()` for the keystroke. An
         # arm with no rest pose has its own question, inside, and it is the one that matters.
         close_it = ", close its gripper" if closes_gripper else ""
@@ -8068,7 +6889,7 @@ def robot_release(
         if presses():
             # a Ctrl-C or `q` while it connected: nothing is moved or released after one
             said = stopped_before
-            if rest is None and not simulated:
+            if rest is None:
                 # and a real arm with no rest pose is kept powered by its close (ADR-0058): the
                 # press came after the Enter that asked for the drop, and stopped it
                 said = (
@@ -8079,25 +6900,23 @@ def robot_release(
                 )
             return Settled("kept", "stopped before the fold", said=said)
         if rest is None:
-            # nothing to fold to: the simulator's arm, or a real one after Enter at the question
-            # that said it drops
+            # nothing to fold to: an arm after Enter at the question that said it drops
             return await release_where_it_stands(adapter, stopped=person.stopped)
         async with one_watch(person) as stopped:
-            if not simulated:
-                # The hands that supported the arm through the connect come away before it moves:
-                # the fold used to start a few milliseconds after the connect, under them. The
-                # countdown is raced against a press the way the fold is, and one stops the command
-                # with nothing moved.
-                ui.err_console.print(
-                    Text(
-                        FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S),
-                        style=ui.STYLES["warn"],
-                    )
+            # The hands that supported the arm through the connect come away before it moves:
+            # the fold used to start a few milliseconds after the connect, under them. The
+            # countdown is raced against a press the way the fold is, and one stops the command
+            # with nothing moved.
+            ui.err_console.print(
+                Text(
+                    FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S),
+                    style=ui.STYLES["warn"],
                 )
-                try:
-                    await fold_unless_stopped(hands_away, stopped)
-                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-                    return Settled("kept", "stopped before the fold", said=stopped_before)
+            )
+            try:
+                await fold_unless_stopped(hands_away, stopped)
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                return Settled("kept", "stopped before the fold", said=stopped_before)
             and_close = " and closing its gripper" if closes_gripper else ""
             ui.console.print(
                 Text(
@@ -8136,18 +6955,13 @@ def robot_release(
                 TORQUE_READS_OFF,
                 said=LIMP_AFTER_A_MISS.format(why=why, limp=", ".join(first.limp)),
             )
-        if simulated or not prompting:
-            whose = "the simulated arm" if simulated else "the arm"
+        if not prompting:
             return Settled(
                 "kept",
                 why,
                 said=(
-                    f"{whose} did not reach its rest pose ({why}), so torque stays on"
-                    + (
-                        ""
-                        if simulated
-                        else ", and with no terminal to ask on nothing more is tried"
-                    )
+                    f"the arm did not reach its rest pose ({why}), so torque stays on, and "
+                    "with no terminal to ask on nothing more is tried"
                 ),
             )
         # from before the questions: a press made as the second fold arrives is counted by no
@@ -8166,7 +6980,7 @@ def robot_release(
         person.bind(switch)
         switch.install()
         try:
-            if rest is None and not simulated:
+            if rest is None:
                 question = DROP_UNFOLDED.format(name=name, seconds=ENTER_DROPS_S)
                 if await ask(person, question, ENTER_DROPS_S) != ENTER:
                     return None, None
@@ -8202,11 +7016,7 @@ def robot_release(
         settled, note = asyncio.run(release())
     except (TransportError, OSError) as e:
         where = f" at {kwargs['address']}" if kwargs.get("address") else ""
-        after = (
-            "this was the arm's simulator, so there is no arm to hold"
-            if simulated
-            else "a connect that failed part way can leave some motors limp: keep hold of the arm"
-        )
+        after = "a connect that failed part way can leave some motors limp: keep hold of the arm"
         _fail(f"{entry.key}{where}: {e}", hint=f"nothing was released by Roboglot, and {after}")
         return
 
@@ -8248,18 +7058,7 @@ def robot_release(
                 hint="hold the arm, and cut its power",
             )
         )
-    if note and simulated and released is not None:
-        # The close note is the real backend's, written for somebody holding a real arm, and
-        # the warning above has just told this person that nobody is. The simulator's close
-        # let the released arm settle under the model's gravity, so that is the line to end on.
-        ui.console.print(
-            Text(
-                "  this was the arm's simulator: the simulated arm settled where the model's "
-                "physics left it when it closed, and there is nothing to put down",
-                style=muted,
-            )
-        )
-    elif note and not failed and at_rest:
+    if note and not failed and at_rest:
         # the close found it limp at its rest pose, as asked: said, but not as a warning
         ui.console.print(Text(f"  {note}", style=muted))
     elif note:
@@ -8330,7 +7129,7 @@ team_app = typer.Typer(
 )
 app.add_typer(team_app, name="team", rich_help_panel="Robots")
 
-_TEAM_NAME = typer.Argument(..., help="A slug. Not a number: --team N means N simulated ducks.")
+_TEAM_NAME = typer.Argument(..., help="A slug. Not a number, which reads as a count.")
 _TEAM_MEMBER = typer.Option(
     [], "--robot", "-r", help="A registered robot to include. Repeatable, order kept."
 )
@@ -8338,10 +7137,13 @@ PROMPT_TRIES = 3
 """How many times the picker re-asks before giving up. Enough for a typo, not a loop."""
 
 
-def _team_status(team: Any, missing: list[str]) -> Any:
+def _team_status(team: Any, missing: list[str], unbuildable: Sequence[str] = ()) -> Any:
     """One cell saying whether this team could run, and what to do if not."""
     if missing:
         text, style = f"{', '.join(missing)} not registered", ui.STYLES["warn"]
+    elif unbuildable:
+        text = f"{', '.join(unbuildable)} cannot be built here: roboglot robot list says why"
+        style = ui.STYLES["warn"]
     elif not team.members:
         text, style = "empty", ui.STYLES["warn"]
     elif len(team.members) < 2:
@@ -8480,6 +7282,14 @@ def team_create(
             )
         )
         return
+    if unbuildable := registry.unbuildable_members(team):
+        ui.err_console.print(
+            Text(
+                f"  {', '.join(unbuildable)} cannot be built here: roboglot robot list says why",
+                style=ui.STYLES["warn"],
+            )
+        )
+        return
     ui.console.print(Text(f"  roboglot run <task> --team {team.name}", style=ui.STYLES["muted"]))
 
 
@@ -8495,12 +7305,13 @@ def team_list(
         registry = _registry(registry_dir)
         teams = registry.teams()
         missing = {name: registry.missing_members(f) for name, f in teams.items()}
+        unbuildable = {name: registry.unbuildable_members(f) for name, f in teams.items()}
     except RegistryError as e:
         _registry_fail(e)
         return
     if as_json:
         for name, team in teams.items():
-            print(json.dumps(team.public(missing[name]), ensure_ascii=False))
+            print(json.dumps(team.public(missing[name], unbuildable[name]), ensure_ascii=False))
         return
     if not teams:
         ui.console.print(
@@ -8519,7 +7330,7 @@ def team_list(
         table.add_row(
             Text(name),
             _members_cell(team, missing[name]),
-            _team_status(team, missing[name]),
+            _team_status(team, missing[name], unbuildable[name]),
             Text(team.description or ""),
         )
     ui.console.print(table)
@@ -8546,13 +7357,14 @@ def team_show(
         registry = _registry(registry_dir)
         team = registry.team(name)
         missing = registry.missing_members(team)
+        unbuildable = registry.unbuildable_members(team)
         known = registry.robots()
     except RegistryError as e:
         _fail(str(e), hint="roboglot team list")
         return
     if as_json:
         payload = {
-            **team.public(missing),
+            **team.public(missing, unbuildable),
             "robots": [known[m].public() for m in team.members if m in known],
         }
         print(json.dumps(payload, ensure_ascii=False))
@@ -8560,7 +7372,7 @@ def team_show(
     rows: list[tuple[str, Any]] = [
         ("name", Text(team.name, style=ui.STYLES["key"])),
         ("robots", _members_cell(team, missing)),
-        ("status", _team_status(team, missing)),
+        ("status", _team_status(team, missing, unbuildable)),
     ]
     if team.description:
         rows.append(("description", Text(team.description)))
@@ -8697,7 +7509,7 @@ def memory_show(
     registry_dir: str | None = _REGISTRY_DIR,
     raw: bool = typer.Option(False, "--raw", help="Print the JSONL file as is."),
 ) -> None:
-    """Print what one robot remembers (default: the Microduck simulator)."""
+    """Print what one robot remembers (default: this machine's robot)."""
     mem = _memory_for(robot, memory_dir, registry_dir)
     if raw:
         if mem.path.exists():
@@ -8833,32 +7645,13 @@ def _place_store_for(robot: str | None, memory_dir: str | None, registry_dir: st
     return PlaceStore(resolved.memory_key, memory_dir)
 
 
-def _room_hint(spec: Any, room: str | None) -> str | None:
-    """Where a body with no places would have them: its simulator, given a room."""
-    from roboglot.adapters.base import AdapterError
-    from roboglot.adapters.factory import describe
-
-    if room is not None:
-        return None
-    try:
-        roomy = describe(spec, room=next(iter(BUILT_IN_ROOMS)))
-    except AdapterError:
-        return None  # its adapter lays out no room
-    if "map" not in roomy.verb_names():
-        return None
-    rooms = ", ".join(BUILT_IN_ROOMS)
-    return f"its simulator keeps a map, and places in it, in a room: --room {rooms}"
-
-
 @contextlib.asynccontextmanager
 async def _robot_places(
     robot: str | None,
     *,
     address: str | None,
     token: str | None,
-    room: str | None,
     map_address: str | None,
-    seed: int | None,
     memory_dir: str | None,
     registry_dir: str | None,
 ) -> AsyncIterator[tuple[str, Any, Any]]:
@@ -8869,27 +7662,21 @@ async def _robot_places(
     from roboglot.adapters.factory import describe, make_adapter
     from roboglot.registry import Registry, RegistryError, resolve_robot_ref
     from roboglot.space.places import PlaceBook, PlaceStore
-    from roboglot.space.room import RoomError, load_room
     from roboglot.transport.base import spatial_of
 
     try:
         resolved = resolve_robot_ref(robot, Registry(registry_dir))
-        if room is not None:
-            load_room(room)
-        static = describe(resolved.spec, room=room)
-    except (AdapterError, RegistryError, RoomError) as e:
+        static = describe(resolved.spec)
+    except (AdapterError, RegistryError) as e:
         _fail(str(e))
     name = resolved.entry.name if resolved.entry is not None else resolved.spec.key
     if "map" not in static.verb_names():
-        _fail(
-            f"{name} keeps no places: it does not say where it is",
-            hint=_room_hint(resolved.spec, room),
-        )
+        _fail(f"{name} keeps no places: it does not say where it is")
     kwargs = resolved.adapter_kwargs(address=address, token=token, map_address=map_address)
     # a map needs no camera, and a camera that will not open refuses the whole connect
     kwargs["camera_url"] = ()
     try:
-        adapter = make_adapter(resolved.spec, seed=seed, room=room, **kwargs)
+        adapter = make_adapter(resolved.spec, **kwargs)
     except (AdapterError, ImportError) as e:
         _fail(str(e))
     try:
@@ -8962,9 +7749,7 @@ def map_command(
     robot: str | None = _ROBOT,
     address: str | None = _ADDR,
     token: str | None = _TOKEN,
-    room: str | None = _ROOM,
     map_address: str | None = _MAP_ADDR,
-    seed: int | None = _SEED,
     cells: int | None = _CELLS,
     watch: bool = typer.Option(
         False, "--watch", help="Draw it again every second, as the robot moves, until Ctrl+C."
@@ -9009,9 +7794,7 @@ def map_command(
             robot,
             address=address,
             token=token,
-            room=room,
             map_address=map_address,
-            seed=seed,
             memory_dir=memory_dir,
             registry_dir=registry_dir,
         ) as (name, adapter, book):
@@ -9093,9 +7876,7 @@ def places_add(
     robot: str | None = _ROBOT,
     address: str | None = _ADDR,
     token: str | None = _TOKEN,
-    room: str | None = _ROOM,
     map_address: str | None = _MAP_ADDR,
-    seed: int | None = _SEED,
     memory_dir: str | None = _MEMORY_DIR,
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
@@ -9122,9 +7903,7 @@ def places_add(
             robot,
             address=address,
             token=token,
-            room=room,
             map_address=map_address,
-            seed=seed,
             memory_dir=memory_dir,
             registry_dir=registry_dir,
         ) as (who, adapter, book):
@@ -10392,8 +9171,6 @@ def _load_what_a_command_needs() -> None:
         "pydantic",
         "yaml",
         "numpy",
-        "roboglot.preflight",
-        "roboglot.space.room",
     ):
         importlib.import_module(module)
 

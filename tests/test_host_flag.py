@@ -206,7 +206,6 @@ def _run(tmp_path: Path, *args: str) -> Any:
             *args,
             "--llm",
             "fake",
-            "--no-gif",
             "--no-log",
             "--runs-dir",
             str(tmp_path / "runs"),
@@ -246,10 +245,9 @@ def _flat(result: Any) -> str:
     [
         ("hello-world", "--robots", "a=microduck:mock,b=microduck:mock"),
         ("hello-world", "--robots", "a=microduck:mock"),
-        ("team-kick", "--team", "2"),
         ("team-hello",),
     ],
-    ids=["robots", "robots-of-one", "team-n", "team-section"],
+    ids=["robots", "robots-of-one", "team-section"],
 )
 def test_a_host_on_the_line_is_refused_for_a_fleet_before_anything_connects(
     tmp_path: Path, nothing_connects: list[Any], fleet: tuple[str, ...]
@@ -289,7 +287,7 @@ def test_the_usual_board_in_the_environment_does_not_stop_a_fleet(
     """`ROBOGLOT_HOST` is the board somebody usually uses, not a claim about these bodies, so a
     team still runs with it set; what it moves for a fleet is only a local preset's server."""
     monkeypatch.setenv(HOST_ENV, "jetson.local")
-    result = _run(tmp_path, "team-kick", "--team", "2", "--seed", "3")
+    result = _run(tmp_path, "team-hello")
     assert result.exit_code == 0, result.output
 
 
@@ -401,7 +399,7 @@ def test_a_hand_edited_bad_host_stops_only_the_robot_it_belongs_to(
 
 def test_a_hand_edited_bad_host_does_not_stop_a_run_of_another_robot(tmp_path: Path) -> None:
     _hand_edited(tmp_path)
-    result = _run(tmp_path, "hello-world", "--robot", "duck", "--seed", "3")
+    result = _run(tmp_path, "hello-world", "--robot", "duck")
     assert result.exit_code == 0, result.output
 
 
@@ -472,7 +470,6 @@ def _local_run(tmp_path: Path, *args: str) -> Any:
             "hello-world",
             "--llm",
             "ollama",
-            "--no-gif",
             "--no-log",
             "--runs-dir",
             str(tmp_path / "runs"),
@@ -539,7 +536,6 @@ def test_the_host_token_never_reaches_any_file_the_run_writes(
             str(tmp_path / "runs"),
             "--memory-dir",
             str(tmp_path / "mem"),
-            "--no-gif",
             "--host",
             hostd.address,
             "--host-token",
@@ -666,8 +662,7 @@ def test_the_commands_that_register_a_board_say_so_in_their_own_help(command: li
     assert "never reaches the run record" not in text
 
 
-@pytest.mark.parametrize("command", [["record"], ["list-models"]], ids=" ".join)
+@pytest.mark.parametrize("command", [["list-models"]], ids=" ".join)
 def test_the_commands_with_no_board_to_use_do_not_offer_one(command: list[str]) -> None:
-    """`record` pins the simulator and `list-models` reads a catalogue; neither has a camera,
-    a detector or a board's health to use."""
+    """`list-models` reads a catalogue, and has no camera, detector or board's health to use."""
     assert "--host" not in help_text([*command, "--help"])

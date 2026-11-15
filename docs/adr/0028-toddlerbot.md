@@ -1,6 +1,11 @@
 # ADR-0028: ToddlerBot: Roboglot ships the loop, and everything upstream forgot to protect
 
-**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0024 · Implemented in 0.7 ([page](../adapters/toddlerbot/README.md))
+**Status:** accepted, amended · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0024 · Implemented in 0.7 ([page](../adapters/toddlerbot/README.md))
+
+**Amended 2026-11-15:** `toddlerbot:sim2d` is gone with every simulator, so the ToddlerBot's
+backends are `mock` and `bridge`, and of the two below that emulate a deadman only `mock` is
+left. The coordinator team the Consequences say does not know this robot is gone too. See the
+CHANGELOG's Unreleased entry.
 
 ## Context
 

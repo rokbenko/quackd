@@ -10,8 +10,8 @@ and who is offered the verb at all.
 Nothing here needs the `openai` package or a key. The exits run on a mock body through
 `ScriptedEyes`, at the seam, and everything that has to show what reaches the wire runs Roboglot's
 own client for OpenAI's Decisions API on the fake SDK (`tests/fake_decisions_api.py`), with
-`BlobEyes` answering by finding the ball in the very JPEG it was handed. The closed loop on the
-physics simulator is in `tests/test_acceptance_mujoco.py`, where the physics job runs it.
+`BlobEyes` answering by finding the ball in the very JPEG it was handed. The loop is closed on a
+Microduck over the Open Duck's mock, whose camera draws the ball where the head points.
 """
 
 from __future__ import annotations
@@ -92,6 +92,7 @@ from roboglot.verbs.watch import (
 from roboglot_microduck import MicroduckAdapter, microduck_manifest
 from roboglot_microduck import make as make_microduck
 from roboglot_microduck.verbs import MICRODUCK_HEAD, MICRODUCK_VERBS
+from roboglot_open_duck.mock import OpenDuckMock
 from tests import fake_decisions_api as fake_api
 from tests.conftest import plain_text
 from tests.fake_eyes import (
@@ -126,7 +127,7 @@ def _no_ambient_openai(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def unhurried(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No cap on the wall's clock that a busy test machine could reach. A call on a simulator
+    """No cap on the wall's clock that a busy test machine could reach. A call on a mock's clock
     ends at its duration and `WALL_SLACK_S` on the wall's clock, and the eyes hand requests over
     at least `MIN_PERIOD_S` apart on the wall's, so a call of n looks takes n half seconds of the
     wall at least, and a machine running other suites can use up the slack. The cap has a test of
@@ -289,7 +290,7 @@ def test_a_declined_question_is_refused_whatever_else_came_back() -> None:
 
 def test_the_lens_is_the_detectors_where_that_is_known() -> None:
     detector = SimpleNamespace(fov_deg=90.0, calibrated=True)
-    lens = watch_lens(microduck_manifest("sim2d"), detector)
+    lens = watch_lens(microduck_manifest("mock"), detector)
     assert lens.deg == 90.0 and lens.assumed is None and lens.warning is None
 
 
@@ -318,8 +319,8 @@ def test_a_lens_much_wider_than_the_cameras_own_is_warned_about() -> None:
     assert wide.warning and "62.0" in wide.warning and "37.3" in wide.warning
     near = watch_lens(manifest, SimpleNamespace(fov_deg=50.0, calibrated=True))
     assert near.warning is None
-    sim = watch_lens(microduck_manifest("sim2d"), SimpleNamespace(fov_deg=150.0, calibrated=True))
-    assert sim.warning and "90.0" in sim.warning
+    mock = watch_lens(microduck_manifest("mock"), SimpleNamespace(fov_deg=150.0, calibrated=True))
+    assert mock.warning and "90.0" in mock.warning
 
 
 # ── the control law ─────────────────────────────────────────────────────────────────────
@@ -566,7 +567,7 @@ async def test_a_look_inside_the_heads_reach_starts_the_edge_count_again() -> No
 async def test_the_head_never_turns_past_the_bodys_own_gaze_reach() -> None:
     """A body that says how far `gaze` may turn its head holds `watch` to that as well, where it
     is less than the head's own numbers."""
-    manifest = microduck_manifest("sim2d")
+    manifest = microduck_manifest("mock")
     manifest = manifest.model_copy(update={"limits": {**manifest.limits, "gaze_yaw_deg": 30.0}})
     duck, eyes = Duck(), ScriptedEyes(default=seen_at(-0.4))
     executor = _executor(duck, eyes)
@@ -776,7 +777,7 @@ async def test_a_body_that_falls_between_looks_is_not_looked_at_again() -> None:
 @pytest.mark.parametrize("clock", ["replayed", "wall"])
 async def test_a_duck_picked_up_while_an_answer_is_out_is_sent_no_more_looks(clock: str) -> None:
     """The hold reads the body before every look it sends again, so a duck picked up as a
-    request goes out, its answer slow to come, is sent nothing more: on a simulator's clock,
+    request goes out, its answer slow to come, is sent nothing more: on a mock's clock,
     run on for as long as the answer took, as on a robot's, which runs on by itself."""
     duck = Duck() if clock == "replayed" else Realtime()
     picked: list[float] = []
@@ -1309,8 +1310,8 @@ async def test_a_call_takes_no_more_looks_than_it_may(monkeypatch: pytest.Monkey
 async def test_a_clock_slower_than_the_wall_is_capped_on_the_wall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A simulator slower than real time would let a call outlive the executor's timeout, so a
-    call ends at its duration and a slack on the wall's clock too, whichever comes first."""
+    """A body's clock slower than real time would let a call outlive the executor's timeout, so
+    a call ends at its duration and a slack on the wall's clock too, whichever comes first."""
     import roboglot.verbs.watch as watch_module
 
     monkeypatch.setattr(watch_module, "WALL_SLACK_S", 0.4)
@@ -1335,10 +1336,10 @@ async def test_a_clock_slower_than_the_wall_is_capped_on_the_wall(
     assert duck.now() < 1.0
 
 
-async def test_a_simulator_lets_its_world_run_for_as_long_as_the_answer_took() -> None:
-    """The world waits while the answer is out on a simulator's clock, which runs only when told
-    to, so it is let run for as long as the answer took before the head moves, as a robot's
-    world runs on by itself. A clock that ran on its own meanwhile is not run again."""
+async def test_a_mocks_clock_is_run_on_for_as_long_as_the_answer_took() -> None:
+    """The world waits while the answer is out on a mock's clock, which runs only when told to,
+    so it is let run for as long as the answer took before the head moves, as a robot's world
+    runs on by itself. A clock that ran on its own meanwhile is not run again."""
     duck = Duck()
     eyes = ScriptedEyes([(0.3, seen_at(-0.3))], default=seen_at(0.0))
     asks: list[float] = []
@@ -1435,7 +1436,7 @@ def test_withdrawing_watch_takes_it_out_and_never_takes_the_brake() -> None:
 
 
 def test_the_microduck_declares_watch_only_with_a_camera() -> None:
-    seeing = microduck_manifest("sim2d")
+    seeing = microduck_manifest("mock")
     assert WATCH in seeing.verb_names() and seeing.preconditions[WATCH] == ["not_fallen"]
     blind = microduck_manifest("jsonrpc", camera=False)
     assert WATCH not in blind.verb_names() and WATCH not in blind.preconditions
@@ -1477,14 +1478,36 @@ def _seeing(monkeypatch: pytest.MonkeyPatch, fake: fake_api.FakeOpenAI) -> Any:
     return make_decision_llm(OPENAI, frames=True)
 
 
+def _seeing_duck() -> MicroduckAdapter:
+    """A Microduck whose camera sees: the Open Duck's mock under it turns its head on every look
+    and draws its orange ball where the ball lies in the world, seen along where the head points,
+    through a lens 90 degrees wide."""
+    return MicroduckAdapter(OpenDuckMock(frame_size=256))
+
+
+def _seen_by(adapter: MicroduckAdapter) -> OpenDuckMock:
+    body = adapter.transport
+    assert isinstance(body, OpenDuckMock)
+    return body
+
+
 def _ball_at(adapter: MicroduckAdapter, bearing_deg: float, distance_m: float = 0.6) -> None:
-    """The cartoon's ball, `bearing_deg` to the left of where the duck's head points."""
-    world = adapter.transport.world  # type: ignore[attr-defined]
-    duck = world.ducks[0]
-    heading = duck.theta + duck.head_yaw + math.radians(bearing_deg)
-    world.ball.x = duck.x + distance_m * math.cos(heading)
-    world.ball.y = duck.y + distance_m * math.sin(heading)
-    world.ball.vx = world.ball.vy = 0.0
+    """The mock's ball, `bearing_deg` to the left of where the duck's head points."""
+    body = _seen_by(adapter)
+    heading = body.theta + math.radians(body.head_yaw_deg + bearing_deg)
+    body.ball_xy = (
+        body.x + distance_m * math.cos(heading),
+        body.y + distance_m * math.sin(heading),
+    )
+
+
+def _off_the_head_deg(adapter: MicroduckAdapter) -> float:
+    """How far the mock's ball is to the left of where the duck's head points, in degrees."""
+    body = _seen_by(adapter)
+    assert body.ball_xy is not None
+    toward = math.atan2(body.ball_xy[1] - body.y, body.ball_xy[0] - body.x)
+    off = toward - body.theta - math.radians(body.head_yaw_deg)
+    return math.degrees(math.atan2(math.sin(off), math.cos(off)))
 
 
 def _config(
@@ -1547,7 +1570,7 @@ async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
         )
 
     fake = BlobEyes(on_post=on_post)
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = _seeing_duck()
     _ball_at(adapter, 20.0)
     result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     assert result.outcome == "success", result.reason
@@ -1588,7 +1611,7 @@ async def test_a_run_with_a_stepper_folds_watchs_bill_into_the_decision_totals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = BlobEyes()
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = _seeing_duck()
     _ball_at(adapter, 10.0)
     llm = _seeing(monkeypatch, fake)
     result = await run_glot(_config(tmp_path, adapter, llm, decision="shadow"))
@@ -1615,7 +1638,7 @@ async def test_a_frame_the_disk_refused_is_still_named_as_sent_and_leaves_no_par
 
     monkeypatch.setattr(eyes_module, "write_jpeg", half_then_full)
     fake = BlobEyes()
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = make_microduck("mock")
     result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     events = _events(result.run_dir)
     frames = _of(events, "watch_frame")
@@ -1711,7 +1734,7 @@ async def test_a_frame_the_record_could_not_name_is_neither_sent_nor_kept(
 async def test_requests_are_handed_over_half_a_second_apart_on_the_wall(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Looks are spaced on the robot's clock, which on a simulator runs only as fast as it is
+    """Looks are spaced on the robot's clock, which on a mock runs only as fast as it is
     stepped, so the eyes space the requests they hand over on the wall's as well: no more than
     two frames a second go out, whatever clock the robot keeps."""
     handed: list[float] = []
@@ -1767,7 +1790,7 @@ async def test_an_abort_while_a_request_is_out_still_leaves_the_frame_on_the_rec
 
     posted = asyncio.Event()
     fake = BlobEyes(hold=asyncio.Event(), on_post=lambda _body: posted.set())
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = make_microduck("mock")
     loop = AgentLoop(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     run = asyncio.create_task(loop.run())
     await asyncio.wait_for(posted.wait(), 30)
@@ -1802,7 +1825,7 @@ async def test_no_frame_reaches_a_plugin_or_a_server_of_your_own(
         )
         with pytest.raises(ValueError, match="may not be shown the camera"):
             DecisionEyes(llm, resolve_decision_price(OPENAI), emit=print, run_dir=tmp_path)
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = make_microduck("mock")
     result = await run_glot(_config(tmp_path / "run", adapter, local))
     assert fake.posts == []
     notes = [e["text"] for e in _of(_events(result.run_dir), "note")]
@@ -1815,7 +1838,7 @@ async def test_no_frame_reaches_a_plugin_or_a_server_of_your_own(
 async def test_a_run_with_nothing_to_look_through_withdraws_watch_and_says_so(
     tmp_path: Path,
 ) -> None:
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = make_microduck("mock")
     script = [ToolCall(name="declare_success", arguments={"reason": "nothing to do"})]
     result = await run_glot(_config(tmp_path, adapter, None, script=script))
     events = _events(result.run_dir)
@@ -1830,7 +1853,7 @@ async def test_a_run_that_never_asked_for_watch_is_told_nothing_about_it(tmp_pat
     """The lookout allows no `watch`, so its record is what it always was."""
     from roboglot.glotfile.parser import load_glot
 
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = make_microduck("mock")
     cfg = _config(tmp_path, adapter, None)
     cfg.duck = load_glot("microduck-lookout")
     cfg.provider = FakeProvider.for_glot("microduck-lookout")
@@ -1868,12 +1891,11 @@ async def test_an_mcp_session_has_no_watch(monkeypatch: pytest.MonkeyPatch) -> N
     in the vocabulary a session shows before its robot connects, the Microduck's own where it
     is installed, and not in the one the robot's manifest gives it once it has."""
     from roboglot.mcp_server import build_server
-    from roboglot.transport.sim2d import Sim2DTransport
     from tests.test_mcp_server import _data, connected
 
-    _server, before = build_server(Sim2DTransport(seed=1), memory=False, log=False)
+    _server, before = build_server(MockTransport(), memory=False, log=False)
     assert "quack" in before.registry and WATCH not in before.registry
-    async with connected(make_microduck("sim2d", seed=1)) as (client, session, _transport):
+    async with connected(make_microduck("mock")) as (client, session, _transport):
         verbs = _data(await client.call_tool("robot_list_verbs", {}))
         assert WATCH not in {v["name"] for v in verbs["verbs"]}
         assert session.manifest is not None and WATCH in session.manifest.verb_names()
@@ -1903,49 +1925,55 @@ def test_a_team_member_neither_has_watch_nor_says_it_provides_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A team builds no decision LLM, so its members' Microducks have nothing to look through:
-    `watch` is out of each one's vocabulary, and out of what it tells the coordinator it can do."""
+    `watch` is out of each one's vocabulary, which a Microduck with a camera would have."""
+    from roboglot.adapters.factory import RobotSpec
+    from roboglot.agent.loop import AgentLoop
     from roboglot.glotfile.parser import load_glot
-    from roboglot.team.member import TeamMember
-    from roboglot.team.runner import run_team
+    from roboglot.team.pilots import roster_from_specs, run_pilot_team
 
-    kept: list[tuple[list[str], list[str]]] = []
-    run = TeamMember.run
+    assert WATCH in microduck_manifest("mock").verb_names(), "there is a watch to withdraw"
+    kept: dict[str, list[str]] = {}
+    run = AgentLoop.run
 
-    async def recorded(self: TeamMember) -> None:
+    async def recorded(self: AgentLoop) -> Any:
         try:
-            await run(self)
+            return await run(self)
         finally:
-            kept.append((list(self.provides), self.executor.registry.names()))
+            assert self.cfg.run_dir is not None
+            kept[self.cfg.run_dir.name] = self.executor.registry.names()
 
-    monkeypatch.setattr(TeamMember, "run", recorded)
+    monkeypatch.setattr(AgentLoop, "run", recorded)
+    roster = roster_from_specs(
+        {"duck": RobotSpec("microduck", "mock", "duck"), "arm": RobotSpec("lerobot", "mock", "arm")}
+    )
     asyncio.run(
         asyncio.wait_for(
-            run_team(
-                load_glot("team-kick"),
-                provider=FakeProvider.for_glot("team-kick"),
-                seed=3,
+            run_pilot_team(
+                load_glot("team-hello"),
+                roster,
+                providers={name: FakeProvider.for_glot("team-hello") for name in roster},
                 runs_dir=tmp_path,
             ),
             timeout=120,
         )
     )
-    assert len(kept) == 3
-    for provides, names in kept:
-        assert "observe" in provides and WATCH not in provides and WATCH not in names
+    assert set(kept) == {"duck", "arm"}
+    for names in kept.values():
+        assert "observe" in names and WATCH not in names
 
 
-# ── the head closes on the ball, on the cartoon ─────────────────────────────────────────
+# ── the head closes on the ball, on a mock that sees ────────────────────────────────────
 
 
 @pytest.mark.usefixtures("unhurried")
-async def test_on_the_cartoon_the_head_turns_onto_the_ball_and_holds_it(
+async def test_the_head_turns_onto_the_ball_and_holds_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The loop closed through the real client: each frame `BlobEyes` is handed is the one the
     head points along, and the head turns onto the ball within a few looks, crosses it at most
-    once, never leaves its envelope, and is never asked a height, since the cartoon has none."""
+    once, never leaves its envelope, and is asked a height as well, since this head pitches."""
     fake = BlobEyes(noise=0.02, seed=7)
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = _seeing_duck()
     _ball_at(adapter, 30.0)
     result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     assert result.outcome == "success", result.reason
@@ -1954,21 +1982,20 @@ async def test_on_the_cartoon_the_head_turns_onto_the_ball_and_holds_it(
     assert all(abs(b) <= 9.5 for b in bearings[5:]), bearings
     signs = [b > 0 for b in bearings if abs(b) > 9.5]
     assert sum(1 for a, b in itertools.pairwise(signs) if a != b) <= 1, bearings
-    world = adapter.transport.world  # type: ignore[attr-defined]
-    _, off = world.relative(world.ball.x, world.ball.y, camera=True)
-    assert abs(math.degrees(off)) <= 9.5
+    assert abs(_off_the_head_deg(adapter)) <= 9.5
     looks = [e for e in _of(_events(result.run_dir), "intent") if e["intent"] == "look"]
     yaws = [math.degrees(math.atan2(e["params"]["y"], e["params"]["x"])) for e in looks]
     assert max(abs(yaw) for yaw in yaws) <= MICRODUCK_HEAD.yaw_deg + 1e-6
-    assert {q["name"] for post in fake.posts for q in post["body"]["questions"]} == {WHERE}
+    asked = {q["name"] for post in fake.posts for q in post["body"]["questions"]}
+    assert asked == {WHERE, HEIGHT}
 
 
 @pytest.mark.usefixtures("unhurried")
-async def test_on_the_cartoon_a_ball_out_of_view_ends_as_lost_after_four_looks(
+async def test_a_ball_out_of_view_ends_as_lost_after_four_looks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = BlobEyes()
-    adapter = make_microduck("sim2d", seed=0)
+    adapter = _seeing_duck()
     _ball_at(adapter, 180.0)
     result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     events = _events(result.run_dir)
@@ -1991,11 +2018,10 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
             "run",
             *argv,
             "--robot",
-            "microduck:sim2d",
+            "microduck:mock",
             "--llm",
             "fake",
             "--no-memory",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
         ],

@@ -47,7 +47,6 @@ def test_bundled_list() -> None:
         "patrol-and-quack",
         "follow-me",
         "fetch",
-        "team-kick",
         "team-hello",
         "open-duck-scout",
         "open-duck-lookout",
@@ -57,8 +56,6 @@ def test_bundled_list() -> None:
         "alohamini-lookout",
         "toddlerbot-lookout",
         "lerobot-lookout",
-        "find-the-ball",
-        "favourite-spot",
         "arm-grip-check",
         "moss-lookout",
         "rosarm-lookout",
@@ -89,7 +86,7 @@ def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
 
     from roboglot.cli import app
     from roboglot.mcp_server import build_server
-    from roboglot.transport.sim2d import Sim2DTransport
+    from roboglot.transport.mock import MockTransport
 
     plain = TASKS / f"{starter}.glot"
     marked = tmp_path / plain.name
@@ -105,7 +102,7 @@ def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
     assert checked.exit_code == 0, checked.output
 
     # what `robot_load_glotfile` calls
-    _server, session = build_server(Sim2DTransport(seed=1), memory=False)
+    _server, session = build_server(MockTransport(), memory=False)
     adopted = session.load(str(marked))
     assert adopted["ok"], adopted
     assert adopted["instructions"] == want.body
@@ -122,7 +119,7 @@ def test_a_duck_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
 
     from roboglot.cli import app
     from roboglot.mcp_server import build_server
-    from roboglot.transport.sim2d import Sim2DTransport
+    from roboglot.transport.mock import MockTransport
 
     wide = tmp_path / "hello-world.glot"
     wide.write_bytes((TASKS / "hello-world.glot").read_text(encoding="utf-8").encode("utf-16"))
@@ -131,7 +128,7 @@ def test_a_duck_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
     checked = CliRunner().invoke(app, ["validate", str(wide)])
     assert checked.exit_code == 1 and isinstance(checked.exception, SystemExit), checked.exception
     assert "saved as UTF-16" in " ".join(checked.output.split()), checked.output
-    _server, session = build_server(Sim2DTransport(seed=1), memory=False)
+    _server, session = build_server(MockTransport(), memory=False)
     adopted = session.load(str(wide))
     assert not adopted["ok"] and "saved as UTF-16" in adopted["error"], adopted
 
@@ -210,32 +207,28 @@ glot: 1
 name: t
 description: d
 requires: [observe, kick]
-robots: {lerobot-01: lerobot:mock, duck-01: microduck:sim2d}
+robots: {lerobot-01: lerobot:mock, duck-01: microduck:mock}
 verbs:
   allow: [observe, gaze, go_to, kick, stop]
 success: [x]
 team:
   members: [lerobot-01, duck-01]
-  roles:
-    spotter: {requires: [observe, gaze]}
-    kicker: {requires: [go_to, kick]}
-  frame_hints: auto
 ---
 # Task
 Do it.
 """
+MEMBERS = "  members: [lerobot-01, duck-01]\n"
+COORDINATOR_GONE = "Roboglot no longer has the coordinator team it was for"
 
 
-def test_duck_v1_parses_requires_robots_and_roles() -> None:
+def test_duck_v1_parses_requires_and_robots() -> None:
     fm = parse_glot_text(V1).frontmatter
     assert fm.glot == 1 and fm.effective_requires == ["observe", "kick"]
-    assert fm.robots == {"lerobot-01": "lerobot:mock", "duck-01": "microduck:sim2d"}
-    assert fm.team is not None and fm.team.roles is not None
-    assert fm.team.roles["kicker"].requires == ["go_to", "kick"]
-    assert fm.team.frame_hints == "auto"
+    assert fm.robots == {"lerobot-01": "lerobot:mock", "duck-01": "microduck:mock"}
+    assert fm.team is not None and fm.team.member_names == ["lerobot-01", "duck-01"]
     solo = parse_glot_text(
         V1.replace(
-            "robots: {lerobot-01: lerobot:mock, duck-01: microduck:sim2d}",
+            "robots: {lerobot-01: lerobot:mock, duck-01: microduck:mock}",
             "robots: microduck:mock",
         ).split("team:")[0]
         + "---\n# Task\nx\n"
@@ -254,22 +247,23 @@ def test_duck_v1_parses_requires_robots_and_roles() -> None:
             lambda s: s.replace("requires: [observe, kick]", "requires: [observe, get_frame]"),
             "same verb",
         ),
-        (lambda s: s.replace("spotter:", "judge:"), "unknown team role"),
+        (lambda s: s.replace("microduck:mock", "Micro Duck"), "<adapter>"),
+        # what only the coordinator team read is refused by its key, never dropped
         (
-            lambda s: s.replace("    kicker: {requires: [go_to, kick]}\n", ""),
-            "both spotter and kicker",
-        ),
-        (lambda s: s.replace("members: [lerobot-01, duck-01]", "members: 2"), "name the members"),
-        (
-            lambda s: s.replace("kicker: {requires: [go_to, kick]}", "kicker: {requires: [fly]}"),
-            "not allowed",
+            lambda s: s.replace(
+                MEMBERS, MEMBERS + "  roles:\n    spotter: {requires: [observe]}\n"
+            ),
+            f"team.roles: {COORDINATOR_GONE}",
         ),
         (
-            lambda s: s.replace("duck-01: microduck:sim2d", "duck-02: microduck:sim2d"),
-            "does not have",
+            lambda s: s.replace(MEMBERS, MEMBERS + "  frame_hints: auto\n"),
+            f"team.frame_hints: {COORDINATOR_GONE}",
         ),
-        (lambda s: s.replace("microduck:sim2d", "Micro Duck"), "<adapter>"),
-        (lambda s: s.replace("frame_hints: auto", "frame_hints: maybe"), "frame_hints"),
+        (
+            lambda s: s.replace(MEMBERS, MEMBERS + "  allocation: {method: auction}\n"),
+            f"team.allocation.method: auction: {COORDINATOR_GONE}",
+        ),
+        (lambda s: s.replace("glot: 1", "glot: 0"), "a glot: 0 team was a coordinator team"),
     ],
 )
 def test_invalid_v1_ducks_fail_fast(mutation, needle: str) -> None:
@@ -343,50 +337,6 @@ def test_invalid_v2_ducks_fail_fast(mutation, needle: str) -> None:
     assert needle.lower() in str(exc.value).lower()
 
 
-V2_TEAM = """---
-glot: 2
-name: two-body-kick
-description: One spots, the one that can carry kicks.
-verbs:
-  allow: [observe, gaze, go_to, kick, stop]
-success: [The ball moved.]
-team:
-  members: [eye, arm]
-  roles:
-    spotter: {requires: [observe, gaze]}
-    kicker:
-      requires: [go_to, kick]
-      needs: {payload_kg: 1.0, manipulator: gripper}
----
-# Task
-Do it.
-"""
-
-
-def test_a_v2_role_can_ask_for_a_body_not_only_a_vocabulary() -> None:
-    fm = parse_glot_text(V2_TEAM).frontmatter
-    roles = (fm.team.roles or {}) if fm.team else {}
-    assert roles["kicker"].needs == {"payload_kg": 1.0, "manipulator": "gripper"}
-    assert roles["spotter"].needs == {}, "a role that asks for nothing is still a role"
-
-
-@pytest.mark.parametrize(
-    ("mutation", "needle"),
-    [
-        (lambda s: s.replace("glot: 2", "glot: 1"), "team.roles.kicker.needs needs glot: 2"),
-        (lambda s: s.replace("payload_kg: 1.0", "oomph: 1.0"), "datasheet vocabulary"),
-        (lambda s: s.replace("payload_kg: 1.0", "payload_kg: -1"), "0 or more"),
-        (lambda s: s.replace("payload_kg: 1.0", "payload_kg: heavy"), "must be a number"),
-        (lambda s: s.replace("manipulator: gripper", "manipulator: claw"), "must be one of"),
-        (lambda s: s.replace("payload_kg: 1.0", "mobility: flying"), "must be one of"),
-    ],
-)
-def test_invalid_v2_role_needs_fail_fast(mutation, needle: str) -> None:
-    with pytest.raises(GlotParseError) as exc:
-        parse_glot_text(mutation(V2_TEAM), path="x.glot")
-    assert needle.lower() in str(exc.value).lower()
-
-
 # ── the strategy paragraph a `--goal` run writes ────────────────────────────────────────
 
 
@@ -403,7 +353,7 @@ def _goal_allowlist(spec: str) -> list[str]:
     return sorted(verb.name for verb in registry.verbs() if verb.safety_class == "safe")
 
 
-@pytest.mark.parametrize("spec", ["lerobot:real", "lerobot:mock", "microduck:sim2d"])
+@pytest.mark.parametrize("spec", ["lerobot:real", "lerobot:mock", "microduck:mock"])
 def test_a_goal_duck_names_no_verb_the_body_was_not_granted(spec: str) -> None:
     """The strategy paragraph `--goal` writes used to name `observe`, `search_scan` and
     `go_to` whatever the body was. On 2026-09-15 an SO-101 arm read all three in a prompt
@@ -432,7 +382,7 @@ def test_an_arm_is_told_to_look_with_report_state_and_a_duck_keeps_its_composite
     assert "verify with a fresh reading" in arm, "an arm with no camera verb has no frame"
     assert "composite" not in arm and "go_to" not in arm
 
-    duck = glot_from_goal("find the ball", _goal_allowlist("microduck:sim2d"), memory=True).body
+    duck = glot_from_goal("find the ball", _goal_allowlist("microduck:mock"), memory=True).body
     assert "Look before you act (`observe` or `search_scan`)" in duck
     assert "prefer composite verbs like `go_to`" in duck
     assert "verify with a fresh frame" in duck

@@ -305,10 +305,6 @@ Gemini Robotics model that does is offered to selected partners only
 
 Two cloud LLMs have flown a real robot, both OpenAI's and both on the SO-101 arm:
 `openai:gpt-6-astra` on 2026-09-15, twelve `--goal` runs in one afternoon, and both it and
-`openai:gpt-6-sol` on 2026-09-23. `gpt-6-sol` has also been filmed flying the arm's simulator, on
-2026-09-28, and on 2026-09-29 it flew a twin of the arm with a learned policy behind it. Four
-local runs were made by contributors, Qwen 2.5 Coder 14B on LM Studio and Qwen3-32B-AWQ on vLLM
-on an NVIDIA GB10, with their transcripts in [`docs/assets/transcripts/`](../assets/transcripts/).
-No other row has a run on a robot on record: each is tested against the test suite's stand-in
-for its SDK. The robots those runs were on, and how far each robot has got, are in
-[adapters/status.md](../adapters/status.md).
+`openai:gpt-6-sol` on 2026-09-23. No other row has a run on a robot on record: each is tested
+against the test suite's stand-in for its SDK. The robots those runs were on, and how far each
+robot has got, are in [adapters/status.md](../adapters/status.md).

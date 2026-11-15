@@ -1,6 +1,12 @@
 # ADR-0007: sim2d is a cartoon with two cameras
 
-**Status:** accepted · **Date:** 2026-08-28 · Amended by [ADR-0030](0030-mujoco-physics-backend.md) (0.8: the GPU in "needs a GPU and CC BY-NC-SA meshes we will not vendor" below was only ever needed to *train* the policy. Running one is CPU MuJoCo and onnxruntime, so `microduck:mujoco` runs upstream's own robot on upstream's own gait. The meshes are still not vendored: they are fetched at run time into a user cache and hash checked, and `sim2d` stays the default)
+**Status:** superseded · **Date:** 2026-08-28 · Amended by [ADR-0030](0030-mujoco-physics-backend.md) (0.8: the GPU in "needs a GPU and CC BY-NC-SA meshes we will not vendor" below was only ever needed to *train* the policy. Running one is CPU MuJoCo and onnxruntime, so `microduck:mujoco` runs upstream's own robot on upstream's own gait. The meshes are still not vendored: they are fetched at run time into a user cache and hash checked, and `sim2d` stays the default)
+
+**Superseded 2026-11-15:** the 2D simulator was removed from Roboglot with every other
+simulator, and its arena, its two renders, its GIF recorder and `--live` went with it.
+Everything below is left as the record of what 0.1 to 0.34 shipped, and none of it applies to
+the current tree. Without a robot, a task runs on an adapter's mock. See the CHANGELOG's
+Unreleased entry for the removal.
 
 ## Context
 

@@ -300,8 +300,8 @@ CAMERA_FOV_DEG = UpstreamRef(
     "CAMERA_FOV_DEG",
     "UNVERIFIED",
     src(_CONFIG, 27),
-    "upstream names no field of view. Roboglot's ColorBlobDetector assumes 90 degrees, which "
-    "is the simulator's camera; a real C920 is about 78. The assumption is recorded in "
+    "upstream names no field of view. Roboglot's ColorBlobDetector assumes 90 degrees by "
+    "default; a real C920 is about 78. The assumption is recorded in "
     "extras rather than silently inherited, and bearings are approximate until measured.",
 )
 

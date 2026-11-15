@@ -1,6 +1,12 @@
 # ADR-0016: The team clock is lockstep
 
-**Status:** accepted, amended · **Date:** 2026-08-31
+**Status:** superseded · **Date:** 2026-08-31
+
+**Superseded 2026-11-15:** the lockstep clock is gone with the simulators whose worlds it
+advanced: the 2D arena, the duck's physics and the arm's. Everything below, the three amendments
+included, is left as the record of what 0.3 to 0.34 shipped, and none of it applies to the
+current tree. A team of pilots runs on wall-clock time, as it always did. See the CHANGELOG's
+Unreleased entry for the removal.
 
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** this is
 the *auction* team's clock. A pilot team has no `TeamClock`: its members are real or

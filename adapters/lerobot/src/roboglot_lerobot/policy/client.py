@@ -42,9 +42,7 @@ no dependency from a policy: no torch, no LeRobot, no HTTP library.
   stops answering starves the segment, which ends it with the arm held, before the call gives
   up, unless what was still queued when it stopped plays for longer than that deadline less
   the loop's patience: then the call's error ends the segment, and the verb stops the arm on
-  it. On the simulator the loop's patience is on the world's clock, which stands still while
-  the loop waits for a chunk, so there this deadline is what ends the segment, and the
-  segment says the policy raised the `PolicyServerError` it ended on.
+  it.
 
 **Whether the policy fits the arm** is asked at connect, before the arm is energised
 (`fit_arm`, and `fit.py` for what is checked): the arm hands the client its bus's motors, a
@@ -106,8 +104,7 @@ it otherwise), so on the arm a server that stops answering starves the segment a
 says so, holding the arm, before this call gives up and frees the loop's worker, as long as
 what was still queued when it stopped plays out within this less that patience. A queue
 longer than that ends on this call's `PolicyServerError` instead, which the verb stops the arm
-on. On the simulator, whose clock stands still while the loop waits, this is what ends the
-wait, as a `PolicyServerError` the segment ends on."""
+on."""
 READ_CHUNK_BYTES = 64 << 10
 RETRIED = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)
 """What a kept-alive socket the server has since closed fails with. `RemoteDisconnected` is one

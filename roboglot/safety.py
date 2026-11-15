@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn
 
 from pydantic import ValidationError
 
-from roboglot.adapters.base import backend_name
 from roboglot.answers import answered, confirm_question
 from roboglot.glotfile.schema import (
     DEFAULT_POLICY_TOTAL_S,
@@ -145,8 +144,7 @@ class Preempted(SafetyStop):
     command is neither the verb's failure nor anybody's."""
 
     outcome = "preempted"
-    """The team's word for a member it redirected (`TeamPreempted`), and drive's for a command
-    it moved on from."""
+    """Drive's word for a command it moved on from."""
 
 
 class BudgetExceeded(SafetyStop):
@@ -398,34 +396,16 @@ class Executor:
 
     def _robot_now(self) -> float | None:
         """The robot's own clock, or None when it has none to give (a transport that raises,
-        or a simulator not connected yet). Never a reason to lose the verb."""
+        or one not connected yet). Never a reason to lose the verb."""
         with contextlib.suppress(Exception):
             return float(self.transport.now())
         return None
 
-    def _timed_out(
-        self, name: str, verb: Verb, *, timed: bool, unstopped: str | None = None
-    ) -> str:
+    def _timed_out(self, name: str, verb: Verb, *, unstopped: str | None = None) -> str:
         """What a verb this executor's own timeout ended says, asked after the stop that follows
-        it, and why that stop failed when it did (`unstopped`, from `_stop_after`). A policy
-        segment's adds why, where the robot can tell (`slow_policy`): a simulator's clock stands
-        still while its policy thinks, so a policy slower than the latency it declared outruns a
-        timeout sized from that latency, and the bare timeout read as a simulator that had hung.
-        Never a reason to lose the result."""
+        it, and why that stop failed when it did (`unstopped`, from `_stop_after`)."""
         stopped = "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
-        said = f"{name} timed out after {verb.timeout_s:g}s; {stopped}"
-        why = None
-        if timed:
-            with contextlib.suppress(Exception):
-                ask = getattr(self.transport, "slow_policy", None)
-                why = ask() if callable(ask) else None
-        return f"{said}. {why}" if isinstance(why, str) and why else said
-
-    def _clock(self) -> str | None:
-        """What to call the robot's clock when it is not the wall clock. A free-running
-        simulator's seconds are the ones that mean something to a reader; on hardware `now()`
-        is monotonic, so there is nothing to distinguish and the key is absent."""
-        return "sim" if backend_name(self.transport) in ("sim2d", "mujoco") else None
+        return f"{name} timed out after {verb.timeout_s:g}s; {stopped}"
 
     def logged_transport(self) -> Any:
         """The transport as verbs see it: the real one, or a wrapper that narrates every
@@ -756,8 +736,6 @@ class Executor:
                 robot_now = self._robot_now()
                 if robot_started is not None and robot_now is not None:
                     clocks["transport_s"] = round(robot_now - robot_started, 3)
-                    if (label := self._clock()) is not None:
-                        clocks["clock"] = label
                 self._emit(
                     "verb_end",
                     name=name,
@@ -1160,7 +1138,7 @@ class Executor:
             )
         except TimeoutError:
             unstopped = await self._stop_after()
-            result = VerbResult.fail(self._timed_out(name, verb, timed=timed, unstopped=unstopped))
+            result = VerbResult.fail(self._timed_out(name, verb, unstopped=unstopped))
         except SafetyStop:
             raise
         except Exception as e:  # a buggy verb must not take the run down un-stopped
@@ -1601,7 +1579,7 @@ class AfterTheClose:
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     def took_its_time(self) -> None:
-        """What was left was slow on purpose, a `run.gif` on a long run: no sign of being stuck."""
+        """What was left was slow on purpose: no sign of being stuck."""
         self.since = time.monotonic()
 
     @classmethod

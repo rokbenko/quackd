@@ -190,7 +190,6 @@ class XLerobotZmq:
         self.camera_available = False
         self.camera_key: str | None = None
         self.holding: dict[str, bool] = dict.fromkeys(ARMS, False)
-        self.post_sleep: Any = None
         self._unheld: set[str] = set()
         """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
         self.stop_left_going: tuple[str, ...] = ()
@@ -511,8 +510,6 @@ class XLerobotZmq:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
 
 __all__ = [

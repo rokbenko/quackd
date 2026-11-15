@@ -7,6 +7,7 @@ be absent from the manifest, from the registry, from `.glot` validation and from
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,6 @@ from roboglot_open_duck import (
     open_duck_manifest,
 )
 from roboglot_open_duck.mock import OpenDuckMock
-from roboglot_open_duck.sim2d import OpenDuckSim2D
 from roboglot_open_duck.verbs import GAZE_YAW_DEG, MAX_VX, MAX_VY, MAX_WZ, mood_for
 
 runner = CliRunner()
@@ -63,7 +63,7 @@ GATED = {
     "pick",
     "place",
 }
-#: Every skill the shared cartoon duck understands and this robot does not.
+#: Every skill a Microduck understands and this robot does not.
 NOT_THIS_DUCK = ("kick_left", "kick_right", "ground_pick", "sit_toggle", "roulade")
 
 DUCK = parse_glot_text(
@@ -106,11 +106,6 @@ def test_manifest_is_a_slow_biped_that_cannot_kick() -> None:
     assert "get-up" in m.extras["no_recovery"] and "battery" in m.extras["no_battery"]
 
 
-def test_the_same_duck_over_sim2d_and_mock_has_the_same_capabilities() -> None:
-    assert open_duck_manifest("sim2d").digest() == open_duck_manifest("mock").digest()
-    assert describe("sim2d").digest() == describe("mock").digest()
-
-
 def test_a_duck_built_without_a_camera_or_a_speaker_loses_exactly_those_verbs() -> None:
     """`REQUIREMENTS` does the gating: no branching of ours decides this."""
     blind = open_duck_manifest("mock", camera=False)
@@ -142,7 +137,7 @@ def test_the_registry_and_the_prompt_never_offer_a_verb_this_body_lacks() -> Non
             registry.get(gone)
     allow = DUCK.frontmatter.verbs.allow
     prompt = build_system_prompt(
-        DUCK, [registry.view(n) for n in allow], "mock", manifest=open_duck_manifest("mock")
+        DUCK, [registry.view(n) for n in allow], manifest=open_duck_manifest("mock")
     )
     for gone in ("kick", "grab", "stand_up"):
         assert gone not in prompt
@@ -220,41 +215,17 @@ async def test_the_mock_finds_the_ball_by_turning_and_walks_to_it() -> None:
     assert (await ex.run_verb("go_to", {"target": "ball", "stop_distance": 0.4})).ok
 
 
-# ── the sim2d backend ───────────────────────────────────────────────────────────────────
-
-
-async def test_sim2d_reports_no_battery_and_no_kick_telemetry() -> None:
-    adapter = make_adapter("open_duck:sim2d", seed=0)
-    await adapter.connect()
-    state = await adapter.get_state()
-    assert state.battery_percent is None
-    assert not [k for k in ("kicks", "last_kick_ball_moved_m", "holding") if k in state.extras]
-    assert state.extras["policy_running"] is True
-    await adapter.disconnect()
-
-
-async def test_sim2d_refuses_the_skills_this_duck_does_not_have() -> None:
-    transport = OpenDuckSim2D(0)
-    await transport.connect()
-    for skill in NOT_THIS_DUCK:
-        ack = await transport.send_intent(Intent.do(skill))
-        assert not ack.accepted and "cannot" in (ack.reason or "")
-    assert (await transport.send_intent(Intent.do("antennas:perk"))).accepted
-    assert transport.gestures == ["perk"]
-    assert not (await transport.send_intent(Intent.do("antennas:moonwalk"))).accepted
-    await transport.close()
-
-
-@pytest.mark.parametrize("seed", range(4))
-async def test_sim2d_walks_to_the_ball(seed: int) -> None:
-    adapter = make_adapter("open_duck:sim2d", seed=seed)
+@pytest.mark.parametrize("ball_xy", [(0.9, 0.4), (0.2, 1.2), (1.1, -0.6), (-0.8, 0.5)])
+async def test_the_mock_walks_to_within_reach_of_the_ball(ball_xy: tuple[float, float]) -> None:
+    """Where the duck really ends, from the mock's own pose, wherever the ball is put."""
+    adapter = OpenDuckAdapter(OpenDuckMock(ball_xy=ball_xy))
     manifest = await adapter.connect()
-    ex = _executor(adapter, manifest)  # type: ignore[arg-type]
+    ex = _executor(adapter, manifest)
     await ex.run_verb("search_scan", {"target": "ball", "step_deg": 30, "max_steps": 12})
     await ex.run_verb("go_to", {"target": "ball", "stop_distance": 0.35})
-    world = adapter.world  # type: ignore[attr-defined]
-    duck, ball = world.ducks[0], world.ball
-    assert ((duck.x - ball.x) ** 2 + (duck.y - ball.y) ** 2) ** 0.5 < 0.6
+    duck = adapter.transport
+    assert isinstance(duck, OpenDuckMock)
+    assert math.hypot(duck.x - ball_xy[0], duck.y - ball_xy[1]) < 0.6
     await adapter.disconnect()
 
 
@@ -272,7 +243,7 @@ def test_a_kick_task_is_refused_against_this_duck_with_the_validator_s_words() -
 
 
 def test_list_verbs_shows_the_real_set() -> None:
-    result = runner.invoke(app, ["list-verbs", "--robot", "open_duck:sim2d"])
+    result = runner.invoke(app, ["list-verbs", "--robot", "open_duck:mock"])
     assert result.exit_code == 0
     for name in ("move", "gaze", "quack", "say"):
         assert name in result.output
@@ -290,13 +261,13 @@ def test_mood_mapping_is_stable() -> None:
 
 
 def test_the_factory_makes_every_backend() -> None:
-    for backend in ("sim2d", "mock", "bridge"):
+    for backend in ("mock", "bridge"):
         adapter = make_adapter(parse_robot_spec(f"open_duck:{backend}"))
         assert adapter.name == "open_duck" and adapter.backend == backend
-    with pytest.raises(ValueError, match="unknown open_duck backend"):
+    with pytest.raises(ValueError, match="unknown open_duck backend 'sim2d'"):
         from roboglot_open_duck import make
 
-        make("mujoco")
+        make("sim2d")
 
 
 def test_the_bring_up_task_does_not_require_the_dangerous_flag() -> None:

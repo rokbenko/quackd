@@ -403,7 +403,7 @@ def test_the_radio_is_handed_the_question_of_which_adapter(
 def body_file(robot_file: Path) -> Path:
     """A robot file that names a body Roboglot drives, whose manifest supplies what it can do."""
     text = robot_file.read_text(encoding="utf-8")
-    body = text.replace("\nmeeting:\n", "\nrobot:\n  adapter: microduck:sim2d\n\nmeeting:\n", 1)
+    body = text.replace("\nmeeting:\n", "\nrobot:\n  adapter: microduck:mock\n\nmeeting:\n", 1)
     assert body != text
     robot_file.write_text(body, encoding="utf-8")
     return robot_file
@@ -511,7 +511,7 @@ def test_an_adapter_that_exits_ends_no_command_that_reads_it(
         sys.exit(3)
 
     monkeypatch.setattr(factory, "describe", leaves)
-    said = "the microduck:sim2d adapter exited as it was read, with code 3"
+    said = "the microduck:mock adapter exited as it was read, with code 3"
     code, rows = preflight_rows(home, "--board", "sim")
     assert said in rows["signed"]["detail"] and code != 3
     assert said in status_said(home)["robot.yaml"]

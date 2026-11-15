@@ -114,9 +114,9 @@ def test_a_newer_file_is_refused_rather_than_half_read(tmp_path: Path) -> None:
         ("Duck-A", "not a valid"),
         ("-duck", "not a valid"),
         ("x" * 65, "not a valid"),
-        ("3", "simulated ducks"),
+        ("3", "a number reads as a count, not a name"),
         ("microduck", "is an adapter"),
-        ("microduck-sim2d", "memory file name"),
+        ("microduck-mock", "memory file name"),
         ("described", "the row of bodies Roboglot only describes"),
         ("described-unitree-b2", "memory file name"),
     ],
@@ -128,14 +128,14 @@ def test_a_name_may_not_be_something_else_it_could_be_mistaken_for(name: str, wh
 
 def test_a_team_may_be_called_after_an_adapter_but_not_after_a_number() -> None:
     assert check_name("microduck", kind="team") == "microduck"
-    with pytest.raises(RegistryError, match="simulated ducks"):
+    with pytest.raises(RegistryError, match="a number reads as a count, not a name"):
         check_name("4", kind="team")
 
 
 def test_the_spec_is_normalised_and_a_bad_one_keeps_the_adapters_own_words() -> None:
     """A spec that parses is stored canonically. One that does not is kept as written, and the
     adapter table's own words say why on the robot that is refused for it."""
-    assert _entry(spec="MicroDuck").spec == "microduck:sim2d"
+    assert _entry(spec="MicroDuck").spec == "microduck:mock"
     assert _entry(spec="microduck:mock").spec_problem is None
     kept = _entry(spec=" bogus:nope ")
     assert (kept.spec, kept.adapter, kept.backend) == ("bogus:nope", "bogus", "nope")
@@ -370,7 +370,7 @@ def test_registering_the_same_name_twice_is_refused(tmp_path: Path) -> None:
     reg = Registry(tmp_path)
     reg.add_robot(_entry())
     with pytest.raises(RegistryError, match="already registered"):
-        reg.add_robot(_entry(spec="microduck:sim2d"))
+        reg.add_robot(_entry(spec="microduck:jsonrpc"))
 
 
 def test_an_unknown_robot_is_one_line(tmp_path: Path) -> None:
@@ -743,9 +743,7 @@ def test_a_second_camera_is_refused_on_a_body_that_reads_one(tmp_path: Path) -> 
     dropped: the duck would open the first one and nobody would learn why."""
     with pytest.raises(
         ValidationError,
-        match=(
-            "microduck:mock takes one camera url; only lerobot:real and lerobot:mujoco take several"
-        ),
+        match="microduck:mock takes one camera url; only lerobot:real takes several",
     ):
         _entry("duck-a", "microduck:mock", camera_url=["http://glot:1", "http://glot:2"])
     (tmp_path / "robots.json").write_text(
@@ -899,24 +897,26 @@ def test_an_empty_team_says_how_to_fill_it(tmp_path: Path) -> None:
 
 
 def test_a_reference_is_the_registry_then_a_spec_then_one_line(tmp_path: Path) -> None:
+    from roboglot.adapters.factory import NoRobotNamed
+
     reg = _pair(tmp_path)
-    assert resolve_robot_ref(None, reg).spec.key == "microduck:sim2d"
+    with pytest.raises(NoRobotNamed, match="no robot named"):
+        resolve_robot_ref(None, reg)  # several adapters here, and none is a default
     assert resolve_robot_ref(None, reg, duck_default="lerobot:mock").spec.key == "lerobot:mock"
     registered = resolve_robot_ref("duck-a", reg)
     assert registered.registered and registered.spec.name == "duck-a"
     assert registered.label == "duck-a (microduck:mock)"
     bare = resolve_robot_ref("microduck", reg)
-    assert not bare.registered and bare.spec.key == "microduck:sim2d"
+    assert not bare.registered and bare.spec.key == "microduck:mock"
     with pytest.raises(AdapterError, match="neither a registered robot"):
         resolve_robot_ref("ghost", reg)
     with pytest.raises(AdapterError, match="unknown adapter"):
         resolve_robot_ref("ghost:nope", reg)
 
 
-async def test_a_probe_fails_a_robot_this_roboglot_cannot_build_before_its_backend() -> None:
-    """Ahead of the backends a probe declines, which are read off the stored spec's text:
-    `acme:mujoco` is not a physics model to skip, it is a body this Roboglot does not have."""
-    result = await probe_entry(_entry("kitchen", "acme:mujoco"))
+async def test_a_probe_fails_a_robot_this_roboglot_cannot_build() -> None:
+    """`acme:real` is a body this Roboglot does not have, and the probe says so."""
+    result = await probe_entry(_entry("kitchen", "acme:real"))
     assert result.reachable is False and "unknown adapter 'acme'" in result.detail, result
 
 
@@ -940,11 +940,6 @@ async def test_a_probe_reaches_a_mock_and_reports_a_dead_address() -> None:
         _entry("far", "open_duck:bridge", address="tcp://127.0.0.1:1"), timeout_s=3.0
     )
     assert dead.reachable is False and dead.detail
-
-
-async def test_a_probe_declines_the_backend_that_would_download_a_model() -> None:
-    skipped = await probe_entry(_entry("phys", "microduck:mujoco"))
-    assert skipped.reachable is None and "skipped" in skipped.detail
 
 
 async def test_a_probe_times_out_rather_than_hanging(monkeypatch: pytest.MonkeyPatch) -> None:

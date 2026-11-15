@@ -1,7 +1,7 @@
 """Runs: every run and chat session in the working folder's `runs/`, newest first, read from disk.
 
-A run is told as `roboglot log` tells it, in the terminal's own words, with its frames, its GIF on a
-simulator and what its terminal showed; a chat session lists its goals, each a run of its own.
+A run is told as `roboglot log` tells it, in the terminal's own words, with its frames and what
+its terminal showed; a chat session lists its goals, each a run of its own.
 """
 
 from __future__ import annotations
@@ -103,9 +103,6 @@ def _show(run: Path) -> None:
     renderer.flush()
     with st.container(height=480):
         st.code("\n".join(made), language=None, wrap_lines=True)
-    gif = run / "run.gif"
-    if gif.is_file():
-        st.image(str(gif), caption="run.gif")
     frames = sorted((run / "frames").glob("*.png"))[-8:] if (run / "frames").is_dir() else []
     if frames:
         st.image([str(f) for f in frames], caption=[f.stem for f in frames], width=160)

@@ -48,7 +48,7 @@ Rules this file lives by, the same three as `bridge/open_duck/`:
 - **It never imports Roboglot.** Roboglot's dependencies do not belong on a robot.
 - **It ships in the sdist and never in the wheel**, so `packages` stays `["roboglot"]`.
 - **It is testable with no hardware.** Everything above the `Robot` boundary is pure and takes
-  plain arrays, and `--fake` runs the whole daemon and protocol against a simulated body.
+  plain arrays, and `--fake` runs the whole daemon and protocol against a fake body.
 
     python roboglot_toddlerbot_bridge.py --robot toddlerbot_2xc --fake
     python roboglot_toddlerbot_bridge.py --robot toddlerbot_2xc --toddlerbot ~/toddlerbot
@@ -212,10 +212,9 @@ def looks_like_a_dropped_read(pos: Any, vel: Any) -> bool:
     indistinguishable from every joint genuinely at zero. Feeding that to a position
     controller commands a full-scale move to zero, so it is refused instead.
 
-    It is indistinguishable only because a real bus can fail that way. A simulator cannot:
-    there is no bulk read to drop, and all-zeros with zero velocity is simply a body standing
-    at its home pose, which is exactly where upstream's MuJoCo model starts. So the caller
-    decides whether the guard applies, and `Daemon.bus` is how it knows."""
+    It is indistinguishable only because a real bus can fail that way. The fake body cannot:
+    it has no bulk read to drop. So the caller decides whether the guard applies, and
+    `Daemon.bus` is how it knows."""
     if pos is None or len(pos) == 0:
         return True
     return bool(np.all(pos == 0.0) and np.all(vel == 0.0))
@@ -354,10 +353,8 @@ class Daemon:
         self.sim = sim
         self.fake = fake
         #: Whether readings arrive over a serial bus that can hand back a zeroed buffer. On
-        #: hardware they do, and an all-zeros read is refused rather than driven to. On a
-        #: simulator they do not, and refusing it means refusing the home pose upstream's
-        #: MuJoCo body starts in: every read rejected, `plan` never reached, and a `stand`
-        #: that reports itself moving for as long as anybody waits without a joint turning.
+        #: hardware they do, and an all-zeros read is refused rather than driven to. The fake
+        #: body's do not, and an all-zeros pose there is just a pose.
         self.bus = bus
         self.lock = threading.Lock()
         self.running = False
@@ -1216,38 +1213,6 @@ def build_walk_policy(ckpt: str, robot: Any, init_pos: Any, root: str) -> tuple[
 # ── wiring it up ────────────────────────────────────────────────────────────────────────
 
 
-def build_mujoco(robot_name: str, root: str) -> tuple[Any, Any]:
-    """Construct upstream's Robot and its MuJoCo body, headless.
-
-    This is the contract path: upstream's own physics, upstream's own model, and no
-    hardware anywhere. It exists so the client, the protocol and the fifty hertz loop can
-    be exercised against something that pushes back, which the fake body cannot do.
-
-    Three things about it are not obvious and all three were read at the pin.
-
-    `vis_type` is left at its default, which is the only value that builds neither a
-    viewer nor a renderer, so nothing on this path needs a display or a GL context.
-    Upstream never reads MUJOCO_GL, so setting it changes nothing here.
-
-    `controller_type` stays at torque because the position controller's `step` takes
-    three arguments and the sim calls it with four, so the other setting raises on the
-    first tick.
-
-    And the working directory has to be the checkout root, because the model path and
-    every path `Robot` reads are relative and it offers no way to override them.
-    """
-    os.chdir(root)
-    sys.path.insert(0, root)
-    from toddlerbot.sim.mujoco_sim import MuJoCoSim  # late: needs mujoco, cv2 and jax
-    from toddlerbot.sim.robot import Robot
-
-    robot = Robot(robot_name)
-    # A simulated body has no assembly for a zero to be offset by, so the calibration
-    # the real path refuses to run without does not apply and must not block this one.
-    robot.roboglot_calibrated = True
-    return robot, MuJoCoSim(robot)
-
-
 def build_real(robot_name: str, root: str) -> tuple[Any, Any]:
     """Construct upstream's Robot and RealWorld, under a watchdog.
 
@@ -1299,13 +1264,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--token", default=os.environ.get(TOKEN_ENV))
-    parser.add_argument("--fake", action="store_true", help="Run with a simulated body.")
-    parser.add_argument(
-        "--sim",
-        choices=("real", "mujoco"),
-        default="real",
-        help="Which body to drive. mujoco is upstream's own physics, headless, no robot.",
-    )
+    parser.add_argument("--fake", action="store_true", help="Run with a fake body, no robot.")
     parser.add_argument(
         "--camera",
         choices=("left", "right"),
@@ -1327,18 +1286,17 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("Roboglot's ToddlerBot daemon needs numpy\n")
         return 2
 
-    # Resolved once, before anything changes directory. build_real and build_mujoco both
-    # chdir into the checkout, so a second os.path.abspath of a relative --toddlerbot would
-    # resolve against the new directory and quietly name a different path.
+    # Resolved once, before anything changes directory. build_real chdirs into the checkout,
+    # so a second os.path.abspath of a relative --toddlerbot would resolve against the new
+    # directory and quietly name a different path.
     root = os.path.abspath(os.path.expanduser(args.toddlerbot))
 
     if args.fake:
         robot: Any = FakeRobot(args.robot)
         sim: Any = FakeSim(robot)
     else:
-        build = build_mujoco if args.sim == "mujoco" else build_real
         try:
-            robot, sim = build(args.robot, root)
+            robot, sim = build_real(args.robot, root)
         except ImportError as e:
             sys.stderr.write(
                 "Roboglot's ToddlerBot daemon needs upstream installed on this robot:\n"
@@ -1348,9 +1306,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
 
-    # a simulated body has no bulk read to drop, and upstream's MuJoCo model starts at
-    # exactly the all-zeros pose the guard is built to refuse
-    daemon = Daemon(robot, sim, fake=args.fake, bus=args.sim == "real" and not args.fake)
+    # the fake body has no bulk read to drop
+    daemon = Daemon(robot, sim, fake=args.fake, bus=not args.fake)
 
     # From here the motors are live and torqued: upstream's RealWorld constructor energises
     # them the moment it returns. Everything that follows can fail, and anything that leaves

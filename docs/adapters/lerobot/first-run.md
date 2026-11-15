@@ -63,9 +63,9 @@ body has no neck and no `search_scan`. "Finds you" means you are already inside 
 never moves, so you position yourself rather than the arm.
 
 **Whether it can see you at all depends on the LLM you bring.** Roboglot's bundled detector
-is a colour threshold carrying the simulator's own ranges, so on a real desk `person` means
-"a saturated blue thing" and nothing else. An LLM that accepts images sees the actual
-webcam frame every step and can simply look. An LLM that does not gets one line of text.
+is a colour threshold tuned to the orange ball a mock draws, so on a real desk it finds orange
+things and never a person. An LLM that accepts images sees the actual webcam frame every step
+and can simply look. An LLM that does not gets one line of text.
 [Choose your pilot](#03-choose-your-pilot) is where that decision gets made, and
 [Wave to me](#12-wave-to-me) is where it pays off or does not.
 
@@ -96,8 +96,6 @@ Two reflexes, and they matter more than anything you type:
   is short on ports.
 - **A USB webcam, and something to prop it up and aim it.** A small tripod, a clip, a stack
   of books. The arm cannot move the camera for you.
-- **Something strongly blue to wear**, if the LLM you are bringing does not take images.
-  Section 03 explains why, and it is the difference between the arm seeing you and not.
 - **A way to cut power fast.** A power strip with its own switch, or a firm decision about
   which plug you are going to pull.
 - **Permission, and the arm's own parts list.** Whoever runs the lab should confirm that you
@@ -623,8 +621,8 @@ seconds run out, you press Ctrl-C or `q` at it, or the terminal has no key to re
 closes on the line that begins `the arm is not at its rest pose`, with the arm holding itself up
 where its fold stopped. A Ctrl-C or `q` during the second fold stops it where it is and keeps
 torque on too, and the close's own line follows ([section 11](#11-prove-the-safety-net)).
-Neither question is put on a dry run, in an MCP session, in a team or on the simulator, nor
-over an arm that stopped answering or one still in your hands from a
+Neither question is put on a dry run, in an MCP session or in a team, nor over an arm that
+stopped answering or one still in your hands from a
 [hand-placed start](#or-start-from-a-pose-you-set-by-hand). If you missed them, or the arm was
 left up by any of those, clear its way and run:
 
@@ -891,9 +889,8 @@ from a script, a scheduler or a CI job has nobody to talk to, and Roboglot says 
 rather than releasing an arm into an empty room and waiting for an Enter that is never coming.
 
 The last is the refusal every run of a real arm with no rest pose meets, `--by-hand` or not. The
-mock and the simulator, which a run may still let go of where they stand, meet one of the flag's
-own instead, which says that `--by-hand` releases the arm at its recorded rest pose, and this arm
-has none recorded.
+mock, which a run may still let go of where it stands, meets one of the flag's own instead, which
+says that `--by-hand` releases the arm at its recorded rest pose, and this arm has none recorded.
 
 > [!WARNING]
 > Everything in this subsection has been exercised against `lerobot:mock` and in the test
@@ -1041,7 +1038,7 @@ where the cameras are today, the way `--address` already does. `roboglot robot e
 
 > [!TIP]
 > Aim the webcam now at wherever you will actually stand, and pass `--fov-deg` for your lens
-> once you know it. Without it Roboglot assumes the simulator's 90 degrees, says so in every
+> once you know it. Without it Roboglot assumes a mock's 90 degrees, says so in every
 > detection line, and every bearing and distance is scaled wrong.
 
 #### More than one camera
@@ -1121,8 +1118,7 @@ answered every heartbeat for the length of the run, because an arm that drops ou
 have dropped out mid move in the next section.
 
 This costs a handful of API calls and is the cheapest rehearsal you will get on the arm
-itself. Run it more than once if the plan looks odd. The other kind of rehearsal needs no arm at
-all, and moves everything in a model of it: [section 16](#16-between-visits-rehearse-on-the-simulator).
+itself. Run it more than once if the plan looks odd.
 
 Two of the bench's dry runs on 2026-09-15 ended early, and both endings were the rehearsal
 doing its job. One aborted with `the arm did not answer: TimeoutError` when a single heartbeat
@@ -1361,11 +1357,8 @@ see. It still waved. It could not watch itself do it. Point the camera at the vo
 arm will move through, not at the end of it, or add a second view as in section 09.
 
 **An LLM that does not** receives one line of text built by Roboglot's colour detector, and
-that detector carries the simulator's ranges. It emits exactly four labels and `person`
-means a saturated blue region, not a human. Wear a strong blue top and fill a decent share
-of the frame and you will read as `person at bearing 12° left ~1.40 m`. Wear grey and the
-line says `nothing detected`. The distance is computed from the *simulated* person's size,
-so treat it as a rough guess rather than a measurement.
+that detector looks for one thing, the orange ball a mock draws. It has no label for a person,
+so whatever you wear the line says `nothing detected` unless something orange is in view.
 
 > [!WARNING]
 > `observe` is not reachable on a `--goal` run even with a camera attached. A goal's
@@ -1379,8 +1372,8 @@ There is a real person detector behind the `yolo` extra, and `--detector yolo` s
 YOLO in Roboglot's own process on the laptop, which reads a person as `person` whatever they are
 wearing. Without the extra the run is refused before anything connects, with
 `YoloDetector needs ultralytics: uv pip install 'roboglot[yolo]'`. Give it `--fov-deg` for your
-webcam, or its distances are a guess and the run says so once. Tuning the colour ranges to
-your own shirt has no flag: [the FAQ](../../faq.md) covers it as a Python constructor.
+webcam, or its distances are a guess and the run says so once. Tuning the colour detector to
+your own ball has no flag: [the FAQ](../../faq.md) covers it as a Python constructor.
 
 #### Give it a picture
 
@@ -1518,7 +1511,7 @@ And once it is running:
 | `and it has stopped moving` | a stall: five ticks in which no watched joint moved, counted once the move's `duration_s` is up | something is in the way, or a servo tripped. The arm is held first. A joint blocked early in a slow move is only called stalled at the end of it |
 | `the camera gave no frame` | the webcam stalled or was unplugged | the arm carries on, and `report_state` starts saying `CAMERA DOWN:` |
 | `the arm's torque is off` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so this points at a tripped servo or the supply |
-| the run ends saying the arm did not answer, and closes on `roboglot cannot tell whether the arm is holding itself up (...)` when the close could not read it either | the heartbeat's round trip failed. The close's line means Roboglot cannot say whether the arm is held up or limp. Seen once on 2026-09-15, in a dry run, and not since. One other cause was found later, in the simulator and not on an arm: the event loop's thread busy past the deadline while the arm answered in time, which 0.15.0 fixed. It is not known to be what happened that day | hold the arm and cut its power, then check the cable, the power or a tripped servo. Do not reconnect without holding it, because connecting takes torque off every motor for a moment |
+| the run ends saying the arm did not answer, and closes on `roboglot cannot tell whether the arm is holding itself up (...)` when the close could not read it either | the heartbeat's round trip failed. The close's line means Roboglot cannot say whether the arm is held up or limp. Seen once on 2026-09-15, in a dry run, and not since. One other cause was found later, and not on an arm: the event loop's thread busy past the deadline while the arm answered in time, which 0.15.0 fixed. It is not known to be what happened that day | hold the arm and cut its power, then check the cable, the power or a tripped servo. Do not reconnect without holding it, because connecting takes torque off every motor for a moment |
 | `arm-01 (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to ...` | no rest pose is recorded, and a run, a dry run included, refuses a real arm without one before anything connects. A bare `--robot lerobot:real` is refused the same way, since it has no name to keep a pose under | `roboglot robot rest-pose arm-01`, with the arm folded by hand first, and if you ran it by its spec, register it before that ([section 06](#name-it)) |
 | `arm-01 has no rest pose recorded, so torque was left on rather than let go of where the arm stands` when `doctor` ends | no rest pose is recorded, so `doctor` kept the arm powered where it stands rather than let it fall, which 0.23 and before let go of there | hold the arm and press Enter at doctor's question, or cut its power, then fold it by hand and `roboglot robot rest-pose arm-01` |
 | `the arm is not at its rest pose (...), so torque was left on` | it could not get home: something is in the way, or a servo tripped. The run itself says `the arm did not reach its rest pose`, and at a terminal it asked you first to clear the way for a second fold | clear whatever stopped it, then run `roboglot robot release arm-01`, which folds the arm to its rest pose and lets go of it there. Support the arm while it connects, because connecting takes torque off every motor for a moment, and take your hands away as soon as it prints where the arm is, because the fold follows at once. `roboglot doctor --robot arm-01` tries the fold again too, and gives your hands 3 seconds to come away first, and the power switch is for when neither can reach the arm. It stays energised until you do one of them. If you calibrated again since you recorded the pose, record it again: the old angles name a different shape now |
@@ -1758,156 +1751,7 @@ either way.
 
 <br>
 
-### 16. Between visits: rehearse on the simulator
-
-Everything above happens at the bench, and the bench is where a mistake costs most: an
-afternoon, and somebody else's arm. Most of what went wrong on 2026-09-23 was in the code
-between the pilot and the bus rather than in the pilots, and much of it could have been found
-without the arm. So between one visit and the next, rehearse on the arm's simulator.
-
-This is not [section 10](#10-rehearse-with---dry-run). A dry run needs the arm, connects to it
-for real and moves none of it. The simulator needs no arm and moves all of it, in a model:
-`lerobot:mujoco` is the real backend's own code, the connect and its retries, the travel read
-off your calibration, the rest move, the refusals and the close, running over a physics model
-of the SO-101 in MuJoCo instead of over LeRobot. A task file rehearsed on it goes through the
-lines that will drive your arm.
-
-![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the LLM was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
-
-*The README hero's goal, `Wave to the camera with an extended arm`, on the simulator's generic
-arm, piloted by OpenAI's `gpt-6-sol`, with the front camera the LLM was sent on the right
-([how it was made](../../assets/README.md)).*
-
-**Install it** into the same environment, or into a 3.11 one, since it needs neither LeRobot nor
-torch:
-
-```bash
-uv pip install "roboglot[lerobot-sim]"
-```
-
-**Make a twin of your arm.** Once `arm-01` is calibrated and registered, sections 05 and 06,
-this registers a simulator of it on the calibration file its runs read, with the rest pose from
-section 07, the pilot and the cameras:
-
-```
-$ roboglot robot twin arm-01
-✓ added arm-01-sim: lerobot:mujoco, a simulator of arm-01 on
-/home/you/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json
-  copied from arm-01: rest pose, pilot openai:gpt-6-sol, 2 camera urls
-⚠ robots.json now holds a lerobot:mujoco robot, and Roboglot 0.14 and earlier cannot read the file at all: roboglot robot remove arm-01-sim before going back to one
-  roboglot preflight <task> --robot arm-01-sim
-```
-
-An arm registered with a rest pose and neither a pilot nor a camera, as the lab's `arm-01` is,
-gets `copied from arm-01: rest pose` and then `arm-01 has no pilot or camera to copy`, and a
-hint that ends `--llm VENDOR[:LLM]`, since its twin has no pilot to rehearse with until you
-name one.
-
-Take the warning seriously if an older Roboglot shares `~/.roboglot` with this one: it cannot read
-the registry at all while the twin is in it, every robot included, and
-[guides/registry.md](../../guides/registry.md#a-simulator-of-an-arm) says how to keep the two apart.
-
-**Run anything you would run on the arm, on the twin.** The same task files, the same flags and
-the same camera urls, which the simulator renders from its scene instead of opening a webcam:
-
-```bash
-roboglot run lerobot-lookout --robot arm-01-sim --llm fake
-```
-
-The first connect fetches the SO-101's model from its makers at a pinned commit, about 16 MB,
-checking every file against a recorded hash, and says so once. After that a run reads like one
-on the arm, with up to four things the arm never gives. Every run has a paragraph in the pilot's
-prompt saying it is on a model of the arm, whose physics nobody measured on an SO-101. A note
-names whichever of the `front` and `top` cameras is open, since those views are Roboglot's rather
-than where your cameras stand. With both open:
-
-```
-·  note    the front and top cameras are Roboglot's default views of the table, not where any real camera stands
-```
-
-The other two are notes the connect makes only where your rest pose calls for them, each saying
-where the simulated arm starts instead: one when the pose puts a joint past one of the model's
-stops, and one when it puts the model into its table or into itself. The lab arm's rest pose
-does both, and a connect of its twin, here `roboglot doctor --robot arm-01-sim`, prints them.
-After them comes the advice `doctor` gives the arm itself, because that fold lies past what its
-calibration lets `shoulder_lift` be driven to ([section 07](#07-record-the-rest-pose)):
-
-```
-the rest pose puts shoulder_lift at -104.7 degrees, past the model's stop at -100.0 degrees, so the simulated arm starts at the stop instead
-the rest pose puts gripper 21 mm into the table, moving_jaw_so101_v1 13 mm into the table, lower_arm 10 mm into shoulder and wrist 3 mm into shoulder on the model, and with shoulder_lift at the edge of its travel, where the close's rest move parks the arm, gripper 10 mm into the table, moving_jaw_so101_v1 8 mm into the table, wrist 6 mm into shoulder, gripper 5 mm into shoulder and wrist_camera_mount 1 mm into shoulder, so the simulated arm starts and rests where it settles against them instead, with elbow_flex at 82.9 degrees in place of 96.4 and wrist_flex at 81.9 degrees in place of 72.2. The model's joint zeros and signs are an assumption (JOINT_ZERO, JOINT_SIGN) until the bench checks them, so the pose may be right on the arm and the model's frame wrong
-shoulder_lift is recorded at -105 in the rest pose and this calibration lets its servo be driven to -84 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (roboglot robot rest-pose arm-01-sim) to make the fold reachable
-```
-
-**Then rehearse the task file properly.** `roboglot preflight` connects and closes the twin a few
-times, runs the task once per seed with memory off, and says whether every run ended at the rest
-pose:
-
-```
-$ roboglot preflight lerobot-lookout --robot arm-01-sim --llm fake
-roboglot preflight lerobot-lookout
-+--------------------------------------------------------------------+
-| seed | outcome | steps | close            | checks | cost | result |
-|------+---------+-------+------------------+--------+------+--------|
-|    0 | success |     1 | at the rest pose |      - |   $0 | pass   |
-|    1 | success |     1 | at the rest pose |      - |   $0 | pass   |
-|    2 | success |     1 | at the rest pose |      - |   $0 | pass   |
-+--------------------------------------------------------------------+
-  no lerobot-lookout.sim.yaml beside it, so only the close was judged
-LLM cost $0 over 3 runs
-sim dt 0.01 s
-✓ 1 file passed preflight
-```
-
-The scripted pilot is enough for the lookout. For a task you mean to hand a real LLM, rehearse
-with that LLM, `--llm openai` and so on, because what the LLM reaches for is half of what a
-rehearsal is for, and each seed then costs what a run costs. A `<task>.sim.yaml` beside the file
-lays out the table and says what has to be so when a run ends, such as a block lifted or a joint
-moved, judged by where things really went rather than by what the pilot said:
-[adapters/lerobot/README.md](README.md#the-sidecar) has the format. `--faults` puts a bus
-that drops packets under the connects, so the failed connects the lab met on 2026-09-23, and the
-retries Roboglot now answers them with, happen at home first.
-
-Preflight never rehearses on the arm itself, and says so before it connects to anything:
-
-```
-✗ error: arm-01 (lerobot:real) is not a simulator, and preflight runs only on one, since it drives
-the robot through every task file seed after seed: roboglot robot twin NAME registers a
-lerobot:mujoco simulator of a registered arm to rehearse on
-  then roboglot preflight FILES --robot NAME-sim
-```
-
-**`--by-hand` on the twin** releases the arm at its rest pose and waits for Enter, as on the
-desk. Nobody can place a simulated arm, so when you press Enter it is left to fall for a second
-of sim time, and Roboglot takes hold of it wherever it landed, or refuses in the words it would
-use on the desk. On a twin whose rest pose held the elbow near the end of its travel, the fall
-took it past that end:
-
-```
-·  hand    hold refused: elbow_flex reads 90.8, outside its calibrated travel of -89.9..89.9, so Roboglot left torque off: a goal written where that joint is lies past its travel and the servo would pull it to the end of its travel, and with none written the servo may drive it to the last goal it was given, with a hand on the arm either way. Roboglot takes hold of the arm only with elbow_flex inside its travel
-```
-
-That is worth seeing before the bench. It is the refusal a
-[hand-placed start](#or-start-from-a-pose-you-set-by-hand) makes over any joint outside its
-travel, met here because a limp joint near the end of its travel settled past it. On the desk
-you lift the joint back inside before you press Enter. On the twin nobody does, so you meet the
-refusal instead, and the run ends there, as it would on the desk.
-
-What the fall rehearses is what Roboglot says and does with the pose it leaves, and not whether
-your arm's rest pose holds itself up. How a limp joint settles is the model's physics, and
-which way gravity pulls each joint rests on signs and zeros nobody has checked against an arm,
-so the arm itself may fall differently, or not at all. Only the bench says which.
-
-**What the twin cannot tell you** is how your arm moves. The physics is the model's, not a
-measurement of an SO-101. Which way each joint turns and where its zero sits are assumed to
-match the model, the front and top cameras are Roboglot's views and not yours, the servos never
-warm, and nothing timed on the simulator is a rate. A task that passes preflight has survived
-the code and the contract. Whether it survives the arm is still [section 11](#11-prove-the-safety-net)
-onwards, with a hand near the switch, and a task that passes on the twin and then does
-something else on the arm is exactly what [section 14](#14-what-to-report) asks for.
-
-<br>
-
-### 17. Optional: hand the arm to a learned policy
+### 16. Optional: hand the arm to a learned policy
 
 Everything above has an LLM choosing every verb, about once every six seconds on this arm.
 That is the right rate for deciding what to do next and the wrong one for closing a gripper on
@@ -1918,9 +1762,8 @@ under the LLM rather than in its place: the LLM hands it one short subtask at a 
 `manipulate`, and judges from a fresh look at the arm whether it did it.
 
 > [!WARNING]
-> **Nobody has driven this arm with a policy through Roboglot yet.** Every segment so far has run
-> in the test suite and on the simulator. Rehearse everything below on the twin from section 16
-> first, and on the arm keep a hand on the power switch.
+> **Nobody has driven this arm with a policy through Roboglot yet.** Keep a hand on the power
+> switch for everything below.
 
 The policy runs in a server of its own, and no Roboglot command loads a checkpoint in the process
 that holds the serial bus, because a checkpoint is code
@@ -1932,54 +1775,30 @@ uv pip install "roboglot[lerobot-vla]"
 ```
 
 **In a second terminal, start a server.** A scripted policy needs no torch and no checkpoint,
-which makes it the one to prove the plumbing with. `scripted:sweep` swings `wrist_flex` 5 degrees
-either side of where it started, one swing every 2 s, and `scripted:hold` holds the arm where it
-reads:
+which makes it the one to prove the plumbing with. `scripted:hold` holds the arm where it reads,
+so it comes first on the arm, and `scripted:sweep` swings `wrist_flex` 5 degrees either side of
+where it started, one swing every 2 s:
 
 ```bash
-roboglot policy serve --policy scripted:sweep
+roboglot policy serve --policy scripted:hold
 ```
 
 It prints where it serves, `http://127.0.0.1:9875`, the token file it wrote or read, which is
 `~/.roboglot/policy.token` and is written the first time, and its rate, and serves until Ctrl+C.
 It never prints the token itself: a run on the same machine reads it from that file. **In the
-first terminal, point a run at it.** Here with the scripted pilot, on the twin, and with memory
-off so a rehearsal leaves nothing in the twin's:
+first terminal, point a run at it.** Here with the scripted pilot, and with memory off so a run
+that proves the plumbing leaves no note behind:
 
-```
-$ roboglot run --goal "swing the wrist" --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm fake --no-memory
-┌─ 🦆 goal ───────────────────────────────────────────────────────────────────────────────────────┐
-│ provider  fake (scripted:goal)                                                                  │
-│ robot     arm-01-sim (lerobot:mujoco)                                                           │
-│ detector  color_blob on this machine  (once the body reports a camera)                          │
-│ policy    http://127.0.0.1:9875  scripted:sweep                                                 │
-└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────────────┘
-·  note    the policy at http://127.0.0.1:9875 is scripted:sweep, at 10 Hz from scripted:sweep's own, the verbs' tick
-·  note    the front and top cameras are Roboglot's default views of the table, not where any real camera stands
+```bash
+roboglot run --goal "hold the arm where it is" --robot arm-01 --policy-url http://127.0.0.1:9875 --llm fake --no-memory
 ```
 
-The server was asked what it serves before anything connected, and the header and the record
+The server is asked what it serves before anything connects, and the run's header and its record
 name it. The scripted pilot never calls `manipulate`, so that is all this run proves. To see a
 segment, give the run an LLM, `--llm openai` and so on, whose prompt then has a section on its
 executor: one short subtask a call, and a fresh look after each. A `--goal` run allows
 `manipulate` only behind a confirm, so you are asked before every segment when you run it from
 a terminal. `--yes`, or a pipe or file on stdin, answers in your place, and nobody is asked.
-
-**On the twin, the first segment is refused until `shoulder_lift` is moved in.** A segment starts
-only with every joint inside its calibrated travel, and the twin starts where the arm's rest pose
-puts it, settled clear of its table ([the arm's page](README.md#running-it)). The lab
-arm's was recorded folded, past what its calibration lets `shoulder_lift` be driven to
-([section 07](#07-record-the-rest-pose)) and past its model's stop too, so the twin starts with
-that joint settled just off the stop, outside its travel, and `manipulate` refuses with
-`Move shoulder_lift inside its travel first`. An LLM moves the joint in with `move_joints` when
-it reads that, and an MCP client can do the same before its first segment. After a small move in
-and two segments, the close parked the joint at the edge of its travel, in the pose the twin
-settled to there, and let it go. After a larger move the rest move can set the gripper down on
-the table short of that pose, and the close keeps torque on. `--controller vla`, below, only ever
-calls `manipulate`, so a vla run on this twin ends in failure, in the verb's own words, before
-any segment runs. The lasting fix is to calibrate the arm again folded, the bench item in
-[PLAN.md](../../../PLAN.md) that reads the calibrated value at each of the arm's stops, and record
-the rest pose again after it.
 
 **Or take the LLM out altogether.** `--controller vla` is a scripted pilot that hands the
 policy each instruction a `glot: 3` task file lists, or the goal as the only one, and then asks
@@ -1987,7 +1806,7 @@ you `Did the arm do it?`. Only your yes is a success, so it needs you at the ter
 anything that would answer for you:
 
 ```
-$ roboglot run --goal "swing the wrist" --robot arm-01-sim --policy-url http://127.0.0.1:9875 --controller vla --yes --no-memory
+$ roboglot run --goal "swing the wrist" --robot arm-01 --policy-url http://127.0.0.1:9875 --controller vla --yes --no-memory
 ✗ error: --controller vla leaves the verdict on the task to a person who watched the arm, and --yes
 answers every question without asking anybody
   drop --yes: a vla run asks you before its first segment and after its last
@@ -2013,19 +1832,15 @@ the arm refuses to connect to it before any motor is energised, saying how many 
 chunk it would starve and the longest `--latency-s` to start it again with. Nothing overrides that
 refusal ([the arm's page](README.md#whether-the-policy-fits-the-arm)).
 
-**On the arm**, the same commands with `--robot arm-01`, and step 18 of
-[the hardware checklist](hardware-checklist.md) in that order: a policy that holds the
-arm still, then the sweep, then a checkpoint. A policy moves no joint faster than a verb may,
-and a goal past the travel is clipped rather than sent, but a joint that reads past its travel,
-once a move has begun lifting it, rises to the end of it at the servo's own speed whatever anybody
-sends, which is what the hand on the switch is for.
+**On the arm, keep to the order** of step 18 of [the hardware checklist](hardware-checklist.md): a
+policy that holds the arm still, then the sweep, then a checkpoint. A policy moves no joint faster
+than a verb may, and a goal past the travel is clipped rather than sent, but a joint that reads
+past its travel, once a move has begun lifting it, rises to the end of it at the servo's own speed
+whatever anybody sends, which is what the hand on the switch is for.
 
-**What the twin cannot tell you** is how fast the policy's loop runs on the arm's bus while this
-laptop infers, since nothing timed on the simulator is a rate, or what a policy trained on real
-camera frames does with rendered ones. A policy that grasps on the twin, or fails to, says
-nothing about the arm. The `policy` block of a run's `summary.json` says what the loop achieved,
-and from the arm it is a number nobody has yet: send it back with the rest of
-[section 14](#14-what-to-report).
+**How fast the policy's loop runs on the arm's bus** while this laptop infers is a number nobody
+has yet. The `policy` block of a run's `summary.json` says what the loop achieved: send it back
+with the rest of [section 14](#14-what-to-report).
 
 <br>
 
@@ -2044,14 +1859,8 @@ Roboglot chooses no LLM here and reads no key of yours.
 > contract. The flag and its two companions belong to `roboglot run`
 > ([guides/mcp.md](../../guides/mcp.md)).
 >
-> [Section 16](#16-between-visits-rehearse-on-the-simulator) has no mirror either, because it
-> works the same from here. `roboglot robot twin arm-01` registers the twin, and
-> `roboglot serve-mcp --robot arm-01-sim` hands Claude the twin instead of the arm. An MCP session
-> runs tool calls at once, though, so unlike a run it does not do the same again under one
-> seed. `roboglot preflight` is the rehearsal that does, and it runs from the terminal.
->
-> [Section 17](#17-optional-hand-the-arm-to-a-learned-policy) has no mirror either. Its server is
-> the same from here, and `roboglot serve-mcp --robot arm-01-sim --policy-url
+> [Section 16](#16-optional-hand-the-arm-to-a-learned-policy) has no mirror either. Its server is
+> the same from here, and `roboglot serve-mcp --robot arm-01 --policy-url
 > http://127.0.0.1:9875 --yes` hands Claude a `manipulate` the policy runs. The rule on a policy's
 > latency holds here too: the arm refuses to connect to a server that declares one longer than half
 > a chunk, before any motor is energised, and says the longest `--latency-s` to start it again
@@ -2204,7 +2013,7 @@ gate. The question arrives where you are already reading instead.
 There is no `wave` verb and the camera cannot look for you, whoever is piloting. Part 1's third
 one is that whether it can see you at all depends on the LLM you bring, and over MCP the pilot
 takes images by construction, so that half resolves itself and what is left of it is the bundled
-detector: a colour threshold carrying the simulator's own ranges rather than a person detector.
+detector: a colour threshold tuned to an orange ball rather than a person detector.
 [Section 00](#00-read-this-first) has all three in full.
 
 > [!CAUTION]
@@ -2254,8 +2063,7 @@ know which half of this guide you are reading.
 **What drops off the list is the key.** Part 1's last bullet asks for a cloud vendor's key or a
 local LLM server, because `roboglot run` has to go and find an LLM. In MCP mode Roboglot picks no
 LLM and reads no key: the pilot is the LLM you are already chatting with, so the account you
-signed into the client with is all of it. The blue top goes with it, since that bullet is there
-for a pilot that cannot take images and this one can.
+signed into the client with is all of it.
 
 <br>
 
@@ -2351,9 +2159,8 @@ either of those.
 > server as failed rather than connected, and the stderr log names `lerobot` and the
 > `roboglot[lerobot]` extra that would buy it. And where uv does pick 3.12, it downloads torch
 > all over again. The venv you already built has the right interpreter and the SDK in it, so
-> point the client straight at it. [guides/mcp.md](../../guides/mcp.md) uses `uvx` for the simulated
-> bodies, where no SDK with a version floor is involved, and that form does not carry over to the
-> arm.
+> point the client straight at it. [guides/mcp.md](../../guides/mcp.md) uses `uvx` for the mocks,
+> where no SDK with a version floor is involved, and that form does not carry over to the arm.
 
 **Claude Code, the one command.** Everything after the bare `--` is the command and its
 arguments, which is what stops `--robot` being read as a flag of `claude mcp add` itself:
@@ -2365,8 +2172,10 @@ claude mcp add arm -- D:\Development\lerobot-test\.venv\Scripts\roboglot.exe ser
 `-s local|user|project` chooses where the entry is written, and local is the default: private
 to you, in this project. `-e KEY=value` sets a variable for the server, and it repeats.
 
-Here are the add, the list and the get from one capture on this machine, against a mock arm.
-The `claude mcp remove` at the end of that same capture is under **Changing it later** below:
+Here are the add, the list and the get from one capture on this machine, against a mock arm,
+with the list's first line, this repository's own `.mcp.json`, as that file starts its server
+now. The `claude mcp remove` at the end of that same capture is under **Changing it later**
+below:
 
 ```
 $ claude mcp add arm -- D:\Development\roboglot\.venv\Scripts\roboglot.exe serve-mcp --robot arm-01 --registry-dir <TMPREG>
@@ -2376,7 +2185,7 @@ File modified: C:\Users\<you>\.claude.json [project: D:\Development\roboglot]
 $ claude mcp list
 Checking MCP server health…
 
-Roboglot: uv run --no-sync roboglot serve-mcp --robot microduck:sim2d - ⏸ Pending approval (run `claude` to approve)
+Roboglot: uv run --no-sync roboglot serve-mcp --robot microduck:mock - ⏸ Pending approval (run `claude` to approve)
 arm: D:\Development\roboglot\.venv\Scripts\roboglot.exe serve-mcp --robot arm-01 --registry-dir <TMPREG> - ✔ Connected
 
 $ claude mcp get arm
@@ -2738,7 +2547,7 @@ whether the fold held with torque off and whether the park at the end put it bac
 
 ### M08. The first session
 
-The twin of [section 08](#08-the-first-task), and like that one, no verb the LLM can reach
+The mirror of [section 08](#08-the-first-task), and like that one, no verb the LLM can reach
 here moves a joint. The server itself does: it drives the arm to the rest pose as it connects,
 and again as the client quits, so have your hands clear when you start the server and when you
 quit. This is the first time Claude talks to your arm: reading, listing, one refusal, one note
@@ -2827,7 +2636,7 @@ that run before a feasibility verdict exists.
 
 Three of those rows are the mock's. A real arm lists `observe` only when `--camera-url` named a
 camera that opened, and lists `pick` and `manipulate` only when the server was started with
-`--policy-url` naming a policy server ([section 17](#17-optional-hand-the-arm-to-a-learned-policy)).
+`--policy-url` naming a policy server ([section 16](#16-optional-hand-the-arm-to-a-learned-policy)).
 Those two are also the only confirm-class verbs, which is why `--yes` changes nothing on a real
 arm without one.
 
@@ -2932,7 +2741,7 @@ nothing.
 
 **The lens goes on the url, because there is no flag for it here.** `roboglot run` takes
 `--fov-deg` and `roboglot serve-mcp` does not, so the field of view rides on the url as `?fov=62`.
-Without it Roboglot assumes the simulator's 90 degrees, scales every bearing and distance wrong,
+Without it Roboglot assumes a mock's 90 degrees, scales every bearing and distance wrong,
 and says so on every detection line. `62` is one camera module's figure: use your own lens's.
 
 > [!IMPORTANT]
@@ -2981,7 +2790,7 @@ done    ok in 0.0 s budget: step 1/40, LLM calls 0/40, 0.0/5 min
 
 > [!NOTE]
 > That ball is the mock's synthetic scene and nothing on a real desk will produce that line. The
-> detector behind it is a colour threshold carrying the simulator's own ranges, so on your desk it
+> detector behind it is a colour threshold tuned to the ball a mock draws, so on your desk it
 > will usually report nothing, and say so. The picture is still the picture, and an LLM that takes
 > images can ignore the sentence. [Section 12](#12-wave-to-me) has what it can and cannot see.
 
@@ -3546,7 +3355,7 @@ the server and the session.
 | a verb refused with `this verb needs human confirmation` | a confirm-class verb, and there is no terminal here to ask on. On this arm `pick` and `manipulate` are, whenever `--policy-url` names a policy server | restart the server with `--yes` in its command, which is the only way to answer that gate from a chat client |
 | `budget exhausted` | the session has spent its steps or its minutes | the paragraphs under this table are about this row |
 | every verb except `stop` refused with `session aborted` | the heartbeat gave up, or a contract's `abort_when` fired | send `stop`, which is refused by nothing except an exhausted budget, then restart the server. Nothing in an aborted session recovers on its own ([M11](#m11-prove-the-safety-net)) |
-| a team `.glot` refused as not available over MCP | an MCP session is one pilot, and a team needs a coordinator this process does not run | run that file with `roboglot run` from a terminal, which is what the refusal tells you |
+| a team `.glot` refused as not available over MCP | an MCP session is one pilot, and a team has one LLM per robot rather than one for all of them | run that file with `roboglot run` from a terminal, which is what the refusal tells you |
 | `file not found (also not a bundled starter task)` for a file that is plainly there | a relative path resolved against the server's working directory, which you did not choose | pass an absolute path. Bundled names like `lerobot-lookout` resolve by name and need none |
 | tools, verbs or a camera that do not match what you changed a minute ago | a running server keeps the tools and the contract it started with | restart it: `/mcp` in Claude Code, or a new session. In Desktop, restart the app |
 | a summary you cannot act on | the log in a result is capped at thirty lines, and the whole block goes to stderr | read the server's log, which is the last paragraph here |

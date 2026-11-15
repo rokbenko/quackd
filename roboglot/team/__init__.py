@@ -1,21 +1,13 @@
-"""Several robots cooperating on one task. Two kinds of it, sharing one bus.
+"""Several robots cooperating on one task: a team of pilots, talking over one bus.
 
-**The coordinator** (`runner.py`, `coordinator.py`, `member.py`, `auction.py`, `planner.py`)
-is the 0.3 team: several simulated Microducks in one arena on one lockstep clock, refereed
-deterministically. It exists so that cooperation is *inspectable*: every message between ducks
-travels over a tiny in-process bus and lands in a transcript, the kicker is chosen by an
-auction rather than by LLM vibes, and the LLM contributes at most one planning call for the
-whole run. Simulator only, and still is.
+One whole `AgentLoop` per body (`pilots.py`, `talk.py`), on wall-clock time, on any adapter and
+backend including mixed ones, with no referee at all. They divide the work by talking to each
+other, over the bus, with one transcript for the team (ADR-0034).
 
-**The pilots** (`pilots.py`, `talk.py`) are the 0.9 team: one whole `AgentLoop` per body, on
-wall-clock time, on any adapter and backend including mixed ones, with no referee at all. They
-divide the work by talking to each other, over the same bus, with the same transcript
-(ADR-0034).
-
-The bus is a protocol rather than an implementation, so a LAN bus can slot in for either
+The bus is a protocol rather than an implementation, so a LAN bus can slot in for it
 (`mqtt_bus.py`), and nobody ever awaits it.
 """
 
-from roboglot.team.runner import TeamResult, run_team
+from roboglot.team.pilots import PilotTeamResult, run_pilot_team
 
-__all__ = ["TeamResult", "run_team"]
+__all__ = ["PilotTeamResult", "run_pilot_team"]

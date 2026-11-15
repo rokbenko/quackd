@@ -11,9 +11,7 @@ prompt:
   as a `$ref`, which the stepper does not follow, so it would never be a choice. A list of one
   is an `enum` of one as well, where pydantic would write a `const` that Gemini's schema
   refuses, and with it every tool of the run.
-- `timeout_s` becomes the segment plus `SEGMENT_HEADROOM_S`, plus the wall seconds a
-  simulator's clock stands still while its policy thinks (`frozen_inference_s`), which the
-  executor's clock does not, held to `FROZEN_INFERENCE_MAX_S`.
+- `timeout_s` becomes the segment plus `SEGMENT_HEADROOM_S`.
 - the segment's length reaches the verb through the transport (`set_segment_s`), which is where
   the verb reads it, so the segment the verb runs and the timeout it runs under come from the
   same number. A transport with no setter runs its own segment under the verb's own timeout.
@@ -27,7 +25,6 @@ named defaults and any words. A registry with no `manipulate` is left as it is.
 from __future__ import annotations
 
 import dataclasses
-import math
 from typing import Any, Literal, cast
 
 from pydantic import Field, create_model
@@ -35,7 +32,6 @@ from pydantic import Field, create_model
 from roboglot.glotfile.schema import (
     POLICY_VERB,
     SEGMENT_HEADROOM_S,
-    SEGMENT_MAX_S,
     GlotFrontmatter,
     PolicySection,
 )
@@ -46,40 +42,6 @@ LISTED = (
     "nothing else."
 )
 """What the narrowed `instruction` says about itself in the tool's schema."""
-FROZEN_INFERENCE_MAX_S = 10 * SEGMENT_MAX_S
-"""The most wall seconds past a segment and its headroom that `manipulate`'s timeout covers
-for a simulator's clock standing still while its policy thinks: ten times the longest segment,
-ten minutes. On a lockstep clock the executor's timeout is the only thing on the wall's clock
-that ends a runner that hangs, and a simulator's bound is what its policy declares and what one
-frame cost at connect, times every request a segment can hold: one camera slow to draw at
-connect makes it hours, and a transport that says something wilder, more. A segment whose clock
-stands still longer than this is stopped as timed out, which is a rehearsal ended and never an
-arm left moving."""
-
-
-def frozen_inference_s(transport: Any, segment_s: float) -> float:
-    """The wall seconds `transport` says its clock stands still over a segment of `segment_s`,
-    held to `FROZEN_INFERENCE_MAX_S`, or 0 for a transport that does not say, whose answer
-    raises, or that says something that is not a number of seconds above 0. Only a simulator's
-    clock stands still while its policy thinks; on the wall's clock the thinking happens inside
-    the segment's own seconds. Never a reason to refuse the run: a bound nobody can give leaves
-    the tightest timeout, which only ends a segment sooner."""
-    ask = getattr(transport, "frozen_inference_s", None)
-    if not callable(ask):
-        return 0.0
-    try:
-        said = ask(segment_s)
-    except Exception:
-        return 0.0
-    if isinstance(said, bool) or not isinstance(said, int | float):
-        return 0.0
-    try:
-        seconds = float(said)
-    except OverflowError:  # an int past any float, which is past the maximum too
-        seconds = math.inf
-    if math.isnan(seconds) or seconds <= 0:
-        return 0.0
-    return min(seconds, FROZEN_INFERENCE_MAX_S)
 
 
 def _as_enum(schema: dict[str, Any]) -> None:
@@ -123,8 +85,7 @@ def narrow_policy_verb(
     task file it loads is validated, before the file is adopted. The pilot LLM's tools, the
     stepper's choices and the executor's check all read the one verb this registers. A
     ValueError, with nothing changed, for a registry whose `manipulate` takes no instruction to
-    narrow (`policy_problem`), or a segment the transport's setter refuses. Nothing else it
-    asks the transport can raise out of it (`frozen_inference_s`)."""
+    narrow (`policy_problem`), or a segment the transport's setter refuses."""
     if POLICY_VERB not in registry:
         return None
     if (problem := policy_problem(registry, contract)) is not None:
@@ -140,16 +101,15 @@ def narrow_policy_verb(
             __base__=template.params,
             instruction=(listed, Field(..., description=LISTED, json_schema_extra=_as_enum)),
         )
-    frozen = frozen_inference_s(transport, policy.segment_s)
     setter = getattr(transport, "set_segment_s", None)
     if callable(setter):
         setter(policy.segment_s)
-        timeout_s = policy.segment_s + SEGMENT_HEADROOM_S + frozen
+        timeout_s = policy.segment_s + SEGMENT_HEADROOM_S
         said = f" In this run each segment lasts up to {policy.segment_s:g} s, and the segments"
     else:
         # a body that cannot be told the segment's length runs its own, which only its own
         # timeout is known to cover
-        timeout_s = template.timeout_s + frozen
+        timeout_s = template.timeout_s
         said = " In this run the segments"
     narrowed = dataclasses.replace(
         template,
@@ -163,9 +123,7 @@ def narrow_policy_verb(
 
 
 __all__ = [
-    "FROZEN_INFERENCE_MAX_S",
     "LISTED",
-    "frozen_inference_s",
     "narrow_policy_verb",
     "policy_problem",
 ]

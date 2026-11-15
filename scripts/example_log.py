@@ -225,12 +225,12 @@ SCRIPTED = (
 )
 """What trying a run `--llm fake` flew needs: nothing, since no LLM is asked."""
 
-TRY_ON_THE_SIMULATOR = """\
-This runs the same {what} with no arm attached, on `lerobot:mujoco`, the arm's simulator, against a
-policy server. Leave the first command running in a terminal of its own, and answer the second's
-questions yourself, as a person did on the arm. It shows a simulated arm and not yours. Run it from
-a checkout of this repository with Roboglot's `lerobot-sim` extra, and `lerobot-vla` as well if the
-policy is a checkpoint. No LLM is asked, so it costs nothing."""
+TRY_ON_AN_ARM = """\
+This runs the same {what} on an arm of your own, against a policy server, since `lerobot:mock` plays
+a policy of its own and reaches none. Leave the first command running in a terminal of its own, and
+answer the second's questions yourself, as a person did on the arm. Name your arm where the line
+says `arm-01`. Run it from a checkout of this repository, with Roboglot's `lerobot-vla` extra if
+the policy is a checkpoint. No LLM is asked, so it costs nothing."""
 
 TRY_THE_REFUSAL = """\
 This needs no arm and no key, and it costs nothing: Roboglot refuses the line before it connects to
@@ -427,7 +427,7 @@ def _try_intro(summary: dict[str, Any], notes: dict[str, Any]) -> str:
         return TRY_AS_IT_RAN.format(beside=beside, cost=cost)
     if summary.get("session") is not None:
         return TRY_A_SESSION
-    said = TRY_ON_THE_SIMULATOR if summary.get("provider") == VLA else TRY_ON_THE_MOCK
+    said = TRY_ON_AN_ARM if summary.get("provider") == VLA else TRY_ON_THE_MOCK
     needs = f".\n{SCRIPTED}" if summary.get("provider") == FAKE else AN_LLM
     return said.format(what="task file" if _goal(summary) is None else "goal", needs=needs)
 
@@ -512,7 +512,7 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
             f"roboglot run {task} --robot lerobot:mock --llm {_try_llm(summary)} --no-memory{dry}"
         )
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
-    # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
+    # is tried on an arm, against the policy it ran. A checkpoint's pins, cameras and rate
     # are in no record, so its server's line is the one somebody typed, from the notes.
     typed = [line for line in notes.get("before") or [] if "roboglot policy serve" in line]
     served = str((summary.get("policy") or {}).get("policy") or "scripted:hold")
@@ -522,9 +522,9 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
             "`before` in the notes, because what that line pinned is in no record"
         )
     serve = typed[0] if typed else f"roboglot policy serve --policy {served}"
-    # what the run needed of the command itself, which a try on the simulator needs as well
+    # what the run needed of the command itself, which a try on an arm needs as well
     kept = [flag for flag in ("--accept-other-frame", "--no-play") if flag in words]
-    line = ["roboglot run", task, "--robot lerobot:mujoco", "--policy-url http://127.0.0.1:9875"]
+    line = ["roboglot run", task, "--robot arm-01", "--policy-url http://127.0.0.1:9875"]
     return serve + "\n" + " ".join([*line, "--controller vla", *kept, "--no-memory"])
 
 

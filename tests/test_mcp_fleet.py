@@ -22,7 +22,7 @@ from roboglot.transport.mock import MockTransport
 
 
 def one_duck() -> dict[str, Any]:
-    return {"duck": make_adapter(RobotSpec("microduck", "sim2d", "duck"), seed=1)}
+    return {"duck": make_adapter(RobotSpec("microduck", "mock", "duck"))}
 
 
 @contextlib.asynccontextmanager
@@ -65,7 +65,7 @@ async def test_dry_run_still_observes_but_moves_nothing() -> None:
             await client.call_tool("robot_run_verb", {"verb": "move", "params": {"vx": 0.2}})
         )
         assert moved["ok"] and moved["data"].get("dry_run") is True
-        assert fleet.sessions["duck"].transport.world.steps == 0
+        assert fleet.sessions["duck"].transport.transport.intents == []
 
 
 class _Dead:
@@ -107,10 +107,10 @@ def test_build_needs_a_robot_and_a_known_default() -> None:
 
 
 @pytest.mark.parametrize("spec", ["open_duck:mock", "microduck:mock"])
-async def test_a_camera_robot_that_is_not_the_simulator_gets_a_detector(spec: str) -> None:
+async def test_a_camera_robot_gets_a_detector(spec: str) -> None:
     """The 0.5 fix landed in `roboglot run` and missed this entry point.
 
-    `build_fleet_server` still keyed the detector on the backend being `sim2d`, so every
+    `build_fleet_server` still keyed the detector on one backend alone, so every
     hardware body over MCP fetched frames, detected nothing because nothing was detecting,
     and reported that it could not see. The decision now happens after connect, against
     what the robot said it has."""
@@ -144,8 +144,8 @@ async def test_an_infeasible_verdict_names_the_robot_that_could() -> None:
     """A duck cannot pick anything up and a cart can. The pilot is told which, by name, so
     the task can be handed over rather than abandoned."""
     robots = {
-        "duck": make_adapter(RobotSpec("microduck", "sim2d", "duck"), seed=1),
-        "cart": make_adapter(RobotSpec("alohamini", "mock", "cart"), seed=1),
+        "duck": make_adapter(RobotSpec("microduck", "mock", "duck")),
+        "cart": make_adapter(RobotSpec("alohamini", "mock", "cart")),
     }
     async with connected(robots) as (client, fleet):
         answer = _data(
@@ -181,7 +181,7 @@ async def test_a_described_body_is_never_named_as_the_robot_that_could() -> None
     """Told a body cannot do a task, a client is told which could and to load it on one of them.
     It was offered a UR5e on its maker's figures, a robot nothing here can load a task on."""
     robots = {
-        "duck": make_adapter(RobotSpec("microduck", "sim2d", "duck"), seed=1),
+        "duck": make_adapter(RobotSpec("microduck", "mock", "duck")),
         "arm": make_adapter(RobotSpec("described", "ur5e", "arm")),
     }
     async with connected(robots) as (client, _fleet):
@@ -207,9 +207,9 @@ async def test_the_instructions_describe_each_body_before_anything_connects() ->
     robot` about every one of them."""
     from roboglot.adapters.factory import describe
 
-    specs = {"duck": RobotSpec("microduck", "sim2d", "duck")}
+    specs = {"duck": RobotSpec("microduck", "mock", "duck")}
     server, _fleet = build_fleet_server(
-        {"duck": make_adapter(specs["duck"], seed=1)},
+        {"duck": make_adapter(specs["duck"])},
         manifests={"duck": describe(specs["duck"])},
     )
     text = server.instructions or ""

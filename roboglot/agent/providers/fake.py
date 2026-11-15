@@ -260,13 +260,11 @@ SHAPE_SIDE_M = 0.5
 _TURN_TOLERANCE = math.radians(10)
 #: How near the start a square has to finish to count as closed.
 #:
-#: One full side, which is loose on purpose. Measured on seed 0 on 2026-11-14: the trained gait
-#: closes 0.09 m from where it started and the kinematic stand-in 0.25 m. Each corner is accepted
-#: within ten degrees and each leg ends where the pose says it has gone far enough, so a square
-#: walked well still finishes some way off. What this bound separates is a loop from a
-#: drift: four legs walked in a straight line finish two metres out and fail. The distance
-#: itself goes in the reason either way, so a run says how square it was rather than only
-#: that it declared success, and `docs/assets/hero3d.py` prints it.
+#: One full side, which is loose on purpose. Each corner is accepted within ten degrees and each
+#: leg ends where the pose says it has gone far enough, so a square walked well still finishes
+#: some way off. What this bound separates is a loop from a drift: four legs walked in a straight
+#: line finish two metres out and fail. The distance itself goes in the reason either way, so a
+#: run says how square it was rather than only that it declared success.
 SHAPE_CLOSURE_M = SHAPE_SIDE_M
 #: One `move` is one sample of the heading: the strategy reads the pose before and after and
 #: nothing in between, so a turn past +/-pi is indistinguishable from its complement and a
@@ -290,7 +288,7 @@ def _wrap(radians_: float) -> float:
 class _Gait:
     """How much of a commanded twist this body actually delivers, learned as it goes.
 
-    A cartoon duck walks at the speed it is asked for. A real one on an RL gait delivers
+    A mock walks at the speed it is asked for. A real duck on an RL gait delivers
     roughly forty percent of it, and a shape walker that assumes otherwise spends its whole
     budget creeping up on the first corner. So each move records what it asked for and from
     where, the next turn measures what happened, and the estimate is the ratio — which is
@@ -382,9 +380,8 @@ def square_strategy(side: float = SHAPE_SIDE_M) -> Strategy:
         if state["leg"] >= 4:
             # Four legs is a count, not a shape. Each leg ends when the pose says it has gone
             # far enough, so an overshoot or a corner short of ninety degrees gives four legs
-            # that finish somewhere else entirely. Say how far off, first, because
-            # `docs/assets/hero3d.py` prints the first sixty characters of this and then
-            # decides whether to publish the GIF. Asked here, where the fourth corner ends,
+            # that finish somewhere else entirely. Say how far off, first. Asked here, where
+            # the fourth corner ends,
             # and not before the corner is checked: a corner that ends goes on to the next
             # leg, so asked first it judged the shape from the end of a fifth leg.
             closed = math.dist((x, y), state["start"])
@@ -434,7 +431,7 @@ def circle_strategy(turns: float = 1.0) -> Strategy:
         gait: _Gait = state["gait"]
         if state["last"] is not None:
             # Signed. A real gait wags the trunk every stride, which an absolute total counts
-            # as turning: `tests/test_sim3d.py` says exactly that about the same measurement.
+            # as turning.
             state["turned"] += _wrap(theta - float(state["last"]))
             gait.observe(0.0, state["turned"])
         state["last"] = theta
@@ -668,74 +665,6 @@ def rosarm_lookout_strategy(obs: Observation, step: int, history: list[Exchange]
     return ToolCall(name="declare_success", arguments={"reason": f"{where}; {moving}; {says}"})
 
 
-def _result_of(history: list[Exchange], verb: str) -> dict[str, Any]:
-    """The newest result of `verb` the pilot was shown, or an empty one."""
-    for exchange in reversed(history):
-        last = _last(exchange.observation)
-        if last.get("verb") == verb:
-            return last
-    return {}
-
-
-def _failed(obs: Observation) -> ToolCall | None:
-    """Give up on a verb that failed, saying which and why, or None after one that did not."""
-    last = _last(obs)
-    if last.get("verb") is not None and not last.get("ok"):
-        why = " ".join(str(last.get("summary") or "no reason given").split())[:200]
-        return ToolCall(name="declare_failure", arguments={"reason": why})
-    return None
-
-
-BALL_STOP_M = 0.3
-"""How far from the ball `find-the-ball`'s pilot asks `go_to` to stop: as `open-duck-scout`'s."""
-
-
-def find_the_ball_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
-    """Find the ball by exploring, walk up to it, say where it was, and come back to where it
-    began, each on the result of the one before, as `find-the-ball` asks."""
-    if (failed := _failed(obs)) is not None:
-        return failed
-    verb = _last(obs).get("verb")
-    if verb == "find":
-        return ToolCall(name="go_to", arguments={"target": "ball", "stop_distance": BALL_STOP_M})
-    if verb == "go_to":
-        found = _result_of(history, "find").get("data") or {}
-        far = (found.get("detection") or {}).get("est_distance_m")
-        how_far = f"about {far:.1f} m from " if isinstance(far, int | float) else "seen from "
-        mark = found.get("place") or "where I stood"
-        return ToolCall(
-            name="say", arguments={"text": f"The ball was {how_far}the spot I marked {mark}."}
-        )
-    if verb == "say":
-        return ToolCall(name="go_to_place", arguments={"name": "start"})
-    if verb == "go_to_place":
-        return ToolCall(
-            name="declare_success",
-            arguments={"reason": "found the ball, walked up to it, said where, and came back"},
-        )
-    return ToolCall(name="find", arguments={"target": "ball", "minutes": 4.0})
-
-
-def favourite_spot_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
-    """Mark where it stands as its favourite spot, explore, walk back to the spot and say so, as
-    `favourite-spot` asks."""
-    if (failed := _failed(obs)) is not None:
-        return failed
-    verb = _last(obs).get("verb")
-    if verb == "mark_place":
-        return ToolCall(name="explore", arguments={"minutes": 2.0})
-    if verb == "explore":
-        return ToolCall(name="go_to_place", arguments={"name": "favourite"})
-    if verb == "go_to_place":
-        return ToolCall(name="say", arguments={"text": "Back at my favourite spot."})
-    if verb == "say":
-        return ToolCall(
-            name="declare_success",
-            arguments={"reason": "marked the spot, explored the room and walked back to it"},
-        )
-    return ToolCall(name="mark_place", arguments={"name": "favourite"})
-
-
 STRATEGIES: dict[str, Strategy] = {
     "team-hello": team_hello_strategy,
     "meeting": meeting_strategy,
@@ -752,8 +681,6 @@ STRATEGIES: dict[str, Strategy] = {
     "lerobot-lookout": lerobot_lookout_strategy,
     "moss-lookout": moss_lookout_strategy,
     "rosarm-lookout": rosarm_lookout_strategy,
-    "find-the-ball": find_the_ball_strategy,
-    "favourite-spot": favourite_spot_strategy,
 }
 
 PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {

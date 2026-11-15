@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from roboglot import cli, preflight, preflight_defaults
+from roboglot import cli
 
 REPO = Path(__file__).resolve().parents[1]
-HEAVY = ("numpy", "asyncio", "pydantic", "yaml", "roboglot.preflight")
+HEAVY = ("numpy", "asyncio", "pydantic", "yaml")
 
 
 def _inside(script: str, *argv: str) -> dict:
@@ -103,8 +103,3 @@ def test_only_an_invocation_that_can_only_print_skips_the_imports(
 def test_the_shell_completing_a_word_skips_them_too(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("_ROBOGLOT_COMPLETE", "complete_bash")
     assert cli._asks_only_for_help(["run"]) is True
-
-
-def test_preflights_defaults_are_still_where_they_were() -> None:
-    assert preflight.DEFAULT_SEEDS == preflight_defaults.DEFAULT_SEEDS == 3
-    assert preflight.DEFAULT_CONNECT_CYCLES == preflight_defaults.DEFAULT_CONNECT_CYCLES == 3

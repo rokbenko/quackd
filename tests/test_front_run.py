@@ -127,7 +127,6 @@ def _run_args(tmp_path: Path, *task: str) -> list[str]:
         "microduck:mock",
         "--llm",
         "fake",
-        "--no-gif",
         "--runs-dir",
         runs,
     ]

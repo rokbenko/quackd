@@ -140,7 +140,7 @@ RAN = frozenset({"time", "chunks", "stall"})
 says the task was done, which only a fresh look at the arm can say."""
 NO_INSTRUCTION = "manipulate needs an instruction: say in a few words what the policy is to do"
 """What every backend says to a `manipulate` with nothing but blanks for its instruction, the
-same words on the bench, the simulator and the mock, so a rehearsal fails where the arm would."""
+same words on the bench and on the mock, so a rehearsal fails where the arm would."""
 
 
 @dataclass(frozen=True)
@@ -1381,7 +1381,7 @@ async def pick(ctx: VerbContext, p: PickParams) -> VerbResult:
 
     The `do` intent carries `max_s`, because the loop is what ends a segment on its time: on a
     backend that runs one (`policy_segment`), the verb waits for that task and sleeps on no
-    clock meanwhile. The loop is the one sleeper, which on the simulator is what lets time run
+    clock meanwhile. The loop is the one sleeper, which on the mock's clock is what lets time run
     for it, and it is also what reads `holding` each tick and ends the segment on it, so a
     grasp stops the policy the moment it settles rather than leaving it driving the arm through
     the pilot's thinking.

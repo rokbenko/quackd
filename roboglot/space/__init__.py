@@ -1,7 +1,7 @@
 """Where a robot is, what is around it, and the places a person named.
 
 A robot that knows its pose is a robot whose maker said where it is: the Microduck's contact
-odometry, its onboard mapper `mapd`, MOSS's lidar, a ROS `/odom`, a simulator. Roboglot makes no map
+odometry, its onboard mapper `mapd`, MOSS's lidar, a ROS `/odom`. Roboglot makes no map
 of its own. What it adds is the meaning: a pose read the same way from every body (`pose.Fix`),
 places a pilot or a person marked (`places`), an occupancy grid read from whoever made one
 (`grid`), and the walk to a place on top of them.

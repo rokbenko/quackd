@@ -22,7 +22,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
 from roboglot_toddlerbot.verbs import look_degrees
 
@@ -91,7 +91,7 @@ class ToddlerBotMock:
         self.stale_ms: float = 0.0
         self.loop_hz: float = 50.0
 
-    # ── physics ─────────────────────────────────────────────────────────────────────
+    # ── motion ──────────────────────────────────────────────────────────────────────
 
     @property
     def moving(self) -> bool:

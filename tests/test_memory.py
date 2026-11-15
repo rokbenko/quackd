@@ -20,17 +20,17 @@ from roboglot.verbs.registry import default_registry
 
 
 def test_slug_and_dir_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert robot_slug("microduck:sim2d") == "microduck-sim2d"
+    assert robot_slug("microduck:mock") == "microduck-mock"
     assert robot_slug("Open Duck::bridge") == "open-duck-bridge"
     monkeypatch.setenv("ROBOGLOT_MEMORY_DIR", str(tmp_path / "env"))
     assert memory_dir() == tmp_path / "env"
     assert memory_dir(tmp_path / "explicit") == tmp_path / "explicit"
-    mem = RobotMemory("microduck:sim2d", tmp_path)
-    assert mem.path == tmp_path / "microduck-sim2d.jsonl"
+    mem = RobotMemory("microduck:mock", tmp_path)
+    assert mem.path == tmp_path / "microduck-mock.jsonl"
 
 
 def test_remember_round_trip_and_dedup(tmp_path: Path) -> None:
-    mem = RobotMemory("microduck:sim2d", tmp_path)
+    mem = RobotMemory("microduck:mock", tmp_path)
     assert mem.recall() == ""
     a = mem.remember("  the ball is usually near   the left wall ", tags=["place"], now=1.0)
     assert a.text == "the ball is usually near the left wall"
@@ -44,7 +44,7 @@ def test_remember_round_trip_and_dedup(tmp_path: Path) -> None:
 
 
 def test_episode_and_recall_order(tmp_path: Path) -> None:
-    mem = RobotMemory("microduck:sim2d", tmp_path)
+    mem = RobotMemory("microduck:mock", tmp_path)
     mem.record_episode(duck="find-and-kick", outcome="failure", reason="no ball", steps=6, now=1.0)
     mem.record_episode(
         duck="find-and-kick",
@@ -61,7 +61,7 @@ def test_episode_and_recall_order(tmp_path: Path) -> None:
     assert text.index("success — ball displaced") < text.index("failure — no ball")
     assert "kick: ball moved 0.5 m" in text
     assert mem.summary() == {
-        "robot": "microduck:sim2d",
+        "robot": "microduck:mock",
         "path": str(mem.path),
         "notes": 1,
         "episodes": 2,
@@ -76,7 +76,7 @@ def test_cap_drops_old_episodes_before_notes(
     At the real 400 it cost 15 s on one machine, on four CI jobs, to prove a property that
     a cap of 12 proves just as well. The real cap is asserted below, once."""
     monkeypatch.setattr("roboglot.memory.MAX_ENTRIES", 12)
-    mem = RobotMemory("microduck:sim2d", tmp_path)
+    mem = RobotMemory("microduck:mock", tmp_path)
     mem.remember("keep me", now=0.0)
     for i in range(17):
         mem.record_episode(duck="d", outcome="success", reason=str(i), steps=1, now=float(i))
@@ -141,7 +141,7 @@ def test_a_hand_edited_line_is_skipped_not_fatal(tmp_path: Path, junk: str) -> N
     """The file is documented as one you can edit by hand, so every way of getting it wrong
     has to be survivable. Only `json.JSONDecodeError` was caught, so a line that parsed to
     anything but an object took the whole command down with an AttributeError."""
-    mem = RobotMemory("microduck:sim2d", tmp_path)
+    mem = RobotMemory("microduck:mock", tmp_path)
     mem.remember("real", now=1.0)
     with mem.path.open("a", encoding="utf-8") as f:
         f.write(junk + "\n")
@@ -157,7 +157,7 @@ def test_a_hand_edited_line_is_skipped_not_fatal(tmp_path: Path, junk: str) -> N
 def test_a_refreshed_note_becomes_the_newest_note(tmp_path: Path) -> None:
     """`recall` and the cap both read file order, so a refresh that left the entry where it
     was made "the newest notes" a lie: the note the LLM just repeated sorted oldest."""
-    mem = RobotMemory("microduck:sim2d", tmp_path)
+    mem = RobotMemory("microduck:mock", tmp_path)
     mem.remember("the sofa is on the left", now=1.0)
     for i in range(3):
         mem.remember(f"filler {i}", now=2.0 + i)
@@ -173,11 +173,11 @@ def test_a_refreshed_note_becomes_the_newest_note(tmp_path: Path) -> None:
 def test_prompt_mentions_memory_only_when_on(hello_glot: GlotFile) -> None:
     reg = default_registry()
     verbs = [reg.view(n) for n in hello_glot.frontmatter.verbs.allow]
-    off = build_system_prompt(hello_glot, verbs, "mock")
+    off = build_system_prompt(hello_glot, verbs)
     assert "remember" not in off.lower()
-    empty = build_system_prompt(hello_glot, verbs, "mock", memory_text="")
+    empty = build_system_prompt(hello_glot, verbs, memory_text="")
     assert "first run on this robot" in empty and "`remember`" in empty
-    full = build_system_prompt(hello_glot, verbs, "mock", memory_text="- [2026-09-03] ball by sofa")
+    full = build_system_prompt(hello_glot, verbs, memory_text="- [2026-09-03] ball by sofa")
     assert "ball by sofa" in full and "first run" not in full
 
 

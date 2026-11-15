@@ -16,8 +16,6 @@ from __future__ import annotations
 import re
 import tomllib
 
-import pytest
-
 from hatch_build import BLOB, ReadmeHook, absolutise, pypi_readme, relative_links
 from tests.conftest import REPO
 
@@ -97,12 +95,11 @@ def test_pyproject_declares_the_hook_and_ships_it() -> None:
 
 
 def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
-    """The one rule keeping a non-Apache asset out of a published package.
+    """The one rule keeping an image out of a published package.
 
-    `docs/assets/roboglot-on-off.gif` renders upstream's model and carries its meshes' CC BY-NC-SA
-    4.0 terms, and `docs/reference/licenses.md` promises that neither the wheel nor the repository's
-    published artefacts carry a byte of it. The README serves every image from
-    raw.githubusercontent, so no artefact needed any of them anyway. Nothing checked this.
+    The README serves every image from raw.githubusercontent, so no artefact needs any of them,
+    and one that shipped would carry whatever terms it was made under into the sdist with no word
+    said. Nothing checked this.
     """
     import fnmatch
 
@@ -118,34 +115,8 @@ def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
         relative = image.relative_to(REPO).as_posix()
         assert any(fnmatch.fnmatch(relative, pattern) for pattern in patterns), (
             f"{relative} would ship in the sdist. The README serves images from "
-            f"raw.githubusercontent and the simulator figure renders CC BY-NC-SA 4.0 meshes "
-            f"(docs/reference/licenses.md), so add its suffix to the sdist exclude in "
-            f"pyproject.toml."
+            f"raw.githubusercontent, so add its suffix to the sdist exclude in pyproject.toml."
         )
-
-
-#: The recorders that render a simulator into `docs/assets` and check their own output against
-#: the general cap: the duck's physics figure and the arm simulator's recording.
-RENDER_RECORDERS = ("hero3d.py", "lerobot_sim.py")
-
-
-@pytest.mark.parametrize("script", RENDER_RECORDERS)
-def test_each_simulator_recorder_uses_the_cap_the_pre_commit_hook_is_configured_with(
-    script: str,
-) -> None:
-    """`check-added-large-files` only inspects files being *added*, so regenerating a
-    simulator recording in place past the cap is invisible to it. The script's own check is the
-    one that fires, and `hero3d.py`'s was once set 97 KB tighter than the hook it claimed to
-    mirror.
-
-    Both keep the general cap. The one file over it is the README hero, which is a photograph
-    rather than a render and is held to its own number by the test below."""
-    maxkb, _ = _hook_cap()
-    found = _script_constant(script, "MAX_BYTES")
-    assert found == [maxkb * 1024], (
-        f"docs/assets/{script} caps its output at {found}, and the pre-commit hook refuses "
-        f"anything over {maxkb} KB ({maxkb * 1024} bytes). Move one of the two."
-    )
 
 
 def _hook_cap() -> tuple[int, str]:

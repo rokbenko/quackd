@@ -56,7 +56,7 @@ def test_every_shipped_body_publishes_a_datasheet_that_renders(spec: RobotSpec) 
 
 @pytest.mark.parametrize("adapter", [a for a in ADAPTER_NAMES if a != "rosbridge"])
 def test_a_body_reads_the_same_on_every_backend(adapter: str) -> None:
-    """sim2d, mock or real, the body is the body. This is also what keeps the digests equal.
+    """Mock or real, the body is the body. This is also what keeps the digests equal.
 
     rosbridge is the exception and is tested below: its sheet is whatever the bridge said,
     so it is not a constant of the adapter at all."""
@@ -80,7 +80,7 @@ def test_the_one_body_whose_datasheet_is_not_a_constant_is_the_one_that_is_a_nam
 
 
 def test_the_microduck_says_what_it_knows_and_what_nobody_published() -> None:
-    text = body_section(microduck_manifest("sim2d"))
+    text = body_section(microduck_manifest("mock"))
     assert BODY_HEADING in text
     assert "0.8 kg (official: the Pollen Robotics README)" in text
     assert "Not published: payload, reach, endurance." in text
@@ -103,7 +103,7 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
     says which falls it catches rather than that it catches every one. The release is spelled
     out here rather than taken from `up.RELEASE`, which moves with the pin: a later pin would
     have the test ask the sheet to say that release does nothing about a fall."""
-    text = body_section(microduck_manifest("sim2d"))
+    text = body_section(microduck_manifest("mock"))
     assert "may not get up again by itself" in text and "get itself upright" not in text
     assert "may not manage" in MICRODUCK_VERBS["stand_up"].description
     said = " ".join(text.split())
@@ -122,7 +122,7 @@ def test_the_microduck_says_its_speed_caps_are_roboglots_own_clamp() -> None:
     which Roboglot holds every twist a verb sends to and the prompt renders as Roboglot's clamp, so
     the note contradicted a line above it. It says whose clamp it is now. The turn is 1.0 rad/s
     from 0.21.0, the turn upstream's walking task was trained on and its pad asks for."""
-    manifest = microduck_manifest("sim2d")
+    manifest = microduck_manifest("mock")
     text = body_section(manifest)
     assert "software clamp in robotd" not in text
     assert "The speed caps are Roboglot's own clamp on the twists it sends" in text
@@ -140,7 +140,7 @@ def test_an_unpublished_figure_is_a_question_for_a_person_not_a_refusal() -> Non
 
     A body with no datasheet keeps its own sentence, which still says decline: this is about a
     figure missing from a sheet, not a body nobody has described at all."""
-    many = body_section(microduck_manifest("sim2d"))
+    many = body_section(microduck_manifest("mock"))
     assert (
         "Not published: payload, reach, endurance. Where a task turns on one of them, say "
         "uncertain and name it rather than guessing; do not decline on it alone." in many
@@ -238,7 +238,7 @@ def test_a_body_no_verb_moves_is_told_no_speed_cap() -> None:
 
 def test_speed_clamps_come_from_the_limits_never_from_the_datasheet() -> None:
     """`limits` is Roboglot's own rule about what it sends. The datasheet never repeats it."""
-    duck = body_section(microduck_manifest("sim2d"))
+    duck = body_section(microduck_manifest("mock"))
     assert "Roboglot clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in duck
 
     strafing = body_section(xlerobot_manifest("mock"))
@@ -254,7 +254,7 @@ def test_the_working_height_band_is_an_extra_where_known() -> None:
     cart = body_section(xlerobot_manifest("mock"))
     assert "Working height: 0.5 to 1.25 m (official: the XLeRobot docs" in cart
     assert "the torso does not lift" in cart
-    assert "Working height" not in body_section(microduck_manifest("sim2d"))
+    assert "Working height" not in body_section(microduck_manifest("mock"))
 
 
 def test_a_manifest_without_a_datasheet_says_so_rather_than_guessing() -> None:
@@ -276,7 +276,7 @@ def test_a_manifest_without_a_datasheet_says_so_rather_than_guessing() -> None:
 
 def test_the_section_states_facts_and_leaves_the_rules_to_the_rules_block() -> None:
     """The prompt has one place where enforced rules are stated, and this is not it."""
-    text = body_section(microduck_manifest("sim2d"))
+    text = body_section(microduck_manifest("mock"))
     assert "assess_task" not in text
 
 

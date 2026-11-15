@@ -1,6 +1,15 @@
 # ADR-0020: Heterogeneous teams, spotter-judged success, and the sim head
 
-**Status:** accepted, amended · **Date:** 2026-09-02 · Implemented in Phases 2 and 3 of 0.4 ([design](../design/multi-robot.md))
+**Status:** superseded · **Date:** 2026-09-02 · Implemented in Phases 2 and 3 of 0.4 ([design](../design/multi-robot.md))
+
+**Superseded 2026-11-15:** the coordinator team was removed with the simulators it ran on
+([ADR-0015](0015-team-deterministic-coordinator.md), superseded the same day), and every
+mechanism this ADR decided went with it: the capability term on a bid, the role auction, the
+spotter's verdict and the frame hints. `team.roles` and `team.frame_hints` are refused now. Two
+different bodies share a task as a team of pilots, which names no roles
+([ADR-0034](0034-registered-robots-and-pilot-teams.md)). Everything below, the amendment of
+2026-09-12 included, is left as the record of what 0.4 to 0.34 shipped. See the CHANGELOG's
+Unreleased entry for the removal.
 
 **Amended 2026-09-12:** the Reachy Mini adapter was removed ([ADR-0023](0023-reachy-mini.md),
 now superseded), and it was the only "stationary head" embodiment Roboglot ever had. So

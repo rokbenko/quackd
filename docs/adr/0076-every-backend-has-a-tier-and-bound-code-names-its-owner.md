@@ -2,6 +2,10 @@
 
 **Status:** accepted, amended · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (an adapter is a family, a body file and a binding) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md), whose "no row gets ✅ unless we exercised it" becomes one of four tiers · Implemented in 0.33.0 in `roboglot/adapters/catalogue.py` (the `Tier` on every backend) and the tests that hold it · Documented in [docs/adapters/status.md](../adapters/status.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md#add-an-adapter)
 
+**Amended 2026-11-15:** the simulators are gone, so a **rehearsed** backend below is a mock, run
+in the suite, and the README's simulator and physics words under that tier name nothing now. See
+the CHANGELOG's Unreleased entry.
+
 **Amended 2026-11-08 by [ADR-0078](0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md):**
 Bound code may also enter with no owner when its backend is tiered `described` and its `make()`
 refuses it in this record's words until somebody names a date, as the Koch's arm type is

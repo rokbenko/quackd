@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any
 from roboglot.adapters.base import (
     MAP_SPECS,
     POLICY_SPECS,
-    ROOM_SPECS,
     AdapterError,
     AdapterNotInstalled,
     PolicyChoice,
@@ -42,13 +41,6 @@ from roboglot.verbs.registry import VerbRegistry, core_registry, registry_from_m
 
 if TYPE_CHECKING:
     from roboglot.host import HostClient
-
-DEFAULT_ROBOT = "microduck:sim2d"
-"""The body a command falls back to when nothing named one and several are installed.
-
-It survives because `find-and-kick` and the other v0 starters carry no `robots:` line and a
-reader who types `roboglot run find-and-kick` means the cartoon. Where exactly one adapter is
-installed, that one is the default instead, and where none is, there is no default at all."""
 
 
 @lru_cache(maxsize=1)
@@ -194,7 +186,7 @@ class RobotSpec:
     adapter: str
     backend: str
     name: str | None = None
-    """The member or fleet name (`duck=microduck:sim2d`), which becomes the manifest id."""
+    """The member or fleet name (`duck=microduck:mock`), which becomes the manifest id."""
     robot_type: str | None = None
     """Which of its adapter's robot types this is (`AdapterInfo.robot_types`), when a registered
     robot said (`--robot-type`), and None for the adapter's default. Not part of `key`: an
@@ -211,7 +203,7 @@ class RobotSpec:
 
 
 def parse_robot_spec(text: str) -> RobotSpec:
-    """`microduck:sim2d`, or `microduck` (its first backend). Unknown names list the choices.
+    """`microduck:jsonrpc`, or `microduck` (its first backend). Unknown names list the choices.
 
     A name Roboglot publishes parses whether or not it is installed here, so a robot can be
     registered, listed and printed on a machine that cannot build it. Asking for the body
@@ -239,7 +231,7 @@ def parse_robot_spec(text: str) -> RobotSpec:
 
 
 def parse_robots(text: str) -> list[RobotSpec]:
-    """`duck=microduck:sim2d,arm=lerobot:mock` -> named specs, order preserved."""
+    """`duck=microduck:mock,arm=lerobot:mock` -> named specs, order preserved."""
     specs: list[RobotSpec] = []
     for item in [part.strip() for part in text.split(",") if part.strip()]:
         name, sep, spec_text = item.partition("=")
@@ -261,15 +253,12 @@ class NoRobotNamed(AdapterError):
 def default_spec() -> RobotSpec:
     """The body a command means when nothing named one, or a refusal saying why there is none.
 
-    Four answers, and which one you get depends only on what is installed here. With nothing
+    Three answers, and which one you get depends only on what is installed here. With nothing
     installed there is no robot to default to and the message says what to install. With
-    exactly one adapter installed that one is the default, because a machine with one robot
-    has no ambiguity to resolve and making its owner type the name would be ceremony. With
-    several including the Microduck, `microduck:sim2d` is still the default, because the
-    starter task files that name no robot have always meant the cartoon and a machine that
-    installed the duck on purpose is not surprised by it. With several and no Microduck among
-    them, Roboglot refuses to guess and lists what is here, rather than reaching for whichever
-    body happens to sort first."""
+    exactly one adapter installed that one is the default, on its first backend, because a
+    machine with one robot has no ambiguity to resolve and making its owner type the name
+    would be ceremony. With several, Roboglot refuses to guess and lists what is here, rather
+    than reaching for whichever body happens to sort first."""
     # a described body is never a default: a bare core has the described row and nothing
     # that drives, and a command with no robot named would otherwise get a body that moves
     # nothing and reads as a run
@@ -284,8 +273,6 @@ def default_spec() -> RobotSpec:
     if len(usable) == 1:
         only = usable[0]
         return RobotSpec(only, info(only).backends[0])
-    if DEFAULT_ROBOT.split(":", 1)[0] in usable:
-        return parse_robot_spec(DEFAULT_ROBOT)
     raise NoRobotNamed(
         "no robot named: --robot <adapter>:<backend> or a registered name "
         f"(roboglot robot list); installed here: {', '.join(usable)}"
@@ -385,28 +372,19 @@ def _built_on(adapter: str) -> tuple[str, ...]:
     return tuple(bases)
 
 
-def describe(
-    spec: RobotSpec, *, policy: PolicyChoice | None = None, room: str | None = None
-) -> RobotManifest:
+def describe(spec: RobotSpec, *, policy: PolicyChoice | None = None) -> RobotManifest:
     """The static manifest: no SDK import, no socket. What `validate` and `announce` use.
 
     `policy` is the server a run hands the arm's segments to (`--policy-url`), passed only when
     one was given, so a body described without one is described exactly as it always was. With
     one, the arm's static manifest carries `manipulate` and `pick`, which its connect would
     otherwise be the first to claim, so a task that allows them is judged before anything
-    connects. A body that runs no policy is refused (`_takes_policy`).
-
-    `room` is the room a simulator lays out (`--room`), passed by the same rule: a simulator
-    given one keeps a map of it, and its static manifest carries the place verbs. A body whose
-    adapter takes no room is refused (`_takes_room`)."""
+    connects. A body that runs no policy is refused (`_takes_policy`)."""
     module = _module(spec.adapter)
     extra: dict[str, Any] = {}
     if policy is not None:
         _takes_policy(spec, module.describe)
         extra["policy"] = policy
-    if room is not None:
-        _takes_room(spec, module.describe)
-        extra["room"] = room
     if spec.robot_type is not None:
         _takes_robot_type(spec, module.describe)
         extra["robot_type"] = spec.robot_type
@@ -490,37 +468,15 @@ def _takes_map_address(spec: RobotSpec, fn: Any) -> None:
         )
 
 
-def _takes_room(spec: RobotSpec, fn: Any) -> None:
-    """Refuse a room for a body whose adapter has no `room` parameter where it is asked for one:
-    a run told it walks a room would otherwise walk the adapter's own world and say nothing."""
-    if not _takes(fn, "room"):
-        raise AdapterError(
-            f"{spec.key} has no simulator that lays out a room, so --room has nothing to give: "
-            f"a room is for the Microduck's simulator ({' and '.join(ROOM_SPECS)})"
-        )
-
-
-def is_simulator(spec: RobotSpec | str) -> bool:
-    """Whether this robot is a simulator of a real body rather than the body, asked before
-    anything is built: the adapter module's own `SIMULATOR_BACKENDS`, and a module that
-    declares none has none. `lerobot:mujoco` is one. What a command that must never touch a
-    real arm refuses by, and not `perception.is_simulated`, which counts a mock too."""
-    if isinstance(spec, str):
-        spec = parse_robot_spec(spec)
-    backends = getattr(_module(spec.adapter), "SIMULATOR_BACKENDS", ())
-    return spec.backend in tuple(backends)
-
-
 def needs_rest_pose(spec: RobotSpec | str) -> bool:
     """Whether this robot must have a recorded rest pose before a run, an MCP session or a
     team may connect it, asked before anything is built: the adapter module's own
-    `REST_POSE_BACKENDS`, and a module that declares none needs none, as with
-    `SIMULATOR_BACKENDS` above.
+    `REST_POSE_BACKENDS`, and a module that declares none needs none.
 
     The LeRobot arm's real backend is the one (ADR-0058): with no rest pose there is nothing
     to fold the arm to at the end of a run, a dry one included, and the close keeps its torque
     rather than let it fall where it stands, so the run would leave it holding itself up
-    wherever it stopped. Its mock and its simulator are not, having no arm to drop. `doctor`
+    wherever it stopped. Its mock is not, having no arm to drop. `doctor`
     and `rest-pose` do not ask: one is a probe that moves nothing, and the other is how a pose
     comes to be recorded at all.
 
@@ -540,11 +496,11 @@ def deprecated_backend(spec: RobotSpec | str) -> str | None:
 
     Read off the adapter module's own `DEPRECATED_BACKENDS`, which maps a backend's name to that
     line: what to use instead, and the release the backend goes in. A module that declares none
-    has none, as with `SIMULATOR_BACKENDS` above. `roboglot run`, `doctor`, `serve-mcp` and
+    has none, as with `REST_POSE_BACKENDS` above. `roboglot run`, `doctor`, `serve-mcp` and
     `robot list --probe` ask this just before they connect a robot, and print the line then,
     which is the warning at run time RELEASING.md asks of a removal announced a minor ahead.
 
-    It is a mapping where `SIMULATOR_BACKENDS` is a tuple, because the line is the adapter's own
+    It is a mapping where `REST_POSE_BACKENDS` is a tuple, because the line is the adapter's own
     to write. A declaration in any other shape, or a line that is not a string, raises TypeError
     naming the module, rather than being read as nothing: a backend its author meant to retire
     would then be connected through with no word said, which is the one failure this exists to
@@ -603,17 +559,12 @@ def registry_for(spec: RobotSpec, manifest: RobotManifest | None = None) -> Verb
 def make_adapter(
     spec: RobotSpec | str,
     *,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: Mapping[str, float] | None = None,
     host: HostClient | None = None,
-    faults: str | None = None,
-    scene: Sequence[Mapping[str, Any]] | None = None,
     policy: PolicyChoice | None = None,
-    room: str | None = None,
     map_address: str | None = None,
 ) -> RobotAdapter:
     """Build a robot. `camera_url` may name several cameras; every `make()` is handed the
@@ -625,29 +576,18 @@ def make_adapter(
     board is asked for its `/hello` here unless the client already has it, so a caller that
     must refuse a board that does not answer asks first; this raises `HostError` otherwise.
 
-    `faults` is a spec of faults for a simulator to meet, and `scene` the objects it lays out
-    in place of its own (`roboglot preflight` reads them from a task's sidecar). Each is passed to
-    `make()` only when given, so every adapter that has no simulator is called exactly as it
-    always was.
-
-    `policy` is the policy server `--policy-url` names, passed by the same rule, and refused for
-    a body whose `make()` has no `policy` parameter (`_takes_policy`): only the LeRobot arm
-    hands a segment to one, and a third party's adapter built without the flag is called as it
-    always was. `room`, the room a simulator lays out (`--room`), is passed by the same rule and
-    refused for a body whose `make()` has no `room` parameter (`_takes_room`), and so is
-    `map_address`, where a robot keeps its own map (`--map-address`, `_takes_map_address`)."""
+    `policy` is the policy server `--policy-url` names, passed to `make()` only when given, and
+    refused for a body whose `make()` has no `policy` parameter (`_takes_policy`): only the
+    LeRobot arm hands a segment to one, and a third party's adapter built without the flag is
+    called as it always was. `map_address`, where a robot keeps its own map (`--map-address`),
+    is passed by the same rule and refused the same way (`_takes_map_address`)."""
     if isinstance(spec, str):
         spec = parse_robot_spec(spec)
     module = _module(spec.adapter)
-    extra: dict[str, Any] = {} if faults is None else {"faults": faults}
-    if scene is not None:
-        extra["scene"] = [dict(item) for item in scene]
+    extra: dict[str, Any] = {}
     if policy is not None:
         _takes_policy(spec, module.make)
         extra["policy"] = policy
-    if room is not None:
-        _takes_room(spec, module.make)
-        extra["room"] = room
     if map_address is not None:
         _takes_map_address(spec, module.make)
         extra["map_address"] = map_address
@@ -657,9 +597,7 @@ def make_adapter(
     adapter: RobotAdapter = module.make(
         spec.backend,
         robot_id=spec.robot_id,
-        seed=seed,
         address=address,
-        live=live,
         camera_url=camera_urls(camera_url),
         token=token,
         rest_pose=dict(rest_pose) if rest_pose else None,
@@ -680,7 +618,7 @@ def list_adapters() -> list[dict[str, Any]]:
     `installed` is whether the adapter itself is here, and `sdk` whether the library its
     real backend needs is. They are separate questions: an adapter with a mock is useful
     with no SDK at all, and reporting the whole robot missing because a wheel it only needs
-    for hardware is absent told a simulator user their duck was gone."""
+    for hardware is absent told somebody running its mock that their robot was gone."""
     rows = []
     for name in adapter_names():
         row = info(name)
@@ -731,13 +669,7 @@ def installed_vocabulary() -> VerbRegistry:
     `glot: 3` task file is coherent here whichever of the arm's backends is described first.
     Each backend is asked through the factory's own `policy` parameter, which refuses a body
     that runs no policy, with an address nothing is ever sent to: a description is static, so
-    this reaches no server and imports no torch.
-
-    So are the verbs a simulator offers in a room it lays out (`--room`), the place verbs,
-    `explore` and `find` among them, by the same rule through the factory's `room` parameter,
-    which refuses a body that lays out no room: a description of a room loads none."""
-    from roboglot.space.room import BUILT_IN as ROOMS
-
+    this reaches no server and imports no torch."""
     registry = core_registry()
     offered = PolicyChoice("http://127.0.0.1")
     for name in adapter_names():
@@ -753,8 +685,6 @@ def installed_vocabulary() -> VerbRegistry:
             spec = RobotSpec(name, backend)
             with contextlib.suppress(AdapterError, ImportError):
                 _union(registry, registry_for(spec, describe(spec, policy=offered)))
-            with contextlib.suppress(AdapterError, ImportError):
-                _union(registry, registry_for(spec, describe(spec, room=ROOMS[0])))
     return registry
 
 

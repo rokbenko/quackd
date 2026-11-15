@@ -21,7 +21,6 @@ def test_cli_help() -> None:
         "list-verbs",
         "list-adapters",
         "list-models",
-        "record",
         "log",
         "discover",
         "announce",

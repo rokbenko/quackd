@@ -8,7 +8,6 @@ Thanks for taking a toy duck seriously. Two kinds of contribution matter most: *
 ```bash
 git clone https://github.com/rokbenko/quackd && cd Roboglot
 uv sync --extra dev            # the core and all ten robots, editable, no robot SDKs
-uv sync --extra dev --extra mujoco   # the physics simulator, or its tests just skip
 uv tool install pre-commit     # the hooks' runner, in an environment of its own, not in the lock
 pre-commit install
 uv run pytest -n auto          # the whole suite on every core, about ten minutes, no network, no keys
@@ -60,48 +59,26 @@ under 3.11 and 3.12, and `[tool.mypy]` pins no `python_version` on purpose (pinn
 made mypy reject numpy's stubs under 3.12), so a clean local run is half of that gate.
 `uv sync --python 3.12 --extra dev` and run it again for the other half.
 
-Windows, macOS and Linux are all first-class. Tests must never touch the network. About a
-third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by setting
-`ROBOGLOT_STRICT_SEEDS=1`; locally they pass at 8 of 10 so a slow machine does not block you.
+Windows, macOS and Linux are all first-class. Tests must never touch the network.
 
 ## Where things live
 
 | Path | What is there |
 |---|---|
-| `roboglot/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.glot` contract, the MCP server, the 2D arena (`roboglot/sim2d/`) and the mock transport (`roboglot/transport/mock.py`) |
+| `roboglot/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.glot` contract, the MCP server and the mock transport (`roboglot/transport/mock.py`) |
 | `roboglot/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the ten Roboglot publishes, as strings), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, as strings), `factory.py` (`--robot` to a body) |
 | `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/roboglot_<name>/` |
 | `bridge/<name>/` | the daemons that run across the network from Roboglot and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `roboglot/onboard/`, `roboglot/boards/`, `roboglot/radio/` | Robot Passport on a robot's own computer, the one part of Roboglot that runs there: `roboglot onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `roboglot/passport/`, which imports nothing else from Roboglot |
 | `roboglot/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `roboglot/adapters/host_camera.py`, and its detector is `roboglot/perception/host.py` |
-| `tasks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
+| `tasks/`, `docs/`, `tests/`, `scripts/` | the starter task files, the documentation, the whole suite, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
 
-A robot's code is imported as `roboglot_<name>`, never as `roboglot.adapters.<name>`. The 2D
-arena and the mock transport stayed in the core on purpose: three bodies subclass
-`Sim2DTransport` and a fourth uses it as it is, and seven of the ten mocks draw their frame
-with `roboglot/sim2d/render.py`, so neither was ever the duck's. `UpstreamRef`
-lives in `roboglot/upstream.py` for the same reason, since every adapter cites an upstream and
-none of them should import a duck to do it.
-
-Touching `adapters/microduck/src/roboglot_microduck/sim3d/` or that package's
-`transports/mujoco.py`? Install `--extra mujoco` or your work
-is untested locally: both test modules start with `pytest.importorskip("mujoco")` and vanish
-without it. CI's `physics` job installs the extra and runs them on the kinematic stand-in, which
-touches no network. The tests marked `real_duck` need upstream's model in `~/.roboglot/cache`, so
-they skip until you have run `--robot microduck:mujoco` once, and a nightly job runs them there.
-The gait arithmetic itself lives in that package's `sim3d/gait.py`, which imports no `mujoco`, so
-`tests/test_sim3d_gait.py` runs whether you installed the extra or not.
-
-Touching the arm's simulator under `adapters/lerobot/src/roboglot_lerobot/sim/`? The same extra
-gives you `mujoco`, and `tests/test_lerobot_sim.py` vanishes without it the same way. It runs on
-`sim/standin.py`, a primitives-only arm that needs nothing fetched, and CI's `physics` job runs
-it too. The tests marked `so101_model`, the model check in that file and the whole of
-`tests/test_lerobot_sim_model.py` (the seeded grasp sweep, the rehearsal sweeps, the real
-meshes rendered and the physics timed), need the maker's model already in `~/.roboglot/cache`,
-or `ROBOGLOT_LEROBOT_SIM_ASSETS` pointing at the `Simulation/SO101` directory of a checkout, and
-skip without either. The nightly `lerobot-sim-assets` job fetches the model and runs them, and
-no job a pull request waits on does. So a contact setting changed in `sim/model.py` meets the
-grasp sweep only that night: run `uv run pytest tests/test_lerobot_sim_model.py` yourself first.
+A robot's code is imported as `roboglot_<name>`, never as `roboglot.adapters.<name>`. The mock
+transport and the colours a mock paints with live in the core on purpose: the Microduck's mock is
+`MockTransport` itself, the Open Duck's and every described body subclass it, and seven of the
+ten mocks paint their frame from `roboglot/perception/palette.py`, so neither was ever the duck's.
+`UpstreamRef` lives in `roboglot/upstream.py` for the same reason, since every adapter cites an
+upstream and none of them should import a duck to do it.
 
 Touching an adapter's `upstream_api.py`? Every ref there is a permalink to a commit and a line,
 and the nightly `upstream-drift` job (`scripts/upstream_drift.py`) fetches each file a ref cites
@@ -168,38 +145,6 @@ Nothing in these folders has run on a Jetson or over a real radio, so a change i
 the sim board and the fakes, and a page or a help string that claims more than that of a board or a
 radio is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
-Touching `web/`? That is the browser demo, and the only Roboglot code that is not Python: plain
-JavaScript modules, no build step, nothing to install. Run it with the server in the directory
-itself, not with `http.server` ([web/README.md](web/README.md) says why):
-
-```bash
-python web/serve.py            # then open http://localhost:8000/simulator/
-```
-
-The mount matters here for a reason that is yours rather than the reader's. The live page at
-<https://www.roboglot.org/simulator> belongs to roboglot-web, a separate project whose build fetches
-this directory into its own `/simulator` at a pinned commit. `web/serve.py` mounts the directory
-the way that deploy does, so the local mount is what you compare your change against, and what
-you test there is what ships.
-
-Merging is not shipping here. Because the deployed copy is pinned, a change to `web/` on `main`
-does not reach a visitor until roboglot-web builds again. Asking it to is the whole job of
-`.github/workflows/refresh-the-simulator.yml`, which pings a Vercel deploy hook on pushes to
-`main` that touch `web/` or the workflow file itself, and on a manual `workflow_dispatch`. The
-hook is a secret (`VERCEL_DEPLOY_HOOK`), and until it exists the job says so and exits green
-rather than failing. A fork never gets that far: the job is guarded on the repository name, so
-it does nothing at all there. `/simulator/source.json` records which commit the live copy was
-built from, which is how you tell whether your change is on it yet.
-
-`tests/test_web.py` gates the directory from the ordinary suite with no browser: the ids the
-script looks up, the mount, the assets, the key that is stored nowhere, the rule that a key
-barges into a run if and only if it would move the robot, `node --check` on each module and the
-argument validator executed under Node (those last two need node on your machine and skip
-without it; CI's runners all have it — everything else is Python and always runs). It is the
-floor, not the test: the page has been booted in a browser twice and a held `W` walks the duck,
-but no LLM-driven run, no barge-in out of one and no recording has ever been watched. If you
-open it, say what you saw in the PR. See [web/README.md](web/README.md).
-
 Touching `roboglot/lan/` or `roboglot/team/mqtt_bus.py`? Neither imports its library at module
 level and neither is in the default install, so the tests run them on fakes: a fake zeroconf
 registrar and a synchronous fake MQTT broker, no sockets. Keep it that way, and see
@@ -216,10 +161,9 @@ registrar and a synchronous fake MQTT broker, no sockets. Keep it that way, and 
 4. Open a PR. In the description say what it does, which providers you tried, and what
    failed. Ducks that mostly fail are still welcome if the file says so — that is data.
 
-Checklist: `glot: 0` (or `glot: 1` if you use `requires`, `robots`, `team.roles` or
-`team.allocation.method: pilots`, or `glot: 2` if you correct the robot's `datasheet` or a
-role's `needs`, or `glot: 3` if you use `policy`, or `glot: 4` if the task gives the pilot a
-part to play with `play: true`) ·
+Checklist: `glot: 0` (or `glot: 1` if you use `requires`, `robots` or a `team:` block, or
+`glot: 2` if you correct the robot's `datasheet`, or `glot: 3` if you use `policy`, or
+`glot: 4` if the task gives the pilot a part to play with `play: true`) ·
 slug name · `allow` lists only verbs the robot provides (`roboglot list-verbs --robot ...`)
 · `confirm` ⊆ `allow` · at least one `success` line · `abort_when` uses the two enforced
 phrasings if you want them enforced · body starts with `# Task` · `roboglot validate
@@ -227,9 +171,8 @@ your.glot --robot <adapter>:<backend>` passes for the robot you mean.
 
 **Ask for a note.** Every solo starter except `hello-world` and the bring-up lookouts
 ends its numbered strategy with a `remember` and carries a short *Memory* section saying what
-is worth keeping for next time. A coordinator team's duck has no `remember` step, because its
-members are state machines with nothing to remember with; a pilot team's members are whole
-pilots and may.
+is worth keeping for next time. A team's members are whole pilots, so a team's task may ask
+them for one too.
 Put the call in the strategy rather than only in a Memory section: a 14B local LLM read a
 prompt-level hint and never wrote to memory, and followed the same instruction on its first
 run once it was step 5. `remember` is offered automatically when memory is on and needs
@@ -250,8 +193,8 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
 2. Write a pydantic params model (`extra="forbid"`, ranges on every number) and an
    `async def my_verb(ctx: VerbContext, p: MyParams) -> VerbResult`. Use
    `ctx.transport.send_intent(...)`, `ctx.transport.sleep(...)`, `ctx.detector`,
-   `ctx.manifest` (to pick a strategy per body), and `ctx.on_frame(img, caption)` for the
-   GIF. Never call an LLM from a verb.
+   `ctx.manifest` (to pick a strategy per body), and `ctx.on_frames(frames, caption)` for
+   what the verb saw, which a run keeps in its `frames/`. Never call an LLM from a verb.
 3. Add a `Verb(...)` template with a one-line LLM-facing description, a `timeout_s`, a
    `safety_class` (`safe` · `confirm` · `dangerous`) and a `done_condition` to `CORE` or to
    the adapter's verb table, then a `VerbSpec` entry in the adapter's manifest (that is
@@ -264,7 +207,9 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
    verb the pilot needs in order to reach one, and `tests/test_verdict.py` fails until you
    have chosen. A verb you flag `read_only` has to be in `BEFORE_VERDICT` as well: the flag
    is for a body Roboglot does not ship, and a second test there says so.
-4. Add a test: on `MockTransport` for intent sequences, on `Sim2DTransport` for behaviour, and on `MujocoTransport(body="puppet")` if the verb makes a claim about the body, because the cartoon cannot tell you whether one is true.
+4. Add a test on `MockTransport`, for the intents the verb sends and for what it does with the
+   frames and states you script. No test here can tell you whether a claim the verb makes about
+   the body is true: only the robot can.
 5. If the verb needs an upstream method we have not verified, add it to the adapter's
    `upstream_api.py` as `UNVERIFIED` with a note and a row in that adapter's page,
    `docs/adapters/<name>/README.md`. Never invent one.
@@ -304,15 +249,6 @@ Then the models pages, which render every row: run `uv run --no-sync python
 scripts/models_docs.py` and commit what it rewrites under `docs/models/`, or the drift test in
 `tests/test_docs.py` fails. A vendor the script has no name for in `MAKERS` and `COMPANIES` is
 refused there rather than printed unnamed.
-
-Then the browser, which has its own copy of the LLM list and its own reason to refuse one.
-Run `python web/build_catalogue.py` and commit `web/src/catalogue.js`, or the generator-drift
-test in `tests/test_web.py` fails. Then decide whether the page can call the vendor at all: it
-calls from the visitor's browser, so a vendor that refuses a cross-origin preflight goes in
-`NOT_FROM_A_BROWSER` in `web/src/providers.js` with the reason and the date, and a vendor that
-answers one goes in `PROVIDERS` with its base URL, its key link and the `tool_choice` its own
-docs allow. A test holds that pair to exactly the vendors `PROVIDERS` leaves out, so neither
-half can be skipped quietly.
 
 Four things the log depends on, none of them optional:
 
@@ -452,7 +388,7 @@ Every backend carries one tier, as data in its row of `roboglot/adapters/catalog
   first day it did.
 - **bound** 🧪: code that reaches a real robot and has never met one. The row names who answers
   for its first hardware run, and a date.
-- **rehearsed** ✅: runs whole tasks with no robot, in a simulator or against a scripted mock.
+- **rehearsed** ✅: runs whole tasks with no robot, against a scripted mock.
 - **described** 📄: a body Roboglot lists and reasons about and drives no part of.
 
 The rule, since 2026-11-05: bound code enters this repository only with a named owner and a date
@@ -475,12 +411,9 @@ every row to all of this.
 - Keep the default install light: robots, provider SDKs and YOLO are all optional extras,
   and `uv pip install roboglot` brings none of them.
 - **Never commit an upstream asset.** No logos, meshes, CAD, MJCF, ONNX policies or videos,
-  from Pollen Robotics or anyone else, in a commit, a test fixture or a docs asset. This got
-  sharper in 0.8: a real `--robot microduck:mujoco` run puts upstream's `robot_walk.xml` and
-  38 CC BY-NC-SA 4.0 meshes in `~/.roboglot/cache`. Roboglot's whole licence position is that it
-  redistributes none of them, and a public history does not forget. `.gitignore` now catches
-  `.stl`, `robot_walk.xml` and the SO-101's `so101_*.xml` as well as `.onnx`, but do not rely
-  on it.
+  from Pollen Robotics or anyone else, in a commit, a test fixture or a docs asset. Roboglot's
+  whole licence position is that it redistributes none of them, and a public history does not
+  forget. `.gitignore` catches `.onnx`, `.pt`, `.stl` and `.safetensors`, but do not rely on it.
 - Tone: confident, playful, honest about status.
 
 ## Versions and releases
@@ -506,8 +439,8 @@ what the next release is:
   docs never promised, whose entry says what is refused now and what to do instead. And it
   takes catalogue data that changes no default, and a dependency or packaging fix nobody has to
   act on.
-- `Documentation` for the README, the pages under `docs/`, the examples, the images and the web
-  demo, which never raise it.
+- `Documentation` for the README, the pages under `docs/`, the examples and the images, which
+  never raise it.
 
 A test or a CI job goes in the entry of the change it checks, and one that stands on its own,
 such as a nightly, goes under `Documentation`, and so does a refresh of `uv.lock`, which changes

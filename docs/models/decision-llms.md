@@ -56,6 +56,6 @@ says which, and what that is worth in seconds and dollars.
 ## What has run
 
 **Nothing here has ever answered a real robot.** Every row has been exercised against the mock
-arm, the simulators and the test suite, with a stand-in answering for the server, and not one
-has driven hardware. Each row's page says what was read from its upstream and when, and what is
-still assumed.
+arm and the test suite, with a stand-in answering for the server, and not one has driven
+hardware. Each row's page says what was read from its upstream and when, and what is still
+assumed.

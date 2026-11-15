@@ -322,7 +322,7 @@ async def test_the_loop_and_observe_run_a_blocking_detector_off_the_event_loop(
                     ToolCall(name="declare_success", arguments={"reason": "looked"}),
                 ]
             ),
-            transport=make_adapter("microduck:mock", seed=0),
+            transport=make_adapter("microduck:mock"),
             detector=probe,  # type: ignore[arg-type]
             runs_dir=tmp_path,
         )
@@ -504,7 +504,7 @@ async def test_it_never_swaps_itself_for_the_colour_detector(
     record has one note for the outage rather than one per frame.
 
     The body is the Microduck's mock, which has a camera of its own; the detector is the
-    board's, asked for by name, which is the one way it runs on a simulator."""
+    board's, asked for by name, which is the one way it runs on a mock."""
     hostd.detect_status = 503
     hostd.detect_reply = {"ok": False, "reason": "detection is not available: CUDA out of memory"}
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
@@ -523,7 +523,7 @@ async def test_it_never_swaps_itself_for_the_colour_detector(
                 ToolCall(name="declare_success", arguments={"reason": "looked"}),
             ]
         ),
-        transport=make_adapter("microduck:mock", seed=0),
+        transport=make_adapter("microduck:mock"),
         detector=detector,
         runs_dir=tmp_path,
     )
@@ -592,7 +592,7 @@ async def test_a_flaky_link_is_a_note_per_outage_and_per_kind_of_reason_not_per_
             provider=FakeProvider(
                 script=[*script, ToolCall(name="declare_success", arguments={"reason": "done"})]
             ),
-            transport=make_adapter("microduck:mock", seed=0),
+            transport=make_adapter("microduck:mock"),
             detector=_Flaky(reasons),
             runs_dir=tmp_path,
         )
@@ -674,7 +674,7 @@ async def test_a_run_records_what_the_board_took_for_every_frame(
                     ToolCall(name="declare_success", arguments={"reason": "scanned"}),
                 ]
             ),
-            transport=make_adapter("microduck:mock", seed=0),
+            transport=make_adapter("microduck:mock"),
             detector=detector,
             runs_dir=tmp_path,
         )
@@ -703,7 +703,7 @@ def test_uncalibrated_when_nobody_said_the_fov(
 ) -> None:
     """On a real body with no field of view from anyone, the lens is a guess: 62 degrees,
     every detection marked uncalibrated, and one warning however often it is recalibrated. A
-    field of view from anyone makes it measured; a simulator's own camera is known."""
+    field of view from anyone makes it measured; a mock's own camera is known."""
     caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.detect_reply = _reply([("sports ball", 0.9, *BALL_BOX)])
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
@@ -722,7 +722,7 @@ def test_uncalibrated_when_nobody_said_the_fov(
     (measured,) = detector.detect(_frame())
     assert measured.calibrated is True
 
-    detector.calibrate(None, backend="sim2d")
+    detector.calibrate(None, backend="mock")
     assert (detector.fov_deg, detector.calibrated) == (90.0, True)
 
 

@@ -6,7 +6,7 @@ glot: 1
 name: microduck-lookout
 description: Stand still, look around with the head only, and say what you can see.
 author: rok
-robots: microduck:sim2d
+robots: microduck:mock
 requires: [report_state, say]
 verbs:
   allow: [gaze, observe, say, quack, report_state, stop]

@@ -2,6 +2,11 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0022](0022-per-adapter-upstream-refs.md) (every SDK name is a verified ref) and [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is a manifest) · Implemented in `roboglot/adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
+**Amended 2026-11-15:** the arm's simulator is gone, so the amendment of 2026-09-27 below
+describes nothing Roboglot has now but the one change it made to the arm itself: the heartbeat's
+reads still stay out of the gripper trace `pick` watches. The decision is unchanged. See the
+CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-18 by [ADR-0039](0039-an-arm-placed-by-hand.md):** the decision below that
 opens "Nothing here changes what Roboglot never does" loses one clause of one sentence. Roboglot now
 disables torque in one place, `let_go()`, which `roboglot run --by-hand` calls once and nothing

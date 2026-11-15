@@ -103,7 +103,7 @@ def test_the_list_says_each_robot_s_type_when_one_was_registered_with_one(tmp_pa
 @pytest.mark.parametrize(
     ("argv", "needle"),
     [
-        (["robot", "add", "3", "microduck:mock"], "simulated ducks"),
+        (["robot", "add", "3", "microduck:mock"], "a number reads as a count, not a name"),
         (["robot", "add", "microduck", "microduck:mock"], "is an adapter"),
         (["robot", "add", "Duck-A", "microduck:mock"], "not a valid robot name"),
         (["robot", "add", "duck-a", "bogus:nope"], "unknown adapter 'bogus'"),
@@ -127,7 +127,7 @@ def test_a_refusal_is_one_line_and_never_a_traceback(
 
 def test_the_same_name_twice_is_refused(tmp_path: Path) -> None:
     _seed(tmp_path)
-    result = runner.invoke(app, ["robot", "add", "duck-a", "microduck:sim2d", *_reg(tmp_path)])
+    result = runner.invoke(app, ["robot", "add", "duck-a", "microduck:mock", *_reg(tmp_path)])
     assert result.exit_code == 1
     assert "already registered" in result.output
 
@@ -401,7 +401,7 @@ def test_a_body_that_reads_one_camera_refuses_a_second(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
-    assert "only lerobot:real and lerobot:mujoco take several" in flat, flat
+    assert "only lerobot:real takes several" in flat, flat
     assert Registry(tmp_path).get_robot("duck-a") is None
 
 
@@ -773,7 +773,6 @@ def test_a_run_by_name_says_the_name_and_keys_its_memory_by_it(tmp_path: Path) -
             "fake",
             "--runs-dir",
             str(tmp_path / "runs"),
-            "--no-gif",
             "--memory-dir",
             str(memory),
             *_reg(tmp_path),
@@ -812,7 +811,6 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
         "duck-a",
         "--runs-dir",
         str(tmp_path / "r"),
-        "--no-gif",
         "--memory-dir",
         str(tmp_path / "m"),
         *_reg(tmp_path),
@@ -862,7 +860,6 @@ def test_a_run_by_name_is_refused_when_the_robots_own_llm_is_no_longer_listed(
             "duck-a",
             "--runs-dir",
             str(tmp_path / "r"),
-            "--no-gif",
             "--memory-dir",
             str(tmp_path / "m"),
             *_reg(tmp_path),
@@ -900,7 +897,7 @@ def test_a_run_by_name_reaches_the_address_it_was_registered_with(
 
     def recorder(spec: object, **kw: object) -> object:
         seen.update(kw)
-        return real(spec, seed=kw.get("seed"))  # type: ignore[arg-type]
+        return real(spec)  # type: ignore[arg-type]
 
     monkeypatch.setattr("roboglot.adapters.factory.make_adapter", recorder)
     result = runner.invoke(
@@ -912,7 +909,6 @@ def test_a_run_by_name_reaches_the_address_it_was_registered_with(
             "duck-a",
             "--llm",
             "fake",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path / "r"),
             "--memory-dir",
@@ -935,7 +931,7 @@ def test_a_flag_on_the_line_beats_the_stored_address(
 
     def recorder(spec: object, **kw: object) -> object:
         seen.update(kw)
-        return real(spec, seed=kw.get("seed"))  # type: ignore[arg-type]
+        return real(spec)  # type: ignore[arg-type]
 
     monkeypatch.setattr("roboglot.adapters.factory.make_adapter", recorder)
     result = runner.invoke(
@@ -947,7 +943,6 @@ def test_a_flag_on_the_line_beats_the_stored_address(
             "duck-a",
             "--llm",
             "fake",
-            "--no-gif",
             "--address",
             "tcp://tunnel:9999",
             "--runs-dir",
@@ -1044,7 +1039,7 @@ def test_an_unknown_bare_name_names_both_things_it_could_have_been(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    "command", ["add", "list", "show", "edit", "remove", "rest-pose", "release", "twin"]
+    "command", ["add", "list", "show", "edit", "remove", "rest-pose", "release"]
 )
 def test_every_robot_command_answers_help(command: str) -> None:
     result = runner.invoke(app, ["robot", command, "--help"])

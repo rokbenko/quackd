@@ -25,7 +25,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
 from roboglot_alohamini.verbs import (
     ARMS,
@@ -51,7 +51,7 @@ LIFT_MM_PER_UNIT = 60.0 / LIFT_V_MAX
 """Roboglot's own integration constant, chosen so a lift at full velocity travels 60 mm/s.
 
 Upstream states no mm/s figure anywhere: its velocity maximum is 1300 raw units and nothing
-says what that is in millimetres. So this is a plausible number that makes the simulated lift
+says what that is in millimetres. So this is a plausible number that makes the mock's lift
 take a few seconds rather than a guess dressed up as a measurement, and the manifest records
 the real speed as unknown."""
 MOCK_CAM_HEIGHT_M = 0.4
@@ -111,7 +111,7 @@ class AlohaMiniMock:
         self.connected = False
         self.stale_ms: float = 0.0
 
-    # ── physics ─────────────────────────────────────────────────────────────────────
+    # ── motion ──────────────────────────────────────────────────────────────────────
 
     def _integrate(self, dt: float) -> None:
         if self._last_cmd_t is not None and self._t - self._last_cmd_t > WATCHDOG_S:

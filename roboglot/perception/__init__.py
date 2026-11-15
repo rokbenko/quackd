@@ -21,7 +21,7 @@ __all__ = [
     "DETECTOR_CHOICES",
     "detector_for",
     "explicit_detector",
-    "is_simulated",
+    "is_mock",
     "lens",
     "lens_of",
     "tell_lens",
@@ -29,14 +29,15 @@ __all__ = [
 
 logger = logging.getLogger("roboglot.perception")
 
-#: Backends whose camera really is the one the default geometry assumes.
-_SIMULATED = ("sim2d", "mujoco", "mock")
+#: Backends whose camera really is the one the default geometry assumes: a mock's, which
+#: Roboglot draws itself (`roboglot.perception.palette`).
+_MOCKS = ("mock",)
 
 
-def is_simulated(backend: str | None) -> bool:
-    """Whether this backend's camera is a simulator's, whose lens the default geometry already
-    knows. No backend at all is a bare transport, which is the simulator's."""
-    return backend is None or backend in _SIMULATED
+def is_mock(backend: str | None) -> bool:
+    """Whether this backend's camera is a mock's, whose lens the default geometry already
+    knows. No backend at all is a bare transport, which is a mock's."""
+    return backend is None or backend in _MOCKS
 
 
 DETECTOR_CHOICES = ("color", "host", "yolo")
@@ -76,13 +77,13 @@ def lens(
 
     A field of view somebody gave is the lens, and calibrated, unless the body that reported it
     said it was assumed (`assumed`, the words of the assumption, `lens_of`): that one is the
-    lens, uncalibrated, so every detection says its size rests on it. With none, a simulator's
+    lens, uncalibrated, so every detection says its size rests on it. With none, a mock's
     camera is still known, because it is the one `color_blob.DEFAULT_FOV_DEG` describes. A real
     body with none gets `guess`, uncalibrated, so every detection says its size is a guess
     rather than looking measured."""
     if fov_deg is not None:
         return float(fov_deg), assumed is None
-    if is_simulated(backend):
+    if is_mock(backend):
         from roboglot.perception.color_blob import DEFAULT_FOV_DEG
 
         return DEFAULT_FOV_DEG, True
@@ -121,7 +122,7 @@ def _lens_if_known(
     detector: _Calibrates, fov_deg: float | None, backend: str | None, *, has_camera: bool
 ) -> None:
     """Set a detector's lens before the body connects, when it is already known: a field of
-    view somebody gave, a simulator's own camera, or a body described with a camera of its own.
+    view somebody gave, a mock's own camera, or a body described with a camera of its own.
 
     A body described without one is left alone, at the guess it was built with, and nothing is
     said about it yet. Such a body may report a camera of its own when it connects (an arm given
@@ -130,7 +131,7 @@ def _lens_if_known(
     taken from the board now would measure the body's own camera through the board's; the loop
     sets the lens at connect, from the manifest the body reported, and warns then if there is
     none."""
-    if fov_deg is not None or has_camera or is_simulated(backend):
+    if fov_deg is not None or has_camera or is_mock(backend):
         detector.calibrate(fov_deg, backend=backend)
 
 
@@ -148,14 +149,14 @@ def explicit_detector(
     body with a camera.
 
     - `color` is None, which is how a run opts out of a board's detector.
-    - `host` is the board's detector, honoured even on a simulator because somebody asked for
+    - `host` is the board's detector, honoured even on a mock because somebody asked for
       it by name. Without a board, or with one whose daemon cannot detect, it is a ValueError
       whose sentence says what the daemon said, raised before anything connects.
     - `yolo` is YOLO in this process, which raises its own ImportError naming the extra when
       `ultralytics` is not installed.
     - None, the default, is the board's detector when the daemon can detect and the body is
-      real. Never on a simulator: YOLO does not see a cartoon ball, and the colour detector is
-      tuned for exactly what a simulator draws.
+      real. Never on a mock: YOLO does not see a painted ball, and the colour detector is
+      tuned for exactly what a mock draws.
 
     `client` and `hello` are the board `--host` named, already asked what it is, or both None.
     `fov_deg` is `--fov-deg` or the body's own `camera_fov_deg`, never the board's: whether the
@@ -194,7 +195,7 @@ def explicit_detector(
                 f"{said}). Start it without --no-detect, with ultralytics on the board, or drop "
                 "--detector host"
             )
-    elif not can_detect or is_simulated(backend):
+    elif not can_detect or is_mock(backend):
         return None
     from roboglot.perception.host import GUESSED_FOV_DEG, HostDetector
 
@@ -215,8 +216,8 @@ def detector_for(
 ) -> Detector | None:
     """A robot with a camera needs something to look at its frames with. Any robot.
 
-    Keying this on the backend being `sim2d` is the bug that made every hardware body run
-    blind: it fetched a frame, detected nothing because nothing was detecting, and reported
+    Keying this on the backend, as releases before 0.5 did, is the bug that made every hardware
+    body run blind: it fetched a frame, detected nothing because nothing was detecting, and reported
     that it could not see. 0.5 fixed that in `roboglot run` and missed `serve-mcp`, which is
     why the decision now lives in one function that both entry points call.
 
@@ -226,7 +227,7 @@ def detector_for(
     you may not have been built with.
 
     `fov_deg` is the horizontal field of view of the lens actually in front of you. The
-    default is the simulator's 90 degrees, and a real Pi camera module is nearer 62, which
+    default is a mock's 90 degrees, and a real Pi camera module is nearer 62, which
     makes the focal length half what it should be: bearings come out inflated by about 1.7x
     and distances short by about 40 percent. `go_to` then announces it has arrived while the
     duck is still half a metre out — outside `open-duck-scout`'s own success criterion, so
@@ -237,7 +238,7 @@ def detector_for(
     measured through uncalibrated. The detector built here is marked `lens_at_connect`, so the
     loop and the MCP server set its lens again once the body has said what it has: `roboglot run`
     builds it from the body's description, before it connects, and a body that learns its lens
-    at connect, a Microduck from its camera, was measured through the simulator's 90 degrees for
+    at connect, a Microduck from its camera, was measured through a mock's 90 degrees for
     the whole run, the lens its camera reported unread.
 
     It says nothing about the lens itself. Every caller that builds one for a body with a camera
@@ -251,7 +252,7 @@ def detector_for(
         return current
     from roboglot.perception.color_blob import DEFAULT_FOV_DEG, ColorBlobDetector
 
-    # A real lens nobody named keeps the simulator's field of view, uncalibrated: the target is
+    # A real lens nobody named keeps a mock's field of view, uncalibrated: the target is
     # still in the right direction, but the numbers are the wrong size, and saying so at connect
     # beats a confident measurement nobody can act on (`ColorBlobDetector.calibrate`).
     detector = ColorBlobDetector(lens_at_connect=True)

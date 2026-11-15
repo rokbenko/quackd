@@ -53,7 +53,7 @@ decision LLM, needs no key for one, and never switches this on because it found 
 
 > [!WARNING]
 > **Nobody has run any of this against a real robot.** Every decision LLM on this page has been
-> exercised against the mock arm, the simulators and the test suite with a fake standing in for
+> exercised against the mock arm and the test suite with a fake standing in for
 > the server, and not one of them has driven hardware. That is the same standing as the rest pose
 > and `--by-hand` ([README](../../../README.md#which-robots-work)).
 
@@ -241,10 +241,9 @@ uv pip install "roboglot[laya]"                      # the one that runs in this
 uv pip install "roboglot[lerobot,decision,openai]"   # the arm, a decision LLM and a pilot LLM
 ```
 
-Neither `roboglot[decision]` nor `roboglot[laya]` is part of `roboglot[all]`, for the same reason the
-simulators are not: `laya` pulls torch, and nobody should pay for a vendor that is not in their
-run. The `openai` row needs neither: its client is the pilot's own SDK, which `roboglot[all]`
-already carries.
+Neither `roboglot[decision]` nor `roboglot[laya]` is part of `roboglot[all]`: `laya` pulls torch,
+and nobody should pay for a vendor that is not in their run. The `openai` row needs neither: its
+client is the pilot's own SDK, which `roboglot[all]` already carries.
 
 Four flags, because there are many decision LLMs now rather than one, and one of them may see:
 

@@ -14,9 +14,8 @@ never used to choose it.
 never from a sum of sleeps, so a tick that ran long costs its own tick and not every one after
 it. A tick that overruns the next deadline skips to the next whole period after the clock's now,
 counts the ticks it missed, and never sends twice in one period. A tick never starts before its
-deadline either: the simulator's clock wakes on its own steps, the nearest to what was asked,
-and a period that is not a whole number of steps would otherwise wake a tick in the period
-before its own (`PolicyLoop._pace`).
+deadline either: a clock may wake a sleeper a little before the time it asked for, and a tick
+woken early would otherwise run in the period before its own (`PolicyLoop._pace`).
 
 **The speed cap** is the verbs' own, `max_step_deg / TICK_S` degrees a second, so the one
 setting (`ROBOGLOT_LEROBOT_MAX_STEP_DEG`) governs both. Per send it is that speed over the pacer's
@@ -42,8 +41,8 @@ the default pool the bus's calls run in (`LeRobotReal._call`), so a runner that 
 cannot hold up a read, a hold or a heartbeat. A segment's reset waits for the one before it,
 behind whatever inference is still on that worker, for no longer than `RESET_S`.
 
-**Lockstep.** On the simulator (a clock whose `lockstep` is true) time stands still while
-nothing sleeps on it, so a runner's inference is awaited in the loop's own turn and costs no sim
+**Lockstep.** On a clock whose `lockstep` is true, the mock's, time stands still while nothing
+sleeps on it, so a runner's inference is awaited in the loop's own turn and costs none of that
 time. Its answer is then held back `k` ticks, `k` from the runner's declared latency, while the
 pacer goes on ticking and playing the old queue, and is judged only when it is let go: that is
 where it would have landed on the arm, a chunk thrown away and an error raised included.
@@ -62,10 +61,10 @@ while that one is on its way, and it is played from its first action at the tick
 since the arm has not moved on from where it was asked. No chunk is waited for in a tick, so
 every tick of the wait still reads and judges the arm, the stall's clock stops while nothing is
 sent and goes on when sending does, and the wait is starved out with the patience a first chunk
-gets, since the arm waits for every chunk by design. The simulator holds each back its declared
-latency, or a tick for a runner that declares none, the soonest the arm takes one in. A runner
-that has answered nothing but one action at a time is asked as it always was, and a runner in
-tick mode plays no chunks, either way.
+gets, since the arm waits for every chunk by design. A lockstep clock holds each back its
+declared latency, or a tick for a runner that declares none, the soonest the arm takes one in. A
+runner that has answered nothing but one action at a time is asked as it always was, and a runner
+in tick mode plays no chunks, either way.
 
 **A wait in a tick for a chunk that outlasts the tick** sends nothing in it: the arm held still
 through the wait, and the tick that is due when it ends reads the arm and judges it before
@@ -80,8 +79,7 @@ clock started when it goes out.
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
 segment with the arm held and resets the runner. Its delay line is a tick deep at most: it is
 asked again only once it has answered, so one that declares more than a tick to answer could
-never keep up on the arm, and is refused on either clock rather than rehearsed on the
-simulator's.
+never keep up on the arm, and is refused on either clock.
 """
 
 from __future__ import annotations
@@ -135,8 +133,7 @@ MAX_RATE_HZ = 60.0
 """The rates Roboglot paces a policy at. Roboglot's own bounds, and no measurement: a rate outside
 them is more likely a wrong number than a policy, a period given where a frequency was meant,
 and above the ceiling a tick is shorter than a read and a send of the arm's bus are likely to
-take together, and than a few steps of the simulator's clock. Below the floor every send is a
-step the speed cap clamps anyway."""
+take together. Below the floor every send is a step the speed cap clamps anyway."""
 STARVE_S = 1.0
 """How long, in the transport's time, a segment may have nothing to send before it ends. The
 arm holds its last goal meanwhile, which is safe and is also a policy that has stopped driving,
@@ -281,7 +278,7 @@ def starved_each_chunk(latency: int, chunk: int) -> int:
     arm has to play meanwhile is the `chunk - latency` actions left of the last one. No
     threshold for `refill_at` can help: the next is asked for the tick the last lands, and
     cannot be asked sooner. So a latency this gives a number above zero for starves the arm
-    every chunk, on the simulator's delay line as on the arm, and `roboglot policy serve` refuses
+    every chunk, on a lockstep clock's delay line as on the arm, and `roboglot policy serve` refuses
     to declare one."""
     return max(0, 2 * latency - chunk)
 
@@ -380,11 +377,11 @@ class Tally:
     stopped. A segment refused before it started is not one. A report, and never a rate
     anything is set from, as `SegmentStats` is.
 
-    The segments' seconds are kept on two clocks, because on the simulator they are not the
-    same: `seconds`, and the rate the ticks were achieved at, on the transport's clock, which
-    is what the ticks were paced on, and `wall_s` on the wall's, which is the share of a run's
-    wall time the segments had. A lockstep clock's seconds are the simulator's own and run as
-    fast as it steps, so a record of them says so (`clock`), as a verb's does."""
+    The segments' seconds are kept on two clocks, because on a mock they are not the same:
+    `seconds`, and the rate the ticks were achieved at, on the transport's clock, which is what
+    the ticks were paced on, and `wall_s` on the wall's, which is the share of a run's wall
+    time the segments had. A lockstep clock's seconds are the mock's own and run as fast as
+    something sleeps on it, so a record of them says so (`clock`)."""
 
     segments: int = 0
     seconds: float = 0.0
@@ -410,12 +407,12 @@ class Tally:
     def summary(self) -> dict[str, Any]:
         """The counts as the run's record keeps them, and the rate the ticks were achieved at
         across every segment, or None before any tick. `clock` is there only for a lockstep
-        clock, and says `sim`, the word `roboglot.safety` gives a simulator's clock: on the wall's
-        clock `seconds` and `wall_s` measure the same time and there is nothing to name."""
+        clock, a mock's, and says `mock`: on the wall's clock `seconds` and `wall_s` measure the
+        same time and there is nothing to name."""
         return {
             "segments": self.segments,
             "seconds": round(self.seconds, 2),
-            **({"clock": "sim"} if self.lockstep else {}),
+            **({"clock": "mock"} if self.lockstep else {}),
             "wall_s": round(self.wall_s, 2),
             "ticks": self.ticks,
             "late_ticks": self.late,
@@ -450,17 +447,6 @@ class PolicyLoop:
         self.instruction = ""
         self._executor: concurrent.futures.ThreadPoolExecutor | None = None
         self._inflight: _Request | None = None
-        self.declared_s = 0.0
-        """The latency the runner declared at the last segment's start, in seconds."""
-        self.waited = 0
-        self.thinking_s = 0.0
-        self.slowest_s = 0.0
-        """How many requests the last segment waited for with its lockstep clock standing
-        still, how long on the wall's clock in all, and the longest of them, a request still
-        out when the segment ended included. All 0 on any other clock, where nothing waits for
-        one. A simulator's timeout for `manipulate` covers only the thinking the runner
-        declares, and these tell a runner that outran it from one that did not
-        (`LeRobotSim.slow_policy`)."""
 
     # ── the runner's own thread ─────────────────────────────────────────────────────────
 
@@ -554,8 +540,6 @@ class PolicyLoop:
         the last segment left on the worker, which is how its answer is kept out of this one."""
         self.epoch += 1
         self.instruction = instruction
-        self.declared_s = self.thinking_s = self.slowest_s = 0.0
-        self.waited = 0
         reset = await self._ask(self.runner.reset, instruction)
         if isinstance(reset, str):
             return reset
@@ -579,7 +563,6 @@ class PolicyLoop:
                 f"the policy was not started: it declares a latency of {latency!r} s, and a "
                 "latency is a number of seconds, 0 or more, that comes to a number of ticks"
             )
-        self.declared_s = float(latency)
         ticks = latency_ticks(float(latency), rate)
         if features.per_tick and ticks > 1:
             return (
@@ -611,7 +594,7 @@ class PolicyLoop:
         counts up to there, and with no hold: the verb waiting on it stops the arm."""
         run = _Run(started, registers_at, arm._range_clips)
         run.waits_each = not self.async_chunks and not plan.features.per_tick
-        # the wall's clock beside the arm's, which on the simulator is the simulator's (`Tally`)
+        # the wall's clock beside the arm's, which on the mock is the mock's own (`Tally`)
         walled = time.perf_counter()
         try:
             return await self._ticks(arm, plan, segment, run)
@@ -714,11 +697,10 @@ class PolicyLoop:
 
         A tick that overran that deadline goes to the next whole period strictly after now,
         and the ticks between are skipped rather than sent late, two to a period. The sleep
-        never wakes a tick short of its deadline: the simulator's clock rounds a sleep to its
-        nearest whole step, which for a period that is not a whole number of steps can land
-        up to half a step early, in the period before the tick's own, and what is left is
-        slept again. A clock whose step is longer than a period can also wake past a later
-        tick's deadline, and that later tick is the one it is on, the ones between skipped."""
+        never wakes a tick short of its deadline: a clock may wake a sleeper a little before
+        the time it asked for, in the period before the tick's own, and what is left is slept
+        again. A clock that wakes late can also wake past a later tick's deadline, and that
+        later tick is the one it is on, the ones between skipped."""
         now = arm.now()
         if now > started + following * plan.period_s:
             after = max(following + 1, math.floor((now - started) / plan.period_s) + 1)
@@ -871,23 +853,13 @@ class PolicyLoop:
                 if run.got_first
                 else max(0.0, self.first_chunk_s - (arm.now() - run.started))
             )
-        asked = time.perf_counter()
-        try:
-            answered = await self._answered(future, patience)
-        finally:
-            # a request still out when the segment is cancelled, by the executor's timeout
-            # among others, counts for as long as it had been out
-            if lockstep:
-                took = time.perf_counter() - asked
-                self.waited += 1
-                self.thinking_s += took
-                self.slowest_s = max(self.slowest_s, took)
+        answered = await self._answered(future, patience)
         if not answered:
             return await self._starved(arm, run)
         self._inflight = None
         # asked with something queued, or one chunk at a time, an answer reaches the arm by the
-        # next tick's look at the soonest, however fast it comes back, so the simulator holds it
-        # back at least that long
+        # next tick's look at the soonest, however fast it comes back, so a lockstep clock holds
+        # it back at least that long
         held = plan.latency_ticks or (1 if queued or each else 0)
         if lockstep and held:
             run.held_back.append((req.tick + held, req))

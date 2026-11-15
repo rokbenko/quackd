@@ -158,7 +158,7 @@ class Transcript:
         """Seconds since this transcript opened, on the clock every record's `t` is on.
 
         Not the budget's clock (`safety.Budget.elapsed_s`), which starts later, restarts after
-        a `--by-hand` handover and runs on the simulator's time on a simulator. This one is
+        a `--by-hand` handover and runs on a mock's time on a mock. This one is
         the whole run, wall seconds, start to finish."""
         return time.monotonic() - self._t0
 

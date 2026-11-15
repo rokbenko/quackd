@@ -15,7 +15,7 @@ Serve it in one terminal, run the task file in another, then count what got thro
 With `--gibberish 0.05` one answer in twenty has arguments that are no object or not JSON, which the
 params gate refuses and tells the pilot about, as it does any other bad call.
 
-Point it at the mock or at the arm's simulator, never at the arm: it is a monkey.
+Point it at the mock, never at the arm: it is a monkey.
 """
 
 from __future__ import annotations

@@ -24,7 +24,7 @@ team:
   allocation:
     method: pilots
 robots:
-  duck: microduck:sim2d
+  duck: microduck:mock
   arm: lerobot:mock
 ---
 

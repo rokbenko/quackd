@@ -346,7 +346,6 @@ class RosArmWs:
         """Each joint's lower and upper as the description gives them, which every goal sent lies
         inside: the travel published in degrees is rounded, and a goal is not."""
         self.stop_error: str | None = None
-        self.post_sleep: Callable[[], None] | None = None
 
     # ── names ───────────────────────────────────────────────────────────────────────────
 
@@ -1048,5 +1047,3 @@ class RosArmWs:
 
     async def sleep(self, seconds: float) -> None:
         await self.clock.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()

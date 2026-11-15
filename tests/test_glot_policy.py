@@ -2,8 +2,7 @@
 budgets, and the stepper that is shown the verb and never let take it.
 
 Everything here runs on the LeRobot mock, whose `manipulate` is a scripted segment on a clock of
-its own, so a segment's seconds are exactly the ones it was told. The simulator's half, the
-thinking its clock waits for, is in `tests/test_lerobot_sim.py`, beside the other lockstep tests.
+its own, so a segment's seconds are exactly the ones it was told.
 """
 
 from __future__ import annotations
@@ -11,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-import math
 import re
 import sys
 import time
@@ -30,9 +28,7 @@ from roboglot.agent.decision.stepper import (
 )
 from roboglot.agent.providers.base import ToolCall
 from roboglot.glotfile.narrow import (
-    FROZEN_INFERENCE_MAX_S,
     LISTED,
-    frozen_inference_s,
     narrow_policy_verb,
     policy_problem,
 )
@@ -61,7 +57,6 @@ from roboglot.safety import (
 from roboglot.verbs.registry import VerbRegistry, VerbResult, registry_from_manifest
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import LeRobotMock
-from roboglot_lerobot.policy.loop import MAX_RATE_HZ
 from roboglot_lerobot.policy.scripted import ScriptedRunner
 from roboglot_lerobot.real import LeRobotReal
 from roboglot_lerobot.verbs import (
@@ -229,7 +224,7 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
     against, refused it. Named, the mock arm keeps it as it is registered.
 
     A plain validate would pass a verb that some other body provides, and the page's own run
-    of the file is on `lerobot:mujoco` with a policy server, which checks it against the arm as
+    of the file is on `lerobot:real` with a policy server, which checks it against the arm as
     it describes itself before it connects. So every verb the file allows is one that arm
     provides: the file allowed `observe`, which it does not, and every run of it was refused.
     Named as it is registered, the arm holds no server, and the refusal says where to give it
@@ -267,12 +262,12 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
     assert "1 file valid" in plain.output and "1 file valid" in section
     result = CliRunner().invoke(app, ["validate", str(duck), "--robot", "lerobot:mock"])
     assert result.exit_code == 0, result.output
-    arm = factory.parse_robot_spec("lerobot:mujoco")
+    arm = factory.parse_robot_spec("lerobot:real")
     served = factory.describe(arm, policy=PolicyChoice("http://127.0.0.1"))
     provided = set(factory.registry_for(arm, served).names())
     missing = sorted(set(fm.verbs.allow) - provided)
-    assert not missing, f"lerobot:mujoco with a policy does not provide {missing}"
-    unserved = CliRunner().invoke(app, ["validate", str(duck), "--robot", "lerobot:mujoco"])
+    assert not missing, f"lerobot:real with a policy does not provide {missing}"
+    unserved = CliRunner().invoke(app, ["validate", str(duck), "--robot", "lerobot:real"])
     assert unserved.exit_code == 1, unserved.output
     said = " ".join(unserved.output.split())
     assert f"requires {POLICY_VERB}" in said and "roboglot policy serve" in said, said
@@ -418,53 +413,6 @@ async def test_no_verb_changes_nothing_and_a_body_that_cannot_be_told_keeps_its_
     assert narrowed is not None and narrowed.timeout_s == own.timeout_s
     assert _labels(registry) == _said(*INSTRUCTIONS)
     assert "each segment lasts" not in narrowed.description
-
-
-class _Frozen:
-    """A transport that can be told a segment's length, and says `said` for the seconds its
-    clock stands still over one, or raises it."""
-
-    def __init__(self, said: Any) -> None:
-        self.said = said
-        self.segment_s: float | None = None
-
-    def set_segment_s(self, seconds: float) -> None:
-        self.segment_s = seconds
-
-    def frozen_inference_s(self, _segment_s: float) -> Any:
-        if isinstance(self.said, BaseException):
-            raise self.said
-        return self.said
-
-
-def test_a_simulators_frozen_seconds_are_held_to_a_named_maximum_and_never_raise() -> None:
-    """The executor's timeout is the only thing on the wall's clock that ends a runner hanging on
-    a lockstep simulator, so what a transport says its clock stands still for is held to
-    `FROZEN_INFERENCE_MAX_S`, and what it cannot say, or raises saying, leaves the tightest
-    timeout rather than refusing the run: a narrowing that raised did so after an MCP session had
-    adopted the file. The maximum still covers a policy asked every tick at the fastest rate the
-    loop paces, thinking for the whole of every tick of the longest segment."""
-    most = FROZEN_INFERENCE_MAX_S
-    for said, frozen in (
-        (most / 2, most / 2),
-        (math.inf, most),
-        (sys.float_info.max, most),
-        (10 ** (sys.float_info.max_10_exp + 1), most),
-        (math.nan, 0.0),
-        (-most, 0.0),
-        (True, 0.0),
-        (str(most), 0.0),
-        (OverflowError("cannot convert float infinity to integer"), 0.0),
-    ):
-        transport = _Frozen(said)
-        assert frozen_inference_s(transport, SEGMENT_MAX_S) == frozen, said
-        registry = VerbRegistry()
-        registry.register(lerobot_verbs(policy=True)[POLICY_VERB])
-        narrowed = narrow_policy_verb(registry, _fm(segment_s=SEGMENT_MAX_S), transport)
-        assert narrowed is not None and transport.segment_s == SEGMENT_MAX_S
-        assert narrowed.timeout_s == SEGMENT_MAX_S + SEGMENT_HEADROOM_S + frozen, said
-    thinking = (math.ceil(SEGMENT_MAX_S * MAX_RATE_HZ) + 1) / MAX_RATE_HZ
-    assert thinking < most
 
 
 # ── the budget ──────────────────────────────────────────────────────────────────────────

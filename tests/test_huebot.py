@@ -407,7 +407,7 @@ def test_a_pilot_team_with_no_address_for_its_huebot_writes_nothing(tmp_path: Pa
     result = CliRunner().invoke(
         app,
         [
-            *("run", "team-hello", "--team", "pair", "--llm", "fake", "--no-gif", "--no-log"),
+            *("run", "team-hello", "--team", "pair", "--llm", "fake", "--no-log"),
             *("--runs-dir", str(tmp_path / "runs"), "--memory-dir", str(tmp_path / "memory")),
             *("--registry-dir", str(tmp_path / "registry")),
         ],

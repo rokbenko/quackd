@@ -12,10 +12,15 @@ from typing import Any
 import numpy as np
 import pytest
 
-from roboglot.sim2d.render import BALL
+from roboglot.perception.palette import BALL
 from roboglot.transport.base import Intent
 from roboglot_lerobot import LeRobotAdapter, make
 from roboglot_lerobot.fake_follower import FakeCamera, FakeFollower, calibration_for
+from roboglot_lerobot.follower import (
+    DeviceAlreadyConnectedError,
+    DeviceNotConnectedError,
+    FollowerConfig,
+)
 from roboglot_lerobot.mock import (
     GRIP_ON_OBJECT,
     MOCK_CAM_HEIGHT_M,
@@ -27,11 +32,6 @@ from roboglot_lerobot.mock import (
     LeRobotMock,
 )
 from roboglot_lerobot.real import MAX_STEP_DEG, STEP_ENV, LeRobotReal, joint_ranges
-from roboglot_lerobot.sim.follower import (
-    DeviceAlreadyConnectedError,
-    DeviceNotConnectedError,
-    SimFollowerConfig,
-)
 from roboglot_lerobot.upstream_api import SO_MOTOR_IDS
 from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
@@ -50,7 +50,7 @@ def _follower(*, cap: float | None = MAX_STEP_DEG, release: bool = False) -> Fak
     """The mock's follower on its own, at `REST`, with `cap` as the step cap on its config and
     `release` as its disconnect's torque flag. Its port is not open: a test connects it first, as
     the real backend does, since a closed port refuses every read and write."""
-    config = SimFollowerConfig(disable_torque_on_disconnect=release, max_relative_target=cap)
+    config = FollowerConfig(disable_torque_on_disconnect=release, max_relative_target=cap)
     return FakeFollower(
         config,
         travel=MOCK_RANGES,
@@ -210,8 +210,8 @@ def test_a_closed_port_refuses_every_read_and_write_as_lerobot_s_does() -> None:
     is not open, in one sentence under the class that refused (`up.NOT_CONNECTED`), and the mock's
     follower used to answer them all, before its connect and after its close alike. So a hand-off
     over a mock nobody had connected was let go of and read back rather than refused at its first
-    read, as the arm's is. It refuses them now, as the arm and the simulator do, and touches no
-    motor doing so, and the bus's own disconnect still passes over a closed port without a word."""
+    read, as the arm's is. It refuses them now, as the arm does, and touches no motor doing so,
+    and the bus's own disconnect still passes over a closed port without a word."""
     arm = _follower()
     follower = "SOFollower is not connected. Run `.connect()` first."
     bus = "SerialMotorsBus is not connected. Run `.connect()` first."
@@ -322,8 +322,8 @@ async def test_the_mock_is_the_real_backend_and_reads_its_travel_off_its_calibra
 async def test_the_mock_moves_under_the_step_the_arm_s_variable_sets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`ROBOGLOT_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm and its simulator, so a
-    rehearsal under a lowered cap moves as slowly as the arm will and says so in its manifest."""
+    """`ROBOGLOT_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm, so a rehearsal under
+    a lowered cap moves as slowly as the arm will and says so in its manifest."""
     lowered = MAX_STEP_DEG / 2
     monkeypatch.setenv(STEP_ENV, str(lowered))
     adapter = make("mock")

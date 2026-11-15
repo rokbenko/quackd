@@ -15,7 +15,7 @@ OpenRouter was read off its own documentation on 2026-10-06, and the code is
 ```bash
 uv pip install "roboglot[openrouter]"                    # not run here
 export OPENROUTER_API_KEY=...                           # not run here: no OpenRouter key on this machine
-roboglot run find-and-kick --llm openrouter --robot microduck:sim2d    # not run here against OpenRouter
+roboglot run hello-world --llm openrouter --robot microduck:mock    # not run here against OpenRouter
 ```
 
 ## The rows Roboglot carries
@@ -249,7 +249,6 @@ stepper.
 | Variants | catalog variants, `:free` and `:batch` among them, are separate entries on the list; routing variants "are accepted on any model ID at request time" and "are not listed" | only `:free` is taken; the rest are refused on their spelling, listed or not |
 | `~` aliases | "always resolve to the newest concrete model", and the list carries them | refused on their spelling |
 | Free LLMs | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 is asked again up to four times, then ends the run |
-| From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the seven rows |
 | No key | a keyless POST answered `401` | none: a run with no key stops before it posts |
 
 ## UNVERIFIED, and what Roboglot does about each
@@ -273,8 +272,7 @@ It has never answered a real robot, and this page says so until somebody reports
 LLM list check ran against OpenRouter itself, keyless. Everything after it ran against a stand-in:
 `tests/fake_openrouter.py` answers on 127.0.0.1, and `tests/test_openrouter_wire.py` drives a real
 `roboglot run` through the real `openai` SDK at it, checking the headers, the body, the replay, the
-cost of every turn and every refusal. The browser demo's client sent its request to the same
-stand-in under Node. None of that proves OpenRouter answers.
+cost of every turn and every refusal. None of that proves OpenRouter answers.
 
 ## How to help
 

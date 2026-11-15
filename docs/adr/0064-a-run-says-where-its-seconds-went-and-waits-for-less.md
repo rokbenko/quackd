@@ -1,6 +1,10 @@
 # ADR-0064: A run says where its seconds went, and waits for less
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (in `--decision-mode shadow` the stepper is asked beside the pilot LLM's call, not in front of it), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the summary says how the calls spread and when the body first moved, and `run_start` what the pilot was asked to reason at) and [ADR-0059](0059-a-turn-the-api-could-not-answer-is-asked-again.md) (a call is raced against the task's minutes as well as the stop) · Implemented in `roboglot/latency.py`, `roboglot/agent/loop.py` (`_unless_stopped`, `_minutes_spent`, `_guarded`, `_settle_beside`, `_Warming`), `roboglot/safety.py` (`Executor.first_motion_at`), `roboglot/agent/transcript.py` (`save_frames_off_loop`), `roboglot/agent/providers/sdk_warm.py`, `roboglot/agent/providers/factory.py` (`EFFORTS`, `effort_refusal`), `roboglot/ui.py` and `roboglot/cli.py` (`--effort`, `run_counters`)
+**Status:** accepted, amended · **Date:** 2026-10-26 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (in `--decision-mode shadow` the stepper is asked beside the pilot LLM's call, not in front of it), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the summary says how the calls spread and when the body first moved, and `run_start` what the pilot was asked to reason at) and [ADR-0059](0059-a-turn-the-api-could-not-answer-is-asked-again.md) (a call is raced against the task's minutes as well as the stop) · Implemented in `roboglot/latency.py`, `roboglot/agent/loop.py` (`_unless_stopped`, `_minutes_spent`, `_guarded`, `_settle_beside`, `_Warming`), `roboglot/safety.py` (`Executor.first_motion_at`), `roboglot/agent/transcript.py` (`save_frames_off_loop`), `roboglot/agent/providers/sdk_warm.py`, `roboglot/agent/providers/factory.py` (`EFFORTS`, `effort_refusal`), `roboglot/ui.py` and `roboglot/cli.py` (`--effort`, `run_counters`)
+
+**Amended 2026-11-15:** `microduck:mujoco`, which the owed check under Consequences runs
+`hello-world` on, is gone with the simulators, and so is `preflight`, which `--effort` is named
+on below. See the CHANGELOG's Unreleased entry.
 
 ## Context
 

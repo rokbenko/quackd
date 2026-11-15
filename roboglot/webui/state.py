@@ -18,6 +18,12 @@ from typing import Any
 
 SETUP_FILE = "ui-setup.json"
 
+FIRST_ROBOT = "microduck:mock"
+"""What the Setup screen shows first, and what a goal or a chat runs on before anybody has
+chosen: the form starts somewhere. The command line has no default robot
+(`roboglot.adapters.factory.default_spec`), so the page names this one rather than leave a
+`--robot` out and have the command refuse."""
+
 SAVED_BEFORE = {"_model": "_llm", "_model_text": "_llm_text", "_decision_model": "_decision_llm"}
 """The pickers' names in a setup saved before 0.32.0. Read as nothing chosen, they would put the
 page's first LLM back on Setup, and the next run would bill that one."""
@@ -88,9 +94,12 @@ class Setup:
             return dict(self.values)
 
     def options(self) -> dict[str, Any]:
-        """The option values alone, for `options.argv_for`."""
+        """The option values alone, for `options.argv_for`, with a robot always among them."""
         with self._lock:
-            return {k: v for k, v in self.values.items() if not k.startswith("_")}
+            out = {k: v for k, v in self.values.items() if not k.startswith("_")}
+        if not out.get("robot"):
+            out["robot"] = FIRST_ROBOT
+        return out
 
 
 _SETUP: Setup | None = None

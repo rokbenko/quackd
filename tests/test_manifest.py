@@ -39,7 +39,7 @@ def _manifest(**over: Any) -> RobotManifest:
 
 
 def test_round_trips_through_json() -> None:
-    m = microduck_manifest("sim2d")
+    m = microduck_manifest("mock")
     assert RobotManifest.model_validate_json(m.model_dump_json()) == m
 
 
@@ -82,23 +82,24 @@ def test_extra_keys_and_bad_ids_are_rejected() -> None:
 
 def test_digest_is_a_capability_fingerprint() -> None:
     # the backend and the id are not capabilities: two backends that offer the same verbs match
-    a = microduck_manifest("sim2d", "duck-a")
-    b = microduck_manifest("mujoco", "duck-b")
+    a = microduck_manifest("mock", "duck-a")
+    b = microduck_manifest("jsonrpc", "duck-b")
     assert a.digest() == b.digest() and len(a.digest()) == 16
     assert _manifest().digest() != a.digest()
-    # and one that says where the duck is offers more, which the fingerprint shows
-    assert microduck_manifest("mock", "duck-c").digest() != a.digest()
+    # and one that cannot say where the duck is offers less, which the fingerprint shows
+    assert microduck_manifest("mock", "duck-c", places=False).digest() != a.digest()
 
 
 def test_provides_is_alias_aware() -> None:
-    m = microduck_manifest("sim2d")
+    m = microduck_manifest("mock")
     assert m.provides("walk") and m.provides("move") and not m.provides("fly")
     spec = m.verb("get_frame")
     assert spec is not None and spec.name == "observe" and spec.core
 
 
 def test_microduck_manifest_matches_the_default_registry() -> None:
-    assert set(microduck_manifest("sim2d").verb_names()) == set(default_registry().names())
+    manifest = microduck_manifest("mock", places=False)
+    assert set(manifest.verb_names()) == set(default_registry().names())
 
 
 def test_registry_from_manifest_only_builds_declared_verbs() -> None:
@@ -190,7 +191,7 @@ def test_the_datasheet_is_part_of_the_capability_fingerprint() -> None:
 def test_the_task_file_replaces_figures_and_only_ever_adds_sentences() -> None:
     from roboglot.glotfile.schema import DatasheetOverride
 
-    base = microduck_manifest("sim2d")
+    base = microduck_manifest("mock")
     assert base.datasheet is not None
     merged = apply_datasheet_override(
         base,

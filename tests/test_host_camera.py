@@ -346,7 +346,7 @@ async def test_the_agent_loop_calibrates_the_boards_detector_at_connect(
         has_camera=False,
     )
     assert isinstance(detector, HostDetector)
-    assert (detector.fov_deg, detector.calibrated) == (90.0, True), "the simulator's, for now"
+    assert (detector.fov_deg, detector.calibrated) == (90.0, True), "the mock's, for now"
     duck = parse_glot_text(
         "---\nglot: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"

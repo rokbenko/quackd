@@ -2,6 +2,13 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-16 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is an adapter that declares a manifest) and [ADR-0022](0022-per-adapter-upstream-refs.md) (each adapter owns its upstream refs) · Amends [ADR-0034](0034-registered-robots-and-pilot-teams.md), which assumed there was always a body to fall back to · Documented in the README's install section and [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
+**Amended 2026-11-15:** with several adapters installed and no robot named, a command now
+refuses and lists them, the Microduck among them, because `microduck:sim2d`, the default below,
+is gone with every simulator. With one installed its first backend is still the default, and
+that is its `mock` on every adapter now. `roboglot[mujoco]`, the `sim3d` simulator and the 2D
+arena that stayed in the core are gone too, and the mocks that drew with its renderer paint from
+`roboglot/perception/palette.py`. See the CHANGELOG's Unreleased entries.
+
 **Amended 2026-11-05 by [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)
 and [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md):** an adapter may
 depend on a sibling adapter, in the same version window, when it is a body over that sibling's

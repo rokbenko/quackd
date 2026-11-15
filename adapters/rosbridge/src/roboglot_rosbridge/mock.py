@@ -1,9 +1,9 @@
 """A wheeled base that does exactly what the test tells it to.
 
-`RosbridgeMock` is a planar kinematic integrator with the same deadman semantics as the
-simulator: a Twist holds for half a second, then the base coasts to zero. Odometry is the
+`RosbridgeMock` is a planar kinematic integrator with a deadman: a Twist holds for half a
+second, then the base coasts to zero. Odometry is the
 integrated pose, and the optional camera serves a synthetic frame with an orange disc at a
-fixed spot in the arena, so `observe`, `search_scan` (turn mode) and `go_to` can be
+fixed spot, so `observe`, `search_scan` (turn mode) and `go_to` can be
 exercised offline, all the way to the executor's gates.
 """
 
@@ -17,7 +17,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import where_record
 from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
@@ -112,7 +112,7 @@ class RosbridgeMock:
         """Where the mock base is by its own integration, as /odom would say, in a frame that
         lasts the connection, as the ws backend's does. Set at connect."""
 
-    # ── physics ─────────────────────────────────────────────────────────────────────
+    # ── motion ──────────────────────────────────────────────────────────────────────
 
     def _integrate(self, dt: float) -> None:
         if self._last_cmd_t is not None and self._t - self._last_cmd_t > DEADMAN_S:

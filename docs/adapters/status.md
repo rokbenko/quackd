@@ -23,7 +23,7 @@ Every backend carries a tier, in the catalogue and in the second table below, an
 |---|---|
 | 🤖 **verified** | The real robot has moved under Roboglot, and the row names who ran it and the first day it did |
 | 🧪 **bound** | Code that reaches a real robot and has never met one. The row names who answers for its first hardware run and a date |
-| ✅ **rehearsed** | Runs whole tasks with no robot: in a simulator, or against a scripted mock, in CI |
+| ✅ **rehearsed** | Runs whole tasks with no robot, against a scripted mock, in CI |
 | 📄 **described** | A body Roboglot lists and reasons about and drives no part of: one file of its maker's figures. [Described bodies](#described-bodies) lists them. One backend is described too, `rosarm:ws`: bound code nobody has named an owner for, which refuses to start until somebody does |
 
 The rule since 2026-11-05
@@ -54,11 +54,8 @@ the rule's words until somebody names a date, and `rosarm:ws` is the one backend
 | Industrial arm on ROS 2 | `roboglot[rosarm]` | `roboglot-rosarm` |
 
 So `uv pip install "roboglot[open_duck]"` buys the Open Duck Mini and nothing else, and
-`roboglot[robots]` buys all ten, each with the SDK its real backend needs. Two extras buy the
-duck and one heavy thing it can do: `roboglot[mujoco]` is `roboglot-microduck[mujoco]`, the duck
-with its physics simulator, and `roboglot[microduck-camera]` is the duck with its WebRTC camera.
-One buys the arm's simulator: `roboglot[lerobot-sim]` is `roboglot-lerobot[sim]`, the arm with
-MuJoCo and without LeRobot, so it installs on Python 3.11 as well.
+`roboglot[robots]` buys all ten, each with the SDK its real backend needs. One extra buys the
+duck and one heavy thing it can do: `roboglot[microduck-camera]`, the duck with its WebRTC camera.
 
 An adapter that is not installed keeps its row in `roboglot list-adapters` and in
 `roboglot doctor`, marked not installed. Naming one anyway refuses with the extra to type:
@@ -67,27 +64,21 @@ at all, every command that needs a body refuses and names all ten.
 
 | Adapter | `--robot` | Tier | Notes | Upstream file | Page |
 |---|---|---|---|---|---|
-| Microduck | `microduck:sim2d` | ✅ rehearsed | default | | [adapters/microduck/README.md](microduck/README.md) |
-| | `microduck:mujoco` | ✅ rehearsed | physics simulator (MuJoCo, `roboglot[mujoco]`): `find-and-kick` 10 of 10 seeds on the stand-in, and 9 or 10 of 10 on the trained gait depending on the machine and the run, seed 4 being the marginal one | [`adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py) | |
-| | `microduck:mock` | ✅ rehearsed | | | |
+| Microduck | `microduck:mock` | ✅ rehearsed | | | [adapters/microduck/README.md](microduck/README.md) |
 | | `microduck:jsonrpc` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every method VERIFIED, never run on a duck | [`adapters/microduck/src/roboglot_microduck/upstream_api.py`](../../adapters/microduck/src/roboglot_microduck/upstream_api.py) | |
 | LeRobot | `lerobot:mock` | ✅ rehearsed | | | [adapters/lerobot/README.md](lerobot/README.md) |
 | | `lerobot:real` | 🤖 verified · rok · 2026-09-15 | **run on a real arm on 2026-09-15 and again on 2026-09-23**, the only row here that has been. On 2026-09-15 it was an SO-101 follower calibrated as `arm-01` and reached as `--robot lerobot:real --address COM3` with no registered name, on Windows 11, Python 3.12.12, lerobot 0.6.1, Roboglot 0.9.0, piloted by OpenAI `gpt-6-astra`. `lerobot-lookout` ran, once with `--llm fake` as well. Free-form `--goal` runs waved the wrist roll about plus or minus 27 degrees, reached wider with `shoulder_lift` -39 and `elbow_flex` 24 to 30, opened and closed the gripper (commanded 100, reported 98 open and 3 closed with the jaws nearly touching), and one of them mimed a duck quacking with the gripper. A USB webcam answered at `opencv://1`, and at `opencv://2` after a replug, 640x480, with no `?backend=` key needed. **The arm fell at the end of every run that day**, which is the fault the rest pose was written to fix. The rest pose first met that arm on 2026-09-23 and could not reach a fold that lay past the travel its calibration recorded, which is [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md). That second afternoon was 26 runs on Roboglot 0.12.0 with the arm registered as `arm-01`: 19 never moved the arm at a pilot's request, three failed at connect, each on one bad status packet, one lost and two garbled, and all 21 that reached their close kept torque on and ended at the power switch, which `roboglot robot release` now answers. None of what changed after it has run on the arm. Every LeRobot name is still VERIFIED at a pinned commit, and still exercised with a fake arm (Python 3.12+, [checklist](lerobot/hardware-checklist.md)). An SO-100 is registered with `--robot-type so100_follower` and runs the same code, bound and never run, and a Koch v1.1 is described and registered by nothing ([which arms](lerobot/README.md#which-arms)) | [`adapters/lerobot/src/roboglot_lerobot/upstream_api.py`](../../adapters/lerobot/src/roboglot_lerobot/upstream_api.py) | |
 | | `lerobot:real`, `--robot-type so100_follower` | 🧪 bound · rok · 2026-09-15 | no SO-100 has run: it runs the code that drove the SO-101, through the same LeRobot class | | |
 | | `lerobot:real`, `--robot-type koch_follower` | 📄 described | data only: Roboglot lists a Koch v1.1 and registers none, and `make()` refuses it until an owner names a date | | |
-| | `lerobot:mujoco` | ✅ rehearsed | the arm's simulator (MuJoCo, `roboglot[lerobot-sim]`): `lerobot:real`'s own code over a physics model of the SO-101, the maker's model fetched at a pinned commit. On that model a grasp driven through the real backend's own verbs lifts a cube clear of the table between both finger pads on 10 of 10 seeds, judged by the world's truth and not by Roboglot, and the bundled `lerobot-lookout` and a grasp task with a sidecar each pass the rehearsal `roboglot preflight` runs, on 10 seeds of 10: the lookout on the generic arm, which has no rest pose to return to, and the grasp task from a rest pose its close has to reach, though the grasp task's seeds move only a pen on the table, never the block it lifts (`tests/test_lerobot_sim_model.py`, by hand on 2026-09-27). The nightly `lerobot-sim-assets` job fetches the model and runs those sweeps, asking ten of ten, and its first run, dispatched on `main` on 2026-09-29 at the commit tagged `v0.16.0`, passed all three ten of ten ([run 36523568197](https://github.com/rokbenko/quackd/actions/runs/36523568197)). CI's gating job runs the simulator's other tests on a primitives-only stand-in, because it fetches nothing. Done means the simulator does what it says, not that it moves like an arm: nothing has compared it against one, and it never raises `lerobot:real`'s status | [`adapters/lerobot/src/roboglot_lerobot/sim/upstream_api.py`](../../adapters/lerobot/src/roboglot_lerobot/sim/upstream_api.py) | |
 | rosbridge | `rosbridge:mock` | ✅ rehearsed | | | [adapters/rosbridge/README.md](rosbridge/README.md) |
 | | `rosbridge:ws` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every roslibpy, rosbridge and message name VERIFIED at pinned commits, exercised with fake topics and fake services, including reading the robot's own description off the bridge, never run against a bridge | [`adapters/rosbridge/src/roboglot_rosbridge/upstream_api.py`](../../adapters/rosbridge/src/roboglot_rosbridge/upstream_api.py) | |
-| Open Duck Mini v2 | `open_duck:sim2d` | ✅ rehearsed | `open-duck-scout` 10 of 10 seeds | | [adapters/open_duck/README.md](open_duck/README.md) |
-| | `open_duck:mock` | ✅ rehearsed | | | |
+| Open Duck Mini v2 | `open_duck:mock` | ✅ rehearsed | | | [adapters/open_duck/README.md](open_duck/README.md) |
 | | `open_duck:bridge` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every runtime name VERIFIED at a pinned commit, the protocol exercised against the real daemon over loopback, never run on a duck | [`adapters/open_duck/src/roboglot_open_duck/upstream_api.py`](../../adapters/open_duck/src/roboglot_open_duck/upstream_api.py) | |
 | XLeRobot | `xlerobot:mock` | ✅ rehearsed | | | [adapters/xlerobot/README.md](xlerobot/README.md) |
 | | `xlerobot:zmq` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host Roboglot wrote from that source over loopback, never run on a cart | [`adapters/xlerobot/src/roboglot_xlerobot/upstream_api.py`](../../adapters/xlerobot/src/roboglot_xlerobot/upstream_api.py) | |
 | AlohaMini | `alohamini:mock` | ✅ rehearsed | | | [adapters/alohamini/README.md](alohamini/README.md) |
-| | `alohamini:sim2d` | ✅ rehearsed | `alohamini-lookout` 10 of 10 seeds | | |
 | | `alohamini:zmq` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | the whole wire format VERIFIED at a pinned commit, the client exercised against a fake host Roboglot wrote from that source over loopback, never run on a robot. The arm verbs additionally need Roboglot's own host wrapper, which nobody has run either | [`adapters/alohamini/src/roboglot_alohamini/upstream_api.py`](../../adapters/alohamini/src/roboglot_alohamini/upstream_api.py) | |
 | ToddlerBot | `toddlerbot:mock` | ✅ rehearsed | | | [adapters/toddlerbot/README.md](toddlerbot/README.md) |
-| | `toddlerbot:sim2d` | ✅ rehearsed | `toddlerbot-lookout` 10 of 10 seeds | | |
 | | `toddlerbot:bridge` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | every upstream name VERIFIED at the commit the v2.0.0 tag points at, the protocol and the daemon's own safety machinery exercised against a fake body over loopback, never run on a robot | [`adapters/toddlerbot/src/roboglot_toddlerbot/upstream_api.py`](../../adapters/toddlerbot/src/roboglot_toddlerbot/upstream_api.py) | |
 | Huebot | `huebot:mock` | ✅ rehearsed | | | [adapters/huebot/README.md](huebot/README.md) |
 | | `huebot:jsonrpc` | 🧪 bound · grandfathered 0.33.0 · 2026-11-05 | robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker is writing for the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/roboglot_huebot/upstream_api.py`](../../adapters/huebot/src/roboglot_huebot/upstream_api.py) | |
@@ -152,13 +143,10 @@ and a decision LLM leave open. Those four are why that 🤖 is a robot Roboglot 
 rather than a robot Roboglot is tested on.
 
 **Pilot teams** (`team.allocation.method: pilots`, `--team NAME`) run one LLM pilot per body
-on wall-clock time, on any adapter and backend including mixed ones, and have run on `mock` and
-`sim2d` bodies and on no hardware. **Coordinator teams** (`--team N`, `team.roles`) run N
-in-process views of one simulated world on one lockstep clock, Microducks only. The MQTT bus
-implements the same `Bus` protocol and was exercised once against a local broker
-([guides/lan.md](../guides/lan.md)); a coordinator team across machines also needs a clock across
-machines, which does not exist yet, and a pilot team needs no such clock and has never been tried
-across two.
+on wall-clock time, on any adapter and backend including mixed ones, and have run on `mock`
+bodies and on no hardware. The MQTT bus implements the `Bus` protocol a pilot team's in-process
+bus does, and was exercised once against a local broker ([guides/lan.md](../guides/lan.md)). A
+pilot team needs no clock across machines, and has never been tried across two.
 
 Each adapter's upstream tables, what Roboglot read and what it assumes, are on the page its
 row links.

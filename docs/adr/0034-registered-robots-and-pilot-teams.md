@@ -1,6 +1,12 @@
 # ADR-0034: A robot has a name, and a team can be N pilots talking
 
-**Status:** accepted · **Date:** 2026-09-13 · Extends [ADR-0020](0020-heterogeneous-teams.md) (bodies in a team) and [ADR-0021](0021-lan-discovery-and-mqtt-bus.md) (the bus carries one more kind) · Amends [ADR-0015](0015-team-deterministic-coordinator.md) (per-duck LLM pilots were out of scope), [ADR-0016](0016-team-lockstep-clock.md) (the lockstep clock is the auction's, not every team's) and [ADR-0025](0025-memory-between-runs.md) (memory is keyed by a registered name where there is one) · Documented in [registry.md](../guides/registry.md) and [team.md](../guides/team.md)
+**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0020](0020-heterogeneous-teams.md) (bodies in a team) and [ADR-0021](0021-lan-discovery-and-mqtt-bus.md) (the bus carries one more kind) · Amends [ADR-0015](0015-team-deterministic-coordinator.md) (per-duck LLM pilots were out of scope), [ADR-0016](0016-team-lockstep-clock.md) (the lockstep clock is the auction's, not every team's) and [ADR-0025](0025-memory-between-runs.md) (memory is keyed by a registered name where there is one) · Documented in [registry.md](../guides/registry.md) and [team.md](../guides/team.md)
+
+**Amended 2026-11-15:** a team is one kind now. The coordinator team, `auction`, is gone with
+the simulators it ran on, so `team.allocation.method` takes `pilots` alone and is that by
+default, `--team` takes a stored team's name and refuses a number, and the Consequences about
+the auction no longer apply. Registered robots, a pilot team, `tell` and memory by name stand as
+below. See the CHANGELOG's Unreleased entry.
 
 ## Context
 

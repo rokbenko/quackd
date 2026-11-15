@@ -42,12 +42,12 @@ from roboglot.host import (
 )
 from tests.fake_jetson_hostd import (
     BALL_BOX,
+    BALL_ORANGE,
     COMPATIBLE,
     MEMINFO,
     NVPMODEL_Q,
     ORIN_NANO,
     RELEASE_36_4_3,
-    SIM_ORANGE,
     TEGRASTATS_LINE,
     ZRAM_SWAPS,
     CannedReply,
@@ -537,7 +537,7 @@ def test_a_snapshot_is_an_rgb_image_and_its_age(hostd: FakeHostd) -> None:
     assert age == pytest.approx(0.12)
     x1, y1, x2, y2 = BALL_BOX
     r, g, b = image.getpixel((int((x1 + x2) / 2), int((y1 + y2) / 2)))
-    assert abs(r - SIM_ORANGE[0]) < 20 and abs(g - SIM_ORANGE[1]) < 20 and b < 40
+    assert abs(r - BALL_ORANGE[0]) < 20 and abs(g - BALL_ORANGE[1]) < 20 and b < 40
     assert client.camera_health() == {
         "url": f"{hostd.url}/snapshot.jpg",
         "frames": 1,

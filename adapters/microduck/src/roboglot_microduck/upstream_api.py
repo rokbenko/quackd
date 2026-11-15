@@ -302,8 +302,8 @@ TOF_FOV = UpstreamRef(
     src("kinematics/src/tof.rs", 34),
     "'The sensor's square field of view, degrees per axis' is 45 by 45, 'per ST's datasheet for "
     "both generations' (kinematics/src/tof.rs:32-34), an 8 by 8 grid of zones across it "
-    "(tof.rs:28-29). "
-    "The simulators' stand-in for the duck's map reveals what this field sees from each stop.",
+    "(tof.rs:28-29). A walk to a place takes it, with mapd's range, for what the duck's map "
+    "sees from each stop (MapdSource.view).",
 )
 TOF_FOV_DEG = 45.0
 """TOF_FOV, as a number."""
@@ -596,8 +596,8 @@ STATE_FRAMES = UpstreamRef(
     "frame, '+x right, +y down, +z along the optical axis' (lib.rs:4363-4374). On the stream "
     "since API 24, which first shipped in daemon-v0.12.0 on API 27. Roboglot turns camera's "
     "optical axis, quat applied to [0, 0, 1], into extras.head_yaw_deg and head_pitch_deg, "
-    "where the camera points from the trunk, positive left and up: the convention the "
-    "simulators have always published head_yaw_deg in. It records whether a robot reports "
+    "where the camera points from the trunk, positive left and up: the convention Roboglot's "
+    "verbs read head_yaw_deg in. It records whether a robot reports "
     "frames at all as extras.robotd.state_frames, and reads the head_yaw joint instead on a "
     "robotd that does not (HEAD_YAW_SIGN).",
 )
@@ -682,9 +682,8 @@ VELSTAND = UpstreamRef(
     "update. v8 changes no policy but velstand.onnx, and its manifest says that 'From v8 it gets "
     "up from a fall smoothly and reliably instead of violently or getting stuck on its back, and "
     "yaw commands are tracked (turning in place and while walking now reaches the commanded "
-    "rate)' (POLICY_SET in sim3d/upstream_api.py). That is upstream's word on its model, and "
-    "nobody has seen it on a duck under Roboglot. Roboglot's physics simulator still runs "
-    "alpha_walking and alpha_stand.",
+    "rate)' (the set's manifest.json, at pollen-robotics/microduck-policies on Hugging Face). "
+    "That is upstream's word on its model, and nobody has seen it on a duck under Roboglot.",
 )
 
 # ── what robot.state.policy can say ─────────────────────────────────────────────────────

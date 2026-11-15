@@ -9,11 +9,10 @@ which is what `manipulate` hands it. ACT is a policy that is told nothing: it le
 from your own demonstrations.
 
 > [!WARNING]
-> **No learned policy has driven a real arm through Roboglot.** As of 2026-10-25 every segment has
-> run against the test suite's fake arm and on the arm's simulator. A trained ACT from the Hub
-> drove a twin of the lab's arm on 2026-09-28 and 2026-09-29, SmolVLA loaded and never answered a
-> step in time on a laptop's CPU, and no other family has run at all. Rehearse on the simulator
-> first, and keep a hand on the arm's power switch the first time a policy drives it.
+> **No learned policy has driven a real arm through Roboglot.** The test suite runs every segment
+> against a fake arm. As of 2026-10-25 a trained ACT from the Hub had answered on a laptop's CPU,
+> SmolVLA had loaded and never answered a step in time there, and no other family had run at all.
+> Keep a hand on the arm's power switch the first time a policy drives it.
 
 ## Why Hugging Face
 
@@ -39,7 +38,7 @@ and `--json` for a script.
 
 | Type | Family | Maker | Told the subtask in words | Needs besides the extra | GPU | Licence | How far it has got |
 |---|---|---|---|---|---|---|---|
-| `act` | ACT | Tony Z. Zhao (ALOHA) | no, it learns one task | nothing | no: it answered on a laptop's CPU | yours: you train it on your own demonstrations | a trained ACT from the Hub drove the arm's twin on the simulator from a laptop's CPU on 2026-09-28, and CI serves a tiny random one, but none has driven the arm |
+| `act` | ACT | Tony Z. Zhao (ALOHA) | no, it learns one task | nothing | no: it answered on a laptop's CPU | yours: you train it on your own demonstrations | a trained ACT from the Hub answered on a laptop's CPU on 2026-09-28, and CI serves a tiny random one, but none has driven the arm |
 | `smolvla` | SmolVLA | Hugging Face | yes | --pin for the backbone its config names (`vlm_model_name`) | wants one: it took minutes a chunk on a laptop's CPU | [Apache-2.0](https://huggingface.co/lerobot/smolvla_base), read 2026-11-14 | lerobot/smolvla_base loaded on a laptop's CPU on 2026-09-28 and never answered a step in time |
 | `pi05` | Pi0.5 | Physical Intelligence | yes | `--pin google/paligemma-3b-pt-224@REVISION`, its tokenizer; a Hub token granted google/paligemma-3b-pt-224, which is gated | wants one (not measured) | [gemma on its card, Apache 2.0 on LeRobot's page](https://huggingface.co/lerobot/pi05_base), read 2026-11-14 | has not run |
 | `pi0` | Pi0 | Physical Intelligence | yes | `--pin google/paligemma-3b-pt-224@REVISION`, its tokenizer; a Hub token granted google/paligemma-3b-pt-224, which is gated | wants one (not measured) | [gemma on its card, Apache 2.0 on LeRobot's page](https://huggingface.co/lerobot/pi0_base), read 2026-11-14 | has not run |
@@ -69,14 +68,14 @@ What each family needs, what it refuses and why, and its licence in full are in
    its files before any weight is fetched, says what it needs, and times it through the real
    client.
 3. **Serve it** where it answers in time, below.
-4. **Point a run at it:** `roboglot run task.glot --robot arm-01-sim --policy-url ...`, on the arm's
-   simulator first.
+4. **Point a run at it:** `roboglot run task.glot --robot arm-01 --policy-url ...`, with a hand on
+   the arm's power switch the first time.
 
 ## Where it runs
 
 | Where | Start it with | Reach it with | What it costs | How far it has got |
 |---|---|---|---|---|
-| The laptop beside the arm | `roboglot policy serve --policy OWNER/NAME@REVISION` | `--policy-url http://127.0.0.1:9875` | nothing | an ACT drove the arm's twin from a laptop's CPU |
+| The laptop beside the arm | `roboglot policy serve --policy OWNER/NAME@REVISION` | `--policy-url http://127.0.0.1:9875` | nothing | an ACT answered on a laptop's CPU, but no policy has driven the arm from one |
 | A GPU you rent anywhere | the same command there, and `ssh -L 9875:127.0.0.1:9875` from the laptop | `--policy-url http://127.0.0.1:9875` | that GPU's rate | no round trip through one has been timed |
 | A Hugging Face Inference Endpoint | `roboglot policy endpoint up NAME --policy OWNER/NAME@REVISION` | `--policy-url hf:NAME` | from $0.80 an hour on an L4 in us-east-1, Hugging Face's price on 2026-10-25, and nothing while paused | Roboglot has never created one: it has run against stand-ins only |
 
@@ -94,7 +93,7 @@ otherwise stays on this machine. How each is set up is in
 
 | Not served | Maker | LeRobot type | Why not | What would change that |
 |---|---|---|---|---|
-| FLUX 3 Action | Black Forest Labs | `flux3` | it is a LeRobot policy type since 0.7.0 that Roboglot has not read, and it needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine, which publishes no wheel yet for the torch 2.15 LeRobot 0.7.0 installs; its weights are gated under the FLUX Kommunity License | a spike on a rented Linux GPU showing that `roboglot policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives the simulator end to end |
+| FLUX 3 Action | Black Forest Labs | `flux3` | it is a LeRobot policy type since 0.7.0 that Roboglot has not read, and it needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine, which publishes no wheel yet for the torch 2.15 LeRobot 0.7.0 installs; its weights are gated under the FLUX Kommunity License | a spike on a rented Linux GPU showing that `roboglot policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives an arm end to end |
 | Pi0-FAST | Physical Intelligence | `pi0_fast` | its policy loads the FAST action tokenizer with trust_remote_code=True, hard-wired, so serving it runs Python code the tokenizer's repository brings with it | LeRobot loading the FAST tokenizer without the repository's own code |
 | MolmoAct2 | Ai2 | `molmoact2` | its base model maps its classes to code of its own (auto_map), which Roboglot refuses in every model it loads | a decision to accept the auto_map of a checkpoint whose LeRobot loader ignores it, as LeRobot 0.7.0's MolmoAct2 loader does, fetching none of the repository's Python and building LeRobot's own copy of its code, which Roboglot would read first |
 | OpenVLA | the OpenVLA team (Stanford and partners) | none | it is not a LeRobot policy type at 0.7.0, and it loads through transformers with its repository's own code (auto_map) | a LeRobot port of it |
@@ -111,9 +110,9 @@ otherwise stays on this machine. How each is set up is in
 ## What has run, and what has not
 
 A tiny random ACT and a tiny random X-VLA run through the real server and client in CI, offline.
-A trained ACT from the Hub, `natsuki0000/act-so101-bluecap`, drove a twin of the lab's arm on
-the simulator from a laptop's CPU on 2026-09-28 over `roboglot serve-mcp`, and on 2026-09-29 under
-OpenAI's `gpt-6-sol` in a `roboglot run --goal`. `lerobot/smolvla_base` loaded on that laptop and
+A trained ACT from the Hub, `natsuki0000/act-so101-bluecap`, served on a laptop's CPU, answered
+Roboglot's own client on 2026-09-28 over `roboglot serve-mcp`, and on 2026-09-29 under OpenAI's
+`gpt-6-sol` in a `roboglot run --goal`. `lerobot/smolvla_base` loaded on that laptop and
 took minutes a chunk. No trained pi05, pi0, X-VLA or GR00T checkpoint has been loaded, benched
 or served, no round trip through a rented GPU has been timed, no Hugging Face Endpoint has been
 created, and no policy has driven the real arm. The run that would settle the arm's part is an

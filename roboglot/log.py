@@ -280,7 +280,7 @@ class LoggedTransport:
 
     def _robot_t(self) -> dict[str, float]:
         """The robot's own clock, so a burst's span is in the seconds the robot lived rather
-        than the wall seconds a free-running simulator crosses in a fraction of the time."""
+        than the wall seconds, which a mock's clock crosses in no time at all."""
         with contextlib.suppress(Exception):
             return {"robot_t": float(self._inner.now())}
         return {}
@@ -414,21 +414,9 @@ def fmt_params(params: Mapping[str, Any] | None, *, drop_none: bool = False) -> 
     )
 
 
-_CLOCK_GAP_S, _CLOCK_GAP_FRAC = 0.5, 0.2
-
-
 def _seconds(d: Mapping[str, Any]) -> str:
-    """`1.4 s`, or `20.0 s sim, 1.4 s wall` when a free-running simulator's clock and the
-    wall clock disagree. Both thresholds have to be crossed, or every sub-second sim verb
-    would print two numbers to say the same thing."""
-    wall = float(d.get("elapsed_s", 0) or 0)
-    robot, label = d.get("transport_s"), d.get("clock")
-    if robot is None or not label:
-        return f"{wall:.1f} s"
-    gap = abs(float(robot) - wall)
-    if gap <= _CLOCK_GAP_S or gap <= _CLOCK_GAP_FRAC * max(float(robot), wall):
-        return f"{wall:.1f} s"
-    return f"{float(robot):.1f} s {label}, {wall:.1f} s wall"
+    """`1.4 s`: how long a verb took on the wall's clock."""
+    return f"{float(d.get('elapsed_s', 0) or 0):.1f} s"
 
 
 def fmt_duration(seconds: float) -> str:
@@ -519,54 +507,12 @@ _BAD = dict.fromkeys(("fail", "refused", "denied", "budget", "aborted", "error")
 `preempted`) is yellow: the verb ended early on purpose and nothing is wrong."""
 
 
-_TEAM_STYLE = {
-    "auction": "cyan",
-    "claim": "bold",
-    "miss": "red",
-    "kick_done": "bold",
-    "verdict": "bold",
-    "separation": "yellow",
-    "auction_void": "yellow",
-    "auction_waiting": "yellow",
-    "member_dead": "red",
-    "member_excluded": "red",
-    "wedges_rotated": "cyan",
-    "bid_rejected": "yellow",
-    "talk": "cyan",
-}
+_TEAM_STYLE = {"talk": "cyan"}
 
 
 def team_caption(kind: str, d: Mapping[str, Any]) -> tuple[str, str] | None:
-    """A coordinator's decision as (WORD, detail), or None for anything that is not one.
-
-    One vocabulary for two surfaces: the GIF caption is `WORD detail` and the terminal line
-    is the word, lower-cased, in the label column. They were separate strings in the CLI and
-    would have drifted the first time either was touched."""
-    if kind == "auction":
-        return "AUCTION", f"first bid {d.get('first_bid')} {float(d.get('dist') or 0):.2f} m"
-    if kind == "claim":
-        spotter = f", spotter {d['spotter']}" if d.get("spotter") else ""
-        return "CLAIM", f"{d.get('kicker')} ({float(d.get('dist') or 0):.2f} m){spotter}"
-    if kind == "miss":
-        detail = f": {d['detail']}" if d.get("detail") else ""
-        return "MISS", f"{d.get('duck')}{detail}, re-searching"
-    if kind == "kick_done":
-        return "KICKED", f"by {d.get('kicker')}, the spotter judges"
-    if kind == "verdict":
-        moved = f" {float(d['moved_m']):.2f} m" if d.get("moved_m") is not None else ""
-        return "VERDICT", f"{d.get('verdict')}{moved} by {d.get('spotter')}"
-    if kind == "separation":
-        return "HOLD", f"{d.get('duck')} {float(d.get('dist') or 0):.2f} m away, ordered back"
-    if kind == "auction_void":
-        return "AUCTION", f"{d.get('auctions')} void: nobody eligible"
-    if kind == "auction_waiting":
-        return "AUCTION", f"waiting for a bid: {', '.join(d.get('missing_roles') or [])}"
-    if kind == "member_dead":
-        return "DEAD", f"{d.get('duck')}, last heartbeat at {float(d.get('last_hb') or 0):.1f} s"
-    if kind == "member_excluded":
-        return "OUT", f"{d.get('duck')} ({d.get('why')})"
-    if kind == "wedges_rotated":
-        return "SEARCH", f"round {d.get('round')}, wedges rotated {d.get('by_deg')} deg"
+    """A team's own line as (WORD, detail), or None for anything that is not one: what one pilot
+    said to another, the line in the label column lower-cased."""
     if kind == "talk":
         # the one team line a person actually reads for its content rather than its verdict,
         # so it carries the words and not a summary of them
@@ -578,9 +524,6 @@ def team_caption(kind: str, d: Mapping[str, Any]) -> tuple[str, str] | None:
         from roboglot.ui import printable
 
         return "TALK", printable(line)
-    if kind == "bid_rejected":
-        why = d.get("why") or f"missing {', '.join(d.get('missing') or [])}"
-        return "BID", f"{d.get('src')} for {d.get('role')} rejected: {why}"
     return None
 
 
@@ -598,7 +541,7 @@ def render_events(
         flown_by = "pilot" if asks_no_llm(d) else "LLM"
         head = f"{d.get('glot')} provider={d.get('provider')} {flown_by}={_llm_id(d)} robot={robot}"
         # Only a detector other than the colour one, which every run before there was a choice
-        # used and every run on a simulator still does: those lines stay exactly as they were,
+        # used and every run on a mock still does: those lines stay exactly as they were,
         # in every transcript already written and in every MCP result an LLM reads.
         detector = d.get("detector")
         if isinstance(detector, str) and detector != DEFAULT_DETECTOR:
@@ -1232,8 +1175,8 @@ hardware becomes one line every two seconds rather than twenty seconds of silenc
 
 MAX_BURST = 200
 """And how many intents may build, whatever the clock says. Twenty seconds at 10 Hz, which
-is the bound that matters in a free-running simulator: it crosses that in under two wall
-seconds, so the time rule never fires there."""
+is the bound that matters on a mock: its clock crosses that in no wall time at all, so the
+time rule never fires there."""
 
 
 class LineLog:

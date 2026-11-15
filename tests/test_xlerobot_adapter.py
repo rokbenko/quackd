@@ -214,7 +214,7 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
     m = xlerobot_manifest("mock", camera=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
     allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], "mock", manifest=m)
+    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
     # the prompt offers a verb as "- `name`: description"; the task's own prose may still say
     # the word, and does, because it explains that this robot has no voice
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
@@ -480,7 +480,7 @@ def test_the_variant_comes_off_the_address(address: str | None, expected: str) -
 async def test_the_camera_composites_run_through_the_executor() -> None:
     """`search_scan`, `go_to` and `approach_and` are in this manifest whenever a camera is,
     so they get driven rather than assumed. They are also the only declared verbs that would
-    move a 12 kg cart across a room, which makes them the last ones to leave untested."""
+    move a 12 kg cart across the floor, which makes them the last ones to leave untested."""
     adapter = XLerobotAdapter(XLerobotMock())
     manifest = await adapter.connect()
     ex = _executor(adapter, manifest)

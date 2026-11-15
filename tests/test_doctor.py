@@ -18,6 +18,7 @@ import threading
 from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -58,7 +59,6 @@ def test_doctor_runs() -> None:
         "adapters",
         "transports",
         "upstream assumptions",
-        "sim2d",
         "jsonrpc",
     ):
         assert needle in result.output
@@ -264,7 +264,7 @@ def test_render_says_everything_the_report_holds() -> None:
         # eight table titles used to carry these paths; losing them was losing where to read
         "read more:",
         "docs/adapters/lerobot/README.md",
-        "docs/adr/0030-mujoco-physics-backend.md",
+        "docs/adapters/microduck/README.md",
     ):
         assert needle in out, needle
 
@@ -272,20 +272,29 @@ def test_render_says_everything_the_report_holds() -> None:
 def test_the_transports_section_is_every_adapters_and_names_each_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each installed adapter adds its own rows to the transports table, so the table is not
-    one robot's. Its heading used to call them the Microduck's backends and say to pass
-    `--robot microduck:<name>`, which a row for the arm's simulator made untrue, so each row
-    names its own `adapter:backend` and the heading claims no body."""
+    """Each installed adapter adds its own rows to the transports table (`doctor_rows`), so the
+    table is not one robot's. Its heading used to call them the Microduck's backends and say to
+    pass `--robot microduck:<name>`, which a row for the arm made untrue, so each row names its
+    own `adapter:backend` and the heading claims no body. No adapter Roboglot publishes has a
+    row to add today, so the arm's module here is a stand-in that has one."""
+    real = doctor._adapter_module
+    row = doctor.TransportRow("lerobot:real", "checked here", note="the stand-in's own row")
+
+    def with_a_row(name: str) -> Any:
+        return SimpleNamespace(doctor_rows=lambda: [row]) if name == "lerobot" else real(name)
+
+    monkeypatch.setattr(doctor, "_adapter_module", with_a_row)
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     report = doctor.collect()
     rows = {row.name: row for row in report.transports}
-    assert "lerobot:mujoco" in rows, sorted(rows)
+    assert "lerobot:real" in rows, sorted(rows)
     buf = io.StringIO()
     doctor.render(Console(file=buf, width=200), report)
     out = buf.getvalue()
     assert "transports (backends an adapter checks on this machine)" in out
     assert "Microduck backends" not in out and "microduck:<name>" not in out
-    assert "lerobot:mujoco" in out and rows["lerobot:mujoco"].status in out
+    (drawn,) = [line for line in out.splitlines() if rows["lerobot:real"].status in line]
+    assert "lerobot:real" in drawn and "the stand-in's own row" in drawn, drawn
 
 
 def test_the_header_names_the_microducks_protocol_only_when_it_has_a_number(

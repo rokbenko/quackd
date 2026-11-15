@@ -166,12 +166,10 @@ async def test_the_record_says_what_was_asked_and_whose_word_it_was(
 def test_the_header_names_the_level_only_when_the_flag_asked() -> None:
     """A header quoted anywhere from a run without the flag stays what it was."""
     pilot = types.SimpleNamespace(name="anthropic", llm_id="claude-opus-5-5")
-    plain = cli._header_rows(provider=pilot, robot="duck", seed=None, dry_run=False, memory=None)
+    plain = cli._header_rows(provider=pilot, robot="duck", dry_run=False, memory=None)
     assert "effort" not in dict(plain)
     rows = dict(
-        cli._header_rows(
-            provider=pilot, robot="duck", seed=None, dry_run=False, memory=None, effort="Low"
-        )
+        cli._header_rows(provider=pilot, robot="duck", dry_run=False, memory=None, effort="Low")
     )
     assert rows["effort"] == "low (--effort)"
 
@@ -188,7 +186,6 @@ def test_a_run_refuses_the_flag_for_the_scripted_pilot_before_it_connects(tmp_pa
             "low",
             "--robot",
             "microduck:mock",
-            "--no-gif",
             "--no-memory",
             "--runs-dir",
             str(tmp_path),
@@ -203,8 +200,16 @@ def test_a_vla_run_refuses_the_flag_since_it_asks_no_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--controller vla` hands the arm to a policy server and reads it the task's steps from a
-    script, so a reasoning level has nobody to reach. Refused before the arm is built."""
+    script, so a reasoning level has nobody to reach. Refused before the arm is built: a real arm
+    whose rest pose is recorded, since only the real arm runs a policy and it needs the pose."""
+    from roboglot.registry import Registry, RobotEntry
+    from roboglot_lerobot.mock import REST
+
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    registry = tmp_path / "registry"
+    Registry(registry).add_robot(
+        RobotEntry(name="arm", spec="lerobot:real", address="COM9", rest_pose=dict(REST))
+    )
     result = runner.invoke(
         cli.app,
         [
@@ -212,7 +217,9 @@ def test_a_vla_run_refuses_the_flag_since_it_asks_no_llm(
             "--goal",
             "hold still",
             "--robot",
-            "lerobot:mujoco",
+            "arm",
+            "--registry-dir",
+            str(registry),
             "--policy-url",
             "http://127.0.0.1:1",
             "--policy-token",

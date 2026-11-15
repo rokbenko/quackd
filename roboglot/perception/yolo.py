@@ -1,8 +1,8 @@
 """An optional YOLO detector (`roboglot[yolo]`) for real cameras and cluttered scenes.
 
 Lazily imports `ultralytics` so the default install never pays for it. Maps COCO classes
-onto the same labels the colour-blob detector emits — `ball`, `person`, `pet` — so verbs
-and `.glot` files do not care which detector produced a detection.
+onto the labels Roboglot's verbs look for — `ball`, `person`, `pet` — the colour detector's
+`ball` among them, so verbs and `.glot` files do not care which detector produced a detection.
 
 The box maths lives in `detections_from_boxes`, apart from the model, because the model does not
 have to run on this machine: a Jetson reached with `--host` runs the same YOLO on its own GPU and
@@ -23,8 +23,6 @@ from roboglot.perception.base import Detection
 logger = logging.getLogger("roboglot.perception")
 
 COCO_TO_LABEL = {"sports ball": "ball", "person": "person", "cat": "pet", "dog": "pet"}
-LABELS = frozenset(COCO_TO_LABEL.values())
-"""The labels a YOLO detector gives, wherever its model runs (`labels_of`)."""
 HEIGHT_M = {"ball": 0.10, "person": 1.6, "pet": 0.35}
 GUESSED_FOV_DEG = 62.0
 """The lens assumed when nobody said which one this is: a Pi Camera Module 2's."""
@@ -77,7 +75,6 @@ def detections_from_boxes(
 
 class YoloDetector:
     name = "yolo"
-    labels = LABELS
     lens_at_connect = False
     """True on one `explicit_detector` built before the body connected, whose lens the loop and
     the MCP server set again from what the body reported. One built anywhere else, such as a

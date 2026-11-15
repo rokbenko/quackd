@@ -446,7 +446,10 @@ async def test_memory_and_its_folder_reach_every_goal_and_the_places(tmp_path: P
         runs_dir=str(tmp_path / "runs"),
     )
     run_dir = await run_drive(
-        args, say=lambda _line: None, stream=io.StringIO("patrol the room\nquit\n"), keyboard=False
+        args,
+        say=lambda _line: None,
+        stream=io.StringIO("patrol the kitchen\nquit\n"),
+        keyboard=False,
     )
     (goal_dir,) = (run_dir / "goals").iterdir()
     events = Transcript.read(goal_dir / "transcript.jsonl")
@@ -619,20 +622,6 @@ async def test_a_vla_session_whose_duck_does_not_allow_manipulate_is_refused_fir
     with pytest.raises(DriveError, match="look does not allow it"):
         await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
     assert not runs.exists(), "refused before anything was made"
-
-
-async def test_fov_reaches_a_simulators_detector_and_outlasts_a_goal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The simulators' detector learns no lens at connect, so it measured through 90 degrees
-    whatever --fov-deg said."""
-    kept = _kept_sessions(monkeypatch)
-    args = DriveArgs(robot="microduck:sim2d", llm="fake", fov_deg=62, runs_dir=str(tmp_path))
-    await run_drive(
-        args, say=lambda _line: None, stream=io.StringIO("look around\nquit\n"), keyboard=False
-    )
-    (session,) = kept
-    assert getattr(session.robot.detector, "fov_deg", None) == 62.0
 
 
 async def test_decision_frames_are_read_from_the_command_line_alone(

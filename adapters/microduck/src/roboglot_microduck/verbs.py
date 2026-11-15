@@ -20,15 +20,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from roboglot.transport.base import DuckState, Intent
 from roboglot.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
-from roboglot.verbs.explore import ExploreSpec, explore_verb, find_verb
 from roboglot.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from roboglot.verbs.watch import HeadSpec, watch_verb
 from roboglot_microduck import upstream_api as up
 from roboglot_microduck.body import KICK_SKILLS, MICRODUCK, SIT_TOGGLE, Body
 
 MICRODUCK_HEAD = HeadSpec(
-    # `gaze`'s own `left` and `right`, half the 90 its `bearing_deg` may ask for, and inside both
-    # simulators' 60.
+    # `gaze`'s own `left` and `right`, half the 90 its `bearing_deg` may ask for.
     yaw_deg=45.0,
     # Up as far as `gaze`'s `up` goes (atan 0.25), and down as far as robotd's own glances tilt it,
     # 0.2 rad (`up.IDLE_HEAD`). Wider than `gaze` downward, and nothing more until a duck is
@@ -50,17 +48,6 @@ MICRODUCK_HEAD = HeadSpec(
     ),
 )
 """The Microduck's head as `watch` holds it: starting values, until a duck is measured."""
-
-MICRODUCK_EXPLORE = ExploreSpec(
-    # a look turns the head as far as `watch` may turn it, and the body past that, and waits for
-    # the head as `watch` does; how wide a look is and how far it reaches are the map's own
-    # (`SpatialSource.view`)
-    head_yaw_deg=MICRODUCK_HEAD.yaw_deg,
-    head_settle_s=MICRODUCK_HEAD.settle_s,
-    source="the head's reach and settle as watch holds them (MICRODUCK_HEAD), and the map's own "
-    "view",
-)
-"""The Microduck's numbers for `explore` and `find`, beside what its map says of itself."""
 
 
 class KickParams(BaseModel):
@@ -100,7 +87,7 @@ class GazeParams(BaseModel):
 def _blind(state: DuckState) -> bool:
     """True when nothing is reporting falls, so `state.fallen` is silence and not a verdict.
 
-    `fall_detection` is absent on the backends that always know (the simulator, the mock), and
+    `fall_detection` is absent on the backend that always knows (the mock), and
     False on a real robot whose state stream has stopped or never started.
     """
     return state.extras.get("fall_detection") is False
@@ -156,7 +143,7 @@ def _answering_a_fall(body: Body, state: DuckState) -> str | None:
     hands it back (`up.LIMP_FALL`), and it labels every tick of that with one of two labels. The
     label is read whatever the posture says, since a duck that has landed reads `fallen` before
     any label is looked at. safety.limp is true on the first half's ticks and on no others, so
-    the label covers it too. The simulators and the mock never report either label."""
+    the label covers it too. The mock never reports either label."""
     if state.policy not in up.LIMP_FALL_LABELS:
         return None
     return f"policy {state.policy!r}: {body.not_standing[state.policy]}"
@@ -178,7 +165,7 @@ def _not_fallen(body: Body, state: DuckState) -> str | None:
 def _standing(body: Body, state: DuckState) -> str | None:
     """Standing, and known to be: `unknown` refuses, where it used to pass.
 
-    The simulators and the mock always know their posture. On a real robot `unknown` is
+    The mock always knows its posture. On a real robot `unknown` is
     everything Roboglot cannot vouch for, a duck mid-skill, rising off its seat, limp, or
     reporting a policy label Roboglot has never read, and the transport says which in
     `posture_reason`, so the refusal can too.
@@ -441,8 +428,6 @@ async def gaze(ctx: VerbContext, p: GazeParams) -> VerbResult:
 
 
 _WATCH = watch_verb(MICRODUCK_HEAD)
-_EXPLORE = explore_verb(MICRODUCK_EXPLORE)
-_FIND = find_verb(MICRODUCK_EXPLORE)
 
 
 @cache
@@ -498,10 +483,6 @@ def verbs_for(body: Body) -> dict[str, Verb]:
         # Declared only on a duck with a camera (`microduck_manifest`), and offered only on a run
         # that can look through a decision LLM (`roboglot.verbs.watch.withdraw_watch`).
         _WATCH,
-        # Declared only where the duck's reading keeps a map and knows the body's size, and find
-        # only on a duck with a camera besides (`microduck_manifest`).
-        _EXPLORE,
-        _FIND,
     )
     return {verb.name: verb for verb in family if verb.name in body.verbs}
 

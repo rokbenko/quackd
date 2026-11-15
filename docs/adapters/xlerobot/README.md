@@ -237,7 +237,7 @@ port can drive the robot. Bind it to loopback and reach it through an ssh tunnel
 |---|---|---|
 | `CAMERA_KEY_SHAPE` | a camera is any observation key whose value is a string | the seventeen state keys are floats, so a string is the marker; the chosen key is in `extras.camera_key` |
 | `CAMERA_COLOR_ORDER` | the host's JPEG holds BGR | Roboglot swaps to RGB. One photograph of a red object retires this |
-| `CAMERA_FOV_DEG` | upstream names no field of view | the detector's 90° is the simulator's camera, not this one; bearings are approximate and `extras.assumptions` says so |
+| `CAMERA_FOV_DEG` | upstream names no field of view | the detector's 90° is a mock's camera, not this one; bearings are approximate and `extras.assumptions` says so |
 | `HEAD_AXES` | which head motor is yaw is undocumented. Upstream's own agent library RoboCrew drives id 7 as yaw and id 8 as pitch, but that is second-hand and its pitch range is not centred on zero | Roboglot never commands the head, and does not declare `gaze` |
 | `BASE_VARIANT` | the three-omniwheel base is the default | Roboglot cannot tell the bases apart on the wire, so the owner says which with `?variant=diff2` or `?variant=mecanum` on the address; those declare `max_vy: 0.0`, so a strafe is clamped and reported rather than silently ignored |
 | `OBSERVATION_STALENESS` | nothing on the wire is timestamped | Roboglot stamps on arrival and calls a reading older than the watchdog window a heartbeat failure, instead of serving a cache like upstream's own client does |
