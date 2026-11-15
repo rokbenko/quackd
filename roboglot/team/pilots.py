@@ -32,7 +32,13 @@ from typing import Any, Protocol
 
 from roboglot import __version__
 from roboglot.adapters.base import go_to_rest_if_any
-from roboglot.adapters.factory import RobotSpec, describe, make_adapter, needs_rest_pose
+from roboglot.adapters.factory import (
+    RobotSpec,
+    describe,
+    make_adapter,
+    needs_rest_pose,
+    parse_robot_spec,
+)
 from roboglot.adapters.manifest import RobotManifest
 from roboglot.agent.loop import AgentLoop, Outcome, RunConfig, RunResult, resolve_play
 from roboglot.agent.providers.base import LLMProvider, Usage
@@ -43,10 +49,59 @@ from roboglot.log import EventLog, Sink
 from roboglot.memory import RobotMemory
 from roboglot.safety import allow_all, deny_all
 from roboglot.team.bus import Bus, InProcessBus
-from roboglot.team.runner import TEAM_LOG, BusFactory, ViewFactory
+from roboglot.team.messages import TeamMessage
 from roboglot.team.talk import TEAM_SRC, Peer, make_links, notice
 from roboglot.team.transcript import TeamTranscript
 from roboglot.verbs.aliases import canonical
+
+BusFactory = Callable[[Callable[[TeamMessage], None]], Bus]
+"""`bus_factory(tap) -> Bus`: the seam for `MqttBus`; the in-process bus is the default."""
+
+ViewFactory = Callable[[str], "Sink | None"]
+"""`view(name) -> Sink | None`: a view per member, by member name, and one more for
+`TEAM_LOG`: the team's own events (the planner's call, the coordinator's story). Return a
+distinct sink per name, or two members' intent bursts fold into one line."""
+
+TEAM_LOG = "team"
+
+
+def member_specs(
+    members: list[str],
+    robots: dict[str, str] | None,
+    duck_default: str | dict[str, str] | None,
+    *,
+    fallback: str | None = None,
+) -> dict[str, RobotSpec]:
+    """Each member's robot: `--robots`, else the task file's `robots:`, else `fallback`.
+
+    A coordinator team passes `DEFAULT_MEMBER`, because a coordinator team is N views of one
+    simulated Microduck world and there is nothing else it could be. A pilot team passes
+    None, because it is N separate bodies of whatever kind, and the machine's own answer to
+    "which robot, then" is `default_spec()`: the one adapter installed if there is one, the
+    Microduck if the Microduck is among several, and a refusal naming what to install if there
+    is none. Hardcoding the duck here was a second default that outlived the first."""
+    given: dict[str, str] = {}
+    if robots:
+        given = dict(robots)
+    elif isinstance(duck_default, dict):
+        given = dict(duck_default)
+    elif isinstance(duck_default, str):
+        given = dict.fromkeys(members, duck_default)
+    specs: dict[str, RobotSpec] = {}
+    chosen: RobotSpec | None = None
+    for name in members:
+        if (named := given.get(name)) is not None:
+            parsed = parse_robot_spec(named)
+        elif fallback is not None:
+            parsed = parse_robot_spec(fallback)
+        else:
+            from roboglot.adapters.factory import default_spec
+
+            chosen = chosen or default_spec()  # asked once: the answer cannot differ per member
+            parsed = chosen
+        specs[name] = RobotSpec(parsed.adapter, parsed.backend, name)
+    return specs
+
 
 MIN_MEMBERS = 2
 MAX_MEMBERS = 8

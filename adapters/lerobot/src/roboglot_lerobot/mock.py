@@ -45,6 +45,7 @@ from roboglot.adapters.base import GripperResult, HandResult, RestResult
 from roboglot.transport.base import Ack, HeartbeatError, Intent
 from roboglot_lerobot.arms import ROBOT_TYPE
 from roboglot_lerobot.fake_follower import FakeCamera, FakeFollower
+from roboglot_lerobot.follower import FollowerConfig
 from roboglot_lerobot.policy.loop import Segment
 from roboglot_lerobot.policy.runner import Chunk, Features, Observation
 from roboglot_lerobot.policy.scripted import SWEEP_DEG, SWEEP_JOINT, SWEEP_PERIOD_S
@@ -56,7 +57,6 @@ from roboglot_lerobot.real import (
     LeRobotReal,
     joint_ranges,
 )
-from roboglot_lerobot.sim.follower import SimFollowerConfig
 from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
@@ -293,7 +293,7 @@ class LeRobotMock(LeRobotReal):
             max_step_deg=max_step_deg,
         )
         self.follower = FakeFollower(
-            SimFollowerConfig(**self._config_kwargs()),
+            FollowerConfig(**self._config_kwargs()),
             travel=MOCK_RANGES,
             pose=REST,
             object_at=OBJECT_AT,

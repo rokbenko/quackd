@@ -36,7 +36,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import Fix, where_record
 from roboglot.transport.base import Ack, CameraFrame, DuckState, HeartbeatError, Intent

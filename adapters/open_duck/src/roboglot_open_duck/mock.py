@@ -13,7 +13,7 @@ import math
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.transport.base import Ack, DuckState, Intent
 from roboglot.transport.mock import MockTransport
 from roboglot_open_duck.verbs import GESTURES

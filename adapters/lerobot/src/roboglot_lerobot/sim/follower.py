@@ -52,13 +52,28 @@ from __future__ import annotations
 import contextlib
 import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
 from pprint import pformat
 from typing import Any, TypeVar
 
 from roboglot_lerobot import upstream_api as up
-from roboglot_lerobot.arms import SO_ENCODER_TICKS
+from roboglot_lerobot.follower import (
+    BUS_CLASS,
+    DISCONNECT_RETRIES,
+    FOLLOWER_CLASS,
+    GRIPPER,
+    MAX_RES,
+    NO_STATUS,
+    NOT_SENT,
+    TEMPERATURE,
+    TORQUE_ENABLE,
+    BusMotor,
+    DeviceAlreadyConnectedError,
+    DeviceNotConnectedError,
+    FollowerConfig,
+    NameOrID,
+    ensure_safe_goal_position,
+)
 from roboglot_lerobot.sim.faults import (
     CONFIGURE,
     HANDSHAKE,
@@ -75,101 +90,18 @@ from roboglot_lerobot.sim.world import ArmWorld
 from roboglot_lerobot.verbs import JOINTS
 
 T = TypeVar("T")
-NameOrID = str | int
-"""How a bus call names one motor: by name, or by the id the table gives it (`up.BUS_MOTORS`)."""
-
-FOLLOWER_CLASS = "SOFollower"
-"""The class an SO-101 follower is (`up.SO_FOLLOWER`), which LeRobot's refusals name."""
-BUS_CLASS = "SerialMotorsBus"
-"""The class its bus is (`up.SO_BUS`), named the same way."""
-NO_STATUS = "Operation timed out"
-NOT_SENT = "Timeout error"
-"""serialport-rs's words for a reply that never came, and rustypot's for a packet that could not go
-out, which LeRobot ends its bus errors with (`up.BUS_SYNC_READ_ERROR`)."""
-DISCONNECT_RETRIES = 5
-"""The extra tries upstream's bus disconnect gives its torque-off (`up.BUS_DISCONNECT`)."""
-MAX_RES = SO_ENCODER_TICKS - 1
-"""What LeRobot divides a turn by to turn a tick into degrees (`up.DEGREES_FORMULA`)."""
-GRIPPER = JOINTS[-1]
-"""The one motor in LeRobot's RANGE_0_100 mode rather than degrees (`up.SO_GRIPPER_RANGE`)."""
+SimFollowerConfig = FollowerConfig
+SimMotor = BusMotor
 FULL_SCALE = 100.0
 """The top of that range."""
 POSITION = "Present_Position"
 GOAL = "Goal_Position"
-TORQUE_ENABLE = "Torque_Enable"
-TEMPERATURE = "Present_Temperature"
 LOCK = "Lock"
 """The registers the simulated bus has: the two LeRobot normalises (`up.BUS_NORMALIZED_DATA`),
 the two Roboglot reads off the bus itself (`up.STS3215_REGISTERS`), and the lock every torque
 write is followed by (`up.BUS_ENABLE_TORQUE`)."""
 Lost = tuple[str, str]
 """Where a torque fault lands: a motor's name and the register whose write got no reply."""
-
-
-class DeviceNotConnectedError(ConnectionError):
-    """LeRobot's refusal of a call through a port that is not open (`up.NOT_CONNECTED`)."""
-
-
-class DeviceAlreadyConnectedError(ConnectionError):
-    """LeRobot's refusal of a connect through a port that is open
-    (`up.SO_CONNECT_REFUSES_WHILE_OPEN`)."""
-
-
-@dataclass
-class SimFollowerConfig:
-    """The fields of `up.SO_CONFIG` the real backend builds a follower with, by the same
-    keywords (`LeRobotReal._config_kwargs`), so one dict of them builds either follower.
-
-    Mutable, as LeRobot's config is: the real backend writes the torque flag on it just before
-    each disconnect, and both fields are read when they are used and not when the follower is
-    built."""
-
-    disable_torque_on_disconnect: bool
-    max_relative_target: float | dict[str, float] | None
-    port: str = ""
-    id: str = ""
-    use_degrees: bool = True
-    cameras: dict[str, Any] = field(default_factory=dict)
-    num_read_retries: int = 2
-    """Upstream's default (`up.SO_CONFIG`): the extra tries each read of the positions gets."""
-
-
-def ensure_safe_goal_position(
-    goal_present_pos: Mapping[str, tuple[float, float]],
-    max_relative_target: float | dict[str, float],
-) -> dict[str, float]:
-    """LeRobot's step cap, line for line (`up.ENSURE_SAFE_GOAL_POSITION`), and not imported,
-    because LeRobot needs Python 3.12 and torch.
-
-    A float caps every goal, a dict must name exactly the goals it caps or it is a ValueError,
-    and anything else, an int included, is a TypeError. Each goal is then the present reading
-    moved toward it by at most the cap, with `min` before `max` as upstream has them, so a NaN
-    cap caps nothing. LeRobot also logs every goal it moved; nothing in Roboglot reads that log,
-    and a rehearsal would print it on every step of every ramp, so it is left out."""
-    if isinstance(max_relative_target, float):
-        diff_cap: Mapping[str, float] = dict.fromkeys(goal_present_pos, max_relative_target)
-    elif isinstance(max_relative_target, dict):
-        if not set(goal_present_pos) == set(max_relative_target):
-            raise ValueError("max_relative_target keys must match those of goal_present_pos.")
-        diff_cap = max_relative_target
-    else:
-        raise TypeError(max_relative_target)
-    safe_goal_positions: dict[str, float] = {}
-    for key, (goal_pos, present_pos) in goal_present_pos.items():
-        diff = goal_pos - present_pos
-        max_diff = diff_cap[key]
-        safe_diff = min(diff, max_diff)
-        safe_diff = max(safe_diff, -max_diff)
-        safe_goal_positions[key] = present_pos + safe_diff
-    return safe_goal_positions
-
-
-@dataclass(frozen=True)
-class SimMotor:
-    """One row of the bus's motor table (`up.BUS_MOTORS`): the id is the one field Roboglot
-    reads, to name the joint a bus error is about."""
-
-    id: int
 
 
 class SimBus:

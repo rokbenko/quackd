@@ -1975,8 +1975,7 @@ def _run_impl(
     from roboglot.registry import RegistryError, Resolved, no_rest_pose_refusal
     from roboglot.safety import Aborted, KillSwitch, allow_all
     from roboglot.space.room import RoomError, load_room
-    from roboglot.team.pilots import ADVISORY_FIELDS, roster_from_specs
-    from roboglot.team.runner import member_specs
+    from roboglot.team.pilots import ADVISORY_FIELDS, member_specs, roster_from_specs
     from roboglot.transport.base import TransportError
 
     if (glotfile is None) == (goal is None):
@@ -3012,7 +3011,7 @@ def _member_views(
         prompt_shown_default,
         thinking_limit_default,
     )
-    from roboglot.team.runner import TEAM_LOG
+    from roboglot.team.pilots import TEAM_LOG
 
     views: dict[str, ConsoleLog] = {}
     width = max(len(name) for name in [*member_names, TEAM_LOG])

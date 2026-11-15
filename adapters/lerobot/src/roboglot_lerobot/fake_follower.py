@@ -13,7 +13,7 @@ plain as the backend's code allows:
   (`up.POSITION_LIMITS_CLAMP_GOALS`), and a reading is not: a joint placed past its travel reads
   past it.
 - **The step cap.** Each send is capped at `config.max_relative_target` from the present
-  reading, by LeRobot's own function (`sim.follower.ensure_safe_goal_position`), read off the
+  reading, by LeRobot's own function (`follower.ensure_safe_goal_position`), read off the
   config as the send is made, so a policy segment's cap governs its sends and the verbs' cap
   theirs.
 - **A goal lands by the next read.** A goal within the cap is where the joint reads next, as a
@@ -62,8 +62,8 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
-from roboglot_lerobot.sim.follower import (
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot_lerobot.follower import (
     BUS_CLASS,
     DISCONNECT_RETRIES,
     FOLLOWER_CLASS,
@@ -72,11 +72,11 @@ from roboglot_lerobot.sim.follower import (
     NO_STATUS,
     TEMPERATURE,
     TORQUE_ENABLE,
+    BusMotor,
     DeviceAlreadyConnectedError,
     DeviceNotConnectedError,
+    FollowerConfig,
     NameOrID,
-    SimFollowerConfig,
-    SimMotor,
     ensure_safe_goal_position,
 )
 from roboglot_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
@@ -138,7 +138,7 @@ class FakeBus:
 
     def __init__(self, arm: FakeFollower, motor_ids: Mapping[str, int]) -> None:
         self.arm = arm
-        self.motors = {name: SimMotor(motor_ids[name]) for name in JOINTS}
+        self.motors = {name: BusMotor(motor_ids[name]) for name in JOINTS}
         self._open = False
         """Whether the port is open, which is all LeRobot's bus knows of it
         (`up.BUS_IS_CONNECTED`): there is no port handler and no busy flag (`up.NO_BUSY_FLAG`)."""
@@ -250,7 +250,7 @@ class FakeBus:
 class FakeFollower:
     """What `lerobot:mock` drives: the follower and its bus, over an arm in memory.
 
-    Built with a config (`sim.follower.SimFollowerConfig`, the fields the real backend builds a
+    Built with a config (`follower.FollowerConfig`, the fields the real backend builds a
     follower with), the travel of each body joint in degrees, which becomes its calibration
     (`calibration_for`), the pose it starts in, where the object is in joint space (`object_at`,
     the three joints that put the jaws round it, or None for nothing to hold), how near those
@@ -270,7 +270,7 @@ class FakeFollower:
 
     def __init__(
         self,
-        config: SimFollowerConfig,
+        config: FollowerConfig,
         *,
         travel: Mapping[str, tuple[float, float]],
         pose: Mapping[str, float],

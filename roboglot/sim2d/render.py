@@ -17,15 +17,13 @@ import numpy as np
 import numpy.typing as npt
 from PIL import Image, ImageChops, ImageDraw
 
+from roboglot.perception.palette import BALL, CAM_FOV_DEG, FLOOR, HORIZON, SKY, focal_px
 from roboglot.sim2d.world import ARENA_HALF, World
 from roboglot.space.grid import UNKNOWN, OccupancyGrid
 from roboglot.space.room import HEIGHT_M, Room
 
 # Colours are part of the contract: the detector's HSV ranges are tuned to these.
-FLOOR = (236, 229, 212)
-SKY = (204, 222, 240)
 WALL = (70, 62, 55)
-BALL = (255, 140, 0)  # orange — hue ≈ 33°
 DUCK = (250, 210, 40)  # cream colorway (the historic duck yellow)
 BEAK = (230, 100, 20)  # NEVER used for peers in duck-cams: its hue is inside the ball band
 PERSON = (60, 90, 220)  # blue
@@ -43,9 +41,7 @@ COLORWAY_RGB: dict[str, tuple[int, int, int]] = {
 }
 DUCK_BODY_HEIGHT_M = 0.18  # how tall a peer looks in another duck's camera
 
-CAM_FOV_DEG = 90.0
 CAM_HEIGHT_M = 0.20
-HORIZON = 0.45  # fraction of frame height
 
 # A room's walls and furniture, in greys far below the saturation every detector band starts at
 # (`roboglot.perception.color_blob`), so nothing solid is ever taken for a ball, a person or a duck.
@@ -55,10 +51,6 @@ BEYOND = (128, 122, 114)  # the top-down view outside a room's walls
 UNSEEN = (96, 96, 104)  # laid over floor the simulated map has not seen yet
 UNSEEN_ALPHA = 110  # of 255
 KEYFRAME = (40, 120, 140)  # where the simulated map stopped and looked
-
-
-def focal_px(width: int, fov_deg: float = CAM_FOV_DEG) -> float:
-    return (width / 2) / math.tan(math.radians(fov_deg) / 2)
 
 
 def render_topdown(

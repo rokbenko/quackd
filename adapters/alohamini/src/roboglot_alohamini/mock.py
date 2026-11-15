@@ -25,7 +25,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from roboglot.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
 from roboglot_alohamini.verbs import (
     ARMS,

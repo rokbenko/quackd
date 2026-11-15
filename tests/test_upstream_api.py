@@ -681,19 +681,19 @@ def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
         assert word in step_cap.note, word
     # the words the simulated bus fails in, and the model number its handshake prints
     assert lerobot_api.STS3215_MODEL_NUMBER.name.endswith(f" {lerobot_api.STS3215_MODEL}")
-    from roboglot_lerobot.sim import follower as simulated
+    from roboglot_lerobot import follower
 
     sync = lerobot_api.BUS_SYNC_READ_ERROR
     assert sync.name.startswith("Failed to sync read '") and "sync write" in sync.note
     # serialport-rs's words for a reply that never came, and rustypot's for a packet that never
     # went out, which the simulated bus fails in
-    assert (simulated.NO_STATUS, simulated.NOT_SENT) == ("Operation timed out", "Timeout error")
-    for result in (simulated.NO_STATUS, simulated.NOT_SENT):
+    assert (follower.NO_STATUS, follower.NOT_SENT) == ("Operation timed out", "Timeout error")
+    for result in (follower.NO_STATUS, follower.NOT_SENT):
         assert f"`{result}`" in sync.note, result
     assert "motor <M>: <error>" in sync.name
     torque = lerobot_api.TORQUE_TRIED_ON_EVERY_MOTOR
     assert torque.name.startswith("Failed to <enable|disable> torque after <k> tries on '<joint>'")
-    assert f"SOFollower.bus is a {simulated.BUS_CLASS}" == lerobot_api.SO_BUS.name
+    assert f"SOFollower.bus is a {follower.BUS_CLASS}" == lerobot_api.SO_BUS.name
     assert "is not connected. Run `.connect()` first." in lerobot_api.NOT_CONNECTED.note
     assert "is already connected." in lerobot_api.NOT_CONNECTED.note
     # the finger meshes the simulator cuts pads from are files the pin fetches

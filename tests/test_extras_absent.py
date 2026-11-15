@@ -328,7 +328,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         assert counted in " ".join(said.split()), said
 
         # a pilot team does not reach past the refusal for a hardcoded duck either
-        from roboglot.team.runner import member_specs
+        from roboglot.team.pilots import member_specs
 
         with pytest.raises(NoRobotNamed, match="no robot adapter is installed"):
             member_specs(["a", "b"], None, None, fallback=None)

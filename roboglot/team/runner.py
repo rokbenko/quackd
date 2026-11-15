@@ -17,7 +17,7 @@ from typing import Any
 
 from roboglot import __version__
 from roboglot.adapters.base import AdapterError
-from roboglot.adapters.factory import RobotSpec, describe, parse_robot_spec
+from roboglot.adapters.factory import RobotSpec, describe
 from roboglot.agent.providers.base import LLMProvider, Usage
 from roboglot.agent.transcript import new_run_dir, run_label
 from roboglot.command import command_line
@@ -30,22 +30,12 @@ from roboglot.team.auction import AuctionPolicy
 from roboglot.team.bus import Bus, InProcessBus
 from roboglot.team.coordinator import TeamCoordinator, TeamOutcome
 from roboglot.team.member import TeamMember
-from roboglot.team.messages import TeamMessage
+from roboglot.team.pilots import TEAM_LOG, BusFactory, ViewFactory, member_specs
 from roboglot.team.planner import plan_team_task
 from roboglot.team.transcript import TeamTranscript
 from roboglot.transport.sim2d import make_team
 
 DEFAULT_MEMBER = "microduck:sim2d"
-
-BusFactory = Callable[[Callable[[TeamMessage], None]], Bus]
-"""`bus_factory(tap) -> Bus`: the seam for `MqttBus`; the in-process bus is the default."""
-
-ViewFactory = Callable[[str], "Sink | None"]
-"""`view(name) -> Sink | None`: a view per member, by member name, and one more for
-`TEAM_LOG`: the team's own events (the planner's call, the coordinator's story). Return a
-distinct sink per name, or two members' intent bursts fold into one line."""
-
-TEAM_LOG = "team"
 
 
 @dataclass
@@ -70,44 +60,6 @@ class TeamResult:
     @property
     def ok(self) -> bool:
         return self.outcome == "success"
-
-
-def member_specs(
-    members: list[str],
-    robots: dict[str, str] | None,
-    duck_default: str | dict[str, str] | None,
-    *,
-    fallback: str | None = DEFAULT_MEMBER,
-) -> dict[str, RobotSpec]:
-    """Each member's robot: `--robots`, else the task file's `robots:`, else `fallback`.
-
-    A coordinator team passes `DEFAULT_MEMBER`, because a coordinator team is N views of one
-    simulated Microduck world and there is nothing else it could be. A pilot team passes
-    None, because it is N separate bodies of whatever kind, and the machine's own answer to
-    "which robot, then" is `default_spec()`: the one adapter installed if there is one, the
-    Microduck if the Microduck is among several, and a refusal naming what to install if there
-    is none. Hardcoding the duck here was a second default that outlived the first."""
-    given: dict[str, str] = {}
-    if robots:
-        given = dict(robots)
-    elif isinstance(duck_default, dict):
-        given = dict(duck_default)
-    elif isinstance(duck_default, str):
-        given = dict.fromkeys(members, duck_default)
-    specs: dict[str, RobotSpec] = {}
-    chosen: RobotSpec | None = None
-    for name in members:
-        if (named := given.get(name)) is not None:
-            parsed = parse_robot_spec(named)
-        elif fallback is not None:
-            parsed = parse_robot_spec(fallback)
-        else:
-            from roboglot.adapters.factory import default_spec
-
-            chosen = chosen or default_spec()  # asked once: the answer cannot differ per member
-            parsed = chosen
-        specs[name] = RobotSpec(parsed.adapter, parsed.backend, name)
-    return specs
 
 
 def make_sim_team(
@@ -163,7 +115,7 @@ async def run_team(
             raise ValueError("--team N cannot be combined with team.roles; name the members")
         team = team.model_copy(update={"members": n_override})
     members = team.member_names
-    specs = member_specs(members, robots, duck.frontmatter.robots)
+    specs = member_specs(members, robots, duck.frontmatter.robots, fallback=DEFAULT_MEMBER)
     for name, spec in specs.items():
         if spec.backend != "sim2d":
             raise ValueError(
