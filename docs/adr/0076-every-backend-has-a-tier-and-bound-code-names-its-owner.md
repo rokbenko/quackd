@@ -1,6 +1,6 @@
 # ADR-0076: Every backend has a tier, and bound code names its owner
 
-**Status:** accepted, amended · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (an adapter is a family, a body file and a binding) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md), whose "no row gets ✅ unless we exercised it" becomes one of four tiers · Implemented in 0.33.0 in `quackd/adapters/catalogue.py` (the `Tier` on every backend) and the tests that hold it · Documented in [docs/adapters/status.md](../adapters/status.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md#add-an-adapter)
+**Status:** accepted, amended · **Date:** 2026-11-05 · Follows [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) (an adapter is a family, a body file and a binding) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md), whose "no row gets ✅ unless we exercised it" becomes one of four tiers · Implemented in 0.33.0 in `roboglot/adapters/catalogue.py` (the `Tier` on every backend) and the tests that hold it · Documented in [docs/adapters/status.md](../adapters/status.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md#add-an-adapter)
 
 **Amended 2026-11-08 by [ADR-0078](0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md):**
 Bound code may also enter with no owner when its backend is tiered `described` and its `make()`
@@ -27,8 +27,8 @@ more robots wanted, the same path would add fifteen more.
 
 **Every backend carries a tier, as data in the catalogue row.** The four tiers:
 
-- **described**: a body quackd lists, registers and reasons about from one YAML, and drives
-  no part of ([ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)).
+- **described**: a body Roboglot lists, registers and reasons about from one YAML, and drives
+  no part of ([ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)).
 - **rehearsed**: a mock or a simulator of a body, run in the suite.
 - **bound**: a backend that reaches a real robot, whose upstream names were read at a pin, and
   that has never met one.
@@ -38,7 +38,7 @@ more robots wanted, the same path would add fifteen more.
 first hardware run and when, or who ran a verified one and when; the note is what the status
 string used to say of that backend alone. The marks stay and are derived from the tier, 📄 ✅
 🧪 🤖, so a ✅ can never sit on a bound backend, and every table that prints a status prints
-the tier: [docs/adapters/status.md](../adapters/status.md), `quackd list-adapters`, `quackd
+the tier: [docs/adapters/status.md](../adapters/status.md), `roboglot list-adapters`, `roboglot
 doctor` and their `--json`. The README's table keeps its finer words, simulator, physics and
 mock under rehearsed, daemon and names under bound, each behind its tier's mark, and its
 legend says which tier each belongs to. A third party's adapter may declare `TIERS`, `FAMILY`

@@ -13,18 +13,18 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import AdapterNotInstalled, RobotAdapter
-from quackd.adapters.factory import make_adapter, parse_robot_spec
-from quackd.agent.prompts import build_system_prompt
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck
-from quackd.duckfile.validate import validate_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import Intent
-from quackd.verbs.core import scan_mode
-from quackd.verbs.registry import VerbNotFound, registry_from_manifest
-from quackd_alohamini import (
+from roboglot.adapters.base import AdapterNotInstalled, RobotAdapter
+from roboglot.adapters.factory import make_adapter, parse_robot_spec
+from roboglot.agent.prompts import build_system_prompt
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot
+from roboglot.glotfile.validate import validate_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
+from roboglot.transport.base import Intent
+from roboglot.verbs.core import scan_mode
+from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
+from roboglot_alohamini import (
     MAX_VX,
     MAX_VY,
     MAX_WZ,
@@ -35,9 +35,9 @@ from quackd_alohamini import (
     implementations,
     parse_model,
 )
-from quackd_alohamini.mock import AlohaMiniMock
-from quackd_alohamini.sim2d import AlohaMiniSim2D
-from quackd_alohamini.verbs import (
+from roboglot_alohamini.mock import AlohaMiniMock
+from roboglot_alohamini.sim2d import AlohaMiniSim2D
+from roboglot_alohamini.verbs import (
     GRIPPER_CLOSED,
     JOINTS_5DOF,
     JOINTS_6DOF,
@@ -87,7 +87,7 @@ ALOHAMINI_VERBS = {
 #: Verbs other robots have and this body has not. No speaker, no head, no legs.
 ABSENT = {"say", "quack", "gaze", "express", "play_sound", "wake_up", "sit", "stand", "kick"}
 
-DUCK = load_duck("alohamini-lookout")
+DUCK = load_glot("alohamini-lookout")
 
 
 def _executor(adapter: AlohaMiniAdapter, manifest: object) -> Executor:
@@ -117,9 +117,9 @@ def test_manifest_is_a_wheeled_body_with_two_arms_and_a_lift() -> None:
 
 
 def test_limits_stay_inside_the_schema_because_limits_may_only_narrow() -> None:
-    from quackd.verbs.core import MAX_VX as SCHEMA_VX
-    from quackd.verbs.core import MAX_VY as SCHEMA_VY
-    from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
+    from roboglot.verbs.core import MAX_VX as SCHEMA_VX
+    from roboglot.verbs.core import MAX_VY as SCHEMA_VY
+    from roboglot.verbs.core import MAX_WZ as SCHEMA_WZ
 
     m = alohamini_manifest("mock", camera=True)
     assert m.limits["max_vx"] <= SCHEMA_VX
@@ -220,7 +220,7 @@ def test_joint_goals_are_normalised_and_not_degrees() -> None:
         MoveJointsParams(arm="left", positions={})
 
 
-# ── the registry, the prompt and .duck validation all agree ────────────────────────────
+# ── the registry, the prompt and .glot validation all agree ────────────────────────────
 
 
 def test_an_absent_verb_is_absent_everywhere() -> None:
@@ -237,14 +237,14 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
-    assert validate_duck(DUCK, [alohamini_manifest("sim2d", camera=True)]) == []
+    assert validate_glot(DUCK, [alohamini_manifest("sim2d", camera=True)]) == []
     allowed = set(DUCK.frontmatter.verbs.allow)
     assert not (allowed & {"move", "lift", "move_joints", "go_to", "approach_and", "search_scan"})
 
 
 def test_the_cli_refuses_a_task_this_robot_cannot_do() -> None:
     result = runner.invoke(
-        app, ["validate", "ducks/open-duck-scout.duck", "--robot", "alohamini:mock"]
+        app, ["validate", "tasks/open-duck-scout.glot", "--robot", "alohamini:mock"]
     )
     assert result.exit_code != 0
 
@@ -297,7 +297,7 @@ async def test_homing_leaves_the_lift_travelling_and_a_stop_is_what_ends_it() ->
     mock = AlohaMiniMock()
     adapter = AlohaMiniAdapter(mock)
     await adapter.connect()
-    assert mock.lift_velocity < 0, "the lift is descending the moment quackd arrives"
+    assert mock.lift_velocity < 0, "the lift is descending the moment Roboglot arrives"
     await adapter.stop()
     assert mock.lift_velocity == 0
 
@@ -314,7 +314,7 @@ async def test_the_watchdog_stops_the_base_and_the_lift_and_leaves_the_arms() ->
     assert mock.joints["arm_left_shoulder_pan"] == pytest.approx(20.0)
 
 
-# ── the arms, which are limp unless quackd's own host is running ───────────────────────
+# ── the arms, which are limp unless Roboglot's own host is running ───────────────────────
 
 
 async def test_a_stock_host_refuses_the_arm_verbs_with_a_reason_that_names_the_fix() -> None:
@@ -392,7 +392,7 @@ def test_the_factory_builds_every_backend(backend: str) -> None:
 
 
 def test_an_unknown_backend_names_the_real_ones() -> None:
-    from quackd_alohamini import make
+    from roboglot_alohamini import make
 
     with pytest.raises(ValueError, match="unknown alohamini backend"):
         make("serial")
@@ -403,7 +403,7 @@ async def test_the_zmq_backend_without_the_extra_names_it(
 ) -> None:
     monkeypatch.setitem(sys.modules, "zmq", None)
     adapter = make_adapter("alohamini:zmq", address="tcp://robot.local:5555")
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[alohamini\]"):
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[alohamini\]"):
         await adapter.connect()
 
 
@@ -479,9 +479,9 @@ def test_the_manifest_declares_exactly_this_set_and_no_more() -> None:
 
 
 def test_a_kicking_task_is_refused_against_this_robot_with_the_validators_words() -> None:
-    problems = validate_duck(load_duck("find-and-kick"), [describe("mock", "alohamini-01")])
+    problems = validate_glot(load_glot("find-and-kick"), [describe("mock", "alohamini-01")])
     assert any("does not provide it" in p.message for p in problems), [p.message for p in problems]
-    cli = runner.invoke(app, ["validate", "ducks/find-and-kick.duck", "--robot", "alohamini:mock"])
+    cli = runner.invoke(app, ["validate", "tasks/find-and-kick.glot", "--robot", "alohamini:mock"])
     assert cli.exit_code == 1 and "does not provide it" in cli.output
 
 
@@ -496,7 +496,7 @@ def test_list_verbs_shows_the_real_set() -> None:
 async def test_the_confirm_gated_verbs_are_actually_gated() -> None:
     """`lift`, `move_joints` and `home_arms` all declare `safety_class="confirm"` and nothing
     verified any of it. These are the verbs that drive a 600 mm motorised axis and two arms
-    whose torque quackd's own host wrapper had to switch on."""
+    whose torque Roboglot's own host wrapper had to switch on."""
     asked: list[str] = []
 
     def refuse(name: str, _params: dict[str, object]) -> bool:

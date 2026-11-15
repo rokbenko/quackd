@@ -1,6 +1,6 @@
 """The bridge backend against a fake bridge daemon over TCP loopback.
 
-The fake speaks exactly the protocol quackd defines for this robot, so this proves our
+The fake speaks exactly the protocol Roboglot defines for this robot, so this proves our
 framing, the handshake and its version gate, the capability narrowing that decides which
 verbs the robot has, the deadman-feeding command notifications, and the heartbeat that
 refuses a starved control loop. It proves nothing about a real duck.
@@ -15,13 +15,13 @@ from typing import Any
 
 import pytest
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, allow_all
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.registry import registry_from_manifest
-from quackd_open_duck import OpenDuckAdapter
-from quackd_open_duck.bridge import (
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.bridge import (
     COMMAND,
     MIN_LOOP_HZ,
     PROTOCOL,
@@ -31,10 +31,10 @@ from quackd_open_duck.bridge import (
     OpenDuckBridge,
     parse_address,
 )
-from quackd_open_duck.verbs import HEAD_YAW_RANGE
+from roboglot_open_duck.verbs import HEAD_YAW_RANGE
 
-DUCK = parse_duck_text(
-    "---\nduck: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
+DUCK = parse_glot_text(
+    "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
     "  allow: [move, gaze, say, quack, express, report_state, stop]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
@@ -200,7 +200,7 @@ async def test_a_protocol_mismatch_refuses_rather_than_guessing() -> None:
 
 async def test_a_missing_bridge_says_so_in_words_an_owner_can_act_on() -> None:
     t = OpenDuckBridge("tcp://127.0.0.1:1")
-    with pytest.raises(TransportError, match="quackd-duck-bridge running"):
+    with pytest.raises(TransportError, match="roboglot-duck-bridge running"):
         await t.connect()
 
 
@@ -226,7 +226,7 @@ async def test_an_answer_over_asyncios_default_line_reaches_the_client(bridge: F
 async def test_a_line_over_the_limit_costs_that_line_and_not_the_link(
     bridge: FakeBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("quackd_open_duck.bridge.READER_LIMIT", 2**12)
+    monkeypatch.setattr("roboglot_open_duck.bridge.READER_LIMIT", 2**12)
     t = OpenDuckBridge(bridge.address, request_timeout_s=0.5)
     await t.connect()
     bridge.state_padding = 10_000
@@ -263,7 +263,7 @@ async def test_a_line_the_client_cannot_read_does_not_end_the_link() -> None:
 
 
 async def test_an_error_that_is_no_object_still_answers_its_request() -> None:
-    """The request was let go before its error was read, so an error quackd could not read
+    """The request was let go before its error was read, so an error Roboglot could not read
     left it waiting for an answer that had already come."""
     t = OpenDuckBridge("tcp://127.0.0.1:1")
     t._reader = asyncio.StreamReader()
@@ -475,7 +475,7 @@ async def test_head_control_is_off_unless_the_bridge_says_it_is_on() -> None:
 
 async def test_a_bridge_that_cannot_see_falls_reports_unknown_not_standing() -> None:
     """A duck nobody is watching must never read as upright. Nothing upstream reports a
-    fall, so a bridge with no IMU tap sends null and quackd says it does not know."""
+    fall, so a bridge with no IMU tap sends null and Roboglot says it does not know."""
     fake = FakeBridge(fallen=None)
     await fake.start()
     t = OpenDuckBridge(fake.address)
@@ -536,7 +536,7 @@ async def test_the_token_can_come_from_the_environment(monkeypatch) -> None:
 
 async def test_a_state_that_could_not_be_read_is_not_a_healthy_duck() -> None:
     """The client used to suppress the error and return a default frame, so `fallen` was
-    False, `policy_running` was None, both preconditions passed, and quackd would start a
+    False, `policy_running` was None, both preconditions passed, and Roboglot would start a
     `move` into a link that was not there. `report_state` printed a pose of exactly
     (0, 0, 0) for a robot that has no odometry at all."""
     fake = FakeBridge()
@@ -551,7 +551,7 @@ async def test_a_state_that_could_not_be_read_is_not_a_healthy_duck() -> None:
     assert "UNREADABLE" in state.summary()
     assert state.x is None and state.y is None and state.theta is None
 
-    from quackd_open_duck.verbs import open_duck_conditions
+    from roboglot_open_duck.verbs import open_duck_conditions
 
     for name, check in open_duck_conditions().items():
         assert check(state) is not None, f"{name} must refuse on a state it could not read"

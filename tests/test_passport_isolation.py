@@ -1,7 +1,7 @@
-"""`quackd/passport/` imports nothing else from quackd.
+"""`roboglot/passport/` imports nothing else from Roboglot.
 
-The protocol is written to leave quackd one day, and this package is meant to leave with it
-whole (ADR-0057). An import of `quackd.registry` or `quackd.ui` slipped in for convenience is
+The protocol is written to leave Roboglot one day, and this package is meant to leave with it
+whole (ADR-0057). An import of `roboglot.registry` or `roboglot.ui` slipped in for convenience is
 exactly what would make that a rewrite instead of a move, so it fails here first.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parents[1] / "quackd" / "passport"
+PACKAGE = Path(__file__).resolve().parents[1] / "roboglot" / "passport"
 ALLOWED_THIRD_PARTY = {"cryptography"}
 
 
@@ -29,14 +29,14 @@ def test_the_passport_package_imports_only_itself_the_stdlib_and_cryptography() 
     import sys
 
     files = sorted(PACKAGE.glob("*.py"))
-    assert files, "quackd/passport/ moved, so this test checks nothing"
+    assert files, "roboglot/passport/ moved, so this test checks nothing"
     stray = []
     for path in files:
         for name in _imports(path):
             top = name.split(".")[0]
-            if name.startswith("quackd.passport") or name == "__future__":
+            if name.startswith("roboglot.passport") or name == "__future__":
                 continue
             outside = top not in sys.stdlib_module_names and top not in ALLOWED_THIRD_PARTY
-            if top == "quackd" or outside:
+            if top == "roboglot" or outside:
                 stray.append(f"{path.name}: {name}")
-    assert not stray, f"quackd/passport/ must stand on its own: {stray}"
+    assert not stray, f"roboglot/passport/ must stand on its own: {stray}"

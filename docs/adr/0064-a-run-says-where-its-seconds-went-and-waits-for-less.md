@@ -1,11 +1,11 @@
 # ADR-0064: A run says where its seconds went, and waits for less
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (in `--decision-mode shadow` the stepper is asked beside the pilot LLM's call, not in front of it), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the summary says how the calls spread and when the body first moved, and `run_start` what the pilot was asked to reason at) and [ADR-0059](0059-a-turn-the-api-could-not-answer-is-asked-again.md) (a call is raced against the task's minutes as well as the stop) · Implemented in `quackd/latency.py`, `quackd/agent/loop.py` (`_unless_stopped`, `_minutes_spent`, `_guarded`, `_settle_beside`, `_Warming`), `quackd/safety.py` (`Executor.first_motion_at`), `quackd/agent/transcript.py` (`save_frames_off_loop`), `quackd/agent/providers/sdk_warm.py`, `quackd/agent/providers/factory.py` (`EFFORTS`, `effort_refusal`), `quackd/ui.py` and `quackd/cli.py` (`--effort`, `run_counters`)
+**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (in `--decision-mode shadow` the stepper is asked beside the pilot LLM's call, not in front of it), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the summary says how the calls spread and when the body first moved, and `run_start` what the pilot was asked to reason at) and [ADR-0059](0059-a-turn-the-api-could-not-answer-is-asked-again.md) (a call is raced against the task's minutes as well as the stop) · Implemented in `roboglot/latency.py`, `roboglot/agent/loop.py` (`_unless_stopped`, `_minutes_spent`, `_guarded`, `_settle_beside`, `_Warming`), `roboglot/safety.py` (`Executor.first_motion_at`), `roboglot/agent/transcript.py` (`save_frames_off_loop`), `roboglot/agent/providers/sdk_warm.py`, `roboglot/agent/providers/factory.py` (`EFFORTS`, `effort_refusal`), `roboglot/ui.py` and `roboglot/cli.py` (`--effort`, `run_counters`)
 
 ## Context
 
 Rok asked on 2026-10-25 for a command line that answers as close to real time as it can. Most
-of that is a new way to drive a robot, which comes in later releases. Some of it is `quackd run`
+of that is a new way to drive a robot, which comes in later releases. Some of it is `roboglot run`
 as it stands, where a person waits on four things: the pilot LLM's calls, which on the README's arm
 run were 62.1 of 78.8 seconds; the turn around them; the stepper in shadow mode, asked before
 the pilot LLM on every turn although its answer changed nothing there; and the record, which could
@@ -15,7 +15,7 @@ the robot asks first, how long it took to do anything at all, was in no field.
 
 ## Decision
 
-1. **The summary says how the calls spread and when the body first moved.** `quackd.latency`
+1. **The summary says how the calls spread and when the body first moved.** `roboglot.latency`
    is the one definition, nearest rank, so every figure is a call that happened. The summary
    gains `llm_latency_p50_s`, `llm_latency_p90_s` and `llm_latency_max_s` over the calls that
    answered, only where one did, and the stepper's block the same three. `first_motion_s` is
@@ -31,7 +31,7 @@ the robot asks first, how long it took to do anything at all, was in no field.
    and a wait carries the last answer's seconds.
 4. **`--effort low|medium|high`** on `run` and `preflight` reaches Anthropic's
    `output_config.effort`, OpenAI's reasoning effort and an LLM server of your own, and beats
-   `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand without it. Three
+   `ROBOGLOT_EFFORT` and `ROBOGLOT_OPENAI_REASONING_EFFORT`, which still stand without it. Three
    levels, because both vendors have those three. It is refused before anything connects where
    it cannot reach: the scripted pilot, `--controller vla`, an LLM that takes no effort or not
    at that level, by its catalogue row (`LLMSpec.effort` and `effort_levels`, read off each
@@ -75,7 +75,7 @@ the robot asks first, how long it took to do anything at all, was in no field.
   and, for a pilot with a warm-up, `pilot_warm`. A shadow turn's `decision` line follows its
   `llm` line now, and its `decision_frame` line its `llm_request`.
 - None of the seconds this saves is measured. The owed check is Step 0 of the plan: twenty
-  timed requests per keyed decision LLM, and one `quackd run hello-world --robot
+  timed requests per keyed decision LLM, and one `roboglot run hello-world --robot
   microduck:mujoco --no-memory` per vendor, compared on per-call `latency_s` and time to the
   first `verb_start` against a run on this release.
 - Shadow costs a turn only what is left of the stepper's second once the pilot LLM has answered,

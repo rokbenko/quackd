@@ -3,31 +3,31 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-toddlerbot"
+name = "roboglot-toddlerbot"
 dynamic = ["version"]
-description = "The ToddlerBot humanoid adapter for quackd. Install it as quackd[toddlerbot]."
+description = "The ToddlerBot humanoid adapter for Roboglot. Install it as roboglot[toddlerbot]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35"]
+dependencies = ["roboglot>=0.34.0,<0.35"]
 
 
-[project.entry-points."quackd.adapters"]
-toddlerbot = "quackd_toddlerbot"
+[project.entry-points."roboglot.adapters"]
+toddlerbot = "roboglot_toddlerbot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/toddlerbot/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_toddlerbot/__init__.py"
+path = "src/roboglot_toddlerbot/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_toddlerbot"]
+packages = ["src/roboglot_toddlerbot"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

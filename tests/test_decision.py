@@ -1,6 +1,6 @@
 """The discrete stepper: which turns are a choice, and which belong to the pilot LLM.
 
-This is quackd's half of a decision LLM and it does not change with the vendor. Which turns are
+This is Roboglot's half of a decision LLM and it does not change with the vendor. Which turns are
 a choice, what an answer has to clear before it moves a servo, what the record says afterwards:
 none of that moves when the thing answering does. `tests/test_decision_llms.py` next door is
 the other half -- the flags, the presets, the two backends and the plugin hook -- and this file
@@ -9,7 +9,7 @@ leaves all of it alone.
 So nothing here imports `typesafe_sdk` and nothing here reaches the network: every test hands
 `Stepper.build` a scripted `FakeDecisionLLM` as `llm=`, which is the seam the CLI hands a real
 one through. The classification is pure besides -- it reads a tool's JSON Schema and answers --
-so it is testable against every body quackd ships without connecting to any of them.
+so it is testable against every body Roboglot ships without connecting to any of them.
 
 The table below is frozen on purpose, the way `MOVES_THE_BODY` is: a verb added to an adapter
 with a parameter nobody thought about is a verb the stepper would either offer or refuse
@@ -30,11 +30,11 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.factory import ADAPTER_NAMES, _module
-from quackd.agent.decision.base import TIMEOUT_S, UnreadableReply
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.factory import resolve_decision_price
-from quackd.agent.decision.stepper import (
+from roboglot.adapters.factory import ADAPTER_NAMES, _module
+from roboglot.agent.decision.base import TIMEOUT_S, UnreadableReply
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.factory import resolve_decision_price
+from roboglot.agent.decision.stepper import (
     ESCALATE,
     FLOORS,
     MAX_CALLS_PER_VERB,
@@ -43,9 +43,9 @@ from quackd.agent.decision.stepper import (
     labels,
     verb_class,
 )
-from quackd.agent.prompts import META_TOOLS, REMEMBER, TELL
-from quackd.verbs.aliases import canonical
-from quackd.verbs.registry import Verb, default_registry
+from roboglot.agent.prompts import META_TOOLS, REMEMBER, TELL
+from roboglot.verbs.aliases import canonical
+from roboglot.verbs.registry import Verb, default_registry
 from tests import fake_systemone
 
 # (how many concrete calls, which confidence floor) per body, or None for "not a choice".
@@ -160,7 +160,7 @@ def _verbs(body: str) -> dict[str, Verb]:
     default vocabulary and every core template beside it, since a core verb a body offers only on
     some connections, the place verbs, is in no static default and still reaches the stepper."""
     if body == "core":
-        from quackd.verbs.core import CORE
+        from roboglot.verbs.core import CORE
 
         return {**CORE, **{v.name: v for v in default_registry().verbs()}}
     return dict(_module(body).implementations())
@@ -191,7 +191,7 @@ def test_every_verb_of_every_shipped_body_is_classified_and_this_table_says_how(
         assert _classify(verb, name) == frozen[name], f"{body}.{name} classifies differently now"
 
 
-def test_the_table_covers_every_adapter_quackd_ships() -> None:
+def test_the_table_covers_every_adapter_roboglot_ships() -> None:
     """Otherwise a whole new body could arrive unclassified and the parametrised test above
     would simply not run for it."""
     assert set(TABLE) - {"core"} == set(ADAPTER_NAMES)
@@ -293,7 +293,7 @@ def test_a_verb_with_more_shapes_than_a_person_could_weigh_stops_being_a_choice(
 def test_perform_is_never_offered_a_motion_this_build_did_not_load() -> None:
     """A ToddlerBot reports which keyframes it managed to load, and `perform`'s schema is
     built from that list rather than from everything upstream ships."""
-    from quackd_toddlerbot.verbs import toddlerbot_verbs
+    from roboglot_toddlerbot.verbs import toddlerbot_verbs
 
     verb = toddlerbot_verbs(motions=("hold", "kneel"))["perform"]
     calls = discrete_calls(verb.tool_schema())
@@ -308,7 +308,7 @@ def test_no_meta_tool_is_ever_a_choice() -> None:
     """A safety property rather than an accident.
 
     Every meta tool needs a sentence, and the stepper writes none, so it can never end a run,
-    never record a feasibility verdict, never write to memory and never speak to a flock.
+    never record a feasibility verdict, never write to memory and never speak to a team.
     Every ending goes through the pilot LLM or through a budget."""
     for tool in [*META_TOOLS, REMEMBER, TELL]:
         assert discrete_calls(tool) is None, f"{tool['name']} must stay the LLM's"
@@ -383,11 +383,11 @@ async def _arm(
     """A stepper on the mock arm, with the adapter it was built from.
 
     `price` is resolved the way the CLI resolves it rather than taken from the row, so a test
-    that sets `QUACKD_DECISION_PRICE` and nothing else still gets the rate it asked for."""
-    from quackd.agent.decision.stepper import Stepper
-    from quackd.verbs.registry import registry_from_manifest
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    that sets `ROBOGLOT_DECISION_PRICE` and nothing else still gets the rate it asked for."""
+    from roboglot.agent.decision.stepper import Stepper
+    from roboglot.verbs.registry import registry_from_manifest
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     adapter = LeRobotAdapter(LeRobotMock())
     manifest = await adapter.connect()
@@ -408,7 +408,7 @@ async def _arm(
 
 
 async def _observation(adapter: Any, last: dict[str, Any] | None = None) -> Any:
-    from quackd.agent.providers.base import Observation
+    from roboglot.agent.providers.base import Observation
 
     return Observation(
         text="x",
@@ -491,7 +491,7 @@ async def test_questions_whose_text_is_under_other_names_still_bill() -> None:
     them used to make `_question_chars` return zero, and a zero there does not merely
     under-bill the turn: `advise` reads it as "nothing was sent" and skips the bill for a
     request that did go out. The fallback is the wrong number in the right direction."""
-    from quackd.agent.decision.stepper import _question_chars
+    from roboglot.agent.decision.stepper import _question_chars
 
     class _Opaque:
         def __init__(self, text: str) -> None:
@@ -636,9 +636,9 @@ async def test_the_state_is_named_english_fields_and_carries_no_picture(
     and the state it is sent then is the same named English fields with one more sentence, which
     says an image went beside it. The instructions belong in the questions rather than in the
     state."""
-    from quackd.agent.decision.factory import make_decision_llm
-    from quackd.agent.decision.frames import Snapshot
-    from quackd.transport.base import frames_of
+    from roboglot.agent.decision.factory import make_decision_llm
+    from roboglot.agent.decision.frames import Snapshot
+    from roboglot.transport.base import frames_of
     from tests import fake_decisions_api as fake_api
 
     _a, _s, fake = await _advise(
@@ -780,7 +780,7 @@ async def test_an_answer_off_the_wire_is_read_exactly_like_an_sdk_object() -> No
 async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_llm_did() -> None:
     """The record that turns the arithmetic in docs/guides/decision-llms/README.md into a
     measurement."""
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.providers.base import ToolCall
 
     advice, stepper, _f = await _advise(
         _fake(answers=fake_systemone.turn("report_state", 0.91)),
@@ -818,24 +818,24 @@ async def test_the_summary_block_counts_the_turns_it_answered() -> None:
 
 
 def _lookout() -> Any:
-    from quackd.duckfile.parser import load_duck
-    from tests.conftest import DUCKS
+    from roboglot.glotfile.parser import load_glot
+    from tests.conftest import TASKS
 
-    return load_duck(str(DUCKS / "lerobot-lookout.duck"))
+    return load_glot(str(TASKS / "lerobot-lookout.glot"))
 
 
 async def _lookout_run(tmp_path: Any, **over: Any) -> Any:
     """`lerobot-lookout` on the mock arm with the scripted pilot, with or without a stepper."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = _lookout()
-    return await run_duck(
+    return await run_glot(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck(duck.name),
+            provider=FakeProvider.for_glot(duck.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             **over,
@@ -844,7 +844,7 @@ async def _lookout_run(tmp_path: Any, **over: Any) -> Any:
 
 
 def _records(result: Any, kind: str) -> list[dict[str, Any]]:
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     return [r for r in Transcript.read(result.run_dir / "transcript.jsonl") if r["kind"] == kind]
 
@@ -853,7 +853,7 @@ def _calls(result: Any) -> list[tuple[str, Any]]:
     return [(r["name"], r.get("params")) for r in _records(result, "verb")]
 
 
-async def test_a_run_with_the_stepper_off_is_the_run_quackd_has_always_made(
+async def test_a_run_with_the_stepper_off_is_the_run_roboglot_has_always_made(
     tmp_path: Any,
 ) -> None:
     """The off path is not a mode, it is the absence of one: no stepper is built, no record is
@@ -927,15 +927,15 @@ async def test_shadow_asks_the_stepper_beside_the_llms_call_not_before_it(
     stepper's second every turn for the measuring. The stepper is asked beside the pilot LLM's own
     call now: on every turn the pilot LLM is asked while the stepper's request is out, every answer
     still lands on the record, and the comparison is made as before."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = _lookout()
-    pilot = _Counting(FakeProvider.for_duck(duck.name))
+    pilot = _Counting(FakeProvider.for_glot(duck.name))
     llm = _Overlaps({"answers": _answered()}, pilot)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=pilot,  # type: ignore[arg-type]
@@ -962,7 +962,7 @@ class _Failing:
     supports_vision = False
 
     async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
-        from quackd.agent.providers.base import ProviderError
+        from roboglot.agent.providers.base import ProviderError
 
         raise ProviderError("the LLM's API turned the request down")
 
@@ -980,14 +980,14 @@ async def test_a_shadow_request_the_turn_ends_without_is_cut_off_and_on_the_reco
     The request is cancelled rather than left to run out its second, and the record says it was
     cut off, on the gate a cut off request always gets, so the summary and the transcript agree
     about a request that left the machine."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.base import ProviderError
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.base import ProviderError
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     runs = tmp_path / "runs"
     with pytest.raises(ProviderError):
-        await run_duck(
+        await run_glot(
             RunConfig(
                 duck=_lookout(),
                 provider=_Failing(),  # type: ignore[arg-type]
@@ -998,7 +998,7 @@ async def test_a_shadow_request_the_turn_ends_without_is_cut_off_and_on_the_reco
                 decision_price=resolve_decision_price(JEV),
             )
         )
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     (transcript,) = list(runs.rglob("transcript.jsonl"))
     decisions = [r for r in Transcript.read(transcript) if r["kind"] == "decision"]
@@ -1026,13 +1026,13 @@ async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_llm_g
     out. The pilot LLM's answer, which its vendor billed, is on the record before the stepper is
     waited for, so the stop that ends that wait cannot lose it: the `llm` line with the call the
     LLM chose, and then the stepper's request, cut off."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = _lookout()
-    pilot = _AnswersAsTheStopLands(FakeProvider.for_duck(duck.name))
+    pilot = _AnswersAsTheStopLands(FakeProvider.for_glot(duck.name))
     loop = AgentLoop(
         RunConfig(
             duck=duck,
@@ -1047,7 +1047,7 @@ async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_llm_g
     pilot.abort = loop.executor.abort
     result = await loop.run()
     assert result.outcome == "aborted", result.reason
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     turn = [
         r
@@ -1063,16 +1063,16 @@ async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_llm_g
 def _shadow_loop(tmp_path: Any, refused: str) -> Any:
     """`lerobot-lookout` in shadow on the mock arm, its stepper's request out until it is cut
     off, and a disk that refuses the record line of kind `refused`."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = _lookout()
     loop = AgentLoop(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck(duck.name),
+            provider=FakeProvider.for_glot(duck.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="shadow",
@@ -1098,7 +1098,7 @@ async def test_a_disk_that_refuses_the_llm_line_still_settles_the_shadow_request
     error as it always did, and the stepper's request asked beside the call is settled on the way
     out, cut off and on the record, rather than left running behind the teardown with nothing
     saying it ever left."""
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     with pytest.raises(OSError, match="No space left"):
         await _shadow_loop(tmp_path, "llm").run()
@@ -1149,14 +1149,14 @@ async def _on_run(tmp_path: Any, llm: Any, **over: Any) -> Any:
     The decision LLM is handed to the run built, the way the CLI hands one over: a run is
     refused outright if a mode names nobody to answer it, and a price goes with it because a
     turn that cannot be costed is a turn missing from the summary."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = over.pop("duck", None) or _lookout()
-    recorder = _Recorder(FakeProvider.for_duck(duck.name))
-    result = await run_duck(
+    recorder = _Recorder(FakeProvider.for_glot(duck.name))
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=recorder,  # type: ignore[arg-type]
@@ -1252,7 +1252,7 @@ async def test_the_stepper_does_not_answer_twice_running_with_the_same_call(tmp_
 async def test_a_stepper_that_never_repeats_still_has_to_hand_the_run_back() -> None:
     """The backstop behind the repeat rule: alternating two calls for ever is also a loop, and
     only the pilot LLM can record a verdict or declare an outcome."""
-    from quackd.agent.decision.stepper import MAX_IN_A_ROW
+    from roboglot.agent.decision.stepper import MAX_IN_A_ROW
 
     fake = _fake(
         script=[
@@ -1280,9 +1280,9 @@ async def test_a_wave_like_goal_never_gets_a_pose_out_of_the_stepper(tmp_path: A
     The stub answers every question at 0.99, so anything the stepper is allowed to author it
     will. `move_joints` is never among the labels, so it can never be chosen, and every pose
     in the run came from an LLM call."""
-    from quackd.duckfile.parser import duck_from_goal
+    from roboglot.glotfile.parser import glot_from_goal
 
-    duck = duck_from_goal(
+    duck = glot_from_goal(
         "Wave to the camera with an extended arm",
         ["report_state", "stop", "gripper", "place", "move_joints"],
     )
@@ -1318,8 +1318,8 @@ async def test_a_choice_that_was_not_on_offer_this_turn_is_refused() -> None:
 
 async def test_the_verdict_gate_never_refuses_a_verb_the_stepper_chose(tmp_path: Any) -> None:
     """End to end, on the arm: no gate in the whole run refuses a call the stepper authored."""
-    duck_path = pathlib.Path("ducks/arm-grip-check.duck")
-    from quackd.duckfile.parser import load_duck
+    glot_path = pathlib.Path("tasks/arm-grip-check.glot")
+    from roboglot.glotfile.parser import load_glot
 
     result, _rec = await _on_run(
         tmp_path,
@@ -1332,7 +1332,7 @@ async def test_the_verdict_gate_never_refuses_a_verb_the_stepper_chose(tmp_path:
             ],
             answers=fake_systemone.turn(ESCALATE, 0.99, done=0.9),
         ),
-        duck=load_duck(str(duck_path)),
+        duck=load_glot(str(glot_path)),
     )
     refused = [
         r for r in _records(result, "gate") if r.get("gate") == "verdict" and r["outcome"] != "ok"
@@ -1352,7 +1352,7 @@ def test_a_stepper_that_cannot_run_warns_once_and_the_run_carries_on(
 
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
     result = CliRunner().invoke(
@@ -1373,7 +1373,7 @@ def test_a_stepper_that_cannot_run_warns_once_and_the_run_carries_on(
     )
     assert result.exit_code == 0, result.output
     assert "running without it" in result.output
-    assert "quackd[decision]" in result.output, "the warning does not say what to install"
+    assert "roboglot[decision]" in result.output, "the warning does not say what to install"
     run_dir = next(tmp_path.iterdir())
     records = [
         r
@@ -1393,7 +1393,7 @@ def test_a_mode_nobody_defined_never_reaches_the_robot(tmp_path: Any) -> None:
     happens while the CLI is still reading flags, before anything is connected."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     result = CliRunner().invoke(
         app,
@@ -1433,7 +1433,7 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
     monkeypatch.setenv("TYPESAFE_API_KEY", "sk-test")
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     def run(mode: str) -> str:
         return (
@@ -1459,7 +1459,7 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
             .output
         )
 
-    from quackd.cli import _DECISION_MODE_ON_UNMEASURED
+    from roboglot.cli import _DECISION_MODE_ON_UNMEASURED
 
     said = run("on")
     assert "has not been measured" in said
@@ -1481,8 +1481,8 @@ def test_agreement_is_about_the_call_and_not_the_word() -> None:
     them as agreement, which corrupted the one measurement `docs/guides/decision-llms/README.md`
     says earns the right to move a floor, and did it worst on `arm-grip-check`, the benchmark that
     page names."""
-    from quackd.agent.decision.stepper import Advice, Stepper
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.decision.stepper import Advice, Stepper
+    from roboglot.agent.providers.base import ToolCall
 
     stepper = Stepper(mode="shadow", goal="g")
     advice = Advice(None, {"choice": "gripper(open=true)", "confidence": 0.97, "gate": "taken"})
@@ -1501,7 +1501,7 @@ def test_agreement_is_about_the_call_and_not_the_word() -> None:
 def test_a_label_reads_the_same_whatever_order_the_arguments_arrive_in() -> None:
     """The label is matched back by string equality, and a call from a provider carries its
     arguments in whatever order the wire had them."""
-    from quackd.agent.decision.stepper import _label
+    from roboglot.agent.decision.stepper import _label
 
     assert _label("gripper", {"side": "left", "open": True}) == _label(
         "gripper", {"open": True, "side": "left"}
@@ -1624,7 +1624,7 @@ async def test_a_turn_the_api_did_not_count_is_estimated_from_the_whole_request(
     worked example in `docs/guides/decision-llms/README.md` counted 1,721 against that same 388. The
     record keeps `state_tokens_est` for the trim, and the estimate has to be strictly bigger than
     it."""
-    from quackd.agent.decision.stepper import _question_chars
+    from roboglot.agent.decision.stepper import _question_chars
 
     advice, stepper, fake = await _advise(
         _fake(answers=fake_systemone.turn("report_state", 0.91), usage=None),
@@ -1646,7 +1646,7 @@ async def test_a_negotiated_rate_beats_the_published_one_and_the_run_says_which_
     """Somebody whose contract differs has to be able to say so, and the summary has to carry
     which rate the figure came from. A cost checked months later against the pricing page is
     the one way a wrong rate gets found, and it only works if the run wrote down its own."""
-    monkeypatch.setenv("QUACKD_DECISION_PRICE", "in=0.42,out=0")
+    monkeypatch.setenv("ROBOGLOT_DECISION_PRICE", "in=0.42,out=0")
     advice, stepper, _f = await _advise(
         _fake(
             answers=fake_systemone.turn("report_state", 0.91),
@@ -1657,7 +1657,7 @@ async def test_a_negotiated_rate_beats_the_published_one_and_the_run_says_which_
     assert advice.record["cost_usd"] == round(1631 * 0.42 / 1_000_000, 9)
     assert advice.record["cost_usd"] > round(1631 * 0.042 / 1_000_000, 9), "the rate was ignored"
     price = stepper.summary()["price"]
-    assert price["source"] == "QUACKD_DECISION_PRICE" and price["input"] == 0.42
+    assert price["source"] == "ROBOGLOT_DECISION_PRICE" and price["input"] == 0.42
 
 
 async def test_a_turn_that_never_reached_the_network_is_not_billed_at_all() -> None:
@@ -1751,7 +1751,7 @@ async def test_the_shadow_record_puts_the_two_bills_for_one_turn_side_by_side() 
     a turn, beside what the stepper charged for the same reading. Either half can be None, and None
     is not zero: the pilot LLM's is missing when nobody publishes a rate for it, the stepper's when
     the turn never reached the network."""
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.providers.base import ToolCall
 
     advice, stepper, _f = await _advise(
         _fake(
@@ -1906,7 +1906,7 @@ async def test_a_next_verb_nobody_answered_records_no_choice(
     for a `done` or a `need_human` nobody answered, keeps a confidence only where one was sent,
     and the shadow row says null beside the gate that explains it, with the questions declined
     where there were any."""
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.providers.base import ToolCall
 
     advice, stepper, _f = await _advise(_OffTheWire(payload), mode="shadow", cleared=True)
     assert advice.gate == gate and advice.call is None
@@ -1922,7 +1922,7 @@ async def test_a_shadow_row_names_what_was_declined_only_where_something_was() -
     """The names ride on the shadow row of a turn that ended on `refused`, so a reader tallying
     shadow rows sees which question the vendor would not judge without joining back to the
     `decision` record, and on no other row, so every other row reads as it always did."""
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.providers.base import ToolCall
 
     call = ToolCall(id="x", name="report_state", arguments={})
     declined, stepper, _f = await _advise(
@@ -2092,7 +2092,7 @@ def test_a_failure_is_recorded_by_its_type_and_status_alone(
     as `status` and httpx's on the response, and the message is never read, whoever wrote it. A
     field by that name that is not a status is not taken for one, and a read that raises costs
     the record its status and nothing else."""
-    from quackd.agent.decision.stepper import _failure
+    from roboglot.agent.decision.stepper import _failure
 
     assert _failure(error) == recorded
 
@@ -2100,12 +2100,12 @@ def test_a_failure_is_recorded_by_its_type_and_status_alone(
 async def test_a_turn_that_ran_out_of_time_says_what_it_waited_and_nothing_else(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The one sentence a failed turn keeps is quackd's own: the stepper's timeout gives up with
+    """The one sentence a failed turn keeps is Roboglot's own: the stepper's timeout gives up with
     a `TimeoutError` that says nothing at all, and the budget is the number a reader would
     change. Shortened here so the test does not wait out the real one."""
     import asyncio
 
-    from quackd.agent.decision import stepper as module
+    from roboglot.agent.decision import stepper as module
 
     monkeypatch.setattr(module, "TIMEOUT_S", 0.2)
 
@@ -2120,9 +2120,9 @@ async def test_a_turn_that_ran_out_of_time_says_what_it_waited_and_nothing_else(
 
 @pytest.mark.parametrize("how", ["its own clock", "a bare raise"])
 async def test_a_backends_own_timeout_is_recorded_by_its_type_alone(how: str) -> None:
-    """The sentence is quackd's, and names quackd's budget, so it goes only on a turn that budget
-    ended. A backend with a shorter clock of its own raises a `TimeoutError` with nothing in it
-    too, and the record said `no answer within 1.0 s` beside a `latency_s` a twentieth of that,
+    """The sentence is Roboglot's, and names Roboglot's budget, so it goes only on a turn that
+    budget ended. A backend with a shorter clock of its own raises a `TimeoutError` with nothing in
+    it too, and the record said `no answer within 1.0 s` beside a `latency_s` a twentieth of that,
     naming a budget that was not the one that ran out."""
 
     class GivesUp(_Fails):
@@ -2137,13 +2137,13 @@ async def test_a_backends_own_timeout_is_recorded_by_its_type_alone(how: str) ->
     assert stepper.errors == 1
 
 
-def test_quackds_own_words_about_a_reply_are_kept_and_nobody_elses() -> None:
-    """A reply quackd could not read is described in quackd's own words, by the type of what came
-    back, and those words quote nothing, so the record keeps them: a page that was not JSON and
+def test_roboglots_own_words_about_a_reply_are_kept_and_nobody_elses() -> None:
+    """A reply Roboglot could not read is described in Roboglot's own words, by the type of what
+    came back, and those words quote nothing, so the record keeps them: a page that was not JSON and
     an object with no list of answers read apart. They were a bare `ValueError` each, like every
     other message the rule throws away. A plain `ValueError` with the same words is still
-    recorded by its type, because only quackd's own exception promises to quote nothing."""
-    from quackd.agent.decision.stepper import _failure
+    recorded by its type, because only Roboglot's own exception promises to quote nothing."""
+    from roboglot.agent.decision.stepper import _failure
 
     said = "POST /v1/decisions answered str rather than a JSON object"
     assert _failure(UnreadableReply(said)) == f"UnreadableReply: {said}"
@@ -2151,7 +2151,7 @@ def test_quackds_own_words_about_a_reply_are_kept_and_nobody_elses() -> None:
     assert _failure(UnreadableReply()) == "UnreadableReply", "nothing said, nothing kept"
 
 
-async def test_a_reply_quackd_could_not_read_is_on_the_record_in_its_words() -> None:
+async def test_a_reply_roboglot_could_not_read_is_on_the_record_in_its_words() -> None:
     """Through the stepper, the way a backend raises it."""
     said = "POST /v1/decisions answered without a list of answers (NoneType)"
 
@@ -2194,7 +2194,7 @@ class _Takes(_OffTheWire):
 
 
 def _clocked(monkeypatch: pytest.MonkeyPatch) -> _Clock:
-    from quackd.agent.decision import stepper as module
+    from roboglot.agent.decision import stepper as module
 
     clock = _Clock()
     monkeypatch.setattr(module, "time", SimpleNamespace(perf_counter=clock.perf_counter))
@@ -2375,7 +2375,7 @@ class _Interrupted(_OffTheWire):
     """A decision LLM whose request is out when the run is interrupted. It answers its first
     `answers` requests, and on the next one it is handed the questions and then either a second
     Ctrl-C lands (`KeyboardInterrupt`, raised where it is, as the default handler raises it) or
-    the flock cancels the member, and it waits until it is cancelled."""
+    the team cancels the member, and it waits until it is cancelled."""
 
     def __init__(self, press: type[BaseException], answers: int = 0) -> None:
         super().__init__({"answers": _answered()})
@@ -2398,7 +2398,7 @@ class _Interrupted(_OffTheWire):
 async def _interrupt(press: type[BaseException], llm: _Interrupted, asking: Any) -> None:
     """Await `asking` until `press` ends it. A Ctrl-C is awaited in this task, because one raised
     in a task of its own leaves through the event loop and ends the test session; a cancel is a
-    real one, of the task the request is out in, as a flock cancels a member."""
+    real one, of the task the request is out in, as a team cancels a member."""
     if press is KeyboardInterrupt:
         with pytest.raises(KeyboardInterrupt):
             await asking
@@ -2414,7 +2414,7 @@ async def _interrupt(press: type[BaseException], llm: _Interrupted, asking: Any)
 async def test_a_turn_an_interrupt_cut_off_is_counted_billed_and_kept_for_the_record(
     press: type[BaseException],
 ) -> None:
-    """A second Ctrl-C or a flock's cancel is not an `Exception`, so it went past every handler a
+    """A second Ctrl-C or a team's cancel is not an `Exception`, so it went past every handler a
     failed call has, and the request it cut off, already handed over, was neither counted, timed
     nor billed, and left nothing to write down. It is counted and billed now, as a failed one
     is, on a gate of its own because nothing failed and nobody takes the turn, and not among the
@@ -2441,7 +2441,7 @@ async def test_a_turn_an_interrupt_cut_off_is_counted_billed_and_kept_for_the_re
 def _the_one_run(runs: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The summary and the transcript of the one run under `runs`, for a run that raised rather
     than returning a result that names its directory."""
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     (written,) = pathlib.Path(runs).rglob("summary.json")
     summary = json.loads(written.read_text(encoding="utf-8"))
@@ -2453,7 +2453,7 @@ async def test_a_run_interrupted_while_the_stepper_waits_has_that_turn_on_the_re
     tmp_path: Any, press: type[BaseException]
 ) -> None:
     """End to end, on the arm. The loop wrote the `decision` record only once `advise` returned,
-    so a run a person ended, or a flock cancelled, while the stepper's request was out left no
+    so a run a person ended, or a team cancelled, while the stepper's request was out left no
     record of that request, and its summary, written on the way out, counted none either. Now
     there is one record, on `interrupted`, and the summary's decision block is that turn."""
     llm = _Interrupted(press)
@@ -2477,11 +2477,11 @@ async def test_a_press_while_the_decision_llm_is_thinking_ends_the_run_without_w
     the abort, so a decision LLM that has not answered is not waited for, the turn goes on the
     record as cut off, and the run ends `aborted`. The stepper's own timeout is raised here, so
     nothing but the stop could end the request quickly."""
-    from quackd.agent.decision import stepper as module
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.decision import stepper as module
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     monkeypatch.setattr(module, "TIMEOUT_S", 30.0)
     asked = asyncio.Event()
@@ -2495,7 +2495,7 @@ async def test_a_press_while_the_decision_llm_is_thinking_ends_the_run_without_w
     loop = AgentLoop(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck(duck.name),
+            provider=FakeProvider.for_glot(duck.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="on",

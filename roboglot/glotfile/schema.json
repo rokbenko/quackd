@@ -1,0 +1,758 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rokbenko/quackd/blob/main/roboglot/glotfile/schema.json",
+  "$defs": {
+    "Budgets": {
+      "additionalProperties": false,
+      "description": "Hard stops. The loop ends when any of these is hit, whatever the LLM thinks.",
+      "properties": {
+        "max_steps": {
+          "default": 40,
+          "description": "Maximum number of LLM decisions.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "max_minutes": {
+          "default": 5.0,
+          "description": "Wall-clock (or sim-clock) cap.",
+          "exclusiveMinimum": 0,
+          "maximum": 180,
+          "title": "Max Minutes",
+          "type": "number"
+        },
+        "max_llm_calls": {
+          "default": 40,
+          "description": "Maximum provider calls. A turn the LLM's API could not answer, and Roboglot asked again, counts once.",
+          "maximum": 2000,
+          "minimum": 1,
+          "title": "Max Llm Calls",
+          "type": "integer"
+        }
+      },
+      "title": "Budgets",
+      "type": "object"
+    },
+    "DatasheetOverride": {
+      "additionalProperties": false,
+      "description": "v2: what a `.glot` says about the body it was written for (`docs/reference/glot-spec.md`).\n\nMerged field-wise into the robot's own datasheet by `apply_datasheet_override`: a figure\ngiven here replaces the adapter's and is rendered as coming from the task file; `cannot`,\n`notes` and `not_rated` extend the adapter's; whatever is omitted is left alone. A task\nfile can add a `cannot`; it can never delete one.",
+      "properties": {
+        "mass_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "height_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "payload_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "carries_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reach_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workspace_height_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpanOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endurance_min": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FigureOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "manipulator": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "beak",
+                "gripper",
+                "arms"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manipulator"
+        },
+        "arms": {
+          "anyOf": [
+            {
+              "maximum": 4,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arms"
+        },
+        "tethered": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tethered"
+        },
+        "terrain": {
+          "anyOf": [
+            {
+              "enum": [
+                "indoor_flat",
+                "indoor",
+                "outdoor"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Terrain"
+        },
+        "not_rated": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Not Rated",
+          "type": "array"
+        },
+        "cannot": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cannot",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "DatasheetOverride",
+      "type": "object"
+    },
+    "FigureOverride": {
+      "additionalProperties": false,
+      "description": "A number the task file asserts about the build in front of it.\n\nThe source defaults to the file itself and the confidence to `estimate`; an author who\nweighed the thing says `measured`.",
+      "properties": {
+        "value": {
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        },
+        "confidence": {
+          "default": "estimate",
+          "enum": [
+            "official",
+            "estimate",
+            "measured"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "description": "Optional: 'weighed with the printed gripper'.",
+          "title": "Source",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "FigureOverride",
+      "type": "object"
+    },
+    "LearnedVerbRef": {
+      "additionalProperties": false,
+      "description": "Reserved for v2. The shape a `.glot` will use to pull in a learned (ONNX) verb.\n\nSee `docs/concepts/learned-verbs.md`. Parsed and validated today; nothing executes it.",
+      "properties": {
+        "name": {
+          "description": "Verb name it registers as.",
+          "title": "Name",
+          "type": "string"
+        },
+        "policy": {
+          "description": "Path or URL of the ONNX policy.",
+          "title": "Policy",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "description": "LLM-facing description.",
+          "title": "Description",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "policy"
+      ],
+      "title": "LearnedVerbRef",
+      "type": "object"
+    },
+    "PolicySection": {
+      "additionalProperties": false,
+      "description": "v3: what the body's learned policy may be told through `manipulate`, and for how long.\n\nA `.glot` is untrusted input, so every number here is bounded and every instruction is a\nshort line. The run narrows `manipulate` to it (`roboglot.glotfile.narrow`): the listed\ninstructions become the only words the verb takes, and each segment runs `segment_s`. The\nexecutor refuses the next segment, a `pick` as well as a `manipulate`, once `total_s` of\nthem have run. A run whose task has no section, a goal run or a v2 file, gets the defaults\nand takes any instruction.",
+      "properties": {
+        "instructions": {
+          "description": "The subtasks the policy may be told, word for word, at most 12, each one line of at most 200 characters. Empty lets the pilot word each subtask itself. A list refuses pick in verbs.allow, whose target would be words of the pilot's own.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Instructions",
+          "type": "array"
+        },
+        "segment_s": {
+          "default": 10.0,
+          "description": "How long one manipulate segment runs, in the robot's time, unless something ends it sooner.",
+          "exclusiveMinimum": 0,
+          "maximum": 60.0,
+          "title": "Segment S",
+          "type": "number"
+        },
+        "total_s": {
+          "default": 120.0,
+          "description": "How many seconds of segments the run may spend in all, pick's as well as manipulate's. The executor refuses the next one once they are spent.",
+          "exclusiveMinimum": 0,
+          "maximum": 3600.0,
+          "title": "Total S",
+          "type": "number"
+        }
+      },
+      "title": "PolicySection",
+      "type": "object"
+    },
+    "SpanOverride": {
+      "additionalProperties": false,
+      "description": "A band the task file asserts, the same way.",
+      "properties": {
+        "low": {
+          "minimum": 0,
+          "title": "Low",
+          "type": "number"
+        },
+        "high": {
+          "minimum": 0,
+          "title": "High",
+          "type": "number"
+        },
+        "confidence": {
+          "default": "estimate",
+          "enum": [
+            "official",
+            "estimate",
+            "measured"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "title": "Source",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "low",
+        "high"
+      ],
+      "title": "SpanOverride",
+      "type": "object"
+    },
+    "TeamAllocation": {
+      "additionalProperties": false,
+      "description": "Which kind of team this is, and how an auction team decides who kicks.\n\n`auction` is the 0.3 coordinator: deterministic Contract Net, the LLM never runs it, and\nevery knob below is its. `pilots` (0.9) is the other kind entirely: one LLM pilot per\nbody, on wall-clock time, deciding by talking to each other rather than by bidding, so\nthe coordinator never runs and the rest of this block is ignored (ADR-0034).",
+      "properties": {
+        "method": {
+          "default": "auction",
+          "enum": [
+            "auction",
+            "pilots"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "bid": {
+          "const": "ball_distance",
+          "default": "ball_distance",
+          "title": "Bid",
+          "type": "string"
+        },
+        "tie_break": {
+          "const": "duck_id",
+          "default": "duck_id",
+          "title": "Tie Break",
+          "type": "string"
+        },
+        "hysteresis_pct": {
+          "default": 20.0,
+          "description": "A challenger must bid this much lower to unseat the current claimant.",
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Hysteresis Pct",
+          "type": "number"
+        },
+        "claim_lease_s": {
+          "default": 6.0,
+          "description": "Longest a claim may be held before re-auction (sim clock). A fixed fuse from the moment the claim is granted, not a progress timer.",
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Claim Lease S",
+          "type": "number"
+        }
+      },
+      "title": "TeamAllocation",
+      "type": "object"
+    },
+    "TeamRole": {
+      "additionalProperties": false,
+      "description": "A role in a heterogeneous team (v1): who may take it is decided by capability.\n\nv2 adds a second half to that: a role may also state what the body has to be able to do\nphysically, in the datasheet's own words. A robot whose datasheet does not say is not\noffered the role, because a robot that cannot say what it carries is not the one to ask\nto carry something.",
+      "properties": {
+        "requires": {
+          "description": "Verbs a robot must provide to bid for this role.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Requires",
+          "type": "array"
+        },
+        "needs": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "description": "v2: what the body must be, in the datasheet vocabulary (payload_kg, carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure nobody published counts as not met.",
+          "title": "Needs",
+          "type": "object"
+        },
+        "count": {
+          "const": 1,
+          "default": 1,
+          "description": "Robots per role. Only 1 so far.",
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requires"
+      ],
+      "title": "TeamRole",
+      "type": "object"
+    },
+    "TeamSafety": {
+      "additionalProperties": false,
+      "properties": {
+        "min_separation_m": {
+          "default": 0.4,
+          "maximum": 2.0,
+          "minimum": 0.1,
+          "title": "Min Separation M",
+          "type": "number"
+        },
+        "one_claimant": {
+          "default": true,
+          "description": "At most one duck approaches the ball at a time. Always enforced in v0.3; false is rejected rather than silently ignored.",
+          "title": "One Claimant",
+          "type": "boolean"
+        },
+        "per_duck_heartbeat_s": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "title": "Per Duck Heartbeat S",
+          "type": "number"
+        }
+      },
+      "title": "TeamSafety",
+      "type": "object"
+    },
+    "TeamSearch": {
+      "additionalProperties": false,
+      "properties": {
+        "partition": {
+          "const": "heading",
+          "default": "heading",
+          "title": "Partition",
+          "type": "string"
+        },
+        "restart_s": {
+          "default": 8.0,
+          "description": "Re-scan the sector when nothing was found for this long.",
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "title": "Restart S",
+          "type": "number"
+        }
+      },
+      "title": "TeamSearch",
+      "type": "object"
+    },
+    "TeamSection": {
+      "additionalProperties": false,
+      "description": "Cooperating robots. `allocation.method` says which kind of team this is: `auction`\n(the coordinator enforces this block, simulator only) or `pilots` (one LLM per body, any\nbackend, and only `members` is read).",
+      "properties": {
+        "members": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": 3,
+          "description": "Count (named duck-0..) or a list of unique slugs. 2-4 for an auction (the arena holds four), 2-8 for pilots.",
+          "title": "Members"
+        },
+        "allocation": {
+          "$ref": "#/$defs/TeamAllocation"
+        },
+        "safety": {
+          "$ref": "#/$defs/TeamSafety"
+        },
+        "search": {
+          "$ref": "#/$defs/TeamSearch"
+        },
+        "roles": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/TeamRole"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "v1: named roles (spotter, kicker) with the verbs each requires.",
+          "title": "Roles"
+        },
+        "frame_hints": {
+          "default": "auto",
+          "description": "v1: share arena-frame target hints between robots. auto = only when every member runs in sim2d (there is no shared frame on hardware).",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "title": "Frame Hints",
+          "type": "string"
+        }
+      },
+      "title": "TeamSection",
+      "type": "object"
+    },
+    "VerbsSection": {
+      "additionalProperties": false,
+      "description": "Which verbs the LLM may call, and which need a human to say yes first.",
+      "properties": {
+        "allow": {
+          "description": "Verbs the LLM may call. Anything else is refused.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allow",
+          "type": "array"
+        },
+        "confirm": {
+          "description": "Verbs (subset of `allow`) that prompt a human y/N before executing.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Confirm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "allow"
+      ],
+      "title": "VerbsSection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The contract. This is what `schema.json` describes and what the executor enforces.",
+  "properties": {
+    "glot": {
+      "description": "Spec version: 0 (Roboglot 0.1 to 0.3), 1 (0.4: requires, robots, team.roles, team.frame_hints; 0.9: team.allocation.method: pilots), 2 (0.9: datasheet, team.roles.needs), 3 (0.16: policy) or 4 (0.19: play). Older files parse unchanged.",
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "title": "Glot",
+      "type": "integer"
+    },
+    "name": {
+      "description": "Slug: lowercase letters, digits, hyphens.",
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "description": "One line, human-facing.",
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "author": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Author"
+    },
+    "verbs": {
+      "$ref": "#/$defs/VerbsSection"
+    },
+    "budgets": {
+      "$ref": "#/$defs/Budgets",
+      "default": {
+        "max_steps": 40,
+        "max_minutes": 5.0,
+        "max_llm_calls": 40
+      }
+    },
+    "success": {
+      "description": "Success criteria the LLM must judge itself against.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Success",
+      "type": "array"
+    },
+    "abort_when": {
+      "description": "Abort conditions. 'Battery below N%' and 'Same verb fails N times in a row' are enforced by the executor; other entries are passed to the LLM as instructions.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Abort When",
+      "type": "array"
+    },
+    "persona": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Tone for the LLM. Optional.",
+      "title": "Persona"
+    },
+    "play": {
+      "default": false,
+      "description": "v4: the task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section to the system prompt and changes no gate. `roboglot run --play` or `--no-play` overrides it for one run.",
+      "title": "Play",
+      "type": "boolean"
+    },
+    "providers": {
+      "description": "Providers this task was tested with (not enforced).",
+      "items": {
+        "type": "string"
+      },
+      "title": "Providers",
+      "type": "array"
+    },
+    "learned_verbs": {
+      "description": "Reserved for v2 learned verbs. Must be empty in v0.1.",
+      "items": {
+        "$ref": "#/$defs/LearnedVerbRef"
+      },
+      "title": "Learned Verbs",
+      "type": "array"
+    },
+    "team": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TeamSection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cooperating robots. Absent means a single robot, unless the run names a stored team, which makes it a pilot team."
+    },
+    "requires": {
+      "description": "v1: verbs the task needs. `roboglot validate --robot` checks them against the robot's manifest. For v0 files every allowed verb is required.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Requires",
+      "type": "array"
+    },
+    "datasheet": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DatasheetOverride"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "v2: corrections and additions to the robot's datasheet for this build, rendered in the prompt as coming from the task file."
+    },
+    "robots": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "v1: default robot as <adapter>[:<backend>], or a mapping from team member name to such a spec, so `roboglot run <task>` needs no --robot flag.",
+      "title": "Robots"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PolicySection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "v3: the instructions manipulate may give the robot's learned policy, how long each segment runs and how long they may run in all. Needs manipulate allowed."
+    }
+  },
+  "required": [
+    "glot",
+    "name",
+    "description",
+    "verbs",
+    "success"
+  ],
+  "title": "Roboglot .glot frontmatter (v0, v1, v2, v3, v4)",
+  "type": "object"
+}

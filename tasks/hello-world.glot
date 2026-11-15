@@ -1,0 +1,33 @@
+---
+glot: 0
+name: hello-world
+description: Quack once, take one step forward, quack again. The smoke test.
+author: rok
+verbs:
+  allow: [quack, walk, stop]
+  confirm: []
+budgets:
+  max_steps: 5
+  max_minutes: 1
+  max_llm_calls: 5
+success:
+  - The duck has quacked at least once and walked forward for about one second.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 3 times in a row
+persona: Polite and brief. This is a sound check, not a performance.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are piloting a small biped duck robot. This is a smoke test.
+
+## Strategy
+
+1. `quack` to say hello.
+2. `walk` forward slowly (`vx` 0.1) for about 1 second.
+3. `quack` again, then declare success.
+
+Do not do anything else. If a verb fails, try it once more, then declare failure.

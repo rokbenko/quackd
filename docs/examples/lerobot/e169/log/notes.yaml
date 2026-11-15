@@ -6,7 +6,7 @@ why_example: >
   most alarming task on the sheet, E114's as-fast-as-you-can swing, through it.
 why_result: >
   No move reached the motors, and what would have gone out was printed first, joint and duration, which
-  makes the rehearsal worth having on its own. quackd told the LLM the truth about its move, `not sent`,
+  makes the rehearsal worth having on its own. Roboglot told the LLM the truth about its move, `not sent`,
   and the LLM would not claim a swing that never happened. That honesty is what you want from an LLM
   beside a robot. It also marks the limit of a dry run: a careful LLM can stop at its first move, and
   then you never see the rest of what it planned.

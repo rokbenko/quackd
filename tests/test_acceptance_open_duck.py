@@ -12,32 +12,32 @@ import os
 import time
 from pathlib import Path
 
-from quackd.adapters.factory import make_adapter
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import load_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.sim2d.recorder import FrameRecorder
+from roboglot.adapters.factory import make_adapter
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import load_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.sim2d.recorder import FrameRecorder
 
 SEEDS = range(10)
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 ARRIVED_M = 0.5
 NOT_THIS_DUCK = {"kick", "grab", "sit", "stand", "stand_up"}
 
 
 async def test_open_duck_scout_acceptance(tmp_path: Path) -> None:
-    duck = load_duck("open-duck-scout")
+    duck = load_glot("open-duck-scout")
     successes = 0
     report = []
     for seed in SEEDS:
         adapter = make_adapter("open_duck:sim2d", seed=seed)
         recorder = FrameRecorder(adapter) if seed == 0 else None
         t0 = time.perf_counter()
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
                 duck=duck,
-                provider=FakeProvider.for_duck("open-duck-scout"),
+                provider=FakeProvider.for_glot("open-duck-scout"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,
@@ -70,13 +70,13 @@ async def test_open_duck_scout_acceptance(tmp_path: Path) -> None:
 
 async def test_open_duck_lookout_never_takes_a_step(tmp_path: Path) -> None:
     """The bring-up task: it is what you point at a real duck first, so it must not walk."""
-    duck = load_duck("open-duck-lookout")
+    duck = load_glot("open-duck-lookout")
     adapter = make_adapter("open_duck:sim2d", seed=0)
     start = (adapter.world.ducks[0].x, adapter.world.ducks[0].y)  # the seed placed it, not us
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck("open-duck-lookout"),
+            provider=FakeProvider.for_glot("open-duck-lookout"),
             transport=adapter,
             detector=ColorBlobDetector(),
             runs_dir=tmp_path,

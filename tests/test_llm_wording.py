@@ -43,22 +43,22 @@ WHOLE_FILES: dict[str, str] = {
     r"tests/test_llm_wording\.py": "this file",
     r"scripts/example_log\.py": "holds the pattern, and reads the key an older run wrote",
     # the simulator
-    r"adapters/lerobot/src/quackd_lerobot/sim/.*": "the MuJoCo model of the arm",
-    r"adapters/microduck/src/quackd_microduck/sim3d/.*": "the MuJoCo model of the duck",
+    r"adapters/lerobot/src/roboglot_lerobot/sim/.*": "the MuJoCo model of the arm",
+    r"adapters/microduck/src/roboglot_microduck/sim3d/.*": "the MuJoCo model of the duck",
     r"adapters/toddlerbot/.*|bridge/toddlerbot/.*": "upstream's MuJoCo model of the ToddlerBot",
     r"docs/assets/(lerobot_sim|hero3d|lerobot_real)\.py": "scripts that render a simulator",
     r"web/src/(microduck|view)\.js": "the MuJoCo model, in the browser",
     r"docs/adr/0030-.*|docs/adr/0047-.*": "ADRs about the simulators",
     # policies
-    r"adapters/lerobot/src/quackd_lerobot/policy/.*": "learned policies",
-    r"quackd/adapters/policies\.py": "learned policies",
+    r"adapters/lerobot/src/roboglot_lerobot/policy/.*": "learned policies",
+    r"roboglot/adapters/policies\.py": "learned policies",
     r"docs/guides/policies\.md": "learned policies",
     r"docs/adr/006[01]-.*": "ADRs about learned policies",
     # detectors, the radio and boards
     r"bridge/jetson/.*": "the daemon's detector",
-    r"quackd/perception/.*": "a detector's model",
-    r"quackd/radio/.*": "the radio's log-distance model",
-    r"quackd/boards/.*": "a computer's model",
+    r"roboglot/perception/.*": "a detector's model",
+    r"roboglot/radio/.*": "the radio's log-distance model",
+    r"roboglot/boards/.*": "a computer's model",
     # somebody else's words
     r"NOTICE": "licences",
     r"docs/reference/licenses\.md": "licences",
@@ -175,42 +175,42 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "and refuses a model the checkpoint",
         "code trusted, a model a checkpoint",
     ),
-    "adapters/alohamini/src/quackd_alohamini/sim2d.py": ("shared simulator already models: it",),
-    "adapters/alohamini/src/quackd_alohamini/upstream_api.py": (
-        "quackd derives the model from the",
+    "adapters/alohamini/src/roboglot_alohamini/sim2d.py": ("shared simulator already models: it",),
+    "adapters/alohamini/src/roboglot_alohamini/upstream_api.py": (
+        "Roboglot derives the model from the",
     ),
-    "adapters/alohamini/src/quackd_alohamini/verbs.py": ("the two 6dof models have",),
+    "adapters/alohamini/src/roboglot_alohamini/verbs.py": ("the two 6dof models have",),
     "adapters/lerobot/README.md": (
         "model from TheRobotStudio's",
         "reads from the model is in",
     ),
-    "adapters/lerobot/src/quackd_lerobot/__init__.py": (
+    "adapters/lerobot/src/roboglot_lerobot/__init__.py": (
         "the arm's simulator model, which",
         "and whether that model is in",
         "one without the model is refused,",
         "physics and the model",
     ),
-    "adapters/lerobot/src/quackd_lerobot/real.py": (
+    "adapters/lerobot/src/roboglot_lerobot/real.py": (
         "answering as another model",
         "(expected model: <M>)up.HANDSHAKE_NAMES_THE_ID`),",
     ),
-    "adapters/lerobot/src/quackd_lerobot/upstream_api.py": (
+    "adapters/lerobot/src/roboglot_lerobot/upstream_api.py": (
         '"src/lerobot/model/kinematics.py"',
         "simulator scales its model gripper's force",
         "reading on a model of the",
         'name -> Motor(id, model, norm_mode)"',
         "- <N> (expected model: <M>)'",
     ),
-    "adapters/microduck/src/quackd_microduck/__init__.py": ("# protocol, the model and walking",),
-    "adapters/microduck/src/quackd_microduck/transports/mujoco.py": (
+    "adapters/microduck/src/roboglot_microduck/__init__.py": ("# protocol, the model and walking",),
+    "adapters/microduck/src/roboglot_microduck/transports/mujoco.py": (
         "is upstream's real model on upstream's",
         "# of upstream model on first",
     ),
-    "adapters/microduck/src/quackd_microduck/upstream_api.py": (
+    "adapters/microduck/src/roboglot_microduck/upstream_api.py": (
         '"(DEFAULT_POSITION, duck-control/src/model.rs:37-53), so',
         "word on its model, and",
     ),
-    "adapters/rosbridge/src/quackd_rosbridge/upstream_api.py": ("had one) or model a tool",),
+    "adapters/rosbridge/src/roboglot_rosbridge/upstream_api.py": ("had one) or model a tool",),
     "docs/adapters/alohamini/README.md": ("and motors per model |",),
     "docs/adapters/huebot/README.md": ("Microduck's  and  backends model the Microduck's",),
     "docs/adapters/lerobot/README.md": (
@@ -257,7 +257,7 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "because a newer model is what",
         "for, and the model is then",
         "endings in the model do not",
-        "|  | the model quackd loads:",
+        "|  | the model Roboglot loads:",
         "from the loaded model rather than",
         "every mesh the model names and",
         "vertices when the model loads |",
@@ -319,9 +319,9 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "meant for a model never opens",
     ),
     "docs/adr/0001-language.md": ("params, transport models),  +",),
-    "docs/adr/0005-duck-spec-v0.md": ("model () and",),
+    "docs/adr/0005-glot-spec-v0.md": ("model () and",),
     "docs/adr/0008-perception-features-not-frames.md": ("whose model runs on",),
-    "docs/adr/0016-flock-lockstep-clock.md": ("the honest hardware-shaped model and may",),
+    "docs/adr/0016-team-lockstep-clock.md": ("the honest hardware-shaped model and may",),
     "docs/adr/0025-memory-between-runs.md": ("store (an embedding model in",),
     "docs/adr/0027-alohamini.md": ("faithful enough to model the watchdog.",),
     "docs/adr/0031-llm-catalogue.md": (
@@ -355,9 +355,10 @@ SENTENCES: dict[str, tuple[str, ...]] = {
     "docs/adr/0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md": (
         "not to its model. Pins",
     ),
-    "docs/adr/0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md": (
-        "that names no model. The",
-    ),
+    (
+        "docs/adr/0074-a-computer-roboglot-cannot-recognise-is-named-and-says-what-it-"
+        "calls-itself.md"
+    ): ("that names no model. The",),
     "docs/assets/README.md": ("upstream model:  renders TheRobotStudio's model of the",),
     "docs/concepts/architecture.md": (
         "scene around the model, maps",
@@ -416,24 +417,24 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "## Invariants the model enforces",
     ),
     "pyproject.toml": ("3.12 floor. The model is",),
-    "quackd/adapters/export.py": ("regenerates  from the model.",),
-    "quackd/adapters/passport.py": ("than to its model, comes",),
-    "quackd/agent/decision/catalogue.py": (
+    "roboglot/adapters/export.py": ("regenerates  from the model.",),
+    "roboglot/adapters/passport.py": ("than to its model, comes",),
+    "roboglot/agent/decision/catalogue.py": (
         "([their models page](https://docs.typesafe.ai/models), read",
     ),
-    "quackd/agent/loop.py": (
+    "roboglot/agent/loop.py": (
         "and its detector's model and device.",
         "bytes`, a model's out-of-memory",
     ),
-    "quackd/agent/prompts.py": (
+    "roboglot/agent/prompts.py": (
         "# simulator's collision model where there",
         "dynamics are the model's, which",
         '"view of the model, not',
         "simulator (MuJoCo): a model of this",
         "falls is the model's \"",
     ),
-    "quackd/agent/providers/anthropic.py": ('supported on this model"',),
-    "quackd/agent/providers/catalogue.py": (
+    "roboglot/agent/providers/anthropic.py": ('supported on this model"',),
+    "roboglot/agent/providers/catalogue.py": (
         "embedding and OCR models are not",
         "supported for this model.False` is asked",
         "to the 2.5 models to users",
@@ -447,21 +448,21 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "overview's own Latest Models are",
         '"the latest flagship model series"',
     ),
-    "quackd/agent/providers/factory.py": (
+    "roboglot/agent/providers/factory.py": (
         "LLM from /v1/models when none",
         "#: OpenRouter's model-variants page",
     ),
-    "quackd/agent/providers/fake.py": ("come from whatever model is loaded,",),
-    "quackd/agent/providers/openai.py": ("this model. Supported",),
-    "quackd/agent/providers/openrouter.py": (
+    "roboglot/agent/providers/fake.py": ("come from whatever model is loaded,",),
+    "roboglot/agent/providers/openai.py": ("this model. Supported",),
+    "roboglot/agent/providers/openrouter.py": (
         "builds its own models for the",
         '"/models"',
         '"openrouter-models"',
         "build its own models for keeps",
     ),
-    "quackd/agent/providers/pricing.py": ("rather than the model, because",),
-    "quackd/agent/providers/qwen.py": ("models do not support setting",),
-    "quackd/cli.py": (
+    "roboglot/agent/providers/pricing.py": ("rather than the model, because",),
+    "roboglot/agent/providers/qwen.py": ("models do not support setting",),
+    "roboglot/cli.py": (
         'entry of /v1/models."',
         '"REPO@REVISION of a model the checkpoint',
         "moves. Once per model. A",
@@ -469,7 +470,7 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "settle under the model's gravity,",
         "settled where the model's \"",
     ),
-    "quackd/doctor.py": (
+    "roboglot/doctor.py": (
         "its model, and",
         "/models",
         '"answered /models with something',
@@ -477,13 +478,13 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "(GET /v1/models, 1.5",
         "servers (GET /v1/models, 1.5",
     ),
-    "quackd/duckfile/export.py": ("drifts from the model.",),
-    "quackd/duckfile/schema.py": (
+    "roboglot/glotfile/export.py": ("drifts from the model.",),
+    "roboglot/glotfile/schema.py": (
         "executor trusts this model and nothing",
         "cap is a model validator",
     ),
-    "quackd/flock/pilots.py": ("Rebuilt through the model rather than",),
-    "quackd/host.py": (
+    "roboglot/team/pilots.py": ("Rebuilt through the model rather than",),
+    "roboglot/host.py": (
         "of a small model on the",
         '"a model"',
         "and the detector's model and device.",
@@ -491,15 +492,15 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "spent in the model, so",
         '"detect.model"',
     ),
-    "quackd/onboard/config.py": ("model:",),
-    "quackd/onboard/wizard.py": ('"its model (e.g. g1-edu)"',),
-    "quackd/preflight.py": ("simulator is the model settling under",),
-    "quackd/registry.py": (
+    "roboglot/onboard/config.py": ("model:",),
+    "roboglot/onboard/wizard.py": ('"its model (e.g. g1-edu)"',),
+    "roboglot/preflight.py": ("simulator is the model settling under",),
+    "roboglot/registry.py": (
         "a key this model no longer",
         "one fetches a model from upstream,",
     ),
-    "quackd/sim2d/clock.py": ("the arm the model's timestep",),
-    "quackd/verbs/core.py": ("second, a model of the",),
+    "roboglot/sim2d/clock.py": ("the arm the model's timestep",),
+    "roboglot/verbs/core.py": ("second, a model of the",),
     "tests/conftest.py": ("physics backend's downloaded model lives in",),
     "tests/jetson_fixtures.py": ('"proc/device-tree/model"',),
     "tests/test_cli_places.py": ("and the verb's model is what",),
@@ -540,10 +541,10 @@ MODELS_IN_GENERAL: dict[str, tuple[str, ...]] = {
     "docs/README.md": (
         "[Models]",
         "## Models",
-        "which models quackd can fly",
+        "which models Roboglot can fly",
         "and models have",
         "roles a model can have",
-        "for which models quackd names",
+        "for which models Roboglot names",
         "How to set a model up",
     ),
     "docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md": (
@@ -562,9 +563,9 @@ MODELS_IN_GENERAL: dict[str, tuple[str, ...]] = {
     ),
     "docs/models/decision-llms.md": ("the optional second model of a run",),
     "docs/models/pilot-llms.md": ("the only model a run needs", "[the models page]"),
-    "docs/models/vendors.md": ("whose models quackd",),
+    "docs/models/vendors.md": ("whose models Roboglot",),
     "docs/models/vlas.md": ("the third model a run can have",),
-    "quackd/cli.py": ("Which models to list.", "List the models quackd can use"),
+    "roboglot/cli.py": ("Which models to list.", "List the models Roboglot can use"),
     "scripts/models_docs.py": ("names a model, a vendor",),
 }
 """Where the word means every kind of model at once, file by file as the sentence says it: the
@@ -735,12 +736,12 @@ NAMES_FOR_EVERY_KIND = {
 """A Python name that said LLM where it meant every kind of model, and what it is now."""
 
 NAMES_MAY_STAY: dict[str, str] = {
-    r"quackd/(radio|boards|perception)/.*": "the radio's model, a computer's, a detector's",
-    r"quackd/(host|mcp_server)\.py": "the detector's, and the manifest's",
-    r"quackd/lan/.*|quackd/passport/.*|quackd/adapters/.*": "a robot's identity",
-    r"quackd/onboard/(body|config|wizard|preflight)\.py": "a robot's or a computer's",
-    r"quackd/duckfile/.*": "the manifest's",
-    r"quackd/agent/prompts\.py": "the manifest's",
+    r"roboglot/(radio|boards|perception)/.*": "the radio's model, a computer's, a detector's",
+    r"roboglot/(host|mcp_server)\.py": "the detector's, and the manifest's",
+    r"roboglot/lan/.*|roboglot/passport/.*|roboglot/adapters/.*": "a robot's identity",
+    r"roboglot/onboard/(body|config|wizard|preflight)\.py": "a robot's or a computer's",
+    r"roboglot/glotfile/.*": "the manifest's",
+    r"roboglot/agent/prompts\.py": "the manifest's",
 }
 OWNERS_MAY_STAY = {
     "manifest",
@@ -776,11 +777,11 @@ def _names(path: str) -> Iterator[tuple[int, str, str, str]]:
             yield token.start[0], token.string, owner, source[token.start[0] - 1]
 
 
-def test_no_name_in_quackd_says_the_word_where_it_means_an_llm() -> None:
+def test_no_name_in_roboglot_says_the_word_where_it_means_an_llm() -> None:
     allowed = [re.compile(pattern) for pattern in NAMES_MAY_STAY]
     found = []
     code = subprocess.run(
-        ["git", "ls-files", "quackd/*.py", "scripts/*.py"],
+        ["git", "ls-files", "roboglot/*.py", "scripts/*.py"],
         cwd=REPO,
         capture_output=True,
         check=True,
@@ -808,14 +809,14 @@ def test_no_name_in_quackd_says_the_word_where_it_means_an_llm() -> None:
 
 
 def test_the_old_command_name_is_refused_and_the_new_one_lists() -> None:
-    """`quackd list-models` lists every kind of model, so it has the name it had before 0.32.0
+    """`roboglot list-models` lists every kind of model, so it has the name it had before 0.32.0
     again, and `list-llms` has no alias, at the owner's word, as `list-models` had none then. A
     script that still types it stops rather than carrying on under a spelling nobody maintains,
-    as one that typed `quackd trace` does, and Click's refusal names the command it meant. The
+    as one that typed `roboglot trace` does, and Click's refusal names the command it meant. The
     phrase is asserted and not the styled name, as `tests/test_cli_log.py` says why."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
     from tests.conftest import help_text, plain_text
 
     runner = CliRunner()
@@ -868,7 +869,7 @@ def test_the_kinds_counted_as_llms_are_caught(words: str) -> None:
     [
         (
             "run_start",
-            {"duck": "x", "provider": "openai", "transport": "mock"},
+            {"glot": "x", "provider": "openai", "transport": "mock"},
             "provider=openai LLM=gpt-6-sol",
         ),
         (
@@ -881,8 +882,8 @@ def test_the_kinds_counted_as_llms_are_caught(words: str) -> None:
 def test_a_run_recorded_before_the_rename_replays_as_it_did(
     kind: str, data: dict[str, object], says: str
 ) -> None:
-    """A record says what its version wrote, so `quackd log` reads `model` as well as `llm_id`."""
-    from quackd.log import LogEvent, render_lines
+    """A record says what its version wrote, so `roboglot log` reads `model` as well as `llm_id`."""
+    from roboglot.log import LogEvent, render_lines
 
     old = render_lines(LogEvent(kind, 0.0, {**data, "model": "gpt-6-sol"}))
     new = render_lines(LogEvent(kind, 0.0, {**data, "llm_id": "gpt-6-sol"}))
@@ -891,7 +892,7 @@ def test_a_run_recorded_before_the_rename_replays_as_it_did(
 
 
 def test_a_shadow_row_recorded_before_the_rename_names_the_pilots_verb() -> None:
-    from quackd.log import LogEvent, render_lines
+    from roboglot.log import LogEvent, render_lines
 
     row = {
         "choice": "stop",

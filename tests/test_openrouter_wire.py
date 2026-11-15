@@ -1,4 +1,4 @@
-"""`--llm openrouter` through the real `openai` SDK and a real `quackd run`, against a stand-in.
+"""`--llm openrouter` through the real `openai` SDK and a real `roboglot run`, against a stand-in.
 
 Skipped wherever the SDK is not installed, which includes CI: nothing in the suite installs a
 provider SDK. To run it, sync an environment with the extra and run pytest there:
@@ -6,9 +6,9 @@ provider SDK. To run it, sync an environment with the extra and run pytest there
     UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openrouter
 
 No key and no network. `tests/fake_openrouter.py` answers every request on 127.0.0.1, so what
-this proves is what quackd puts on the wire through the SDK and what it makes of an answer in
+this proves is what Roboglot puts on the wire through the SDK and what it makes of an answer in
 OpenRouter's documented shape. It proves nothing about OpenRouter, and no OpenRouter LLM has
-answered a real quackd request.
+answered a real Roboglot request.
 """
 
 from __future__ import annotations
@@ -22,10 +22,10 @@ pytest.importorskip("openai")
 
 from typer.testing import CliRunner
 
-from quackd.agent.providers.catalogue import Price, find_llm
-from quackd.agent.providers.pricing import cost_usd
-from quackd.agent.transcript import Transcript
-from quackd.cli import app
+from roboglot.agent.providers.catalogue import Price, find_llm
+from roboglot.agent.providers.pricing import cost_usd
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app
 from tests.conftest import REPO
 from tests.fake_openrouter import FakeOpenRouter, reasoning_details
 
@@ -97,7 +97,7 @@ def test_every_request_says_who_is_asking_and_what_it_insists_on(tmp_path: Path)
         assert post.path == "/api/v1/chat/completions"
         assert post.headers["authorization"] == f"Bearer {KEY}"
         assert post.headers["http-referer"] == "https://github.com/rokbenko/quackd"
-        assert post.headers["x-openrouter-title"] == "quackd"
+        assert post.headers["x-openrouter-title"] == "roboglot"
         assert post.headers["user-agent"].startswith("AsyncOpenAI/Python")
         assert post.body["model"] == "openai/gpt-6-sol"
         assert post.body["tool_choice"] == "required"
@@ -165,7 +165,7 @@ def test_an_unlisted_id_is_checked_and_priced_against_the_list_once_and_asked(
     tmp_path: Path,
 ) -> None:
     with FakeOpenRouter() as stand_in:
-        result = _run(stand_in, tmp_path, llm="openrouter:quackd-stub/tool-model")
+        result = _run(stand_in, tmp_path, llm="openrouter:roboglot-stub/tool-model")
     assert result.exit_code == 0, result.output
     kinds = [r.method for r in stand_in.requests]
     assert kinds[0] == "GET" and kinds.count("GET") == 1, kinds
@@ -182,7 +182,7 @@ def test_an_unlisted_id_is_checked_and_priced_against_the_list_once_and_asked(
 
 def test_an_unlisted_id_whose_entry_names_no_tool_choice_is_sent_none(tmp_path: Path) -> None:
     with FakeOpenRouter() as stand_in:
-        result = _run(stand_in, tmp_path, llm="openrouter:quackd-stub/no-tool-choice")
+        result = _run(stand_in, tmp_path, llm="openrouter:roboglot-stub/no-tool-choice")
     assert result.exit_code == 0, result.output
     assert all("tool_choice" not in post.body for post in stand_in.posts())
 
@@ -193,7 +193,7 @@ def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Pat
         seeing = _run(
             stand_in,
             tmp_path / "seeing",
-            llm="openrouter:quackd-stub/tool-model",
+            llm="openrouter:roboglot-stub/tool-model",
             robot="microduck:sim2d",
         )
     assert seeing.exit_code == 0, seeing.output
@@ -202,7 +202,7 @@ def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Pat
         blind = _run(
             stand_in,
             tmp_path / "blind",
-            llm="openrouter:quackd-stub/text-only",
+            llm="openrouter:roboglot-stub/text-only",
             robot="microduck:sim2d",
         )
     assert blind.exit_code == 0, blind.output
@@ -212,9 +212,9 @@ def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Pat
 @pytest.mark.parametrize(
     ("llm_id", "why"),
     [
-        ("quackd-stub/no-tools", "without tool calling"),
-        ("quackd-stub/expired", "expired on OpenRouter on 2000-01-01"),
-        ("quackd-stub/not-there", "is not on OpenRouter's LLM list"),
+        ("roboglot-stub/no-tools", "without tool calling"),
+        ("roboglot-stub/expired", "expired on OpenRouter on 2000-01-01"),
+        ("roboglot-stub/not-there", "is not on OpenRouter's LLM list"),
     ],
 )
 def test_an_id_the_list_says_cannot_pilot_is_refused_before_any_turn(
@@ -259,12 +259,12 @@ def test_a_busy_api_is_asked_the_same_turn_again_through_the_real_sdk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ADR-0059 end to end. The stand-in answers its first chat post with a 529, which the SDK,
-    built to retry nothing of its own (`NO_SDK_RETRIES`), hands straight up, and quackd waits and
+    built to retry nothing of its own (`NO_SDK_RETRIES`), hands straight up, and Roboglot waits and
     asks the same turn again, which the stand-in answers: the run succeeds, the turn is one call,
     and the request that answered is the one that failed, byte for byte. That the SDK's exception
-    arrives under quackd's own with its status on it is what this proves, since only a real SDK
+    arrives under Roboglot's own with its status on it is what this proves, since only a real SDK
     raises one, and that it arrives after one post, which only a real SDK built so can show."""
-    import quackd.agent.loop as loop_module
+    import roboglot.agent.loop as loop_module
 
     waits: list[float] = []
 
@@ -315,7 +315,7 @@ def test_a_claude_row_is_asked_and_keeps_its_reasoning_past_eight_exchanges(
     trims on every call, on OpenRouter's word that binding is not enforced through it. What can
     be checked here is that every turn's reasoning still goes back, in order, on a run long
     enough to cross that line, and that the row is asked with `auto` from first to last."""
-    hello = (REPO / "ducks" / "hello-world.duck").read_text(encoding="utf-8")
+    hello = (REPO / "tasks" / "hello-world.glot").read_text(encoding="utf-8")
     longer = (
         hello.replace("name: hello-world", "name: long-quack")
         .replace("max_steps: 5", "max_steps: 20")
@@ -323,7 +323,7 @@ def test_a_claude_row_is_asked_and_keeps_its_reasoning_past_eight_exchanges(
         .replace("max_minutes: 1", "max_minutes: 5")
     )
     assert longer != hello and "max_llm_calls: 20" in longer
-    duck = tmp_path / "long-quack.duck"
+    duck = tmp_path / "long-quack.glot"
     duck.write_text(longer, encoding="utf-8")
     with FakeOpenRouter(script="long") as stand_in:
         result = _run(

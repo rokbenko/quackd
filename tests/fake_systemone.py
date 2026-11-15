@@ -1,7 +1,7 @@
 """A System One server that never leaves the machine.
 
 Two faces, because the seam it stands in for is now two seams. Installed into `sys.modules` as
-`typesafe_sdk`, it is the SDK `quackd.agent.decision.systemone` imports lazily and would
+`typesafe_sdk`, it is the SDK `roboglot.agent.decision.systemone` imports lazily and would
 otherwise find whatever state a developer's machine happens to be in and nothing at all on CI,
 which is two different suites. Handed straight to `Stepper.build` as `llm=`, it is a
 `DecisionLLM` and the HTTP half is never involved at all -- which is what most of the stepper's
@@ -61,7 +61,7 @@ class NoulAnswer:
 class Usage:
     """What the server says the call cost. Both counts are `int | None` in the real SDK, which
     documents None as "when the API did not report it", and that None is the difference between
-    a cost quackd measured and one it estimated. An LLM running in this process reports
+    a cost Roboglot measured and one it estimated. An LLM running in this process reports
     neither, so it is the common case rather than the odd one."""
 
     input_tokens: int | None = None
@@ -99,7 +99,7 @@ class FakeDecisionLLM:
         self.raises = raises
         self.usage = usage
         """What every turn reports spending, or None for a backend that reported nothing,
-        which is the path where quackd has to estimate the size of its own question."""
+        which is the path where Roboglot has to estimate the size of its own question."""
         self.calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
         """(state, questions) per turn, so a test can assert what was and was not sent."""
         # What the protocol asks of a decision LLM. A test that hands this straight to

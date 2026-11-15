@@ -1,0 +1,49 @@
+[Unit]
+Description=Roboglot host daemon for an NVIDIA Jetson (camera, detections and board health over HTTP)
+Documentation=https://github.com/rokbenko/quackd/blob/main/bridge/jetson/README.md
+# After nvargus-daemon, because --camera csi opens the camera through it and a capture that
+# races it at boot fails to open and leaves the daemon with no camera until restarted. The
+# daemon keeps serving and /healthz says it is not ok, so Restart= below never sees that one.
+After=network-online.target nvargus-daemon.service
+Wants=network-online.target
+
+# Loopback on purpose: this serves a live view of wherever the board is, and a GPU anyone who
+# can reach the port can keep busy. Reach it from the laptop with
+# `ssh -L 9874:127.0.0.1:9874 <board>` rather than binding it wide, and if you do bind it
+# wide, keep the token and understand who is on that network.
+[Service]
+Type=simple
+# A placeholder: substitute the account you created on the board, here and as the group of
+# the token file (bridge/jetson/README.md, step 2), so this user can read its own token.
+User=jetson
+# /dev/video* belongs to the video group, and a USB camera needs it.
+SupplementaryGroups=video
+Environment=PYTHONUNBUFFERED=1
+# ultralytics downloads a bare model name such as yolov8n.pt into the working directory the
+# first time it is asked for one, and / is not writable by the service user. systemd creates
+# /var/lib/roboglot-jetson-hostd for that user.
+StateDirectory=roboglot-jetson-hostd
+WorkingDirectory=/var/lib/roboglot-jetson-hostd
+# The system python on purpose: JetPack's own OpenCV, built with GStreamer, is installed for
+# it, and the CSI camera needs GStreamer. A virtualenv's pip OpenCV is built without it, and
+# so is the one pip installs for this python along with ultralytics, which then hides
+# JetPack's: bridge/jetson/README.md, "Detection on the GPU", says how to remove it.
+ExecStart=/usr/bin/python3 /opt/roboglot/roboglot_jetson_hostd.py --bind 127.0.0.1 --port 9874 --camera csi --fps 5 --size 640x480 --token-file /etc/roboglot/jetson-hostd.token
+
+# This is the process to lose. On a robot whose own computer this board is, the robot's
+# control daemon and an LLM server may share it, and an LLM server or a detector saturating
+# the board can starve a fifty hertz control loop. So this yields: a lower CPU priority than
+# either, a memory ceiling, and an OOM score that makes the kernel take this first. Losing it
+# costs Roboglot a camera, detections and the board's health; losing the control loop mid-step
+# costs the robot.
+MemoryMax=2G
+OOMScoreAdjust=500
+Nice=10
+
+# Restarting this is harmless: it reads a camera, a few files and two read-only commands, and
+# answers HTTP. Nothing in it can move a robot.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

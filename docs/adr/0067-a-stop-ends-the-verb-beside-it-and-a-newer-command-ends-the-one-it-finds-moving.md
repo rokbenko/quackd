@@ -1,6 +1,6 @@
 # ADR-0067: A stop ends the verb beside it, and a newer command ends the one it finds moving
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a stop asked for from beside a verb ends `move`, `go_to`, `search_scan` and `approach_and`, not `watch` alone) and [ADR-0012](0012-safety-executor.md) (the executor can end every verb moving the body for a newer command, and refuses one admitted before it that has not started) · Implemented in `quackd/verbs/core.py` (`_twist`, `_Interrupted`, `_ended_by`, `move`, `search_scan`, `approach_and`), `quackd/verbs/registry.py` (`STOP_ENDED`), `quackd/safety.py` (`Executor.preempt`, `Preempted`, `_run_verb`, `_run_admitted`, `_record`, `context`) and `adapters/moss/src/quackd_moss/verbs.py` (`_braked`) · Documented in [docs/guides/drive.md](../guides/drive.md#one-mover-at-a-time) and [docs/guides/mcp.md](../guides/mcp.md)
+**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a stop asked for from beside a verb ends `move`, `go_to`, `search_scan` and `approach_and`, not `watch` alone) and [ADR-0012](0012-safety-executor.md) (the executor can end every verb moving the body for a newer command, and refuses one admitted before it that has not started) · Implemented in `roboglot/verbs/core.py` (`_twist`, `_Interrupted`, `_ended_by`, `move`, `search_scan`, `approach_and`), `roboglot/verbs/registry.py` (`STOP_ENDED`), `roboglot/safety.py` (`Executor.preempt`, `Preempted`, `_run_verb`, `_run_admitted`, `_record`, `context`) and `adapters/moss/src/roboglot_moss/verbs.py` (`_braked`) · Documented in [docs/guides/drive.md](../guides/drive.md#one-mover-at-a-time) and [docs/guides/mcp.md](../guides/mcp.md)
 
 **Amended 2026-11-02:** the arm's `move_joints`, `gripper` and `place` read the stop beside them
 now, and mark a braked result the same way. Their loop sends a fresh goal every tenth of a second,
@@ -47,7 +47,7 @@ for its seconds.
    `pause_for` with no hold after it. It cancels each verb before its next step, so nothing it
    would have sent goes out after `preempt` returns. A verb it ends is answered with a stop
    after it, a `preempted` gate record, and `Preempted` in the newer command's words. That is a
-   `SafetyStop` whose outcome is `preempted`, the flock's word for a member it redirected, and
+   `SafetyStop` whose outcome is `preempted`, the team's word for a member it redirected, and
    being raised, it is never a failure `abort_when` counts.
 4. **A verb admitted before a preempt does not start after it.** One already past its gates and
    still reading the body's state is in nothing `preempt` can cancel, and would start after the
@@ -79,7 +79,7 @@ for its seconds.
 
 - `serve-mcp` gains the first half: a `stop` called while a `move`, a `go_to` or a
   `search_scan` runs, or is still reading the body's state, ends it before its next twist.
-  `quackd run` gains decisions 7 and 8.
+  `roboglot run` gains decisions 7 and 8.
 - A verb an adapter brings reads the stop beside it only where the adapter asks. MOSS's verbs
   do, and mark a braked result `ended_by: stop` as the core verbs do. The ToddlerBot's own
   `search_scan` and the arm's joint moves do not read it yet. Drive's brake and a newer command end every verb that moves the body through

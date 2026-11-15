@@ -1,7 +1,7 @@
 # Robot Passport
 
 > [!NOTE]
-> Spec 1.0. Since quackd 0.29.0 a passport lives on the robot it introduces: `quackd onboard`
+> Spec 1.0. Since Roboglot 0.29.0 a passport lives on the robot it introduces: `roboglot onboard`
 > runs on the robot's own computer, an NVIDIA Jetson first, and the owner's key signs what it says.
 > Nothing in this folder has run on a Jetson or over a real Bluetooth radio.
 > What has run is the test suite and the sim board, a laptop standing in for a robot's computer,
@@ -32,9 +32,9 @@ words never reach a brain until a person pins it.
 ## Which robots carry one
 
 The robots that will meet strangers: humanoids and quadrupeds, many of them carrying an NVIDIA
-Jetson that can run quackd, and others another Linux computer that can. An arm carries none, because it is fixed in place and will rarely
+Jetson that can run Roboglot, and others another Linux computer that can. An arm carries none, because it is fixed in place and will rarely
 meet another robot, and neither does a toy-sized robot, because it has no computer on board that can
-run quackd ([compatibility.md](compatibility.md)).
+run Roboglot ([compatibility.md](compatibility.md)).
 
 ## Read in this order
 
@@ -46,11 +46,11 @@ run quackd ([compatibility.md](compatibility.md)).
 | [passport.md](passport.md) | the document, member by member, with sizes and what it leaves out |
 | [discovery.md](discovery.md) | the Bluetooth beacon and its rotating id, signal strength, the LAN, and the fetch rules |
 | [trust.md](trust.md) | the robot key and the owner key, the owner's signature, pinning, the three tiers, and lost or stolen keys |
-| [talk.md](talk.md) | the six messages, the three-step `hello`, the two channels, and what quackd does with an `ask` |
+| [talk.md](talk.md) | the six messages, the three-step `hello`, the two channels, and what Roboglot does with an `ask` |
 | [security.md](security.md) | the threat model: every threat, what stops it, and what nothing here stops |
-| [privacy.md](privacy.md) | what each layer reveals, tracking by radio, and what quackd keeps on the robot |
+| [privacy.md](privacy.md) | what each layer reveals, tracking by radio, and what Roboglot keeps on the robot |
 | [compatibility.md](compatibility.md) | which robots carry a passport, the boards it runs on, and what a reader of its own needs |
-| [quackd.md](quackd.md) | Robot Passport in quackd: `quackd onboard`, robot.yaml, the service, meetings, pins and the demo |
+| [roboglot.md](roboglot.md) | Robot Passport in Roboglot: `roboglot onboard`, robot.yaml, the service, meetings, pins and the demo |
 | [spec.md](spec.md) | the normative specification, version 1.0 |
 | [schema/](schema/passport.schema.json) | the JSON Schemas: [passport](schema/passport.schema.json) and [message](schema/message.schema.json) |
 | [vectors/](vectors/README.md) | the conformance vectors, each with the result a reader must reach |
@@ -58,7 +58,7 @@ run quackd ([compatibility.md](compatibility.md)).
 | [prior-art.md](prior-art.md) | the systems it was measured against, what it borrowed and what it avoided |
 | [glossary.md](glossary.md) | every term, in a sentence or two |
 | [faq.md](faq.md) | the questions people ask |
-| [roadmap.md](roadmap.md) | the status, the phases, the decisions taken, and leaving quackd |
+| [roadmap.md](roadmap.md) | the status, the phases, the decisions taken, and leaving Roboglot |
 
 ## Sizes at a glance
 

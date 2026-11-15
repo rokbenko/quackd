@@ -20,14 +20,14 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from quackd import doctor
-from quackd.duckfile.parser import load_duck
-from quackd.duckfile.schema import DuckFile
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import VerbRegistry, default_registry
+from roboglot import doctor
+from roboglot.glotfile.parser import load_glot
+from roboglot.glotfile.schema import GlotFile
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import VerbRegistry, default_registry
 
 REPO = Path(__file__).resolve().parents[1]
-DUCKS = REPO / "ducks"
+TASKS = REPO / "tasks"
 
 EXIT_GRACE_S = 120
 
@@ -136,7 +136,7 @@ def _scratch_dir(factory: pytest.TempPathFactory, name: str) -> Path:
 def _no_llm_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
     """Doctor asks the local servers whether they are up. Whether any is running on the machine
     the suite runs on is not what a test is about, and on Windows a closed port takes three
-    seconds to say so, for a test that merely runs `quackd doctor`. A test about the answer
+    seconds to say so, for a test that merely runs `roboglot doctor`. A test about the answer
     replaces this with its own, and `test_doctor.py` holds the real probe for the tests about
     the probe itself."""
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
@@ -146,10 +146,12 @@ def _no_llm_server_is_asked(monkeypatch: pytest.MonkeyPatch) -> None:
 def _memory_in_tmp(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A test run must never write the developer's real `~/.quackd/memory`: every test that
+    """A test run must never write the developer's real `~/.roboglot/memory`: every test that
     runs the CLI with memory on (the default) gets a throwaway directory instead. Not inside
     `tmp_path`: tests count the run directories they make there."""
-    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(_scratch_dir(tmp_path_factory, "quackd-memory")))
+    monkeypatch.setenv(
+        "ROBOGLOT_MEMORY_DIR", str(_scratch_dir(tmp_path_factory, "roboglot-memory"))
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -157,10 +159,10 @@ def _registry_in_tmp(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same rule as memory, for the same reason: a test that registers a robot must never
-    write the developer's real `~/.quackd/robots.json`, and a developer who has one must never
-    be running a different suite from CI because a flock they made is lying there."""
+    write the developer's real `~/.roboglot/robots.json`, and a developer who has one must never
+    be running a different suite from CI because a team they made is lying there."""
     monkeypatch.setenv(
-        "QUACKD_REGISTRY_DIR", str(_scratch_dir(tmp_path_factory, "quackd-registry"))
+        "ROBOGLOT_REGISTRY_DIR", str(_scratch_dir(tmp_path_factory, "roboglot-registry"))
     )
 
 
@@ -168,9 +170,11 @@ def _registry_in_tmp(
 def _onboard_in_tmp(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same rule again for `quackd onboard`: a test never writes a robot's directory, its
-    keys above all, into the developer's real `~/.quackd/onboard`."""
-    monkeypatch.setenv("QUACKD_ONBOARD_DIR", str(_scratch_dir(tmp_path_factory, "quackd-onboard")))
+    """The same rule again for `roboglot onboard`: a test never writes a robot's directory, its
+    keys above all, into the developer's real `~/.roboglot/onboard`."""
+    monkeypatch.setenv(
+        "ROBOGLOT_ONBOARD_DIR", str(_scratch_dir(tmp_path_factory, "roboglot-onboard"))
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -179,7 +183,7 @@ def _asset_cache_in_tmp(
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The physics backend's downloaded model lives in `~/.quackd/cache`, and a developer who
+    """The physics backend's downloaded model lives in `~/.roboglot/cache`, and a developer who
     has one was running a different suite from CI: `ensure_microduck(offline=True)` found it
     and the tests that skip everywhere else ran here. Everything gets a throwaway cache and no
     checkout override, the Microduck's or the arm simulator's, so a skip is a skip on both
@@ -190,9 +194,9 @@ def _asset_cache_in_tmp(
     skips them — so this decides which machine they run on, not whether they download."""
     if any(request.node.get_closest_marker(m) for m in ("real_duck", "so101_model")):
         return
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(_scratch_dir(tmp_path_factory, "quackd-cache")))
-    monkeypatch.delenv("QUACKD_MICRODUCK_ASSETS", raising=False)
-    monkeypatch.delenv("QUACKD_LEROBOT_SIM_ASSETS", raising=False)
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(_scratch_dir(tmp_path_factory, "roboglot-cache")))
+    monkeypatch.delenv("ROBOGLOT_MICRODUCK_ASSETS", raising=False)
+    monkeypatch.delenv("ROBOGLOT_LEROBOT_SIM_ASSETS", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -212,11 +216,11 @@ def _lerobot_calibration_in_tmp(
 
 @pytest.fixture(autouse=True)
 def _no_hugging_face_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A Hugging Face account's token pays for Inference Endpoints, and `quackd policy endpoint`
+    """A Hugging Face account's token pays for Inference Endpoints, and `roboglot policy endpoint`
     finds it where huggingface_hub does: `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, then the file
     `HF_TOKEN_PATH` names, `$HF_HOME/token` by default. A developer who has logged in has all
     three within reach, and the CLI loads a `.env`, so a test that asked for an endpoint would
-    ask with their token. Both variables are empty, which reads as unset to quackd and to
+    ask with their token. Both variables are empty, which reads as unset to Roboglot and to
     huggingface_hub alike and survives `load_dotenv`, `HF_TOKEN_PATH` goes, and the default file
     is under the throwaway `HF_HOME` above. The tests that need a token set a stand-in's."""
     monkeypatch.setenv("HF_TOKEN", "")
@@ -226,7 +230,7 @@ def _no_hugging_face_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
 HUGGING_FACE_DOMAINS = ("huggingface.co", "huggingface.cloud", "pypi.org")
 """Whose hosts the guard below stops: Hugging Face's Hub, its Inference Endpoints and their API,
-and PyPI, which `quackd policy endpoint up` asks about a release. Each at the domain or any host
+and PyPI, which `roboglot policy endpoint up` asks about a release. Each at the domain or any host
 under it."""
 
 
@@ -258,7 +262,7 @@ def _no_request_reaches_hugging_face(
 ) -> Iterator[list[str]]:
     """No test may reach Hugging Face or PyPI, and a test that tries fails.
 
-    `quackd policy endpoint` would create an endpoint that bills by the hour, and every one of
+    `roboglot policy endpoint` would create an endpoint that bills by the hour, and every one of
     its tests runs against the stand-ins on 127.0.0.1 in `tests/fake_hugging_face.py`, with the
     module's addresses pointed there. A test that left one of them pointed at Hugging Face would
     otherwise reach it, with whatever token it found. So every lookup of a host of theirs goes
@@ -284,7 +288,7 @@ def _no_request_reaches_hugging_face(
     yield reached
     assert not reached, (
         f"this test looked up {', '.join(sorted(set(reached)))}, which belongs to Hugging Face "
-        "or PyPI, and the guard stopped it. Point quackd_lerobot.policy.endpoint's API, HUB and "
+        "or PyPI, and the guard stopped it. Point roboglot_lerobot.policy.endpoint's API, HUB and "
         "PYPI at the stand-ins in tests/fake_hugging_face.py"
     )
 
@@ -294,46 +298,46 @@ def _log_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """The log is on by default and goes to stderr, which CliRunner folds into `output`,
     so every CLI and acceptance test would carry pages of it in its failure message and its
     substring assertions would match by accident. Off for the suite; the tests that prove
-    the default is on set `QUACKD_LOG` to an empty string themselves (an empty value is
+    the default is on set `ROBOGLOT_LOG` to an empty string themselves (an empty value is
     on, and unlike `delenv` it also shields them from a developer's own `.env`)."""
-    monkeypatch.setenv("QUACKD_LOG", "0")
+    monkeypatch.setenv("ROBOGLOT_LOG", "0")
 
 
 @pytest.fixture(autouse=True)
 def _no_llm_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_LLM` pins the pilot, and `QUACKD_DECISION_LLM` switches a decision LLM on for
-    every run, and `QUACKD_DECISION_FRAMES` shows it the camera. The CLI loads a developer's
+    """`ROBOGLOT_LLM` pins the pilot, and `ROBOGLOT_DECISION_LLM` switches a decision LLM on for
+    every run, and `ROBOGLOT_DECISION_FRAMES` shows it the camera. The CLI loads a developer's
     `.env` in its root callback, so one line in an untracked file could make half this suite
     assert against a pilot nobody chose, pay for a stepper nobody asked for, or refuse a run
     for frames nobody asked for. Empty reads as unset everywhere any of them is consumed, and
     unlike `delenv` it survives `load_dotenv`, which does not overwrite a name already in the
     environment. The tests that exercise them set them themselves."""
-    monkeypatch.setenv("QUACKD_LLM", "")
-    monkeypatch.setenv("QUACKD_DECISION_LLM", "")
-    monkeypatch.setenv("QUACKD_DECISION_MODE", "")
-    monkeypatch.setenv("QUACKD_DECISION_URL", "")
-    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "")
+    monkeypatch.setenv("ROBOGLOT_LLM", "")
+    monkeypatch.setenv("ROBOGLOT_DECISION_LLM", "")
+    monkeypatch.setenv("ROBOGLOT_DECISION_MODE", "")
+    monkeypatch.setenv("ROBOGLOT_DECISION_URL", "")
+    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", "")
 
 
 @pytest.fixture(autouse=True)
 def _no_price_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_PRICE` and `QUACKD_DECISION_PRICE` cost a run money, and the CLI loads a developer's
-    `.env` in its root callback, so one line in an untracked file could have half this suite
-    asserting against a rate nobody chose. Empty reads as unset everywhere either is consumed,
+    """`ROBOGLOT_PRICE` and `ROBOGLOT_DECISION_PRICE` cost a run money, and the CLI loads a
+    developer's `.env` in its root callback, so one line in an untracked file could have half this
+    suite asserting against a rate nobody chose. Empty reads as unset everywhere either is consumed,
     and unlike `delenv` it survives `load_dotenv`, which does not overwrite a name already in
     the environment. The tests that exercise them set them themselves."""
-    monkeypatch.setenv("QUACKD_PRICE", "")
-    monkeypatch.setenv("QUACKD_DECISION_PRICE", "")
+    monkeypatch.setenv("ROBOGLOT_PRICE", "")
+    monkeypatch.setenv("ROBOGLOT_DECISION_PRICE", "")
 
 
 @pytest.fixture(autouse=True)
 def _no_extra_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_EXTRA_BODY` adds fields to every request an OpenAI-compatible provider sends, so
+    """`ROBOGLOT_EXTRA_BODY` adds fields to every request an OpenAI-compatible provider sends, so
     one line in a developer's `.env` would reach every test in this suite that reads a request
     body, and the tests asserting a field is *absent* would fail on their machine and nowhere
     else. Empty reads as unset, and unlike `delenv` it survives `load_dotenv`. The tests that
     exercise the variable set it themselves."""
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", "")
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", "")
 
 
 @pytest.fixture(autouse=True)
@@ -342,28 +346,28 @@ def _no_redirected_key_line(monkeypatch: pytest.MonkeyPatch) -> None:
     the line this says in every CLI test's output, and nowhere else. Emptying the variables, as the
     fixtures here do for others, would hand a real SDK an empty address, so the line is silenced
     instead, and `tests/test_cli_redirected_keys.py` holds the real one, bound at its import."""
-    monkeypatch.setattr("quackd.cli._warn_redirected_keys", lambda: None)
+    monkeypatch.setattr("roboglot.cli._warn_redirected_keys", lambda: None)
 
 
 @pytest.fixture(autouse=True)
 def _no_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_HOST` moves every local preset's LLM server to another machine, and the CLI
+    """`ROBOGLOT_HOST` moves every local preset's LLM server to another machine, and the CLI
     loads a developer's `.env` in its root callback, so one line in an untracked file would
     point this suite's local-provider tests at a Jetson on somebody's desk. Its token rides
     along for the same reason. Empty reads as unset, and unlike `delenv` it survives
     `load_dotenv`. The tests that exercise them set them themselves."""
-    monkeypatch.setenv("QUACKD_HOST", "")
-    monkeypatch.setenv("QUACKD_HOST_TOKEN", "")
+    monkeypatch.setenv("ROBOGLOT_HOST", "")
+    monkeypatch.setenv("ROBOGLOT_HOST_TOKEN", "")
 
 
 @pytest.fixture(autouse=True)
 def _no_openrouter_listing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--llm openrouter:` an id quackd does not carry reads OpenRouter's public LLM list, and
+    """`--llm openrouter:` an id Roboglot does not carry reads OpenRouter's public LLM list, and
     keeps it for the life of the process. No test may reach the real one: CI has no business on
     the network, and a list that changes weekly would make an assertion true on one day only. So
     every test starts with an empty cache, and a fetch from openrouter.ai fails the test that
     made it. A list at any other address, a stand-in on 127.0.0.1, still goes through for real."""
-    from quackd.agent.providers import openrouter
+    from roboglot.agent.providers import openrouter
 
     real = openrouter.fetch_llms
 
@@ -401,11 +405,11 @@ def openai_address(url: object) -> str | None:
     request is about to go to, and `urlsplit`'s reading otherwise. A trailing dot names the same
     machine in DNS, so it comes off.
 
-    Wider than the hosts quackd sends a key to (`openai_headers.OPENAI_HOSTS`), on purpose, and
+    Wider than the hosts Roboglot sends a key to (`openai_headers.OPENAI_HOSTS`), on purpose, and
     a rule of the guard's own rather than `decisions_api.is_openai_host`: a test may replace
     that one to have a stand-in on 127.0.0.1 treated as OpenAI's and see what the key does there
     (`tests/test_decisions_api_wire.py` does), and a guard that replacement could talk round
-    would guard nothing. The key is not all that is at stake either. A request quackd sends a
+    would guard nothing. The key is not all that is at stake either. A request Roboglot sends a
     host of OpenAI's it has no key for, at a `--decision-url` of `https://chatgpt.openai.com` or
     a region OpenAI never named, carries the word `local` rather than the key and the robot's
     state all the same, and that state is what must not reach OpenAI from a test."""
@@ -530,13 +534,13 @@ def mock_transport() -> MockTransport:
 
 
 @pytest.fixture
-def hello_duck() -> DuckFile:
-    return load_duck(str(DUCKS / "hello-world.duck"))
+def hello_glot() -> GlotFile:
+    return load_glot(str(TASKS / "hello-world.glot"))
 
 
 @pytest.fixture
-def kick_duck() -> DuckFile:
-    return load_duck(str(DUCKS / "find-and-kick.duck"))
+def kick_duck() -> GlotFile:
+    return load_glot(str(TASKS / "find-and-kick.glot"))
 
 
 @pytest.fixture(autouse=True)
@@ -568,7 +572,7 @@ def help_text(argv: list[str]) -> str:
     """
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     return plain_text(CliRunner().invoke(app, argv, env={"COLUMNS": "200"}).output)
 
@@ -601,7 +605,7 @@ def _no_test_writes_into_the_checkout() -> Iterator[None]:
 
     They accumulated for weeks before anybody noticed, because each is a directory holding one
     line and nothing fails. What made them worth stopping is that they sit among a person's own
-    runs, which is where `quackd log` looks and where the evidence from a real robot lives.
+    runs, which is where `roboglot log` looks and where the evidence from a real robot lives.
 
     Only a directory with no `summary.json` is swept up, and the same rule is why: a run that
     finished wrote one, and the suite's leavings never get that far because the loop makes the
@@ -617,5 +621,5 @@ def _no_test_writes_into_the_checkout() -> Iterator[None]:
         shutil.rmtree(REPO_RUNS / name, ignore_errors=True)
     assert not leaked, (
         f"this test wrote {leaked} into the checkout's runs/. Pass runs_dir=tmp_path to the "
-        "RunConfig (or runs_dir= to the flock runner): the default is relative and lands here."
+        "RunConfig (or runs_dir= to the team runner): the default is relative and lands here."
     )

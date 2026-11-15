@@ -1,6 +1,6 @@
 # E117: Ctrl-C mid-move
 
-**Ctrl-C folded the arm away. A hard kill left it reached out over the table under torque, until `quackd robot release` put it down.**
+**Ctrl-C folded the arm away. A hard kill left it reached out over the table under torque, until `roboglot robot release` put it down.**
 
 **Part 1 of 2:** Ctrl-C, pressed once
 
@@ -8,13 +8,13 @@
 
 Filmed with an external camera. The GIF plays at 3x speed.
 
-**Part 2 of 2:** A hard kill from a second terminal, then `quackd robot release`
+**Part 2 of 2:** A hard kill from a second terminal, then `roboglot robot release`
 
 ![E117, filmed with an external camera](log/part-2/run.gif)
 
 Filmed with an external camera. The GIF plays at 3x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Partly | ABORTED / KILLED | 2026-11-10 | 0.33.0 |
 
@@ -23,23 +23,23 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** A process that stops is not an arm that stops. The SO-101's servos, with their torque on, hold their last goal until the torque or the power is cut, so when quackd ends, the arm stays where it was unless something puts it down. This example compares two of the ways a run can be stopped from the keyboard: Ctrl-C, which quackd handles, and a hard kill, which it never sees.
+**Why this example exists:** A process that stops is not an arm that stops. The SO-101's servos, with their torque on, hold their last goal until the torque or the power is cut, so when Roboglot ends, the arm stays where it was unless something puts it down. This example compares two of the ways a run can be stopped from the keyboard: Ctrl-C, which Roboglot handles, and a hard kill, which it never sees.
 
-**Why this result is important:** Both behaved as designed. Ctrl-C cut the LLM call it landed in, sent a `stop` and folded the arm back to its rest pose within a second. The hard kill gave quackd no chance: no `stop`, no fold and no `summary.json`, and the arm stayed reached out under torque, still reading shoulder_lift -75.3, until `quackd robot release` folded it and turned its torque off. That is the hazard the card warns about, and the way back from a killed run is to support the arm and let `quackd robot release` put it down, or to hold it and cut its power.
+**Why this result is important:** Both behaved as designed. Ctrl-C cut the LLM call it landed in, sent a `stop` and folded the arm back to its rest pose within a second. The hard kill gave Roboglot no chance: no `stop`, no fold and no `summary.json`, and the arm stayed reached out under torque, still reading shoulder_lift -75.3, until `roboglot robot release` folded it and turned its torque off. That is the hazard the card warns about, and the way back from a killed run is to support the arm and let `roboglot robot release` put it down, or to hold it and cut its power.
 
 ## The goal
 
-Show that killing the process does not stop the arm: it holds its last commanded position under torque, which is the real hardware hazard quackd is designed around. Ctrl-C, an ordinary exit, is the contrast.
+Show that killing the process does not stop the arm: it holds its last commanded position under torque, which is the real hardware hazard Roboglot is designed around. Ctrl-C, an ordinary exit, is the contrast.
 
-**What we expected:** Ctrl-C: `aborted mid-verb; the verb was cancelled and a stop was sent`, the arm freezes, then folds to the rest pose and goes limp there. Hard kill: the arm freezes under torque and stays there, with nothing running to release it and no `summary.json` in the run folder, until `quackd robot release` puts it down.
+**What we expected:** Ctrl-C: `aborted mid-verb; the verb was cancelled and a stop was sent`, the arm freezes, then folds to the rest pose and goes limp there. Hard kill: the arm freezes under torque and stays there, with nothing running to release it and no `summary.json` in the run folder, until `roboglot robot release` puts it down.
 
 ## What the run showed
 
 * In Part 1 the LLM read the arm, judged the reach `feasible` and raised it, shoulder_lift to -75 over 5 s. Ctrl-C landed while it waited on its next answer, and that call ended `ERROR Aborted: kill switch after 0.2 s`.
-* quackd then sent a `stop` and folded the arm: `moving to the rest pose`, then `at the rest pose` 0.8 s later. The run ended `ABORTED` on `kill switch`, with its summary written.
-* In Part 2 nearly the same move ran, this time also turning the pan to 0, and the process was killed from a second terminal while the LLM was thinking: `taskkill /F /IM quackd.exe` ended four quackd.exe processes. The run's own terminal stops at the call it was waiting on, and the screen's last line was `waiting on openai gpt-6-astra (last call 4.4 s)`, the 4.4 s being how long the call before it took.
+* Roboglot then sent a `stop` and folded the arm: `moving to the rest pose`, then `at the rest pose` 0.8 s later. The run ended `ABORTED` on `kill switch`, with its summary written.
+* In Part 2 nearly the same move ran, this time also turning the pan to 0, and the process was killed from a second terminal while the LLM was thinking: `taskkill /F /IM roboglot.exe` ended four roboglot.exe processes. The run's own terminal stops at the call it was waiting on, and the screen's last line was `waiting on openai gpt-6-astra (last call 4.4 s)`, the 4.4 s being how long the call before it took.
 * Nothing ran after the kill: no `stop`, no fold and no `summary.json`. The run folder kept its terminal, its transcript and its frames up to that moment, which is where this part's numbers come from.
-* The arm held its pose under torque. When `quackd robot release arm-01` connected, it read shoulder_lift -75.3, elbow_flex 78.2 and wrist_flex 60.8, within a degree of where the move had left it, then folded it and let go: `torque reads off on every joint of arm-01`.
+* The arm held its pose under torque. When `roboglot robot release arm-01` connected, it read shoulder_lift -75.3, elbow_flex 78.2 and wrist_flex 60.8, within a degree of where the move had left it, then folded it and let go: `torque reads off on every joint of arm-01`.
 * The release said first that `connecting takes torque off every motor for a moment`, so the arm has to be supported while it connects.
 
 ## What the run did not show
@@ -47,7 +47,7 @@ Show that killing the process does not stop the arm: it holds its last commanded
 * Neither stop landed mid-move. Both came while the LLM was thinking, after the move had finished, so the run does not show a move cut off, and the card's `aborted mid-verb` line was never printed.
 * It does not show how long the arm would hold after a kill: the release came within the same take.
 * Part 2's numbers stop at the kill. Its total time is not recorded, and its fourth LLM call was sent and never answered, so that call is counted and its wait, tokens and cost are not.
-* It does not show which quackd.exe processes the taskkill ended besides the run's own. It ends every one on the machine, and the card warns that an editor's MCP server can be among them.
+* It does not show which roboglot.exe processes the taskkill ended besides the run's own. It ends every one on the machine, and the card warns that an editor's MCP server can be among them.
 
 ## How the run ended
 
@@ -57,7 +57,7 @@ The run ended with **ABORTED**. The reason on record:
 
 > kill switch
 
-**Part 2 of 2:** A hard kill from a second terminal, then `quackd robot release`
+**Part 2 of 2:** A hard kill from a second terminal, then `roboglot robot release`
 
 The run did not end on its own: its process was killed, so it wrote no summary and recorded no
 reason. What it did record up to then is in the numbers and the trace.
@@ -66,31 +66,31 @@ reason. What it did record up to then is in the numbers and the trace.
 
 **Part 1 of 2:** Ctrl-C, pressed once
 
-The following command was run with quackd 0.33.0:
+The following command was run with Roboglot 0.33.0:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e117/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
-**Part 2 of 2:** A hard kill from a second terminal, then `quackd robot release`
+**Part 2 of 2:** A hard kill from a second terminal, then `roboglot robot release`
 
-The following command was run with quackd 0.33.0:
+The following command was run with Roboglot 0.33.0:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-taskkill /F /IM quackd.exe
-quackd robot release arm-01
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e117/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+taskkill /F /IM roboglot.exe
+roboglot robot release arm-01
 ```
 
 ## The numbers
 
 | | Part 1 | Part 2 |
 |---|---|---|
-| quackd version | 0.33.0 | 0.33.0 |
+| roboglot version | 0.33.0 | 0.33.0 |
 | Started | 2026-11-10 11:27:43 UTC | 2026-11-10 11:32:31 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` |
-| Task file | [`slow-raise.duck`](slow-raise.duck) | [`slow-raise.duck`](slow-raise.duck) |
+| Task file | [`slow-raise.glot`](slow-raise.glot) | [`slow-raise.glot`](slow-raise.glot) |
 | Steps | 2 | 2 |
 | LLM calls | 4 | 4 |
 | Total time | 47.6 s | not recorded |
@@ -110,7 +110,7 @@ quackd robot release arm-01
 |---|---|---|
 | ![Start](log/part-1/frame-1.jpg) | ![Middle](log/part-1/frame-2.jpg) | ![End](log/part-1/frame-3.jpg) |
 
-**Part 2 of 2:** A hard kill from a second terminal, then `quackd robot release`
+**Part 2 of 2:** A hard kill from a second terminal, then `roboglot robot release`
 
 | Start | Middle | End |
 |---|---|---|
@@ -120,10 +120,10 @@ quackd robot release arm-01
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e117/slow-raise.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run docs/examples/lerobot/e117/slow-raise.glot --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -132,8 +132,8 @@ quackd run docs/examples/lerobot/e117/slow-raise.duck --robot lerobot:mock --llm
 <summary>Show the full terminal trace (382 lines)</summary>
 
 ```text
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.33.0, started 2026-11-10T11:27:39Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e117/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.33.0, started 2026-11-10T11:27:39Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e117-slow-raise ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -142,7 +142,7 @@ quackd 0.33.0, started 2026-11-10T11:27:39Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 23.40 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -172,7 +172,7 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -180,8 +180,8 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -191,13 +191,13 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -312,8 +312,8 @@ WARNING:root:Relative goal position magnitude had to be clamped to be safe.
 │ run dir  runs\20261110-112743-e117-slow-raise                                                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.33.0, started 2026-11-10T11:32:25Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e117/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.33.0, started 2026-11-10T11:32:25Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e117-slow-raise ─────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                           │
@@ -324,7 +324,7 @@ WARNING  no camera field of view given for a real camera, so detections use
          the simulator's 90 degrees. Distances will be out by tens of       
          percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you
          know yours.                                                        
-WARNING:quackd.perception:no camera field of view given for a real camera, 
+WARNING:roboglot.perception:no camera field of view given for a real camera, 
 so detections use the simulator's 90 degrees. Distances will be out by tens 
 of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know 
 yours.
@@ -356,7 +356,7 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_star… ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -364,8 +364,8 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_star… ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -375,13 +375,13 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_star… ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -446,13 +446,13 @@ step 2/10 · LLM calls 3/16, 0.4/4 min ─────────────�
            Choose exactly one tool.
    llm>    step 2: 4 messages (2 with image) to openai gpt-6-astra
 
-(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM quackd.exe
-SUCCESS: The process "quackd.exe" with PID 21872 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 35824 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 22152 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 20864 has been terminated.
+(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM roboglot.exe
+SUCCESS: The process "roboglot.exe" with PID 21872 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 35824 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 22152 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 20864 has been terminated.
 (lerobot-test) PS D:\Development\lerobot-test\.venv>
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot
 configures them with it off, and the arm then folds to its rest pose and is
 let go of there: support it while it connects, then take your hands away

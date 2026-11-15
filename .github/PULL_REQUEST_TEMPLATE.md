@@ -4,9 +4,9 @@
 
 ## Kind of change
 
-- [ ] New or changed **verb** (core in `quackd/verbs/core.py`, or an extension in `adapters/<name>/src/quackd_<name>/verbs.py`) — it has a `VerbSpec` in the owning manifest (without one it does not exist), I updated `docs/concepts/architecture.md`, and `quackd list-verbs --robot <adapter>:<backend>` shows it
-- [ ] New or changed **`.duck` file** (`ducks/`) — `quackd validate` passes and I ran it with `--llm fake`
-- [ ] Adapter / upstream API — every upstream name is in that adapter's `upstream_api.py` (each adapter's lives in its own package, `adapters/<name>/src/quackd_<name>/upstream_api.py`) marked `VERIFIED` (with a pinned link) or `UNVERIFIED`, and the adapter's page, `docs/adapters/<name>/README.md`, is updated
+- [ ] New or changed **verb** (core in `roboglot/verbs/core.py`, or an extension in `adapters/<name>/src/roboglot_<name>/verbs.py`) — it has a `VerbSpec` in the owning manifest (without one it does not exist), I updated `docs/concepts/architecture.md`, and `roboglot list-verbs --robot <adapter>:<backend>` shows it
+- [ ] New or changed **`.glot` file** (`tasks/`) — `roboglot validate` passes and I ran it with `--llm fake`
+- [ ] Adapter / upstream API — every upstream name is in that adapter's `upstream_api.py` (each adapter's lives in its own package, `adapters/<name>/src/roboglot_<name>/upstream_api.py`) marked `VERIFIED` (with a pinned link) or `UNVERIFIED`, and the adapter's page, `docs/adapters/<name>/README.md`, is updated
 - [ ] Docs only
 - [ ] Other
 
@@ -14,9 +14,9 @@
 
 - [ ] `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest` pass locally
 - [ ] No network calls in tests; no API keys needed
-- [ ] No upstream assets added, from any project: no logos, meshes (`.stl`), MJCF or URDF, ONNX policies, keyframes or videos, and nothing copied out of `~/.quackd/cache`
+- [ ] No upstream assets added, from any project: no logos, meshes (`.stl`), MJCF or URDF, ONNX policies, keyframes or videos, and nothing copied out of `~/.roboglot/cache`
 - [ ] CHANGELOG.md updated under *Unreleased*
-- [ ] `uv run quackd validate ducks/*.duck` passes (CI runs it)
+- [ ] `uv run roboglot validate tasks/*.glot` passes (CI runs it)
 
 <!--
 What happens next: your commits are merged as they are, under your name, and never

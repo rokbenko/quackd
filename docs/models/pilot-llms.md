@@ -17,59 +17,59 @@ Anthropic. The split is at the first colon and no other, so `--llm ollama:llama3
 Which pilot a run gets, first match wins:
 
 1. `--llm` on the command.
-2. The `llm` a registered robot keeps (`quackd robot add NAME ... --llm VENDOR[:LLM]`).
-3. `QUACKD_LLM`, in the environment or a `.env`.
+2. The `llm` a registered robot keeps (`roboglot robot add NAME ... --llm VENDOR[:LLM]`).
+3. `ROBOGLOT_LLM`, in the environment or a `.env`.
 4. `fake`, the scripted pilot, which needs no key and no network.
 
 An id a cloud vendor does not list is refused before any key is read, and the refusal prints the
-ids that vendor does take. OpenRouter is the one vendor whose list is open: an id quackd does not
+ids that vendor does take. OpenRouter is the one vendor whose list is open: an id Roboglot does not
 carry is checked against OpenRouter's own LLM list when the run starts
-([OpenRouter](#openrouter) below). `quackd list-models` prints every id this build carries, and
-`quackd doctor` says which keys and SDKs this machine has.
+([OpenRouter](#openrouter) below). `roboglot list-models` prints every id this build carries, and
+`roboglot doctor` says which keys and SDKs this machine has.
 
 ## The cloud vendors
 
-<!-- generated: pilot-vendors, by scripts/models_docs.py from quackd/agent/providers/factory.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-vendors, by scripts/models_docs.py from roboglot/agent/providers/factory.py. Change a row there and run the script, not this table. -->
 
 | `--llm` | Who | Extra | Key | Address | Default | Ids |
 |---|---|---|---|---|---|---|
-| `anthropic` | Anthropic | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | the SDK's own | `claude-opus-5-5` | [14](#anthropic) |
-| `openai` | OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6.1-sol` | [16](#openai) |
-| `gemini` | Google | `quackd[gemini]` | `GEMINI_API_KEY`, or `GOOGLE_API_KEY` | the SDK's own | `gemini-4-hydrogen` | [10](#gemini) |
-| `grok` | xAI | `quackd[grok]` | `XAI_API_KEY` | `https://api.x.ai/v1` | `grok-4.7` | [7](#grok) |
-| `mistral` | Mistral AI | `quackd[mistral]` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `mistral-large-4-0` | [8](#mistral) |
-| `deepseek` | DeepSeek | `quackd[deepseek]` | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` | `deepseek-flash` | [2](#deepseek) |
-| `cohere` | Cohere | `quackd[cohere]` | `COHERE_API_KEY`, or `CO_API_KEY` | `https://api.cohere.ai/compatibility/v1` | `command-a-plus-05-2026` | [7](#cohere) |
-| `qwen` | Alibaba Cloud (Qwen) | `quackd[qwen]` | `DASHSCOPE_API_KEY` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `qwen3.8-max` | [21](#qwen) |
-| `kimi` | Moonshot AI (Kimi) | `quackd[kimi]` | `MOONSHOT_API_KEY` | `https://api.moonshot.ai/v1` | `kimi-k3.1-pro` | [3](#kimi) |
-| `glm` | Z.ai (GLM) | `quackd[glm]` | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` | `glm-5.3` | [20](#glm) |
-| `meta` | Meta | `quackd[meta]` | `META_API_KEY`, or `MODEL_API_KEY` | `https://api.meta.ai/v1` | `muse-spark-1.3` | [7](#meta) |
-| `openrouter` | OpenRouter, other vendors' LLMs behind one key | `quackd[openrouter]` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | `openai/gpt-6-sol` | [7, and ids it lists](#openrouter) |
+| `anthropic` | Anthropic | `roboglot[anthropic]` | `ANTHROPIC_API_KEY` | the SDK's own | `claude-opus-5-5` | [14](#anthropic) |
+| `openai` | OpenAI | `roboglot[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6.1-sol` | [16](#openai) |
+| `gemini` | Google | `roboglot[gemini]` | `GEMINI_API_KEY`, or `GOOGLE_API_KEY` | the SDK's own | `gemini-4-hydrogen` | [10](#gemini) |
+| `grok` | xAI | `roboglot[grok]` | `XAI_API_KEY` | `https://api.x.ai/v1` | `grok-4.7` | [7](#grok) |
+| `mistral` | Mistral AI | `roboglot[mistral]` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `mistral-large-4-0` | [8](#mistral) |
+| `deepseek` | DeepSeek | `roboglot[deepseek]` | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` | `deepseek-flash` | [2](#deepseek) |
+| `cohere` | Cohere | `roboglot[cohere]` | `COHERE_API_KEY`, or `CO_API_KEY` | `https://api.cohere.ai/compatibility/v1` | `command-a-plus-05-2026` | [7](#cohere) |
+| `qwen` | Alibaba Cloud (Qwen) | `roboglot[qwen]` | `DASHSCOPE_API_KEY` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `qwen3.8-max` | [21](#qwen) |
+| `kimi` | Moonshot AI (Kimi) | `roboglot[kimi]` | `MOONSHOT_API_KEY` | `https://api.moonshot.ai/v1` | `kimi-k3.1-pro` | [3](#kimi) |
+| `glm` | Z.ai (GLM) | `roboglot[glm]` | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` | `glm-5.3` | [20](#glm) |
+| `meta` | Meta | `roboglot[meta]` | `META_API_KEY`, or `MODEL_API_KEY` | `https://api.meta.ai/v1` | `muse-spark-1.3` | [7](#meta) |
+| `openrouter` | OpenRouter, other vendors' LLMs behind one key | `roboglot[openrouter]` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | `openai/gpt-6-sol` | [7, and ids it lists](#openrouter) |
 
 <!-- end generated: pilot-vendors -->
 
 The extra installs the vendor's SDK, and most of them install the same one, `openai`, because
 most vendors speak OpenAI's API. The key goes in the environment or a `.env` file
 ([`.env.example`](../../.env.example) names every one). Where a vendor's own SDK or examples
-export the key under a second name, quackd reads that one when the first is empty, and
-`quackd doctor` says which it found. The last column links to every id the vendor has below.
+export the key under a second name, Roboglot reads that one when the first is empty, and
+`roboglot doctor` says which it found. The last column links to every id the vendor has below.
 
 ## Local servers
 
-<!-- generated: pilot-local, by scripts/models_docs.py from quackd/agent/providers/local.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-local, by scripts/models_docs.py from roboglot/agent/providers/local.py. Change a row there and run the script, not this table. -->
 
 | `--llm` | Server | Default address | Extra | Key |
 |---|---|---|---|---|
-| `local` | any server that speaks OpenAI's API | none: give `--base-url` or `QUACKD_BASE_URL` | `quackd[openai]` | `LOCAL_API_KEY`, or none |
-| `ollama` | Ollama | `http://localhost:11434/v1` | `quackd[openai]` | `LOCAL_API_KEY`, or none |
-| `vllm` | vLLM | `http://localhost:8000/v1` | `quackd[openai]` | `LOCAL_API_KEY`, or none |
-| `llamacpp` | llama.cpp's `llama-server` | `http://localhost:8080/v1` | `quackd[openai]` | `LOCAL_API_KEY`, or none |
-| `lmstudio` | LM Studio | `http://localhost:1234/v1` | `quackd[openai]` | `LOCAL_API_KEY`, or none |
+| `local` | any server that speaks OpenAI's API | none: give `--base-url` or `ROBOGLOT_BASE_URL` | `roboglot[openai]` | `LOCAL_API_KEY`, or none |
+| `ollama` | Ollama | `http://localhost:11434/v1` | `roboglot[openai]` | `LOCAL_API_KEY`, or none |
+| `vllm` | vLLM | `http://localhost:8000/v1` | `roboglot[openai]` | `LOCAL_API_KEY`, or none |
+| `llamacpp` | llama.cpp's `llama-server` | `http://localhost:8080/v1` | `roboglot[openai]` | `LOCAL_API_KEY`, or none |
+| `lmstudio` | LM Studio | `http://localhost:1234/v1` | `roboglot[openai]` | `LOCAL_API_KEY`, or none |
 
 <!-- end generated: pilot-local -->
 
 A local preset has no catalogue, because it serves whatever you pulled: the half after the colon
-takes any id the server serves, as in `--llm vllm:Qwen/Qwen3-8B`, and with none quackd takes the
+takes any id the server serves, as in `--llm vllm:Qwen/Qwen3-8B`, and with none Roboglot takes the
 first LLM the server lists. No key is needed, `LOCAL_API_KEY` is sent where a server wants
 one, and `OPENAI_API_KEY` is never sent to a local address. A local LLM is sent the detections
 as text unless `--vision` says it takes frames. Setup for each server, the tool-calling flags it
@@ -89,17 +89,17 @@ whether the arm did it. It needs `--policy-url` and a person at the terminal
 
 ## Over MCP
 
-`quackd serve-mcp` selects no LLM at all. The MCP client is the pilot: Claude Code, Claude
+`roboglot serve-mcp` selects no LLM at all. The MCP client is the pilot: Claude Code, Claude
 Desktop or any other client that calls the robot's tools, with whatever LLM that client runs.
 `serve-mcp` takes no `--llm` ([guides/mcp.md](../guides/mcp.md)).
 
 ## OpenRouter
 
 `--llm openrouter` reaches other vendors' LLMs through one key, `OPENROUTER_API_KEY`.
-quackd carries a few of its ids as rows, below, and `--llm openrouter:AUTHOR/LLM` names any
+Roboglot carries a few of its ids as rows, below, and `--llm openrouter:AUTHOR/LLM` names any
 other id OpenRouter's public list carries with tool calling on the day the run starts, unless
-quackd refuses the id's spelling first. A turn is costed at what OpenRouter says it billed.
-**No OpenRouter LLM has answered a real quackd request.** Its chat requests have reached a
+Roboglot refuses the id's spelling first. A turn is costed at what OpenRouter says it billed.
+**No OpenRouter LLM has answered a real Roboglot request.** Its chat requests have reached a
 stand-in on 127.0.0.1 through the real `openai` SDK, and nothing else. Everything else about it
 is in [guides/openrouter.md](../guides/openrouter.md).
 
@@ -107,13 +107,13 @@ is in [guides/openrouter.md](../guides/openrouter.md).
 
 Google's embodied-reasoning LLM is a pilot row, `gemini:gemini-robotics-er-2-preview`, marked
 preview as Google marks it. It plans and reasons about what a camera sees, as any pilot does, and
-it calls quackd's verbs like any other row. It is not a VLA: it moves no motor itself, and the
+it calls Roboglot's verbs like any other row. It is not a VLA: it moves no motor itself, and the
 Gemini Robotics model that does is offered to selected partners only
 ([VLAs](vlas.md#not-served-and-why)). Nothing on record has flown a robot with it.
 
 ## Every LLM id
 
-<!-- generated: pilot-ids, by scripts/models_docs.py from quackd/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
+<!-- generated: pilot-ids, by scripts/models_docs.py from roboglot/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
 
 122 LLM ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-11-14, and OpenRouter's list on 2026-11-14. None is a rate the vendor does not publish, and unpriced an LLM with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
 

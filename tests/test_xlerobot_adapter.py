@@ -1,6 +1,6 @@
 """The XLeRobot adapter: a cart with two arms that never claims a voice or a head.
 
-The first body in quackd with both a mobile base and arms, so the things worth pinning are
+The first body in Roboglot with both a mobile base and arms, so the things worth pinning are
 the ones no other adapter could get wrong: that `move` strafes only on the base that can,
 that arm units are normalised rather than degrees, that commanding an arm stops the wheels
 because upstream writes them on every action, and that `say` and `gaze` do not exist here.
@@ -14,18 +14,18 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import AdapterNotInstalled, RobotAdapter
-from quackd.adapters.factory import make_adapter, parse_robot_spec
-from quackd.agent.prompts import build_system_prompt
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.duckfile.validate import validate_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import Intent, TransportError
-from quackd.verbs.core import scan_mode
-from quackd.verbs.registry import VerbNotFound, registry_from_manifest
-from quackd_xlerobot import (
+from roboglot.adapters.base import AdapterNotInstalled, RobotAdapter
+from roboglot.adapters.factory import make_adapter, parse_robot_spec
+from roboglot.agent.prompts import build_system_prompt
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.glotfile.validate import validate_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
+from roboglot.transport.base import Intent, TransportError
+from roboglot.verbs.core import scan_mode
+from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
+from roboglot_xlerobot import (
     DEFAULT_VARIANT,
     MAX_VX,
     MAX_VY,
@@ -39,8 +39,8 @@ from quackd_xlerobot import (
     parse_variant,
     xlerobot_manifest,
 )
-from quackd_xlerobot.mock import XLerobotMock
-from quackd_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
+from roboglot_xlerobot.mock import XLerobotMock
+from roboglot_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
 from tests.conftest import REPO
 
 runner = CliRunner()
@@ -80,8 +80,8 @@ XLEROBOT_VERBS = {
 #: Verbs other robots have and this body has not. No speaker, no microphone, no head mapping.
 ABSENT = {"say", "quack", "gaze", "express", "play_sound", "wake_up", "sit", "stand", "kick"}
 
-DUCK = load_duck("xlerobot-lookout")
-DUCK_TEXT = (REPO / "ducks" / "xlerobot-lookout.duck").read_text(encoding="utf-8")
+DUCK = load_glot("xlerobot-lookout")
+DUCK_TEXT = (REPO / "tasks" / "xlerobot-lookout.glot").read_text(encoding="utf-8")
 
 
 def _executor(adapter: XLerobotAdapter, manifest: object, *, contract: object = None) -> Executor:
@@ -114,12 +114,12 @@ def test_manifest_is_a_wheeled_body_with_arms_and_no_voice() -> None:
 
 
 def test_limits_stay_inside_the_schema_because_limits_may_only_narrow() -> None:
-    """The robot's own fast tier is 0.3 m/s and 90 deg/s, but quackd's schema caps vy at 0.2
+    """The robot's own fast tier is 0.3 m/s and 90 deg/s, but Roboglot's schema caps vy at 0.2
     and wz at 1.5 rad/s. Declaring the robot's numbers would be declaring more than the core
     verbs can express."""
-    from quackd.verbs.core import MAX_VX as SCHEMA_VX
-    from quackd.verbs.core import MAX_VY as SCHEMA_VY
-    from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
+    from roboglot.verbs.core import MAX_VX as SCHEMA_VX
+    from roboglot.verbs.core import MAX_VY as SCHEMA_VY
+    from roboglot.verbs.core import MAX_WZ as SCHEMA_WZ
 
     m = xlerobot_manifest("mock", camera=True)
     assert m.limits["max_vx"] <= SCHEMA_VX
@@ -134,7 +134,7 @@ def test_limits_stay_inside_the_schema_because_limits_may_only_narrow() -> None:
     ("variant", "strafes"), [("omni3", True), ("diff2", False), ("mecanum", False)]
 )
 def test_only_the_omniwheel_base_declares_a_sideways_speed(variant: str, strafes: bool) -> None:
-    """The other bases accept y.vel and do nothing with it. Declaring 0.0 makes quackd's own
+    """The other bases accept y.vel and do nothing with it. Declaring 0.0 makes Roboglot's own
     clamp zero the request and report it, instead of promising a move that will not happen."""
     m = xlerobot_manifest("mock", camera=True, variant=variant)
     assert (m.limits["max_vy"] > 0.0) is strafes
@@ -201,13 +201,13 @@ async def test_connect_narrows_the_manifest_to_what_the_wire_actually_carried() 
 
 def test_search_scan_turns_the_whole_cart_because_there_is_no_head_to_sweep() -> None:
     """head_motor_1 and head_motor_2 are on the wire, but which is yaw is stated nowhere
-    upstream, so quackd declares no gaze and the body turns instead."""
+    upstream, so Roboglot declares no gaze and the body turns instead."""
     m = xlerobot_manifest("mock", camera=True)
     assert scan_mode(m) == "turn"
     assert "gaze" not in m.intents
 
 
-# ── the registry, the prompt and .duck validation all agree ────────────────────────────
+# ── the registry, the prompt and .glot validation all agree ────────────────────────────
 
 
 def test_an_absent_verb_is_absent_everywhere() -> None:
@@ -231,13 +231,13 @@ def test_a_task_needing_a_voice_is_refused_against_this_robot() -> None:
     text = DUCK_TEXT.replace(
         "requires: [observe, report_state]", "requires: [observe, say]"
     ).replace("allow: [observe, report_state, stop]", "allow: [observe, report_state, stop, say]")
-    duck = parse_duck_text(text)
-    problems = validate_duck(duck, [xlerobot_manifest("mock", camera=True)])
+    duck = parse_glot_text(text)
+    problems = validate_glot(duck, [xlerobot_manifest("mock", camera=True)])
     assert any("say" in p.message for p in problems)
 
 
 def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
-    assert validate_duck(DUCK, [xlerobot_manifest("mock", camera=True)]) == []
+    assert validate_glot(DUCK, [xlerobot_manifest("mock", camera=True)]) == []
     allowed = set(DUCK.frontmatter.verbs.allow)
     assert not (allowed & {"move", "go_to", "approach_and", "search_scan", "move_joints"}), (
         "the first task pointed at real hardware must not drive a 12 kg cart"
@@ -246,7 +246,7 @@ def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
 
 def test_the_cli_refuses_a_task_this_robot_cannot_do() -> None:
     result = runner.invoke(
-        app, ["validate", "ducks/open-duck-scout.duck", "--robot", "xlerobot:mock"]
+        app, ["validate", "tasks/open-duck-scout.glot", "--robot", "xlerobot:mock"]
     )
     assert result.exit_code != 0
 
@@ -296,14 +296,14 @@ async def test_the_mock_refuses_what_this_body_cannot_do() -> None:
     assert not (await adapter.send_intent(Intent.sound("chirp"))).accepted
     assert not (await adapter.send_intent(Intent.look(1.0, 0.0, 0.0))).accepted
     assert not (await adapter.send_intent(Intent.do("kick_left"))).accepted
-    # quackd never limps a robot, on any body
+    # Roboglot never limps a robot, on any body
     assert not (await adapter.send_intent(Intent.enable(False))).accepted
 
 
 async def test_commanding_an_arm_stops_the_cart_because_upstream_writes_the_wheels() -> None:
     """`_body_to_wheel_raw` is called on every action with .get(key, 0.0) defaults, so an
     action carrying no velocity keys commands zero base velocity. A move_joints issued
-    mid-drive halts the base, and quackd must not pretend otherwise."""
+    mid-drive halts the base, and Roboglot must not pretend otherwise."""
     adapter = XLerobotAdapter(XLerobotMock())
     manifest = await adapter.connect()
     ex = _executor(adapter, manifest)
@@ -385,7 +385,7 @@ async def test_a_silent_host_refuses_every_moving_verb_but_never_stop() -> None:
 def test_joint_goals_are_normalised_and_not_degrees() -> None:
     """The SO-101 adapter next door sets use_degrees=True and validates -180..180. This robot
     does not, so the same number means a different angle and the schema must differ."""
-    from quackd_xlerobot.verbs import MoveJointsParams
+    from roboglot_xlerobot.verbs import MoveJointsParams
 
     assert MoveJointsParams(positions={"left_arm_shoulder_pan": 100.0}).positions
     with pytest.raises(ValueError, match="outside"):
@@ -422,7 +422,7 @@ async def test_the_zmq_backend_without_the_extra_names_it(
     its absence the way the other adapters' are: it has to make the absence happen."""
     monkeypatch.setitem(sys.modules, "zmq", None)
     adapter = make_adapter("xlerobot:zmq", address="tcp://robot.local:5555")
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[xlerobot\]"):
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[xlerobot\]"):
         await adapter.connect()
 
 
@@ -447,7 +447,7 @@ async def test_stop_never_raises_even_when_the_socket_does() -> None:
     its own library's error rather than one of ours. If that escaped, a stop would be reported
     as a failed verb and the reason the base actually stopped - the host's own watchdog - would
     be hidden behind it."""
-    from quackd_xlerobot.zmq_host import XLerobotZmq
+    from roboglot_xlerobot.zmq_host import XLerobotZmq
 
     link = XLerobotZmq(address="tcp://127.0.0.1:5555", client=_BrokenLink(), connect_timeout_s=0.05)
     with pytest.raises(TransportError, match="no observation"):
@@ -458,7 +458,7 @@ async def test_stop_never_raises_even_when_the_socket_does() -> None:
 
 def test_an_unknown_backend_names_the_real_ones() -> None:
     with pytest.raises(ValueError, match="unknown xlerobot backend"):
-        from quackd_xlerobot import make
+        from roboglot_xlerobot import make
 
         make("serial")
 
@@ -513,7 +513,7 @@ async def test_a_blind_cart_has_no_composites_to_run() -> None:
 
 async def test_the_colour_swap_is_reachable_from_the_address() -> None:
     """The detector every camera verb steers by does not fail loudly on a swapped frame, it
-    quietly stops finding things, so the switch has to be reachable without editing quackd.
+    quietly stops finding things, so the switch has to be reachable without editing Roboglot.
     The Open Duck Mini's camera daemon has had the same one since 0.5."""
     assert parse_swap_colour(None) is True
     assert parse_swap_colour("tcp://cart:5555") is True
@@ -555,9 +555,9 @@ def test_the_manifest_declares_exactly_this_set_and_no_more() -> None:
 
 
 def test_a_kicking_task_is_refused_against_this_cart_with_the_validators_words() -> None:
-    problems = validate_duck(load_duck("find-and-kick"), [describe("mock", "xlerobot-01")])
+    problems = validate_glot(load_glot("find-and-kick"), [describe("mock", "xlerobot-01")])
     assert any("does not provide it" in p.message for p in problems), [p.message for p in problems]
-    cli = runner.invoke(app, ["validate", "ducks/find-and-kick.duck", "--robot", "xlerobot:mock"])
+    cli = runner.invoke(app, ["validate", "tasks/find-and-kick.glot", "--robot", "xlerobot:mock"])
     assert cli.exit_code == 1 and "does not provide it" in cli.output
 
 

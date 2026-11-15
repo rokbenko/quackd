@@ -1,4 +1,4 @@
-"""`quackd log` replays a finished run. What it prints has to be what the run printed."""
+"""`roboglot log` replays a finished run. What it prints has to be what the run printed."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
+from roboglot.cli import app
 
 from .conftest import help_text, plain_text
 
@@ -109,7 +109,7 @@ def test_a_decision_block_with_no_cost_key_gains_no_cost_counter(
     (run_dir / "summary.json").write_text(
         json.dumps(
             {
-                "duck": "arm-grip-check",
+                "glot": "arm-grip-check",
                 "outcome": "success",
                 "reason": "the gripper reported closed",
                 "steps": 6,
@@ -142,13 +142,13 @@ def test_a_session_recorded_before_it_added_up_its_goals_claims_no_zeros() -> No
     """Before 0.32.0 a session wrote neither key, whatever its goals spent, and a zero read
     from a key nobody wrote is a claim nobody measured. A run with no such key keeps its three
     counters, since every run has always written them."""
-    from quackd.cli import run_counters
+    from roboglot.cli import run_counters
 
-    old = {"duck": "drive", "steps": 3, "wall_s": 0.2}
+    old = {"glot": "drive", "steps": 3, "wall_s": 0.2}
     assert run_counters(old) == ["steps 3", "time 0.2 s"]
     now = {**old, "llm_calls": 2, "usage": {"input_tokens": 9, "output_tokens": 1}}
     assert run_counters(now)[:3] == ["steps 3", "LLM calls 2", "tokens 9+1"]
-    assert run_counters({"duck": "a-task", "steps": 3})[:3] == [
+    assert run_counters({"glot": "a-task", "steps": 3})[:3] == [
         "steps 3",
         "LLM calls 0",
         "tokens 0+0",
@@ -156,7 +156,7 @@ def test_a_session_recorded_before_it_added_up_its_goals_claims_no_zeros() -> No
 
 
 def test_log_survives_a_summary_somebody_edited_by_hand(tmp_path: Path) -> None:
-    """`quackd log` is pointed at files people edit, truncate and copy between machines. The
+    """`roboglot log` is pointed at files people edit, truncate and copy between machines. The
     renderers beside the counter line already shrug at a field that is not what it should be,
     and a counter is not worth a traceback."""
     run_dir = tmp_path / "20260101-120000-hand-edited"
@@ -164,7 +164,7 @@ def test_log_survives_a_summary_somebody_edited_by_hand(tmp_path: Path) -> None:
     (run_dir / "summary.json").write_text(
         json.dumps(
             {
-                "duck": "hand-edited",
+                "glot": "hand-edited",
                 "outcome": "success",
                 "reason": "somebody was in here with an editor",
                 "steps": "six",
@@ -281,17 +281,17 @@ def test_log_on_a_missing_run_is_one_line(tmp_path: Path) -> None:
 
 def test_log_on_an_empty_runs_dir_says_what_to_do(tmp_path: Path) -> None:
     code, out = _replay(tmp_path)
-    assert code == 1 and "quackd run" in out
+    assert code == 1 and "roboglot run" in out
 
 
-def test_log_on_a_flock_run_names_every_member(tmp_path: Path) -> None:
-    """A flock writes no top-level transcript: the record is one file per robot, and a
+def test_log_on_a_team_run_names_every_member(tmp_path: Path) -> None:
+    """A team writes no top-level transcript: the record is one file per robot, and a
     replay that read only the first of them would quietly show a third of the run."""
     result = runner.invoke(
         app,
         [
             "run",
-            "flock-kick",
+            "team-kick",
             "--llm",
             "fake",
             "--seed",
@@ -311,7 +311,7 @@ def test_log_on_a_flock_run_names_every_member(tmp_path: Path) -> None:
         assert f"{name} ■ end stopped after" in out
     # the outcome comes from summary.json, since no member wrote a run_end
     assert "SUCCESS" in out and "kicker duck-" in out
-    assert "LLM calls" not in out, "a flock counts auctions and bids, not steps and tokens"
+    assert "LLM calls" not in out, "a team counts auctions and bids, not steps and tokens"
 
 
 # ── the clocks, the price, and the name the run was given ───────────────────────────────
@@ -370,7 +370,7 @@ def test_a_summary_written_before_the_clocks_replays_with_the_counters_it_had(
 ) -> None:
     """The compatibility guarantee, written out as the thing it protects: a summary from
     before this release carries steps, llm_calls, usage, outcome and reason and nothing else,
-    and `quackd log` has to replay it with exactly the three counters it printed then.
+    and `roboglot log` has to replay it with exactly the three counters it printed then.
 
     Not `time None`, and not a cost of zero dollars for a run nobody priced. Every field
     `run_counters` reads is optional for this reason, and the time and the cost appear only
@@ -415,11 +415,11 @@ def test_a_summary_written_before_the_clocks_replays_with_the_counters_it_had(
 def _typed(monkeypatch: pytest.MonkeyPatch, *argv: str) -> None:
     """What the saved terminal records as the command that started the run.
 
-    `_terminal_header` reads `sys.argv` for the `$ quackd ...` line at the top of the file.
+    `_terminal_header` reads `sys.argv` for the `$ roboglot ...` line at the top of the file.
     CliRunner passes its arguments to the command directly and leaves `sys.argv` alone, so
     without this the header of a run made here opens with pytest's own command line. Nothing
     about a deprecation reads argv any more; this is only the recorded command."""
-    monkeypatch.setattr(sys, "argv", ["quackd", *argv])
+    monkeypatch.setattr(sys, "argv", ["roboglot", *argv])
 
 
 def _deprecations(stderr: str) -> list[str]:
@@ -432,7 +432,7 @@ def _name_warning(old: str, new: str) -> str:
     """The line a name this release stopped reading prints when it finds one set, spelled out
     here so a change to it has to be deliberate.
 
-    It is the sentence `QUACKD_MODEL` gets, and it is here for the same reason: a flag that is
+    It is the sentence `ROBOGLOT_MODEL` gets, and it is here for the same reason: a flag that is
     gone fails loudly, because Click refuses it and names it, while a variable that is gone
     says nothing at all unless something says it."""
     return f"{old} is not read any more and this run ignores it; set {new} instead"
@@ -504,8 +504,8 @@ def test_a_run_that_asked_the_llm_again_says_so_in_its_counters() -> None:
     so `LLM calls` stays the task's count and the tries ride beside it, with the seconds
     waited in the split, kept out of the LLM's. A run that never asked again prints exactly
     the counters it always did."""
-    from quackd.cli import run_counters
-    from quackd.log import fmt_duration
+    from roboglot.cli import run_counters
+    from roboglot.log import fmt_duration
 
     end = {
         "steps": 4,
@@ -527,8 +527,8 @@ def test_the_counters_say_how_the_calls_spread_and_when_the_robot_first_moved() 
     stepper, and how long the robot took to move and after how many LLM calls, each said only
     where its keys are. A record written before them replays with the counters it always had,
     and a spread with one figure missing is no spread rather than a counter with a hole in it."""
-    from quackd.cli import run_counters
-    from quackd.log import fmt_duration
+    from roboglot.cli import run_counters
+    from roboglot.log import fmt_duration
 
     end: dict[str, Any] = {
         "steps": 4,
@@ -564,7 +564,7 @@ def test_the_counters_say_how_the_calls_spread_and_when_the_robot_first_moved() 
 
 
 def test_the_help_offers_log_and_trace_is_no_command() -> None:
-    """0.11 kept `quackd trace` alive for one release, hidden from `--help` so that nobody
+    """0.11 kept `roboglot trace` alive for one release, hidden from `--help` so that nobody
     learned a name that was going, and said in twelve files that it went in 0.12. It went.
 
     Refused rather than aliased, which is the shape 0.5 used on the flag `--robot` replaced:
@@ -621,9 +621,9 @@ def test_the_old_flags_are_refused_like_any_unknown_option(
 @pytest.mark.parametrize(
     ("old", "new", "shows"),
     [
-        ("QUACKD_TRACE", "QUACKD_LOG", "result quack ok"),
-        ("QUACKD_TRACE_THINKING", "QUACKD_LOG_THINKING", "[scripted]"),
-        ("QUACKD_TRACE_PROMPT", "QUACKD_LOG_PROMPT", "system prompt"),
+        ("ROBOGLOT_TRACE", "ROBOGLOT_LOG", "result quack ok"),
+        ("ROBOGLOT_TRACE_THINKING", "ROBOGLOT_LOG_THINKING", "[scripted]"),
+        ("ROBOGLOT_TRACE_PROMPT", "ROBOGLOT_LOG_PROMPT", "system prompt"),
     ],
 )
 def test_an_old_env_name_is_ignored_and_says_so_once(
@@ -637,9 +637,9 @@ def test_an_old_env_name_is_ignored_and_says_so_once(
     really was ignored is that the thing `0` used to hide is on the screen.
 
     The new names are deleted rather than set, because the scenario is a `.env` carrying only
-    the old one; the suite sets `QUACKD_LOG`, and leaving it would answer the question this
+    the old one; the suite sets `ROBOGLOT_LOG`, and leaving it would answer the question this
     test is asking."""
-    for name in ("QUACKD_LOG", "QUACKD_LOG_THINKING", "QUACKD_LOG_PROMPT"):
+    for name in ("ROBOGLOT_LOG", "ROBOGLOT_LOG_THINKING", "ROBOGLOT_LOG_PROMPT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(old, "0")
 
@@ -658,16 +658,16 @@ def test_every_old_name_that_is_set_is_named_not_only_the_one_a_run_reads(
 
     They are a list now. The names are read where the command line is, before anything asks
     what the log should do, so one run answers for the whole file."""
-    for name in ("QUACKD_LOG", "QUACKD_LOG_THINKING", "QUACKD_LOG_PROMPT"):
+    for name in ("ROBOGLOT_LOG", "ROBOGLOT_LOG_THINKING", "ROBOGLOT_LOG_PROMPT"):
         monkeypatch.delenv(name, raising=False)
-    for name in ("QUACKD_TRACE", "QUACKD_TRACE_THINKING", "QUACKD_TRACE_PROMPT"):
+    for name in ("ROBOGLOT_TRACE", "ROBOGLOT_TRACE_THINKING", "ROBOGLOT_TRACE_PROMPT"):
         monkeypatch.setenv(name, "0")
 
     _, said = _narration(tmp_path)
     assert said == [
-        _name_warning("QUACKD_TRACE", "QUACKD_LOG"),
-        _name_warning("QUACKD_TRACE_THINKING", "QUACKD_LOG_THINKING"),
-        _name_warning("QUACKD_TRACE_PROMPT", "QUACKD_LOG_PROMPT"),
+        _name_warning("ROBOGLOT_TRACE", "ROBOGLOT_LOG"),
+        _name_warning("ROBOGLOT_TRACE_THINKING", "ROBOGLOT_LOG_THINKING"),
+        _name_warning("ROBOGLOT_TRACE_PROMPT", "ROBOGLOT_LOG_PROMPT"),
     ]
 
 
@@ -677,11 +677,11 @@ def test_a_deprecation_line_is_not_folded_at_eighty_columns(
     """The longest of these sentences is 99 characters, and it is an instruction a script
     greps for. Folded at the default width it breaks inside the new name, so the one part of
     the line worth reading is the part a grep no longer finds."""
-    sentence = _name_warning("QUACKD_TRACE_THINKING", "QUACKD_LOG_THINKING")
+    sentence = _name_warning("ROBOGLOT_TRACE_THINKING", "ROBOGLOT_LOG_THINKING")
     assert len(sentence) > 80, "this stopped being a test about folding"
 
-    monkeypatch.delenv("QUACKD_LOG_THINKING", raising=False)
-    monkeypatch.setenv("QUACKD_TRACE_THINKING", "0")
+    monkeypatch.delenv("ROBOGLOT_LOG_THINKING", raising=False)
+    monkeypatch.setenv("ROBOGLOT_TRACE_THINKING", "0")
     lines = _narrow_run(tmp_path)
     assert sentence in lines, lines[:4]
 
@@ -780,22 +780,22 @@ def test_an_ignored_name_is_written_down_above_the_header_panel(
     warning being moved later, because on the screen it came before the panel and a saved
     terminal that reorders what you saw is a record of a different afternoon.
 
-    Until 0.12 this line was said from inside `quackd.log`, at the moment the value was read,
-    which is after the capture opens. It is read beside `QUACKD_MODEL` in the callback now, so
+    Until 0.12 this line was said from inside `roboglot.log`, at the moment the value was read,
+    which is after the capture opens. It is read beside `ROBOGLOT_MODEL` in the callback now, so
     it moves up to where a reader opening the file meets it first.
 
-    `QUACKD_LOG` is set to empty rather than deleted: an empty value is on, so the panel is
+    `ROBOGLOT_LOG` is set to empty rather than deleted: an empty value is on, so the panel is
     drawn, and setting it at all shields this from a developer's own `.env`."""
     _typed(monkeypatch, "run", "hello-world")
-    monkeypatch.setenv("QUACKD_LOG", "")
-    monkeypatch.setenv("QUACKD_TRACE", "0")
-    line = _name_warning("QUACKD_TRACE", "QUACKD_LOG")
+    monkeypatch.setenv("ROBOGLOT_LOG", "")
+    monkeypatch.setenv("ROBOGLOT_TRACE", "0")
+    line = _name_warning("ROBOGLOT_TRACE", "ROBOGLOT_LOG")
 
     _, said = _narration(tmp_path)
     assert said == [line]
 
     lines = _terminal(tmp_path)
-    assert lines[0].startswith("$ quackd run"), lines[:3]
+    assert lines[0].startswith("$ roboglot run"), lines[:3]
     (at,) = [i for i, text in enumerate(lines) if text == line]
     panel = next(i for i, text in enumerate(lines) if "provider" in text)
     assert at < panel, lines[: panel + 1]

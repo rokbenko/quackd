@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from quackd.passport import SigningKey, document, strict
-from quackd.passport_trust import TIERS, Pin, judge
+from roboglot.passport import SigningKey, document, strict
+from roboglot.passport_trust import TIERS, Pin, judge
 from tests.passport_helpers import INTRUDER, OWNER, OWNER_B, B, doc, passport
 
 #: A pin's date, as robot.yaml writes it.
@@ -165,7 +165,8 @@ def test_a_robot_that_takes_this_robots_name_or_its_owners_is_warned_about() -> 
 def test_a_robot_pinned_with_its_owner_is_a_stranger_once_another_owner_signs_for_it() -> None:
     """Whoever holds a robot key could otherwise sign that robot's passport with a key of their
     own and talk as a robot a person trusts, past the day its owner's signature ran out. A pin
-    names the owner that signed the robot when it was pinned, as `quackd onboard pin` writes it."""
+    names the owner that signed the robot when it was pinned, as `roboglot onboard pin` writes
+    it."""
     pins = [Pin("robot", B.did, "cart-01", PINNED, owner=OWNER_B.did)]
     as_pinned = judge(read(passport(B, OWNER_B, "cart-01")), own_owner=OWNER.did, pins=pins)
     assert as_pinned.tier == "known"
@@ -186,6 +187,6 @@ def test_a_robot_pinned_with_its_owner_is_a_stranger_once_another_owner_signs_fo
     ],
 )
 def test_hyphens_and_marks_that_show_nothing_are_folded_away(lookalike: str) -> None:
-    from quackd.passport_trust import fold
+    from roboglot.passport_trust import fold
 
     assert fold(lookalike) == fold("cart-01")

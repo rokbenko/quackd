@@ -8,18 +8,18 @@ from pathlib import Path
 
 import pytest
 
-from quackd.agent.prompts import build_observation_text, places_section
-from quackd.drive.run import DriveArgs, run_drive
-from quackd.memory import RobotMemory
-from quackd.safety import Executor
-from quackd.space.places import PlaceBook, PlaceStore, places_line
-from quackd.space.pose import Fix, FrameRef, Pose2D
-from quackd.space.source import SpatialSourceBase
-from quackd.transport.base import DuckState
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import VerbRegistry, registry_from_manifest
-from quackd.verdict import BEFORE_VERDICT, MOVES_THE_BODY
-from quackd_microduck import (
+from roboglot.agent.prompts import build_observation_text, places_section
+from roboglot.drive.run import DriveArgs, run_drive
+from roboglot.memory import RobotMemory
+from roboglot.safety import Executor
+from roboglot.space.places import PlaceBook, PlaceStore, places_line
+from roboglot.space.pose import Fix, FrameRef, Pose2D
+from roboglot.space.source import SpatialSourceBase
+from roboglot.transport.base import DuckState
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import VerbRegistry, registry_from_manifest
+from roboglot.verdict import BEFORE_VERDICT, MOVES_THE_BODY
+from roboglot_microduck import (
     MICRODUCK_VERBS,
     MicroduckAdapter,
     microduck_conditions,
@@ -130,7 +130,7 @@ async def test_forgetting_a_place_says_which_places_there_are_when_it_has_no_suc
 async def test_the_place_verbs_move_nothing_and_run_before_a_verdict_and_while_paused(
     tmp_path: Path,
 ) -> None:
-    from quackd.safety import WHILE_PAUSED
+    from roboglot.safety import WHILE_PAUSED
 
     for name in ("map", "mark_place", "forget_place"):
         assert name in BEFORE_VERDICT and name in WHILE_PAUSED and name not in MOVES_THE_BODY
@@ -254,7 +254,7 @@ async def test_a_place_a_person_marks_while_driving_is_there_for_the_next_sessio
     sent to walk there, found no such place. Kept beside memory now, as a run's and an MCP
     session's are, and a dry session, which runs no `mark_place`, leaves them as they were."""
     home = tmp_path / "memory"
-    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(home))
+    monkeypatch.setenv("ROBOGLOT_MEMORY_DIR", str(home))
 
     async def drive(lines: str, *, dry_run: bool = False) -> None:
         args = DriveArgs(

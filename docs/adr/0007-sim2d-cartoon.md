@@ -11,7 +11,7 @@ approach, act, verify — not contact dynamics.
 
 ## Decision
 
-- `quackd/sim2d/world.py`: a 2 m × 2 m top-down arena at 20 Hz. Duck pose `(x, y, θ)` with
+- `roboglot/sim2d/world.py`: a 2 m × 2 m top-down arena at 20 Hz. Duck pose `(x, y, θ)` with
   2 % velocity noise, speed clamps matching the verb limits, walls, a ball with contact push
   and linear friction, a static person marker. `kick` connects only inside 0.30 m and a
   ±35° cone (1.2 m/s, ~0.7 m travel). `ground_pick` succeeds 60 % of the time inside
@@ -32,7 +32,7 @@ approach, act, verify — not contact dynamics.
 ## Consequences
 
 - It is a cartoon and the docs say so. It will not tell you whether a gait works; it will
-  tell you whether your `.duck` strategy and your LLM's judgement work.
+  tell you whether your `.glot` strategy and your LLM's judgement work.
 - `sim2d` state carries ground truth (`ball_displacement_m`) in `extras`, so tests check
   the LLM's success claim against the world, not just against itself.
 - `--live` opens a pygame window (optional `[live]` extra); headless is the default.

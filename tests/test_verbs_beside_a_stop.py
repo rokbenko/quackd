@@ -15,11 +15,11 @@ from typing import Any
 
 import pytest
 
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, allow_all
-from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import TICK_S, _waited_out, send_or_fail
-from quackd.verbs.registry import (
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.base import DuckState, Intent
+from roboglot.verbs.core import TICK_S, _waited_out, send_or_fail
+from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
     NoParams,
@@ -27,17 +27,17 @@ from quackd.verbs.registry import (
     VerbResult,
     registry_from_manifest,
 )
-from quackd_alohamini import AlohaMiniAdapter
-from quackd_alohamini.mock import AlohaMiniMock
-from quackd_huebot import verbs as huebot_verbs
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import LeRobotMock
-from quackd_microduck import verbs as microduck_verbs
-from quackd_open_duck import verbs as open_duck_verbs
-from quackd_toddlerbot import ToddlerBotAdapter
-from quackd_toddlerbot.mock import ToddlerBotMock
-from quackd_xlerobot import XLerobotAdapter
-from quackd_xlerobot.mock import XLerobotMock
+from roboglot_alohamini import AlohaMiniAdapter
+from roboglot_alohamini.mock import AlohaMiniMock
+from roboglot_huebot import verbs as huebot_verbs
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import LeRobotMock
+from roboglot_microduck import verbs as microduck_verbs
+from roboglot_open_duck import verbs as open_duck_verbs
+from roboglot_toddlerbot import ToddlerBotAdapter
+from roboglot_toddlerbot.mock import ToddlerBotMock
+from roboglot_xlerobot import XLerobotAdapter
+from roboglot_xlerobot.mock import XLerobotMock
 
 
 def _aloha() -> Any:

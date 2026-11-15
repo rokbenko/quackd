@@ -10,7 +10,7 @@ import math
 
 import pytest
 
-from quackd.space.frontier import (
+from roboglot.space.frontier import (
     GivenUp,
     body_cells,
     fan,
@@ -25,8 +25,8 @@ from quackd.space.frontier import (
     views_worth_taking,
     world_cell,
 )
-from quackd.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
-from quackd.verbs.core import MAX_SCAN_STEPS, SearchScanParams, scan_steps
+from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
+from roboglot.verbs.core import MAX_SCAN_STEPS, SearchScanParams, scan_steps
 
 RES = 0.1
 ALPHABET = {"?": UNKNOWN, ".": FREE, "#": OCCUPIED}

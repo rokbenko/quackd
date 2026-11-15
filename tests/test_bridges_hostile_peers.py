@@ -34,11 +34,11 @@ def _load(relative: str, name: str) -> ModuleType:
     return module
 
 
-DUCK = _load("bridge/open_duck/quackd_duck_bridge.py", "hostile_duck_bridge")
-TODDLER = _load("bridge/toddlerbot/quackd_toddlerbot_bridge.py", "hostile_toddlerbot_bridge")
-MOSS = _load("bridge/moss/quackd_moss_bridge.py", "hostile_moss_bridge")
-HOSTD = _load("bridge/jetson/quackd_jetson_hostd.py", "hostile_jetson_hostd")
-CAMD = _load("bridge/open_duck/quackd_duck_camd.py", "hostile_duck_camd")
+DUCK = _load("bridge/open_duck/roboglot_duck_bridge.py", "hostile_duck_bridge")
+TODDLER = _load("bridge/toddlerbot/roboglot_toddlerbot_bridge.py", "hostile_toddlerbot_bridge")
+MOSS = _load("bridge/moss/roboglot_moss_bridge.py", "hostile_moss_bridge")
+HOSTD = _load("bridge/jetson/roboglot_jetson_hostd.py", "hostile_jetson_hostd")
+CAMD = _load("bridge/open_duck/roboglot_duck_camd.py", "hostile_duck_camd")
 
 
 def _browser_post(port: int, body: bytes) -> bytes:

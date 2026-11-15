@@ -1,4 +1,4 @@
-"""`quackd robot twin`: a simulator of a registered arm, registered beside it.
+"""`roboglot robot twin`: a simulator of a registered arm, registered beside it.
 
 The twin is `lerobot:mujoco` on the calibration file the arm's own runs read, found where
 LeRobot keeps it under the arm's registered name, with the arm's rest pose, pilot and camera
@@ -24,14 +24,14 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.factory import make_adapter
-from quackd.cli import app
-from quackd.registry import Registry, RobotEntry
-from quackd_lerobot import upstream_api as lr
-from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
-from quackd_lerobot.real import joint_ranges
-from quackd_lerobot.sim.model import MOUNTS, calibration_path, read_calibration
-from quackd_lerobot.verbs import JOINTS
+from roboglot.adapters.factory import make_adapter
+from roboglot.cli import app
+from roboglot.registry import Registry, RobotEntry
+from roboglot_lerobot import upstream_api as lr
+from roboglot_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from roboglot_lerobot.real import joint_ranges
+from roboglot_lerobot.sim.model import MOUNTS, calibration_path, read_calibration
+from roboglot_lerobot.verbs import JOINTS
 
 runner = CliRunner()
 CAMERAS = ["opencv://1?name=front", "opencv://2?name=wrist"]
@@ -136,8 +136,8 @@ def test_a_twin_is_the_simulator_on_the_arms_calibration_with_what_it_recorded()
     said = _flat(result.output)
     assert "added arm-01-sim: lerobot:mujoco, a simulator of arm-01" in said, said
     assert "copied from arm-01: rest pose, pilot anthropic, 2 camera urls" in said, said
-    assert "quackd 0.14 and earlier cannot read the file" in said, said
-    assert "quackd preflight <duck> --robot arm-01-sim" in said, said
+    assert "Roboglot 0.14 and earlier cannot read the file" in said, said
+    assert "roboglot preflight <task> --robot arm-01-sim" in said, said
 
 
 def test_a_twin_named_for_itself_says_what_its_source_had_not_got() -> None:
@@ -288,18 +288,18 @@ def test_a_twin_keeps_only_the_cameras_the_simulator_renders() -> None:
         f"arm-01's camera {other} was not copied: it is named side, and the simulator renders "
         f"only {', '.join(MOUNTS[:-1])} and {MOUNTS[-1]}"
     ) in said, said
-    assert "quackd robot edit arm-01-sim --camera-url" in said, said
+    assert "roboglot robot edit arm-01-sim --camera-url" in said, said
 
 
 def test_the_warning_names_every_simulator_that_old_releases_cannot_read() -> None:
-    """One lerobot:mujoco robot is enough for quackd 0.14 and earlier to refuse the whole file,
+    """One lerobot:mujoco robot is enough for Roboglot 0.14 and earlier to refuse the whole file,
     so removing only the twin just made would leave it unreadable to them still."""
     registry = Registry()
     for name in ("arm-01", "arm-02"):
         registry.add_robot(RobotEntry(name=name, spec="lerobot:real", address="COM5"))
         _write(calibration_path(name), _calibration())
     first = _flat(runner.invoke(app, ["robot", "twin", "arm-01"]).output)
-    assert "quackd robot remove arm-01-sim before going back to one" in first, first
+    assert "roboglot robot remove arm-01-sim before going back to one" in first, first
     second = _flat(runner.invoke(app, ["robot", "twin", "arm-02"]).output)
     assert "now holds 2 lerobot:mujoco robots, arm-01-sim and arm-02-sim" in second, second
-    assert "quackd robot remove each of them before going back to one" in second, second
+    assert "roboglot robot remove each of them before going back to one" in second, second

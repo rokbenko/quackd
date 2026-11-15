@@ -1,6 +1,6 @@
 # ADR-0059: A turn the LLM's API could not answer is asked again
 
-**Status:** accepted · **Date:** 2026-10-23 · Extends [ADR-0012](0012-safety-executor.md) (the kill switch, the heartbeat and the teardown every run ends with) · Implemented in `quackd/agent/providers/base.py` (`transient_failure`), `quackd/agent/loop.py` (`_ask_the_llm`), and in `quackd/log.py`, `quackd/ui.py` and `quackd/cli.py` (`run_counters`) for what a person sees ([safety](../concepts/safety.md#when-the-llms-api-fails))
+**Status:** accepted · **Date:** 2026-10-23 · Extends [ADR-0012](0012-safety-executor.md) (the kill switch, the heartbeat and the teardown every run ends with) · Implemented in `roboglot/agent/providers/base.py` (`transient_failure`), `roboglot/agent/loop.py` (`_ask_the_llm`), and in `roboglot/log.py`, `roboglot/ui.py` and `roboglot/cli.py` (`run_counters`) for what a person sees ([safety](../concepts/safety.md#when-the-llms-api-fails))
 
 **Amended 2026-10-23:** the two separate changes the consequences below name were made the same
 day, at Rok's word.
@@ -38,7 +38,7 @@ robot and folds the arm to its rest pose
 ([ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md) has the release). Most of
 the first half was too. A verb that raises, times out or is refused is handed back to the LLM
 as a failed result, and the LLM chooses again; a serial packet the arm garbled is read again
-by the bus before anything gives up (upstream's `num_read_retries`, and quackd's own `num_retry`
+by the bus before anything gives up (upstream's `num_read_retries`, and Roboglot's own `num_retry`
 on the torque and temperature registers).
 
 What ended a run at once was the LLM's API. A rate limit (429), Anthropic's 529 "overloaded",
@@ -57,17 +57,17 @@ reason that had nothing to do with the task or the robot.
    529 included, is worth asking again, unless the API says `x-should-retry: false`; with no
    status, a timeout or a lost connection is, by the class names in the MRO. Everything else is
    permanent and ends the run at once as before: a bad request, a key that does not work, an
-   LLM that does not exist, a refused redirect, an answer quackd could not read as a turn, a
-   missing extra. So is a request quackd built wrong, though the SDKs raise it as a lost
+   LLM that does not exist, a refused redirect, an answer Roboglot could not read as a turn, a
+   missing extra. So is a request Roboglot built wrong, though the SDKs raise it as a lost
    connection: it is found beneath their `APIConnectionError` (`BUILT_WRONG_ERRORS`). The
-   message is never read, so nothing quackd raised itself is ever asked again. An implicit
+   message is never read, so nothing Roboglot raised itself is ever asked again. An implicit
    `__context__` is not followed.
 
 2. **The same turn is asked again, unchanged.** The history is built once per turn and resent
    byte for byte, so an LLM that binds its replayed thinking to what came before it sees the
    request it would have seen. The waits are `ASK_AGAIN_AFTER_S` = 5, 15, 30 and 60 s, so five
    tries in all and 110 s of waiting unless the API asks for longer. Each scheduled wait loses up
-   to a quarter at random (`ASK_AGAIN_JITTER`), so a flock on one key spreads out, and no wait is
+   to a quarter at random (`ASK_AGAIN_JITTER`), so a team on one key spreads out, and no wait is
    ever shorter than a `retry-after` the API sent. A `retry-after` longer than
    `LONGEST_ASKED_WAIT_S` (120 s, the openai SDK's own ceiling in 3.22.1) ends the run instead,
    and so does a wait longer than what the task's `max_minutes` has left.
@@ -82,7 +82,7 @@ reason that had nothing to do with the task or the robot.
 
 4. **The robot holds still, and the run stays stoppable.** Nothing is sent to the robot while the
    run waits: it is the same idle state as an LLM taking a minute to think, and the heartbeat
-   keeps watching the body as its own task. Ctrl-C, `q`, a heartbeat that fails and a flock that
+   keeps watching the body as its own task. Ctrl-C, `q`, a heartbeat that fails and a team that
    stops its members all set the run's abort flag, which ends the wait at once as `aborted`, and
    the teardown folds the arm as it does for every abort. A failure that arrives after the flag was
    set is not asked again. The second Ctrl-C still ends the run as an interrupt.
@@ -96,7 +96,7 @@ reason that had nothing to do with the task or the robot.
 
 6. **Every try is on the record.** Each failed call keeps its `llm` record with the error and
    its latency, which still counts toward `llm_latency_s`, and gains `attempt` from the second
-   try and `retry_in_s` where quackd will wait; each `llm_request` carries `attempt` from the
+   try and `retry_in_s` where Roboglot will wait; each `llm_request` carries `attempt` from the
    second, and so does the `llm` record of a try that answered. The summary gains `llm_retries`
    and `llm_retry_wait_s` only when the run waited to ask again, a wait a stop ended counting
    its seconds and no try, so every older summary reads as it did, and the counters under a
@@ -107,23 +107,23 @@ reason that had nothing to do with the task or the robot.
 
 - A run on a busy API goes on where it used to end. The first wait of a run comes with a note
   saying the robot holds still, that the heartbeat goes on watching it and that Ctrl-C or `q`
-  ends the run instead, and each try after has a log line saying when quackd asks again.
+  ends the run instead, and each try after has a log line saying when Roboglot asks again.
 - A request that timed out or lost its connection may have been processed and billed by the
-  vendor before quackd asks it again; `cost_usd` cannot see a bill that never came back. The SDKs'
+  vendor before Roboglot asks it again; `cost_usd` cannot see a bill that never came back. The SDKs'
   own retries have the same gap, and neither sends an idempotency key.
 - The SDKs' own retries still come first, inside the call. The anthropic SDK honours a
   `retry-after` of any length and the openai SDK one up to 120 s, so a call can wait minutes
-  before it fails, counted as the LLM's seconds rather than as quackd's waits and out of reach
+  before it fails, counted as the LLM's seconds rather than as Roboglot's waits and out of reach
   of a first Ctrl-C, which only the second ends. Building the SDK clients with `max_retries=0`,
-  so that quackd's loop is the only one that retries, is a separate change, and it would also
+  so that Roboglot's loop is the only one that retries, is a separate change, and it would also
   take away the quick retries a first connection has now.
 - A server error that will not go away, a local server out of memory or a gateway with no
   provider it may route to, now takes the whole schedule, a minute and a half or more, to end
   the run.
 - A first Ctrl-C still does not end a call already in flight: the abort is noticed when the call
   returns, as before. Racing the call against the abort, as a verb is raced, is a separate change.
-- The decision LLM, the coordinator flock's planner and the browser demo are left as they were:
-  the stepper already hands a turn it could not decide to the pilot (`quackd/agent/decision/
+- The decision LLM, the coordinator team's planner and the browser demo are left as they were:
+  the stepper already hands a turn it could not decide to the pilot (`roboglot/agent/decision/
   stepper.py`), inside a bound of its own, and the planner falls back to its defaults.
 - Nothing here has retried against a real 429 or 529: only against stand-ins of the SDKs'
   exceptions and against the real openai SDK talking to a stand-in server.
@@ -135,7 +135,7 @@ reason that had nothing to do with the task or the robot.
   record, so a run would sit silent for minutes and then say nothing about why.
 - **Flags set by each provider's classifier.** Three edits that would all call this same logic,
   and a provider that forgot one would silently never ask again.
-- **Read the message.** quackd's own refusals and every vendor's wording would then decide, and
+- **Read the message.** Roboglot's own refusals and every vendor's wording would then decide, and
   a test's `ProviderError("rate limited")` would mean something different from a real 429.
 - **Follow `__context__` too.** Raised while handling a rate limit is not raised because of one.
 - **Charge `max_llm_calls`**, or end `budget` when out of minutes: see decision 5; a run that ran

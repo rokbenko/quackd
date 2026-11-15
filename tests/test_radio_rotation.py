@@ -7,8 +7,8 @@ import itertools
 
 import pytest
 
-from quackd.passport.beacon import is_beacon_id
-from quackd.radio.rotation import HOLD_S, RETRY_S, ROTATE_S, BeaconRotor
+from roboglot.passport.beacon import is_beacon_id
+from roboglot.radio.rotation import HOLD_S, RETRY_S, ROTATE_S, BeaconRotor
 
 
 class Clock:

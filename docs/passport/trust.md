@@ -1,7 +1,7 @@
 # Trust: keys, the owner's signature and tiers
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of
+> Spec 1.0. Roboglot 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of
 > it is built and what has run.
 
 A passport is a claim. Anybody can write one, about any robot, saying anything. This page is about
@@ -60,7 +60,7 @@ drops stamps, and the robot key alone cannot change a word of the passport.
 A reader refuses a passport under [rule 4.4](spec.md#44-signed-passports) when its robot's own key
 signed it, the 0.1 shape, when any key but the one `owner.id` names signed it, or when its owner key
 is its robot key. Under [rule 4.5](spec.md#45-validity) it refuses one whose dates the reader's clock
-is outside, with five minutes of grace for an `issued` a little ahead of it. quackd signs for 365
+is outside, with five minutes of grace for an `issued` a little ahead of it. Roboglot signs for 365
 days unless `--days` says otherwise, and never past the 400 a reader accepts.
 
 The signature is over the passport's exact bytes, a compact JWS
@@ -73,7 +73,7 @@ member: two parsers that pick different duplicates would read two documents unde
 ## The owner key, sealed on the robot
 
 The owner key lives on the robot because the passport is signed there, by the wizard and by
-`quackd onboard sign` after an edit. It is sealed: encrypted with AES-256-GCM under a key scrypt
+`roboglot onboard sign` after an edit. It is sealed: encrypted with AES-256-GCM under a key scrypt
 derives from your passphrase, at a cost of 128 MiB of memory for every guess, with the owner's
 `did:key` bound in.
 
@@ -82,11 +82,11 @@ derives from your passphrase, at a cost of 128 MiB of memory for every guess, wi
 - **The service never needs it.** It serves the passport the owner last signed and signs talk with
   the robot key, so a robot that restarts at three in the morning asks nobody for anything.
 - **No environment variable carries it.** A script passes `--passphrase-file`, and where files have
-  modes quackd refuses one that anybody but its owner can open, the way SSH refuses a private key
+  modes Roboglot refuses one that anybody but its owner can open, the way SSH refuses a private key
   others can read. Windows has no such modes, and the check is skipped there.
 
 A second robot of the same owner starts from the same sealed key, with `--owner-key`
-([quackd.md](quackd.md#a-second-robot-of-the-same-owner)).
+([roboglot.md](roboglot.md#a-second-robot-of-the-same-owner)).
 
 > [!WARNING]
 > Keep a copy of the sealed owner key off the robot, and the passphrase somewhere else again, the way
@@ -107,12 +107,12 @@ refusal is written down for a person, and nothing it said reaches a brain.
 When a robot meets another for the first time, a person can **pin** its robot key or its owner's
 key, so the next meeting starts at known. That is how SSH treats a server's host key, for the same
 reason: no authority everyone trusts exists, and first contact approved by a person is the best
-anchor there is. `quackd onboard pin` pins a robot this one met, by the start of its short id, the
+anchor there is. `roboglot onboard pin` pins a robot this one met, by the start of its short id, the
 name it was met under or its `did:key`, and `--owner` pins the owner key that signed it. A robot's
 pin names the owner key that signed it then: whoever holds a robot key could otherwise sign its
 passport with a key of their own and stay known past the day its owner's signature ran out. Pins
 live in `robot.yaml` under `trust.pins`, edited as text so your comments survive, and
-`quackd onboard forget` removes one ([quackd.md](quackd.md#pinning)). A change to the pins reaches
+`roboglot onboard forget` removes one ([roboglot.md](roboglot.md#pinning)). A change to the pins reaches
 every open session at its next word.
 
 ## The tiers
@@ -120,7 +120,7 @@ every open session at its next word.
 <a id="the-four-tiers"></a>
 
 What a robot met can make yours do, and what your robot's brain hears from it, depends on its tier.
-These are quackd's defaults: the specification requires only that every action a peer starts is
+These are Roboglot's defaults: the specification requires only that every action a peer starts is
 bounded ([spec section 6.5](spec.md#65-ask-and-answer)).
 
 | Tier | How a robot gets there | What it can make your robot do | What your robot's brain hears |
@@ -129,8 +129,8 @@ bounded ([spec section 6.5](spec.md#65-ask-and-answer)).
 | known | a person pinned its robot key, signed by the owner it had then, or the owner key that signed it | `pause` for up to 10 s, and `identify` by light, sound or motion | its name, skills, what it cannot do and its safety, and what it says, JSON-quoted |
 | same owner | it is signed by this robot's own owner key | what a known robot can | the same |
 
-quackd identifies a body by sound alone, so an `identify` by light or motion is answered `no`. A
-robot grants only what its signed passport lists under `courtesy`, and a robot quackd only talks
+Roboglot identifies a body by sound alone, so an `identify` by light or motion is answered `no`. A
+robot grants only what its signed passport lists under `courtesy`, and a robot Roboglot only talks
 for lists nothing, so it answers `no` to a `pause` and an `identify` alike. A robot meets strangers
 unless `robot.yaml` says `with_strangers: false` under `meeting:`, and a stranger's words stay in
 the log either way. Free talk needs a pin.
@@ -146,7 +146,7 @@ body, and outside one every `ask` is answered `no`.
 
 ### Why lists, and not safety classes
 
-quackd's verbs carry a safety class, `safe`, `confirm` or `dangerous`, but `safe` includes motion: the
+Roboglot's verbs carry a safety class, `safe`, `confirm` or `dangerous`, but `safe` includes motion: the
 class says whether a person must confirm a verb, not whether it moves. A tier that granted "safe
 skills" would grant driving the robot, so each tier is a short explicit list, and the handler that
 runs it is the only path from a peer to anything that moves.
@@ -167,13 +167,13 @@ the owner, and a new robot to whoever pinned the old robot key.
 ### An edit after signing
 
 An edit to the passport section of `robot.yaml` is no passport until the owner signs it. The service
-serves the last signed one meanwhile, `quackd onboard status` names every unsigned change, and
-`quackd onboard sign` signs it with your passphrase. From 30 days before `expires` it signs again
+serves the last signed one meanwhile, `roboglot onboard status` names every unsigned change, and
+`roboglot onboard sign` signs it with your passphrase. From 30 days before `expires` it signs again
 even with nothing changed, and a robot whose own passport has expired stops talking until it is.
 
 ### A name that looks like another
 
-quackd compares names the way a person sees them: case, spaces, characters that show nothing and
+Roboglot compares names the way a person sees them: case, spaces, characters that show nothing and
 letters from other scripts or digits drawn like Latin letters are folded away, so `G1-EDU-01 `, a
 `g1-edu-01` with a zero-width space in it and one spelled with a Cyrillic letter all fold to one
 name. A robot whose

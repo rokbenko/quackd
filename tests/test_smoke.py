@@ -2,12 +2,12 @@
 
 from typer.testing import CliRunner
 
-import quackd
-from quackd.cli import app
+import roboglot
+from roboglot.cli import app
 
 
 def test_version_string() -> None:
-    assert quackd.__version__.count(".") == 2
+    assert roboglot.__version__.count(".") == 2
 
 
 def test_cli_help() -> None:
@@ -27,7 +27,7 @@ def test_cli_help() -> None:
         "announce",
         "memory",
         "robot",
-        "flock",
+        "team",
     ):
         assert command in result.output
 
@@ -35,4 +35,4 @@ def test_cli_help() -> None:
 def test_cli_version_flag() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert quackd.__version__ in result.output
+    assert roboglot.__version__ in result.output

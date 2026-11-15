@@ -1,4 +1,4 @@
-# ADR-0028: ToddlerBot: quackd ships the loop, and everything upstream forgot to protect
+# ADR-0028: ToddlerBot: Roboglot ships the loop, and everything upstream forgot to protect
 
 **Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0024 · Implemented in 0.7 ([page](../adapters/toddlerbot/README.md))
 
@@ -6,7 +6,7 @@
 
 ToddlerBot is a small open source humanoid: about 56 cm and 3 kg, two arms, two legs, a two
 joint neck, thirty Dynamixel servos on a communication board, a Jetson on its back. It is
-quackd's first full humanoid, which makes it the Open Duck and the LeRobot arm on one body.
+Roboglot's first full humanoid, which makes it the Open Duck and the LeRobot arm on one body.
 
 The pin is the commit the annotated tag `v2.0.0` points at, `84e02d1`, chosen deliberately:
 the request was for ToddlerBot 2.0 and this is 2.0. That choice was made with its costs on the
@@ -37,8 +37,8 @@ torqued holding its last target instead.
 
 ## Decision
 
-- **quackd ships the daemon, and it owns the loop.** `bridge/toddlerbot/` runs the fifty hertz
-  loop continuously; quackd's intents steer what it is already doing. This is not only because
+- **Roboglot ships the daemon, and it owns the loop.** `bridge/toddlerbot/` runs the fifty hertz
+  loop continuously; Roboglot's intents steer what it is already doing. This is not only because
   there is no API to speak to, which would be the ADR-0024 argument on its own. It is because
   a verb is episodic and this body is not: a humanoid frozen mid-stride while an LLM thinks is
   a humanoid on the floor.
@@ -61,11 +61,11 @@ torqued holding its last target instead.
   current limit anywhere upstream, and the motors are in multi-turn mode so the
   firmware's own position limits are off too. The robot is therefore not a safety
   authority in any sense the manifest can name, and `native` says so. The only
-  deadman that can exist is one quackd runs, and each backend answers for itself:
+  deadman that can exist is one Roboglot runs, and each backend answers for itself:
   `mock` and `sim2d` emulate it and say true, and `:bridge` says **false** until the
   daemon has actually answered the handshake, because before that there is nothing on
   the other end to be running anything. Connecting is what turns it true. `heartbeat_hz` is 5, an order of magnitude
-  below the control rate, because quackd's heartbeat only has to notice that the
+  below the control rate, because Roboglot's heartbeat only has to notice that the
   daemon stopped answering: the fifty hertz loop and its own deadman are the
   daemon's job. `extras.deadman_scope` says what tripping it actually does, which is
   slew to a safe pose and hold, never go limp.
@@ -94,9 +94,9 @@ torqued holding its last target instead.
   body four times the mass.
 - **No raw joint verb.** The `joint` intent is not declared. Thirty unclamped radians from an
   LLM, on a machine in multi-turn mode with no current limit and no position limit,
-  is the exact failure this project exists to prevent. quackd offers named moves and the daemon
+  is the exact failure this project exists to prevent. Roboglot offers named moves and the daemon
   owns every trajectory.
-- **quackd curates the motion list, and says that it is curating.** Five of the nine shipped
+- **Roboglot curates the motion list, and says that it is curating.** Five of the nine shipped
   motions are offered. The other four are excluded on judgement rather than capability, which
   is a different thing from the absences above and is documented as such: two assume the robot
   is hanging from a bar, one is a gait reference, and one is a cartwheel on a body with no fall
@@ -109,24 +109,24 @@ torqued holding its last target instead.
 
 - The `v2.0.0` pin costs a torque-on binding: `enable_motors` exists in C++ and is not bound to
   Python at this commit, so there is no way back from a torque-off short of `initialize`, which
-  also rewrites every gain and re-latches the zero positions. quackd therefore never disables
+  also rewrites every gain and re-latches the zero positions. Roboglot therefore never disables
   torque, and `relax` is not declared at all. That is stricter than the house rule against
   sending a go-limp call, and it costs nothing here.
 - The pin also means upstream's own CI never ran: the workflow echoes a skip and exits zero,
-  and the repository has one test file. quackd assumes nothing works until it has run it.
+  and the repository has one test file. Roboglot assumes nothing works until it has run it.
 - The daemon and the protocol are exercised end to end against a fake body over a real loopback
   socket, on every CI platform, including the deadman, the settle, the clamp, the rate limit,
   the all-zeros detector and the controller-fault path. "The machinery works" is a fact; "the
   robot stood up" stays a claim nobody has earned, and the `bridge` row is 🧪.
-- quackd now has a third on-robot artifact (after the Open Duck Mini's pair of daemons and
+- Roboglot now has a third on-robot artifact (after the Open Duck Mini's pair of daemons and
   the AlohaMini's host wrapper), with its own version and its own way to be out of
   date relative to the laptop, so the handshake carries both and refuses a mismatch.
 - `search_scan` sweeps the head here rather than turning the body, which is the opposite of the
   Open Duck's choice and for the same reason in reverse: turning a humanoid with no fall
   recovery to look around is not the first thing to reach for.
-- Flock mode does not know this robot, and extending it stays out of scope.
-  Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-flocks.md): true of
-  the *coordinator* flock, whose runner is still Microduck-only. A **pilot** flock takes any
+- Team mode does not know this robot, and extending it stays out of scope.
+  Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md): true of
+  the *coordinator* team, whose runner is still Microduck-only. A **pilot** team takes any
   adapter and backend, so this robot can be a member of one today.
 - Eight unknowns remain and are named in `upstream_api.py` as UNVERIFIED, the largest being
   whether the safe pose is safe to slew to from a crawling or prone start. Only a robot on a

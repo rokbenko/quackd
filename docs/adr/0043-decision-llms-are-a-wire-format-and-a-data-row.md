@@ -1,10 +1,10 @@
 # ADR-0043: Decision LLMs are a wire format and a data row, not a vendor
 
-**Status:** accepted, amended · **Date:** 2026-09-22 · Extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper, its floors and its gates, all unchanged) and borrows the discovery pattern from [ADR-0037](0037-adapters-are-their-own-packages.md) (adapters announce themselves through an entry point group) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (their Jev-specific spellings) · Retires `--jev` outright, with none of the release of grace [ADR-0042](0042-the-log-is-the-whole-screen.md) gave the trace spellings · Also merges `--provider` and `--model` into `--llm`, amending [ADR-0031](0031-llm-catalogue.md) · Implemented in `quackd/agent/decision/` (was `quackd/agent/jev.py`) ([page](../guides/decision-llms/README.md))
+**Status:** accepted, amended · **Date:** 2026-09-22 · Extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper, its floors and its gates, all unchanged) and borrows the discovery pattern from [ADR-0037](0037-adapters-are-their-own-packages.md) (adapters announce themselves through an entry point group) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (their Jev-specific spellings) · Retires `--jev` outright, with none of the release of grace [ADR-0042](0042-the-log-is-the-whole-screen.md) gave the trace spellings · Also merges `--provider` and `--model` into `--llm`, amending [ADR-0031](0031-llm-catalogue.md) · Implemented in `roboglot/agent/decision/` (was `roboglot/agent/jev.py`) ([page](../guides/decision-llms/README.md))
 
 **Amended 2026-11-14:** the `von` row is gone. Its README has said "Von is no longer maintained and
 these weights will not be updated" since 2026-10-17, and its repository is archived now, so its row,
-its page and its line in `quackd doctor` went with it. Von is still named below as one of the
+its page and its line in `roboglot doctor` went with it. Von is still named below as one of the
 servers the format reached when this was written, and a Von server somebody still runs is
 `--decision-llm local --decision-url` like any other.
 
@@ -20,7 +20,7 @@ Two sentences below are wrong on their facts and the decisions above them are no
 is priced at the self-hosted rate because of where it runs rather than because of what it
 counts. And read "the floors are Jev's numbers" as true of two of the four: TypeSafe publish
 0.5 and 0.9, which are the brake and the confirm gate, while the 0.60 read floor and the
-0.85 motion floor are quackd's own, set between them. Nothing else in this ADR changes.
+0.85 motion floor are Roboglot's own, set between them. Nothing else in this ADR changes.
 
 **Amended 2026-10-10 by [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md):** decision LLMs speak two wire formats now.
 OpenAI's Decisions API asks the same kind of question at `POST /v1/decisions` in a shape of its
@@ -39,15 +39,15 @@ The wire format is still the abstraction, one per backend.
 [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) is four days old and its
 reasoning has held up completely. What has not held up is a single word in it.
 
-That ADR decided quackd should put something in front of the pilot LLM on the turns whose answer is
+That ADR decided Roboglot should put something in front of the pilot LLM on the turns whose answer is
 a choice, and it named that something TypeSafe's Jev, because on 2026-09-18 Jev was the only
 one there was. Jev launched on 2026-09-15. Within the week some thirty projects had shipped
 LLMs that answer the same typed questions, most of them open, several small enough to run on
 the laptop this is being written on, and at least five serving the identical HTTP contract on
 purpose. `systemonemodels.org` lists them; the count was 33 when this was read on 2026-09-22.
 
-quackd had spelled one vendor's name into a CLI flag (`--jev`), a pip extra (`quackd[jev]`),
-three environment variables, a module (`quackd/agent/jev.py`), two transcript kinds, five
+Roboglot had spelled one vendor's name into a CLI flag (`--jev`), a pip extra (`roboglot[jev]`),
+three environment variables, a module (`roboglot/agent/jev.py`), two transcript kinds, five
 record fields, a summary block, three terminal labels, a doctor row and a 603-line page. None
 of those spellings was wrong on the day. All of them were about to become wrong, in the way
 that is hardest to undo later: quietly, by being copied.
@@ -60,16 +60,16 @@ own client at our base URL.
 ## Decision
 
 **The wire format is the abstraction.** One HTTP backend, `decision/systemone.py`, reaches Jev,
-Kev, Von, OpenJev, OpenDecision and anything else that speaks it. The questions quackd builds
+Kev, Von, OpenJev, OpenDecision and anything else that speaks it. The questions Roboglot builds
 are plain dicts in the System One shape rather than an SDK's own `Choice` and `Noul` objects,
 so the same four questions go to a hosted API, to a server on this machine and to an LLM in
 this process without being rebuilt for any of them.
 
 **A decision LLM is a row of data.** `decision/catalogue.py` holds name, backend, default URL,
 default LLM, key variable, price and install hint, and imports nothing. Adding a
-wire-compatible server is one row; a server quackd has never heard of is `--decision-llm local
+wire-compatible server is one row; a server Roboglot has never heard of is `--decision-llm local
 --decision-url` and no code at all. The split between a data module and a factory that imports
-is the one `adapters/catalogue.py` already makes, and for the same reason: `quackd doctor` has
+is the one `adapters/catalogue.py` already makes, and for the same reason: `roboglot doctor` has
 to render the whole table on a machine where none of them is installed.
 
 **The row is the only place a per-vendor fact may live.** This is worth stating as a rule
@@ -81,11 +81,11 @@ them, in a different way, on every request.
 
 **In-process decision LLMs sit behind the same protocol.** `decision/laya.py` is the proof that
 the seam is a protocol and not an HTTP call: Laya takes the same question mapping the wire does,
-and everything quackd asks of a hosted LLM it asks of this one. It is also the case that
+and everything Roboglot asks of a hosted LLM it asks of this one. It is also the case that
 keeps the billing honest, because it reports no token count at all.
 
-**Third parties announce themselves.** The `quackd.decision_llms` entry point group, discovered
-the way `quackd.adapters` is discovered, with the same `find_spec` verification and the same
+**Third parties announce themselves.** The `roboglot.decision_llms` entry point group, discovered
+the way `roboglot.adapters` is discovered, with the same `find_spec` verification and the same
 refusal to believe stale metadata. A built-in name always wins over a plugin that took it, so a
 package on an index cannot quietly become the thing `--decision-llm jev` reaches.
 
@@ -97,7 +97,7 @@ client.
 
 **No plain-LLM fallback.** An adapter that asks GPT or Claude for a JSON object of
 probabilities exists and would have been easy to add. Those numbers are prompted rather than
-calibrated, and quackd's floors gate real motion on calibration: `motion` is 0.85 and `confirm`
+calibrated, and Roboglot's floors gate real motion on calibration: `motion` is 0.85 and `confirm`
 is 0.90 precisely because the number underneath them is meant to mean something. Anybody may
 write it as a plugin. They would have to measure it first, and so would we.
 
@@ -110,23 +110,23 @@ than silently doing nothing.
 
 **A clean rename, with no release of grace.** [ADR-0042](0042-the-log-is-the-whole-screen.md)
 gave the trace spellings a release, and was right to: they were three releases old and in
-people's scripts. These are three days old, `quackd record` pinned the stepper off so no
+people's scripts. These are three days old, `roboglot record` pinned the stepper off so no
 recording in this repository carries them, and ADR-0040 already promised that a transcript kind
 the renderer does not know is drawn as nothing. So `--jev` is gone rather than deprecated, and
-`quackd log` on a 0.10 or 0.11 run directory prints no stepper lines, still prints `from jev`
+`roboglot log` on a 0.10 or 0.11 run directory prints no stepper lines, still prints `from jev`
 on the verbs it chose, and shows no stepper seconds or cost in its counters. The run directory
 is untouched; only the reading of it is.
 
 **The floors are Jev's numbers, and every other preset inherits them unmeasured.** ADR-0040
 took them from TypeSafe's published guidance, which was the honest thing to do for an LLM
-quackd cannot tune against. It is less honest the moment there are seven of them, because each
+Roboglot cannot tune against. It is less honest the moment there are seven of them, because each
 one computes confidence by its own formula. The floors do not move here, and the warning on
 `--decision-mode on` now says exactly this.
 
 ### And the pilot flag
 
 `--provider anthropic --model claude-opus-5` became `--llm anthropic:claude-opus-5`, with
-`QUACKD_MODEL` becoming `QUACKD_LLM` and a robot's two registry fields becoming one. This is
+`ROBOGLOT_MODEL` becoming `ROBOGLOT_LLM` and a robot's two registry fields becoming one. This is
 not really a separate decision: the two flags were never independent, since an LLM id means
 nothing without its vendor and every refusal had to name both anyway. What forced it now is
 that `--decision-llm` needed a grammar, and shipping a new pair `--decision-provider` plus
@@ -173,10 +173,10 @@ have outlived the thing it aliased.
 - A URL can carry a credential and arrives from an environment variable that argv redaction
   never sees, so it is written through `redacted_url` where the stepper is built rather than at
   each place that records it.
-- A server you run is costed at the self-hosted rate the rest of quackd already uses for a
-  local LLM: `$0`, and not `None`, which quackd reserves for "there is a rate and nobody here
+- A server you run is costed at the self-hosted rate the rest of Roboglot already uses for a
+  local LLM: `$0`, and not `None`, which Roboglot reserves for "there is a rate and nobody here
   knows it". Only Jev has a published rate.
-- `quackd doctor` gains a row per preset with its address. It does not probe any of them: the
+- `roboglot doctor` gains a row per preset with its address. It does not probe any of them: the
   providers table does not probe cloud vendors either, and these do not all expose a listing
   endpoint on the same path or in the same shape.
 - The 0.11.0 README on PyPI links to `docs/jev.md`, which has moved. That link 404s until the

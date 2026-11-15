@@ -1,4 +1,4 @@
-"""Which computer `quackd onboard` runs on: a Jetson finds itself, and sim is only ever asked for.
+"""Which computer `roboglot onboard` runs on: a Jetson finds itself, and sim is only ever asked for.
 
 The boards here are files, as in `tests/jetson_fixtures.py`, and what is tested is the reading,
 never a board. The Orin Nano is that file's own. The Thor, the Xavier and the Orin on JetPack 5
@@ -18,20 +18,20 @@ from typing import Any
 
 import pytest
 
-from quackd import boards, doctor
-from quackd.boards import jetson, l4t, sim
-from quackd.boards.generic import GenericBoard
-from quackd.boards.jetson import JetsonBoard
-from quackd.boards.sim import SimBoard
+from roboglot import boards, doctor
+from roboglot.boards import jetson, l4t, sim
+from roboglot.boards.generic import GenericBoard
+from roboglot.boards.jetson import JetsonBoard
+from roboglot.boards.sim import SimBoard
 from tests.jetson_fixtures import COMPATIBLE, NUL, ORIN_NANO, RELEASE_36_4_3
 
 PREFIX = (
-    "quackd onboard runs on a robot's own computer, and this is not one it supports: "
+    "roboglot onboard runs on a robot's own computer, and this is not one it supports: "
     "it found no NVIDIA Jetson ("
 )
 SUFFIX = (
     "). To try it here as a simulation, which its passport will say, "
-    "run quackd onboard --board sim."
+    "run roboglot onboard --board sim."
 )
 """The plan's sentence, around what was looked for, which the docs are to quote."""
 
@@ -92,7 +92,7 @@ def _jetson(
 
 
 def _among(*extra: Any, files: Mapping[str, str]) -> dict[str, Any]:
-    """quackd's own two boards, the Jetson reading `files`, and any others after them."""
+    """Roboglot's own two boards, the Jetson reading `files`, and any others after them."""
     return {"jetson": _jetson(files), boards.SIM: SimBoard(), **{b.name: b for b in extra}}
 
 
@@ -126,7 +126,7 @@ def test_a_xavier_is_refused_for_its_chip_in_the_plans_words() -> None:
     with pytest.raises(boards.Unsupported) as caught:
         boards.detect(among=_among(files=XAVIER))
     assert str(caught.value) == (
-        "a Xavier (tegra194): quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with "
+        "a Xavier (tegra194): roboglot onboard supports Orin with JetPack 6 or 7.2 and Thor with "
         "JetPack 7"
     )
 
@@ -171,16 +171,16 @@ def test_a_thor_that_reads_as_jetpack_6_is_refused_since_no_thor_runs_it() -> No
         (_files(model=ORIN_NANO, compatible=COMPATIBLE, release=_release(40, "1")), "on L4T 40.1:"),
         (
             _files(model="x", compatible="nvidia,tegra239", release=RELEASE_36_4_3),
-            "a Tegra quackd does not know (tegra239)",
+            "a Tegra Roboglot does not know (tegra239)",
         ),
     ],
     ids=["no-chip", "no-release", "unreadable-release", "unknown-l4t", "unknown-chip"],
 )
-def test_a_jetson_quackd_cannot_read_or_run_on_is_refused_saying_why(
+def test_a_jetson_roboglot_cannot_read_or_run_on_is_refused_saying_why(
     files: Mapping[str, str], said: str
 ) -> None:
     """Half a Jetson is a Jetson something hides (a container masks the device tree), and is
-    refused rather than taken for a laptop; a major release or a chip quackd has not met is
+    refused rather than taken for a laptop; a major release or a chip Roboglot has not met is
     refused rather than guessed at."""
     with pytest.raises(boards.Unsupported, match=re.escape(said)):
         _jetson(files).detect()
@@ -286,7 +286,7 @@ class _Crashing(_Acme):
 
 
 class _Impostor(_Acme):
-    """A plugin's board that says it is a Jetson, which only quackd's own may."""
+    """A plugin's board that says it is a Jetson, which only Roboglot's own may."""
 
     def detect(self) -> boards.BoardFacts | None:
         return boards.BoardFacts(kind="jetson", model="NVIDIA Jetson AGX Thor", soc="tegra264")
@@ -308,11 +308,11 @@ class _Unnamable(_Acme):
 
 
 def _installed(monkeypatch: pytest.MonkeyPatch, plugins: Mapping[str, object]) -> None:
-    """Plugins in the `quackd.boards` group: each name to a module whose `make()` returns the
+    """Plugins in the `roboglot.boards` group: each name to a module whose `make()` returns the
     value given, or raises it."""
     points = []
     for i, (name, made) in enumerate(plugins.items()):
-        module = types.ModuleType(f"quackd_test_board_plugin_{i}")
+        module = types.ModuleType(f"roboglot_test_board_plugin_{i}")
 
         def make(made: object = made) -> object:
             if isinstance(made, BaseException):
@@ -372,7 +372,7 @@ def test_a_plugin_is_what_it_is_installed_as_or_nothing(monkeypatch: pytest.Monk
 @pytest.mark.parametrize(
     "plugin", [_Crashing(), _Impostor(), _Sloppy()], ids=["crashing", "impostor", "sloppy"]
 )
-def test_a_plugin_that_fails_or_answers_as_only_quackds_own_may_takes_no_sentence_away(
+def test_a_plugin_that_fails_or_answers_as_only_roboglots_own_may_takes_no_sentence_away(
     plugin: Any,
 ) -> None:
     """Found by itself, it is a board that does not know this computer, so a laptop still gets
@@ -386,7 +386,7 @@ def test_a_plugin_that_fails_or_answers_as_only_quackds_own_may_takes_no_sentenc
         boards.detect(plugin.name, among=_among(plugin, files={}))
 
 
-def test_a_plugin_may_run_where_quackd_refuses_and_the_refusal_stands_without_one() -> None:
+def test_a_plugin_may_run_where_roboglot_refuses_and_the_refusal_stands_without_one() -> None:
     board, found = boards.detect(among=_among(_Acme(), files=XAVIER))
     assert board.name == "acme" and found.kind == "other"
     with pytest.raises(boards.Unsupported, match="Xavier"):
@@ -453,7 +453,7 @@ def test_doctor_reads_the_moved_l4t_table_by_its_old_names() -> None:
 def test_a_boards_kinds_are_the_kinds_a_passport_may_say() -> None:
     """Two lists of the same three words, one where a board is found and one where a passport is
     read; they are one list in two places, and this keeps them so."""
-    from quackd.boards import KINDS
-    from quackd.passport.document import BOARDS
+    from roboglot.boards import KINDS
+    from roboglot.passport.document import BOARDS
 
     assert KINDS == BOARDS

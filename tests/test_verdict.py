@@ -7,19 +7,19 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
-from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, Span, VerbSpec
-from quackd.agent.prompts import (
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+from roboglot.adapters.manifest import Datasheet, Figure, RobotManifest, Span, VerbSpec
+from roboglot.agent.prompts import (
     ASSESS_TASK,
     DECLARE_NAMES,
     META_TOOL_NAMES,
     NOTHING_DETECTED_BEFORE_VERDICT,
 )
-from quackd.safety import Executor, VerdictRequired
-from quackd.transport.mock import MockTransport
-from quackd.verbs.aliases import ALIASES, canonical
-from quackd.verbs.registry import Verb, default_registry
-from quackd.verdict import (
+from roboglot.safety import Executor, VerdictRequired
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.aliases import ALIASES, canonical
+from roboglot.verbs.registry import Verb, default_registry
+from roboglot.verdict import (
     BEFORE_VERDICT,
     MOVES_THE_BODY,
     NEEDS_NUMBERS,
@@ -33,7 +33,7 @@ from quackd.verdict import (
     own_sheet_objection,
     solo_hint,
 )
-from quackd_microduck import microduck_manifest
+from roboglot_microduck import microduck_manifest
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -83,7 +83,7 @@ def test_the_two_vocabularies_of_one_tool_agree_on_a_duration() -> None:
     holds them to each other."""
     from typing import get_args
 
-    from quackd.verdict import Estimate
+    from roboglot.verdict import Estimate
 
     items = ASSESS_TASK["input_schema"]["properties"]["estimates"]["items"]  # type: ignore[index]
     quantities = items["properties"]["quantity"]["enum"]
@@ -137,12 +137,12 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     `tests/test_mcp_server.py`, where there is a client to ask."""
     from pathlib import Path as _Path
 
-    from quackd.agent.prompts import build_system_prompt, play_section
-    from quackd.duckfile.parser import load_duck
-    from quackd.verbs.registry import default_registry
+    from roboglot.agent.prompts import build_system_prompt, play_section
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.verbs.registry import default_registry
 
     registry = default_registry()
-    duck = load_duck("ducks/find-and-kick.duck")
+    duck = load_glot("tasks/find-and-kick.glot")
     allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
     prompt = build_system_prompt(duck, [registry.view(n) for n in allow], "sim2d")
     rule = next(line for line in prompt.splitlines() if "Until then" in line)
@@ -199,8 +199,8 @@ def test_a_verdict_validates_its_own_needs() -> None:
 def test_every_shipped_verb_was_classified_on_purpose() -> None:
     """A verb in neither set is a verb nobody decided about, and the gate would refuse it
     for ever without anybody noticing."""
-    from quackd.adapters.factory import _module
-    from quackd.verbs.core import CORE
+    from roboglot.adapters.factory import _module
+    from roboglot.verbs.core import CORE
 
     # every core template as well, since a core verb a body offers only on some connections,
     # the place verbs, is in no static default and is still shipped
@@ -221,7 +221,7 @@ def _shipped_verbs() -> list[Verb]:
     """Every `Verb` a shipped body can register: the default vocabulary, plus each official
     adapter's own implementations. `registry_from_manifest` copies `read_only` off these
     templates untouched, so what they say here is what the gate sees at run time."""
-    from quackd.adapters.factory import _module
+    from roboglot.adapters.factory import _module
 
     verbs = list(default_registry().verbs())
     for adapter in ADAPTER_NAMES:
@@ -230,9 +230,9 @@ def _shipped_verbs() -> list[Verb]:
 
 
 def test_a_shipped_verb_that_only_reads_is_already_one_that_runs_first() -> None:
-    """The gate reads `Verb.read_only` beside `BEFORE_VERDICT` (#26), and for a body quackd
+    """The gate reads `Verb.read_only` beside `BEFORE_VERDICT` (#26), and for a body Roboglot
     never shipped that is the whole point: it is the only way a stranger's `locate` can look
-    before the pilot judges. For a body quackd does ship, the flag must restate the set and
+    before the pilot judges. For a body Roboglot does ship, the flag must restate the set and
     never widen it. The test above reads the two sets and cannot see the flag, so a shipped
     verb flagged read-only and filed under `MOVES_THE_BODY` would run before any verdict and
     nothing would say so."""
@@ -289,10 +289,10 @@ async def test_nothing_moves_until_a_verdict_clears_it() -> None:
 
 
 async def test_a_bodys_own_read_only_verb_looks_before_the_verdict() -> None:
-    """`BEFORE_VERDICT` knows the verbs quackd ships. A body quackd never shipped brings its
+    """`BEFORE_VERDICT` knows the verbs Roboglot ships. A body Roboglot never shipped brings its
     own sensing verb, and the pilot needs it for the very judgement the gate is waiting for:
     a `locate` that says where the thing is cannot be refused as "moves the body"."""
-    from quackd.verbs.registry import NoParams, Verb, VerbResult
+    from roboglot.verbs.registry import NoParams, Verb, VerbResult
 
     async def looks(_ctx: object, _p: object) -> VerbResult:
         return VerbResult.success("the ball is 0.3 m ahead")
@@ -311,7 +311,7 @@ async def test_a_bodys_own_read_only_verb_looks_before_the_verdict() -> None:
         await executor.run_verb("reach")
 
     # a learned verb never carries the flag: unproven, it waits like everything else
-    from quackd.verbs.learned import LearnedVerbSpec, register_learned_verb
+    from roboglot.verbs.learned import LearnedVerbSpec, register_learned_verb
 
     register_learned_verb(
         registry,
@@ -331,7 +331,7 @@ async def test_a_learned_verb_cannot_take_a_name_that_runs_first() -> None:
 
     The name is free to take because a body with no camera has no `observe` of its own, so the
     registry accepts it: the arm is such a body."""
-    from quackd.verbs.learned import LearnedVerbSpec, register_learned_verb
+    from roboglot.verbs.learned import LearnedVerbSpec, register_learned_verb
 
     registry = default_registry()
     registry._verbs.pop("observe")  # a body with no camera verb, as an arm is
@@ -344,18 +344,18 @@ async def test_a_learned_verb_cannot_take_a_name_that_runs_first() -> None:
         await executor.run_verb("observe")
 
     # and the prompt does not offer it either, by the same rule
-    from quackd.agent.prompts import before_verdict_clause
+    from roboglot.agent.prompts import before_verdict_clause
 
     assert before_verdict_clause([learned]) == "only `stop` runs"
 
 
-async def test_quackds_own_record_beats_a_strangers_read_only_flag() -> None:
-    """#26 lets a verb's own `read_only` open the gate, which is the only way a body quackd
-    never shipped can look before it judges. It must not override the other half of quackd's
+async def test_roboglots_own_record_beats_a_strangers_read_only_flag() -> None:
+    """#26 lets a verb's own `read_only` open the gate, which is the only way a body Roboglot
+    never shipped can look before it judges. It must not override the other half of Roboglot's
     own record: a verb arriving under a name this repository has classified as motion, and
     carrying `read_only`, is saying two contradictory things about itself, and the one to
     believe is the name."""
-    from quackd.verbs.registry import NoParams, Verb, VerbResult
+    from roboglot.verbs.registry import NoParams, Verb, VerbResult
 
     async def looks(_ctx: object, _p: object) -> VerbResult:
         return VerbResult.success("sent nothing, honestly")
@@ -389,17 +389,17 @@ async def test_an_unanswered_doubt_does_not_clear_the_gate() -> None:
     assert (await executor.run_verb("walk", {"vx": 0.1, "duration_s": 0.1})).ok
 
 
-async def test_a_flock_member_is_never_asked_for_a_verdict() -> None:
+async def test_a_team_member_is_never_asked_for_a_verdict() -> None:
     """A member is a state machine, not a pilot: there is nobody there to ask, so the gate is
-    off by default and the flock never turns it on."""
+    off by default and the team never turns it on."""
     import inspect
 
-    from quackd.flock import member as flock_member
+    from roboglot.team import member as team_member
 
     executor, _transport, _events = _executor()
     assert executor.require_verdict is False
     assert (await executor.run_verb("walk", {"vx": 0.1, "duration_s": 0.1})).ok
-    assert "require_verdict" not in inspect.getsource(flock_member)
+    assert "require_verdict" not in inspect.getsource(team_member)
 
 
 # ── the matcher ─────────────────────────────────────────────────────────────────────────
@@ -458,7 +458,7 @@ def test_a_zero_asks_for_nothing_a_working_height_included() -> None:
 
     `work_height_m` was left out of that rule and read as "the ground", while the tool told the
     pilot in so many words that a 0 asks for nothing and is always met. So a pilot that did as
-    it was told was refused on every body quackd ships: "(not published)" on those with no
+    it was told was refused on every body Roboglot ships: "(not published)" on those with no
     working height band, and below the band on the one that has one. The 2026-09-23 bench runs
     on an arm met that refusal as the y/N question on nearly every run. Every number now reads
     a zero the same way, band or no band, and a task whose hands really work at the floor says
@@ -644,7 +644,7 @@ def test_a_pilots_own_sheet_does_not_hold_an_unshown_working_height_against_it()
 
     Everything that names a body to hand a task to stays strict, which is the asymmetry on
     purpose: a body that never said how high it works is not offered a task at a height."""
-    from quackd.adapters.factory import bodies_that_could
+    from roboglot.adapters.factory import bodies_that_could
 
     bandless = _still(datasheet=Datasheet(manipulator="gripper", arms=1))
     for height in (0.15, 0.6, 1.4):
@@ -718,7 +718,7 @@ def test_the_hint_names_the_most_only_for_a_need_nobody_meets() -> None:
     That explains a refusal that never happened, and a pilot handing the task on reads it as
     the reason. The need a "most" is named for is now above zero, met by nobody installed, and
     above the most anybody publishes, which is what "the most" answers."""
-    from quackd.adapters.factory import bodies_that_could, installed_manifests
+    from roboglot.adapters.factory import bodies_that_could, installed_manifests
 
     duck = describe(RobotSpec("microduck", "sim2d"))
     unmet = {"payload_kg": 0, "terrain": "outdoor"}
@@ -780,7 +780,7 @@ def test_the_hint_says_a_sheet_meets_a_height_only_when_it_publishes_one_that_do
 
 
 def test_bodies_that_could_reads_only_the_static_descriptions() -> None:
-    from quackd.adapters.factory import bodies_that_could, installed_manifests
+    from roboglot.adapters.factory import bodies_that_could, installed_manifests
 
     assert [name for name, _m in installed_manifests()] == list(ADAPTER_NAMES)
     assert [name for name, _m, _missing in bodies_that_could({"payload_kg": 6.0})] == []
@@ -797,7 +797,7 @@ def test_bodies_that_could_reads_only_the_static_descriptions() -> None:
 async def test_a_persons_own_command_clears_the_verdict_gate_for_that_call_alone(
     source: str, said: str
 ) -> None:
-    """Somebody at `quackd drive` who names one call of this body's has made the judgement the
+    """Somebody at `roboglot drive` who names one call of this body's has made the judgement the
     gate waits for, for that call: it runs with no verdict recorded, the record says whose word it
     was, as an answer to a confirm says it, and the verdict is never written, so a pilot's, an
     MCP client's or the stepper's next call is refused as before."""
@@ -817,7 +817,7 @@ async def test_a_persons_own_command_clears_the_verdict_gate_for_that_call_alone
 async def test_a_persons_composite_runs_the_calls_it_is_made_of() -> None:
     """A composite's calls inherit its source, so a person's runs the walk it is made of with no
     verdict, where a pilot's is refused at the composite itself."""
-    from quackd.verbs.registry import NoParams, VerbContext, VerbResult
+    from roboglot.verbs.registry import NoParams, VerbContext, VerbResult
 
     async def two_steps(ctx: VerbContext, _p: NoParams) -> VerbResult:
         assert ctx.run_verb is not None
@@ -832,16 +832,16 @@ async def test_a_persons_composite_runs_the_calls_it_is_made_of() -> None:
         await executor.run_verb("two_steps", source="agent")
 
 
-def test_only_quackd_drive_says_a_call_is_a_persons() -> None:
+def test_only_roboglot_drive_says_a_call_is_a_persons() -> None:
     """`person` and `cli` clear the verdict gate by themselves (`PERSONS`), so any other caller
     that claimed one would be a pilot, an MCP client or a peer walking past the gate. Every
-    `source=` written as a literal in quackd and its adapters is held to drive's own code."""
+    `source=` written as a literal in Roboglot and its adapters is held to drive's own code."""
     import ast
 
-    from quackd.safety import PERSONS
+    from roboglot.safety import PERSONS
 
-    drive = REPO / "quackd" / "drive"
-    roots = [REPO / "quackd", *sorted((REPO / "adapters").glob("*/src"))]
+    drive = REPO / "roboglot" / "drive"
+    roots = [REPO / "roboglot", *sorted((REPO / "adapters").glob("*/src"))]
     claims: list[str] = []
     for root in roots:
         for path in sorted(root.rglob("*.py")):
@@ -855,4 +855,4 @@ def test_only_quackd_drive_says_a_call_is_a_persons() -> None:
                     and node.value.value in PERSONS
                 ):
                     claims.append(f"{path.relative_to(REPO)}:{node.value.lineno}")
-    assert claims == [], f"only quackd/drive may say a call is a person's: {claims}"
+    assert claims == [], f"only roboglot/drive may say a call is a person's: {claims}"

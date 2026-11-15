@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.prompts import REMEMBER_NAME, build_system_prompt
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.schema import DuckFile
-from quackd.memory import MAX_ENTRIES, RobotMemory, memory_dir, robot_slug
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import default_registry
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.prompts import REMEMBER_NAME, build_system_prompt
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.schema import GlotFile
+from roboglot.memory import MAX_ENTRIES, RobotMemory, memory_dir, robot_slug
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import default_registry
 
 # ── the file ────────────────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ from quackd.verbs.registry import default_registry
 def test_slug_and_dir_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert robot_slug("microduck:sim2d") == "microduck-sim2d"
     assert robot_slug("Open Duck::bridge") == "open-duck-bridge"
-    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(tmp_path / "env"))
+    monkeypatch.setenv("ROBOGLOT_MEMORY_DIR", str(tmp_path / "env"))
     assert memory_dir() == tmp_path / "env"
     assert memory_dir(tmp_path / "explicit") == tmp_path / "explicit"
     mem = RobotMemory("microduck:sim2d", tmp_path)
@@ -75,7 +75,7 @@ def test_cap_drops_old_episodes_before_notes(
     """Every write re-reads and rewrites the whole file, so this is quadratic in the cap.
     At the real 400 it cost 15 s on one machine, on four CI jobs, to prove a property that
     a cap of 12 proves just as well. The real cap is asserted below, once."""
-    monkeypatch.setattr("quackd.memory.MAX_ENTRIES", 12)
+    monkeypatch.setattr("roboglot.memory.MAX_ENTRIES", 12)
     mem = RobotMemory("microduck:sim2d", tmp_path)
     mem.remember("keep me", now=0.0)
     for i in range(17):
@@ -94,10 +94,10 @@ def test_the_cap_is_the_one_the_docs_promise() -> None:
 
 def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
     """docs/guides/memory.md promises a note saved from Claude Desktop is read by the next
-    `quackd run` on the same robot. That is only true while these two expressions agree,
+    `roboglot run` on the same robot. That is only true while these two expressions agree,
     and they are written in two files that know nothing about each other."""
-    from quackd.adapters.base import AdapterError, adapter_name, backend_name
-    from quackd.adapters.factory import (
+    from roboglot.adapters.base import AdapterError, adapter_name, backend_name
+    from roboglot.adapters.factory import (
         BACKENDS,
         RobotSpec,
         make_adapter,
@@ -107,7 +107,7 @@ def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
 
     for adapter, backends in BACKENDS.items():
         for backend in backends:
-            cli_key = resolve_robot(f"{adapter}:{backend}").key  # quackd/cli.py
+            cli_key = resolve_robot(f"{adapter}:{backend}").key  # roboglot/cli.py
             spec = RobotSpec(adapter, backend, "member")
             if refusal(spec) is not None:
                 continue  # refused before it is built (ADR-0076), so nothing ever keys a memory
@@ -119,7 +119,7 @@ def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
                 if "needs --address" not in str(e):
                     raise
                 transport = make_adapter(spec, address="tcp://127.0.0.1:9")
-            # quackd/mcp_server.py, for a fleet member whose name is not the adapter's
+            # roboglot/mcp_server.py, for a fleet member whose name is not the adapter's
             mcp_key = f"{adapter_name(transport) or 'member'}:{backend_name(transport)}"
             assert cli_key == mcp_key, f"{adapter}:{backend} would use two memory files"
 
@@ -170,14 +170,14 @@ def test_a_refreshed_note_becomes_the_newest_note(tmp_path: Path) -> None:
 # ── the prompt ──────────────────────────────────────────────────────────────────────────
 
 
-def test_prompt_mentions_memory_only_when_on(hello_duck: DuckFile) -> None:
+def test_prompt_mentions_memory_only_when_on(hello_glot: GlotFile) -> None:
     reg = default_registry()
-    verbs = [reg.view(n) for n in hello_duck.frontmatter.verbs.allow]
-    off = build_system_prompt(hello_duck, verbs, "mock")
+    verbs = [reg.view(n) for n in hello_glot.frontmatter.verbs.allow]
+    off = build_system_prompt(hello_glot, verbs, "mock")
     assert "remember" not in off.lower()
-    empty = build_system_prompt(hello_duck, verbs, "mock", memory_text="")
+    empty = build_system_prompt(hello_glot, verbs, "mock", memory_text="")
     assert "first run on this robot" in empty and "`remember`" in empty
-    full = build_system_prompt(hello_duck, verbs, "mock", memory_text="- [2026-09-03] ball by sofa")
+    full = build_system_prompt(hello_glot, verbs, "mock", memory_text="- [2026-09-03] ball by sofa")
     assert "ball by sofa" in full and "first run" not in full
 
 
@@ -185,7 +185,7 @@ def test_prompt_mentions_memory_only_when_on(hello_duck: DuckFile) -> None:
 
 
 async def test_remember_tool_saves_a_note_without_spending_a_step(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
     script = [
@@ -193,9 +193,9 @@ async def test_remember_tool_saves_a_note_without_spending_a_step(
         ToolCall(name=REMEMBER_NAME, arguments={"text": "quacking first works", "tags": ["how"]}),
         ToolCall(name="declare_success", arguments={"reason": "quacked"}),
     ]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(script=script),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -220,7 +220,7 @@ async def test_remember_tool_saves_a_note_without_spending_a_step(
     # the LLM heard back about it on the next observation
     obs_after = [e for e in events if e["kind"] == "observation"][-1]
     assert "remembered for future runs: quacking first works" in obs_after["text"]
-    # and the file now has the note plus the episode quackd wrote at the end
+    # and the file now has the note plus the episode Roboglot wrote at the end
     assert [e.text for e in mem.notes()] == ["quacking first works"]
     episodes = mem.episodes()
     assert len(episodes) == 1 and episodes[0].outcome == "success"
@@ -232,12 +232,12 @@ async def test_remember_tool_saves_a_note_without_spending_a_step(
 
 
 async def test_second_run_starts_with_what_the_first_learned(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
-    first = await run_duck(
+    first = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name=REMEMBER_NAME, arguments={"text": "the sofa is on the left"}),
@@ -250,10 +250,10 @@ async def test_second_run_starts_with_what_the_first_learned(
         )
     )
     assert first.outcome == "failure"
-    second = await run_duck(
+    second = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
             memory=mem,
@@ -268,11 +268,11 @@ async def test_second_run_starts_with_what_the_first_learned(
     assert len(mem.episodes()) == 2
 
 
-async def test_memory_off_means_no_tool_no_episode(hello_duck: DuckFile, tmp_path: Path) -> None:
-    result = await run_duck(
+async def test_memory_off_means_no_tool_no_episode(hello_glot: GlotFile, tmp_path: Path) -> None:
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
         )
@@ -282,12 +282,12 @@ async def test_memory_off_means_no_tool_no_episode(hello_duck: DuckFile, tmp_pat
     assert "remember" not in start["system_prompt"].lower()
 
 
-async def test_dry_run_writes_no_episode(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_dry_run_writes_no_episode(hello_glot: GlotFile, tmp_path: Path) -> None:
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
             memory=mem,
@@ -297,14 +297,14 @@ async def test_dry_run_writes_no_episode(hello_duck: DuckFile, tmp_path: Path) -
     assert mem.entries() == []
 
 
-async def test_dry_run_writes_no_note_either(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_dry_run_writes_no_note_either(hello_glot: GlotFile, tmp_path: Path) -> None:
     """`--dry-run` sends nothing and leaves nothing behind. The episode was guarded and the
     `remember` tool was not, so an inert run could write a permanent conclusion drawn from
     verb results it had invented."""
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name=REMEMBER_NAME, arguments={"text": "learned in a dry run"}),

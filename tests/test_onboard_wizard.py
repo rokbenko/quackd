@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from quackd.onboard import config, systemd, wizard
-from quackd.onboard import preflight as preflight_module
-from quackd.onboard.keys import WrongPassphrase
-from quackd.onboard.service import check_own_passport
-from quackd.onboard.store import OnboardDir
-from quackd.passport import document
+from roboglot.onboard import config, systemd, wizard
+from roboglot.onboard import preflight as preflight_module
+from roboglot.onboard.keys import WrongPassphrase
+from roboglot.onboard.service import check_own_passport
+from roboglot.onboard.store import OnboardDir
+from roboglot.passport import document
 
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
 PASSPHRASE = "correct horse battery staple"
@@ -194,13 +194,13 @@ def test_a_clock_behind_the_passport_is_told_to_set_the_time_and_not_to_sign_aga
     signed_at(datetime.now(UTC) - timedelta(days=30), 1)
     row = passport_row()
     assert row.state == "fail" and "expired" in row.detail
-    assert row.hint == "quackd onboard sign"
+    assert row.hint == "roboglot onboard sign"
 
 
 def test_the_service_serves_only_a_passport_that_checks_out_for_its_own_key(
     home: OnboardDir, passphrase_file: Path, tmp_path: Path
 ) -> None:
-    from quackd.onboard.keys import read_robot_key
+    from roboglot.onboard.keys import read_robot_key
 
     assert not check_own_passport(None, "did:key:x").ok
     signed = sign(home, passphrase_file)
@@ -217,16 +217,16 @@ def test_the_service_serves_only_a_passport_that_checks_out_for_its_own_key(
     assert not expired.ok and "expired" in expired.why
 
 
-def test_the_unit_runs_quackd_as_the_robots_user_and_writes_only_its_directory(
+def test_the_unit_runs_roboglot_as_the_robots_user_and_writes_only_its_directory(
     tmp_path: Path,
 ) -> None:
-    quackd = "/home/robot/.local/bin/quackd"
-    text = systemd.unit_text(user="robot", directory=tmp_path, quackd=quackd)
+    roboglot = "/home/robot/.local/bin/roboglot"
+    text = systemd.unit_text(user="robot", directory=tmp_path, roboglot=roboglot)
     assert "User=robot" in text and "SupplementaryGroups=bluetooth" in text
     assert f"ReadWritePaths={tmp_path}" in text and "ProtectSystem=strict" in text
-    assert "ExecStart=/home/robot/.local/bin/quackd onboard serve" in text
+    assert "ExecStart=/home/robot/.local/bin/roboglot onboard serve" in text
     assert f"EnvironmentFile=-{tmp_path}/robot.env" in text
-    bare = systemd.unit_text(user="robot", directory=tmp_path, quackd="q", bluetooth_group=False)
+    bare = systemd.unit_text(user="robot", directory=tmp_path, roboglot="q", bluetooth_group=False)
     assert "SupplementaryGroups" not in bare
     commands = systemd.install_commands(tmp_path / "unit")
     assert all(command[0] == "sudo" for command in commands)

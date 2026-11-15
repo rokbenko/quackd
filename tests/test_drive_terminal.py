@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from quackd.drive.terminal import Asker, drive_from_keyboard, drive_from_pipe
+from roboglot.drive.terminal import Asker, drive_from_keyboard, drive_from_pipe
 from tests.test_drive_session import _drive, _hold, _until
 
 

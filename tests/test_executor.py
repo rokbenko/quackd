@@ -12,12 +12,12 @@ import pytest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
-from quackd.adapters.factory import ADAPTER_NAMES, make_adapter
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import Budgets, DuckFile
-from quackd.log import EventLog
-from quackd.perception.base import Detection
-from quackd.safety import (
+from roboglot.adapters.factory import ADAPTER_NAMES, make_adapter
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.schema import Budgets, GlotFile
+from roboglot.log import EventLog
+from roboglot.perception.base import Detection
+from roboglot.safety import (
     Aborted,
     Budget,
     BudgetExceeded,
@@ -30,15 +30,15 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import (
+from roboglot.transport.base import (
     DEFAULT_CAMERA_NAME,
     CameraFrame,
     DuckState,
     Intent,
     TransportError,
 )
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import (
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
     NoParams,
@@ -50,10 +50,10 @@ from quackd.verbs.registry import (
 )
 
 
-def duck(allow: str, confirm: str = "", abort: str = "") -> DuckFile:
-    return parse_duck_text(
+def duck(allow: str, confirm: str = "", abort: str = "") -> GlotFile:
+    return parse_glot_text(
         f"""---
-duck: 0
+glot: 0
 name: t
 description: d
 verbs:
@@ -774,7 +774,7 @@ def logged(
     **kwargs: str,
 ) -> tuple[Executor, list[Any]]:
     """An executor whose narration is collected, for the tests below."""
-    from quackd.log import EventLog
+    from roboglot.log import EventLog
 
     seen: list[Any] = []
     ex = Executor(
@@ -892,7 +892,7 @@ async def test_a_confirm_a_person_answered_is_written_down_beside_the_gate(
 async def test_a_standing_yes_records_the_gate_and_no_question(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """`--yes` and every flock member answer their own confirm gates with nobody in the room.
+    """`--yes` and every team member answer their own confirm gates with nobody in the room.
     The gate row is still true: the verb was allowed. A prompt row would not be, and a record
     that invents a person who said yes to a kick is worse than one that says nothing."""
     ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
@@ -907,7 +907,7 @@ def _confirm_asker(answer: bool, *, person: bool | None = None) -> Any:
     its own that reach a terminal.
 
     `person` is what that mark says when the question is put: None leaves the asker unmarked,
-    which is `--yes`, a flock's standing answer and the MCP server."""
+    which is `--yes`, a team's standing answer and the MCP server."""
 
     def says(_name: str, _params: dict[str, Any]) -> bool:
         return answer
@@ -927,11 +927,11 @@ def _confirm_gate(seen: list[Any]) -> dict[str, Any]:
 async def test_a_pipe_on_stdin_opens_the_gate_and_is_not_recorded_as_a_person(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """`yes | quackd run` and `quackd run < answers.txt` reach the same callable a person at
+    """`yes | roboglot run` and `roboglot run < answers.txt` reach the same callable a person at
     a keyboard reaches, and `input()` reads a pipe as happily as it reads a person.
 
     The gate still opens on a yes and still closes on a no, because that is what the pipe
-    asked for and what quackd has always done. What is withheld is the testimony: a row here
+    asked for and what Roboglot has always done. What is withheld is the testimony: a row here
     would be the record saying somebody cleared a kick on a robot nobody was standing next
     to."""
     ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
@@ -956,7 +956,7 @@ async def test_the_confirm_gate_names_a_human_only_where_one_was_asked(
     """What the gate DID is not in question: it allowed or denied the same verb, and
     `answer` holds the same yes or no, whoever it came from. Only the witness changes.
 
-    `a human said yes` under `--yes`, under a flock's standing answer or under a pipe is the
+    `a human said yes` under `--yes`, under a team's standing answer or under a pipe is the
     record naming somebody who was never in the room, and a gate row is exactly what gets
     read back when a run has to be accounted for."""
     rows: dict[tuple[bool, bool], dict[str, Any]] = {}
@@ -1122,7 +1122,7 @@ def _counting(asker: Any, calls: list[str]) -> Any:
     "asker",
     [allow_all, deny_all, _confirm_asker(True), _confirm_asker(True, person=False)],
     ids=[
-        "--yes and a flock's standing answer",
+        "--yes and a team's standing answer",
         "the MCP server without --yes",
         "an asker nobody marked",
         "a pipe on stdin",
@@ -1131,7 +1131,7 @@ def _counting(asker: Any, calls: list[str]) -> Any:
 async def test_a_dangerous_verb_is_refused_where_nobody_is_asked(
     registry: VerbRegistry, mock_transport: MockTransport, asker: Any
 ) -> None:
-    """`--yes`, a flock's standing answer, the MCP server and a pipe answer without anybody
+    """`--yes`, a team's standing answer, the MCP server and a pipe answer without anybody
     there, so a dangerous verb is refused before its question is even put, with a gate that
     names the fix, and it never runs."""
     ran = _dangerous(registry)
@@ -1293,7 +1293,7 @@ async def test_a_composite_reports_the_intents_its_nested_verbs_sent(
 
 
 async def test_the_heartbeats_stop_is_logged_too() -> None:
-    from quackd.log import EventLog
+    from roboglot.log import EventLog
 
     seen: list[Any] = []
     transport = MockTransport(fail_heartbeat_after=0)
@@ -1384,7 +1384,7 @@ async def test_a_broken_record_sink_cannot_stop_the_heartbeat_from_aborting() ->
     """The abort is the one thing that must happen when the link dies. A log sink that
     raised inside the failure handler used to kill the heartbeat task with the abort unset,
     and then explode again at the first line of the loop's teardown."""
-    from quackd.log import EventLog
+    from roboglot.log import EventLog
 
     def broken(_event: Any) -> None:
         raise OSError("disk full")
@@ -1477,7 +1477,7 @@ async def test_a_record_sink_that_fails_on_verb_start_still_ends_the_verb(
 ) -> None:
     """The record's failure is the run's, but it must not also leave a verb that started and
     never ended (the tally frame used to leak onto a shared stack too)."""
-    from quackd.log import EventLog
+    from roboglot.log import EventLog
 
     seen: list[Any] = []
 
@@ -1499,7 +1499,7 @@ async def test_a_record_sink_that_fails_on_verb_start_still_ends_the_verb(
 async def test_without_a_event_log_the_executor_is_silent_and_hands_over_the_real_transport(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """The flock and every direct user build an Executor with no event log, and get exactly
+    """The team and every direct user build an Executor with no event log, and get exactly
     what they got before."""
     ex = Executor(registry, mock_transport, contract=duck("quack").frontmatter)
     assert ex.logged_transport() is mock_transport
@@ -1510,7 +1510,7 @@ async def test_without_a_event_log_the_executor_is_silent_and_hands_over_the_rea
 async def test_a_safety_stop_from_another_layer_ends_the_verb_with_its_own_word(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """A flock's role change preempts an in-flight verb by raising a `SafetyStop` subclass.
+    """A team's role change preempts an in-flight verb by raising a `SafetyStop` subclass.
     Before this the log called that `error`, which the docs define as a bug, and every
     handover in a three-robot run printed a red line about nothing being wrong."""
 

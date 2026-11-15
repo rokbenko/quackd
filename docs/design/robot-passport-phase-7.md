@@ -1,14 +1,14 @@
-# Design: Robot Passport, phase 7, reaching robots that do not run quackd
+# Design: Robot Passport, phase 7, reaching robots that do not run Roboglot
 
 **Status:** dropped by ADR-0073 on 2026-10-29, nothing of it built · **Follows:** 0.23.0, which
 shipped phases 1 to 6 · **Written:** 2026-10-22
 
 > **Read on 2026-10-29:** phase 7 is dropped, and none of its six pieces will be built.
 > [ADR-0073](../adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md) moved Robot
-> Passport onto the robot it introduces: `quackd onboard` runs on the robot's own computer, an
+> Passport onto the robot it introduces: `roboglot onboard` runs on the robot's own computer, an
 > NVIDIA Jetson first, the owner signs what the passport says, and robots near each other find
 > one another by Bluetooth LE and talk over the LAN or a Bluetooth link. The pieces below were
-> ways to reach robots that do not run quackd, and the QR stickers, the MQTT binding and the ROS 2
+> ways to reach robots that do not run Roboglot, and the QR stickers, the MQTT binding and the ROS 2
 > binding they built on went in 0.29.0. "First: the run 0.23.0 still owes" and "Also open,
 > outside phase 7" are replaced by PLAN.md's item for Robot Passport on two Jetsons with
 > Bluetooth. The links below into docs/passport/ still land, most of them on a short note that
@@ -32,7 +32,7 @@ broker, on a ROS 2 topic or through a QR sticker. Two robots that have met talk 
 messages (`hello`, `say`, `bye`, `ask`, `answer`, `share`), and a robot met may ask for a courtesy,
 a bounded `pause` or an `identify`, which fixed code decides and never a pilot. The specification is
 draft 0.1, in [docs/passport/](../passport/README.md), with four JSON Schemas and 31 test vectors.
-quackd is its first implementation. The rule underneath: reading needs nothing, asking needs a key.
+Roboglot is its first implementation. The rule underneath: reading needs nothing, asking needs a key.
 
 ## What 0.23.0 shipped, and where it lives
 
@@ -42,13 +42,13 @@ reading, trust, and talk in two steps.
 
 | Path | What it is |
 |---|---|
-| `quackd/passport/` | the protocol, importing nothing else from quackd (`tests/test_passport_isolation.py` holds it to that): `document.py` (reading and writing a passport, the reader's rules in order), `jws.py`, `keys.py` (did:key, short ids), `stamps.py`, `strict.py` (I-JSON parsing that refuses duplicate members), `fetch.py` (the fetch rules), `serve.py` (the HTTP server and the talk inbox), `beacon.py` (DNS-SD TXT), `talk.py` (the envelope, the three-step hello, sessions) |
-| `quackd/adapters/passport.py` | `passport_from_manifest()`, a passport for any robot quackd drives |
-| `quackd/passport_store.py`, `passport_trust.py` | keys under `~/.quackd/keys/`, pins in `~/.quackd/known_robots.json`, and the four tiers: stranger, known, same owner, flock |
-| `quackd/passport_talk.py`, `passport_courtesy.py` | talk for quackd's robots, the Robots nearby lines a pilot sees, and the courtesy handler |
-| `quackd/passport_qr.py`, `quackd/lan/passports.py`, `quackd/lan/passport_mqtt.py` | QR stickers, DNS-SD, MQTT |
-| `quackd/cli.py` | `quackd passport show\|check\|set\|owner\|stamp\|known\|forget\|serve\|qr`, `quackd meet`, passports in `quackd discover`, `run --talk --meet --talk-port` |
-| `quackd/mcp_server.py` | `serve-mcp --talk` and the `robot_nearby` tool |
+| `roboglot/passport/` | the protocol, importing nothing else from Roboglot (`tests/test_passport_isolation.py` holds it to that): `document.py` (reading and writing a passport, the reader's rules in order), `jws.py`, `keys.py` (did:key, short ids), `stamps.py`, `strict.py` (I-JSON parsing that refuses duplicate members), `fetch.py` (the fetch rules), `serve.py` (the HTTP server and the talk inbox), `beacon.py` (DNS-SD TXT), `talk.py` (the envelope, the three-step hello, sessions) |
+| `roboglot/adapters/passport.py` | `passport_from_manifest()`, a passport for any robot Roboglot drives |
+| `roboglot/passport_store.py`, `passport_trust.py` | keys under `~/.roboglot/keys/`, pins in `~/.roboglot/known_robots.json`, and the four tiers: stranger, known, same owner, team |
+| `roboglot/passport_talk.py`, `passport_courtesy.py` | talk for Roboglot's robots, the Robots nearby lines a pilot sees, and the courtesy handler |
+| `roboglot/passport_qr.py`, `roboglot/lan/passports.py`, `roboglot/lan/passport_mqtt.py` | QR stickers, DNS-SD, MQTT |
+| `roboglot/cli.py` | `roboglot passport show\|check\|set\|owner\|stamp\|known\|forget\|serve\|qr`, `roboglot meet`, passports in `roboglot discover`, `run --talk --meet --talk-port` |
+| `roboglot/mcp_server.py` | `serve-mcp --talk` and the `robot_nearby` tool |
 | `scripts/passport_vectors.py` | writes the vectors with `cryptography` directly, a second implementation of the rules |
 | `scripts/passport_readme_ratio.py` | measures the README's Robot Passport section against `docs/passport/` |
 | `tests/test_passport_*.py` | bindings, cli, courtesy, document, from_manifest, isolation, mcp, meet, mqtt_talk, nearby, run, schema, store, talk, trust, vectors, wire |
@@ -66,9 +66,9 @@ somebody did and wrote down, never a fake.
 
 Before any new piece, the two-machine run in PLAN.md ("Robot Passport across two machines, and then
 on a robot"). It needs two laptops on one network and nothing else, and each part it proves flips a
-row of the roadmap's status table. Write down what ran in `docs/passport/quackd.md`'s "What has run"
+row of the roadmap's status table. Write down what ran in `docs/passport/roboglot.md`'s "What has run"
 with the output it printed, the way the one-machine runs are written. The courtesy test goes to a
-running `quackd run nearby-hello --talk`, because `quackd passport serve --talk` drives no robot and
+running `roboglot run nearby-hello --talk`, because `roboglot passport serve --talk` drives no robot and
 answers every `ask` no. The pause on a robot that is really walking comes after, on whatever body is
 in reach first.
 
@@ -79,8 +79,8 @@ decided already, what is left to decide, where its code goes, what done means an
 
 ### 1. The translators
 
-A reader builds a passport for a robot that publishes something else, the way quackd's adapters let
-quackd drive robots that never heard of it. Four sources, each with its field table already written
+A reader builds a passport for a robot that publishes something else, the way Roboglot's adapters let
+roboglot drive robots that never heard of it. Four sources, each with its field table already written
 in [compatibility.md](../passport/compatibility.md#translators-reading-robots-that-never-heard-of-it):
 a URDF read through rosbridge, a VDA 5050 factsheet (version 3.0's names), a MassRobotics identity
 report (version 1.0), and an A2A Agent Card.
@@ -93,14 +93,14 @@ report (version 1.0), and an A2A Agent Card.
   defines no member for it. Either an extension (`ext`, keyed by reverse DNS) or an optional member,
   which is a spec minor, 0.2, with its schema and vectors. Also what `id` a translated passport has,
   since it holds no key: a `urn:uuid` made from the source's serial, or one made fresh.
-- **Code:** the three that read a document need nothing else, so they go in `quackd/passport/` as
+- **Code:** the three that read a document need nothing else, so they go in `roboglot/passport/` as
   pure functions from a parsed document to a passport, beside the isolation test. The URDF one needs
-  quackd's rosbridge adapter (its `introspect`), so it lives outside, in the adapter or a glue module
-  like `quackd/adapters/passport.py`. The CLI is likely
-  `quackd passport translate FILE --from vda5050|massrobotics|a2a`, and `quackd meet ros://` falling
+  Roboglot's rosbridge adapter (its `introspect`), so it lives outside, in the adapter or a glue module
+  like `roboglot/adapters/passport.py`. The CLI is likely
+  `roboglot passport translate FILE --from vda5050|massrobotics|a2a`, and `roboglot meet ros://` falling
   back to the URDF when a robot publishes no passport topic, labelled translated either way.
 - **Done means:** each translator reads a real published example of its source (the standards'
-  own example files, cited with the date they were read), `quackd passport check` accepts what it
+  own example files, cited with the date they were read), `roboglot passport check` accepts what it
   writes and labels it translated, and compatibility.md loses "planned" with the real output quoted.
 - **Needs:** no hardware. The URDF one needs a ROS robot on rosbridge to claim a run, and a fake to
   test.
@@ -115,9 +115,9 @@ an entry in `capabilities.extensions[]` with `uri`, `description`, `required: fa
 document.
 
 - **To decide:** the extension's `uri`. The page uses the spec's URL on GitHub today, and that URL
-  moves when the spec gets its own repository, so pick the lasting one before quackd writes any.
-- **Code:** writing, `quackd passport show --robot NAME --a2a`, which prints the extension entry.
-  Reading, `quackd meet` given an Agent Card (`/.well-known/agent-card.json`) finds the extension,
+  moves when the spec gets its own repository, so pick the lasting one before Roboglot writes any.
+- **Code:** writing, `roboglot passport show --robot NAME --a2a`, which prints the extension entry.
+  Reading, `roboglot meet` given an Agent Card (`/.well-known/agent-card.json`) finds the extension,
   verifies the JWS and reads the passport like any other, under the same fetch rules.
 - **Done means:** a round trip, and an A2A SDK's own Agent Card model parsing a card that carries
   the extension without complaint.
@@ -125,42 +125,42 @@ document.
 
 ### 3. A single-file server for any Linux robot
 
-A robot that does not run quackd serves its own passport: level 1 of the ladder
+A robot that does not run Roboglot serves its own passport: level 1 of the ladder
 ([compatibility.md](../passport/compatibility.md#a-raspberry-pi-or-any-linux-robot-planned)). One
-file using only Python's standard library, in the spirit of the daemons quackd already puts on
+file using only Python's standard library, in the spirit of the daemons Roboglot already puts on
 robots under `bridge/`, serving the well-known URL and registering `_robot-passport._tcp` with the
 Avahi daemon Raspberry Pi OS already runs.
 
 - **Decided:** the standard library only, so it runs on any Python a robot already has. It reads
   the passport files it is given, `robot-passport.json` and `robot-passport.jws`, written on the
-  owner's laptop with `quackd passport show --out`, or by hand for an unsigned one.
+  owner's laptop with `roboglot passport show --out`, or by hand for an unsigned one.
 - **To decide:** the standard library has no Ed25519, so the server can serve a passport signed
   elsewhere but cannot sign, or answer a `hello`, on its own. Level 2 on the robot means an optional
   import of `cryptography` when it is there. And how it registers with Avahi: a static service file
   under `/etc/avahi/services/`, which needs root once and no Python at all, or `avahi-publish`. A
   systemd unit beside it, as `bridge/moss/` has.
 - **Code:** `bridge/passport/robot_passport_server.py` and a README beside it, with the same
-  bounds as `quackd/passport/serve.py`: a deadline a read, a cap on connections, and a refusal of a
+  bounds as `roboglot/passport/serve.py`: a deadline a read, a cap on connections, and a refusal of a
   body over the limit.
-- **Done means:** it runs on a real Pi or any Linux machine, and `quackd discover` on another
-  machine lists it and `quackd meet` reads and verifies what it serves, with that output quoted in
+- **Done means:** it runs on a real Pi or any Linux machine, and `roboglot discover` on another
+  machine lists it and `roboglot meet` reads and verifies what it serves, with that output quoted in
   compatibility.md.
-- **Needs:** a Linux machine on the same network as a quackd laptop.
+- **Needs:** a Linux machine on the same network as a Roboglot laptop.
 
 ### 4. A page that shows a scanned passport to a person
 
 A person points a phone at a robot's sticker and sees whose robot it is and how to stop it, in
-words, with what is proven kept apart from what is only claimed, as `quackd passport check` shows it
+words, with what is proven kept apart from what is only claimed, as `roboglot passport check` shows it
 in a terminal.
 
 - **Decided:** a sticker holds the passport's URL with `#rp=` and the robot's short id
-  (`quackd passport qr`), and a reader warns when the passport's key does not match it.
+  (`roboglot passport qr`), and a reader warns when the passport's key does not match it.
 - **To decide, and the hard part:** a page served over HTTPS cannot fetch a passport served over
   plain HTTP on a local network, because the browser blocks mixed content, and that is where most
   robots serve theirs. So either the robot's own host serves a page for people beside its passport
-  (`quackd passport serve` and the single-file server answering `text/html` at the well-known URL,
+  (`roboglot passport serve` and the single-file server answering `text/html` at the well-known URL,
   or a page at `/`), or the page lives on a public site, such as the one the browser demo is served
-  from (https://www.quackd.org/simulator), and reads only passports served over HTTPS, which is what
+  from (https://www.roboglot.org/simulator), and reads only passports served over HTTPS, which is what
   a level 0 sticker pointing at a static host has. Likely both.
 - **Code:** a page under `web/` beside the browser demo, verifying the signature in the browser
   with WebCrypto's Ed25519 where it has it, and plain HTML from the robot's host for the local case.
@@ -173,15 +173,15 @@ in a terminal.
 A small node that publishes a robot's passport, as the spec binds it
 ([discovery.md](../passport/discovery.md#ros-2)): the JWS on `robot_passport`,
 `std_msgs/msg/String`, reliability `RELIABLE`, durability `TRANSIENT_LOCAL`. No new message type and
-no new dependency. quackd already reads that topic through rosbridge with
-`quackd meet ros://HOST[:PORT][/NAMESPACE]`, so this node is also what gives that path its first run
+no new dependency. Roboglot already reads that topic through rosbridge with
+`roboglot meet ros://HOST[:PORT][/NAMESPACE]`, so this node is also what gives that path its first run
 outside the fakes.
 
 - **To decide:** Python (`rclpy`) for the first, since it is one file. Where it reads the passport
   from: a file path parameter. A launch file beside it.
 - **Code:** `bridge/ros2/robot_passport_node.py` and a README. Talk over a ROS topic stays reserved
   in the spec and is not part of this.
-- **Done means:** on a ROS 2 machine with `rosbridge_server`, `quackd meet ros://` reads what the
+- **Done means:** on a ROS 2 machine with `rosbridge_server`, `roboglot meet ros://` reads what the
   node publishes and verifies it. A container on the same machine counts as between processes, not
   between machines, and the roadmap keeps the difference.
 - **Needs:** a ROS 2 install (Humble or Jazzy), or a `ros:jazzy` container for development.
@@ -202,41 +202,41 @@ fits its memory for level 2
   has no dependencies). Where the key lives on the board (NVS).
 - **Code:** a C library in the repository until the spec gets its own (below), in a top-level
   folder of its own, since the workspace's members are Python packages under `adapters/`.
-- **Done means:** `quackd meet` reads a real board's passport and verifies its signature, and a
-  `hello` from quackd is answered, with the output quoted.
+- **Done means:** `roboglot meet` reads a real board's passport and verifies its signature, and a
+  `hello` from Roboglot is answered, with the output quoted.
 - **Needs:** an ESP32 board on the network. It is the second implementation that triggers the split.
 
 ## After a second implementation: the spec gets its own repository
 
 When a second implementation exists (the ESP32 library or the ROS 2 node, in a language other than
-quackd's own) or a maker outside quackd wants to adopt the protocol, whichever comes first:
+Roboglot's own) or a maker outside Roboglot wants to adopt the protocol, whichever comes first:
 
-- Move the spec, the schemas, the vectors and `quackd/passport/` to their own repository with
+- Move the spec, the schemas, the vectors and `roboglot/passport/` to their own repository with
   `git subtree split`, keeping their history. `tests/test_passport_isolation.py` exists so that this
   is mechanical.
-- Publish `robot-passport` on PyPI on the spec's own version line, never quackd's shared one
-  ([ADR-0049](../adr/0049-a-version-says-what-changed.md)), which would bump it on every quackd
-  minor and break other people's pins. Upload it before the quackd release that depends on it. The
+- Publish `robot-passport` on PyPI on the spec's own version line, never Roboglot's shared one
+  ([ADR-0049](../adr/0049-a-version-says-what-changed.md)), which would bump it on every Roboglot
+  minor and break other people's pins. Upload it before the Roboglot release that depends on it. The
   name was free on 2026-10-20: check it again first.
-- quackd then depends on it like any third-party package.
+- Roboglot then depends on it like any third-party package.
 - Leave a pointer page at every `docs/passport/` path. A PyPI release's README links never change
   once it is published, so those paths have to keep answering.
 
 ## Also open, outside phase 7
 
-Each of these is written in the pages as planned or not built, and each needs only quackd:
+Each of these is written in the pages as planned or not built, and each needs only Roboglot:
 
 - **Talk over a broker in a run and in `serve-mcp`.** Both talk over HTTP only (`_talk_for_run` in
-  `quackd/cli.py`, the talk server in `quackd/mcp_server.py`), while `passport serve --mqtt --talk`
+  `roboglot/cli.py`, the talk server in `roboglot/mcp_server.py`), while `passport serve --mqtt --talk`
   and `meet mqtt://` already talk over a broker.
-- **`--talk` in a flock run,** which is refused today: each member needs its own talker and inbox.
+- **`--talk` in a team run,** which is refused today: each member needs its own talker and inbox.
 - **A pilot that asks for a courtesy or shares what it saw.** A pilot has `tell` alone. New tools
   would follow the stranger rules `tell` follows: no stranger's words reach a pilot, and what went
   wrong reaches the person and not the pilot.
 - **Maker stamps** (`rel: maker`), once makers hold keys and publish them. Until then a passport's
   maker and model are its own claim, and a reader says so.
 - **A list of revoked keys** at an owner's contact URL.
-- **Guests:** a robot from outside a flock joining it as a peer quackd talks to but does not pilot.
+- **Guests:** a robot from outside a team joining it as a peer Roboglot talks to but does not pilot.
   It needs a decision record of its own before any code.
 
 ## Rules that hold for all of it
@@ -256,7 +256,7 @@ The project's rules are in CONTRIBUTING.md and RELEASING.md. These are the ones 
 - **Gates for each commit:** ruff, its formatter, mypy under Python 3.11 and 3.12, the tests the
   change touches, and always the repo-wide guards (`tests/test_docs.py`, `test_pypi_readme.py`,
   `test_openai_headers.py`, `test_workspace.py` and `test_command.py`, which wants every flag
-  shaped like a URL or a credential in `quackd/command.py`'s lists). The whole suite once before a
+  shaped like a URL or a credential in `roboglot/command.py`'s lists). The whole suite once before a
   branch is called done, and a watchdog on any long run left in the background: the 0.23.0 release
   gate hung overnight in a test that passes alone.
 - **One review agent for code that handles keys, the wire, or a body that moves,** and its
@@ -266,7 +266,7 @@ The project's rules are in CONTRIBUTING.md and RELEASING.md. These are the ones 
 ## Order, and why
 
 0. The two-machine run, since every "no" in the roadmap waits on it.
-1. The translators and the A2A embedding, which need no hardware and widen who quackd can read at
+1. The translators and the A2A embedding, which need no hardware and widen who Roboglot can read at
    once.
 2. The single-file server, and the page for people beside it, on the first Linux box in reach.
 3. The ROS 2 node, developed in a container and claimed on a real ROS machine.

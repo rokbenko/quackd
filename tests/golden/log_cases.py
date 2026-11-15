@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from quackd.log import LogEvent, call_lines, intent_line, render_lines
+from roboglot.log import LogEvent, call_lines, intent_line, render_lines
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -34,7 +34,7 @@ def events() -> list[tuple[str, LogEvent]]:
             _e(
                 "run_start",
                 0.0,
-                duck="find-and-kick",
+                glot="find-and-kick",
                 provider="anthropic",
                 llm_id="claude-opus-5",
                 transport="sim2d",
@@ -49,7 +49,7 @@ def events() -> list[tuple[str, LogEvent]]:
         (
             "run_start_bare",
             _e(
-                "run_start", 0.0, duck="hello-world", provider="fake", llm_id=None, transport="mock"
+                "run_start", 0.0, glot="hello-world", provider="fake", llm_id=None, transport="mock"
             ),
         ),
         # ── observation ──
@@ -133,7 +133,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 tool_calls=[{"name": "kick", "arguments": {"leg": "right"}}],
                 # `in=` is the WHOLE prompt and `cached=`/`cache_write=` are slices of it, so
                 # these three do not add up and are not meant to. A reader who sums them is
-                # reading Anthropic's disjoint buckets into the one convention quackd stores.
+                # reading Anthropic's disjoint buckets into the one convention Roboglot stores.
                 usage={
                     "input_tokens": 1631,
                     "output_tokens": 16,
@@ -616,7 +616,7 @@ def events() -> list[tuple[str, LogEvent]]:
             for label, who in (
                 ("a_person", "a person"),
                 ("yes", "--yes"),
-                ("flock", "a flock's standing answer"),
+                ("team", "a team's standing answer"),
                 ("pipe", "a pipe"),
             )
         ),
@@ -627,34 +627,34 @@ def events() -> list[tuple[str, LogEvent]]:
         ("memory", _e("memory", 0.9, summary="remembered: the ball lives by the sofa")),
         ("note", _e("note", 0.9, text=MULTILINE)),
         # ── the coordinator's vocabulary, which the GIF caption shares ──
-        ("flock_auction", _e("auction", 1.0, first_bid="duck-1", dist=0.42)),
-        ("flock_claim", _e("claim", 1.0, kicker="duck-1", dist=0.62, spotter="duck-2")),
-        ("flock_claim_no_spotter", _e("claim", 1.0, kicker="duck-1", dist=0.62)),
-        ("flock_miss", _e("miss", 1.0, duck="duck-0", detail="the ball rolled away")),
-        ("flock_miss_bare", _e("miss", 1.0, duck="duck-0")),
-        ("flock_kick_done", _e("kick_done", 1.0, kicker="duck-2")),
-        ("flock_verdict", _e("verdict", 1.0, verdict="moved", moved_m=0.51, spotter="duck-1")),
-        ("flock_verdict_no_distance", _e("verdict", 1.0, verdict="unchanged", spotter="duck-1")),
-        ("flock_separation", _e("separation", 1.0, duck="duck-0", dist=0.3)),
-        ("flock_auction_void", _e("auction_void", 1.0, auctions=2)),
-        ("flock_auction_waiting", _e("auction_waiting", 1.0, missing_roles=["spotter", "kicker"])),
-        ("flock_member_dead", _e("member_dead", 1.0, duck="duck-2", last_hb=3.0)),
-        ("flock_member_excluded", _e("member_excluded", 1.0, duck="duck-1", why="no kick verb")),
-        ("flock_wedges_rotated", _e("wedges_rotated", 1.0, round=2, by_deg=45)),
+        ("team_auction", _e("auction", 1.0, first_bid="duck-1", dist=0.42)),
+        ("team_claim", _e("claim", 1.0, kicker="duck-1", dist=0.62, spotter="duck-2")),
+        ("team_claim_no_spotter", _e("claim", 1.0, kicker="duck-1", dist=0.62)),
+        ("team_miss", _e("miss", 1.0, duck="duck-0", detail="the ball rolled away")),
+        ("team_miss_bare", _e("miss", 1.0, duck="duck-0")),
+        ("team_kick_done", _e("kick_done", 1.0, kicker="duck-2")),
+        ("team_verdict", _e("verdict", 1.0, verdict="moved", moved_m=0.51, spotter="duck-1")),
+        ("team_verdict_no_distance", _e("verdict", 1.0, verdict="unchanged", spotter="duck-1")),
+        ("team_separation", _e("separation", 1.0, duck="duck-0", dist=0.3)),
+        ("team_auction_void", _e("auction_void", 1.0, auctions=2)),
+        ("team_auction_waiting", _e("auction_waiting", 1.0, missing_roles=["spotter", "kicker"])),
+        ("team_member_dead", _e("member_dead", 1.0, duck="duck-2", last_hb=3.0)),
+        ("team_member_excluded", _e("member_excluded", 1.0, duck="duck-1", why="no kick verb")),
+        ("team_wedges_rotated", _e("wedges_rotated", 1.0, round=2, by_deg=45)),
         (
-            "flock_bid_rejected_why",
+            "team_bid_rejected_why",
             _e("bid_rejected", 1.0, src="duck-0", role="kicker", why="too far"),
         ),
         (
-            "flock_bid_rejected_missing",
+            "team_bid_rejected_missing",
             _e("bid_rejected", 1.0, src="duck-0", role="kicker", missing=["kick", "walk_to"]),
         ),
         (
-            "flock_talk",
+            "team_talk",
             _e("talk", 1.0, src="duck-a", to="arm", text="I have the ball, you spot", ok=True),
         ),
         (
-            "flock_talk_refused",
+            "team_talk_refused",
             _e(
                 "talk",
                 1.0,
@@ -662,7 +662,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 to="ghost",
                 text="hello",
                 ok=False,
-                summary="no member called 'ghost'; this flock is arm",
+                summary="no member called 'ghost'; this team is arm",
             ),
         ),
         ("member_end", _e("member_end", 1.1, status="stopped", steps=7)),
@@ -745,7 +745,7 @@ def host_detector_start() -> LogEvent:
     return _e(
         "run_start",
         0.0,
-        duck="find-and-kick",
+        glot="find-and-kick",
         provider="ollama",
         llm_id="qwen3:8b",
         transport="bridge",
@@ -772,7 +772,7 @@ def played_start() -> LogEvent:
     return _e(
         "run_start",
         0.0,
-        duck="e049-t-rex",
+        glot="e049-t-rex",
         provider="openai",
         llm_id="gpt-6-astra",
         transport="real",

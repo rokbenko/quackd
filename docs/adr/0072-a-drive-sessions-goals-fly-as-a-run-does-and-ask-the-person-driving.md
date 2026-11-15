@@ -1,15 +1,15 @@
 # ADR-0072: A drive session's goals fly as a run does, and ask the person driving
 
-**Status:** accepted · **Date:** 2026-10-27 · Amends [ADR-0065](0065-a-person-drives-one-robot-a-command-at-a-time.md) (a goal's questions reach the person driving, and drive takes run's flags for its goals) and [ADR-0069](0069-a-page-drives-quackds-own-commands-over-json-lines.md) (a chat in the page takes a VLA pilot) · Implemented in `quackd/answers.py`, `quackd/safety.py` (`ConfirmFn`), `quackd/agent/loop.py` (`RunConfig.places`), `quackd/drive/session.py` (`GoalSettings`, `GoalAsker`, `_goal_answerers`, `_vla_refusal`, `_charge`), `quackd/drive/run.py` (`DriveArgs`, `SESSION_POLICY_S`, `_given_lens`), `quackd/drive/terminal.py` (`Asker`, `PageAsker`), `quackd/drive/attached.py` (`lens_given`), `quackd/cli.py` (`_drive_refusal`, `_vla_refusal`), `quackd/mcp_server.py` (`fleet_from_flags`) and `quackd/agent/decision/laya.py` (`_predict`) · Documented in [docs/guides/drive.md](../guides/drive.md)
+**Status:** accepted · **Date:** 2026-10-27 · Amends [ADR-0065](0065-a-person-drives-one-robot-a-command-at-a-time.md) (a goal's questions reach the person driving, and drive takes run's flags for its goals) and [ADR-0069](0069-a-page-drives-roboglots-own-commands-over-json-lines.md) (a chat in the page takes a VLA pilot) · Implemented in `roboglot/answers.py`, `roboglot/safety.py` (`ConfirmFn`), `roboglot/agent/loop.py` (`RunConfig.places`), `roboglot/drive/session.py` (`GoalSettings`, `GoalAsker`, `_goal_answerers`, `_vla_refusal`, `_charge`), `roboglot/drive/run.py` (`DriveArgs`, `SESSION_POLICY_S`, `_given_lens`), `roboglot/drive/terminal.py` (`Asker`, `PageAsker`), `roboglot/drive/attached.py` (`lens_given`), `roboglot/cli.py` (`_drive_refusal`, `_vla_refusal`), `roboglot/mcp_server.py` (`fleet_from_flags`) and `roboglot/agent/decision/laya.py` (`_predict`) · Documented in [docs/guides/drive.md](../guides/drive.md)
 
 ## Context
 
-`quackd drive` flies a goal as a whole run of its own on the body the session holds (ADR-0065),
-with less than `quackd run` gives one. Its pilot took `--llm` alone: no address for a local
+`roboglot drive` flies a goal as a whole run of its own on the body the session holds (ADR-0065),
+with less than `roboglot run` gives one. Its pilot took `--llm` alone: no address for a local
 server, no key, no vision switch, no extra body, no effort and no price. A goal kept no memory,
 could not be given a part to play, and took the task default of steps with no way to change it. A
 policy server could not be named, so a session's arm had no policy to hand `manipulate` to, and
-there was no `--controller vla`. The page's chat is `quackd drive`, and inherited every gap, and a
+there was no `--controller vla`. The page's chat is `roboglot drive`, and inherited every gap, and a
 chat was to get everything a goal gets.
 
 And a goal asked nobody anything. A run puts four questions: the confirm gate's before a gated
@@ -21,7 +21,7 @@ with the person who typed the goal at the keyboard, and the pilot's doubt was le
 
 ## Decision
 
-**One way to wait for an answer.** `quackd.answers.answered` takes an answerer that replies at
+**One way to wait for an answer.** `roboglot.answers.answered` takes an answerer that replies at
 once, as a terminal's prompt and every standing answer do, or later, from a coroutine, and races a
 later one against the run's abort. A stop takes the question back, which raises
 `QuestionWithdrawn`, recorded as a question nobody answered and never as a no, and a question put
@@ -52,15 +52,15 @@ the body.
 `--decision-frames` say who flies a goal and what a goal's stepper may do. Each is refused in
 run's words where run refuses it, before the robot connects.
 
-**Memory stays off in drive.** `quackd run` keeps it on, and a session was never handed one, so a
+**Memory stays off in drive.** `roboglot run` keeps it on, and a session was never handed one, so a
 session started as before keeps none, and a goal recalls the robot's memory and adds to it only
 under `--memory`. The places a person marks were kept already, and each goal now reads them, so a
 place marked between two goals is there for the second. What a goal marks or forgets is kept only
 under `--memory`, as a run without a memory keeps its own places as long as it lasts.
 
 **`--decision-llm` stays the fast lane.** A goal gets a stepper only with `--decision-mode` on
-the command line, and is shown the camera only with `--decision-frames`. `QUACKD_DECISION_MODE`
-and `QUACKD_DECISION_FRAMES` are not read, so a `.env` written for `quackd run` changes no
+the command line, and is shown the camera only with `--decision-frames`. `ROBOGLOT_DECISION_MODE`
+and `ROBOGLOT_DECISION_FRAMES` are not read, so a `.env` written for `roboglot run` changes no
 session. A goal's stepper asks the fast lane's own client. The one that runs in this process,
 laya, runs one forward pass at a time, since the fast lane and a goal's stepper may ask it from
 two threads at once.
@@ -69,22 +69,22 @@ two threads at once.
 goal measures through the same lens without telling the body again: a goal's `lens_given` would
 reach the body every goal shares.
 
-**A goal holds `manipulate` to the session's own `.duck`.** Its policy section is the goal's,
+**A goal holds `manipulate` to the session's own `.glot`.** Its policy section is the goal's,
 listed instructions and all, cut to the policy seconds the session has left, so a goal's pilot
-tells the arm's policy nothing the `.duck` does not list, as `quackd run` holds a task to it. A
+tells the arm's policy nothing the `.glot` does not list, as `roboglot run` holds a task to it. A
 goal is built once whatever it takes over has ended and been charged, so what it may spend is
 what is really left.
 
 **A VLA pilot flies a goal a line at a time.** Each line that reaches the pilot is one instruction
-to the arm's learned policy, held to the rule for one as it gets there, and to the `.duck`'s list
-where it has one. A `.duck` that does not allow `manipulate` is refused before the session
+to the arm's learned policy, held to the rule for one as it gets there, and to the `.glot`'s list
+where it has one. A `.glot` that does not allow `manipulate` is refused before the session
 starts. The person driving is asked before the segment whether the body should try, about the
-segment itself, which a goal allows behind the confirm gate as `quackd run --goal` does, and after
+segment itself, which a goal allows behind the confirm gate as `roboglot run --goal` does, and after
 it whether the arm did it. Only their yes makes the goal a success. A VLA pilot is refused with
 `--yes`, `--dry-run`, a pipe, a pilot LLM's flag, `--play`, `--effort` and a goal's stepper, as a run
 refuses it, and `--decision-llm` alone is let through as the fast lane. The seconds a policy
 drives the body are the session's: each goal's are charged to it, and each goal is held to what is
-left. A session without a `.duck` has the schema's ceiling of them, an hour, where a task's
+left. A session without a `.glot` has the schema's ceiling of them, an hour, where a task's
 default is two minutes, for the reason it has a task's highest budgets.
 
 ## Why not
@@ -114,4 +114,4 @@ default is two minutes, for the reason it has a task's highest budgets.
   inside the composite's own time and is taken back when that runs out, recorded as unanswered.
 - A local pilot in a session with `--host` asks the board's LLM server, as a run's does, where
   it asked this computer's.
-- `quackd log` replays the verbs and does not yet draw drive's own lines.
+- `roboglot log` replays the verbs and does not yet draw drive's own lines.

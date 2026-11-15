@@ -1,7 +1,7 @@
 # Why Robot Passport exists
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
+> Spec 1.0. Roboglot 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
 > is built and what has run.
 
 ## The problem
@@ -11,8 +11,8 @@ in the same aisle, a courier's robot at a front door and the robot that lives th
 maker's protocol to its maker's software, and neither has any way to say who it is, who it belongs
 to, what it can do, what it cannot, or how a person stops it.
 
-quackd lets robots from different makers work together as a flock, but a flock is a list a person
-wrote ([guides/flock.md](../guides/flock.md)), and a robot nobody put on the list is invisible. What
+Roboglot lets robots from different makers work together as a team, but a team is a list a person
+wrote ([guides/team.md](../guides/team.md)), and a robot nobody put on the list is invisible. What
 two strangers lack is the smallest thing: a way to introduce themselves, and to know whether to
 believe the introduction. Robot Passport is that, and nothing more.
 
@@ -39,8 +39,8 @@ leaves that laptop behind.
 
 So the passport moved onto the robot: its key on its own computer, its owner's signature on what it
 says, and an introduction wherever it goes. Many humanoids and quadrupeds have an NVIDIA Jetson on
-board that runs quackd, and others another Linux computer. An arm is fixed in place and will rarely meet another robot, and a
-toy-sized robot has no computer on board that can run quackd, so neither carries one
+board that runs Roboglot, and others another Linux computer. An arm is fixed in place and will rarely meet another robot, and a
+toy-sized robot has no computer on board that can run Roboglot, so neither carries one
 ([compatibility.md](compatibility.md)).
 
 ## Principles
@@ -54,7 +54,7 @@ toy-sized robot has no computer on board that can run quackd, so neither carries
 - **A stranger's words never reach an LLM.** A brain hears a robot nobody pinned as the closed
   facts of its passport, and free talk needs a person's pin.
 - **A passport is a claim.** A signature proves who made it, never that it is true, and every
-  figure carries its source: quackd's datasheet rule, carried to strangers.
+  figure carries its source: Roboglot's datasheet rule, carried to strangers.
 - **Never grant authority.** Nothing in a passport, and nothing a peer says, moves a robot except
   through a short, bounded rule its owner chose. A peer can ask; only the owner's policy decides.
 - **Borrow, do not invent.** Every mechanism here already works somewhere else, and
@@ -67,7 +67,7 @@ toy-sized robot has no computer on board that can run quackd, so neither carries
 
 - **Not remote control.** A peer can ask for a pause or for a robot to identify itself, and nothing
   else reaches its body.
-- **Not a coordinator.** A quackd flock divides work among robots a person put in it; a passport
+- **Not a coordinator.** A roboglot team divides work among robots a person put in it; a passport
   only lets robots outside it be known.
 - **Not a benchmark,** a replacement for ROS 2, A2A, VDA 5050 or Matter, navigation, or encryption.
 
@@ -97,10 +97,10 @@ The strongest case against a new format is a fair one, and it deserves an answer
 So the passport stays small and new, and borrows from each ([prior-art.md](prior-art.md)). A new
 format is a real cost, paid once, by a format small enough to fit in a `hello`.
 
-## Why it lives in quackd for now
+## Why it lives in Roboglot for now
 
-It starts inside quackd because quackd is its first implementation, its maintainer is one person,
-and quackd ships no claim it has not run, so the code that proves the spec lives beside it. It is
-written to leave: its module imports nothing else from quackd, and its spec uses none of quackd's
+It starts inside Roboglot because Roboglot is its first implementation, its maintainer is one person,
+and Roboglot ships no claim it has not run, so the code that proves the spec lives beside it. It is
+written to leave: its module imports nothing else from Roboglot, and its spec uses none of Roboglot's
 words. When a second implementation exists or another maker wants to adopt it, the spec, the
-schemas and the vectors move to a repository of their own ([roadmap.md](roadmap.md#leaving-quackd)).
+schemas and the vectors move to a repository of their own ([roadmap.md](roadmap.md#leaving-roboglot)).

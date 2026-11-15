@@ -5,9 +5,9 @@ Implemented in 0.8 (`--robot microduck:mujoco`, and `web/` in a browser)
 
 **Amended 2026-09-27 by [ADR-0047](0047-the-arms-simulator-runs-the-real-backend.md):** this is
 no longer the only MuJoCo backend. `lerobot:mujoco` is the SO-101 arm's simulator, in the arm's
-own package and behind its own extra, `quackd[lerobot-sim]`: the arm's real backend over a
+own package and behind its own extra, `roboglot[lerobot-sim]`: the arm's real backend over a
 physics model of the arm, fetched at a pinned commit and hash checked the way the duck's is. It
-shares nothing of `sim3d/` and steps its world on the `FlockClock` this ADR generalised, with a
+shares nothing of `sim3d/` and steps its world on the `TeamClock` this ADR generalised, with a
 participant per sleep. So `mujoco` is a backend of two bodies now. The prompt's arena note is
 keyed on the adapter as well as the backend, and a run records a GIF only of a body with a world
 to draw, which the arm's simulator does not offer. Everything below is still the duck's.
@@ -20,7 +20,7 @@ agent loop rather than contact dynamics, and upstream's simulator "needs a GPU a
 BY-NC-SA meshes we will not vendor". The cartoon has carried eight adapters since.
 
 It also has a ceiling that the docs have always been honest about: *it will not tell you
-whether a gait works*. Every quackd demo so far shows a sprite sliding at exactly the speed
+whether a gait works*. Every Roboglot demo so far shows a sprite sliding at exactly the speed
 it was asked for. A pilot that has only ever driven that has never met the thing that makes
 a real robot hard, which is that it does not do what you asked.
 
@@ -36,7 +36,7 @@ than it read.
   are on the Hugging Face Hub as `pollen-robotics/microduck-policies` under Apache-2.0. Only
   the 3D model files are CC BY-NC-SA. *Amended 2026-10-09 (0.18):* ten since upstream's set
   `v5` added `velstand.onnx`, the walk every robotd from daemon-v0.13.0 loads, and all ten are
-  Apache-2.0. quackd pins `v7`, the set daemon-v0.16.1 seeds a robot with.
+  Apache-2.0. Roboglot pins `v7`, the set daemon-v0.16.1 seeds a robot with.
 - **"We will not vendor" is not "we cannot use".** `docs/licenses.md` has said since 0.1
   that a future MuJoCo backend "fetches them from upstream at runtime into a user cache,
   prints the license, and stays optional". That is a design, and it works.
@@ -54,9 +54,9 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
 ## Decision
 
 - **A fifth Microduck backend, `microduck:mujoco`**, behind the same `DuckTransport`
-  protocol as the other four. `quackd/sim3d/` is to `quackd/sim2d/` what physics is to a
+  protocol as the other four. `roboglot/sim3d/` is to `roboglot/sim2d/` what physics is to a
   drawing: same arena, same seeded spawn order, same 0.3 s deadman, same kick cone, same
-  unreliable scoop, and the same `extras` keys, so a `.duck` written for one runs on the
+  unreliable scoop, and the same `extras` keys, so a `.glot` written for one runs on the
   other unchanged.
 
   *Since 0.8:* the arenas are no longer the same in one respect. The cartoon's person marker
@@ -69,11 +69,11 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
 - **The robot is upstream's, all the way down.** `robot_walk.xml` and its 38 meshes come
   from `microduck_rl` at a pinned commit; `alpha_walking.onnx` and `alpha_stand.onnx` come
   from the Hub at a pinned revision; the 50 Hz loop around them is `infer_policy.py`'s,
-  cited line by line in `quackd/sim3d/upstream_api.py`. quackd supplies a twist and a head
+  cited line by line in `roboglot/sim3d/upstream_api.py`. Roboglot supplies a twist and a head
   pose, which is what a gamepad supplies on the real robot. It writes no gait.
 - **Assets are fetched at run time, verified, and never shipped.** The first run downloads
-  upstream's tarball into `~/.quackd/cache`, checks every file against the sha256 it was
-  read at, and writes the licence notice beside it. `QUACKD_MICRODUCK_ASSETS` points at a
+  upstream's tarball into `~/.roboglot/cache`, checks every file against the sha256 it was
+  read at, and writes the licence notice beside it. `ROBOGLOT_MICRODUCK_ASSETS` points at a
   checkout instead. Nothing CC BY-NC-SA enters the wheel, the repository or a CI fixture.
 - **A stand-in body for the tests.** `body="puppet"` is a kinematic block that moves exactly
   as the cartoon does inside the same MuJoCo scene. It needs no download and no policy, so
@@ -96,10 +96,10 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
 - **The same demo runs in a browser.** `web/` is a static page: MuJoCo compiled to
   WebAssembly, the same policy in onnxruntime-web, the same verbs and the same contract in
   six modules of plain JavaScript with no build step, and the model and the policy fetched from
-  the same pinned upstreams. It exists so that trying quackd costs nobody an install, and it carries a
-  switch that removes the quackd layer and hands the visitor the keyboard instead.
+  the same pinned upstreams. It exists so that trying Roboglot costs nobody an install, and it carries a
+  switch that removes the Roboglot layer and hands the visitor the keyboard instead.
 
-  *Since 0.8:* the last clause is not how it works any more. The switch still removes the quackd
+  *Since 0.8:* the last clause is not how it works any more. The switch still removes the Roboglot
   layer, and only that layer — with it off, a typed sentence gets the honest answer the page
   prints, that this robot understands a twist, three numbers, and a walking policy that turns
   them into steps, and has never seen the words. What the switch
@@ -116,9 +116,9 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   argument: a key carries a command, and a sentence needs something to read it. The claim to
   read into the bullet above is therefore both hands on the same duck rather than either/or.
   Underneath, either way, are two learned policies — `alpha_walking` and `alpha_stand` — with
-  the kick a scripted impulse of quackd's own, and none of the three reads English.
+  the kick a scripted impulse of Roboglot's own, and none of the three reads English.
 - **`sim2d` stays the default.** It starts in a second, needs no network, and is what eight
-  adapters share. The physics backend is an extra, `quackd[mujoco]`, imported only inside
+  adapters share. The physics backend is an extra, `roboglot[mujoco]`, imported only inside
   `connect()`.
 
 ## Consequences
@@ -131,7 +131,7 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   and `onnxruntime` versions either side of this release's bump. The failing seed ends on the
   duck's own *same verb fails 3 times in a row* rule with the duck standing and the ball
   unmoved, so seed 4 is marginal and platform dependent rather than the gait being broken. The
-  shipped threshold outside `QUACKD_STRICT_SEEDS` is 8, which it does clear. That sweep is `test_find_and_kick_on_the_real_duck`; it runs
+  shipped threshold outside `ROBOGLOT_STRICT_SEEDS` is 8, which it does clear. That sweep is `test_find_and_kick_on_the_real_duck`; it runs
   only where upstream's model is already cached, and the sweep beside it runs the same ten
   seeds on the puppet. A pilot that works here has met a robot that undershoots.
 - Rendering is the cost. On an Intel iGPU a head-camera frame is 4 ms with the shell hidden
@@ -141,8 +141,8 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   *Since:* the arena is upstream's own scene, from the `scene*.xml` wrappers in `microduck_rl`
   — the blue-grey checker with edge marks, the gradient skybox, the haze, the headlight, the
   directional light and the viewer's azimuth and elevation. Shadows stay off by default and
-  `QUACKD_MUJOCO_SHADOWS=1` turns them on for a recording. What the scene cost is the head
-  camera: that floor and that sky are the same blue as quackd's person marker, at hue 105 and
+  `ROBOGLOT_MUJOCO_SHADOWS=1` turns them on for a recording. What the scene cost is the head
+  camera: that floor and that sky are the same blue as Roboglot's person marker, at hue 105 and
   114 with saturation and value overlapping too, so the detector read a person 0.12 m ahead in
   every frame of every heading. The head camera therefore renders a colourless copy of the
   same checker and no skybox, in a geom group MuJoCo hides everywhere else. It is a stand-in
@@ -170,8 +170,8 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   named test has actually returned under strict seeds is 10 of 10 on some machines and runs and
   9 of 10 on others, per the amendment above.
 - Two upstreams now have to be tracked rather than one, both pinned, both in
-  `quackd/sim3d/upstream_api.py`. A new export from either is a new pin and a new sha256.
-- Flock mode stays `sim2d` only. `FlockClock` was generalised to any world with a `t` and a
+  `roboglot/sim3d/upstream_api.py`. A new export from either is a new pin and a new sha256.
+- Team mode stays `sim2d` only. `TeamClock` was generalised to any world with a `t` and a
   `step(dt)` so a MuJoCo arena could hold several ducks later, but nothing promises it.
 - **Nothing in `web/` has been run in a browser.** `microduck.js` and `pilot.js` were exercised
   under Node against the real model and the real policy, and the rendering, the DOM and the
@@ -182,16 +182,16 @@ Apple Silicon, and no GPU. There is no Intel Mac wheel.
   *Since:* `tests/test_web.py` runs in the ordinary suite and holds what can be held without a
   browser — the ids, the classes, the rule that was hiding nothing, the pins and gait numbers
   shared with Python, `node --check` on each module, and the argument validator executed under
-  Node. The page is deployed from `web/` by Vercel at www.quackd.org rather than by Pages, and
+  Node. The page is deployed from `web/` by Vercel at www.roboglot.org rather than by Pages, and
   `vercel.json` serves the directory with no build step. The sentence that still stands is the
   last one: nobody has opened it.
 
   *Since 0.8 — this supersedes the note above on all three counts, the address, the test list
   and the last sentence:* that address and that list have both moved on. The page is mounted at `/simulator`
   rather than at a domain root — `vercel.json` rewrites `/simulator/*` into `web/`, still with
-  no build step, and quackd-web serves the mount from its own build, which fetches this
+  no build step, and roboglot-web serves the mount from its own build, which fetches this
   directory at a pinned commit — so every local reference in `index.html` is absolute, because a
-  relative one resolves off the mount and 404s. It answers at www.quackd.org/simulator, and
+  relative one resolves off the mount and 404s. It answers at www.roboglot.org/simulator, and
   `/simulator/source.json` records the commit the deployed copy was cut from.
   Locally it runs under `python web/serve.py`,
   which serves `web/` under the same prefix the deploy uses; `python -m http.server --directory

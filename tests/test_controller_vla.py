@@ -3,7 +3,7 @@ leaves the task to the person who watched it.
 
 The loop's half runs on the LeRobot mock, whose `manipulate` is a scripted segment on a clock of
 its own, so every segment runs exactly the seconds it was told and a budget ends a list where the
-arithmetic says. The command's half is `quackd run --controller vla` on `lerobot:mujoco` over the
+arithmetic says. The command's half is `roboglot run --controller vla` on `lerobot:mujoco` over the
 simulator's stand-in model, against the real policy server serving `scripted:hold`, with the
 terminal's answers scripted through `_ask`.
 
@@ -25,11 +25,11 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli, ui
-from quackd.agent.loop import RunConfig, RunResult, run_duck
-from quackd.agent.providers import pricing
-from quackd.agent.providers import vla as V
-from quackd.agent.providers.base import (
+from roboglot import cli, ui
+from roboglot.agent.loop import RunConfig, RunResult, run_glot
+from roboglot.agent.providers import pricing
+from roboglot.agent.providers import vla as V
+from roboglot.agent.providers.base import (
     JUDGE_FEATURE,
     Exchange,
     JudgedPilot,
@@ -38,17 +38,17 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
 )
-from quackd.agent.providers.vla import VlaProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB, Budgets
-from quackd.log import LineLog, LogEvent, a_person_was_asked, render_lines
-from quackd.safety import Budget, BudgetExceeded, allow_all
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import LeRobotMock
-from quackd_lerobot.policy import server as S
+from roboglot.agent.providers.vla import VlaProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB, Budgets
+from roboglot.log import LineLog, LogEvent, a_person_was_asked, render_lines
+from roboglot.safety import Budget, BudgetExceeded, allow_all
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import LeRobotMock
+from roboglot_lerobot.policy import server as S
 from tests.gl import REQUIRE_ENV
-from tests.test_duck_policy import INSTRUCTIONS, SEGMENT_S, _v3
+from tests.test_glot_policy import INSTRUCTIONS, SEGMENT_S, _v3
 from tests.test_policy_contract import TOKEN, Serving, _serving
 
 runner = CliRunner()
@@ -105,8 +105,8 @@ async def _run(
     provider: Any = None,
     mock: LeRobotMock | None = None,
 ) -> RunResult:
-    duck = parse_duck_text(_v3(total_s=total_s, name="stack"))
-    return await run_duck(
+    duck = parse_glot_text(_v3(total_s=total_s, name="stack"))
+    return await run_glot(
         RunConfig(
             duck=duck,
             provider=provider
@@ -167,7 +167,7 @@ async def test_it_costs_nothing_and_says_so(tmp_path: Path) -> None:
 async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
     """The line under the verdict and the line at the top of each step are what a person reads
     a run by, and `LLM calls 5` on a run that asked no LLM is false. Its pilot took turns, and
-    `quackd log` prints the same line from the record."""
+    `roboglot log` prints the same line from the record."""
     result = await _run(tmp_path, judge=_person(True))
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
     events = _events(result)
@@ -186,7 +186,7 @@ async def test_it_counts_turns_because_no_llm_was_asked(tmp_path: Path) -> None:
 
 
 async def test_no_line_of_its_record_says_an_llm_was_asked(tmp_path: Path) -> None:
-    """Replayed whole, its prompt included, as `quackd log --prompt` and the page's History tell
+    """Replayed whole, its prompt included, as `roboglot log --prompt` and the page's History tell
     it, and the live line through every answer it gave, because a label that says `LLM` on a run
     with no LLM in it is as false as a counter that does. The record's own keys stay."""
     result = await _run(tmp_path, judge=_person(True))
@@ -226,7 +226,7 @@ def test_a_budget_it_runs_out_of_names_the_key_and_what_it_counted() -> None:
 def test_another_pilot_keeps_the_words_of_an_llm() -> None:
     """`--llm fake` stands in for an LLM, and a transcript's lines are a contract with whatever
     reads an MCP result, so only the VLA pilot's lines are told apart."""
-    start = {"duck": "d", "provider": "fake", "llm_id": "scripted:d", "transport": "mock"}
+    start = {"glot": "d", "provider": "fake", "llm_id": "scripted:d", "transport": "mock"}
     ((head, _), *_) = render_lines(LogEvent("run_start", 0.0, start))
     assert "provider=fake LLM=scripted:d" in head
     asked = {"step": 0, "messages": 1, "provider": "fake", "llm_id": "scripted:d"}
@@ -297,7 +297,7 @@ async def test_a_person_who_answers_later_is_waited_for(tmp_path: Path) -> None:
 
 
 async def test_a_yes_nobody_gave_is_not_a_success(tmp_path: Path) -> None:
-    """`yes | quackd run` answers yes without anybody reading the question. The record writes
+    """`yes | roboglot run` answers yes without anybody reading the question. The record writes
     no `prompt` row for it, and the run cannot succeed on it: `a_person_was_asked` is the
     test for both."""
     piped: list[str] = []
@@ -324,8 +324,8 @@ async def test_nobody_to_judge_is_a_failure_after_the_segments(tmp_path: Path) -
 async def test_nobody_to_decide_ends_it_before_any_segment(tmp_path: Path) -> None:
     """A scripted pilot never answers its own doubt with `feasible`: with nobody to clear it,
     the arm never moves."""
-    duck = parse_duck_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
-    result = await run_duck(
+    duck = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=VlaProvider(INSTRUCTIONS),
@@ -381,12 +381,12 @@ async def test_a_budget_after_the_question_does_not_ask_it_twice(tmp_path: Path)
     right there ends the run without its declare. The reason carries the answer already given,
     and nobody is asked again."""
     heard: list[str] = []
-    duck = parse_duck_text(
+    duck = parse_glot_text(
         _v3(total_s=len(INSTRUCTIONS) * SEGMENT_S).replace(
             "success: [x]", "success: [x]\nbudgets:\n  max_llm_calls: 4"
         )
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=VlaProvider(INSTRUCTIONS),
@@ -408,7 +408,7 @@ async def test_the_time_a_person_takes_to_answer_is_not_the_runs(
     """The person looks at the arm for longer than `max_minutes` has left, on the arm's own
     clock, which is the one the budget reads, and then says yes. That yes is what the run
     ends on, and not a spent budget."""
-    cap_s = parse_duck_text(_v3(total_s=SEGMENT_S)).frontmatter.budgets.max_minutes * 60
+    cap_s = parse_glot_text(_v3(total_s=SEGMENT_S)).frontmatter.budgets.max_minutes * 60
     mock = LeRobotMock()
     arm_clock = mock.now
     looked_s = [0.0]
@@ -506,8 +506,8 @@ async def test_the_loop_holds_any_judged_pilot_to_a_persons_yes(tmp_path: Path) 
     trust: a pilot that says it cannot judge, and declares success with nobody asked, ends in
     failure. No new outcome: a run is still a success or it is not."""
     assert isinstance(_Claims(), JudgedPilot)
-    duck = parse_duck_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
-    result = await run_duck(
+    duck = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=_Claims(),  # type: ignore[arg-type]
@@ -556,7 +556,7 @@ def test_the_pilot_reads_the_last_result_and_the_answer_and_nothing_else() -> No
 def test_a_pilot_built_from_python_is_held_to_the_rule_for_an_instruction() -> None:
     with pytest.raises(ValueError, match="at least one instruction"):
         VlaProvider([])
-    with pytest.raises(ValueError, match="in a task file at duck: 3 or later"):
+    with pytest.raises(ValueError, match="in a task file at glot: 3 or later"):
         VlaProvider([])
     with pytest.raises(ValueError, match="characters"):
         VlaProvider(["x" * (INSTRUCTION_MAX_CHARS + 1)])
@@ -656,9 +656,9 @@ def test_a_decision_llm_in_the_environment_is_refused_by_its_own_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    monkeypatch.setenv("QUACKD_DECISION_LLM", "jev")
+    monkeypatch.setenv("ROBOGLOT_DECISION_LLM", "jev")
     result = _cli(tmp_path, *GOAL, *ARM, "--controller", "vla")
-    assert result.exit_code == 1 and "QUACKD_DECISION_LLM names one" in _flat(result.output)
+    assert result.exit_code == 1 and "ROBOGLOT_DECISION_LLM names one" in _flat(result.output)
     off = _cli(tmp_path, *GOAL, *ARM, "--controller", "vla", "--decision-llm", "off")
     assert "decision LLM" not in _flat(off.output), "--decision-llm off opts this run out"
 
@@ -667,9 +667,9 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = tmp_path / "hand-off.duck"
+    duck = tmp_path / "hand-off.glot"
     duck.write_text(
-        "---\nduck: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
+        "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
         encoding="utf-8",
@@ -677,13 +677,13 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
     out = _flat(result.output)
     assert result.exit_code == 1 and "and hand-off lists none" in out, result.output
-    assert "policy.instructions in a task file at duck: 3 or later" in out and _no_run(tmp_path)
+    assert "policy.instructions in a task file at glot: 3 or later" in out and _no_run(tmp_path)
 
 
 def _crane(tmp_path: Path, *, instructions: bool = True, played: bool = True) -> Path:
-    duck = tmp_path / "crane.duck"
+    duck = tmp_path / "crane.glot"
     duck.write_text(
-        "---\nduck: 4\nname: crane\ndescription: Play a crane.\nverbs:\n"
+        "---\nglot: 4\nname: crane\ndescription: Play a crane.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n"
         + ("policy:\n  instructions: [put the block in the bowl]\n" if instructions else "")
@@ -774,7 +774,7 @@ def test_serve_mcp_refuses_a_controller_in_words() -> None:
     )
     out = _flat(result.output)
     assert result.exit_code == 1 and "over MCP the client flies" in out, result.output
-    assert "quackd run --controller vla" in out
+    assert "roboglot run --controller vla" in out
 
 
 def test_the_judge_prompt_is_marked_as_reaching_a_person_only_at_a_terminal(
@@ -788,7 +788,7 @@ def test_the_judge_prompt_is_marked_as_reaching_a_person_only_at_a_terminal(
 
 @pytest.fixture
 def held() -> Iterator[Serving]:
-    """`quackd policy serve --policy scripted:hold`: a `manipulate` of it ends on a stall,
+    """`roboglot policy serve --policy scripted:hold`: a `manipulate` of it ends on a stall,
     which is a segment that ran and is ok."""
     serving = _serving(S.ServeOptions(policy="scripted:hold"))
     try:
@@ -803,14 +803,14 @@ def held() -> Iterator[Serving]:
 def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving, said: bool
 ) -> None:
-    """`quackd run --goal ... --controller vla` on the simulator's stand-in, against the real
+    """`roboglot run --goal ... --controller vla` on the simulator's stand-in, against the real
     server: the person clears the pilot's doubt and the segment's confirm, the goal is the one
     instruction, and then they are asked whether the arm did it. Their answer is the exit code,
     and all three questions are in the record in the words they were asked in."""
     pytest.importorskip("mujoco")
-    from quackd_lerobot.sim import standin
+    from roboglot_lerobot.sim import standin
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     asked: list[str] = []
 
@@ -861,9 +861,9 @@ def test_a_played_file_flown_with_no_play_says_its_part_was_off(
     was off where a played run says it was on: the header's row and `run_start.play`, with the
     contract kept as the file's own."""
     pytest.importorskip("mujoco")
-    from quackd_lerobot.sim import standin
+    from roboglot_lerobot.sim import standin
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     monkeypatch.setattr(cli, "_ask", lambda _question: True)
     result = _cli(
@@ -898,7 +898,7 @@ async def test_a_stop_at_the_question_a_budget_puts_is_on_the_record(
     unanswered rather than calling what ran a failure."""
     import asyncio
 
-    import quackd.agent.loop as loop_module
+    import roboglot.agent.loop as loop_module
 
     loops: list[Any] = []
     real = loop_module.AgentLoop

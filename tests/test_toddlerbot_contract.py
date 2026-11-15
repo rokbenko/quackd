@@ -1,8 +1,8 @@
-"""The contract job: quackd's real client against quackd's real daemon on a real physics body.
+"""The contract job: Roboglot's real client against Roboglot's real daemon on a real physics body.
 
 This is the only test in the repository that needs upstream installed, so it is opt-in and
 skipped everywhere else. The main suite must stay installable on Windows with nothing but
-quackd's own dependencies, which is why this cannot simply be another loopback test.
+Roboglot's own dependencies, which is why this cannot simply be another loopback test.
 
 What it adds over `test_toddlerbot_daemon.py` is a body that pushes back. The fake body holds
 exactly what it was told, so it can prove the protocol and the safety machinery and nothing
@@ -11,7 +11,7 @@ about physics. Here the daemon drives upstream's own MuJoCo model, through upstr
 
 Run it with:
 
-    QUACKD_TODDLERBOT_CONTRACT=1 TODDLERBOT_ROOT=~/toddlerbot uv run pytest \
+    ROBOGLOT_TODDLERBOT_CONTRACT=1 TODDLERBOT_ROOT=~/toddlerbot uv run pytest \
         tests/test_toddlerbot_contract.py
 
 It still proves nothing about 3 kg of servos, and `docs/adapters/status.md` says so.
@@ -29,12 +29,12 @@ import threading
 
 import pytest
 
-from quackd.transport.base import Intent
-from quackd_toddlerbot import ToddlerBotAdapter
-from quackd_toddlerbot.bridge import ToddlerBotBridge
+from roboglot.transport.base import Intent
+from roboglot_toddlerbot import ToddlerBotAdapter
+from roboglot_toddlerbot.bridge import ToddlerBotBridge
 from tests.conftest import REPO
 
-DAEMON = REPO / "bridge" / "toddlerbot" / "quackd_toddlerbot_bridge.py"
+DAEMON = REPO / "bridge" / "toddlerbot" / "roboglot_toddlerbot_bridge.py"
 ROBOT = "toddlerbot_2xc"
 
 
@@ -65,7 +65,7 @@ def _daemon_constant(name: str) -> float:
 SETTLE_CEILING_S = _daemon_constant("SETTLE_MAX_S")
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("QUACKD_TODDLERBOT_CONTRACT") != "1",
+    os.environ.get("ROBOGLOT_TODDLERBOT_CONTRACT") != "1",
     reason="the contract job is opt-in: it needs upstream and its MuJoCo model installed",
 )
 

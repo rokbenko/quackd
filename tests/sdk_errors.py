@@ -1,6 +1,6 @@
 """Stand-ins for the SDK exceptions a provider raises its `ProviderError` from.
 
-CI installs no provider SDK, so these carry the class names and attributes quackd reads off
+CI installs no provider SDK, so these carry the class names and attributes Roboglot reads off
 the real ones, and nothing else: anthropic 1.9.0's and openai 3.22.1's status errors
 (`status_code`, `response.headers`), their connection and timeout errors, google-genai
 2.25.0's `APIError` (`code`, `status`, `details`) and httpx's transport errors. The names
@@ -13,7 +13,7 @@ from __future__ import annotations
 from types import SimpleNamespace as NS
 from typing import Any
 
-from quackd.agent.providers.base import ProviderError
+from roboglot.agent.providers.base import ProviderError
 
 
 class APIStatusError(Exception):

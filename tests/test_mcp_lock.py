@@ -1,6 +1,6 @@
-"""`quackd serve-mcp --lock-duckfile`: a contract the client may narrow and may not widen.
+"""`roboglot serve-mcp --lock-glotfile`: a contract the client may narrow and may not widen.
 
-Off, which is the default, a client's `robot_load_duckfile` replaces the contract as it always has,
+Off, which is the default, a client's `robot_load_glotfile` replaces the contract as it always has,
 and `tests/test_mcp_server.py` holds that unchanged. On, the operator's file is the most a pilot can
 talk its way to."""
 
@@ -18,20 +18,20 @@ from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.duckfile.schema import DuckFrontmatter
-from quackd.duckfile.widen import widened_by
-from quackd.mcp_server import build_server
-from quackd.transport.sim2d import Sim2DTransport
+from roboglot.cli import app
+from roboglot.glotfile.schema import GlotFrontmatter
+from roboglot.glotfile.widen import widened_by
+from roboglot.mcp_server import build_server
+from roboglot.transport.sim2d import Sim2DTransport
 
 
 def _duck(path: Path, front: str, name: str = "task") -> str:
-    target = path / f"{name}.duck"
+    target = path / f"{name}.glot"
     target.write_text(f"---\n{front}---\nDo the task.\n", encoding="utf-8")
     return str(target)
 
 
-NARROW = """duck: 1
+NARROW = """glot: 1
 name: narrow
 description: The operator's contract.
 verbs:
@@ -68,16 +68,16 @@ async def _connected(**kwargs: Any) -> AsyncIterator[tuple[ClientSession, Any]]:
 
 
 async def _load(client: ClientSession, path: str) -> dict[str, Any]:
-    result = await client.call_tool("robot_load_duckfile", {"path": path})
+    result = await client.call_tool("robot_load_glotfile", {"path": path})
     return json.loads(result.content[0].text)  # type: ignore[union-attr]
 
 
 async def test_locked_a_wider_file_is_refused_and_the_contract_stands(tmp_path: Path) -> None:
     locked = _duck(tmp_path, NARROW, "narrow")
-    async with _connected(duckfile=locked, lock_duckfile=True) as (client, session):
+    async with _connected(glotfile=locked, lock_glotfile=True) as (client, session):
         answer = await _load(client, "find-and-kick")
         assert answer["ok"] is False
-        assert "--lock-duckfile" in answer["error"] and "it allows" in answer["error"]
+        assert "--lock-glotfile" in answer["error"] and "it allows" in answer["error"]
         assert session.duck.frontmatter.name == "narrow", "the contract did not move"
         assert session.executor.contract.name == "narrow"
 
@@ -93,7 +93,7 @@ async def test_locked_a_file_asking_for_no_more_still_loads(tmp_path: Path) -> N
         .replace("max_steps: 5", "max_steps: 3"),
         "smaller",
     )
-    async with _connected(duckfile=locked, lock_duckfile=True) as (client, session):
+    async with _connected(glotfile=locked, lock_glotfile=True) as (client, session):
         answer = await _load(client, smaller)
         assert answer["ok"] is True, answer
         assert session.duck.frontmatter.name == "smaller"
@@ -102,16 +102,16 @@ async def test_locked_a_file_asking_for_no_more_still_loads(tmp_path: Path) -> N
 async def test_off_a_wider_file_loads_as_it_always_has(tmp_path: Path) -> None:
     """The default. Nothing about a server started without the flag has changed."""
     started = _duck(tmp_path, NARROW, "narrow")
-    async with _connected(duckfile=started) as (client, session):
+    async with _connected(glotfile=started) as (client, session):
         answer = await _load(client, "find-and-kick")
         assert answer["ok"] is True, answer
         assert session.duck.frontmatter.name == "find-and-kick"
         assert session.locked_to is None
 
 
-def _front(**changes: Any) -> DuckFrontmatter:
+def _front(**changes: Any) -> GlotFrontmatter:
     base: dict[str, Any] = {
-        "duck": 3,
+        "glot": 3,
         "name": "x",
         "description": "x",
         "verbs": {"allow": ["quack", "walk", "stop", "manipulate"], "confirm": ["walk"]},
@@ -121,7 +121,7 @@ def _front(**changes: Any) -> DuckFrontmatter:
         "policy": {"instructions": ["pick up the cube"], "segment_s": 5.0, "total_s": 30.0},
     }
     base.update(changes)
-    return DuckFrontmatter(**base)
+    return GlotFrontmatter(**base)
 
 
 LOCKED = _front()
@@ -215,13 +215,13 @@ def test_a_verb_under_its_alias_is_the_same_verb() -> None:
 
 
 def test_the_flag_wants_a_contract_to_hold_to() -> None:
-    result = CliRunner().invoke(app, ["serve-mcp", "--lock-duckfile"])
-    assert result.exit_code != 0 and "--duckfile" in result.output
+    result = CliRunner().invoke(app, ["serve-mcp", "--lock-glotfile"])
+    assert result.exit_code != 0 and "--glotfile" in result.output
 
 
-@pytest.mark.parametrize("fleet", [["--robots", "a=microduck:sim2d"], ["--flock", "kitchen"]])
-def test_the_flag_holds_one_robot_and_refuses_a_flock(fleet: list[str]) -> None:
+@pytest.mark.parametrize("fleet", [["--robots", "a=microduck:sim2d"], ["--team", "kitchen"]])
+def test_the_flag_holds_one_robot_and_refuses_a_team(fleet: list[str]) -> None:
     result = CliRunner().invoke(
-        app, ["serve-mcp", "--duckfile", "hello-world", "--lock-duckfile", *fleet]
+        app, ["serve-mcp", "--glotfile", "hello-world", "--lock-glotfile", *fleet]
     )
-    assert result.exit_code != 0 and "flock" in result.output
+    assert result.exit_code != 0 and "team" in result.output

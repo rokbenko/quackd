@@ -1,4 +1,4 @@
-"""`quackd doctor`: it runs everywhere, and it answers in data.
+"""`roboglot doctor`: it runs everywhere, and it answers in data.
 
 The split between `collect` and `render` is the thing worth testing. The collector must not
 know what green means, or `--json` has nothing underneath it to print, and the renderer must
@@ -24,16 +24,16 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from quackd import doctor
-from quackd.adapters.catalogue import OFFICIAL
-from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, KEY_FALLBACKS, PROVIDER_NAMES
-from quackd.cli import app
-from quackd.doctor import PlacementRow
-from quackd.host import HostBoard, HostClient
-from quackd.registry import Registry, RobotEntry
-from quackd.transport.base import CameraFrame
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import REST, LeRobotMock
+from roboglot import doctor
+from roboglot.adapters.catalogue import OFFICIAL
+from roboglot.agent.providers.factory import CLOUD_NAMES, KEY_ENV, KEY_FALLBACKS, PROVIDER_NAMES
+from roboglot.cli import app
+from roboglot.doctor import PlacementRow
+from roboglot.host import HostBoard, HostClient
+from roboglot.registry import Registry, RobotEntry
+from roboglot.transport.base import CameraFrame
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import REST, LeRobotMock
 from tests.fake_jetson_hostd import CannedReply, FakeHostd, dead_address, default_board
 from tests.jetson_fixtures import (
     COMPATIBLE,
@@ -110,18 +110,18 @@ def test_doctor_pins_an_openrouter_id_it_does_not_carry_without_asking_openroute
     when a run starts, never here: doctor is the command people run when the network is the
     thing in doubt. Its shape is all doctor checks, and the conftest guard fails the test if
     anything reached for the list."""
-    monkeypatch.setenv("QUACKD_LLM", "openrouter:qwen/qwen3.8-flash")
+    monkeypatch.setenv("ROBOGLOT_LLM", "openrouter:qwen/qwen3.8-flash")
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 0, result.output
     assert "qwen/qwen3.8-flash" in " ".join(result.output.split())
 
     # an alias is refused by the parse, on its spelling, and doctor prints the refusal
     # under the table in its own words rather than pinning a row to it
-    monkeypatch.setenv("QUACKD_LLM", "openrouter:~anthropic/claude-opus-latest")
+    monkeypatch.setenv("ROBOGLOT_LLM", "openrouter:~anthropic/claude-opus-latest")
     refused = CliRunner().invoke(app, ["doctor"])
     assert refused.exit_code == 0, refused.output
     flat = " ".join(refused.output.split())
-    assert "'~anthropic/claude-opus-latest' from QUACKD_LLM is refused" in flat
+    assert "'~anthropic/claude-opus-latest' from ROBOGLOT_LLM is refused" in flat
     assert "newest LLM of its family" in flat
 
 
@@ -181,7 +181,7 @@ def test_collect_answers_in_data_with_no_styling_in_it() -> None:
     assert report.ok is True
     assert [c.name for c in report.core] == ["pydantic", "mcp", "numpy", "Pillow"]
     assert len(report.adapters) == len(OFFICIAL), "one row for every catalogue row, described too"
-    assert report.bundled_ducks > 0
+    assert report.bundled_tasks > 0
     assert {p.upstream for p in report.pins} >= {"microduck", "lerobot", "microduck_rl"}
     assert report.assumptions, "there are unverified assumptions and doctor says so"
 
@@ -205,7 +205,7 @@ def test_the_arms_serial_library_row_asks_for_rustypot_by_its_metadata(
     now. It is looked up by its distribution's metadata and never imported, as lerobot is, so
     doctor loads no native library it does not need."""
     module, extra = doctor.EXTRAS["lerobot (feetech bus)"]
-    assert (module, extra) == ("rustypot", "quackd[lerobot]")
+    assert (module, extra) == ("rustypot", "roboglot[lerobot]")
     assert doctor._METADATA_ONLY[module] == "rustypot"
     assert "scservo_sdk" not in doctor._METADATA_ONLY
     assert all(name != "scservo_sdk" for name, _ in doctor.EXTRAS.values())
@@ -349,8 +349,8 @@ def test_the_progress_callback_names_the_slow_questions() -> None:
 
 # ── the board --host names, read over the network ───────────────────────────────────────
 #
-# doctor reads no board of its own any more. quackd never runs on a Jetson, so the section
-# appears only for a board named with --host, read through the daemon quackd ships for it. The
+# doctor reads no board of its own any more. Roboglot never runs on a Jetson, so the section
+# appears only for a board named with --host, read through the daemon Roboglot ships for it. The
 # dumps here are built from `tests/jetson_fixtures.py`, the one fake board every test reads,
 # with the NULs removed where the daemon removes them, and the daemon is
 # `tests/fake_jetson_hostd.py` on loopback. What none of it can say is whether a real Orin's
@@ -495,7 +495,9 @@ def test_a_board_dump_is_read_field_by_field() -> None:
     assert got.power_mode == "15W"
     assert got.gpu_busy_pct == 0 and got.tegrastats == TEGRASTATS_LINE
     assert got.errors == {}
-    assert "docker_default_runtime" not in got.to_dict(), "meaningless on a board quackd is not on"
+    assert "docker_default_runtime" not in got.to_dict(), (
+        "meaningless on a board Roboglot is not on"
+    )
 
 
 def test_a_nul_a_daemon_left_in_never_reaches_a_cell() -> None:
@@ -629,7 +631,7 @@ def test_the_host_section_reads_the_board_over_the_network(hostd: FakeHostd) -> 
     section = _host_section(_rendered(report))
     for needle in (
         f"Jetson at {hostd.address} (the board the daemon runs on)",
-        "daemon quackd-jetson-hostd 0.1.0, protocol 1, on orin-nano",
+        "daemon roboglot-jetson-hostd 0.1.0, protocol 1, on orin-nano",
         "camera 640x480 at 5 fps from csi, field of view 62.2 degrees",
         "detector yolov8n.pt on cuda",
         "health ok",
@@ -652,7 +654,7 @@ def test_the_board_rows_describe_the_board_and_never_this_machine(hostd: FakeHos
     section = _host_section(_rendered(doctor.collect(host=hostd.address)))
     assert not re.search(r"\bhere\b", section), section
     assert "this machine" not in section and "this is running on" not in section
-    assert "none the daemon could see" in section and "quackd never asks for one" in section
+    assert "none the daemon could see" in section and "Roboglot never asks for one" in section
     assert "could not read /etc/nv_tegra_release (No such file or directory)" in section
     assert "nvpmodel -q gave nothing (not on PATH)" in section
     assert "tegrastats gave nothing (not on PATH)" in section
@@ -738,7 +740,7 @@ def test_a_board_name_that_finds_no_address_has_no_llm_server_asked_there(
     monkeypatch.setattr(socket, "getaddrinfo", lookup)
     monkeypatch.setattr(doctor, "_host_client", HostClient)
     monkeypatch.setattr(doctor, "_probe_llms", probe)
-    monkeypatch.delenv("QUACKD_BASE_URL", raising=False)
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
     report = doctor.collect(host="nosuch-jetson.invalid")
     assert report.ok is False and report.host is not None
     assert "no machine by that name could be found" in (report.host.error or "")
@@ -861,7 +863,7 @@ def test_doctor_json_carries_the_board_under_host(hostd: FakeHostd) -> None:
         "platform",
         "api_version",
         "core",
-        "bundled_ducks",
+        "bundled_tasks",
         "providers",
         "llm_env_error",
         "steppers",
@@ -907,7 +909,7 @@ def test_doctor_json_with_a_refused_token_is_one_document_and_exit_code_one(
 def test_doctor_finds_the_board_where_run_does(
     hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The flag, then the host of the robot --robot names, then QUACKD_HOST: the ladder a run
+    """The flag, then the host of the robot --robot names, then ROBOGLOT_HOST: the ladder a run
     climbs, settled by the same function, so the two cannot disagree about a robot's board. The
     robot's token rides with its own board."""
     hostd.token = TOKEN
@@ -926,7 +928,7 @@ def test_doctor_finds_the_board_where_run_does(
     assert stored["address"] == hostd.address and stored["ok"] is True
     with FakeHostd() as other:
         assert host_of("--robot", "jet", "--host", other.address)["address"] == other.address
-        monkeypatch.setenv("QUACKD_HOST", other.address)
+        monkeypatch.setenv("ROBOGLOT_HOST", other.address)
         assert host_of("--robot", "jet")["address"] == hostd.address, "the robot beats the env"
         assert host_of()["address"] == other.address
 
@@ -934,11 +936,11 @@ def test_doctor_finds_the_board_where_run_does(
 def test_doctor_tells_a_robot_whose_stored_token_is_refused_to_store_a_new_one(
     hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The robot's token outranks QUACKD_HOST_TOKEN, so the variable is set to the daemon's
+    """The robot's token outranks ROBOGLOT_HOST_TOKEN, so the variable is set to the daemon's
     token here and the report still fails. The advice is the one that changes the token doctor
     and a run send, and never the variable, which told somebody to set what nothing reads."""
     hostd.token = TOKEN
-    monkeypatch.setenv("QUACKD_HOST_TOKEN", TOKEN)
+    monkeypatch.setenv("ROBOGLOT_HOST_TOKEN", TOKEN)
     Registry(tmp_path).add_robot(
         RobotEntry(name="jet", spec="microduck:mock", host=hostd.address, host_token="stale")
     )
@@ -947,8 +949,8 @@ def test_doctor_tells_a_robot_whose_stored_token_is_refused_to_store_a_new_one(
     )
     assert result.exit_code == 1, result.output
     error = json.loads(result.output)["host"]["error"]
-    assert "refused the token it was given: quackd robot edit jet --host-token TOKEN" in error
-    assert "QUACKD_HOST_TOKEN" not in error
+    assert "refused the token it was given: roboglot robot edit jet --host-token TOKEN" in error
+    assert "ROBOGLOT_HOST_TOKEN" not in error
     assert TOKEN not in result.output and "stale" not in error
 
 
@@ -966,7 +968,7 @@ def test_a_typed_host_token_with_no_board_fails_the_report_and_nothing_is_asked(
 def test_a_host_setting_that_is_no_machine_is_reported_and_nothing_is_asked_of_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Doctor is where a person comes to find a bad setting, and one in QUACKD_HOST is there
+    """Doctor is where a person comes to find a bad setting, and one in ROBOGLOT_HOST is there
     without anybody having typed --host. So it is a failed host row in a whole report, and in
     the one document --json prints, as a bad --robot is. `_NoBoard` fails this test if anything
     is asked of it, and the presets stay on this machine. The refused value itself is never
@@ -976,19 +978,19 @@ def test_a_host_setting_that_is_no_machine_is_reported_and_nothing_is_asked_of_i
     assert typed.exit_code == 1
     flat = " ".join(typed.output.split())
     assert "--host takes a machine, not a URL" in flat
-    assert "bundled ducks" in flat, "the rest of the report is still there"
+    assert "bundled tasks" in flat, "the rest of the report is still there"
     assert "http://jetson.local:9874" not in flat and "host at" not in flat
 
-    monkeypatch.setenv("QUACKD_HOST", "jetson.local/path")
+    monkeypatch.setenv("ROBOGLOT_HOST", "jetson.local/path")
     result = CliRunner().invoke(app, ["doctor", "--json"])
     assert result.exit_code == 1
     payload = json.loads(result.output)
     assert payload["ok"] is False and payload["core"] and payload["providers"]
     host = payload["host"]
     assert (host["host"], host["address"], host["ok"]) == ("", "", False)
-    assert host["error"].startswith("QUACKD_HOST: --host takes a machine with no path")
+    assert host["error"].startswith("ROBOGLOT_HOST: --host takes a machine with no path")
     assert all("jetson.local" not in s["url"] for s in payload["servers"])
-    monkeypatch.delenv("QUACKD_HOST")
+    monkeypatch.delenv("ROBOGLOT_HOST")
 
     for args in (["--json"], []):
         secret = CliRunner().invoke(app, ["doctor", *args, "--host", f"{TOKEN}@jetson.local"])
@@ -997,12 +999,12 @@ def test_a_host_setting_that_is_no_machine_is_reported_and_nothing_is_asked_of_i
     escaped = CliRunner().invoke(app, ["doctor", "--host", "orin\x1b[2Jnano"])
     assert escaped.exit_code == 1 and "\x1b" not in escaped.output
 
-    monkeypatch.setenv("QUACKD_HOST_TOKEN", f"{TOKEN[:8]}\t{TOKEN[8:]}")
+    monkeypatch.setenv("ROBOGLOT_HOST_TOKEN", f"{TOKEN[:8]}\t{TOKEN[8:]}")
     bad_token = CliRunner().invoke(app, ["doctor", "--json", "--host", "jetson.local"])
     assert bad_token.exit_code == 1
     host = json.loads(bad_token.output)["host"]
     assert (host["host"], host["ok"]) == ("jetson.local", False)
-    assert host["error"].startswith("QUACKD_HOST_TOKEN: the host token has a character")
+    assert host["error"].startswith("ROBOGLOT_HOST_TOKEN: the host token has a character")
     assert TOKEN[:8] not in bad_token.output and TOKEN[8:] not in bad_token.output
 
 
@@ -1010,7 +1012,7 @@ def test_the_servers_table_asks_the_presets_on_the_host(
     hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With a board named, the four presets are where a run with --host would reach them, and
-    `local` keeps meaning QUACKD_BASE_URL. A password in that URL is probed with and never
+    `local` keeps meaning ROBOGLOT_BASE_URL. A password in that URL is probed with and never
     shown, because this screen and its spinner are pasted into issues."""
     probed: list[str] = []
 
@@ -1019,7 +1021,7 @@ def test_the_servers_table_asks_the_presets_on_the_host(
         return "down", "not running"
 
     monkeypatch.setattr(doctor, "_probe_llms", probe)
-    monkeypatch.setenv("QUACKD_BASE_URL", "http://me:hunter2@gpu-box:8000/v1")
+    monkeypatch.setenv("ROBOGLOT_BASE_URL", "http://me:hunter2@gpu-box:8000/v1")
     said: list[str] = []
     report = doctor.collect(host=hostd.address, progress=said.append)
     assert {s.preset: s.url for s in report.servers} == {
@@ -1032,7 +1034,7 @@ def test_the_servers_table_asks_the_presets_on_the_host(
     assert "http://me:hunter2@gpu-box:8000/v1" in probed, "the real URL is the one probed"
     assert report.host is not None
     assert [s.preset for s in report.host.servers] == ["ollama", "vllm", "llamacpp", "lmstudio"], (
-        "the board's block holds what was asked on the board, and QUACKD_BASE_URL is not that"
+        "the board's block holds what was asked on the board, and ROBOGLOT_BASE_URL is not that"
     )
     out = _rendered(report)
     assert "LLM servers, the presets on 127.0.0.1" in out
@@ -1282,7 +1284,7 @@ def test_a_list_reply_on_a_real_socket_leaves_the_report_standing(
     """The crash was in `collect()`, so the fix is shown there too: the local row points at a
     server that answers with a JSON list, and the report is a report."""
     root = canned("/v1/models", b"[]")
-    monkeypatch.setenv("QUACKD_BASE_URL", f"{root}/v1")
+    monkeypatch.setenv("ROBOGLOT_BASE_URL", f"{root}/v1")
 
     def only_the_canned_one(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
         return _REAL_PROBE_LLMS(url) if url.startswith(root) else ("down", "not running")
@@ -1381,7 +1383,7 @@ def _probed(monkeypatch: pytest.MonkeyPatch, transport: Any, **kwargs: Any) -> d
     fits through. What these tests need on the other side of it reaches no command line: an
     arm that refuses to move, and a second camera."""
     monkeypatch.setattr(
-        "quackd.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(transport)
+        "roboglot.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(transport)
     )
     return doctor.collect("lerobot:mock", address="mock://arm", **kwargs)
 
@@ -1424,7 +1426,7 @@ def test_a_rest_pose_past_the_travel_is_advice_and_the_verdict_stays_green() -> 
     be driven to, so the row is the ordinary green one and torque is released. What the person
     needs to know about the fold is advice, in the arm's own numbers, and failing the verdict
     over it would say an arm that did everything right is broken."""
-    from quackd_lerobot.mock import MOCK_RANGES
+    from roboglot_lerobot.mock import MOCK_RANGES
 
     ceiling = MOCK_RANGES["elbow_flex"][1]
     pose = dict(AWAY_FROM_REST) | {"elbow_flex": ceiling + 12.0}
@@ -1449,7 +1451,7 @@ def test_a_robot_with_no_rest_pose_recorded_says_how_to_record_one_and_still_pas
     arm = LeRobotMock()
     report = _probed(monkeypatch, arm)
     row = _row(report, "rest pose")
-    assert row.value == "none recorded (quackd robot rest-pose <name>)"
+    assert row.value == "none recorded (roboglot robot rest-pose <name>)"
     assert row.state == "plain", "a pose nobody recorded is not a failure"
     assert report.ok is True
     assert arm.torque is False, "with no pose to hold, the arm is released as it always was"
@@ -1466,7 +1468,7 @@ def test_an_arm_that_arrived_and_was_still_held_at_the_close_fails_the_verdict_t
 
     A person runs `doctor` to be told whether they can walk away. Saying yes over a note that
     says the arm is still powered is the one answer this command must never give."""
-    from quackd_lerobot.verbs import torque_left_on
+    from roboglot_lerobot.verbs import torque_left_on
 
     arm = LeRobotMock(rest_pose=dict(REST))
 
@@ -1631,7 +1633,7 @@ def test_a_single_camera_still_reads_under_the_row_label_it_always_had(
 ) -> None:
     """A camera's name is only spoken by a body that has more than one. Labelling the row
     "camera camera" on every one-camera robot would rename the row everybody reading this
-    output already knows, in exchange for a word that is quackd's own default and not
+    output already knows, in exchange for a word that is Roboglot's own default and not
     anything its owner chose."""
     report = _probed(monkeypatch, _OneEye(), camera_url="opencv://0")
     row = _row(report, "camera")
@@ -1670,3 +1672,33 @@ def test_the_assumptions_table_folds_a_long_what_rather_than_cutting_it() -> Non
     out = io.StringIO()
     Console(file=out, width=60).print(doctor._assumptions_table(report))
     assert "…" not in out.getvalue() and "AND_NAMES_EACH_" in out.getvalue(), out.getvalue()
+
+
+def test_the_decision_table_never_cuts_an_install_hint_short() -> None:
+    """At a hundred columns Rich gave the extra column two characters fewer than
+    `(roboglot[decision])` and cut it to `(roboglot[decisio...`, a hint nobody can paste."""
+    report = doctor.DoctorReport(version="0", python="3.12", platform="test")
+    report.steppers = [
+        doctor.ProviderRow(
+            "jev", "roboglot[decision]", None, "", "TYPESAFE_API_KEY", False, "jev-1"
+        ),
+        doctor.ProviderRow(
+            "openai", "roboglot[openai]", None, "", "OPENAI_API_KEY", False, "gpt", "https://x.test"
+        ),
+        *(
+            doctor.ProviderRow(
+                name, "roboglot[decision]", None, "", "", True, f"{name}-latest", url
+            )
+            for name, url in (
+                ("kev", "http://127.0.0.1:8009"),
+                ("opendecision", "http://127.0.0.1:8000"),
+                ("local", "unset: --decision-url or ROBOGLOT_DECISION_URL"),
+            )
+        ),
+        doctor.ProviderRow(
+            "laya", "roboglot[laya]", None, "", "", True, "typed", "in this process"
+        ),
+    ]
+    out = io.StringIO()
+    Console(file=out, width=100).print(doctor._steppers_table(report))
+    assert "…" not in out.getvalue() and "(roboglot[decision])" in out.getvalue(), out.getvalue()

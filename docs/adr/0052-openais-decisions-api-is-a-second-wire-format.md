@@ -1,6 +1,6 @@
 # ADR-0052: OpenAI's Decisions API is a second wire format, built in
 
-**Status:** accepted, amended · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+**Status:** accepted, amended · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count Roboglot estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `roboglot/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `roboglot log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
 
 **Amended 2026-10-19 by [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md):** `sees` is true on `openai`, which may be shown the robot's
 camera on a run that asks with `--decision-frames`, at OpenAI's own hosts alone, and on no other
@@ -20,14 +20,14 @@ and a feasibility choice it only records.
 
 It does not speak System One. [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md)
 made the wire format the abstraction, and every server row since has been the same
-`POST /v1/systemone` behind one client. OpenAI's shape differs at every point quackd reads:
+`POST /v1/systemone` behind one client. OpenAI's shape differs at every point Roboglot reads:
 
 - the questions go as a list rather than a mapping keyed by name, and the name on each is
   optional;
 - a yes-or-no question is a `predicate` rather than a `noul`, and a choice's options are a list of
   `{value, description}` rather than a mapping of label to description;
 - the answers come back as a list in question order, each naming its question or `null`, and a
-  choice's probabilities are a list of `{value, probability}` where quackd's reader expects a
+  choice's probabilities are a list of `{value, probability}` where Roboglot's reader expects a
   mapping;
 - any one question may come back as `{type: "refusal", name}` in place of an answer.
 
@@ -43,7 +43,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 ## Decision
 
 - **A backend of its own, beside `systemone.py`.** `DECISIONS_API = "decisions"` in the
-  catalogue, `quackd/agent/decision/decisions_api.py` with its `DecisionsAPILLM`, and a branch in
+  catalogue, `roboglot/agent/decision/decisions_api.py` with its `DecisionsAPILLM`, and a branch in
   `make_decision_llm`. It is named for the format rather than the vendor, as `SYSTEM_ONE` is: a
   server of your own that answers `/v1/decisions` is the same backend at another address. The row
   is `openai`, second after `jev`: `https://api.openai.com`, `gpt-6-luna`, `OPENAI_API_KEY`, the
@@ -51,12 +51,12 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   LLM variable, and `sees` false.
 - **The SDK's generic request, so no floor moves.** `client.post("/decisions", cast_to=object,
   body=...)` hands back the decoded JSON body unchanged in 1.66.0 and in 3.22.1. A body that is
-  not a JSON object is an `UnreadableReply`, a `ValueError` whose sentence is quackd's own and
+  not a JSON object is an `UnreadableReply`, a `ValueError` whose sentence is Roboglot's own and
   names only the type that came back, so the record keeps it, calls the turn an error, and the
   LLM takes it.
 - **The address is handed over on every build, and is the host alone.** The client is given
   `<url>/v1` whatever was typed, because left to itself the SDK follows `OPENAI_BASE_URL`, which
-  quackd's own local presets read as the address of an LLM server. A `--decision-url` with a
+  Roboglot's own local presets read as the address of an LLM server. A `--decision-url` with a
   path, a query or a fragment is refused while the CLI reads its flags
   (`factory.resolve_decision_address`), so a copied `https://api.openai.com/v1` stops the run on
   every machine rather than only on one with the SDK and the key.
@@ -71,12 +71,12 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   where `urlsplit` and the HTTP client disagree about the host. The hosts live in
   `decisions_api.py` rather than in the row, whose address is only a default that
   `--decision-url` replaces. Every other address is sent `NO_KEY`, which moves to `base.py`, and
-  is costed at the self-hosted rate unless `QUACKD_DECISION_PRICE` says otherwise, the key and the
+  is costed at the self-hosted rate unless `ROBOGLOT_DECISION_PRICE` says otherwise, the key and the
   price decided by one rule on one string (`factory.sends_key`, which decides `jev`'s too).
-  `QUACKD_DECISION_URL` is never read for this row.
+  `ROBOGLOT_DECISION_URL` is never read for this row.
 - **What the SDK would add by itself goes where it goes for the pilot.** The SDK reads
   `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` for itself, and where they go is
-  decided once for every client quackd builds on it, in `providers/openai_headers.py`, by ADR-0010's
+  decided once for every client Roboglot builds on it, in `providers/openai_headers.py`, by ADR-0010's
   amendment of 2026-10-12: they follow the SDK's own address. This client is always handed one, so
   OpenAI's own API is the one place they go, and there it is built as the SDK builds one by itself
   and they go exactly as the SDK sends them. At any other address it is handed the module's answer
@@ -84,7 +84,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   and the lock treat the variable: the word as the one authorization, under every spelling the
   variable gives one, a header the SDK sends by itself keeping the SDK's own value, every other name
   omitted, and both account headers omitted. The built client's headers and its address are read
-  back, and a release that would still send what quackd did not write refuses the build, naming
+  back, and a release that would still send what Roboglot did not write refuses the build, naming
   itself.
 - **No redirect is followed.** The client is built on the SDK's `DefaultAsyncHttpxClient`, told
   to follow none, because a redirect would carry the account headers, and on a 307 or a 308 the
@@ -95,7 +95,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   The client's own timeout is twice `TIMEOUT_S` (`base.client_timeout`) rather than `TIMEOUT_S`
   itself. httpx2 applies it to each operation of a request, the connect, each read, each write,
   rather than to the whole, and at the stepper's own second it came due with the stepper's bound,
-  so one slow server's turns were recorded some as quackd's `no answer within 1.0 s` and some as
+  so one slow server's turns were recorded some as Roboglot's `no answer within 1.0 s` and some as
   `APITimeoutError`. Above it, the stepper's bound, an `asyncio.timeout` around `decide()`, ends
   every turn that runs out, and the record says `no answer within 1.0 s` only where that bound is
   what expired: a `TimeoutError` a backend raises on a clock of its own is recorded by its type.
@@ -111,7 +111,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   one the stepper measures as `state_chars`, with its letters as letters, because `input` is text
   the API hands its LLM undecoded and JSON's escapes would reach it as written. Every question
   goes named and in order: a `noul` as a `predicate`, a choice's criteria as `choices` with
-  `escalate` last, a score's as `levels`. An answer is kept only under a name quackd asked, and
+  `escalate` last, a score's as `levels`. An answer is kept only under a name Roboglot asked, and
   position is never used, because the schema makes the name optional and position is the one reading
   that could attribute `need_human`'s probability to `done`. Every answer under a name is gathered
   before any is read: a refusal among them declines the question wherever it came, two answers or
@@ -141,7 +141,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   turn usually waits longer than that between two of the stepper's. It is null on the first turn
   and on the one after a request that failed, which may have taken its connection with it, so it
   never claims a connection was kept warm that may be gone.
-- **A request an interrupt cuts off is on the record.** A second Ctrl-C, or a flock cancelling a
+- **A request an interrupt cuts off is on the record.** A second Ctrl-C, or a team cancelling a
   member, is not an `Exception`, so it went past the stepper's handler with the request it cut off
   already handed over, and that request was missing from the stepper's count, its seconds, its bill
   and the transcript. It is counted, timed and billed now as a failed turn is, on a gate of its own,
@@ -156,7 +156,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 
 ## Why not
 
-- **A plugin.** The entry point group is how a decision LLM quackd does not name gets in, and it
+- **A plugin.** The entry point group is how a decision LLM Roboglot does not name gets in, and it
   would have worked. But a plugin's row carries no price, so a paid API would be costed at the
   self-hosted $0, and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) already
   said why that is wrong: a missing rate and a free LLM are different facts. Nor is a plugin
@@ -176,7 +176,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   everybody's answers the same way. A backend that speaks another shape translates on its own
   side, so the stepper never learns which one it was talking to.
 - **The top probability, or a blend, in place of `confidence`.** OpenAI's own examples put
-  `confidence` below the top probability, 0.93 against 0.95, and a number quackd made up from the
+  `confidence` below the top probability, 0.93 against 0.95, and a number Roboglot made up from the
   distribution would be one nobody published. Both are recorded, so shadow mode can compare them.
 - **One predicate per verb.** One tester on OpenAI's forum found a predicate following a weighted
   coin where a choice overshot it and moved with the order of its options. Asking that way would
@@ -191,7 +191,7 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 - Two wire formats, two hosted rows, and two rows with a published rate. The catalogue tests
   loosen to say so: a row's backend is one of three, a key and a price belong to `jev` and
   `openai`, and the LLM variable to `jev` alone. A turn of either that fails after its request
-  went out is billed on quackd's estimate at its rate, so a `~` in front of a stepper cost above
+  went out is billed on Roboglot's estimate at its rate, so a `~` in front of a stepper cost above
   `$0` can be `openai`'s as well as `jev`'s, and ADR-0041 carries a note that says so.
 - A run that names `openai` sends the state's text to OpenAI, whose data controls say it is not
   used for training and is kept in abuse-monitoring logs for 30 days
@@ -200,13 +200,13 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   of its own.
 - The record grows the `refused` gate and its names, `refusals` in the summary, the `interrupted`
   gate, and `idle_s` on each turn that sent a request, and every row's `error` is now a type,
-  followed by its status where there is one or by one of quackd's own two sentences.
+  followed by its status where there is one or by one of Roboglot's own two sentences.
 - The generic request rests on two of the SDK's internals: `cast_to=object` passing the body
   through, and a body that is not JSON coming back as text. The reader checks that it got a JSON
   object, and the wire tests have run against 3.22.1, which the lock carries, against 3.1.0 and
   against 1.66.0, the extra's floor, and against no other release.
-- **Nothing here has answered a real robot, and no request from quackd has reached OpenAI.** In CI
-  the client runs against a fake of the SDK. Wherever the SDK is installed, a real `quackd run` goes
+- **Nothing here has answered a real robot, and no request from Roboglot has reached OpenAI.** In CI
+  the client runs against a fake of the SDK. Wherever the SDK is installed, a real `roboglot run` goes
   through it to a stand-in on 127.0.0.1 (`tests/fake_openai_decisions.py`), which shows on the wire
   where the key and the account headers go, and any test without the `live_decision` or `live_llm`
   marker that sends a request through the real SDK to a host under openai.com is stopped before it

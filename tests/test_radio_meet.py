@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import random
 
-from quackd.passport.beacon import FLAG_LAN, FLAG_LINK
-from quackd.radio.meet import Meet, MeetPolicy, Outcome, Part, Planner
-from quackd.radio.proximity import ProximityEvent
+from roboglot.passport.beacon import FLAG_LAN, FLAG_LINK
+from roboglot.radio.meet import Meet, MeetPolicy, Outcome, Part, Planner
+from roboglot.radio.proximity import ProximityEvent
 
 POLICY = MeetPolicy()
 LOW, MID, HIGH = "1" * 16, "5" * 16, "9" * 16

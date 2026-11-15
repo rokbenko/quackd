@@ -1,16 +1,16 @@
 """Render the table of what connecting each real backend takes into `docs/guides/web-ui.md`, from
-the connect blocks in `quackd/adapters/catalogue.py`, or check that the page still holds what the
+the connect blocks in `roboglot/adapters/catalogue.py`, or check that the page still holds what the
 catalogue says.
 
 The table sits between two markers this script owns. A block is changed in the catalogue and this
 script run, never in the table, and a test runs it on every commit and fails when the guide says
-something the catalogue no longer does. The page `quackd ui` reads the same blocks, so the guide
+something the catalogue no longer does. The page `roboglot ui` reads the same blocks, so the guide
 and the Setup screen cannot disagree.
 
     uv run --no-sync python scripts/connect_docs.py          # rewrite the guide
     uv run --no-sync python scripts/connect_docs.py --check  # exit 1 if the guide would change
 
-It imports the catalogue and nothing else of quackd's, and reads no environment.
+It imports the catalogue and nothing else of Roboglot's, and reads no environment.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from quackd.adapters.catalogue import OFFICIAL
+from roboglot.adapters.catalogue import OFFICIAL
 
 REPO = Path(__file__).resolve().parents[1]
 PAGE = REPO / "docs" / "guides" / "web-ui.md"
@@ -29,7 +29,7 @@ BLOCK = "connect-rows"
 _START = re.compile(rf"^<!-- generated: {BLOCK}\b[^\n]*-->$", re.M)
 _END = re.compile(rf"^<!-- end generated: {BLOCK} -->$", re.M)
 START_MARKER = (
-    f"<!-- generated: {BLOCK}, by scripts/connect_docs.py from quackd/adapters/catalogue.py. "
+    f"<!-- generated: {BLOCK}, by scripts/connect_docs.py from roboglot/adapters/catalogue.py. "
     "Change a block there and run the script, not this table. -->"
 )
 

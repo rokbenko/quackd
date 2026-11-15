@@ -18,12 +18,12 @@ import sys
 import time
 from typing import Any
 
-from quackd.passport.beacon import ble_service_data, initiates
-from quackd.passport.errors import PassportError
-from quackd.passport.link import Media
-from quackd.radio import Pipe, Sighting
-from quackd.radio.links import LinkInbox, LinkTable
-from quackd.radio.sim import Path, SimOptions, SimRadio
+from roboglot.passport.beacon import ble_service_data, initiates
+from roboglot.passport.errors import PassportError
+from roboglot.passport.link import Media
+from roboglot.radio import Pipe, Sighting
+from roboglot.radio.links import LinkInbox, LinkTable
+from roboglot.radio.sim import Path, SimOptions, SimRadio
 
 #: How long the robot that dialled keeps advertising after its link closed: five of the air's
 #: ticks, for the other robot to have heard it whatever the order the two started in.

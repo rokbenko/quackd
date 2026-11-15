@@ -22,8 +22,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck.transports.jsonrpc_unix import (
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck.transports.jsonrpc_unix import (
     SNAPSHOT_MAX_BYTES,
     JsonRpcUnixTransport,
     NotAStill,
@@ -218,7 +218,7 @@ def test_a_redirect_is_refused_without_reading_its_body() -> None:
         assert time.monotonic() - started < 3.0
         said = str(refused.value)
         assert "HTTP 302 Found, a redirect to http://127.0.0.1:" in said, said
-        assert "/elsewhere.jpg, which quackd does not follow" in said, said
+        assert "/elsewhere.jpg, which Roboglot does not follow" in said, said
         assert dropped.wait(5.0), "the redirect's body is still being read"
 
 

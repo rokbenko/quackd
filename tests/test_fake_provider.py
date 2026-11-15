@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.providers.base import Decision, Exchange, Observation, ToolCall
-from quackd.agent.providers.fake import FakeProvider
+from roboglot.agent.providers.base import Decision, Exchange, Observation, ToolCall
+from roboglot.agent.providers.fake import FakeProvider
 
 SYSTEM = "You are the brain of a small duck robot."
 ALLOWED = ["search_scan", "walk_to", "kick", "quack", "declare_success", "declare_failure"]
@@ -68,7 +68,7 @@ async def test_the_scripted_pilot_says_what_it_saw_and_what_it_picked() -> None:
             )
         ),
     ]
-    turn = await FakeProvider.for_duck("find-and-kick").step(SYSTEM, history, [])
+    turn = await FakeProvider.for_glot("find-and-kick").step(SYSTEM, history, [])
 
     assert turn.thinking == (
         "[scripted] step 2: sees 1 ball (nearest 0.58 m, 18 deg left) after search_scan ok, "
@@ -81,7 +81,7 @@ async def test_the_scripted_pilot_says_when_it_sees_nothing() -> None:
     """An empty camera and no verb behind it still produce a whole sentence: a blank think
     line would be indistinguishable from the bug this feature fixes."""
     history = [Exchange(observation=_observation())]
-    turn = await FakeProvider.for_duck("find-and-kick").step(SYSTEM, history, [])
+    turn = await FakeProvider.for_glot("find-and-kick").step(SYSTEM, history, [])
 
     assert (
         turn.thinking == "[scripted] step 0: sees nothing it knows, so the rule picks search_scan"
@@ -95,9 +95,9 @@ HOSTILE_LABEL = 'ball" ' + "with an implausibly long detector label " * 5
 @pytest.mark.parametrize(
     ("provider", "observation"),
     [
-        (FakeProvider.for_duck("hello-world"), _observation()),
+        (FakeProvider.for_glot("hello-world"), _observation()),
         (
-            FakeProvider.for_duck("find-and-kick"),
+            FakeProvider.for_glot("find-and-kick"),
             _observation(
                 detections=[_ball(0.22, 0.0)],
                 last_result={"verb": 'walk_to "ball"', "ok": False, "summary": "", "data": {}},
@@ -105,7 +105,7 @@ HOSTILE_LABEL = 'ball" ' + "with an implausibly long detector label " * 5
         ),
         (FakeProvider(script=[ToolCall(name="kick")]), _observation(detections=[_ball()])),
         (
-            FakeProvider.for_duck("find-and-kick"),
+            FakeProvider.for_glot("find-and-kick"),
             _observation(
                 detections=[
                     {"label": HOSTILE_LABEL, "cx": 0.5, "cy": 0.5, "area": 0.1, "bearing_deg": None}
@@ -136,7 +136,7 @@ async def test_the_scripted_pilot_has_no_text_and_no_reasoning_tokens() -> None:
     """A rule says nothing to the human and spends nothing thinking. Inventing either would
     make the log's token line lie about what a keyless run costs."""
     history = [Exchange(observation=_observation(detections=[_ball()]))]
-    turn = await FakeProvider.for_duck("find-and-kick").step(SYSTEM, history, [])
+    turn = await FakeProvider.for_glot("find-and-kick").step(SYSTEM, history, [])
 
     assert turn.text is None
     assert turn.usage.reasoning_tokens == 0
@@ -164,7 +164,7 @@ def test_the_square_walker_says_how_square_it_was_and_fails_when_it_is_not() -> 
     """Four legs is a count, not a shape. Each leg ends when the pose says it has gone far
     enough, so an overshoot or a corner short of ninety degrees gives four legs that finish
     somewhere else. `docs/assets/hero3d.py` publishes the GIF on this outcome."""
-    from quackd.agent.providers.fake import SHAPE_CLOSURE_M, square_strategy
+    from roboglot.agent.providers.fake import SHAPE_CLOSURE_M, square_strategy
 
     # a walk that wanders off: four legs, ending far from where it started
     wandering = square_strategy()
@@ -178,12 +178,40 @@ def test_the_square_walker_says_how_square_it_was_and_fails_when_it_is_not() -> 
     assert SHAPE_CLOSURE_M < 2.0, "four legs walked in a line must not pass as a square"
 
 
+def test_a_true_square_is_judged_where_its_fourth_corner_ends() -> None:
+    """A body that does exactly what it is told walks four legs and turns four corners, and the
+    walker judges the shape there. It used to look one call late: a corner that ended went
+    straight on to begin the next leg, so a square was judged from the end of a fifth leg, a
+    whole side from where it started. This body passed that by a fraction of a millimetre,
+    which is why the legs are counted: a leg is the moves between two corners, however many
+    a leg takes."""
+    import math
+
+    from roboglot.agent.providers.fake import square_strategy
+
+    strategy = square_strategy()
+    x = y = theta = 0.0
+    legs, walking = 0, False
+    for step in range(60):
+        call = strategy(_pose_obs(x, y, theta), step, [])
+        if call.name != "move":
+            break
+        vx, wz, seconds = (call.arguments[k] for k in ("vx", "wz", "duration_s"))
+        legs += vx > 0 and not walking
+        walking = vx > 0
+        x += vx * seconds * math.cos(theta)
+        y += vx * seconds * math.sin(theta)
+        theta = math.atan2(math.sin(theta + wz * seconds), math.cos(theta + wz * seconds))
+    assert legs == 4, f"{legs} legs walked for one square"
+    assert call.name == "declare_success", call.arguments
+
+
 def test_a_shape_walker_never_asks_for_a_turn_it_cannot_measure() -> None:
     """The strategy reads the heading once per move and not in between, so a turn past pi is
     indistinguishable from its complement and a whole revolution from standing still."""
     import math
 
-    from quackd.agent.providers.fake import circle_strategy, square_strategy
+    from roboglot.agent.providers.fake import circle_strategy, square_strategy
 
     for make in (square_strategy, circle_strategy):
         strategy = make()
@@ -214,6 +242,6 @@ def test_the_scripted_pilot_takes_vision_without_teaching_it_to_every_other_one(
 def test_the_exploring_starters_have_scripted_pilots_of_their_own() -> None:
     """A goal run allows safe verbs alone, and `explore` and `find` ask first, so exploring is a
     task file's to allow: the two starters that do have a pilot each, and no goal word does."""
-    assert FakeProvider.for_duck("find-the-ball").llm_id == "scripted:find-the-ball"
-    assert FakeProvider.for_duck("favourite-spot").llm_id == "scripted:favourite-spot"
-    assert FakeProvider.for_duck("x", "explore the room").llm_id == "scripted:x"
+    assert FakeProvider.for_glot("find-the-ball").llm_id == "scripted:find-the-ball"
+    assert FakeProvider.for_glot("favourite-spot").llm_id == "scripted:favourite-spot"
+    assert FakeProvider.for_glot("x", "explore the room").llm_id == "scripted:x"

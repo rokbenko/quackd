@@ -1,7 +1,7 @@
 # Discovery: how robots find each other
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation. Nothing on this page has run over a real
+> Spec 1.0. Roboglot 0.29.0 is its first implementation. Nothing on this page has run over a real
 > Bluetooth radio: the advert, the rotation and the link are tested in the suite and on the sim
 > board, and [roadmap.md](roadmap.md) says what that proves.
 
@@ -41,7 +41,7 @@ The advert, the robot's LAN record and the beacon its `hello` carries all change
 
 A listener who wrote an id down an hour ago cannot match it to the robot by the id alone
 ([privacy.md](privacy.md#tracking)). Robots that meet again know each other by the keys in their
-passports, and quackd keeps its cooldowns and refusals by `did:key`, never by beacon id, so a
+passports, and Roboglot keeps its cooldowns and refusals by `did:key`, never by beacon id, so a
 rotation costs at most one more `hello`.
 
 > [!WARNING]
@@ -112,7 +112,7 @@ on the LAN can tie the two together ([privacy.md](privacy.md#tracking)). A `hell
 the LAN is answered `403`, "this robot has not heard you by radio", unless the beacon it carries was
 heard over the radio in the last 8 seconds and, when that robot has a LAN record, the `hello` comes
 from an address the record names: the LAN carries talk, and the radio decides who is near.
-In quackd a Jetson announces this record, and on the sim board a folder stands in for it.
+In Roboglot a Jetson announces this record, and on the sim board a folder stands in for it.
 
 ### The Bluetooth link
 
@@ -134,7 +134,7 @@ GET /.well-known/robot-passport.jws     the passport as its owner signed it, as 
 ```
 
 Robots never need it to meet, since a `hello` carries the passport, but a person or a tool can read
-it, as `quackd passport check HOST` does. `/.well-known/` is where
+it, as `roboglot passport check HOST` does. `/.well-known/` is where
 [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615) puts such things, and plain HTTP is acceptable on
 a LAN, because the owner's signature proves a passport, not its transport.
 

@@ -1,5 +1,5 @@
-"""`quackd drive` behind the page: its front end in-process (`drive_from_jsonl`), and the command
-started as the page starts it (`quackd.front`)."""
+"""`roboglot drive` behind the page: its front end in-process (`drive_from_jsonl`), and the command
+started as the page starts it (`roboglot.front`)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest
 
-from quackd.drive.session import DriveSession
-from quackd.drive.terminal import PageAsker, drive_from_jsonl
-from quackd.front import CHANNEL, Channel, Front
-from quackd.transport.mock import MockTransport
+from roboglot.drive.session import DriveSession
+from roboglot.drive.terminal import PageAsker, drive_from_jsonl
+from roboglot.front import CHANNEL, Channel, Front
+from roboglot.transport.mock import MockTransport
 from tests.test_drive_session import _drive, _hold, _until
 from tests.test_front_run import _Page, _transcript
 
@@ -138,11 +138,11 @@ async def test_a_goals_question_is_put_to_the_page_and_its_record_names_the_page
 ) -> None:
     """A goal asks the page as the session's own lanes do, by id, with the gate's own words and
     kind, and the goal's record names a person on the page's channel."""
-    from quackd.duckfile.parser import duck_from_goal
+    from roboglot.glotfile.parser import glot_from_goal
 
     drive, body, records, front, out, ops, task = await _behind_the_page(tmp_path)
     drive.robot.adopt(
-        duck_from_goal(
+        glot_from_goal(
             "drive", ["report_state", "observe", "search_scan", "move", "stop"], confirm=["move"]
         )
     )

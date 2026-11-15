@@ -1,10 +1,10 @@
-(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM quackd.exe
-SUCCESS: The process "quackd.exe" with PID 21872 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 35824 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 22152 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 20864 has been terminated.
+(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM roboglot.exe
+SUCCESS: The process "roboglot.exe" with PID 21872 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 35824 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 22152 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 20864 has been terminated.
 (lerobot-test) PS D:\Development\lerobot-test\.venv>
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot
 configures them with it off, and the arm then folds to its rest pose and is
 let go of there: support it while it connects, then take your hands away

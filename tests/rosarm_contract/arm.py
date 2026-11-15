@@ -4,7 +4,7 @@ It is no arm and no controller. It publishes `sensor_msgs/msg/JointState` for th
 given, in an order other than theirs, and serves `control_msgs/action/FollowJointTrajectory` on
 the action it is given: a goal that names exactly its joints is taken, and the joints move from
 where they are to the goal's last point along the same minimum jerk curve the suite's fake arm
-plays (`quackd_rosarm.fake.minimum_jerk`), over that point's `time_from_start`. A cancel is taken
+plays (`roboglot_rosarm.fake.minimum_jerk`), over that point's `time_from_start`. A cancel is taken
 and the joints hold where it found them; a goal sent over a running one ends the running one
 ABORTED, as Jazzy's JointTrajectoryController does; and with `active` false every goal is
 rejected, as an inactive controller rejects them.

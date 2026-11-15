@@ -1,6 +1,6 @@
 """A behaviour twin of upstream's `alohamini_host.py`, on loopback sockets, with no robot.
 
-Written from the host's source at the pin (`quackd/adapters/alohamini/upstream_api.py`). It
+Written from the host's source at the pin (`roboglot/adapters/alohamini/upstream_api.py`). It
 reproduces the semantics that decide whether a stop is real, bugs included, because the bugs
 are the point:
 
@@ -15,7 +15,7 @@ are the point:
 - the watchdog calls `stop_motion()`, which is the base and the lift and never the arms.
 
 What it cannot prove: serial timing, calibration, real camera behaviour, or whether the arms
-physically move. It proves quackd's client is correct against our reading of the host, which
+physically move. It proves Roboglot's client is correct against our reading of the host, which
 is what `docs/adapters/status.md` claims and no more.
 """
 
@@ -149,9 +149,9 @@ class FakeAlohaMiniHost:
         obs: dict[str, Any] = dict(self.state)
         obs["_image_encoding"] = "jpeg"
         obs["_images"] = list(self.cameras)
-        # quackd's own host wrapper adds these; a stock host has neither
-        obs["quackd_arm_torque"] = self.arm_torque
-        obs["quackd_calibrated"] = self.calibrated
+        # Roboglot's own host wrapper adds these; a stock host has neither
+        obs["roboglot_arm_torque"] = self.arm_torque
+        obs["roboglot_calibrated"] = self.calibrated
         return obs
 
     def _multipart(self) -> list[bytes]:

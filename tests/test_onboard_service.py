@@ -1,5 +1,5 @@
 """The onboard service end to end on the sim air: two robots' services in threads of one process,
-a courier walking up to a household's robot, as `quackd onboard demo` runs them in two.
+a courier walking up to a household's robot, as `roboglot onboard demo` runs them in two.
 
 They meet over the Bluetooth link when they share no network and over the LAN when they do; a
 stranger's name never reaches the other robot's brain, and a pinned owner's robot's does; a
@@ -24,11 +24,11 @@ from typing import Any
 
 import pytest
 
-from quackd.boards import BoardFacts, named
-from quackd.onboard import config, wizard
-from quackd.onboard.keys import read_robot_key
-from quackd.onboard.radio_side import proximity_policy, sim_side
-from quackd.onboard.service import (
+from roboglot.boards import BoardFacts, named
+from roboglot.onboard import config, wizard
+from roboglot.onboard.keys import read_robot_key
+from roboglot.onboard.radio_side import proximity_policy, sim_side
+from roboglot.onboard.service import (
     AlreadyRunning,
     Service,
     SimPlace,
@@ -37,12 +37,12 @@ from quackd.onboard.service import (
     held,
     serve,
 )
-from quackd.onboard.store import OnboardDir
-from quackd.passport import PassportError, document, jws, strict
-from quackd.passport.keys import short_id_of
-from quackd.passport_talk import Talker
-from quackd.passport_trust import Judgement
-from quackd.radio.sim import write_scene
+from roboglot.onboard.store import OnboardDir
+from roboglot.passport import PassportError, document, jws, strict
+from roboglot.passport.keys import short_id_of
+from roboglot.passport_talk import Talker
+from roboglot.passport_trust import Judgement
+from roboglot.radio.sim import write_scene
 
 COURIER = "g1-edu-mock"
 HOUSEHOLD = "agile-one-sn-mock"
@@ -76,7 +76,9 @@ def robot(tmp_path: Path, name: str, *, as_name: str | None = None) -> OnboardDi
     passport signed for the sim board."""
     home = OnboardDir(tmp_path / (as_name or name))
     home.ensure()
-    text = (resources.files("quackd.onboard") / "demo" / f"{name}.yaml").read_text(encoding="utf-8")
+    text = (resources.files("roboglot.onboard") / "demo" / f"{name}.yaml").read_text(
+        encoding="utf-8"
+    )
     text = text.replace("\nmeeting:\n", '\nbrain:\n  llm: "fake"\n\nmeeting:\n', 1)
     if as_name is not None:
         text = text.replace(f"name: {name}\n", f"name: {as_name}\n", 1)
@@ -105,7 +107,7 @@ def air_for(tmp_path: Path) -> Path:
 
 @contextlib.contextmanager
 def running(home: OnboardDir, place: SimPlace) -> Iterator[Service]:
-    """`quackd onboard serve --board sim` for `home`, on a thread, until the block ends."""
+    """`roboglot onboard serve --board sim` for `home`, on a thread, until the block ends."""
     started: list[Service] = []
     ready = threading.Event()
     failed: list[BaseException] = []
@@ -248,7 +250,7 @@ def test_a_passport_changed_after_its_owner_signed_it_is_refused(tmp_path: Path)
         send=side.send,
         heard=side.heard,
         on_session=side.on_session,
-        runtime={"software": "quackd/test"},
+        runtime={"software": "roboglot/test"},
     )
     with running(household, SimPlace(air, STANDS, "none", speed=SPEED)):
         side.start(talker, short_id=short_id_of(key.did), digest="0" * 64, http_port=0)
@@ -284,7 +286,7 @@ def test_a_passport_signed_on_another_kind_of_computer_is_not_served(tmp_path: P
 
 def test_one_service_holds_a_robots_directory_at_a_time(tmp_path: Path) -> None:
     lock = tmp_path / "service.lock"
-    with held(lock), pytest.raises(AlreadyRunning, match="another quackd onboard serve"):  # noqa: SIM117
+    with held(lock), pytest.raises(AlreadyRunning, match="another roboglot onboard serve"):  # noqa: SIM117
         with held(lock):
             pass
     with held(lock):  # and it is free again once the first let go
@@ -292,7 +294,7 @@ def test_one_service_holds_a_robots_directory_at_a_time(tmp_path: Path) -> None:
 
 
 def test_a_robot_file_edited_by_hand_is_read_again_with_no_command(tmp_path: Path) -> None:
-    """A pin written into robot.yaml by an editor, not by `quackd onboard pin`, still reaches
+    """A pin written into robot.yaml by an editor, not by `roboglot onboard pin`, still reaches
     the running service: it looks at the file's time every few seconds."""
     from tests.passport_helpers import B
 
@@ -308,24 +310,24 @@ def test_a_robot_file_edited_by_hand_is_read_again_with_no_command(tmp_path: Pat
 def test_robot_env_reaches_a_service_started_in_a_terminal_and_a_set_variable_wins(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd.onboard.service import load_env
+    from roboglot.onboard.service import load_env
 
     env = tmp_path / "robot.env"
-    env.write_text("LOCAL_API_KEY=from-the-file\nQUACKD_TEST_SET=from-the-file\n# a note\n")
+    env.write_text("LOCAL_API_KEY=from-the-file\nROBOGLOT_TEST_SET=from-the-file\n# a note\n")
     monkeypatch.setenv("LOCAL_API_KEY", "")  # recorded, so the test leaves it as it found it
-    monkeypatch.setenv("QUACKD_TEST_SET", "from-the-shell")
+    monkeypatch.setenv("ROBOGLOT_TEST_SET", "from-the-shell")
     assert load_env(env) == ["LOCAL_API_KEY"]
     assert os.environ["LOCAL_API_KEY"] == "from-the-file"
-    assert os.environ["QUACKD_TEST_SET"] == "from-the-shell"
+    assert os.environ["ROBOGLOT_TEST_SET"] == "from-the-shell"
     assert load_env(tmp_path / "missing.env") == []
 
 
 def test_a_lan_hello_naming_a_beacon_comes_from_an_address_that_robots_record_names() -> None:
     """A beacon id is public, in every advert and every LAN record, so the radio having heard
     it let any host on the LAN borrow the id of a robot that really was near."""
-    from quackd.lan.lookup import LanRecord
-    from quackd.onboard.radio_side import RadioSide
-    from quackd.radio import NoRadio, Sighting
+    from roboglot.lan.lookup import LanRecord
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio, Sighting
 
     class Lan:
         def __init__(self) -> None:
@@ -367,7 +369,7 @@ def test_talk_goes_off_when_its_own_passport_stops_checking_out_and_on_when_it_d
     """The service read its own passport against the clock only as it started: one that expired
     went on being served, a clock set since stayed silent, and a passport signed while talk was
     off never turned it on."""
-    from quackd.onboard import service as onboard_service
+    from roboglot.onboard import service as onboard_service
 
     air = air_for(tmp_path)
     household = robot(tmp_path, HOUSEHOLD)
@@ -405,10 +407,10 @@ def test_a_robot_file_that_stops_reading_is_named_in_status_and_the_service_runs
 
 def test_the_advert_says_when_this_robot_is_at_a_limit() -> None:
     """Spec 5.6: the flag says a robot is at a link or session limit, and nothing ever set it."""
-    from quackd.onboard.radio_side import RadioSide
-    from quackd.passport.beacon import read_ble_service_data
-    from quackd.passport.talk import MAX_SESSIONS
-    from quackd.radio import NoRadio
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.passport.beacon import read_ble_service_data
+    from roboglot.passport.talk import MAX_SESSIONS
+    from roboglot.radio import NoRadio
 
     adverts: list[bytes] = []
 
@@ -446,9 +448,9 @@ def test_the_advert_says_when_this_robot_is_at_a_limit() -> None:
 
 
 def test_an_id_held_past_its_time_ends_what_held_it_and_only_then_changes() -> None:
-    from quackd.onboard.radio_side import RadioSide
-    from quackd.radio import NoRadio
-    from quackd.radio.rotation import HOLD_S, RETRY_S
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from roboglot.radio.rotation import HOLD_S, RETRY_S
 
     # A clock that starts at nothing: on a real one the sum below can round to just under the
     # hour, and then the rotor rightly asks again after RETRY_S and this test says it never asked.
@@ -479,8 +481,8 @@ def test_an_id_held_past_its_time_ends_what_held_it_and_only_then_changes() -> N
 
 
 def test_a_link_that_closes_is_told_to_the_talker_off_the_radios_loop() -> None:
-    from quackd.onboard.radio_side import RadioSide
-    from quackd.radio import NoRadio
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
 
     side = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="127.0.0.1")
     closed: list[str] = []
@@ -500,8 +502,8 @@ def test_a_link_that_closes_is_told_to_the_talker_off_the_radios_loop() -> None:
 
 
 def test_an_advert_that_will_not_change_does_not_stop_the_tick() -> None:
-    from quackd.onboard.radio_side import RadioSide
-    from quackd.radio import NoRadio
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
 
     class Radio(NoRadio):
         async def set_advert(self, advert: bytes) -> None:
@@ -517,7 +519,7 @@ def test_an_advert_that_will_not_change_does_not_stop_the_tick() -> None:
 
 
 def test_a_run_grants_only_the_courtesies_the_signed_passport_offers(tmp_path: Path) -> None:
-    """A robot quackd only talks for signs `courtesy: []`, and a run still granted a pause."""
+    """A robot Roboglot only talks for signs `courtesy: []`, and a run still granted a pause."""
     import asyncio
 
     home = robot(tmp_path, HOUSEHOLD)
@@ -562,12 +564,12 @@ def test_refusals_are_written_at_most_thirty_a_minute_and_rows_from_many_threads
 def test_a_meeting_keeps_no_notes_and_a_goal_does(tmp_path: Path) -> None:
     """A meeting's notes would be what a robot it met claimed, back in a later run as the robot's
     own word, so a meeting is offered no `remember`."""
-    from quackd.duckfile.parser import duck_from_goal
-    from quackd.onboard.meeting import meeting_duck
+    from roboglot.glotfile.parser import glot_from_goal
+    from roboglot.onboard.meeting import meeting_glot
 
     home = robot(tmp_path, HOUSEHOLD)
     service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type,return-value]
-    meeting = service._make_loop(meeting_duck("say who you are"), "meeting", None)
+    meeting = service._make_loop(meeting_glot("say who you are"), "meeting", None)
     assert meeting.cfg.memory is None
-    goal = service._make_loop(duck_from_goal("report your state", ["report_state"]), "goal", None)
+    goal = service._make_loop(glot_from_goal("report your state", ["report_state"]), "goal", None)
     assert goal.cfg.memory is not None

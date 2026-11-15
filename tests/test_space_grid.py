@@ -8,8 +8,8 @@ import math
 import numpy as np
 import pytest
 
-from quackd.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid, Plan
-from quackd.space.pose import Pose2D
+from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid, Plan
+from roboglot.space.pose import Pose2D
 
 ALPHABET = {"?": UNKNOWN, ".": FREE, "#": OCCUPIED}
 

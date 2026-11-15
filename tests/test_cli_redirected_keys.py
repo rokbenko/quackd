@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli, dotenv_names
+from roboglot import cli, dotenv_names
 
 _REAL = cli._warn_redirected_keys
 """Bound before the suite's own fixture replaces it, for every test in here."""
@@ -124,8 +124,8 @@ def test_a_host_with_no_scheme_is_read_as_a_host(
 ) -> None:
     _environment(
         monkeypatch,
-        from_file={"QUACKD_HOST": "jetson.example:9874"},
-        from_shell={"QUACKD_HOST_TOKEN": "a-token"},
+        from_file={"ROBOGLOT_HOST": "jetson.example:9874"},
+        from_shell={"ROBOGLOT_HOST_TOKEN": "a-token"},
     )
     _REAL()
     (line,) = said
@@ -145,7 +145,7 @@ def test_a_key_read_from_its_second_name_counts(
 
 
 @pytest.mark.parametrize(
-    "address", ["OPENAI_BASE_URL", "QUACKD_HOST", "QUACKD_BASE_URL"], ids=str.lower
+    "address", ["OPENAI_BASE_URL", "ROBOGLOT_HOST", "ROBOGLOT_BASE_URL"], ids=str.lower
 )
 def test_a_local_key_counts_wherever_a_local_llm_is_reached_from(
     address: str, monkeypatch: pytest.MonkeyPatch, said: list[str]
@@ -190,8 +190,8 @@ def test_a_closed_stderr_costs_the_command_nothing(tmp_path: Path) -> None:
         "read, write = os.pipe()\n"
         "os.close(read)\n"
         "os.dup2(write, 2)\n"
-        "from quackd.cli import main\n"
-        "sys.argv = ['quackd', 'list-verbs', '--robot', 'microduck:mock', '--json']\n"
+        "from roboglot.cli import main\n"
+        "sys.argv = ['roboglot', 'list-verbs', '--robot', 'microduck:mock', '--json']\n"
         "main()\n"
     )
     env = {**os.environ, "ANTHROPIC_API_KEY": "sk-the-readers-own", "PYTHONUTF8": "1"}

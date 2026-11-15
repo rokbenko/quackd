@@ -1,9 +1,9 @@
 # ADR-0041: The record says when it ran and what it cost
 
-**Status:** accepted, amended · **Date:** 2026-09-21 · Extends [ADR-0029](0029-tracing.md) (one event stream, and what it records) and [ADR-0031](0031-llm-catalogue.md) (the catalogue is where LLM data lives) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's summary block, and its consequence that the speed and cost figures in `docs/jev.md` are an estimate) · Implemented in `quackd/agent/providers/pricing.py`, with changes in the loop, the stepper and both console views
+**Status:** accepted, amended · **Date:** 2026-09-21 · Extends [ADR-0029](0029-tracing.md) (one event stream, and what it records) and [ADR-0031](0031-llm-catalogue.md) (the catalogue is where LLM data lives) · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's summary block, and its consequence that the speed and cost figures in `docs/jev.md` are an estimate) · Implemented in `roboglot/agent/providers/pricing.py`, with changes in the loop, the stepper and both console views
 
-**Amended 2026-09-22 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** `quackd trace` below
-is `quackd log`. The old spelling still runs, hidden from `--help`, prints one yellow line
+**Amended 2026-09-22 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** `roboglot trace` below
+is `roboglot log`. The old spelling still runs, hidden from `--help`, prints one yellow line
 naming the new one, and goes in 0.12. The record this ADR adds to is the log from that release
 on, and it carries the terminal session as well. Nothing else in this ADR changes.
 
@@ -11,15 +11,15 @@ on, and it carries the terminal session as well. Nothing else in this ADR change
 now named for the format. `run_start.jev_price` is `decision_price`, with a `decision_llm`
 beside it saying which one answered and where; the kinds `jev` and `jev_shadow` are `decision`
 and `decision_shadow`, and the five `jev_*` fields on the shadow record are `decision_*`; the
-summary's `jev` block is `decision` and carries `llm` and `url`; `QUACKD_JEV_PRICE` is
-`QUACKD_DECISION_PRICE`. Read "TypeSafe" in the stepper's costing below as "whichever decision
+summary's `jev` block is `decision` and carries `llm` and `url`; `ROBOGLOT_JEV_PRICE` is
+`ROBOGLOT_DECISION_PRICE`. Read "TypeSafe" in the stepper's costing below as "whichever decision
 LLM answered": a server you run reports no bill and is costed at the self-hosted `$0` the rest
-of quackd already uses for a local LLM, so the estimate and its `~` exist only where a
+of Roboglot already uses for a local LLM, so the estimate and its `~` exist only where a
 non-zero rate does, which today is Jev alone.
 
 **Amended 2026-10-06 by [ADR-0050](0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md):** a call can be costed at what
 the vendor says it billed. On OpenRouter a turn's `cost_usd` is its `usage.cost`, with the
-upstream charge added on a bring-your-own-key call, unless `--price` or `QUACKD_PRICE` named a
+upstream charge added on a bring-your-own-key call, unless `--price` or `ROBOGLOT_PRICE` named a
 rate, and that `llm` record carries `billed: true`; the summary counts such calls in
 `billed_calls`. The `price` record is still the rate, which is what a call with no bill is
 costed at, and a rate read on a day of its own carries that day in `checked`. A run's total
@@ -31,8 +31,8 @@ where a non-zero rate does, which today is Jev alone", at the end of the 2026-09
 this way instead. Two decision LLMs carry a published rate now: `jev` reached with no
 `--decision-url`, and `openai` at OpenAI's own hosts, whose $0.10 per million input tokens OpenAI
 publish. Anywhere else either of them is a server you run, costed at the self-hosted `$0` unless
-`QUACKD_DECISION_PRICE` says otherwise. And an estimate never waited for a rate. A turn whose
-tokens quackd worked out for itself, because its request went out and then failed or because the
+`ROBOGLOT_DECISION_PRICE` says otherwise. And an estimate never waited for a rate. A turn whose
+tokens Roboglot worked out for itself, because its request went out and then failed or because the
 backend reported no count, is `usage_estimated` on its record and sets the run's
 `cost_estimated` whatever the rate, and its line in the log puts the `~` on both its tokens and
 its money, so a server you run prints `~$0` there, as it did before ADR-0052. Only the run's
@@ -51,17 +51,17 @@ warm-up (`pilot_warm`).
 The one hardware run this project has is at the top of `README.md`, and the sentence that
 matters most about it is this one: *"Ten LLM calls, 3.3 to 8.2 seconds each, 62.1 seconds in
 all, which is 79% of the run. The arm moved for 12.2 seconds, which is 15%."* That 62.1 was
-added up by hand, out of the `latency_s` on ten `llm` records, because nothing in quackd
+added up by hand, out of the `latency_s` on ten `llm` records, because nothing in Roboglot
 totalled it. `summary.json` gave `steps`, `llm_calls`, a token count and `elapsed_s`, and
 `elapsed_s` is the budget's clock rather than the wall's.
 [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) is built on that ratio and
 `docs/jev.md` quotes it three times, so the number this project's newest argument rests on was
 the one number a run did not record.
 
-Money was worse, because it was declared out of scope. `docs/jev.md` line 494 says **"quackd
+Money was worse, because it was declared out of scope. `docs/jev.md` line 494 says **"Roboglot
 counts tokens and has never computed money"**, and the rest of that section is arithmetic the
 reader is expected to do against a rate card they first have to go and find. Meanwhile
-[ADR-0031](0031-llm-catalogue.md) had already decided that what quackd knows about an LLM
+[ADR-0031](0031-llm-catalogue.md) had already decided that what Roboglot knows about an LLM
 belongs in one curated table, and that table held 115 LLMs without the one field anybody
 converts a token count into. A reader looking at `in=10730 out=96` cannot tell a ten cent run
 from a ten dollar one without a browser open beside the terminal.
@@ -77,21 +77,21 @@ And a run had no name. A bench session of a hundred hardware runs is a hundred d
 that differ only in a timestamp nobody wrote down. The SO-101 afternoon was twelve of them, and
 the honest way to find the wave afterwards was to open transcripts until the goal matched.
 `--run-name "Example 1"` is the answer to that, and it has to reach the directory name, because
-the directory name is what somebody types back into `quackd trace`.
+the directory name is what somebody types back into `roboglot trace`.
 
 ## Decision
 
 - **One wall anchor per run, and every record keeps its relative `t`.** The transcript reads
   `started_at` in the same breath as its monotonic `_t0`, and that pair is the only place the
   two clocks meet. `run_end` derives `ended_at` as `started_at + wall_s` rather than reading
-  the clock a second time, so `ended_at - started_at == wall_s` holds of every record quackd
+  the clock a second time, so `ended_at - started_at == wall_s` holds of every record Roboglot
   writes and no reader ever has to decide which of two stamps to believe.
 
 - **`wall_s` is the honest start to finish figure, and `elapsed_s` is left exactly as it was.**
   `elapsed_s` is `safety.Budget`'s clock, which is the transport's own, and on `sim2d` that is
   the simulator's: a verified run of `find-and-kick` recorded `elapsed_s` 7.8 against `wall_s`
   0.203, because the simulator stepped ahead of the wall. Making those two agree would break
-  the budget line that appears in every observation and that `quackd trace` parses back out.
+  the budget line that appears in every observation and that `roboglot trace` parses back out.
   So there are two clocks and each is named for what it measures: `wall_s` for how long a
   person waited, `elapsed_s` for how much of the budget the robot spent. `connect_s` and
   `llm_latency_s` split the wall into the parts worth arguing about, and `llm_latency_s` is
@@ -99,14 +99,14 @@ the directory name is what somebody types back into `quackd trace`.
   still cost the run its seconds.
 
 - **A run can be named, and the name is validated before anything else happens.**
-  `--run-name` is recorded as typed and goes on disk as a slug, after the duck name and before
-  the collision counter, giving `20260921-155822-find-and-kick-example-1`. `quackd trace`
+  `--run-name` is recorded as typed and goes on disk as a slug, after the task name and before
+  the collision counter, giving `20260921-155822-find-and-kick-example-1`. `roboglot trace`
   gained one resolution pass for it, ahead of both the timestamp prefix and the loose
-  substring, matching the slug against what follows the stamp, so `quackd trace example-1`
+  substring, matching the slug against what follows the stamp, so `roboglot trace example-1`
   finds `example-1` and not the newer `example-19`. Ahead of the prefix pass rather than
   behind it, because a label can be all digits and a run called `20260921` was otherwise
-  answered by whichever run's timestamp started the same way; and only where a duck name
-  precedes the label, because otherwise a bare duck name matched an unnamed run of that duck
+  answered by whichever run's timestamp started the same way; and only where a task name
+  precedes the label, because otherwise a bare task name matched an unnamed run of that task
   and quietly preferred it to a newer named one. A name with nothing in it to slug is an error and
   not a fallback, and both it and `--price` are checked at the top of `_run_impl`, before
   anything connects and before a directory exists: a bench session that mistyped a flag should
@@ -122,7 +122,7 @@ the directory name is what somebody types back into `quackd trace`.
   cannot be summed across a run or multiplied by a rate, which is the whole reason the
   normalisation lives in the adapters rather than in the arithmetic.
 
-- **Rates live in the catalogue, `--price` and `QUACKD_PRICE` override them, and unknown is
+- **Rates live in the catalogue, `--price` and `ROBOGLOT_PRICE` override them, and unknown is
   recorded as `null`.** A rate is LLM data, so by [ADR-0031](0031-llm-catalogue.md) it
   belongs in the same table as the id and the vision flag: 112 of the 115 LLMs carry one,
   read off the vendor's own page on `PRICES_CHECKED`. `None` means the vendor publishes no
@@ -155,7 +155,7 @@ the directory name is what somebody types back into `quackd trace`.
 
 - **One summary shape, printed by one function on both surfaces.** `RunResult.summary` is the
   exact dict written to `summary.json`, and `cli.run_counters` builds the counter line from it
-  for the live verdict and for `quackd trace` alike, so the two cannot drift into printing
+  for the live verdict and for `roboglot trace` alike, so the two cannot drift into printing
   different arithmetic about the same run. Every field it reads is optional: a summary written
   before this change has no `wall_s`, no `cost_usd` and no `jev` block, and prints exactly the
   three counters it always did.
@@ -172,24 +172,24 @@ the directory name is what somebody types back into `quackd trace`.
 - **`input_tokens` meaning only the uncached part.** Attractive because the four buckets would
   then add up to the bill with no subtraction anywhere. It would also silently change the
   meaning of a number that every transcript since the first release carries and that people
-  compare across runs, and it would put quackd at odds with two of its three biggest vendors:
+  compare across runs, and it would put Roboglot at odds with two of its three biggest vendors:
   OpenAI and Gemini both report a prompt total that already contains the cached part, so
-  quackd would have to subtract on those two in order to add on the third. The subtraction
+  Roboglot would have to subtract on those two in order to add on the third. The subtraction
   happens in one place instead, inside `cost_usd`, where it is arithmetic rather than meaning.
 
 - **Pricing an unknown LLM at zero.** A missing rate and a free LLM are different facts and
   only one of them is good news. Cohere is the live case rather than a hypothetical: the
   Command A family is sold as dedicated instances by the hour, so there is no per-token figure
-  to record, and the family includes the LLM quackd defaults to for that vendor. A zero there
+  to record, and the family includes the LLM Roboglot defaults to for that vendor. A zero there
   would print `$0` for capacity somebody is paying for by the hour. `null`, a `cost unpriced`
   counter, and one dim line naming the provider and the LLM and telling you to pass `--price`
   is a worse-looking answer and a true one.
 
 - **Recomputing cost at replay from today's catalogue.** Then a run's cost would change every
-  time a vendor moved a rate or quackd fixed a typo in the table, two readings of the same
+  time a vendor moved a rate or Roboglot fixed a typo in the table, two readings of the same
   transcript a month apart would disagree, and neither would say why. The rate is written into
   `run_start` and `summary.json` instead, with its source and its checked date, so
-  `quackd trace` prices a run at what it cost on the day. A rate later found to be wrong then
+  `roboglot trace` prices a run at what it cost on the day. A rate later found to be wrong then
   shows up as a wrong number in the runs that used it, rather than being quietly reapplied to
   every run in the archive.
 
@@ -211,7 +211,7 @@ different quantities, and only the second one is the bill.
 
 **Anthropic's `input_tokens` now includes its cache buckets.** Anthropic reports its three
 input buckets disjoint, so the adapter adds them up rather than passing the uncached remainder
-through as though it were the prompt. quackd sets no cache breakpoint on any request today, so
+through as though it were the prompt. Roboglot sets no cache breakpoint on any request today, so
 on Anthropic those buckets are zero and this is a correction waiting for the caller who turns
 caching on; where a vendor caches by itself the cached slice of the prompt is now recorded and
 charged at the cache rate instead of disappearing into the full one.
@@ -228,7 +228,7 @@ be aged rather than merely doubted. Vendors move rates, and several of them char
 four numbers cannot express: xAI and the Gemini Pro LLMs double above a 200k prompt and
 OpenAI's flagships above 272k, repricing the whole request rather than the excess; DeepSeek
 halve everything outside their peak hours; batch, priority, provisioned and free tiers are
-choices a caller makes that quackd cannot see. The table records the standard on-demand rate
+choices a caller makes that Roboglot cannot see. The table records the standard on-demand rate
 in the short context band, so a long prompt on a banded vendor is under-costed, and each
 vendor's own comment names the threshold where that begins. `--price` is the answer for
 anybody whose bill does not look like this table, and the `source` written into the record is
@@ -239,5 +239,5 @@ how a reader tells the two apart.
 are an estimate, and that stays true of the run level projections on that page. What changes is
 narrower: where the API returns a token count, the cost in the record is computed from it, and
 where it does not, the record says so. Nobody has yet asked TypeSafe's production API for a
-count from inside a quackd run. Both branches are exercised against `tests/fake_typesafe.py`,
+count from inside a roboglot run. Both branches are exercised against `tests/fake_typesafe.py`,
 which reports whatever a test hands it, so the shape is proven and the number is not.

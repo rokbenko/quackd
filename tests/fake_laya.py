@@ -1,6 +1,6 @@
 """A `laya` that loads no weights.
 
-The in-process decision LLM is the one backend with no wire between quackd and the LLM, so
+The in-process decision LLM is the one backend with no wire between Roboglot and the LLM, so
 the only way to test the seam is to stand where the LLM would be. Installed into
 `sys.modules` for the life of one test, because the real package pulls torch and a suite that
 imported it would be testing a download.
@@ -46,7 +46,7 @@ class FakeRouter:
         self.routing = routing or {"model": "typed-decisions", "reason": "asked for"}
         self.input_tokens = input_tokens
         """What `usage.input_tokens` reports. Laya counts the tokens it actually read, so
-        a positive number here is what puts a turn on quackd's measured path; a test wanting
+        a positive number here is what puts a turn on Roboglot's measured path; a test wanting
         the estimated path passes 0, which `_usage` reads as a field never filled in."""
         self.rejects = rejects
         """Constructor keywords this pretend Laya has never heard of, so a test can play the
@@ -76,7 +76,7 @@ class FakeRouter:
         answers = self.script.pop(0) if self.script else self.answers
         # The real shape: `laya/agent.py` hardcodes the LLM string, counts the input with
         # `int(attention_mask.sum())` and hardcodes the output at zero, and `Router.predict`
-        # adds `routing` on top. A fake without `usage` had quackd's estimate path under test
+        # adds `routing` on top. A fake without `usage` had Roboglot's estimate path under test
         # and its measured path untested, which is backwards for this backend.
         return {
             "model": "laya-rl-agent",

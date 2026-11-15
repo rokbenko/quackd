@@ -1,10 +1,10 @@
-# quackd-open_duck
+# roboglot-open_duck
 
-The `open_duck` robot adapter for [quackd](https://github.com/rokbenko/quackd). Install it through
-quackd rather than directly:
+The `open_duck` robot adapter for [Roboglot](https://github.com/rokbenko/quackd). Install it through
+Roboglot rather than directly:
 
 ```bash
-uv pip install "quackd[open_duck]"
+uv pip install "roboglot[open_duck]"
 ```
 
 Every upstream name it relies on is read from upstream source at a pinned commit and listed in

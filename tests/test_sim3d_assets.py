@@ -1,6 +1,6 @@
 """Fetching upstream's model: the hashes, the allowlist, the licence notice, the failures.
 
-`quackd/sim3d/assets.py` is the only code in quackd that downloads anything, it is what makes
+`roboglot/sim3d/assets.py` is the only code in Roboglot that downloads anything, it is what makes
 `docs/reference/licenses.md`'s "never vendored" true, and `SECURITY.md` makes a claim about the
 tarball it extracts. It had no tests: the physics tests use the puppet, which needs none of this.
 
@@ -20,9 +20,9 @@ from typing import Any
 
 import pytest
 
-from quackd_microduck.sim3d import assets
-from quackd_microduck.sim3d import upstream_api as up
-from quackd_microduck.sim3d.assets import (
+from roboglot_microduck.sim3d import assets
+from roboglot_microduck.sim3d import upstream_api as up
+from roboglot_microduck.sim3d.assets import (
     NOTICE_FILE,
     AssetError,
     cache_root,
@@ -52,8 +52,8 @@ def _tarball(members: dict[str, bytes]) -> bytes:
 @pytest.fixture
 def upstream(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     """Move the pins onto a model we can build here, and answer `fetch` from memory."""
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.delenv("QUACKD_MICRODUCK_ASSETS", raising=False)
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("ROBOGLOT_MICRODUCK_ASSETS", raising=False)
     monkeypatch.setattr(up, "ROBOT_XML_SHA256", _sha(XML))
     monkeypatch.setattr(up, "MESH_SHA256", {n: _sha(b) for n, b in MESHES.items()})
     monkeypatch.setattr(up, "WALK_POLICY_SHA256", _sha(POLICIES["alpha_walking.onnx"]))
@@ -213,7 +213,7 @@ def test_a_truncated_download_is_an_asset_error_not_a_bare_traceback(
     """`fetch` caught OSError only. A truncated body raises `http.client.IncompleteRead`,
     which is not one, so a broken download escaped as a traceback rather than the named error
     the docs promise."""
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(tmp_path))
 
     class Torn:
         headers: dict[str, str] = {}
@@ -242,7 +242,7 @@ def test_something_that_is_not_an_archive_says_so(upstream: dict[str, Any]) -> N
 def test_a_body_bigger_than_the_limit_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(tmp_path))
 
     class Huge:
         headers = {"Content-Length": "999999999"}
@@ -282,7 +282,7 @@ def test_a_checkout_that_matches_the_pin_is_used_as_is(
 ) -> None:
     ensure_microduck()  # fill the cache, then point the override at what it wrote
     cached = ensure_microduck(offline=True).robot_dir
-    monkeypatch.setenv("QUACKD_MICRODUCK_ASSETS", str(cached))
+    monkeypatch.setenv("ROBOGLOT_MICRODUCK_ASSETS", str(cached))
     got = ensure_microduck(offline=True)
     assert got.robot_dir == cached and got.pinned
 
@@ -300,20 +300,20 @@ def test_a_checkout_that_differs_warns_and_says_the_walk_may_not_match(
     (own / up.ROBOT_XML.name).write_bytes(XML + b"<!-- my own export -->")
     for name, blob in MESHES.items():
         (own / "assets" / name).write_bytes(blob)
-    monkeypatch.setenv("QUACKD_MICRODUCK_ASSETS", str(own))
+    monkeypatch.setenv("ROBOGLOT_MICRODUCK_ASSETS", str(own))
     with caplog.at_level("WARNING"):
         got = ensure_microduck(offline=True)
     assert got.robot_dir == own
     assert not got.pinned, "and the state reports model_pinned False"
-    assert "QUACKD_MICRODUCK_ASSETS" in caplog.text and up.PIN[:12] in caplog.text
-    assert not (own / NOTICE_FILE).exists(), "quackd does not write into your checkout"
+    assert "ROBOGLOT_MICRODUCK_ASSETS" in caplog.text and up.PIN[:12] in caplog.text
+    assert not (own / NOTICE_FILE).exists(), "Roboglot does not write into your checkout"
     assert cached != own
 
 
 def test_a_checkout_without_the_model_names_the_directory_it_wanted(
     upstream: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("QUACKD_MICRODUCK_ASSETS", str(tmp_path / "empty"))
+    monkeypatch.setenv("ROBOGLOT_MICRODUCK_ASSETS", str(tmp_path / "empty"))
     with pytest.raises(AssetError, match=up.ROBOT_DIR.name):
         ensure_microduck(offline=True)
 
@@ -324,16 +324,16 @@ def test_a_checkout_without_the_model_names_the_directory_it_wanted(
 def test_a_tilde_in_the_cache_variable_is_a_home_directory_not_a_folder_named_tilde(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`.env.example` suggests `QUACKD_CACHE_DIR=~/.quackd/cache`, and a shell that does not
+    """`.env.example` suggests `ROBOGLOT_CACHE_DIR=~/.roboglot/cache`, and a shell that does not
     expand it would otherwise have made a directory called `~` in the working directory."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    monkeypatch.setenv("QUACKD_CACHE_DIR", "~/.quackd/cache")
-    assert cache_root() == tmp_path / ".quackd" / "cache"
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", "~/.roboglot/cache")
+    assert cache_root() == tmp_path / ".roboglot" / "cache"
     assert "~" not in str(cache_root())
 
 
-def test_a_second_quackd_filling_the_same_cache_waits_rather_than_racing(
+def test_a_second_roboglot_filling_the_same_cache_waits_rather_than_racing(
     upstream: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Two first runs at once used to extract into one directory and verify files the other

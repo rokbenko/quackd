@@ -1,4 +1,4 @@
-# quackd's AlohaMini host
+# Roboglot's AlohaMini host
 
 Run this on the robot **instead of** upstream's own host, if you want the arms to work.
 
@@ -10,7 +10,7 @@ only `Torque_Enable` write in the whole package is a zero inside `lift_axis.home
 neither `configure_motors` nor `write_calibration` touches it.
 
 So on a stock host the arms are limp. A joint command moves nothing, and a stop could not hold
-them even if it wanted to. quackd will not pretend otherwise: without this wrapper it refuses
+them even if it wanted to. Roboglot will not pretend otherwise: without this wrapper it refuses
 `move_joints`, `gripper` and `home_arms` and says why. The base, the lift and `stop` work either
 way.
 
@@ -24,12 +24,12 @@ Three things happen around it:
 2. **The lift is stopped once, immediately.** `home()` runs during connect, drives the lift down
    at full speed, and the write that would zero that register afterwards is commented out
    upstream. Until something writes a zero, the lift is still travelling.
-3. **Every observation gains three fields** so quackd can tell this host from a stock one:
-   `quackd_arm_torque`, `quackd_calibrated` and `quackd_host_version`.
+3. **Every observation gains three fields** so Roboglot can tell this host from a stock one:
+   `roboglot_arm_torque`, `roboglot_calibrated` and `roboglot_host_version`.
 
 ## Running it
 
-It needs upstream installed on the robot, in upstream's own environment, at the commit quackd
+It needs upstream installed on the robot, in upstream's own environment, at the commit Roboglot
 was read against:
 
 ```bash
@@ -39,13 +39,13 @@ git checkout ab4462b713aeb24d0473f1ec6c8812290ab19510
 pip install -e ".[all]"
 ```
 
-A host from upstream's `main` refuses every payload quackd sends without a lift height, its stop
+A host from upstream's `main` refuses every payload Roboglot sends without a lift height, its stop
 among them, which [the adapter's page](../../docs/adapters/alohamini/README.md) says more of.
 
 Then, from that environment, with this file wherever you like:
 
 ```bash
-python quackd_alohamini_host.py --robot_model alohamini2
+python roboglot_alohamini_host.py --robot_model alohamini2
 ```
 
 Every other argument is passed straight through to upstream's host, so `--no_follower` and
@@ -54,9 +54,9 @@ a quick way to confirm the imports resolve before you power the arms.
 
 ## Rules this file lives by
 
-- **It never imports quackd.** quackd's dependencies do not belong on a robot, and a test
+- **It never imports Roboglot.** Roboglot's dependencies do not belong on a robot, and a test
   enforces this by reading the file.
-- **It ships in the sdist and never in the wheel**, so `packages` stays `["quackd"]`.
+- **It ships in the sdist and never in the wheel**, so `packages` stays `["roboglot"]`.
 - **It is testable with no hardware.** The two functions that do the work take any object with
   the right attributes, so `tests/test_alohamini_host_wrapper.py` drives them with fakes.
 

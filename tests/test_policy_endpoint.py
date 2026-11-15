@@ -1,6 +1,6 @@
-"""`quackd policy endpoint`'s module: the account's token, the record this machine keeps, the
+"""`roboglot policy endpoint`'s module: the account's token, the record this machine keeps, the
 body an endpoint is created from, the checks before one is, the wait for one to serve, and how
-a run reaches one (`quackd_lerobot.policy.endpoint`).
+a run reaches one (`roboglot_lerobot.policy.endpoint`).
 
 Everything that reaches a server here reaches `tests/fake_hugging_face.py`'s stand-ins on
 127.0.0.1, with the module's three addresses and the client's rule for where the account's token
@@ -21,14 +21,14 @@ from typing import Any
 
 import pytest
 
-from quackd_lerobot import __version__
-from quackd_lerobot.policy import client as C
-from quackd_lerobot.policy import endpoint as E
-from quackd_lerobot.policy import endpoint_upstream_api as up
-from quackd_lerobot.policy import protocol as wire
-from quackd_lerobot.policy import server as S
-from quackd_lerobot.policy.client import RemoteRunner
-from quackd_lerobot.verbs import JOINTS
+from roboglot_lerobot import __version__
+from roboglot_lerobot.policy import client as C
+from roboglot_lerobot.policy import endpoint as E
+from roboglot_lerobot.policy import endpoint_upstream_api as up
+from roboglot_lerobot.policy import protocol as wire
+from roboglot_lerobot.policy import server as S
+from roboglot_lerobot.policy.client import RemoteRunner
+from roboglot_lerobot.verbs import JOINTS
 from tests.fake_hugging_face import (
     ACCOUNT_TOKEN,
     ACT_CONFIG,
@@ -127,7 +127,7 @@ def test_an_account_token_no_header_can_carry_is_refused_without_being_quoted(
 def test_no_variable_moves_where_the_account_token_goes(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """huggingface_hub sends the token wherever `HF_ENDPOINT` says; quackd sends it to its own
+    """huggingface_hub sends the token wherever `HF_ENDPOINT` says; Roboglot sends it to its own
     constants and nowhere a variable could move it, and those are Hugging Face's own, over
     https."""
     with FakeAPI() as elsewhere:
@@ -153,7 +153,7 @@ def test_the_account_token_goes_to_the_api_and_the_hub_and_never_to_pypi_or_the_
     account's: neither is sent it."""
     api = E.HFEndpoints(ACCOUNT_TOKEN)
     api.provider()
-    api.release("quackd", __version__)
+    api.release("roboglot", __version__)
     api.whoami()
     api.quotas("rok")
     api.model(ACT_REPO, "main", token=api.token)
@@ -277,17 +277,17 @@ def test_a_record_that_is_not_what_up_writes_is_refused_naming_it(
     with pytest.raises(E.EndpointError, match="cannot be read"):
         store.read()
     store.path.write_text(json.dumps({"version": 99, "endpoints": {}}), encoding="utf-8")
-    with pytest.raises(E.EndpointError, match="upgrade quackd"):
+    with pytest.raises(E.EndpointError, match="upgrade Roboglot"):
         store.read()
 
 
 # ── what an endpoint is created from ────────────────────────────────────────────────────
 
 
-def test_an_endpoint_is_created_authenticated_on_one_replica_with_quackds_token_alone() -> None:
+def test_an_endpoint_is_created_authenticated_on_one_replica_with_roboglots_token_alone() -> None:
     """`authenticated` and nothing else, one GPU and one replica, since a session lives in one
     process, scaled to zero after the idle minutes, uv's image by its digest, the server's own
-    health route, quackd's token as the one secret, and quackd's tag. The account's token is
+    health route, Roboglot's token as the one secret, and Roboglot's tag. The account's token is
     nowhere in it, and every string in it is a POSIX one, whatever this machine is."""
     flags = E.serve_flags(fps=30.0, cameras="front=observation.images.front", latency_s=0.25)
     record = _record(pins=(PIN,), flags=flags)
@@ -319,10 +319,10 @@ def test_an_endpoint_is_created_authenticated_on_one_replica_with_quackds_token_
         "--exclude-newer",
         AFTER,
         "--from",
-        f"quackd[lerobot-vla]=={__version__}",
+        f"roboglot[lerobot-vla]=={__version__}",
         "--with",
-        f"quackd-lerobot[vla]=={__version__}",
-        "quackd",
+        f"roboglot-lerobot[vla]=={__version__}",
+        "roboglot",
         "policy",
         "serve",
     ]
@@ -352,7 +352,7 @@ def test_an_endpoint_is_created_authenticated_on_one_replica_with_quackds_token_
     assert gated["model"]["secrets"] == {wire.TOKEN_ENV: record.token, "HF_TOKEN": HUB_TOKEN}
 
 
-def test_the_container_reads_its_arguments_as_quackd_policy_serve_reads_them() -> None:
+def test_the_container_reads_its_arguments_as_roboglot_policy_serve_reads_them() -> None:
     """The stand-in container parses the arguments with the serve command's own parser and builds
     its options as the command does, so the flags `up` was given reach the server as typed, and
     what it serves in place of the checkpoint answers with them: behind TLS, so JPEG frames at
@@ -462,7 +462,7 @@ def test_preflight_reads_what_it_needs_and_changes_nothing(hf: FakeAPI) -> None:
 @pytest.mark.parametrize(
     ("setup", "needle"),
     [
-        ({"releases": {"quackd": [], "quackd-lerobot": []}}, "is not a release on PyPI"),
+        ({"releases": {"roboglot": [], "roboglot-lerobot": []}}, "is not a release on PyPI"),
         ({"models": {ACT_REPO: {"private": False, "gated": "manual"}}}, "gated or private"),
         ({"models": {ACT_REPO: {"private": True, "gated": False}}}, "gated or private"),
         (
@@ -472,7 +472,7 @@ def test_preflight_reads_what_it_needs_and_changes_nothing(hf: FakeAPI) -> None:
         ({"models": {ACT_REPO: None}}, "the Hub has no natsuki0000/act-so101-bluecap"),
         ({"quota": 0}, "has no nvidia-l4 left in its quota"),
         ({"account_type": "org"}, "--namespace"),
-        ({"configs": {ACT_REPO: {**ACT_CONFIG, "type": "diffusion"}}}, "quackd serves"),
+        ({"configs": {ACT_REPO: {**ACT_CONFIG, "type": "diffusion"}}}, "Roboglot serves"),
     ],
 )
 def test_preflight_refuses_before_anything_is_created(
@@ -653,7 +653,7 @@ def test_a_records_tag_is_its_own_and_says_nothing_of_its_token() -> None:
 def test_the_wait_holds_every_read_to_the_record_and_its_address_to_the_first_one(
     hf: FakeAPI, tmp_path: Path, other: str
 ) -> None:
-    """An endpoint by that name that carries no quackd tag, or quackd's but not the one this
+    """An endpoint by that name that carries no Roboglot tag, or Roboglot's but not the one this
     record gave it, is another endpoint: the wait refuses it as Unconfirmed before anything is
     sent to it, whether or not the record holds an address. The address is recorded once, the
     first time Hugging Face gives one, and one the endpoint comes back with later is refused
@@ -666,10 +666,10 @@ def test_the_wait_holds_every_read_to_the_record_and_its_address_to_the_first_on
     refusal: type[E.EndpointError] = E.Unconfirmed
     if other == "untagged":
         ep.payload["tags"] = ["production"]
-        needle = "carries no quackd-policy tag"
+        needle = "carries no roboglot-policy tag"
     elif other == "another machine's":
-        ep.payload["tags"] = [E.TAG, "quackd-policy-0123456789ab"]
-        needle = "carries quackd's tag but not the one this machine's up gave hf:arm"
+        ep.payload["tags"] = [E.TAG, "roboglot-policy-0123456789ab"]
+        needle = "carries Roboglot's tag but not the one this machine's up gave hf:arm"
     else:
         record = replace(record, url=GOOD_URL)  # recorded before, and not where it is now
         store.save(record)
@@ -690,10 +690,10 @@ def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_without_a_token(
     with pytest.raises(E.EndpointFailed, match="hf:arm reached failed"):
         E.wait_until_serving(api, record, minutes=1, store=store)
     ep = hf.endpoints[("rok", "arm")]
-    ep.log += [f"QUACKD_POLICY_TOKEN={record.token}", f"Authorization: Bearer {ACCOUNT_TOKEN}"]
+    ep.log += [f"ROBOGLOT_POLICY_TOKEN={record.token}", f"Authorization: Bearer {ACCOUNT_TOKEN}"]
     lines, bill = E.pause_and_quote(api, record)
     assert bill == "so it was paused, and bills nothing now" and ep.state == "paused"
-    assert lines[-2:] == ["QUACKD_POLICY_TOKEN=<token>", "Authorization: Bearer <token>"]
+    assert lines[-2:] == ["ROBOGLOT_POLICY_TOKEN=<token>", "Authorization: Bearer <token>"]
     assert not any(record.token in line or ACCOUNT_TOKEN in line for line in lines)
 
 
@@ -744,7 +744,7 @@ def test_hf_name_reaches_the_recorded_address_with_its_token_and_the_accounts_be
     hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The token is `--policy-token` when one was typed, else the record's, and never
-    `QUACKD_POLICY_TOKEN` or the file `quackd policy serve` writes, which are other servers'.
+    `ROBOGLOT_POLICY_TOKEN` or the file `roboglot policy serve` writes, which are other servers'.
     The recorded https address reaches the same endpoint, and any other address is not one.
     Each is read from the API first, once, with the account's token."""
     store = E.EndpointStore(tmp_path)
@@ -768,8 +768,8 @@ def test_hf_name_reaches_the_recorded_address_with_its_token_and_the_accounts_be
     ("case", "needle"),
     [
         ("gone", "Hugging Face has no endpoint called arm on rok's account, so nothing was sent"),
-        ("untagged", "carries no quackd-policy tag, so quackd did not start it"),
-        ("another machine's", "carries quackd's tag but not the one this machine's up gave"),
+        ("untagged", "carries no roboglot-policy tag, so Roboglot did not start it"),
+        ("another machine's", "carries Roboglot's tag but not the one this machine's up gave"),
         ("elsewhere", "another address than the one this machine recorded, so nothing was sent"),
         ("no address now", "Hugging Face gives hf:arm no address while it is paused"),
         ("refused", "Hugging Face refused the token when asked to say how arm is (HTTP 401"),
@@ -779,7 +779,7 @@ def test_hf_name_is_reached_only_once_the_api_confirms_the_record(
     hf: FakeAPI, tmp_path: Path, case: str, needle: str
 ) -> None:
     """The bearer goes to the recorded address only when Hugging Face, asked with the account's
-    token, has an endpoint by that name on that account, with quackd's tag, at that address: a
+    token, has an endpoint by that name on that account, with Roboglot's tag, at that address: a
     record of one deleted on huggingface.co, of another by that name, of one that has no
     address now, or of an account the token cannot read, is refused, without the token."""
     store = E.EndpointStore(tmp_path)
@@ -788,7 +788,7 @@ def test_hf_name_is_reached_only_once_the_api_confirms_the_record(
     if case == "untagged":
         hf.seed("rok", "arm", url=GOOD_URL, tags=["production"])
     elif case == "another machine's":
-        hf.seed("rok", "arm", url=GOOD_URL, mark="quackd-policy-0123456789ab")
+        hf.seed("rok", "arm", url=GOOD_URL, mark="roboglot-policy-0123456789ab")
     elif case == "elsewhere":
         moved = "https://0a1b2c3d4e5f.endpoints.huggingface.cloud"
         hf.seed("rok", "arm", url=moved, mark=E.mark(record))

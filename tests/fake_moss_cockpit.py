@@ -1,6 +1,6 @@
 """A fake of MOSS's cockpit, on loopback, written from `tools/moss_cockpit.py` at the pin.
 
-Not a copy of the cockpit and not a rover: it answers the routes quackd uses in the cockpit's
+Not a copy of the cockpit and not a rover: it answers the routes Roboglot uses in the cockpit's
 own shapes, and every answer is an attribute a test may change, including the wrong ones a
 real cockpit can give. What it keeps from the source, because the client depends on each:
 
@@ -16,7 +16,7 @@ real cockpit can give. What it keeps from the source, because the client depends
 Every request is recorded, so a test can say what the client sent and what it never sent:
 `/cmd/stack` above all.
 
-What it proves is that quackd reads the cockpit as written. What it cannot prove is anything
+What it proves is that Roboglot reads the cockpit as written. What it cannot prove is anything
 about a rover.
 """
 

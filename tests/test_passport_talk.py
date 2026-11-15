@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from quackd.passport import PassportError, SigningKey, document, jws, strict
-from quackd.passport.talk import (
+from roboglot.passport import PassportError, SigningKey, document, jws, strict
+from roboglot.passport.talk import (
     HELLO_S,
     IDLE_S,
     MAX_MESSAGE_BYTES,
@@ -267,7 +267,7 @@ def test_a_session_that_heard_all_it_can_remember_ends_rather_than_forgets(
 ) -> None:
     """A message carries no clock, so one forgotten could be replayed into its session as if its
     robot had said it again. A new hello has new nonces, which no old message carries."""
-    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 4)
+    monkeypatch.setattr("roboglot.passport.talk.REMEMBERED_PER_SESSION", 4)
     a, b = pair()
     handshake(a, b)
     words = [a.say(B.did, f"word {i}") for i in range(4)]
@@ -285,7 +285,7 @@ def test_a_session_that_heard_all_it_can_remember_ends_rather_than_forgets(
 def test_a_repeat_is_still_a_repeat_when_a_session_is_full(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 2)
+    monkeypatch.setattr("roboglot.passport.talk.REMEMBERED_PER_SESSION", 2)
     a, b = pair()
     handshake(a, b)
     words = [a.say(B.did, f"word {i}") for i in range(2)]
@@ -383,7 +383,7 @@ def test_a_hellos_runtime_rides_with_it_and_reaches_the_session() -> None:
     """What no owner signs, the software, the beacon id the radio advertises now and the port
     to answer on, travels in the hello and stays on the session for the glue to use."""
     a, b = pair()
-    a.runtime = {"software": "quackd/x", "beacon": "0123456789abcdef", "reach": {"http_port": 9}}
+    a.runtime = {"software": "roboglot/x", "beacon": "0123456789abcdef", "reach": {"http_port": 9}}
     b.runtime = {"beacon": "fedcba9876543210"}
     handshake(a, b)
     on_b, on_a = b.session_with(A.did), a.session_with(B.did)

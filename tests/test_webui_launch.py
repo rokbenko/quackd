@@ -1,6 +1,6 @@
-"""`quackd ui`'s launcher: where the page listens, the token it asks for, how Streamlit is started,
-and the way to it from a phone (`quackd.webui.launch`). Plain Python: runs without Streamlit, on
-every operating system, as the refusal of a taken port does."""
+"""`roboglot ui`'s launcher: where the page listens, the token it asks for, how Streamlit is
+started, and the way to it from a phone (`roboglot.webui.launch`). Plain Python: runs without
+Streamlit, on every operating system, as the refusal of a taken port does."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.webui import launch
+from roboglot.cli import app
+from roboglot.webui import launch
 
 
 def test_the_page_listens_on_this_computer_alone_unless_told_and_is_reached_where_it_listens(
@@ -88,7 +88,7 @@ def _fake_streamlit(monkeypatch: pytest.MonkeyPatch, started: list[list[str]]) -
     monkeypatch.setitem(sys.modules, "streamlit", SimpleNamespace(web=SimpleNamespace(cli=cli)))
     monkeypatch.setitem(sys.modules, "streamlit.web", SimpleNamespace(cli=cli))
     monkeypatch.setitem(sys.modules, "streamlit.web.cli", cli)
-    monkeypatch.setattr(sys, "argv", ["quackd", "ui"])
+    monkeypatch.setattr(sys, "argv", ["roboglot", "ui"])
     monkeypatch.setenv(launch.COOKIE_SECRET_ENV, "known-to-a-project")
 
 
@@ -134,7 +134,7 @@ def test_the_page_asks_for_its_token_everywhere_and_is_waited_for_where_it_liste
     assert config is not None and config.token and config.home == tmp_path
     assert waited == [polled]
     assert opened == [f"{polled}/?token={config.token}"]
-    assert said[0].startswith("quackd ui: http") and said[0].endswith(f"?token={config.token}")
+    assert said[0].startswith("roboglot ui: http") and said[0].endswith(f"?token={config.token}")
     warned = any("can drive your robots" in line for line in said)
     assert warned == (not launch.is_loopback(bind)), "the warning and the QR code: off loopback"
     (argv,) = started
@@ -156,7 +156,7 @@ def test_the_qr_picture_is_kept_private_and_reads_back_as_the_address(tmp_path: 
 
 def test_the_saved_setup_is_kept_private(tmp_path: Path) -> None:
     """It holds no key, but an address or an extra body may carry a credential."""
-    from quackd.webui.state import Setup
+    from roboglot.webui.state import Setup
 
     setup = Setup(tmp_path / "ui-setup.json")
     setup.set("base_url", "https://user:pass@example.com/v1")
@@ -168,7 +168,7 @@ def test_the_saved_setup_is_kept_private(tmp_path: Path) -> None:
 def test_a_setup_saved_before_the_rename_keeps_what_it_chose(tmp_path: Path) -> None:
     """Each name the pickers had before 0.32.0 reads as the one they have now, and a value
     already under the new name stays, since that is the one saved last."""
-    from quackd.webui.state import SAVED_BEFORE, Setup
+    from roboglot.webui.state import SAVED_BEFORE, Setup
 
     path = tmp_path / "ui-setup.json"
     saved = {old: f"chosen as {old}" for old in SAVED_BEFORE}
@@ -182,24 +182,24 @@ def test_a_setup_saved_before_the_rename_keeps_what_it_chose(tmp_path: Path) -> 
     assert Setup(path).get(new) == "newer"
 
 
-def test_quackd_ui_keeps_a_dotenv_out_of_the_pages_home_and_out_of_its_runs(
+def test_roboglot_ui_keeps_a_dotenv_out_of_the_pages_home_and_out_of_its_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The root command loads a `.env` for `quackd ui` as for any command. A cloned project's
+    """The root command loads a `.env` for `roboglot ui` as for any command. A cloned project's
     must not choose where the page keeps its token and its setup, and the runs the page starts
     load it themselves, so they can still tell a file's values from the shell's."""
-    import quackd.webui.catalog as catalog
-    from quackd.registry import DEFAULT_DIR
-    from quackd.webui.jobs import _child_environment
+    import roboglot.webui.catalog as catalog
+    from roboglot.registry import DEFAULT_DIR
+    from roboglot.webui.jobs import _child_environment
 
     planted = tmp_path / "planted"
     work = tmp_path / "work"
     work.mkdir()
     (work / ".env").write_text(
-        f"QUACKD_REGISTRY_DIR={planted}\nQUACKD_UI_FROM_DOTENV=yes\nSTREAMLIT_SERVER_ENABLE_CORS=false\n",
+        f"ROBOGLOT_REGISTRY_DIR={planted}\nROBOGLOT_UI_FROM_DOTENV=yes\nSTREAMLIT_SERVER_ENABLE_CORS=false\n",
         encoding="utf-8",
     )
-    names = ("QUACKD_REGISTRY_DIR", "QUACKD_UI_FROM_DOTENV", "STREAMLIT_SERVER_ENABLE_CORS")
+    names = ("ROBOGLOT_REGISTRY_DIR", "ROBOGLOT_UI_FROM_DOTENV", "STREAMLIT_SERVER_ENABLE_CORS")
     for name in names:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(work)
@@ -217,10 +217,10 @@ def test_quackd_ui_keeps_a_dotenv_out_of_the_pages_home_and_out_of_its_runs(
         result = CliRunner().invoke(app, ["ui", "--no-browser"])
         assert result.exit_code == 0, result.output
         assert seen["token_dir"] == Path(DEFAULT_DIR).expanduser(), "never the .env's registry"
-        assert "QUACKD_UI_FROM_DOTENV" not in seen["child"], "the run loads the .env itself"
-        assert "QUACKD_REGISTRY_DIR" not in seen["child"]
+        assert "ROBOGLOT_UI_FROM_DOTENV" not in seen["child"], "the run loads the .env itself"
+        assert "ROBOGLOT_REGISTRY_DIR" not in seen["child"]
         assert seen["streamlit_cors"] is None, "Streamlit's settings never come from a .env"
-        assert os.environ.get("QUACKD_UI_FROM_DOTENV") == "yes", "the page itself still reads it"
+        assert os.environ.get("ROBOGLOT_UI_FROM_DOTENV") == "yes", "the page itself still reads it"
     finally:
         for name in names:
             os.environ.pop(name, None)
@@ -260,12 +260,12 @@ def test_a_port_something_listens_on_is_taken_and_a_free_one_is_not() -> None:
     assert not launch.port_taken("127.0.0.1", port)
 
 
-def test_quackd_ui_refuses_a_taken_port_before_it_announces_an_address(
+def test_roboglot_ui_refuses_a_taken_port_before_it_announces_an_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Streamlit says a port is taken only after the page has printed, and opened, an address
     the other program answers."""
-    import quackd.webui.catalog as catalog
+    import roboglot.webui.catalog as catalog
 
     def must_not_start(**_kw: object) -> None:
         raise AssertionError("Streamlit was started on a taken port")
@@ -279,5 +279,5 @@ def test_quackd_ui_refuses_a_taken_port_before_it_announces_an_address(
         result = CliRunner().invoke(app, ["ui", "--port", str(port), "--no-browser"])
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
-    assert f"port {port} is already in use" in flat and f"quackd ui --port {port + 1}" in flat
-    assert "quackd ui: http" not in result.output
+    assert f"port {port} is already in use" in flat and f"roboglot ui --port {port + 1}" in flat
+    assert "roboglot ui: http" not in result.output

@@ -3,7 +3,7 @@
 `test_decision_llms.py` holds the table every row is checked against, this one included. This
 file is about what only this row does. It speaks another wire format, so its questions are
 translated out and its answers back, and its client is an SDK that reads half its configuration
-out of the environment, so where the key goes and which headers ride along are decided by quackd
+out of the environment, so where the key goes and which headers ride along are decided by Roboglot
 rather than left to that SDK's defaults.
 
 Nothing here needs the `openai` package: CI installs no provider SDK, and every test that builds a
@@ -34,8 +34,8 @@ from xml.etree import ElementTree
 
 import pytest
 
-from quackd.agent.decision import decisions_api, factory
-from quackd.agent.decision.base import (
+from roboglot.agent.decision import decisions_api, factory
+from roboglot.agent.decision.base import (
     TIMEOUT_S,
     DecisionError,
     DecisionMissingKey,
@@ -43,18 +43,18 @@ from quackd.agent.decision.base import (
     UnreadableReply,
     client_timeout,
 )
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.decisions_api import DecisionsAPILLM, to_questions, to_result
-from quackd.agent.decision.factory import (
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.decisions_api import DecisionsAPILLM, to_questions, to_result
+from roboglot.agent.decision.factory import (
     decision_llm_is_available,
     make_decision_llm,
     resolve_decision_address,
     resolve_decision_price,
     resolve_decision_url,
 )
-from quackd.agent.decision.stepper import ESCALATE, Call, Stepper, build_questions, labels
-from quackd.agent.providers.openai_headers import OPENAI_HOSTS, is_openai_host
-from quackd.agent.providers.pricing import cost_usd
+from roboglot.agent.decision.stepper import ESCALATE, Call, Stepper, build_questions, labels
+from roboglot.agent.providers.openai_headers import OPENAI_HOSTS, is_openai_host
+from roboglot.agent.providers.pricing import cost_usd
 from tests import fake_decisions_api as fake_api
 from tests.conftest import REPO, guard_openai_sdk, openai_address, plain_text
 from tests.fake_openai_decisions import PATH as STAND_IN_PATH
@@ -306,7 +306,7 @@ def test_answers_are_read_by_the_name_they_carry_and_never_by_position() -> None
 
 
 def test_a_name_answered_twice_answers_nothing() -> None:
-    """OpenAI echo the unique names quackd sends, so two answers under one name are a server
+    """OpenAI echo the unique names Roboglot sends, so two answers under one name are a server
     that does not, and the first one used to be kept: a `done` of 0.0 and then 0.99 settled as
     0.0, the reading that lets a verb through. Neither is kept, and the question is one nobody
     answered."""
@@ -448,7 +448,7 @@ def test_usage_and_llm_pass_through_untouched() -> None:
 
 
 def test_answers_that_are_not_a_list_are_an_error_rather_than_an_empty_turn() -> None:
-    """In quackd's own words, which the record keeps (`base.UnreadableReply`), naming the type
+    """In Roboglot's own words, which the record keeps (`base.UnreadableReply`), naming the type
     of what came where the list belongs."""
     with pytest.raises(UnreadableReply, match=r"without a list of answers \(dict\)"):
         to_result({"answers": {"done": {"noul": 0.0}}}, ASKED)
@@ -458,7 +458,7 @@ async def test_a_body_that_is_not_json_is_an_error_and_is_not_quoted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The SDK hands back text when the body is not JSON. A gateway's error page is not a
-    reason the record needs to carry, and its type is: quackd's own sentence names it, and the
+    reason the record needs to carry, and its type is: Roboglot's own sentence names it, and the
     record keeps the sentence and not the page."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI(script=["<html>bad gateway</html>"]))
@@ -643,7 +643,7 @@ def test_the_client_is_built_with_the_address_a_clock_above_the_steppers_and_no_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The SDK's clock at the stepper's own second raced it, and one slow server's turns were
-    recorded now as quackd's `no answer within 1.0 s` and now as the SDK's `APITimeoutError`.
+    recorded now as Roboglot's `no answer within 1.0 s` and now as the SDK's `APITimeoutError`.
     Above it, the stepper's own bound is the one clock that ends a turn."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     llm, fake = _built(monkeypatch)
@@ -740,7 +740,7 @@ def test_a_look_at_the_platform_that_fails_never_stops_the_build(
 
 
 def test_the_sdks_own_address_variable_never_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Given no address, the SDK follows `OPENAI_BASE_URL`, which quackd's own local presets read
+    """Given no address, the SDK follows `OPENAI_BASE_URL`, which Roboglot's own local presets read
     as the address of an LLM server on your own machine (`providers/local.py`), so it may well
     be set where this row runs. The hosted key would follow it there."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
@@ -749,7 +749,7 @@ def test_the_sdks_own_address_variable_never_moves_it(monkeypatch: pytest.Monkey
     assert fake.kwargs["base_url"] == f"{OPENAI.url}/v1"
 
 
-def test_quackds_own_address_variable_never_moves_it_either(
+def test_roboglots_own_address_variable_never_moves_it_either(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
@@ -784,7 +784,7 @@ def test_quackds_own_address_variable_never_moves_it_either(
         ("https://api.openai.com:0443", False),
         # a region OpenAI never named, however much it looks like the ones they did
         ("https://fr.api.openai.com", False),
-        # the trailing dot names the same machine in DNS, and is still not a host quackd named
+        # the trailing dot names the same machine in DNS, and is still not a host Roboglot named
         ("https://api.openai.com.", False),
         ("https://api.openai.com.evil.example", False),
         ("https://user:pw@api.openai.com", False),
@@ -904,7 +904,7 @@ def test_at_openais_own_api_the_client_is_built_as_the_sdk_builds_one(
     """The SDK's own variables follow the SDK's own address (ADR-0010's amendment of
     2026-10-12), and this row is always handed one, so OpenAI's own API is the one place they
     go, exactly as the SDK sends them. There the client is handed the key and no header of
-    quackd's, which leaves `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` to
+    Roboglot's, which leaves `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` to
     the SDK. `tests/test_decisions_api_wire.py` holds what then arrives to what a client the
     SDK built by itself sends."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
@@ -958,7 +958,7 @@ def test_a_release_that_would_still_send_the_variables_authorization_is_refused_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The backstop for a release nobody has read: once the client is built its own headers are
-    read back, and an authorization quackd did not write stops the build, naming the release and
+    read back, and an authorization Roboglot did not write stops the build, naming the release and
     the variable and never the value, which is the credential this exists to keep at home."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "authorization: Bearer sk-ambient")
     fake_api.install(monkeypatch, fake_api.FakeOpenAI(release="backwards"))
@@ -973,7 +973,7 @@ def test_a_release_that_would_put_back_any_other_line_of_the_variable_is_refused
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The authorization is not the only line a release nobody has read could put back over the
-    `Omit` quackd hands under its name. A gateway's own header read back with a value at a server
+    `Omit` Roboglot hands under its name. A gateway's own header read back with a value at a server
     of your own stops the build as well, naming the release and never the value."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "X-Gateway-Key: gk-secret")
     fake_api.install(monkeypatch, fake_api.FakeOpenAI(release="backwards"))
@@ -1122,8 +1122,8 @@ def test_a_row_of_somebody_elses_with_no_llm_or_no_address_is_refused_not_guesse
 def test_no_sdk_is_the_extra_that_installs_it(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "openai", None)
     ok, why = decision_llm_is_available(OPENAI)
-    assert not ok and "quackd[openai]" in why
-    with pytest.raises(DecisionNotInstalled, match=r"quackd\[openai\]"):
+    assert not ok and "roboglot[openai]" in why
+    with pytest.raises(DecisionNotInstalled, match=r"roboglot\[openai\]"):
         make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
 
 
@@ -1134,7 +1134,7 @@ def test_an_sdk_without_the_client_is_the_same_sentence_and_not_a_traceback(
     an `AttributeError` past the CLI, which catches only a `DecisionError`."""
     monkeypatch.setitem(sys.modules, "openai", types.ModuleType("openai"))
     ok, why = decision_llm_is_available(OPENAI)
-    assert not ok and "quackd[openai]" in why
+    assert not ok and "roboglot[openai]" in why
     with pytest.raises(DecisionNotInstalled):
         make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
 
@@ -1173,7 +1173,7 @@ def test_openais_rate_is_charged_at_openai_and_a_server_you_run_is_free(
     url: str | None, source: str
 ) -> None:
     """The regional hosts carry a premium OpenAI publish for no Decisions row, so they are
-    costed at the published rate, and `QUACKD_DECISION_PRICE` is how to say otherwise."""
+    costed at the published rate, and `ROBOGLOT_DECISION_PRICE` is how to say otherwise."""
     price = resolve_decision_price(OPENAI, url=url)
     assert price.source == source
     if source == "published":
@@ -1195,7 +1195,7 @@ def test_the_price_variable_beats_the_address(monkeypatch: pytest.MonkeyPatch) -
 def _run(tmp_path: Path, *extra: str) -> Any:
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     return CliRunner().invoke(
         app,
@@ -1306,7 +1306,7 @@ def test_the_stand_in_keeps_every_value_of_a_header_sent_twice(
     [
         None,
         "https://eu.api.openai.com",
-        # Hosts of OpenAI's that quackd sends no key to. The request carries the word `local`
+        # Hosts of OpenAI's that Roboglot sends no key to. The request carries the word `local`
         # there, and the robot's state all the same, so the guard stops it as well.
         "https://chatgpt.openai.com",
         "https://openai.com",
@@ -1361,7 +1361,7 @@ async def test_the_suites_guard_lets_through_what_cannot_reach_openai(
 OPENAIS = (
     "https://api.openai.com/v1/decisions",
     "https://eu.api.openai.com/v1/decisions",
-    # a region OpenAI never named, which quackd sends no key to and the guard stops all the same
+    # a region OpenAI never named, which Roboglot sends no key to and the guard stops all the same
     "https://fr.api.openai.com/v1/decisions",
     "https://chatgpt.openai.com/v1/decisions",
     "https://openai.com/v1/decisions",
@@ -1372,7 +1372,7 @@ OPENAIS = (
     "https://user:pw@api.openai.com/v1/decisions",
 )
 """Requests the guard stops: OpenAI's own domain and every host under it, wider than the hosts
-quackd sends a key to on purpose (`openai_address`). A rule narrowed to those hosts would let
+Roboglot sends a key to on purpose (`openai_address`). A rule narrowed to those hosts would let
 `fr.api.openai.com`, `chatgpt.openai.com` and `openai.com` through, so those three are what hold
 it wide."""
 
@@ -1424,8 +1424,8 @@ import sys
 import pytest
 from dotenv import load_dotenv
 
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.factory import make_decision_llm
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.factory import make_decision_llm
 from tests import fake_decisions_api as fake_api
 
 # Where the SDK keeps `BaseClient`, put there before any fixture runs, so the suite's guard

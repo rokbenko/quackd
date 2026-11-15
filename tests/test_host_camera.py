@@ -1,4 +1,4 @@
-"""The camera on the board `--host` names, joined to a body: `quackd.adapters.host_camera`.
+"""The camera on the board `--host` names, joined to a body: `roboglot.adapters.host_camera`.
 
 The board is the fake daemon in `tests/fake_jetson_hostd.py`, served over real HTTP on
 loopback; its default frame is a grey floor with an orange ball the colour detector can see.
@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import RobotAdapter
-from quackd.adapters.factory import (
+from roboglot.adapters.base import RobotAdapter
+from roboglot.adapters.factory import (
     adapter_names,
     describe,
     info,
@@ -24,28 +24,28 @@ from quackd.adapters.factory import (
     make_adapter,
     parse_robot_spec,
 )
-from quackd.adapters.host_camera import (
+from roboglot.adapters.host_camera import (
     EXTRAS_KEY,
     HOST_CAMERA_NAME,
     HostCameraAdapter,
     with_host_camera,
 )
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.cli import app
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.validate import validate_duck
-from quackd.host import STALE_AFTER_S, HostClient, HostHello
-from quackd.perception import explicit_detector
-from quackd.perception.host import HostDetector
-from quackd.safety import Executor, allow_all
-from quackd.transport.base import TransportError, camera_names_of, frames_of
-from quackd.verbs.registry import registry_from_manifest
-from quackd_lerobot.real import CAMERA_NAME as ARM_CAMERA
-from quackd_toddlerbot import ToddlerBotAdapter
-from quackd_toddlerbot.mock import ToddlerBotMock
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.validate import validate_glot
+from roboglot.host import STALE_AFTER_S, HostClient, HostHello
+from roboglot.perception import explicit_detector
+from roboglot.perception.host import HostDetector
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.base import TransportError, camera_names_of, frames_of
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_lerobot.real import CAMERA_NAME as ARM_CAMERA
+from roboglot_toddlerbot import ToddlerBotAdapter
+from roboglot_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FRAME_SIZE, FakeHostd
 
 runner = CliRunner()
@@ -115,7 +115,7 @@ def test_an_arm_that_cannot_move_gains_observe_only(hostd: FakeHostd) -> None:
     assert after.preconditions == before.preconditions
 
 
-def test_every_body_quackd_describes_takes_the_boards_camera(hostd: FakeHostd) -> None:
+def test_every_body_roboglot_describes_takes_the_boards_camera(hostd: FakeHostd) -> None:
     """The manifest is validated again with the camera in it, so a body whose own sheet did not
     survive that round trip would refuse to connect with a board beside it. Every installed
     body, on every backend it has, and each ends up able to look."""
@@ -145,13 +145,13 @@ def test_a_camera_task_on_a_blind_body_passes_validation_with_the_board(hostd: F
     would be refused for a camera the run will have. With the board's camera applied first it
     is not."""
     _client, hello = _board(hostd)
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: look\ndescription: d\nrequires: [observe, go_to]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe, go_to]\n"
         "verbs:\n  allow: [observe, go_to, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     blind = describe(parse_robot_spec("xlerobot:zmq"))
-    assert validate_duck(duck, [blind]), "refused without the board"
-    assert validate_duck(duck, [with_host_camera(blind, hello)]) == []
+    assert validate_glot(duck, [blind]), "refused without the board"
+    assert validate_glot(duck, [with_host_camera(blind, hello)]) == []
 
 
 # ── the wrapper ─────────────────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ async def test_a_blind_body_gains_a_primary_host_camera_and_the_verbs_that_need_
 async def test_a_described_body_gains_the_boards_camera_and_observe_and_nothing_more(
     hostd: FakeHostd,
 ) -> None:
-    """A body quackd only describes reads none of its robot's sensors, so a board beside it is
+    """A body Roboglot only describes reads none of its robot's sensors, so a board beside it is
     its one camera, as ADR-0077 allows: `observe` comes with it, and its two verbs stay its
     only others, since a picture moves nothing. Nobody had tried it, and 0.33.0 said so."""
     client, _hello = _board(hostd)
@@ -300,11 +300,11 @@ async def test_the_agent_loop_runs_a_camera_task_on_a_blind_body_through_the_hos
     connects, finds `observe` in the vocabulary the board's camera unlocked, builds the colour
     detector at the lens the daemon reported, and sees the fake frame's ball."""
     body = _blind_toddlerbot(hostd)
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, report_state, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(
@@ -347,11 +347,11 @@ async def test_the_agent_loop_calibrates_the_boards_detector_at_connect(
     )
     assert isinstance(detector, HostDetector)
     assert (detector.fov_deg, detector.calibrated) == (90.0, True), "the simulator's, for now"
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(
@@ -378,7 +378,7 @@ async def test_the_agent_loop_calibrates_the_boards_detector_at_connect(
 
 
 def _probe_with_host(spec: str, hostd: FakeHostd, **kw: Any) -> Any:
-    from quackd import doctor
+    from roboglot import doctor
 
     return doctor.probe(
         spec,
@@ -419,7 +419,7 @@ def test_doctor_lists_the_host_camera_as_the_primary_of_a_blind_body(
         inner = ToddlerBotAdapter(ToddlerBotMock(camera=False))
         return HostCameraAdapter(inner, host, host.hello()) if host is not None else inner
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", blind)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", blind)
     report = _probe_with_host("toddlerbot:mock", hostd)
     rows = _rows(report)
     assert rows[f"camera {HOST_CAMERA_NAME}"][0].endswith("(primary)")
@@ -436,7 +436,7 @@ def test_doctor_hands_the_board_it_asked_to_the_probe(
     """`doctor --robot X --address Y --host Z` end to end through `collect`: the board answers
     its hello, and the probe of the body lists its camera. A board that does not answer is not
     handed on, because its own row has already failed the report."""
-    from quackd import doctor
+    from roboglot import doctor
 
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     monkeypatch.setattr(doctor, "_probe_placement", lambda root_url, timeout_s=1.5: ([], "none"))
@@ -463,10 +463,10 @@ def test_run_judges_a_camera_task_on_a_blind_body_with_the_boards_camera(
     def stop_here(spec: Any, **kw: Any) -> Any:
         raise TransportError("stopped where the body would have been built")
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", stop_here)
-    duck = tmp_path / "look.duck"
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", stop_here)
+    duck = tmp_path / "look.glot"
     duck.write_text(
-        "---\nduck: 1\nname: look\ndescription: d\nrequires: [observe]\n"
+        "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n",
         encoding="utf-8",
     )

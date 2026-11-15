@@ -1,10 +1,10 @@
 # ADR-0070: The page is reachable by its own user alone
 
-**Status:** accepted · **Date:** 2026-10-27 · Builds on [ADR-0069](0069-a-page-drives-quackds-own-commands-over-json-lines.md) (a page's yes is a person's yes, which holds only while the page is reachable by its own user alone) · Implemented in `quackd/webui/launch.py`, `quackd/webui/app.py` (the token's check), `quackd/webui/state.py` (`Setup.keys`), `quackd/webui/catalog.py` (`key_for`, `session_environment`), `quackd/webui/jobs.py` (`_child_environment`), `quackd/dotenv_names.py` (`shell_environment`, `loaded`) and `quackd/cli.py` (`ui_cmd`, `robot add` and `robot edit --token-env`) · Documented in [docs/guides/web-ui.md](../guides/web-ui.md)
+**Status:** accepted · **Date:** 2026-10-27 · Builds on [ADR-0069](0069-a-page-drives-roboglots-own-commands-over-json-lines.md) (a page's yes is a person's yes, which holds only while the page is reachable by its own user alone) · Implemented in `roboglot/webui/launch.py`, `roboglot/webui/app.py` (the token's check), `roboglot/webui/state.py` (`Setup.keys`), `roboglot/webui/catalog.py` (`key_for`, `session_environment`), `roboglot/webui/jobs.py` (`_child_environment`), `roboglot/dotenv_names.py` (`shell_environment`, `loaded`) and `roboglot/cli.py` (`ui_cmd`, `robot add` and `robot edit --token-env`) · Documented in [docs/guides/web-ui.md](../guides/web-ui.md)
 
 ## Context
 
-`quackd ui` serves a Streamlit page that starts runs, answers their questions and stops them, and
+`roboglot ui` serves a Streamlit page that starts runs, answers their questions and stops them, and
 ADR-0069 lets a Yes clicked in it clear a dangerous verb and fly the arm under a VLA pilot, as a
 person's answer. That is only true while the person clicking is the person the page belongs to.
 
@@ -27,9 +27,9 @@ reaches, unless `--bind` names another address. Nothing about a run changes with
 it opens, before anything but the refusal is drawn. Loopback is not one person: another account on
 the same computer reaches `127.0.0.1`, and so can a web page in your own browser that points a name
 of its own at it, which Streamlit's check of a connection's origin against its host lets through.
-Neither has the token. The browser `quackd ui` opens on this computer is handed it, so it costs
+Neither has the token. The browser `roboglot ui` opens on this computer is handed it, so it costs
 nothing there. The token is made once with `secrets.token_urlsafe(18)`, written into `ui.token` in
-the quackd home through a file made readable by its owner alone before anything is written into
+the Roboglot home through a file made readable by its owner alone before anything is written into
 it, and is the same at every start, so a shortcut on a phone's home screen keeps working;
 `--new-token` replaces it. It is compared as bytes in constant time, kept in the session once
 given, and put back in the address on every run, since a page switch drops the address's query
@@ -59,10 +59,10 @@ mode is off.
 **A key typed into the page stays in its memory.** It is kept in the page process for as long as
 the page runs, never in the saved setup, which holds no secret, and reaches a run through that
 run's environment alone: never a file, never a command line, never a **Same as** line, so never the
-record. The page shows where a key would come from, masked as `quackd doctor` masks it, in the
+record. The page shows where a key would come from, masked as `roboglot doctor` masks it, in the
 order a run finds it: the key typed into the page, then the shell's environment, then `.env`.
 
-**A robot's token travels the same way.** `quackd robot add` and `robot edit` take
+**A robot's token travels the same way.** `roboglot robot add` and `robot edit` take
 `--token-env` and `--host-token-env`, the name of a variable holding the token, so the page can
 save a robot without putting a token on a command line, and no refusal quotes what was typed where
 the name goes.
@@ -74,7 +74,7 @@ the page has printed, and opened, an address another program answers.
 
 - **A token only off loopback.** That was the first design, and it left the page open to every
   account on the computer and to a web page that rebinds a name to `127.0.0.1`. The token costs a
-  person on this computer nothing, since the browser `quackd ui` opens is handed it.
+  person on this computer nothing, since the browser `roboglot ui` opens is handed it.
 - **Streamlit's defaults.** Every interface, statistics on and a page that reloads when a file
   changes are right for a data app on a developer's machine and wrong for a page that drives a
   robot.
@@ -83,7 +83,7 @@ the page has printed, and opened, an address another program answers.
 - **A new token at every start.** Safer for a token somebody saw, and it would break every
   shortcut at every restart. `--new-token` is there for the token somebody saw.
 - **HTTPS by default.** It needs a certificate a phone trusts, and a self-signed one teaches people
-  to click past the warning. Streamlit can serve it through its own settings, and quackd has no
+  to click past the warning. Streamlit can serve it through its own settings, and Roboglot has no
   flag for it until somebody has tried it.
 - **Writing a typed key into `.env`.** A file the page writes is a file every later run reads, and
   `.env` is the person's own to edit.
@@ -96,11 +96,11 @@ the page has printed, and opened, an address another program answers.
 - The page is plain HTTP. On a Wi-Fi network the token, and any key typed into the page on a
   phone, cross the air unencrypted. The guide says so, and says to type keys at the computer.
 - The token sits in the address, so a browser's history, a screenshot or a shared link carries it.
-  `--new-token` is the remedy. Streamlit's own `URL:` line, printed above quackd's, carries no
+  `--new-token` is the remedy. Streamlit's own `URL:` line, printed above Roboglot's, carries no
   token and opens on the refusal.
-- Streamlit hears nothing from `quackd ui` about how it is used.
+- Streamlit hears nothing from `roboglot ui` about how it is used.
 - One job per robot is the page's own rule. A run on the same robot started from a terminal beside
-  the page is not seen: quackd has no lock across processes.
+  the page is not seen: Roboglot has no lock across processes.
 - The phone's path has run in a headless browser made to behave as a phone, against the page
   bound to loopback, and the token's refusal, its place in the address across a page switch and a
   refresh have run in a browser. It has not yet run on a phone over a Wi-Fi network, nor through

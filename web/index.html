@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <!-- No maximum-scale and no user-scalable: pinch-zoom must stay available. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>quackd — a Microduck with an LLM for a brain, in your browser</title>
-<meta name="description" content="Type a sentence, watch a simulated Microduck do it. An LLM picks the robot's own skills and quackd decides what it is allowed to do, the same way it commands a whole flock of robots from one CLI. Bring your own API key, or run a local LLM.">
-<meta property="og:title" content="quackd — a Microduck with an LLM for a brain">
+<title>Roboglot — a Microduck with an LLM for a brain, in your browser</title>
+<meta name="description" content="Type a sentence, watch a simulated Microduck do it. An LLM picks the robot's own skills and Roboglot decides what it is allowed to do, the same layer that carries what people say to a whole team of robots, and what the robots say to each other. Bring your own API key, or run a local LLM.">
+<meta property="og:title" content="Roboglot — a Microduck with an LLM for a brain">
 <meta property="og:description" content="Type a sentence, watch a simulated Microduck do it. Real MuJoCo physics, upstream's own walking policy, your own API key.">
 <meta name="theme-color" content="#fffdf7">
 <meta name="color-scheme" content="light">
@@ -38,24 +38,24 @@
   duck walk asks of the product and not of a README, plus the brand lockup, which every site
   on the web makes the way home.
 
-  Both URLs are ABSOLUTE — https://www.quackd.org/, never a bare "/". This file is a static
-  artifact fetched into the quackd-web build and served under its /simulator mount, and
+  Both URLs are ABSOLUTE — https://www.roboglot.org/, never a bare "/". This file is a static
+  artifact fetched into the roboglot-web build and served under its /simulator mount, and
   locally `web/serve.py` redirects the root straight back to /simulator/. A relative "/" would
   therefore leave the visitor exactly where they started in development, and depend on which
   project happens to own the root in production. tests/test_web.py fails if the link goes.
 -->
 <header class="nav-shell">
   <h1>
-    <a href="https://www.quackd.org/">
+    <a href="https://www.roboglot.org/">
       <img src="/simulator/assets/duck-mark.png" alt="" width="30" height="30" decoding="async" class="mark">
-      quackd
+      Roboglot
     </a>
     <small>a Microduck with an LLM for a brain</small>
   </h1>
   <span class="status-pill">MuJoCo · WASM · your key stays in this tab</span>
   <nav>
     <a class="nav-link nav-star" href="https://github.com/rokbenko/quackd">GitHub</a>
-    <a class="nav-link" href="https://www.quackd.org/">What is this?</a>
+    <a class="nav-link" href="https://www.roboglot.org/">What is this?</a>
   </nav>
 </header>
 
@@ -79,11 +79,11 @@
     <div class="llm-bar">
       <div class="toggle-row">
         <label class="switch">
-          <input type="checkbox" id="quackd-on" aria-labelledby="toggle-label" checked>
+          <input type="checkbox" id="roboglot-on" aria-labelledby="toggle-label" checked>
           <span class="slider" aria-hidden="true"></span>
         </label>
         <div>
-          <strong id="toggle-label">quackd is on</strong>
+          <strong id="toggle-label">Roboglot is on</strong>
           <p id="toggle-note" class="fine">An LLM reads your sentence and picks from the robot's own verbs. The executor checks every one against the contract before anything moves.</p>
         </div>
       </div>
@@ -99,8 +99,8 @@
         </p>
         <div class="row">
           <!-- Two controls for one field, and applyProvider() shows exactly one. A cloud
-               vendor's LLMs are a list quackd keeps, so picking one is a <select> built
-               from catalogue.js. A local server serves whatever you pulled and quackd has no
+               vendor's LLMs are a list Roboglot keeps, so picking one is a <select> built
+               from catalogue.js. A local server serves whatever you pulled and Roboglot has no
                list for it, so that one stays free text. -->
           <select id="provider" aria-label="LLM provider"></select>
           <select id="llm" aria-label="LLM"></select>
@@ -235,7 +235,7 @@
           <p class="fine">
             This is the whole interface the robot has: a twist — three numbers,
             <code>vx, vy, wz</code> — and a head angle. Two learned policies use them: one
-            stands it up, one walks it. The kick is quackd's own scripted impulse, not a
+            stands it up, one walks it. The kick is Roboglot's own scripted impulse, not a
             policy. None of it reads English.
           </p>
           <p class="fine">
@@ -257,7 +257,7 @@
     <a id="model-link" href="https://github.com/pollen-robotics/microduck_rl">Pollen Robotics'</a>,
     fetched from upstream at a pinned commit and never served from here: the 3D model files are
     CC BY-NC-SA 4.0. Physics is <a href="https://github.com/google-deepmind/mujoco">MuJoCo</a>
-    compiled to WebAssembly. quackd is Apache-2.0 and unaffiliated with Pollen Robotics.
+    compiled to WebAssembly. Roboglot is Apache-2.0 and unaffiliated with Pollen Robotics.
   </p>
 </footer>
 

@@ -3,33 +3,33 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-rosbridge"
+name = "roboglot-rosbridge"
 dynamic = ["version"]
-description = "Any wheeled base that speaks rosbridge, as a quackd robot. Install it as quackd[rosbridge]."
+description = "Any wheeled base that speaks rosbridge, as a Roboglot robot. Install it as roboglot[rosbridge]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35"]
+dependencies = ["roboglot>=0.34.0,<0.35"]
 
 [project.optional-dependencies]
 sdk = ["roslibpy>=2,<3"]
 
-[project.entry-points."quackd.adapters"]
-rosbridge = "quackd_rosbridge"
+[project.entry-points."roboglot.adapters"]
+rosbridge = "roboglot_rosbridge"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/rosbridge/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_rosbridge/__init__.py"
+path = "src/roboglot_rosbridge/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_rosbridge"]
+packages = ["src/roboglot_rosbridge"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

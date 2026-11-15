@@ -1,4 +1,4 @@
-"""`--decision-llm openai` through the real SDK and a real `quackd run`, against a stand-in.
+"""`--decision-llm openai` through the real SDK and a real `roboglot run`, against a stand-in.
 
 Skipped wherever the SDK is not installed, which includes CI: nothing in the suite installs a
 provider SDK. To run it, sync an environment with the extra and run pytest there:
@@ -16,14 +16,14 @@ release from the floor to below 4.0, and what any other one does is read, where 
 rather than run.
 
 No key and no network. `tests/fake_openai_decisions.py` answers every request on 127.0.0.1, so
-what this proves is what quackd puts on the wire through the SDK, what the SDK adds to a request
-or leaves off it once quackd has told it, and what quackd makes of an answer in OpenAI's
-documented shape. `tests/test_decisions_api.py` holds quackd's half against a fake of the SDK,
+what this proves is what Roboglot puts on the wire through the SDK, what the SDK adds to a request
+or leaves off it once Roboglot has told it, and what Roboglot makes of an answer in OpenAI's
+documented shape. `tests/test_decisions_api.py` holds Roboglot's half against a fake of the SDK,
 and a fake cannot show what the real one does with the headers it is handed. Nothing here proves
-anything about OpenAI, and no request from quackd has reached `gpt-6-luna`.
+anything about OpenAI, and no request from Roboglot has reached `gpt-6-luna`.
 
 Every run here has the variables the SDK reads for itself set the way somebody who pilots with
-OpenAI through a gateway might have them in a `.env`, so every run shows what quackd does about
+OpenAI through a gateway might have them in a `.env`, so every run shows what Roboglot does about
 each of them.
 """
 
@@ -50,14 +50,14 @@ pytest.importorskip("openai")
 from PIL import Image
 from typer.testing import CliRunner
 
-from quackd.agent.decision import decisions_api
-from quackd.agent.decision.base import TIMEOUT_S
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
-from quackd.agent.decision.stepper import Call, Stepper, build_questions
-from quackd.agent.providers.pricing import cost_usd
-from quackd.agent.transcript import Transcript
-from quackd.cli import app
+from roboglot.agent.decision import decisions_api
+from roboglot.agent.decision.base import TIMEOUT_S
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.factory import make_decision_llm, resolve_decision_price
+from roboglot.agent.decision.stepper import Call, Stepper, build_questions
+from roboglot.agent.providers.pricing import cost_usd
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app
 from tests import fake_decisions_api as fake_api
 from tests import test_live_decision as live
 from tests.conftest import ReachedOpenAI, _openai_base, plain_text
@@ -84,7 +84,7 @@ GATEWAY = "gk-secret"
 """A gateway's own credential, which is that gateway's and goes nowhere from here."""
 
 TYPES = {"choice": "choice", "noul": "predicate", "score": "score"}
-"""quackd's question types to OpenAI's: a `noul` goes as a `predicate`, the same question by
+"""Roboglot's question types to OpenAI's: a `noul` goes as a `predicate`, the same question by
 another name, and the other two keep theirs."""
 
 
@@ -171,7 +171,7 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
 
 
 def _as_openai(monkeypatch: pytest.MonkeyPatch, stand_in: FakeOpenAIDecisions) -> None:
-    """Tell quackd's own rule that the stand-in is OpenAI's API, so the key and the SDK's own
+    """Tell Roboglot's own rule that the stand-in is OpenAI's API, so the key and the SDK's own
     variables go to it as they would to OpenAI. Compared on the authority, so the client's own
     address, which the build reads back with `/v1/` on the end, is the stand-in's as well. The
     suite's guard keeps a rule of its own, sees 127.0.0.1 and lets the request through."""
@@ -187,7 +187,7 @@ def _as_openai(monkeypatch: pytest.MonkeyPatch, stand_in: FakeOpenAIDecisions) -
 async def _sent_by_the_sdk_alone(stand_in: FakeOpenAIDecisions) -> Recorded:
     """One request from a client the SDK built by itself, handed the key and the stand-in's
     address and nothing else, as it would reach OpenAI's own API from a program that is not
-    quackd: what the rule says quackd's client sends there. Its answer is not read."""
+    Roboglot: what the rule says Roboglot's client sends there. Its answer is not read."""
     import openai
 
     before = len(stand_in.posts())
@@ -261,7 +261,7 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
     for post in posts:
         assert post.path == PATH
         assert post.status == 200, post.reply
-        # every line under the name, so a second one beside quackd's would show
+        # every line under the name, so a second one beside Roboglot's would show
         assert post.every("authorization") == ["Bearer local"]
         assert post.headers["user-agent"].startswith("AsyncOpenAI/Python"), "not the real SDK"
         for ambient in ("x-gateway-key", "openai-organization", "openai-project"):
@@ -281,7 +281,7 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
 def test_at_openais_own_address_a_run_sends_what_the_sdk_sends_by_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """What a run sends where the key is meant to go, seen without the network: quackd's own
+    """What a run sends where the key is meant to go, seen without the network: Roboglot's own
     rule is told the stand-in is OpenAI's API. The SDK's own variables follow the SDK's own
     address (ADR-0010's amendment of 2026-10-12), so every request carries the key, the gateway's
     lines and the account headers exactly as a client the SDK built by itself sends them, and the
@@ -424,7 +424,7 @@ def test_each_answer_is_read_by_its_name_carried_field_to_field_and_billed_as_co
     is the turn's confidence, which the stand-in puts below its top probability as OpenAI's own
     example does, so a reader that took the top probability for it would show here; the
     distribution comes back a mapping; each yes or no is the probability it was answered with;
-    and the usage is what the server counted, never quackd's estimate. A turn after the first
+    and the usage is what the server counted, never Roboglot's estimate. A turn after the first
     says how long the connection had been idle."""
     with FakeOpenAIDecisions() as stand_in:
         result = _run(stand_in, tmp_path)
@@ -541,7 +541,7 @@ def test_a_reply_that_quotes_the_request_never_reaches_the_record(tmp_path: Path
 
 def test_a_body_that_is_not_json_costs_the_turn_and_not_the_run(tmp_path: Path) -> None:
     """The SDK hands back the text of a reply that is not JSON, the page a proxy answers with,
-    and the backend refuses it as an answer, in quackd's own words, which name the type the real
+    and the backend refuses it as an answer, in Roboglot's own words, which name the type the real
     SDK handed back and quote nothing of the page."""
     with FakeOpenAIDecisions(script="not-json") as stand_in:
         result = _run(stand_in, tmp_path)
@@ -562,7 +562,7 @@ turns is what the suite pays for asking."""
 
 async def test_a_slow_servers_turns_are_all_recorded_as_the_steppers_timeout() -> None:
     """The client's clock used to be the stepper's own second, the two came due together, and the
-    same slow server's turns were recorded some as quackd's `no answer within 1.0 s` and some as
+    same slow server's turns were recorded some as Roboglot's `no answer within 1.0 s` and some as
     the SDK's bare `APITimeoutError`. The client's clock sits above the stepper's now, so the
     stepper's own bound is the one that ends a turn, and every turn says the same thing."""
     slow = paced(answering(), wait_s=1.5 * TIMEOUT_S)
@@ -661,7 +661,7 @@ def test_a_frame_goes_as_the_reference_has_an_image_go_and_is_the_one_the_record
     at detail `low`. The stand-in checks both parts against the reference's shape and took every
     request. The JPEG it was sent is no wider or taller than the limit, and is the file the run
     kept and the hash its record names."""
-    from quackd.agent.decision.frames import MAX_SIDE_PX
+    from roboglot.agent.decision.frames import MAX_SIDE_PX
 
     with FakeOpenAIDecisions() as stand_in:
         _as_openai(monkeypatch, stand_in)
@@ -826,8 +826,8 @@ async def test_the_suites_guard_stops_the_pilots_request_as_well(
     stepper's backend alone, so a test that built the real pilot with a key was free to pay OpenAI
     for a turn. Its request is stopped where every other one is, and the pilot reports the call
     failed, as it reports any call that does."""
-    from quackd.agent.providers.base import ProviderError
-    from quackd.agent.providers.openai import OpenAIProvider
+    from roboglot.agent.providers.base import ProviderError
+    from roboglot.agent.providers.openai import OpenAIProvider
 
     # the pilot is handed no address, so the SDK's own variable would otherwise be its address
     monkeypatch.delenv("OPENAI_BASE_URL")
@@ -930,7 +930,7 @@ async def test_the_measurement_with_a_frame_prints_what_the_frame_added_and_what
     as its tokens, so a body with a frame in it counts more than one without: the test sends
     every request it says it sends, the frame in each, prints both counts and what was declined,
     and passes on an answer with a question declined, as the other measurements do."""
-    from quackd.agent.decision.frames import MAX_SIDE_PX
+    from roboglot.agent.decision.frames import MAX_SIDE_PX
 
     declines = answering(refuse=("next_verb",))
     with FakeOpenAIDecisions(script=[declines]) as stand_in:

@@ -15,7 +15,7 @@ them names the verb that was running.
 
 Frames are taken on the simulator's clock and nowhere else: a tick hook on the clock draws both
 views every `SAMPLE_S` of simulated time, so a frame exists only while the world steps. A
-pilot's thinking costs the simulator no time at all (`quackd_lerobot/sim/clock.py`), so the
+pilot's thinking costs the simulator no time at all (`roboglot_lerobot/sim/clock.py`), so the
 recording skips it, and the drawing happens on the event loop's thread, the one a GL context
 there belongs to, between two steps of a clock that does not advance while it waits.
 
@@ -23,14 +23,14 @@ there belongs to, between two steps of a clock that does not advance while it wa
     uv run --extra lerobot-sim --extra openai python docs/assets/lerobot_sim.py --llm gpt-6-sol
 
 Without `--llm` the pilot is a script built below, as `hero3d.py` builds its own, so the first
-line needs no key. `--llm` takes what `quackd run --llm` takes, and that vendor's key in the
+line needs no key. `--llm` takes what `roboglot run --llm` takes, and that vendor's key in the
 environment: the second line is OpenAI's `gpt-6-sol`, the pilot the committed file flew with.
-Memory is off, as `quackd run --no-memory` has it. The run's directory is written under
+Memory is off, as `roboglot run --no-memory` has it. The run's directory is written under
 `--runs-dir` like any other, transcript and frames included, and a run that does not declare
 success writes no GIF.
 
-Needs `quackd[lerobot-sim]`. The first run downloads the SO-101's model, the maker's own from
-TheRobotStudio's SO-ARM100 at a pinned commit (about 16 MB), into `~/.quackd/cache`, checks
+Needs `roboglot[lerobot-sim]`. The first run downloads the SO-101's model, the maker's own from
+TheRobotStudio's SO-ARM100 at a pinned commit (about 16 MB), into `~/.roboglot/cache`, checks
 each file against its sha256 and prints its licence, which is Apache-2.0. Nothing of theirs is
 written here except the frames of this recording, which render that model and are labelled in
 `docs/assets/README.md` and `docs/reference/licenses.md`.
@@ -50,24 +50,24 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from quackd.adapters.factory import make_adapter, parse_robot_spec, registry_for
-from quackd.agent.loop import RunConfig, RunResult, run_duck
-from quackd.agent.providers.base import (
+from roboglot.adapters.factory import make_adapter, parse_robot_spec, registry_for
+from roboglot.agent.loop import RunConfig, RunResult, run_glot
+from roboglot.agent.providers.base import (
     Exchange,
     LLMProvider,
     Observation,
     ProviderError,
     ToolCall,
 )
-from quackd.agent.providers.factory import make_provider, parse_llm
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.providers.pricing import fmt_usd
-from quackd.duckfile.parser import duck_from_goal
-from quackd.log import LogEvent, fan_out
-from quackd.transport.base import TransportError
-from quackd_lerobot import REACH
-from quackd_lerobot.sim.camera import open_renderer, render
-from quackd_lerobot.verbs import JOINTS
+from roboglot.agent.providers.factory import make_provider, parse_llm
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.providers.pricing import fmt_usd
+from roboglot.glotfile.parser import glot_from_goal
+from roboglot.log import LogEvent, fan_out
+from roboglot.transport.base import TransportError
+from roboglot_lerobot import REACH
+from roboglot_lerobot.sim.camera import open_renderer, render
+from roboglot_lerobot.verbs import JOINTS
 
 GOAL = "Wave to the camera with an extended arm"
 """The sentence the README's hero was given on the real arm, word for word."""
@@ -105,7 +105,7 @@ table, so the objects laid out there are in the frame with the arm."""
 
 LEAN_SHARE = 0.2
 """How far `shoulder_lift` goes from the middle of its travel towards its high end, which leans
-the upper arm towards the front camera on this model at quackd's assumed joint signs
+the upper arm towards the front camera on this model at Roboglot's assumed joint signs
 (`JOINT_SIGN`)."""
 EXTEND_SHARE = 0.6
 """How far `elbow_flex` goes from the middle of its travel towards its low end, which raises
@@ -222,7 +222,7 @@ def wave_pilot(adapter: Any) -> FakeProvider:
 
 
 def pilot_for(spec: str | None, adapter: Any) -> LLMProvider:
-    """`--llm` as `quackd run` reads it, with no `--llm` and `fake` both meaning the script."""
+    """`--llm` as `roboglot run` reads it, with no `--llm` and `fake` both meaning the script."""
     vendor, llm_id = parse_llm(spec)
     if vendor == "fake":
         return wave_pilot(adapter)
@@ -425,9 +425,9 @@ async def record(args: argparse.Namespace) -> tuple[RunResult, Film, LLMProvider
             print(f"  {data.get('outcome')}: {str(data.get('reason'))[:100]}")
 
     try:
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
-                duck=duck_from_goal(GOAL, allowed),
+                duck=glot_from_goal(GOAL, allowed),
                 provider=pilot,
                 transport=adapter,
                 runs_dir=args.runs_dir,
@@ -454,7 +454,7 @@ def report(result: RunResult) -> None:
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default="docs/assets/lerobot-sim.gif")
-    parser.add_argument("--llm", default=None, help="as quackd run takes it; none is the script")
+    parser.add_argument("--llm", default=None, help="as roboglot run takes it; none is the script")
     parser.add_argument("--seed", type=int, default=0, help="lays out the table")
     parser.add_argument("--runs-dir", default="runs")
     parser.add_argument("--pane", type=int, default=296, help="pixels per view, across")

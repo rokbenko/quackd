@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Serve this directory the way production does: mounted at /simulator/, not at the root.
 
-The page is deployed under www.quackd.org/simulator, so every reference in index.html is
+The page is deployed under www.roboglot.org/simulator, so every reference in index.html is
 absolute — `/simulator/style.css`, not `style.css`. Relative paths cannot survive that mount:
-quackd-web sets `trailingSlash: false`, so the browser lands on `/simulator` with no slash and
+roboglot-web sets `trailingSlash: false`, so the browser lands on `/simulator` with no slash and
 resolves a relative `style.css` to `/style.css`, which is the landing page's root and not this
 directory at all.
 

@@ -16,16 +16,16 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import __version__
-from quackd import cli as cli_mod
-from quackd.agent.providers.factory import CLOUD_NAMES, default_llm_for, llm_ids
-from quackd.cli import EXIT_INFEASIBLE, app
-from quackd.release import CLOSING_THE_GRIPPER
-from quackd.safety import AfterTheClose
-from quackd_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
-from quackd_lerobot.verbs import JOINTS as JOINT_NAMES
+from roboglot import __version__
+from roboglot import cli as cli_mod
+from roboglot.agent.providers.factory import CLOUD_NAMES, default_llm_for, llm_ids
+from roboglot.cli import EXIT_INFEASIBLE, app
+from roboglot.release import CLOSING_THE_GRIPPER
+from roboglot.safety import AfterTheClose
+from roboglot_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
+from roboglot_lerobot.verbs import JOINTS as JOINT_NAMES
 
-from .conftest import DUCKS
+from .conftest import TASKS
 from .conftest import help_text as _help
 
 runner = CliRunner()
@@ -37,12 +37,12 @@ runner = CliRunner()
 def _one_command(tmp_path: Path, monkeypatch, *args: str, env: str | None = "") -> str:
     """Any command whose stderr the CliRunner folds into `output`, with the label column's
     padding squeezed out so an assertion can name a line as a reader would say it. `env` is
-    what QUACKD_LOG says: "" is on (an empty value must never read as off), None removes
+    what ROBOGLOT_LOG says: "" is on (an empty value must never read as off), None removes
     it. The suite turns the log off for everyone else (conftest)."""
     if env is None:
-        monkeypatch.delenv("QUACKD_LOG", raising=False)
+        monkeypatch.delenv("ROBOGLOT_LOG", raising=False)
     else:
-        monkeypatch.setenv("QUACKD_LOG", env)
+        monkeypatch.setenv("ROBOGLOT_LOG", env)
     result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     return " ".join(result.output.split())
@@ -82,13 +82,13 @@ def _log_record(tmp_path: Path, monkeypatch, *flags: str, env: str | None = "") 
 
 def _kinds(tmp_path: Path) -> list[str]:
     """Every `kind` the run's transcript recorded, in order."""
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     return [e["kind"] for e in Transcript.read(next(tmp_path.rglob("transcript.jsonl")))]
 
 
 def test_the_log_is_on_by_default(tmp_path: Path, monkeypatch) -> None:
-    """Someone who types `quackd run` and watches a robot move should see why it moved."""
+    """Someone who types `roboglot run` and watches a robot move should see why it moved."""
     out = _log_run(tmp_path, monkeypatch)
     assert "system prompt" in out  # what the LLM was told
     assert "quack(text='hello!')" in out  # what it chose
@@ -106,7 +106,7 @@ def test_no_log_prompt_hides_only_the_prompt(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_the_env_hides_the_prompt_and_the_flag_wins(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("QUACKD_LOG_PROMPT", "0")
+    monkeypatch.setenv("ROBOGLOT_LOG_PROMPT", "0")
     assert "system prompt" not in _log_run(tmp_path, monkeypatch)
     assert "system prompt" in _log_run(tmp_path, monkeypatch, "--log-prompt")
 
@@ -170,17 +170,17 @@ def test_no_log_verbose_prints_the_dry_run_line_intact(tmp_path: Path, monkeypat
 
 
 def test_serve_mcp_refuses_a_task_file_it_cannot_read_in_a_sentence(tmp_path: Path) -> None:
-    """`quackd serve-mcp --duckfile` loaded the file with nothing around it, so a file it
-    refused, a missing one included, ended the command in a DuckParseError traceback. It is
-    refused now as `quackd run` refuses it, before anything connects."""
-    broken = tmp_path / "broken.duck"
+    """`roboglot serve-mcp --glotfile` loaded the file with nothing around it, so a file it
+    refused, a missing one included, ended the command in a GlotParseError traceback. It is
+    refused now as `roboglot run` refuses it, before anything connects."""
+    broken = tmp_path / "broken.glot"
     broken.write_text("no fence here\n", encoding="utf-8")
     for path, said in (
         (str(broken), "missing frontmatter"),
-        (str(tmp_path / "missing.duck"), "file not found"),
+        (str(tmp_path / "missing.glot"), "file not found"),
     ):
         result = runner.invoke(
-            app, ["serve-mcp", "--robot", "microduck:mock", "--no-memory", "--duckfile", path]
+            app, ["serve-mcp", "--robot", "microduck:mock", "--no-memory", "--glotfile", path]
         )
         assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
         assert said in " ".join(result.output.split()), result.output
@@ -190,8 +190,8 @@ def test_serve_mcp_forwards_no_log(monkeypatch) -> None:
     """`--no-log` is what silences an MCP server that logs to the same stderr its client
     reads. The flag is parsed by one module and honoured by another, so nothing but a call
     recorder proves it survives the hand-off."""
-    from quackd import mcp_server
-    from quackd.log import log_enabled_default
+    from roboglot import mcp_server
+    from roboglot.log import log_enabled_default
 
     captured: dict[str, object] = {}
 
@@ -199,7 +199,7 @@ def test_serve_mcp_forwards_no_log(monkeypatch) -> None:
         captured.update(kwargs)
 
     monkeypatch.setattr(mcp_server, "serve", recorder)
-    monkeypatch.setenv("QUACKD_LOG", "")  # an empty value is on
+    monkeypatch.setenv("ROBOGLOT_LOG", "")  # an empty value is on
 
     off = runner.invoke(app, ["serve-mcp", "--no-log", "--robot", "microduck:mock"])
     assert off.exit_code == 0, off.output
@@ -209,7 +209,7 @@ def test_serve_mcp_forwards_no_log(monkeypatch) -> None:
     on = runner.invoke(app, ["serve-mcp", "--robot", "microduck:mock"])
     assert on.exit_code == 0, on.output
     # without the flag the CLI forwards None — "ask the environment" — because a server a
-    # desktop spawned has no shell to read QUACKD_LOG in. `serve` resolves it, and on.
+    # desktop spawned has no shell to read ROBOGLOT_LOG in. `serve` resolves it, and on.
     assert captured["log"] is None and log_enabled_default() is True
 
 
@@ -217,9 +217,9 @@ def test_the_outcome_line_prints_the_llms_reason_verbatim(tmp_path: Path, monkey
     """The reason is the LLM's own `declare_failure` text. A local LLM that leaks
     `[/think]` into it used to crash the CLI with a Rich MarkupError after a completed run,
     replacing the verdict with a traceback."""
-    from quackd.agent.providers import factory
-    from quackd.agent.providers.base import ToolCall
-    from quackd.agent.providers.fake import FakeProvider
+    from roboglot.agent.providers import factory
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
 
     reason = "the ball is [behind] the sofa [/think]"
     monkeypatch.setattr(
@@ -250,8 +250,8 @@ def test_the_outcome_line_prints_the_llms_reason_verbatim(tmp_path: Path, monkey
 
 def test_list_verbs_prints_a_description_with_brackets_verbatim(monkeypatch) -> None:
     """A verb description is manifest text, which Rich would silently eat as a style tag."""
-    from quackd.verbs import registry as registry_mod
-    from quackd.verbs.registry import NoParams, Verb, VerbRegistry
+    from roboglot.verbs import registry as registry_mod
+    from roboglot.verbs.registry import NoParams, Verb, VerbRegistry
 
     reg = VerbRegistry()
     reg.register(Verb("kick", "kick [left] or [right]", lambda c, p: None, params=NoParams))  # type: ignore[arg-type]
@@ -262,13 +262,13 @@ def test_list_verbs_prints_a_description_with_brackets_verbatim(monkeypatch) -> 
 
 
 def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None:
-    """The flock's planner logs an LLM's raw tool arguments through this line."""
+    """The team's planner logs an LLM's raw tool arguments through this line."""
     import io
 
     from rich.console import Console
 
-    from quackd import cli as cli_mod
-    from quackd import ui
+    from roboglot import cli as cli_mod
+    from roboglot import ui
 
     buf = io.StringIO()
     # the consoles live on `ui` so `--no-color` can replace them; `cli` reads them from there
@@ -279,7 +279,7 @@ def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None
 
 
 def test_validate_starter_ducks() -> None:
-    files = sorted(DUCKS.glob("*.duck"))
+    files = sorted(TASKS.glob("*.glot"))
     result = runner.invoke(app, ["validate", *[str(p) for p in files]])
     assert result.exit_code == 0, result.output
     assert f"{len(files)} files valid" in result.output
@@ -288,7 +288,7 @@ def test_validate_starter_ducks() -> None:
 def test_validate_checks_a_task_against_a_simulator_laid_out_in_a_room() -> None:
     """A task that needs a room's verbs is valid for the duck's simulator in a room, refused for
     the same simulator in none, and `--room` with no robot to lay it out for is refused."""
-    duck = str(DUCKS / "find-the-ball.duck")
+    duck = str(TASKS / "find-the-ball.glot")
     roomy = runner.invoke(
         app, ["validate", duck, "--robot", "microduck:sim2d", "--room", "two-rooms"]
     )
@@ -300,7 +300,7 @@ def test_validate_checks_a_task_against_a_simulator_laid_out_in_a_room() -> None
 
 
 def test_validate_expands_globs_itself() -> None:
-    result = runner.invoke(app, ["validate", str(DUCKS / "*.duck")])
+    result = runner.invoke(app, ["validate", str(TASKS / "*.glot")])
     assert result.exit_code == 0, result.output
 
 
@@ -308,29 +308,29 @@ def test_a_pattern_written_with_forward_slashes_expands_to_paths_written_that_wa
     tmp_path: Path,
 ) -> None:
     """On Windows `glob` joined what a wildcard matched with backslashes and kept the part
-    typed before it as typed, so `quackd preflight "docs/examples/e00[1-5]/*.duck"` labelled
+    typed before it as typed, so `roboglot preflight "docs/examples/e00[1-5]/*.glot"` labelled
     its files in two slash styles at once. Anywhere else this holds as it always did."""
-    from quackd.cli import _expand
+    from roboglot.cli import _expand
 
-    for folder, name in (("e001", "a.duck"), ("e002", "b.duck"), ("f003", "c.duck")):
+    for folder, name in (("e001", "a.glot"), ("e002", "b.glot"), ("f003", "c.glot")):
         (tmp_path / folder).mkdir()
         (tmp_path / folder / name).write_text("", encoding="utf-8")
     base = tmp_path.as_posix()
-    assert _expand([f"{base}/e00[1-5]/*.duck"]) == [f"{base}/e001/a.duck", f"{base}/e002/b.duck"]
-    assert _expand([f"{base}/none/*.duck"]) == [f"{base}/none/*.duck"], "no match is kept whole"
+    assert _expand([f"{base}/e00[1-5]/*.glot"]) == [f"{base}/e001/a.glot", f"{base}/e002/b.glot"]
+    assert _expand([f"{base}/none/*.glot"]) == [f"{base}/none/*.glot"], "no match is kept whole"
 
 
 def test_validate_fails_fast(tmp_path: Path) -> None:
-    bad = tmp_path / "bad.duck"
-    bad.write_text("---\nduck: 0\nname: bad\n---\nbody\n", encoding="utf-8")
-    unknown = tmp_path / "unknown.duck"
+    bad = tmp_path / "bad.glot"
+    bad.write_text("---\nglot: 0\nname: bad\n---\nbody\n", encoding="utf-8")
+    unknown = tmp_path / "unknown.glot"
     unknown.write_text(
-        "---\nduck: 0\nname: unknown\ndescription: d\nverbs:\n  allow: [fly]\n"
+        "---\nglot: 0\nname: unknown\ndescription: d\nverbs:\n  allow: [fly]\n"
         "success: [x]\n---\n# Task\nx\n",
         encoding="utf-8",
     )
     result = runner.invoke(
-        app, ["validate", str(bad), str(unknown), str(DUCKS / "hello-world.duck")]
+        app, ["validate", str(bad), str(unknown), str(TASKS / "hello-world.glot")]
     )
     assert result.exit_code == 1
     assert "unknown verbs: fly" in result.output
@@ -366,8 +366,8 @@ def test_run_hello_world_on_mock(tmp_path: Path) -> None:
 
 
 def test_missing_extra_hint_survives_rich_markup(tmp_path: Path, monkeypatch) -> None:
-    from quackd.agent.providers import factory
-    from quackd.agent.providers.base import ProviderNotInstalled
+    from roboglot.agent.providers import factory
+    from roboglot.agent.providers.base import ProviderNotInstalled
 
     def missing(name: str, **_: object) -> None:
         raise ProviderNotInstalled(name, "anthropic")
@@ -387,7 +387,7 @@ def test_missing_extra_hint_survives_rich_markup(tmp_path: Path, monkeypatch) ->
         ],
     )
     assert result.exit_code == 1
-    assert "quackd[anthropic]" in result.output  # Rich must not eat the [anthropic] "tag"
+    assert "roboglot[anthropic]" in result.output  # Rich must not eat the [anthropic] "tag"
 
 
 def test_run_goal_builds_an_ad_hoc_duck(tmp_path: Path) -> None:
@@ -526,7 +526,7 @@ def test_doctor_json_reports_a_second_camera_url_inside_its_document(
     """`--json` promises one JSON document and nothing else, whatever went wrong, so a
     refusal raised while the robot is being built belongs in the probe rather than in a line
     of prose printed above the document a script is trying to parse."""
-    from quackd import doctor
+    from roboglot import doctor
 
     # doctor probes four local LLM servers at 1.5 s each and nothing here is about them
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
@@ -571,9 +571,9 @@ def test_list_verbs_for_a_robot() -> None:
 def test_validate_against_a_robot(tmp_path: Path) -> None:
     ok = runner.invoke(app, ["validate", "hello-world", "--robot", "microduck:mock"])
     assert ok.exit_code == 0 and "for microduck" in ok.output
-    duck = tmp_path / "needs-express.duck"
+    duck = tmp_path / "needs-express.glot"
     duck.write_text(
-        "---\nduck: 1\nname: needs-express\ndescription: d\nrequires: [express]\n"
+        "---\nglot: 1\nname: needs-express\ndescription: d\nrequires: [express]\n"
         "robots: microduck:mock\nverbs:\n  allow: [quack, express, stop]\nsuccess: [x]\n"
         "---\n# Task\nx\n",
         encoding="utf-8",
@@ -704,17 +704,17 @@ def test_list_models_can_be_asked_about_one_vendor(_wide: None) -> None:
 def test_list_models_says_what_the_environment_pins(
     _wide: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """QUACKD_LLM holds a whole spec now, so the note under the table has to read it the way
+    """ROBOGLOT_LLM holds a whole spec now, so the note under the table has to read it the way
     `--llm` does: a bare id infers its vendor and the note names the pair it resolved to, and
     a spec that cannot be read at all is reported as refused rather than quietly ignored.
     A variable in a `.env` nobody has opened in months is exactly the kind of setting whose
     failure has to be printed where the reader is already looking."""
-    monkeypatch.setenv("QUACKD_LLM", "grok-4.6")
+    monkeypatch.setenv("ROBOGLOT_LLM", "grok-4.6")
     flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
-    assert "QUACKD_LLM=grok-4.6 pins grok:grok-4.6" in flat
-    monkeypatch.setenv("QUACKD_LLM", "not-an-llm")
+    assert "ROBOGLOT_LLM=grok-4.6 pins grok:grok-4.6" in flat
+    monkeypatch.setenv("ROBOGLOT_LLM", "not-an-llm")
     flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
-    assert "QUACKD_LLM=not-an-llm is refused" in flat
+    assert "ROBOGLOT_LLM=not-an-llm is refused" in flat
     assert "unknown provider" in flat
 
 
@@ -730,7 +730,7 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
     offers nothing at all: `--llm grok:gpt-5.6-sol` would be refused by the parser, and
     completion that offered it would be arguing with the command it is meant to help type.
     """
-    from quackd.cli import _complete_llm
+    from roboglot.cli import _complete_llm
 
     ctx = SimpleNamespace(params={})
     empty = _complete_llm(ctx, "")
@@ -755,7 +755,7 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
 def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> None:
     """After the colon, the seven rows the catalogue carries and no more: completion runs on
     every TAB and reads nothing but the catalogue, so OpenRouter's list stays out of it."""
-    from quackd.cli import _complete_llm
+    from roboglot.cli import _complete_llm
 
     ctx = SimpleNamespace(params={})
     offered = [i for i, _ in _complete_llm(ctx, "openrouter:")]
@@ -771,9 +771,9 @@ def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> Non
 def test_list_models_says_openrouter_takes_more_than_it_lists(_wide: None) -> None:
     """Its rows are a selection, and the table alone would read as all `--llm openrouter:`
     takes. Nothing is fetched to say so: the conftest guard would fail this test if it were.
-    The note says how an id quackd does not carry is handled and promises none: 0.17.0's said any
+    The note says how an id Roboglot does not carry is handled and promises none: 0.17.0's said any
     other id with tool calling on the vendor's own LLM list works too, and OpenRouter's list
-    carries `~` aliases, routers and `:batch` ids that quackd refuses on their spelling."""
+    carries `~` aliases, routers and `:batch` ids that Roboglot refuses on their spelling."""
     result = runner.invoke(app, ["list-models", "--llm", "openrouter"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
@@ -781,10 +781,10 @@ def test_list_models_says_openrouter_takes_more_than_it_lists(_wide: None) -> No
         assert llm_id in flat
     assert "openrouter: the rows above are a selection" in flat
     assert (
-        "openrouter: the rows above are a selection. An id quackd does not carry can be named as "
+        "openrouter: the rows above are a selection. An id Roboglot does not carry can be named as "
         "--llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on "
         "their spelling alone. Any other is checked against OpenRouter's public LLM list when a "
-        "run starts. That list has to carry the id with tool calling, and one quackd takes is "
+        "run starts. That list has to carry the id with tool calling, and one Roboglot takes is "
         "priced from it."
     ) in flat
     assert "works too" not in flat and "any other id" not in flat.lower()
@@ -816,9 +816,9 @@ def test_list_models_lists_only_pilots_unless_asked(_wide: None) -> None:
 
 
 def test_list_models_kind_decision_prints_every_preset_in_doctors_order(_wide: None) -> None:
-    """Until `--kind decision`, `quackd doctor` was the one command that said which decision
-    LLMs quackd names, buried under the providers."""
-    from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
+    """Until `--kind decision`, `roboglot doctor` was the one command that said which decision
+    LLMs Roboglot names, buried under the providers."""
+    from roboglot.agent.decision.catalogue import PRESET_NAMES, PRESETS
 
     result = runner.invoke(app, ["list-models", "--kind", "decision"])
     assert result.exit_code == 0, result.output
@@ -837,11 +837,11 @@ def test_the_policy_rows_need_no_adapter(
     command: list[str], _wide: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The policy rows are data in the core, so a machine with no LeRobot and no arm package
-    can still be told which policies quackd serves and which it does not, and why, by either
+    can still be told which policies Roboglot serves and which it does not, and why, by either
     command that lists them."""
-    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+    from roboglot.adapters.policies import FAMILIES, NOT_SERVED
 
-    monkeypatch.setitem(sys.modules, "quackd_lerobot", None)
+    monkeypatch.setitem(sys.modules, "roboglot_lerobot", None)
     result = runner.invoke(app, command)
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
@@ -853,9 +853,9 @@ def test_the_policy_rows_need_no_adapter(
 
 
 def test_policy_list_json_says_which_it_serves(_wide: None) -> None:
-    """Every row says it is a `policy`, and `quackd list-models --kind policy` prints the same
-    rows as `quackd policy list`, so a script reads them from either command."""
-    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+    """Every row says it is a `policy`, and `roboglot list-models --kind policy` prints the same
+    rows as `roboglot policy list`, so a script reads them from either command."""
+    from roboglot.adapters.policies import FAMILIES, NOT_SERVED
 
     result = runner.invoke(app, ["policy", "list", "--json"])
     assert result.exit_code == 0, result.output
@@ -890,8 +890,8 @@ def test_policy_list_json_says_which_it_serves(_wide: None) -> None:
 
 def test_list_models_json_tags_every_row_with_its_kind(_wide: None) -> None:
     """One stream for a script, whichever kinds it asked for: every row says which it is."""
-    from quackd.adapters.policies import FAMILIES, NOT_SERVED
-    from quackd.agent.decision.catalogue import PRESET_NAMES
+    from roboglot.adapters.policies import FAMILIES, NOT_SERVED
+    from roboglot.agent.decision.catalogue import PRESET_NAMES
 
     result = runner.invoke(app, ["list-models", "--kind", "all", "--json"])
     assert result.exit_code == 0, result.output
@@ -1009,7 +1009,7 @@ def test_a_camera_robot_that_is_not_the_simulator_still_gets_a_detector(tmp_path
 def test_a_console_that_raises_is_reported_once_at_the_end(tmp_path: Path, monkeypatch) -> None:
     """An observer that raises never ends a run, which is right. It also meant a console that
     raised on every event produced a silent log and no sign at all that it had."""
-    import quackd.log as log_module
+    import roboglot.log as log_module
 
     class Broken(log_module.ConsoleLog):  # type: ignore[misc]
         def __call__(self, event: object) -> None:
@@ -1065,9 +1065,9 @@ def test_validate_json_is_one_object_per_file_and_still_exits_one() -> None:
     assert "does not provide it" in row["problems"][0]
 
 
-def test_validate_json_reports_a_flock_as_a_count() -> None:
-    (row,) = _objects(CliRunner().invoke(app, ["validate", "flock-kick", "--json"]).output)
-    assert row["flock"] == 3
+def test_validate_json_reports_a_team_as_a_count() -> None:
+    (row,) = _objects(CliRunner().invoke(app, ["validate", "team-kick", "--json"]).output)
+    assert row["team"] == 3
 
 
 def test_list_verbs_json_carries_what_the_table_shows() -> None:
@@ -1100,7 +1100,7 @@ def test_json_never_carries_a_rich_tag() -> None:
 def test_no_color_strips_the_colour_and_keeps_the_words() -> None:
     """Rich renders colour through the Win32 console on a legacy terminal rather than as
     escape codes, so this asks the consoles what they were told rather than grepping bytes."""
-    from quackd import ui
+    from roboglot import ui
 
     runner = CliRunner()
     assert runner.invoke(app, ["list-adapters"]).exit_code == 0
@@ -1125,37 +1125,37 @@ def test_no_color_reaches_the_help_typer_renders_for_itself() -> None:
     [
         ["run", "hello-world", "--robot", "microduck:mock", "--no-gif"],
         ["record", "hello-world", "--gif-size", "64"],
-        ["run", "flock-hello", "--no-gif"],
-        ["run", "flock-kick", "--no-gif"],
+        ["run", "team-hello", "--no-gif"],
+        ["run", "team-kick", "--no-gif"],
     ],
-    ids=["run", "record", "pilot-flock", "coordinator-flock"],
+    ids=["run", "record", "pilot-team", "coordinator-team"],
 )
 def test_extra_body_reaches_every_provider_a_run_builds(
     argv: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A flock builds one provider per member, so a flag that only reached the single-robot
-    path would be a silent no-op on the very runs that cost the most. The two kinds of flock
-    are two call sites: `flock-hello` is `method: pilots` and goes through `_run_pilots_impl`,
-    `flock-kick` is `method: auction` and goes through `_run_flock_impl`."""
+    """A team builds one provider per member, so a flag that only reached the single-robot
+    path would be a silent no-op on the very runs that cost the most. The two kinds of team
+    are two call sites: `team-hello` is `method: pilots` and goes through `_run_pilots_impl`,
+    `team-kick` is `method: auction` and goes through `_run_team_impl`."""
     body = '{"chat_template_kwargs": {"enable_thinking": false}}'
     seen: list[object] = []
-    real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
+    real = __import__("roboglot.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
     def recorder(name: str, **kw: object) -> object:
         seen.append(kw.get("extra_body"))
         return real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
 
-    monkeypatch.setattr("quackd.agent.providers.factory.make_provider", recorder)
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     result = runner.invoke(
         app, [*argv, "--llm", "fake", "--runs-dir", str(tmp_path / "r"), "--extra-body", body]
     )
     assert result.exit_code == 0, result.output
     assert seen, "no provider was built"
     assert all(s == body for s in seen), "the factory is handed the text as it was typed"
-    # a pilot flock is one whole pilot per body; a coordinator flock is one referee for all
+    # a pilot team is one whole pilot per body; a coordinator team is one referee for all
     # of them, so only the first should build more than one provider
-    if "flock-hello" in argv:
-        assert len(seen) > 1, "a pilot flock is one provider per member"
+    if "team-hello" in argv:
+        assert len(seen) > 1, "a pilot team is one provider per member"
 
 
 def test_a_bad_extra_body_stops_before_anything_connects(
@@ -1183,16 +1183,16 @@ def test_a_bad_extra_body_stops_before_anything_connects(
     assert "--extra-body" in result.output and "Traceback" not in result.output
     assert not runs.exists() or not list(runs.iterdir())
 
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", "[1]")
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", "[1]")
     result = runner.invoke(app, common)
-    assert result.exit_code == 1 and "QUACKD_EXTRA_BODY" in result.output
+    assert result.exit_code == 1 and "ROBOGLOT_EXTRA_BODY" in result.output
 
 
 def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     """Twenty eight flags in one flat list is a list nobody reads. And `rich_markup_mode`
-    reads `quackd[lan]` as markup, which printed an install that does not exist."""
+    reads `roboglot[lan]` as markup, which printed an install that does not exist."""
     out = _help(["run", "--help"])
-    assert "quackd[live]" in out, "an extra a reader is meant to type must survive"
+    assert "roboglot[live]" in out, "an extra a reader is meant to type must survive"
     for group in ("Task", "Pilot", "Robot", "Output", "Memory"):
         assert group in out, group
     # Two flags became one, and half a rename is worse than either shape on its own: a help
@@ -1202,21 +1202,21 @@ def test_the_help_groups_the_flags_and_keeps_the_brackets_of_an_extra() -> None:
     assert "--model " not in out, "the old LLM flag is gone, help included"
     root = _help(["--help"])
     assert "--no-color" in root
-    for group in ("Inspect", "Run a duck", "Serve", "LAN", "Memory"):
+    for group in ("Inspect", "Run a task", "Serve", "LAN", "Memory"):
         assert group in root, group
-    assert "quackd run find-and-kick --llm fake" in root, "the epilog offers a first command"
+    assert "roboglot run find-and-kick --llm fake" in root, "the epilog offers a first command"
     # the same markup trap, one level up: the core installs no robot, so the first command the
     # epilog offers has to carry the extra that makes it work, and Rich would eat the brackets
-    assert "quackd[microduck]" in root, "the epilog's install line lost its extra to markup"
+    assert "roboglot[microduck]" in root, "the epilog's install line lost its extra to markup"
 
 
 @pytest.mark.parametrize("command", ["serve", "check"])
 def test_the_policy_help_keeps_the_extra_a_checkpoint_needs(command: str) -> None:
     """The same trap in `--policy`'s help, which `serve` and `check` share: it names the extra a
-    LeRobot checkpoint needs, and an unescaped `[lerobot-vla]` printed as `which need quackd)`,
+    LeRobot checkpoint needs, and an unescaped `[lerobot-vla]` printed as `which need Roboglot)`,
     an install line with nothing to install."""
     out = _help(["policy", command, "--help"])
-    assert "quackd[lerobot-vla]" in out, "--policy's help lost its extra to markup"
+    assert "roboglot[lerobot-vla]" in out, "--policy's help lost its extra to markup"
 
 
 def test_dash_h_is_the_same_as_help() -> None:
@@ -1230,8 +1230,8 @@ def test_a_confirmation_prompt_is_asked_with_the_status_line_out_of_the_way(
 ) -> None:
     """A live region redirects stdout and a y/N prompt writes without a newline, so under a
     running status the question is invisible until after it has been answered."""
-    from quackd import cli as cli_mod
-    from quackd import ui
+    from roboglot import cli as cli_mod
+    from roboglot import ui
 
     seen: list[str] = []
 
@@ -1265,9 +1265,9 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
 ) -> None:
     """1 means the run happened and did not succeed. A run that never moved because the body
     could not is a different answer, and a script trying one body after another reads it."""
-    from quackd.agent.providers import factory
-    from quackd.agent.providers.base import ToolCall
-    from quackd.agent.providers.fake import FakeProvider
+    from roboglot.agent.providers import factory
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
 
     monkeypatch.setattr(
         factory,
@@ -1305,7 +1305,7 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
     assert "far past a beak" in out
     assert "No robot installed here meets needs" in out
     # the industrial arm carries 3 kg and holds nothing, so no "most" explains the refusal,
-    # and a body quackd only describes is named apart, as one it drives no part of
+    # and a body Roboglot only describes is named apart, as one it drives no part of
     assert "the most is" not in out
     assert "franka-research-3 could" in out
 
@@ -1314,15 +1314,15 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
 
 
 def test_env_is_also_read_from_the_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `uv tool install`ed quackd lives in its own directory, and the bare `load_dotenv()`
+    """A `uv tool install`ed Roboglot lives in its own directory, and the bare `load_dotenv()`
     walks up from there, so it finds the `.env` beside the venv and never the one beside the
     project you are standing in. The file next to the command you typed is read first.
 
     Neither file overrides a variable the environment already carries, which is what lets
-    `QUACKD_REGISTRY_DIR=... quackd robot list` mean what it says on a machine whose `.env`
+    `ROBOGLOT_REGISTRY_DIR=... roboglot robot list` mean what it says on a machine whose `.env`
     names a different directory.
     """
-    from quackd.registry import Registry, RobotEntry
+    from roboglot.registry import Registry, RobotEntry
 
     beside_the_command, in_the_environment = tmp_path / "beside", tmp_path / "exported"
     Registry(beside_the_command).add_robot(RobotEntry(name="dotenv-duck", spec="microduck:mock"))
@@ -1332,16 +1332,16 @@ def test_env_is_also_read_from_the_cwd(tmp_path: Path, monkeypatch: pytest.Monke
     # as_posix: an unquoted dotenv value keeps its backslashes, and a Windows path is a
     # string of escapes to everything that reads one afterwards
     (work / ".env").write_text(
-        f"QUACKD_REGISTRY_DIR={beside_the_command.as_posix()}\n", encoding="utf-8"
+        f"ROBOGLOT_REGISTRY_DIR={beside_the_command.as_posix()}\n", encoding="utf-8"
     )
     monkeypatch.chdir(work)
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR")  # the suite points it at a throwaway directory
+    monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")  # the suite points it at a throwaway directory
 
     listed = runner.invoke(app, ["robot", "list"])
     assert listed.exit_code == 0, listed.output
     assert "dotenv-duck" in listed.output, "the .env in the working directory was not read"
 
-    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(in_the_environment))
+    monkeypatch.setenv("ROBOGLOT_REGISTRY_DIR", str(in_the_environment))
     again = runner.invoke(app, ["robot", "list"])
     assert again.exit_code == 0, again.output
     assert "exported-duck" in again.output and "dotenv-duck" not in again.output
@@ -1354,22 +1354,22 @@ def test_what_a_dotenv_set_is_told_from_what_the_shell_exported(
     variable the shell had stays the shell's when a `.env` names it too, and one a `.env` set
     stops being the file's once something else sets it, so one command's files never speak for
     a value they did not give."""
-    from quackd import dotenv_names
+    from roboglot import dotenv_names
 
     work = tmp_path / "work"
     work.mkdir()
     (work / ".env").write_text(
-        "QUACKD_TEST_FROM_THE_FILE=file\nQUACKD_TEST_EXPORTED=file\n", encoding="utf-8"
+        "ROBOGLOT_TEST_FROM_THE_FILE=file\nROBOGLOT_TEST_EXPORTED=file\n", encoding="utf-8"
     )
     monkeypatch.chdir(work)
-    monkeypatch.delenv("QUACKD_TEST_FROM_THE_FILE", raising=False)
-    monkeypatch.setenv("QUACKD_TEST_EXPORTED", "shell")
+    monkeypatch.delenv("ROBOGLOT_TEST_FROM_THE_FILE", raising=False)
+    monkeypatch.setenv("ROBOGLOT_TEST_EXPORTED", "shell")
     listed = runner.invoke(app, ["list-adapters"])
     assert listed.exit_code == 0, listed.output
-    assert dotenv_names.from_dotenv("QUACKD_TEST_FROM_THE_FILE")
-    assert not dotenv_names.from_dotenv("QUACKD_TEST_EXPORTED")
-    monkeypatch.setenv("QUACKD_TEST_FROM_THE_FILE", "exported after")
-    assert not dotenv_names.from_dotenv("QUACKD_TEST_FROM_THE_FILE")
+    assert dotenv_names.from_dotenv("ROBOGLOT_TEST_FROM_THE_FILE")
+    assert not dotenv_names.from_dotenv("ROBOGLOT_TEST_EXPORTED")
+    monkeypatch.setenv("ROBOGLOT_TEST_FROM_THE_FILE", "exported after")
+    assert not dotenv_names.from_dotenv("ROBOGLOT_TEST_FROM_THE_FILE")
 
 
 def test_the_env_beside_the_command_is_read_before_the_one_beside_the_install(
@@ -1378,13 +1378,13 @@ def test_the_env_beside_the_command_is_read_before_the_one_beside_the_install(
     """The order, pinned directly, because it is what the docs promise and what decides a
     disagreement: dotenv never overwrites a name it has already set, so whichever file is read
     first wins. The test above proves the working directory is read at all; this proves it is
-    read before the walk up from quackd's own directory.
+    read before the walk up from Roboglot's own directory.
 
     Asked of the calls rather than of two files on disk, because the second lookup's root is
-    wherever quackd happens to be installed and a test cannot put a file there. It also stays
+    wherever Roboglot happens to be installed and a test cannot put a file there. It also stays
     honest under coverage: `find_dotenv` returns the working directory when a trace function is
     set, so a run with `--cov` would read the right file even if the first call were deleted."""
-    import quackd.cli as cli_module
+    import roboglot.cli as cli_module
 
     seen: list[str] = []
     monkeypatch.setattr(
@@ -1395,7 +1395,7 @@ def test_the_env_beside_the_command_is_read_before_the_one_beside_the_install(
     assert listed.exit_code == 0, listed.output
     assert len(seen) == 2, seen
     assert seen[0] == str(Path.cwd() / ".env"), "the working directory is not read first"
-    assert seen[1] == "", "the walk up from quackd's own directory is not read second"
+    assert seen[1] == "", "the walk up from Roboglot's own directory is not read second"
 
 
 # ── --image: the pictures that come with the task ───────────────────────────────────────
@@ -1461,7 +1461,7 @@ def test_a_picture_is_refused_by_a_pilot_that_cannot_see(tmp_path: Path, sketch:
     flat = " ".join(result.output.split())  # the console wraps the line at the terminal width
     assert "fake scripted:hello-world does not take images" in flat, flat
     assert "cannot be given 1 picture" in flat
-    assert "quackd list-models" in flat, "the refusal must say where to look for an LLM"
+    assert "roboglot list-models" in flat, "the refusal must say where to look for an LLM"
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
@@ -1473,7 +1473,7 @@ def test_vision_carries_the_picture_into_the_run_directory_byte_for_byte(
     the only way to walk a picture through the whole loop with no key. The copy beside the
     transcript is the bytes the LLM was sent, not the file they were made from, so a reader
     arguing about the run afterwards is looking at what the pilot looked at."""
-    from quackd.agent.images import load_task_images
+    from roboglot.agent.images import load_task_images
 
     result = _picture_run(tmp_path, "--vision", "--image", str(sketch))
     assert result.exit_code == 0, result.output
@@ -1513,19 +1513,19 @@ def test_a_picture_that_is_not_there_is_refused_before_anything_runs(tmp_path: P
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
-def test_a_picture_is_refused_for_a_flock(tmp_path: Path, sketch: Path) -> None:
+def test_a_picture_is_refused_for_a_team(tmp_path: Path, sketch: Path) -> None:
     """One picture and several bodies is a question the flag cannot answer: whose task is it
     about? Dropping it silently is the failure the flag exists to prevent."""
-    result = _picture_run(tmp_path, "--vision", "--flock", "2", "--image", str(sketch))
+    result = _picture_run(tmp_path, "--vision", "--team", "2", "--image", str(sketch))
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "--image is for one robot, and this run has several" in flat, flat
-    assert "drop --flock and --robots" in flat
+    assert "drop --team and --robots" in flat
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
 def test_a_picture_is_refused_when_robots_names_two_bodies(tmp_path: Path, sketch: Path) -> None:
-    """The same refusal by the other door: `--flock N` is not the only way to end up with more
+    """The same refusal by the other door: `--team N` is not the only way to end up with more
     than one body on the line, and `--robots` reaches a different branch of the dispatch."""
     result = _picture_run(
         tmp_path,
@@ -1547,7 +1547,7 @@ def test_a_picture_is_refused_when_robots_names_two_bodies(tmp_path: Path, sketc
 
 def _arm_registry(tmp_path: Path, *, rest_pose: bool) -> Path:
     """A registry holding one `lerobot:mock` arm called `arm-01`, built through the CLI rather
-    than by writing the file: the pose stored is then the one `quackd robot rest-pose` records
+    than by writing the file: the pose stored is then the one `roboglot robot rest-pose` records
     off the arm, which is what `--by-hand` goes looking for."""
     reg = tmp_path / "registry"
     added = runner.invoke(
@@ -1594,14 +1594,14 @@ def test_by_hand_and_dry_run_are_refused_as_opposites(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
-def test_by_hand_is_refused_for_a_flock(tmp_path: Path) -> None:
+def test_by_hand_is_refused_for_a_team(tmp_path: Path) -> None:
     """One person cannot place four arms at once, and an arm nobody was asked to place would
     be released limp at its rest pose and left there for the length of the run."""
-    result = _by_hand_run(tmp_path, "--robot", "microduck:mock", "--flock", "2")
+    result = _by_hand_run(tmp_path, "--robot", "microduck:mock", "--team", "2")
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "--by-hand is one person placing one arm, and this run has several robots" in flat, flat
-    assert "drop --flock and --robots" in flat
+    assert "drop --team and --robots" in flat
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
 
@@ -1614,13 +1614,13 @@ def test_by_hand_is_refused_on_a_body_that_is_not_the_arm(
 
     The terminal seam is opened deliberately, so that the message under test is the one about
     the body and not the one about there being nobody to ask."""
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     result = _by_hand_run(tmp_path, "--robot", "microduck:mock")
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "microduck:mock is not a body a person places by hand" in flat, flat
     assert "only the LeRobot arm is" in flat
-    assert "quackd list-adapters" in flat
+    assert "roboglot list-adapters" in flat
     assert "Traceback" not in result.output
     assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
 
@@ -1631,7 +1631,7 @@ def test_by_hand_needs_a_rest_pose_to_let_go_at(
     """The release refuses anywhere but the recorded rest pose, because an arm held up by
     torque alone falls when the torque goes. An arm with no pose recorded could therefore never
     be handed over at all, and hearing that here is cheaper than hearing it from the arm."""
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     reg = _arm_registry(tmp_path, rest_pose=False)
     runs = tmp_path / "runs"
     result = runner.invoke(
@@ -1656,7 +1656,7 @@ def test_by_hand_needs_a_rest_pose_to_let_go_at(
     flat = " ".join(result.output.split())
     assert "--by-hand releases the arm at its recorded rest pose" in flat, flat
     assert "this arm has none recorded" in flat
-    assert "quackd robot rest-pose arm-01" in flat, "the hint must name the arm to record"
+    assert "roboglot robot rest-pose arm-01" in flat, "the hint must name the arm to record"
     assert "Traceback" not in result.output
     assert not runs.exists(), "the refusal came before the run directory"
 
@@ -1710,12 +1710,12 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
     What is asserted is what the person at the bench is told, in order: the arm is theirs, then
     that they can let go of the pose they set, then that the gripper opens all the way and when
     the arm folds up. Those lines are the entire user interface of a hand-off."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
 
     async def pressed(self: KillSwitch, *, timeout_s: float | None = None, **_: Any) -> bool:
         return True
 
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     monkeypatch.setattr(KillSwitch, "wait_for_enter", pressed)
 
     reg = _arm_registry(tmp_path, rest_pose=True)
@@ -1746,7 +1746,7 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
     assert "the run is over and the arm is holding where it ended" in flat
     assert "SUCCESS" in result.output
 
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     events = Transcript.read(next(runs.rglob("transcript.jsonl")))
     stages = [e["stage"] for e in events if e["kind"] == "hand_off"]
@@ -1757,7 +1757,7 @@ def test_by_hand_hands_the_arm_over_and_asks_for_it_back(
     assert "the arm did not reach its rest pose" not in flat
 
 
-# ── quackd robot release: fold the arm, and let go of it at its rest pose ───────────────
+# ── roboglot robot release: fold the arm, and let go of it at its rest pose ───────────────
 #
 # Releasing an arm means putting it down first (ADR-0058). The command folds the arm to its
 # recorded rest pose and lets go there, through the first door, which releases nowhere else.
@@ -1772,7 +1772,7 @@ def _hands_come_away_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """`robot release` waits `HANDS_AWAY_S` between its connect and its first fold, for the
     hands that supported the arm to come away. Nobody's hands are under these arms, so the
     wait is none, and the tests about that wait set it themselves."""
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 0.0)
 
 
 def _registered_arm(tmp_path: Path, name: str, *, rest_pose: bool = True) -> Path:
@@ -1800,7 +1800,7 @@ def _watch(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     arm being connected, which is the first thing that takes its torque off."""
     import typer
 
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     seen: list[str] = []
     asked, connected = typer.confirm, LeRobotMock.connect
@@ -1820,7 +1820,7 @@ def _watch(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 def _let_gos(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, bool]]:
     """Every release the mock arm is asked for, with the door it was asked through."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     calls: list[dict[str, bool]] = []
     release = LeRobotMock.let_go
@@ -1841,8 +1841,8 @@ def _folds(monkeypatch: pytest.MonkeyPatch, *, misses: int) -> list[str]:
     """The mock arm's fold, missing the first `misses` times: it stops with the wrist where
     something held it, away from the pose, so the close judges it as one. After those it folds
     as the mock always does, which is what clearing the way looks like."""
-    from quackd.adapters.base import RestResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import RestResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     folds: list[str] = []
     real = LeRobotMock.go_to_rest
@@ -1862,7 +1862,7 @@ def _folds(monkeypatch: pytest.MonkeyPatch, *, misses: int) -> list[str]:
 def _enter(monkeypatch: pytest.MonkeyPatch, *answers: bool) -> list[bool]:
     """A person at a terminal, answering each wait for Enter in turn, the last answer again for
     any after. Nothing reads a key: the kill switch's wait is answered directly."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
 
     given: list[bool] = []
 
@@ -1871,7 +1871,7 @@ def _enter(monkeypatch: pytest.MonkeyPatch, *answers: bool) -> list[bool]:
         given.append(answer)
         return answer
 
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     monkeypatch.setattr(KillSwitch, "wait_for_enter", pressed)
     return given
 
@@ -1887,7 +1887,7 @@ def test_release_warns_asks_connects_folds_and_lets_go_at_the_rest_pose(
     in it, the connect, the joints where it stood, the fold, what torque read back, and the
     close's own line: the arm is limp at its rest pose, because the person asked. The release
     is the first door's, which lets go nowhere but that pose."""
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     reg = _registered_arm(tmp_path, name)
     seen = _watch(monkeypatch)
     released = _let_gos(monkeypatch)
@@ -1941,8 +1941,8 @@ def test_release_folds_an_arm_away_from_its_rest_pose_and_lets_go_there(
     than its recorded pose. It used to be let go of there, and fall. The registered pose here is
     moved off where the mock arm stands, and the command folds it there first, then lets go at
     the pose through the first door: nothing is released where the arm stood."""
-    from quackd.registry import Registry
-    from quackd_lerobot.mock import REST
+    from roboglot.registry import Registry
+    from roboglot_lerobot.mock import REST
 
     reg = _registered_arm(tmp_path, "arm-02")
     Registry(reg).update_robot("arm-02", {"rest_pose": dict(REST) | away})
@@ -1958,7 +1958,7 @@ def test_release_folds_an_arm_away_from_its_rest_pose_and_lets_go_there(
 
 def _gripper_when_let_go(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Where the mock arm's gripper read as each release it was asked for went out."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     readings: list[float] = []
     release = LeRobotMock.let_go
@@ -1973,7 +1973,7 @@ def _gripper_when_let_go(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 def _gripper_closes(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """What the mock arm had already been asked for each time its gripper was told to close."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     closes: list[list[str]] = []
     close = LeRobotMock.close_gripper
@@ -1993,8 +1993,8 @@ def test_release_closes_the_gripper_once_the_arm_is_down_and_then_lets_go(
     never touches the gripper. A person who types this command is putting the arm away, so the
     jaws close too: after the fold, over an arm that is down, and before the release, while
     there is still torque to close them with."""
-    from quackd.registry import Registry
-    from quackd_lerobot.mock import REST
+    from roboglot.registry import Registry
+    from roboglot_lerobot.mock import REST
 
     reg = _registered_arm(tmp_path, "arm-03")
     Registry(reg).update_robot("arm-03", {"rest_pose": dict(REST) | {"shoulder_pan": 35.0}})
@@ -2021,8 +2021,8 @@ def test_release_tells_of_a_gripper_that_stopped_short_and_still_lets_go(
     """A gripper that stops on something in its jaws leaves an arm that is down all the same, so
     it is no reason to keep the arm powered: the release goes out and the command succeeds. The
     person is told where the jaws stopped, since they asked for them shut."""
-    from quackd.adapters.base import GripperResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import GripperResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     short = "the gripper stopped at 22/100, short of closed: something may be in its jaws"
 
@@ -2044,10 +2044,10 @@ def test_release_of_a_body_with_no_gripper_to_close_says_nothing_of_one(
 ) -> None:
     """Only an arm with a gripper has one closed, and a person is told only of one that will
     be: not before the connect, not in the question and not as the fold starts."""
-    from quackd_lerobot import LeRobotAdapter
+    from roboglot_lerobot import LeRobotAdapter
 
     monkeypatch.delattr(LeRobotAdapter, "close_gripper")
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     reg = _registered_arm(tmp_path, "arm-08")
     released = _let_gos(monkeypatch)
     result = _release(reg, "arm-08", answer="y\n")
@@ -2064,8 +2064,8 @@ def test_release_of_an_arm_that_turns_out_to_report_no_gripper_still_lets_go(
 ) -> None:
     """An arm whose reads name no gripper is sent nothing for one, and is let go of at its pose
     as before, with no line saying a gripper it does not have fell short."""
-    from quackd.adapters.base import GripperResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import GripperResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     async def close_gripper(self: LeRobotMock) -> GripperResult:
         return GripperResult.none("this arm reports no gripper")
@@ -2086,8 +2086,8 @@ def test_a_press_while_the_gripper_closes_stops_it_and_releases_nothing(
     the fold: cancelled where it is and waited for, with no release asked for after it. The
     closing here never ends on its own, so one left running behind the press would hang the
     test. What the close then does is the close's: the arm reads at its rest pose."""
-    from quackd.adapters.base import GripperResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import GripperResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     reg = _registered_arm(tmp_path, "arm-16")
     released = _let_gos(monkeypatch)
@@ -2121,7 +2121,7 @@ def test_a_press_while_the_gripper_closes_stops_it_and_releases_nothing(
         return press_once_it_moves()
 
     monkeypatch.setattr(LeRobotMock, "close_gripper", endless)
-    monkeypatch.setattr("quackd.cli._TerminalHandOff.stopped", stopped)
+    monkeypatch.setattr("roboglot.cli._TerminalHandOff.stopped", stopped)
     result = _release(reg, "arm-16", "--yes")
     assert result.exit_code == 1, result.output
     assert ended == ["the gripper task finished"], "the closing was not cancelled and waited for"
@@ -2139,9 +2139,9 @@ def test_a_press_after_the_fold_stops_the_gripper_before_it_moves(
     """One watch runs across the count, the fold and the gripper, so a press made as the fold
     ended is one the gripper hears and does not close under. Each counting presses from where it
     began would lose it, as a count and a fold once did."""
-    from quackd.adapters.base import RestResult
-    from quackd.safety import KillSwitch
-    from quackd_lerobot.real import LeRobotReal
+    from roboglot.adapters.base import RestResult
+    from roboglot.safety import KillSwitch
+    from roboglot_lerobot.real import LeRobotReal
     from tests.test_lerobot_adapter import FakeArm
 
     switches: list[KillSwitch] = []
@@ -2159,7 +2159,7 @@ def test_a_press_after_the_fold_stops_the_gripper_before_it_moves(
 
     monkeypatch.setattr(KillSwitch, "install", installing)
     monkeypatch.setattr(LeRobotReal, "go_to_rest", pressed_as_it_arrives)
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 0.0)
     _a_terminal(monkeypatch, {})
     arm = FakeArm(step=5.0)
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-g", off=0.0)
@@ -2172,7 +2172,7 @@ def test_a_press_after_the_fold_stops_the_gripper_before_it_moves(
 
 def _press_on(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Every kill switch the command installs, with no key thread, for a test to fire by hand."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
 
     switches: list[KillSwitch] = []
     install = KillSwitch.install
@@ -2191,7 +2191,7 @@ def test_a_press_as_the_second_fold_arrives_stops_the_gripper_before_it_moves(
     """The second fold is watched by a watch of its own, gone once it has arrived, and the hand
     that pressed may be the one that just cleared the arm's way. The watch that spans the two
     questions hears it, and the jaws do not start."""
-    from quackd import release as release_module
+    from roboglot import release as release_module
 
     reg = _registered_arm(tmp_path, "arm-21")
     switches = _press_on(monkeypatch)
@@ -2222,8 +2222,8 @@ def test_a_press_while_the_gripper_closes_after_a_second_fold_stops_it(
 ) -> None:
     """The second fold has a watch for its gripper too, and the jaws are told of first: nothing has
     said they will close since the person was asked to clear the arm's way."""
-    from quackd.adapters.base import GripperResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import GripperResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     reg = _registered_arm(tmp_path, "arm-22")
     switches = _press_on(monkeypatch)
@@ -2307,7 +2307,7 @@ def test_release_with_no_terminal_and_no_yes_refuses_before_anything_connects(
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "no terminal to ask on: pass --yes to fold it to its rest pose and let go there" in flat
-    assert "quackd robot release arm-01 --yes" in flat
+    assert "roboglot robot release arm-01 --yes" in flat
     assert seen == [], "the arm was connected with nobody to ask"
     assert "take your hands away" not in flat, "a warning for an arm nothing was going to touch"
 
@@ -2315,7 +2315,7 @@ def test_release_with_no_terminal_and_no_yes_refuses_before_anything_connects(
 def test_release_answered_no_never_connects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     reg = _registered_arm(tmp_path, "arm-01")
     seen = _watch(monkeypatch)
     result = _release(reg, "arm-01", answer="n\n")
@@ -2335,7 +2335,7 @@ def test_release_refuses_a_body_that_is_not_the_arm(tmp_path: Path) -> None:
     result = _release(reg, "duck", "--yes")
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
-    assert "duck (microduck:mock) is not a body quackd takes torque off" in flat, flat
+    assert "duck (microduck:mock) is not a body Roboglot takes torque off" in flat, flat
     assert "only the LeRobot arm is" in flat and "Traceback" not in result.output
 
 
@@ -2363,8 +2363,8 @@ def test_release_exits_non_zero_unless_every_motor_read_off(
     """ "Torque reads off" is said only when the register was read and every motor said 0. A
     motor still on, a release nobody read back and a release never sent each exit 1 and say
     which, because a script, and a person, act on the exit code."""
-    from quackd.adapters.base import HandResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import HandResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     async def let_go(self: Any, *, anywhere: bool = False, asked: bool = False) -> HandResult:
         assert asked and not anywhere, "a folded arm was released anywhere but at its pose"
@@ -2382,8 +2382,8 @@ def test_release_exits_non_zero_unless_every_motor_read_off(
 def test_release_whose_connect_fails_exits_non_zero_and_says_keep_hold(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd.transport.base import TransportError
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.transport.base import TransportError
+    from roboglot_lerobot.mock import LeRobotMock
 
     async def connect(self: Any) -> Any:
         raise TransportError("the port went away")
@@ -2545,8 +2545,8 @@ def test_a_ctrl_c_during_the_release_s_fold_stops_it_and_keeps_torque(
     stops it with Ctrl-C or `q`. The fold is cancelled where it is, a stop holds the arm there,
     nothing is released, and the command says so and exits 1. The fold here never ends on its
     own, so one left running behind the press would hang the test."""
-    from quackd.adapters.base import RestResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import RestResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     reg = _registered_arm(tmp_path, "arm-12")
     released = _let_gos(monkeypatch)
@@ -2573,7 +2573,7 @@ def test_a_ctrl_c_during_the_release_s_fold_stops_it_and_keeps_torque(
         return press_once_it_moves()
 
     monkeypatch.setattr(LeRobotMock, "go_to_rest", endless)
-    monkeypatch.setattr("quackd.cli._TerminalHandOff.stopped", stopped)
+    monkeypatch.setattr("roboglot.cli._TerminalHandOff.stopped", stopped)
     result = _release(reg, "arm-12", "--yes")
     assert result.exit_code == 1, result.output
     assert ended == ["the fold task finished"], "the fold was not cancelled and waited for"
@@ -2589,9 +2589,9 @@ def test_a_press_during_the_hands_away_wait_stops_the_command_before_anything_mo
     the fold used to start a few milliseconds after the connect, under the hands still holding
     it. The command now says it is about to fold and waits `HANDS_AWAY_S` for them, and a press
     in that wait stops it with nothing moved."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 30.0)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 30.0)
     reg = _registered_arm(tmp_path, "arm-13")
     released = _let_gos(monkeypatch)
 
@@ -2605,7 +2605,7 @@ def test_a_press_during_the_hands_away_wait_stops_the_command_before_anything_mo
         return a_press()
 
     monkeypatch.setattr(LeRobotMock, "go_to_rest", never)
-    monkeypatch.setattr("quackd.cli._TerminalHandOff.stopped", stopped)
+    monkeypatch.setattr("roboglot.cli._TerminalHandOff.stopped", stopped)
     result = _release(reg, "arm-13", "--yes")
     assert result.exit_code == 1, result.output
     assert released == []
@@ -2649,15 +2649,15 @@ def _a_terminal(monkeypatch: pytest.MonkeyPatch, answers: dict[str, str]) -> _Li
     the keyboard to the answer is patched: the kill switch's own key thread reads it."""
     import types
 
-    import quackd.safety as safety
-    from quackd.cli import _TerminalHandOff
+    import roboglot.safety as safety
+    from roboglot.cli import _TerminalHandOff
 
     tty = _LineTTY()
     monkeypatch.setattr(
         safety, "sys", types.SimpleNamespace(stdin=tty, stderr=sys.stderr, stdout=sys.stdout)
     )
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.05)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.05)
     said = _TerminalHandOff.say
 
     def say(self: Any, text: str) -> None:
@@ -2729,7 +2729,7 @@ def test_an_enter_typed_before_the_question_does_not_answer_it(
     dropped. An Enter that comes too soon after a question is put is passed by."""
     tty = _a_terminal(monkeypatch, {})
     tty.type_line("\n")  # typed while the command started, before any question
-    monkeypatch.setattr("quackd.release.ENTER_DROPS_S", 0.5)
+    monkeypatch.setattr("roboglot.release.ENTER_DROPS_S", 0.5)
     reg = _registered_arm(tmp_path, "arm-17", rest_pose=False)
     seen = _watch(monkeypatch)
     released = _let_gos(monkeypatch)
@@ -2746,7 +2746,7 @@ def test_a_run_whose_rest_move_missed_asks_twice_before_it_drops_the_arm(
     prompt and binds it to the kill switch. The fold missed, so the person is asked to clear the
     way and the arm folds once more; it misses again, so they are told Enter drops it, and Enter
     releases it and ends on the limp line."""
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     _enter(monkeypatch, True)
     why = "wrist_flex is at 33 with a goal of 0, and it has stopped moving"
@@ -2779,8 +2779,8 @@ def _missed_rest_run(
     """A run on a registered mock arm whose rest move misses, stopping with the joints in
     `stopped`, which aborts it before the pilot and leaves the teardown's rest move missing
     too. The arm really is away from its pose afterwards, so the close judges it as one."""
-    from quackd.adapters.base import RestResult
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.adapters.base import RestResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     async def misses(self: Any) -> RestResult:
         self.sequence.append("rest")
@@ -2828,15 +2828,15 @@ def test_a_run_with_nobody_at_the_terminal_keeps_torque_and_names_the_arm_s_way_
     assert "tries the fold once more" not in flat, "a question was put to nobody"
     assert "so torque was left on and it will not fall as it stands" in flat, flat
     assert (
-        f"To put it down, clear whatever is in its way and run quackd robot release {name}, which "
-        "folds it to its rest pose and lets go of it there: support the arm while that connects, "
-        "because connecting takes torque off every motor for a moment. Or hold it and cut its "
-        "power"
+        f"To put it down, clear whatever is in its way and run roboglot robot release {name}, "
+        "which folds it to its rest pose and lets go of it there: support the arm while that "
+        "connects, because connecting takes torque off every motor for a moment. Or hold it and "
+        "cut its power"
     ) in flat, flat
     assert "to park it" not in flat
 
 
-# ── what a person is told at the arm, matched to what quackd did ─────────────────────────
+# ── what a person is told at the arm, matched to what Roboglot did ─────────────────────────
 
 
 @pytest.mark.parametrize("ending", ["enter", "kill switch", "no keys", "stopped", "timeout"])
@@ -2846,8 +2846,8 @@ async def test_the_terminal_hand_off_says_how_each_wait_ended(ending: str) -> No
     "nobody pressed Enter". The terminal now says which ending it was (`ended`), the bool is
     unchanged for the two `--by-hand` waits that need nothing more, and the saved terminal
     names the ending too."""
-    from quackd.cli import _TerminalHandOff
-    from quackd.safety import KillSwitch
+    from roboglot.cli import _TerminalHandOff
+    from roboglot.safety import KillSwitch
 
     abort = asyncio.Event()
     switch = KillSwitch(abort)
@@ -2874,8 +2874,8 @@ async def test_the_terminal_hand_off_stops_on_a_fresh_press_only() -> None:
     """`stopped()` is how a fold a person asked for hears them say stop, so it must hear a press
     made while it watches, Ctrl-C or `q`, and not one made before: a press that ended the
     question before the fold would otherwise stop the fold it had just asked for."""
-    from quackd.cli import _TerminalHandOff
-    from quackd.safety import KillSwitch
+    from roboglot.cli import _TerminalHandOff
+    from roboglot.safety import KillSwitch
 
     switch = KillSwitch(asyncio.Event())
     loop = asyncio.get_running_loop()
@@ -2893,7 +2893,7 @@ async def test_the_terminal_hand_off_stops_on_a_fresh_press_only() -> None:
 
 def _holding_out(monkeypatch: pytest.MonkeyPatch, holdouts: tuple[str, ...]) -> None:
     """The mock arm's release keeps these motors on, as the real read-back can find them."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     release = LeRobotMock.let_go
 
@@ -2940,10 +2940,10 @@ def test_release_ends_on_a_line_that_matches_what_happened(
 ) -> None:
     """The command's last line is the close's, and three endings used to contradict what came
     before it. Every motor still on, away from the rest pose, after the drop the person pressed
-    Enter for: the torque note sent the person to `quackd robot release`, the command that had
+    Enter for: the torque note sent the person to `roboglot robot release`, the command that had
     just failed one line up. Every motor still on at the rest pose: the close let go of the arm
     without a word, after "cut the power". One motor still on: "nothing is holding it up", over
-    a joint that was. Each ends on a line that says what quackd did, and all three exit 1."""
+    a joint that was. Each ends on a line that says what Roboglot did, and all three exit 1."""
     reg = _registered_arm(tmp_path, "arm-04")
     _holding_out(monkeypatch, holdouts)
     if misses:
@@ -2954,7 +2954,7 @@ def test_release_ends_on_a_line_that_matches_what_happened(
     flat = " ".join(result.output.split())
     assert f"torque still reads on for {', '.join(holdouts)}: cut the power" in flat, flat
     assert flat.endswith(last), flat
-    assert "quackd robot release" not in flat, "sent back to the command that just failed"
+    assert "roboglot robot release" not in flat, "sent back to the command that just failed"
     assert "nothing is holding it up" not in flat
 
 
@@ -2967,24 +2967,24 @@ def test_doctor_builds_a_registered_arm_under_its_name_and_warns_before_it_conne
     with the default id, and a real one looked up the calibration of that id whatever it was
     registered as, and every line it wrote said NAME. It is built under its name now, as a run
     builds it. And it connected without a word, though connecting takes torque off every
-    motor for a moment: the warning `quackd robot release` prints is printed here too, before
+    motor for a moment: the warning `roboglot robot release` prints is printed here too, before
     the connect, and only for a body that is handed to people. The torque note it ends on names
     the release with the arm's own name, and no longer sends the person back to doctor."""
-    import quackd_lerobot
-    from quackd import cli, doctor
-    from quackd.adapters.base import RestResult
-    from quackd_lerobot.mock import LeRobotMock
+    import roboglot_lerobot
+    from roboglot import cli, doctor
+    from roboglot.adapters.base import RestResult
+    from roboglot_lerobot.mock import LeRobotMock
 
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = _registered_arm(tmp_path, "bench-2")
     built: list[str | None] = []
-    make = quackd_lerobot.make
+    make = roboglot_lerobot.make
 
     def recording(backend: str, **kwargs: Any) -> Any:
         built.append(kwargs.get("robot_id"))
         return make(backend, **kwargs)
 
-    monkeypatch.setattr(quackd_lerobot, "make", recording)
+    monkeypatch.setattr(roboglot_lerobot, "make", recording)
     seen: list[str] = []
     warning = cli._doctor_warning
 
@@ -3018,7 +3018,7 @@ def test_doctor_builds_a_registered_arm_under_its_name_and_warns_before_it_conne
         "with it off: support the arm while it connects, then take your hands away"
         " when doctor says so, because it folds the arm to its rest pose before it lets go"
     ) in flat, flat
-    assert "quackd robot release bench-2" in flat and "to park it" not in flat, flat
+    assert "roboglot robot release bench-2" in flat and "to park it" not in flat, flat
     assert "release NAME" not in flat, "the arm was built without the name it was asked for by"
 
     duck = runner.invoke(app, ["doctor", "--robot", "microduck:mock", "--address", "mock://x"])
@@ -3030,9 +3030,9 @@ def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
     handed to people, and tell them to support it, and for the release, to take their hands
     away before it folds. The arm's simulator is handed over as the arm is, and nobody can hold
     it, so each line says it is the simulator instead."""
-    from quackd import cli
-    from quackd.adapters.base import CONNECTING_TAKES_TORQUE_OFF
-    from quackd.adapters.factory import make_adapter
+    from roboglot import cli
+    from roboglot.adapters.base import CONNECTING_TAKES_TORQUE_OFF
+    from roboglot.adapters.factory import make_adapter
 
     real = f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
     assert cli._connect_warning() == real
@@ -3113,10 +3113,10 @@ def _real_arm(
     commands build the real backend over `arm`, a `FakeArm`: the rest is the commands' own code.
     With `off`, a rest pose is recorded with the shoulder that many degrees from where the arm
     sits, so a fold moves it; with none, no pose is recorded."""
-    from quackd import doctor
-    from quackd.registry import Registry
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.real import LeRobotReal
+    from roboglot import doctor
+    from roboglot.registry import Registry
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.real import LeRobotReal
 
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = tmp_path / "registry"
@@ -3139,7 +3139,7 @@ def _real_arm(
             robot_id=name,
         )
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", make_adapter)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", make_adapter)
     return reg
 
 
@@ -3158,7 +3158,7 @@ def test_doctor_keeps_a_real_arm_with_no_rest_pose_powered_and_says_how_to_put_i
     assert arm.torque is True and arm.torque_disabled == 0, "doctor let go of an arm with no pose"
     assert "so doctor keeps it powered where it stands at the end" in flat, flat
     assert "arm-p has no rest pose recorded, so torque was left on" in flat, flat
-    assert "quackd robot rest-pose arm-p" in flat, flat
+    assert "roboglot robot rest-pose arm-p" in flat, flat
 
 
 @pytest.mark.parametrize(("line", "drops"), [("\n", True), ("n\n", False)])
@@ -3192,7 +3192,7 @@ def test_doctor_counts_the_hands_away_before_its_fold_and_a_press_stops_it(
     during the count stops the fold before anything moves, the arm kept powered."""
     from tests.test_lerobot_adapter import FakeArm
 
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 3.0)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 3.0)
     arm = FakeArm()
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-c", off=20.0)
     tty = _a_terminal(monkeypatch, {})
@@ -3201,7 +3201,7 @@ def test_doctor_counts_the_hands_away_before_its_fold_and_a_press_stops_it(
         tty.type_line("q\n")
         await asyncio.sleep(30)
 
-    monkeypatch.setattr("quackd.cli._hands_away", q_during_the_count)
+    monkeypatch.setattr("roboglot.cli._hands_away", q_during_the_count)
     result = runner.invoke(app, ["doctor", "--robot", "arm-c", "--registry-dir", str(reg)])
     flat = " ".join(result.output.split())
     assert "take your hands away when doctor says so" in flat, flat
@@ -3277,7 +3277,7 @@ def test_a_release_whose_fold_found_the_servos_limp_puts_no_question(
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-b", off=40.0)
     asked = _enter(monkeypatch, True)
     if not terminal:
-        monkeypatch.setattr("quackd.cli._can_prompt", lambda: False)
+        monkeypatch.setattr("roboglot.cli._can_prompt", lambda: False)
     result = _release(reg, "arm-b", "--yes")
     flat = " ".join(result.output.split())
     assert result.exit_code == 1, result.output
@@ -3295,16 +3295,16 @@ def test_a_release_whose_fold_found_the_servos_limp_puts_no_question(
 def test_a_press_after_the_close_stops_what_is_chained_to_a_success(
     heard: int, code: int, comes_to: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run a && quackd run b` must not go on to move an arm after somebody pressed Ctrl-C.
-    What the run came to is on its panel either way."""
-    from quackd import cli
+    """`roboglot run a && roboglot run b` must not go on to move an arm after somebody pressed
+    Ctrl-C. What the run came to is on its panel either way."""
+    from roboglot import cli
 
     def finished() -> None:
         raise SystemExit(code)
 
     monkeypatch.setattr(AfterTheClose, "heard", heard)
     monkeypatch.setattr(cli, "app", finished)
-    monkeypatch.setattr(sys, "argv", ["quackd", "--help"])
+    monkeypatch.setattr(sys, "argv", ["roboglot", "--help"])
     with pytest.raises(SystemExit) as ended:
         cli.main()
     assert ended.value.code == comes_to
@@ -3329,7 +3329,7 @@ def test_a_press_past_the_end_of_a_run_loses_no_verdict(
 ) -> None:
     """The record was on disk and the panel was not: 1 time in 6 with somebody still pressing as a
     run ended, and the exit code was the press's."""
-    from quackd import cli
+    from roboglot import cli
 
     printed = cli._print_outcome
 
@@ -3349,10 +3349,10 @@ def test_a_press_past_the_end_of_a_run_loses_no_verdict(
     "argv",
     [
         ["run", "hello-world", "--robot", "microduck:mock", "--no-gif"],
-        ["run", "flock-hello", "--no-gif"],
-        ["run", "flock-kick", "--no-gif"],
+        ["run", "team-hello", "--no-gif"],
+        ["run", "team-kick", "--no-gif"],
     ],
-    ids=["run", "pilot-flock", "coordinator-flock"],
+    ids=["run", "pilot-team", "coordinator-team"],
 )
 def test_a_run_leaves_a_press_doing_nothing_as_it_ends(argv: list[str], tmp_path: Path) -> None:
     result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(tmp_path)])
@@ -3378,7 +3378,7 @@ def test_a_press_while_the_gif_is_made_leaves_out_the_gif_and_keeps_the_verdict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """It can be minutes on a long run, so it is the one thing a press still ends after the run."""
-    from quackd import cli
+    from roboglot import cli
 
     class Pressed:
         def save_gif(self, path: Path) -> Path:
@@ -3495,8 +3495,8 @@ def test_a_press_says_stopping_on_the_status_line_of_a_run(
     it prints draws the line under it, and the old words were drawn once more."""
     from rich.console import Console
 
-    from quackd.safety import KillSwitch
-    from quackd.ui import RunStatus
+    from roboglot.safety import KillSwitch
+    from roboglot.ui import RunStatus
 
     order: list[str] = []
     stopping = RunStatus.stopping
@@ -3537,7 +3537,7 @@ def test_a_press_says_stopping_on_the_status_line_of_a_run(
 
 def _switch_told_to_stay(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
     """Each time a kill switch is told a press stays, with whether it was installed by then."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
 
     told: list[bool] = []
     stay = KillSwitch.stay_to_the_close
@@ -3556,12 +3556,12 @@ def test_a_by_hand_run_stays_from_the_start_and_its_panel_says_so(
     """A second press landing on the teardown's first stop went past the question, the fold, the
     close and the record, with the arm energised and its jaws shut, and that is the commonest way
     to press twice: at the moment the first one seems to have done nothing."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
 
     async def pressed(self: KillSwitch, *, timeout_s: float | None = None, **_: Any) -> bool:
         return True
 
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     monkeypatch.setattr(KillSwitch, "wait_for_enter", pressed)
     told = _switch_told_to_stay(monkeypatch)
     reg = _arm_registry(tmp_path, rest_pose=True)
@@ -3597,7 +3597,7 @@ def test_a_press_as_doctors_count_line_prints_stops_the_fold(
 ) -> None:
     from rich.console import Console
 
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
     from tests.test_lerobot_adapter import FakeArm
 
     switches: list[KillSwitch] = []
@@ -3615,7 +3615,7 @@ def test_a_press_as_doctors_count_line_prints_stops_the_fold(
 
     monkeypatch.setattr(KillSwitch, "install", installing)
     monkeypatch.setattr(Console, "print", prints)
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.05)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 0.05)
     _a_terminal(monkeypatch, {})
     arm = FakeArm()
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-d", off=20.0)
@@ -3632,7 +3632,7 @@ def test_a_press_between_a_releases_count_and_its_fold_stops_the_fold(
     began lost one made there: `kill switch pressed`, and the arm folded under the hand."""
     from rich.console import Console
 
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
     from tests.test_lerobot_adapter import FakeArm
 
     switches: list[KillSwitch] = []
@@ -3650,7 +3650,7 @@ def test_a_press_between_a_releases_count_and_its_fold_stops_the_fold(
 
     monkeypatch.setattr(KillSwitch, "install", installing)
     monkeypatch.setattr(Console, "print", prints)
-    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 0.0)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 0.0)
     _a_terminal(monkeypatch, {})
     arm = FakeArm(step=5.0)  # as the arm's own cap, so a goal already on its way is no fold
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-p", off=20.0)
@@ -3667,7 +3667,7 @@ def test_a_press_stays_from_the_connect_of_a_release_and_from_a_fold_of_doctors(
     """Somebody is at the arm in both, so no press quits past the close that says what became of
     its torque. Before the arm has connected one still can, since a connect is what it would be
     leaving, and doctor reaches a fold only once it has read the rest."""
-    from quackd.safety import KillSwitch
+    from roboglot.safety import KillSwitch
     from tests.test_lerobot_adapter import FakeArm
 
     connected: list[bool] = []
@@ -3723,7 +3723,7 @@ def test_a_press_while_an_arm_with_no_rest_pose_connects_keeps_it_powered_and_sa
     assert arm.torque is True and arm.torque_disabled == 0, "let go of after the press"
     assert "stopped before anything was released" in flat, flat
     assert "so the arm holds where it stands" in flat, flat
-    assert "as quackd disconnects from it" not in flat, flat
+    assert "as Roboglot disconnects from it" not in flat, flat
 
 
 def test_a_rest_pose_answered_no_keeps_the_arm_powered_and_a_yes_lets_it_go(
@@ -3733,10 +3733,10 @@ def test_a_rest_pose_answered_no_keeps_the_arm_powered_and_a_yes_lets_it_go(
     so a no left the arm let go of anyway, and an arm read standing rather than folded fell. It
     lets go only once the pose is answered for: a no keeps a real arm powered, saying how to put
     it down, and a yes records the pose and lets go of the arm where it lies."""
-    from quackd.registry import Registry
+    from roboglot.registry import Registry
     from tests.test_lerobot_adapter import FakeArm
 
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     arm = FakeArm()
     reg = _real_arm(monkeypatch, tmp_path, arm, "arm-s")
     asked = ["robot", "rest-pose", "arm-s", "--registry-dir", str(reg)]
@@ -3757,7 +3757,7 @@ def test_a_rest_pose_whose_read_fails_says_what_its_close_did(
 ) -> None:
     """A read that failed once the arm had connected left it powered in the fold its person
     made, and the command said only that the read failed. The close's own line follows now."""
-    from quackd_lerobot import LeRobotAdapter
+    from roboglot_lerobot import LeRobotAdapter
     from tests.test_lerobot_adapter import FakeArm
 
     arm = FakeArm()
@@ -3775,7 +3775,7 @@ def test_a_rest_pose_whose_read_fails_says_what_its_close_did(
     flat = " ".join(result.output.split())
     assert result.exit_code == 1, result.output
     assert "Present_Position" in flat, flat
-    assert "quackd cannot tell whether the arm is holding itself up" in flat, flat
+    assert "Roboglot cannot tell whether the arm is holding itself up" in flat, flat
     assert arm.torque is True and arm.torque_disabled == 0
 
 
@@ -3844,7 +3844,7 @@ def test_a_fake_run_with_no_price_is_free_rather_than_unpriced(tmp_path: Path) -
     """`fake` sends nothing to anybody, so a run on it costs nothing and says so.
 
     The distinction is the whole reason `Price` and `None` are different things: `unpriced`
-    means quackd has no rate for this LLM and the number is unknown, `$0` means the number
+    means Roboglot has no rate for this LLM and the number is unknown, `$0` means the number
     is known and it is nothing. An LLM with no published rate printing `$0` would be telling
     somebody their frontier run was free."""
     result = _verdict_run(tmp_path)
@@ -3858,7 +3858,7 @@ def test_a_run_name_becomes_the_end_of_the_run_directory(tmp_path: Path) -> None
     minute, and the only way to find the one you meant is to open them.
 
     The name is slugged rather than taken as typed, because a run directory gets typed back
-    into `quackd log` and pasted into a shell. It goes after the duck and before the
+    into `roboglot log` and pasted into a shell. It goes after the duck and before the
     collision counter, so the timestamp still sorts the runs."""
     result = _verdict_run(tmp_path, "--run-name", "Example 1")
     assert result.exit_code == 0, result.output
@@ -3895,7 +3895,7 @@ def test_the_help_offers_the_name_on_disk_and_the_price_of_the_llm() -> None:
 
     `--price` is on `run` and not on `record`: a recording is a GIF for a README, and its
     cost is not what anybody reaches for the command to learn. The brackets of the optional
-    cache rates are the same markup trap as `quackd[live]` a few tests up, which is why the
+    cache rates are the same markup trap as `roboglot[live]` a few tests up, which is why the
     example is asserted whole."""
     run_help = _help(["run", "--help"])
     assert "--run-name" in run_help and "--price" in run_help
@@ -3912,10 +3912,10 @@ def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
     """ADR-0059. A run whose turn the LLM's API never answered ends in an error, and the one
     line it ended on used to be all it printed, though it had waited and asked again: the
     counters a run prints under its verdict are printed under this one too."""
-    import quackd.agent.loop as loop_module
+    import roboglot.agent.loop as loop_module
     from tests.test_loop import _overloaded
 
-    real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
+    real = __import__("roboglot.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
     def overloaded(name: str, **kw: object) -> object:
         provider = real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
@@ -3929,7 +3929,7 @@ def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
     async def no_wait(abort: asyncio.Event, seconds: float) -> bool:
         return abort.is_set()
 
-    monkeypatch.setattr("quackd.agent.providers.factory.make_provider", overloaded)
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", overloaded)
     monkeypatch.setattr(loop_module, "_wait_or_abort", no_wait)
     result = runner.invoke(
         app,
@@ -3966,9 +3966,9 @@ def _typed_run(
     """One run on the mock duck, invoked as if somebody had typed it at a shell.
 
     `sys.argv` because `CliRunner.invoke` parses a list of its own and never touches it, and
-    `quackd.command` reads the command line off `sys.argv`: without this every run here
+    `roboglot.command` reads the command line off `sys.argv`: without this every run here
     would write down pytest's own arguments. The first word is a console script's path on
-    purpose, because what the record has to show instead of it is `quackd`.
+    purpose, because what the record has to show instead of it is `roboglot`.
 
     The runs directory is a subdirectory rather than `tmp_path` itself, so a refused run can
     be asked to have left nothing at all under it. `COLUMNS` for the reason `_verdict_run`
@@ -3987,7 +3987,7 @@ def _typed_run(
         "--no-gif",
         *flags,
     ]
-    monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/quackd", *args])
+    monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/roboglot", *args])
     return runner.invoke(app, args, input=answer, env={"COLUMNS": "200"})
 
 
@@ -3999,7 +3999,7 @@ def _terminal(tmp_path: Path) -> str:
 
 
 def _events(tmp_path: Path) -> list[dict[str, Any]]:
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     return list(Transcript.read(next(tmp_path.rglob("transcript.jsonl"))))
 
@@ -4009,13 +4009,13 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
 
 
 def _gated(tmp_path: Path) -> str:
-    """A duck whose `quack` is behind a confirm gate, which no shipped duck has.
+    """A task whose `quack` is behind a confirm gate, which no shipped task has.
 
-    The gates are the thing `--yes` answers, so a question on screen needs a duck that asks
-    one, and every duck in `ducks/` is a duck somebody can run unattended."""
-    path = tmp_path / "gated.duck"
+    The gates are the thing `--yes` answers, so a question on screen needs a task that asks
+    one, and every duck in `tasks/` is a duck somebody can run unattended."""
+    path = tmp_path / "gated.glot"
     path.write_text(
-        "---\nduck: 1\nname: gated\ndescription: d\nverbs:\n  allow: [quack, walk, stop]\n"
+        "---\nglot: 1\nname: gated\ndescription: d\nverbs:\n  allow: [quack, walk, stop]\n"
         "  confirm: [quack]\nsuccess: [x]\n---\n# Task\n\nQuack once, then stop.\n",
         encoding="utf-8",
     )
@@ -4025,25 +4025,25 @@ def _gated(tmp_path: Path) -> str:
 def test_a_run_writes_down_the_terminal_it_showed_you(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The transcript says what quackd did; this says what you saw while it did it.
+    """The transcript says what Roboglot did; this says what you saw while it did it.
 
     A bug report is a run directory, and the half of the evidence anybody actually looked at
     was the half that scrolled past. The file opens with the command and the version because
-    the first two questions asked of any report are what was run and which quackd ran it,
+    the first two questions asked of any report are what was run and which Roboglot ran it,
     and it carries no escape codes because it is read in a browser, a diff and an issue.
 
     `FORCE_COLOR` so that the last claim is about the file rather than about the runner: the
     screen this run drew really is full of escape codes, and the capture is a console of its
     own that has to be the one thing in the process not writing them."""
-    monkeypatch.setenv("QUACKD_LOG", "")  # the narration is the middle of the story
+    monkeypatch.setenv("ROBOGLOT_LOG", "")  # the narration is the middle of the story
     monkeypatch.setenv("FORCE_COLOR", "1")
     result = _typed_run(tmp_path, monkeypatch)
     assert result.exit_code == 0, result.output
     assert "\x1b" in result.output, "nothing is proved about the file if the screen is plain"
     text = _terminal(tmp_path)
     lines = text.splitlines()
-    assert lines[0].startswith("$ quackd run hello-world --llm fake"), lines[0]
-    assert lines[1].startswith(f"quackd {__version__}, started "), lines[1]
+    assert lines[0].startswith("$ roboglot run hello-world --llm fake"), lines[0]
+    assert lines[1].startswith(f"Roboglot {__version__}, started "), lines[1]
     assert re.search(r"started \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ,", lines[1]), lines[1]
     assert "microduck:mock" in text, "the header panel"
     assert "sound(tag='chirp'" in text, "a narrated line"
@@ -4076,20 +4076,20 @@ def test_a_secret_on_the_command_line_is_hidden_everywhere_it_is_written_down(
     assert _events(tmp_path)[0]["command"][-3:] == ["--api-key", "***", "--token=***"]
 
 
-def test_the_record_says_what_was_asked_for_and_which_quackd_ran_it(
+def test_the_record_says_what_was_asked_for_and_which_roboglot_ran_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Which robot, which LLM, which budget, whether it was a dry run: the flags are half
     the story of a run, and reading a transcript a month later meant guessing at them.
 
-    The first word is `quackd` and not the path that was really invoked, which is an
+    The first word is `roboglot` and not the path that was really invoked, which is an
     absolute path to a console script on one machine and `__main__.py` under `python -m`,
     and neither is what was typed or what a reader wants."""
     result = _typed_run(tmp_path, monkeypatch, "--seed", "7")
     assert result.exit_code == 0, result.output
     start = _events(tmp_path)[0]
     assert start["kind"] == "run_start"
-    assert start["command"][:2] == ["quackd", "run"], start["command"]
+    assert start["command"][:2] == ["roboglot", "run"], start["command"]
     assert start["command"][-2:] == ["--seed", "7"]
     assert "/opt/venv/bin" not in " ".join(start["command"])
     assert start["version"] == __version__
@@ -4132,7 +4132,7 @@ def test_a_question_and_the_answer_to_it_are_both_kept(
 ) -> None:
     """Neither half reaches the file on its own: the question is written straight to stderr
     rather than through a console the capture can see, and the answer is echoed by the
-    terminal driver, so a tee on quackd's own output gets the asking and not the answering.
+    terminal driver, so a tee on Roboglot's own output gets the asking and not the answering.
     The file has both because `_ask` puts them there itself.
 
     The transcript gains the exchange beside the gate's note of what it decided, and quotes
@@ -4156,10 +4156,10 @@ def test_a_question_and_the_answer_to_it_are_both_kept(
 def test_a_pipe_on_stdin_opens_the_gate_and_is_not_written_down_as_a_person(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`yes | quackd run` is how people drive a CLI that asks questions, out of a CI job or a
+    """`yes | roboglot run` is how people drive a CLI that asks questions, out of a CI job or a
     cron wrapper, and `input()` reads a pipe exactly as happily as it reads a person.
 
-    The gate opens, because that is what the pipe asked for and what quackd has always done,
+    The gate opens, because that is what the pipe asked for and what Roboglot has always done,
     and the screen keeps the question and the answer because that is what was on it. What must
     not happen is the record then testifying that somebody cleared a verb on a robot nobody was
     standing next to. `_can_prompt` already knows whether there is a terminal; this is that
@@ -4213,8 +4213,8 @@ def test_a_run_nobody_watched_ends_in_its_sentence_rather_than_a_traceback(
 ) -> None:
     """A no, or no answer, to "Are you watching the robot right now?" ends the run before its
     first step with `Aborted`, which nothing caught: the person who said no got a traceback."""
-    from quackd.agent.loop import AgentLoop
-    from quackd.safety import Aborted
+    from roboglot.agent.loop import AgentLoop
+    from roboglot.safety import Aborted
 
     async def nobody_watching(_self: Any) -> Any:
         raise Aborted("nobody confirmed they were watching a robot that cannot see a fall")

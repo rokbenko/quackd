@@ -1,7 +1,7 @@
-"""The industrial arm family (`quackd_rosarm`): four bodies, two backends, one rule (ADR-0078).
+"""The industrial arm family (`roboglot_rosarm`): four bodies, two backends, one rule (ADR-0078).
 
 What these hold is that the family describes each arm from its body file and drives it only where
-quackd may: every figure is the YAML's, every move asks a person first, the travel and the speeds
+Roboglot may: every figure is the YAML's, every move asks a person first, the travel and the speeds
 are the robot's own description, no rest pose and no tool are claimed, and `ws` is refused for
 every arm in the owner rule's words, at `make()` and at the registry's door, until somebody names a
 date for that arm's first hardware run (ADR-0076).
@@ -16,18 +16,18 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.base import AdapterError
-from quackd.adapters.catalogue import BY_NAME, DESCRIBED_BODIES
-from quackd.adapters.described import describe as described
-from quackd.adapters.factory import RobotSpec, make_adapter, refusal
-from quackd.adapters.factory import describe as describe_spec
-from quackd.agent.prompts import DESCRIBED_LINE, body_lines
-from quackd.drive.session import _ANSWER, Answered, DriveSession, _Answer
-from quackd.duckfile.schema import Budgets
-from quackd.log import EventLog
-from quackd.mcp_server import RobotSession
-from quackd.registry import Registry, RegistryError, RobotEntry
-from quackd.safety import (
+from roboglot.adapters.base import AdapterError
+from roboglot.adapters.catalogue import BY_NAME, DESCRIBED_BODIES
+from roboglot.adapters.described import describe as described
+from roboglot.adapters.factory import RobotSpec, make_adapter, refusal
+from roboglot.adapters.factory import describe as describe_spec
+from roboglot.agent.prompts import DESCRIBED_LINE, body_lines
+from roboglot.drive.session import _ANSWER, Answered, DriveSession, _Answer
+from roboglot.glotfile.schema import Budgets
+from roboglot.log import EventLog
+from roboglot.mcp_server import RobotSession
+from roboglot.registry import Registry, RegistryError, RobotEntry
+from roboglot.safety import (
     Budget,
     ConfirmDenied,
     Executor,
@@ -36,8 +36,8 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.verbs.registry import default_registry, registry_from_manifest
-from quackd_rosarm import (
+from roboglot.verbs.registry import default_registry, registry_from_manifest
+from roboglot_rosarm import (
     BACKENDS,
     NO_REST_POSE,
     ROBOT_TYPE,
@@ -46,10 +46,10 @@ from quackd_rosarm import (
     describe,
     make,
 )
-from quackd_rosarm.bodies import BODIES, ws_tier
-from quackd_rosarm.fake import FakeBridge
-from quackd_rosarm.transport import CANCEL_WAIT_S, RosArmWs
-from quackd_rosarm.verbs import (
+from roboglot_rosarm.bodies import BODIES, ws_tier
+from roboglot_rosarm.fake import FakeBridge
+from roboglot_rosarm.transport import CANCEL_WAIT_S, RosArmWs
+from roboglot_rosarm.verbs import (
     MOVE_MAX_S,
     NOT_OFFERED,
     NOTHING_TO_MOVE_DEG,
@@ -97,7 +97,7 @@ def test_a_bodys_figures_are_its_body_files(robot_type: str) -> None:
     said = " ".join(driven.datasheet.notes)
     assert "never powers, enables, un-brakes or un-stops it" in said
     assert "the arm finishes that move and holds" in said
-    assert "quackd clamps nothing here because it drives nothing" not in said
+    assert "Roboglot clamps nothing here because it drives nothing" not in said
     # and it is not told it is a described body, since this row drives it
     assert DESCRIBED_LINE not in body_lines(driven)
 
@@ -145,7 +145,7 @@ def test_the_prompt_says_where_the_travel_was_read_and_the_ceiling() -> None:
     lines = " ".join(body_lines(describe("mock")))
     assert "travel in degrees, read from the robot's own description on the bridge" in lines
     assert "torque off" not in lines and "rest pose" not in lines, "the SO-101's own sentence"
-    assert "quackd clamps you to 0.1 of each joint's rated speed." in lines
+    assert "Roboglot clamps you to 0.1 of each joint's rated speed." in lines
     assert "one arm with a bare wrist: it holds nothing until somebody fits a tool" in lines
     assert "gripper, place, pick, manipulate: no gripper or tool is fitted" in lines
 
@@ -167,7 +167,7 @@ def test_ws_is_refused_for_every_arm_in_the_owner_rules_words(robot_type: str) -
 
 
 def test_the_refusal_comes_before_anything_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nothing is imported, no socket is opened and no address is parsed for an arm quackd may
+    """Nothing is imported, no socket is opened and no address is parsed for an arm Roboglot may
     not drive: the refusal is the first thing make() does."""
     import sys
 
@@ -278,8 +278,8 @@ _a_pipe.asks_a_person = lambda: False  # type: ignore[attr-defined]
     ids=["run-or-mcp-with-yes", "mcp-without-yes", "drive-with-yes"],
 )
 async def test_a_standing_answer_does_not_clear_a_move_on_the_real_backend(answer: Any) -> None:
-    """On `rosarm:ws` a person answers each move (ADR-0078). `quackd run --yes` and an MCP session
-    with `--yes` answer with `allow_all`, `quackd drive --yes` with its standing rule, and an MCP
+    """On `rosarm:ws` a person answers each move (ADR-0078). `roboglot run --yes` and an MCP session
+    with `--yes` answer with `allow_all`, `roboglot drive --yes` with its standing rule, and an MCP
     session without `--yes` with `deny_all`, none of which asks anybody: each is refused before
     the question is put, in words that say what to do instead, and no goal goes out."""
     adapter = _on_ws()
@@ -344,7 +344,7 @@ MOVE_LINE = "move_joints(positions={shoulder_pan_joint: 3}, duration_s=1)"
 async def test_drive_refuses_a_move_under_yes_and_asks_the_person_without_it(
     tmp_path: Path,
 ) -> None:
-    """What `quackd drive` now does on `rosarm:ws`: under `--yes` the line ends refused, in the
+    """What `roboglot drive` now does on `rosarm:ws`: under `--yes` the line ends refused, in the
     gate's words, with no goal sent; without it the person at the keyboard is asked, and their
     yes moves the arm."""
     driven = await _driven_on_ws(tmp_path, yes=True)
@@ -544,7 +544,7 @@ async def test_a_move_no_result_answers_says_whether_its_cancel_went() -> None:
     lost = await executor.run_verb(
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
-    assert not lost.ok and "quackd could not cancel the goal: no answer to the cancel" in (
+    assert not lost.ok and "Roboglot could not cancel the goal: no answer to the cancel" in (
         lost.summary
     ), lost.summary
     assert "the goal showed no sign of starting within 8 s" in lost.summary, lost.summary
@@ -582,7 +582,7 @@ async def test_a_move_the_run_ended_says_its_cancel_went_unanswered() -> None:
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
     assert not ended.ok and "max_minutes" in ended.summary, ended.summary
-    assert "quackd could not cancel the goal: no answer to the cancel" in ended.summary, (
+    assert "Roboglot could not cancel the goal: no answer to the cancel" in ended.summary, (
         ended.summary
     )
     await adapter.close()
@@ -600,7 +600,7 @@ def test_the_stop_verbs_own_timeout_covers_the_wait_for_a_goal_not_started() -> 
 async def test_a_goal_the_bridge_starts_late_is_timed_from_its_start() -> None:
     """A bridge that has just started holds its first goal back while it makes the action's
     client, about two seconds on Jazzy's in the contract job. A move timed from the goal leaving
-    quackd ran out before the arm had finished, and quackd cancelled a move that was going well;
+    Roboglot ran out before the arm had finished, and Roboglot cancelled a move that was going well;
     timed from its first feedback, it arrives."""
     bridge = FakeBridge(BODIES["ur5e"], first_goal_s=2.5)
     transport = RosArmWs(
@@ -634,7 +634,7 @@ async def test_a_move_that_started_and_never_ends_is_cancelled_with_why() -> Non
         "move_joints", {"positions": {"shoulder_pan_joint": 5.0}, "duration_s": 1}
     )
     assert not moved.ok, moved.summary
-    assert "no result came within 3.0 s of the move starting, so quackd cancelled the goal" in (
+    assert "no result came within 3.0 s of the move starting, so Roboglot cancelled the goal" in (
         moved.summary
     ), moved.summary
     assert "dropped" not in moved.summary, moved.summary

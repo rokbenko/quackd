@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "quackd": {
+    "roboglot": {
       "command": "uv",
-      "args": ["run", "--no-sync", "quackd", "serve-mcp", "--robot", "microduck:sim2d"]
+      "args": ["run", "--no-sync", "roboglot", "serve-mcp", "--robot", "microduck:sim2d"]
     }
   }
 }

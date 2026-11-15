@@ -14,7 +14,7 @@ Filmed with an external camera. The GIF plays at 5x speed.
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Partly | FAILURE / BUDGET | 2026-11-06 | 0.31.3 |
 
@@ -25,7 +25,7 @@ The numbers and the trace below are copied from the run's own record.
 
 **Why this example exists:** A stuck LLM keeps spending. It can use up LLM calls and minutes without ever finishing the task, so a run has a limit on each, and reaching one is meant to end the run cleanly with the arm put down. This example sets both low, three calls in one run and thirty seconds in the other, to watch them do that.
 
-**Why this result is important:** The clock did its job. At thirty seconds quackd cut off an LLM call still in progress and folded the arm, and the LLM had no say in it. Of those thirty seconds, 23.6 went on waiting for the LLM and about 6.1 on moving, so in this run the limit mostly measured the wait for the LLM. The call limit never got its turn. quackd tells an LLM its budgets before its first turn and this task's description named the budget as well, and this one did the sum and declared failure on its last call with the arm still folded. A limit an LLM can see is one it may decide not to reach.
+**Why this result is important:** The clock did its job. At thirty seconds Roboglot cut off an LLM call still in progress and folded the arm, and the LLM had no say in it. Of those thirty seconds, 23.6 went on waiting for the LLM and about 6.1 on moving, so in this run the limit mostly measured the wait for the LLM. The call limit never got its turn. Roboglot tells an LLM its budgets before its first turn and this task's description named the budget as well, and this one did the sum and declared failure on its last call with the arm still folded. A limit an LLM can see is one it may decide not to reach.
 
 ## The goal
 
@@ -38,7 +38,7 @@ Show the two budgets a stuck LLM actually spends, LLM calls and minutes, each en
 * In Part 1 the LLM read the arm, judged the wave `feasible`, and declared failure on its third and last call: `No motion was commanded and no waves were performed.` It had done the sum first, saying the calls left could not hold `five back-and-forth waves`.
 * In Part 1 the arm never moved. All 3 observations read the same joints, both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
 * In Part 2 the LLM made three moves in the time it had: it raised the arm, swung the pan to 12 degrees, then swung it to -12. The first motion came about 14 s into the thirty seconds, which is 21.1 s after the start counting the connect, and after 3 LLM calls.
-* At thirty seconds quackd cut off the sixth LLM call, 3.0 s after it was sent: `ERROR BudgetExceeded: max_minutes (0.5) exceeded after 3.0 s`. The run ended `BUDGET`, and the arm was `at the rest pose` 2.3 s later.
+* At thirty seconds Roboglot cut off the sixth LLM call, 3.0 s after it was sent: `ERROR BudgetExceeded: max_minutes (0.5) exceeded after 3.0 s`. The run ended `BUDGET`, and the arm was `at the rest pose` 2.3 s later.
 * Of its thirty seconds, 23.6 s went on waiting for the LLM and about 6.1 s on the arm moving, so the three moves took about a fifth of the budget.
 
 ## What the run did not show
@@ -67,29 +67,29 @@ The run ended with **BUDGET**. The reason on record:
 
 **Part 1 of 2:** Out of LLM calls: three
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-calls.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-calls.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
 **Part 2 of 2:** Out of time: thirty seconds
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-time.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 40 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-time.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 40 --no-memory
 ```
 
 ## The numbers
 
 | | Part 1 | Part 2 |
 |---|---|---|
-| quackd version | 0.31.3 | 0.31.3 |
+| roboglot version | 0.31.3 | 0.31.3 |
 | Started | 2026-11-06 18:11:13 UTC | 2026-11-06 18:15:33 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` |
-| Task file | [`out-of-calls.duck`](out-of-calls.duck) | [`out-of-time.duck`](out-of-time.duck) |
+| Task file | [`out-of-calls.glot`](out-of-calls.glot) | [`out-of-time.glot`](out-of-time.glot) |
 | Steps | 1 | 4 |
 | LLM calls | 3 | 6 |
 | Total time | 27.2 s | 39.8 s |
@@ -119,10 +119,10 @@ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-time.du
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e187/out-of-calls.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run docs/examples/lerobot/e187/out-of-calls.glot --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -131,8 +131,8 @@ quackd run docs/examples/lerobot/e187/out-of-calls.duck --robot lerobot:mock --l
 <summary>Show the full terminal trace (477 lines)</summary>
 
 ```text
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-calls.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.31.3, started 2026-11-06T18:11:09Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-calls.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.31.3, started 2026-11-06T18:11:09Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e187-out-of-calls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -141,7 +141,7 @@ quackd 0.31.3, started 2026-11-06T18:11:09Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 6.71 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -171,7 +171,7 @@ system prompt, 5549 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -179,8 +179,8 @@ system prompt, 5549 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -190,13 +190,13 @@ system prompt, 5549 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -261,8 +261,8 @@ step 1/10 · llm calls 2/3, 0.3/4 min ──────────────
 │ run dir  runs\20261106-181113-e187-out-of-calls                                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e187/out-of-time.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 40 --no-memory
-quackd 0.31.3, started 2026-11-06T18:15:29Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-time.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 40 --no-memory
+Roboglot 0.31.3, started 2026-11-06T18:15:29Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e187-out-of-time ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -271,7 +271,7 @@ quackd 0.31.3, started 2026-11-06T18:15:29Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 6.69 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -301,7 +301,7 @@ system prompt, 5581 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -309,8 +309,8 @@ system prompt, 5581 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -320,13 +320,13 @@ system prompt, 5581 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE

@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from quackd.agent.providers.base import (
+from roboglot.agent.providers.base import (
     NO_ANSWER_IN_TIME,
     NO_CONNECTION,
     ProviderError,
@@ -30,7 +30,7 @@ def test_a_status_worth_asking_again_is_transient(status: int) -> None:
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 413, 422, 308, 200])
 def test_a_status_that_says_no_is_permanent(status: int) -> None:
     """A bad request, a key that does not work, an LLM that does not exist, a request too big,
-    a refused redirect, and 409, which both SDKs retry and quackd does not: none of them is
+    a refused redirect, and 409, which both SDKs retry and Roboglot does not: none of them is
     answered differently by asking the same request again."""
     assert transient_failure(sdk.wrapped(sdk.APIStatusError(status))) is None
 
@@ -118,9 +118,9 @@ def test_no_answer_errors_are_transient_by_their_class(error: BaseException, why
 
 
 @pytest.mark.parametrize("built_wrong", [sdk.LocalProtocolError, sdk.UnsupportedProtocol])
-def test_a_request_quackd_built_wrong_is_not_asked_again(built_wrong: type[Exception]) -> None:
+def test_a_request_roboglot_built_wrong_is_not_asked_again(built_wrong: type[Exception]) -> None:
     """Bare, and as the SDKs really raise one: their transport wraps every failure inside it as
-    an `APIConnectionError` raised from it, so read by its outer name alone a request quackd
+    an `APIConnectionError` raised from it, so read by its outer name alone a request Roboglot
     built wrong would be a lost connection, and asked again."""
     assert transient_failure(sdk.wrapped(built_wrong())) is None
     under = sdk.caused(sdk.APIConnectionError("Connection error."), built_wrong())
@@ -161,11 +161,11 @@ def test_an_implicit_context_is_not_walked() -> None:
 )
 def test_a_bare_provider_error_is_never_asked_again_whatever_it_says(text: str) -> None:
     """Every error test in the suite raises a bare `ProviderError` and expects the run to end at
-    once, and so does every refusal quackd writes itself. The message is never read."""
+    once, and so does every refusal Roboglot writes itself. The message is never read."""
     assert transient_failure(ProviderError(text)) is None
 
 
-def test_quackds_own_refusals_are_permanent() -> None:
+def test_roboglots_own_refusals_are_permanent() -> None:
     assert transient_failure(ProviderNotInstalled("anthropic", "anthropic")) is None
     redirect = sdk.wrapped(sdk.APIStatusError(308, {"location": "https://elsewhere"}))
     assert transient_failure(redirect) is None

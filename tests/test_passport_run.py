@@ -1,5 +1,5 @@
 """Robots met over Robot Passport, in a run: the `Robots nearby` block a pilot is shown each turn,
-the transcript a person reads afterwards, and `tell` to a robot met (docs/passport/quackd.md).
+the transcript a person reads afterwards, and `tell` to a robot met (docs/passport/roboglot.md).
 
 A real `Talker` stands for the run's robot, and another robot has said hello to it before the
 first turn, the way one would while the pilot was thinking, so these check the loop and the talk
@@ -14,24 +14,24 @@ import time
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.base import RestResult
-from quackd.agent.loop import AgentLoop, RunConfig
-from quackd.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import parse_duck_text
-from quackd.passport import PassportError, document
-from quackd.passport.serve import INBOX_PATH
-from quackd.passport.talk import Endpoint, read_message
-from quackd.passport_courtesy import Courtesy
-from quackd.passport_talk import HEADING, Talker
-from quackd.passport_trust import Judgement, judge
-from quackd.transport.base import Ack, Intent
-from quackd.transport.mock import MockTransport
+from roboglot.adapters.base import RestResult
+from roboglot.agent.loop import AgentLoop, RunConfig
+from roboglot.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.passport import PassportError, document
+from roboglot.passport.serve import INBOX_PATH
+from roboglot.passport.talk import Endpoint, read_message
+from roboglot.passport_courtesy import Courtesy
+from roboglot.passport_talk import HEADING, Talker
+from roboglot.passport_trust import Judgement, judge
+from roboglot.transport.base import Ack, Intent
+from roboglot.transport.mock import MockTransport
 from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
 
-DUCK_FILE = (
-    "---\nduck: 1\nname: neighbourly\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
+GLOT_FILE = (
+    "---\nglot: 1\nname: neighbourly\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
     "success: [said hello]\n---\n# Task\nSay hello to whoever is nearby.\n"
 )
 DUCK, CART = A, B
@@ -113,7 +113,7 @@ def run_with(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     cfg = RunConfig(
-        duck=parse_duck_text(DUCK_FILE),
+        duck=parse_glot_text(GLOT_FILE),
         provider=provider,
         transport=MockTransport(),
         run_dir=run_dir,
@@ -158,7 +158,7 @@ async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: 
     arm = Arm()
     (tmp_path / "run").mkdir()
     cfg = RunConfig(
-        duck=parse_duck_text(DUCK_FILE),
+        duck=parse_glot_text(GLOT_FILE),
         provider=Script([DONE]),
         transport=arm,
         run_dir=tmp_path / "run",
@@ -173,7 +173,7 @@ async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: 
 
 
 ARM_DUCK = (
-    "---\nduck: 1\nname: lift-the-mug\ndescription: Pick up the mug.\nverbs:\n"
+    "---\nglot: 1\nname: lift-the-mug\ndescription: Pick up the mug.\nverbs:\n"
     "  allow: [observe, report_state, stop]\nsuccess: [The mug is up.]\n---\n# Task\nPick it up.\n"
 )
 
@@ -200,8 +200,8 @@ class Person:
 async def test_a_pause_on_the_pilots_last_turn_holds_the_gripper_and_the_fold_until_it_ends(
     tmp_path: Path,
 ) -> None:
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import REST, LeRobotMock
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import REST, LeRobotMock
 
     class Arm(LeRobotMock):
         def __init__(self) -> None:
@@ -220,7 +220,7 @@ async def test_a_pause_on_the_pilots_last_turn_holds_the_gripper_and_the_fold_un
     arm = Arm()
     provider = FakeProvider(script=[DONE])
     cfg = RunConfig(
-        duck=parse_duck_text(ARM_DUCK),
+        duck=parse_glot_text(ARM_DUCK),
         provider=provider,
         transport=LeRobotAdapter(arm),
         hand_off=Person(),
@@ -246,8 +246,8 @@ async def test_a_pause_on_the_pilots_last_turn_holds_the_gripper_and_the_fold_un
 async def test_a_second_ctrl_c_while_waiting_out_a_pause_still_lets_the_arm_fold(
     tmp_path: Path,
 ) -> None:
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import REST, LeRobotMock
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import REST, LeRobotMock
 
     class Arm(LeRobotMock):
         def __init__(self) -> None:
@@ -261,7 +261,7 @@ async def test_a_second_ctrl_c_while_waiting_out_a_pause_still_lets_the_arm_fold
     arm = Arm()
     provider = FakeProvider(script=[DONE])
     cfg = RunConfig(
-        duck=parse_duck_text(ARM_DUCK),
+        duck=parse_glot_text(ARM_DUCK),
         provider=provider,
         transport=LeRobotAdapter(arm),
         runs_dir=tmp_path,

@@ -1,7 +1,7 @@
-hook: "Typed `yes` at the question that opens the jaws, and quackd took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold."
+hook: "Typed `yes` at the question that opens the jaws, and Roboglot took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold."
 goal_met: "Yes"
 why_example: >
-  At the end of a by-hand run quackd asks the person to take hold of whatever is in the gripper and
+  At the end of a by-hand run Roboglot asks the person to take hold of whatever is in the gripper and
   press Enter, and that Enter opens the jaws on what is in them. Most programs want `yes` typed at a
   question, so a person may type it out of habit, and until 0.30.1 a typed `yes` counted as yes. Since
   then only a bare Enter opens the jaws: a line with anything on it is a no. This example types `yes`
@@ -14,7 +14,7 @@ why_result: >
   bare Enter the question asks for does.
 goal: >
   Show that at the question that opens the jaws, a typed word, even `yes`, counts as no, as it has
-  since 0.30.1, and that quackd says so.
+  since 0.30.1, and that Roboglot says so.
 expected: >
   What you type shows as you type it. After Enter: `a line was typed rather than a bare Enter, so the
   gripper stays shut and the arm folds up`, with the question on the record as `-> no`. Then the 3 s
@@ -22,7 +22,7 @@ expected: >
 showed:
   - >
     This ran on a computer whose CPU was under heavy load from other work, as a real setup can be.
-    quackd took 20.34 s to connect, where this command connected the same arm in 2.6 to 8 s in its
+    Roboglot took 20.34 s to connect, where this command connected the same arm in 2.6 to 8 s in its
     other runs, and its calls to the arm took 9.3 ms at the median, 588.5 ms at the 99th percentile and
     up to 1.06 s.
   - >
@@ -30,8 +30,8 @@ showed:
     held, Enter at `the arm is yours`, and the pilot's three calls ended in its `declare_success`.
   - >
     At `Take hold of whatever is in the gripper and press Enter`, `yes` was typed and entered, and
-    quackd answered `(a line was typed rather than a bare Enter, which is a no)`. The question is on
-    the record as `-> no` and the hand-back as `skipped: a line was typed`, and quackd said `a line
+    Roboglot answered `(a line was typed rather than a bare Enter, which is a no)`. The question is on
+    the record as `-> no` and the hand-back as `skipped: a line was typed`, and Roboglot said `a line
     was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`.
   - >
     Then the 3 s count, `folding the arm to its rest pose in 3 s: take your hands away from it now`,
@@ -47,7 +47,7 @@ showed:
     The video's caption marks only the typed `yes`, the point of the example.
 did_not_show:
   - >
-    The record does not hold the typed word itself: quackd draws what is typed on the screen as it is
+    The record does not hold the typed word itself: Roboglot draws what is typed on the screen as it is
     typed, but its trace keeps only its own lines, and the camera does not see the screen. So that it
     showed as it was typed is not on record; the video's caption names the word.
   - >

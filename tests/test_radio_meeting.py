@@ -20,26 +20,26 @@ from typing import Any
 
 import pytest
 
-from quackd.lan.lookup import LanRecord
-from quackd.passport.beacon import (
+from roboglot.lan.lookup import LanRecord
+from roboglot.passport.beacon import (
     FLAG_BUSY,
     FLAG_LAN,
     FLAG_LINK,
     ble_service_data,
     new_beacon_id,
 )
-from quackd.passport.errors import PassportError
-from quackd.passport.fetch import HttpStatus, Unreachable
-from quackd.radio import NoRadio, Pipe, Sighting
-from quackd.radio.fake import FakeAir, FakeLan
-from quackd.radio.links import (
+from roboglot.passport.errors import PassportError
+from roboglot.passport.fetch import HttpStatus, Unreachable
+from roboglot.radio import NoRadio, Pipe, Sighting
+from roboglot.radio.fake import FakeAir, FakeLan
+from roboglot.radio.links import (
     LinkChange,
     LinkTable,
     LinkTransport,
     talk_inbox,
 )
-from quackd.radio.loop import LoopThread
-from quackd.radio.meet import (
+from roboglot.radio.loop import LoopThread
+from roboglot.radio.meet import (
     INBOX_PATH,
     Meet,
     Meeter,
@@ -49,9 +49,9 @@ from quackd.radio.meet import (
     Planner,
     TalkerPort,
 )
-from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
-from quackd.radio.sim import AirModel
-from quackd.radio.transport import Transports
+from roboglot.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
+from roboglot.radio.sim import AirModel
+from roboglot.radio.transport import Transports
 
 QUIET_AIR = AirModel(noise_db=0.0, loss=0.0)
 
@@ -666,9 +666,9 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
     """The whole of it but the radio's own hardware: two robots with 1.0 passports their owners
     signed, each robot's real Talker, a hello of a few kilobytes carried in 20-byte datagrams,
     both verifications done, a word said in the session, and a bye when one walks away."""
-    from quackd.passport.link import MIN_DATAGRAM
-    from quackd.passport_talk import Talker
-    from quackd.passport_trust import Judgement
+    from roboglot.passport.link import MIN_DATAGRAM
+    from roboglot.passport_talk import Talker
+    from roboglot.passport_trust import Judgement
     from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
 
     air = FakeAir(QUIET_AIR)
@@ -695,7 +695,11 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
                 send=self.transports.post,
                 heard=lambda b, _origin="": self.tracker.heard(b, within_s=8, now=air.clock),
                 on_session=self._session,
-                runtime={"software": "quackd/test", "beacon": beacon, "reach": {"http_port": 8790}},
+                runtime={
+                    "software": "roboglot/test",
+                    "beacon": beacon,
+                    "reach": {"http_port": 8790},
+                },
             )
             self.meeter = Meeter(
                 planner=self.planner,

@@ -1,10 +1,10 @@
 {
-  "duck": "e117-slow-raise",
+  "glot": "e117-slow-raise",
   "run_name": null,
   "command": [
-    "quackd",
+    "roboglot",
     "run",
-    "D:/Development/quackd-shoot/docs/examples/lerobot/e117/slow-raise.duck",
+    "D:/Development/roboglot-shoot/docs/examples/lerobot/e117/slow-raise.glot",
     "--robot",
     "arm-01",
     "--camera-url",

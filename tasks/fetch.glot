@@ -1,0 +1,48 @@
+# EXPERIMENTAL: `grab` is an open-loop beak scoop to the floor on the real robot
+# (upstream `ground_pick`), so success rates are low. The instructions below insist on
+# verify-and-retry rather than trusting a single attempt.
+---
+glot: 0
+name: fetch
+description: Find the ball, walk to it, scoop it up with the beak, and bring it back.
+author: rok
+verbs:
+  allow: [search_scan, walk_to, grab, walk, quack, get_frame, stop]
+  confirm: []
+budgets:
+  max_steps: 50
+  max_minutes: 6
+  max_llm_calls: 50
+success:
+  - The ball is no longer visible in front of the duck after a grab (it is in the beak),
+    and the duck has walked back at least 0.5 m toward where it started.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 3 times in a row
+persona: Eager. This is hard for a duck, so be patient with yourself.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are piloting a small biped duck robot. Fetch the ball.
+
+## Strategy
+
+1. `search_scan` to locate the ball.
+2. `walk_to` it with `stop_distance` 0.15 — the scoop only works when the ball is right
+   under the beak.
+3. `grab`. This is open-loop: the duck scoops at the floor and hopes.
+4. **Verify.** `get_frame`. If the ball is still visible in front of you, the grab missed:
+   `walk_to` again (maybe from a slightly different angle) and retry `grab`. Do not retry
+   more than three times.
+5. Once the ball is gone from view, `walk` backward (`vx` -0.1) for about 3 seconds,
+   `remember` where the ball was and what made the grab work, quack, and declare success.
+
+## Memory
+
+Before you declare success or failure, call `remember` once with one short fact a future
+run can use: where the ball was, or the approach distance and angle that made `grab`
+work (or kept missing). Skip it if the prompt already remembers the same thing. It costs
+no step.

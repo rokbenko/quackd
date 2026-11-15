@@ -1,5 +1,5 @@
 name: LeRobot SO-101 hardware report
-description: You ran quackd against a real SO-101 arm. Tell us what happened.
+description: You ran Roboglot against a real SO-101 arm. Tell us what happened.
 labels: ["lerobot", "hardware", "adapter-status"]
 body:
   - type: markdown
@@ -10,17 +10,17 @@ body:
         machine this project has not seen, and a report that says "it did not work" is worth as
         much as one that says it did. Neither afternoon loaded a policy. The second reached the
         arm by a registered name, with a rest pose recorded that the arm could not reach, and
-        most of its runs never moved the arm. What quackd changed after it has not met an arm
+        most of its runs never moved the arm. What Roboglot changed after it has not met an arm
         yet, so on a policy, a rest pose that parks and a release, yours is still the first.
 
         Please follow [docs/adapters/lerobot/hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot/hardware-checklist.md)
         first. It is ordered so that nothing moves until step 10, because this arm has no
         e-stop and LeRobot caps the torque of the gripper and of no other joint.
   - type: input
-    id: quackd_version
+    id: roboglot_version
     attributes:
-      label: quackd version
-      description: Output of `quackd --version`
+      label: roboglot version
+      description: Output of `roboglot --version`
     validations:
       required: true
   - type: input
@@ -56,7 +56,7 @@ body:
     id: gripper_open
     attributes:
       label: Which end of the gripper's 0..100 range is open?
-      description: quackd assumes 100 is open. Everything it believes about holding rests on this.
+      description: Roboglot assumes 100 is open. Everything it believes about holding rests on this.
       options:
         - "100 is open, as assumed"
         - "0 is open, the other way round"
@@ -67,19 +67,19 @@ body:
     id: holding_reading
     attributes:
       label: What the gripper reads while actually holding something
-      description: quackd calls it holding between 8 and 90 of 100, and nobody has seen a real grasp.
+      description: Roboglot calls it holding between 8 and 90 of 100, and nobody has seen a real grasp.
   - type: input
     id: temperature
     attributes:
       label: Servo temperature, cold and after ten minutes of work
-      description: "quackd refuses to move at 60 °C; Feetech documents a 70 °C cut-off. Neither was measured here."
+      description: "Roboglot refuses to move at 60 °C; Feetech documents a 70 °C cut-off. Neither was measured here."
   - type: dropdown
     id: step_deg
     attributes:
       label: Did 5 degrees per action feel right in the room?
       options:
         - "about right"
-        - "too fast, I lowered QUACKD_LEROBOT_MAX_STEP_DEG"
+        - "too fast, I lowered ROBOGLOT_LEROBOT_MAX_STEP_DEG"
         - "too slow"
         - "not tested"
   - type: dropdown
@@ -146,7 +146,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: quackd doctor --robot <the name you registered the arm under>
+      label: roboglot doctor --robot <the name you registered the arm under>
       description: >-
         The whole thing. It carries the calibration file, the joint ranges, the temperatures
         and the rest pose row. Hold the arm while it runs, because connecting takes torque off
@@ -161,7 +161,7 @@ body:
       description: >-
         The whole session as you saw it, opening with
         the command that started the run and the version that ran it. Check it before you
-        paste: quackd replaces the values of `--api-key` and `--token` and the credentials
+        paste: Roboglot replaces the values of `--api-key` and `--token` and the credentials
         in a `--base-url`, an `--address` or a `--camera-url`, and nothing else on that
         screen (see SECURITY.md).
         A run driven from an MCP client writes no run directory, so there is none for those

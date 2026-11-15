@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from quackd.passport import PassportError, SigningKey, document, jws, strict
-from quackd.passport.keys import b58decode, b58encode, did_from_public, public_from_did
+from roboglot.passport import PassportError, SigningKey, document, jws, strict
+from roboglot.passport.keys import b58decode, b58encode, did_from_public, public_from_did
 
 KEY = SigningKey(bytes(range(32)))
 OWNER = SigningKey(bytes(range(32, 64)))
@@ -197,9 +197,9 @@ def test_unknown_members_courtesies_and_boards_are_ignored_with_a_note() -> None
         assert word in notes
 
 
-def test_quackds_own_required_extension_does_not_stop_talk() -> None:
+def test_roboglots_own_required_extension_does_not_stop_talk() -> None:
     reading = document.read(
-        raw(passport(ext={"org.quackd": {"required": True, "sha": "x"}})), now=NOW
+        raw(passport(ext={"org.roboglot": {"required": True, "sha": "x"}})), now=NOW
     )
     assert reading.talk_allowed is True
 
@@ -382,7 +382,7 @@ def test_a_did_too_long_to_be_an_ed25519_key_is_refused_before_it_is_decoded() -
     robot real time; one longer than any Ed25519 did:key is refused unread, in no time."""
     import time
 
-    from quackd.passport.keys import MAX_DID
+    from roboglot.passport.keys import MAX_DID
 
     assert len(KEY.did) <= MAX_DID
     started = time.perf_counter()

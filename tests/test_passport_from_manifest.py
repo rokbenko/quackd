@@ -1,4 +1,4 @@
-"""A 1.0 passport for every body quackd publishes, built from its manifest by
+"""A 1.0 passport for every body Roboglot publishes, built from its manifest by
 `passport_from_manifest`, for its owner to sign.
 
 What a manifest cannot know comes from the robot's owner: who they are and which key signs, what
@@ -13,9 +13,9 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
-from quackd.adapters.passport import CANNOT_CHARS, cannot_line, courtesy, passport_from_manifest
-from quackd.passport import PassportError, document, strict
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+from roboglot.adapters.passport import CANNOT_CHARS, cannot_line, courtesy, passport_from_manifest
+from roboglot.passport import PassportError, document, strict
 from tests.passport_helpers import OWNER, A
 
 ISSUED = datetime(2026, 10, 29, 10, 0, tzinfo=UTC)
@@ -134,7 +134,7 @@ def test_an_unknown_estop_is_refused_rather_than_written() -> None:
 
 def test_a_verb_name_a_passport_cannot_carry_is_written_as_one_or_left_out() -> None:
     """A manifest allows a hyphen, a leading digit and 64 characters, and a passport's skills
-    allow none of them: quackd writes the first as an underscore and leaves the rest out, so it
+    allow none of them: Roboglot writes the first as an underscore and leaves the rest out, so it
     never signs a passport its own reader refuses."""
     manifest = _manifest("microduck")
     first = manifest.verbs[0]

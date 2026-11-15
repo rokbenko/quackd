@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > Version 1.0, written 2026-10-29. This page is normative: the other pages in this folder explain,
-> this one decides, and where one of them disagrees with it, that page is the bug. quackd is the
-> first implementation; [quackd.md](quackd.md) says what of it quackd does, and
+> this one decides, and where one of them disagrees with it, that page is the bug. Roboglot is the
+> first implementation; [roboglot.md](roboglot.md) says what of it Roboglot does, and
 > [roadmap.md](roadmap.md) what has run, none of it on a Jetson or over a real radio.
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, RECOMMENDED, MAY and OPTIONAL are to
@@ -116,7 +116,7 @@ type, and MUST NOT refuse a passport for a bad value in `safety` alone.
 `ext` maps a reverse-DNS name (`org.example.lift`) to an object. A reader MUST ignore an extension
 it does not know, unless the object has `"required": true`; then it MAY show the passport and MUST
 NOT talk to the robot on the strength of it. A `required` that is anything but `true` is read as not
-required. `org.quackd` is reserved for quackd.
+required. `org.roboglot` is reserved for Roboglot.
 
 ### 2.7 The index
 
@@ -446,7 +446,7 @@ message types, advert flags. A reader of one MINOR therefore reads every later M
 ignoring what it does not know. A change that would make an existing reader misread a document takes
 a new MAJOR.
 
-Version 0 was the draft line, and 0.1, which quackd 0.23.0 to 0.28.0 implemented, its only version.
+Version 0 was the draft line, and 0.1, which Roboglot 0.23.0 to 0.28.0 implemented, its only version.
 A 0.1 robot signed its own passport, so a 0.1 reader would misread one its owner signed, and 1.0 is a
 new MAJOR: each refuses the other under rule 4.
 

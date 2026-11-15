@@ -1,4 +1,4 @@
-"""The line the record keeps: `quackd` in front, the secrets gone, everything else verbatim."""
+"""The line the record keeps: `roboglot` in front, the secrets gone, everything else verbatim."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from quackd.command import (
+from roboglot.command import (
     HIDDEN,
     SECRET_FLAGS,
     URL_FLAGS,
@@ -35,13 +35,13 @@ def test_both_shell_spellings_of_a_secret_are_hidden(flag: str) -> None:
         (
             [
                 "run",
-                "ducks/fetch.duck",
+                "tasks/fetch.glot",
                 "--api-key",
                 "sk-live-1234",
                 "--llm",
                 "anthropic:claude-opus-5",
             ],
-            ["run", "ducks/fetch.duck", "--api-key", HIDDEN, "--llm", "anthropic:claude-opus-5"],
+            ["run", "tasks/fetch.glot", "--api-key", HIDDEN, "--llm", "anthropic:claude-opus-5"],
         ),
         # Both flags on one line, one spelling each.
         (
@@ -53,7 +53,7 @@ def test_both_shell_spellings_of_a_secret_are_hidden(flag: str) -> None:
         # An unrelated argument that carries an `=` is not a secret and is not touched.
         (["--goal=go=home", "--budget=12"], ["--goal=go=home", "--budget=12"]),
         # Nothing to hide leaves the line exactly as it was.
-        (["run", "ducks/fetch.duck", "--yes"], ["run", "ducks/fetch.duck", "--yes"]),
+        (["run", "tasks/fetch.glot", "--yes"], ["run", "tasks/fetch.glot", "--yes"]),
         ([], []),
     ],
 )
@@ -63,7 +63,7 @@ def test_what_the_record_shows_of_each_argument(argv: list[str], expected: list[
 
 def test_a_secret_flag_with_nothing_after_it_stays_as_it_was_typed() -> None:
     """There is no secret to hide, and the record should show the mistake as it was made."""
-    argv = ["run", "ducks/fetch.duck", "--api-key"]
+    argv = ["run", "tasks/fetch.glot", "--api-key"]
     assert redacted_argv(argv) == argv
     assert HIDDEN not in redacted_argv(argv)
     assert argv[-1] == "--api-key"  # and the caller's own list is not rewritten under it
@@ -79,43 +79,43 @@ def test_a_secret_is_hidden_by_the_flag_it_followed_and_not_by_how_it_looks() ->
 @pytest.mark.parametrize(
     "argv0",
     [
-        "/home/rok/.local/bin/quackd",
-        r"C:\Users\rok\AppData\Local\quackd\Scripts\quackd.exe",
-        "/home/rok/quackd/.venv/lib/python3.11/site-packages/quackd/__main__.py",
+        "/home/rok/.local/bin/roboglot",
+        r"C:\Users\rok\AppData\Local\roboglot\Scripts\roboglot.exe",
+        "/home/rok/roboglot/.venv/lib/python3.11/site-packages/roboglot/__main__.py",
     ],
 )
-def test_the_line_starts_with_quackd_whatever_argv0_was(
+def test_the_line_starts_with_roboglot_whatever_argv0_was(
     monkeypatch: pytest.MonkeyPatch, argv0: str
 ) -> None:
-    monkeypatch.setattr(sys, "argv", [argv0, "run", "ducks/fetch.duck", "--api-key", "sk-live"])
-    assert command_line() == ["quackd", "run", "ducks/fetch.duck", "--api-key", HIDDEN]
+    monkeypatch.setattr(sys, "argv", [argv0, "run", "tasks/fetch.glot", "--api-key", "sk-live"])
+    assert command_line() == ["roboglot", "run", "tasks/fetch.glot", "--api-key", HIDDEN]
 
 
 def test_an_explicit_argv_is_never_the_process_argv(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The flock members and the tests hand their own list in, and an empty one is a list
+    """The team members and the tests hand their own list in, and an empty one is a list
     and not a request to go and read `sys.argv`."""
-    monkeypatch.setattr(sys, "argv", ["quackd", "run", "--api-key", "sk-live-1234"])
+    monkeypatch.setattr(sys, "argv", ["roboglot", "run", "--api-key", "sk-live-1234"])
     assert command_line(["record", "--robot", "microduck"]) == [
-        "quackd",
+        "roboglot",
         "record",
         "--robot",
         "microduck",
     ]
-    assert command_line([]) == ["quackd"]
+    assert command_line([]) == ["roboglot"]
 
 
 def test_the_text_quotes_an_argument_that_would_otherwise_come_apart() -> None:
     assert command_text(["run", "--goal", "pick up the ball"]) == (
-        "quackd run --goal 'pick up the ball'"
+        "roboglot run --goal 'pick up the ball'"
     )
-    assert command_text(["--api-key", "sk-live-1234"]) == "quackd --api-key '***'"
+    assert command_text(["--api-key", "sk-live-1234"]) == "roboglot --api-key '***'"
 
 
 def test_the_quoting_is_posix_on_every_platform() -> None:
     """`shlex.join` and not a Windows spelling, so the same run reads the same whether the
     directory is copied off the bench laptop or off a Linux box."""
-    argv = ["run", "ducks/fetch.duck", "--goal", "pick up the ball"]
-    assert command_text(argv) == shlex.join(["quackd", *argv])
+    argv = ["run", "tasks/fetch.glot", "--goal", "pick up the ball"]
+    assert command_text(argv) == shlex.join(["roboglot", *argv])
     assert "'pick up the ball'" in command_text(argv)
 
 
@@ -257,7 +257,7 @@ def test_a_url_with_no_credential_in_it_comes_back_byte_identical() -> None:
     [
         "not a url at all",
         "localhost:8000",
-        "/home/rok/ducks/fetch.duck",
+        "/home/rok/tasks/fetch.glot",
         "gateway.example.com/v1",
         "",
     ],
@@ -269,7 +269,7 @@ def test_a_value_that_is_not_a_url_is_returned_as_it_was_typed(typed: str) -> No
 
 
 def test_a_url_that_does_not_parse_is_returned_as_it_was_typed() -> None:
-    """An unclosed IPv6 bracket is the parser's own error and not quackd's to raise. The
+    """An unclosed IPv6 bracket is the parser's own error and not Roboglot's to raise. The
     run is already over by the time the record is written and a typo in a flag is not worth
     a traceback on top of it."""
     typed = "http://[::1"
@@ -293,7 +293,7 @@ def test_a_password_in_a_url_never_reaches_the_line_the_record_keeps() -> None:
     assert "hunter2" not in line
     assert f"https://rok:{HIDDEN}@gw.example.com/v1" in line
     assert command_line(["--camera-url=http://admin:letmein@camera.local/snapshot.jpg"]) == [
-        "quackd",
+        "roboglot",
         f"--camera-url=http://admin:{HIDDEN}@camera.local/snapshot.jpg",
     ]
 
@@ -301,7 +301,7 @@ def test_a_password_in_a_url_never_reaches_the_line_the_record_keeps() -> None:
 def test_a_credential_named_key_is_replaced_wherever_it_sits_in_the_body() -> None:
     """A vendor's nesting is nobody's to predict, so the body is walked to the bottom. The
     `authorization` header is the canonical field somebody puts in `--extra-body`, and no
-    argv redaction reaches it when it arrives through `QUACKD_EXTRA_BODY`."""
+    argv redaction reaches it when it arrives through `ROBOGLOT_EXTRA_BODY`."""
     body = {
         "authorization": "Bearer sk-live-1234",
         "headers": {"Authorization": "Bearer sk-live-5678", "x-run": "fetch"},
@@ -350,7 +350,7 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
     """
     import typer.main
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     exempt = {
         "--registry-dir",  # a directory, and any secret in it is a secret on disk already
@@ -358,23 +358,23 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         # a machine, never a URL: `parse_host` refuses a value with an `@` in it, without
         # quoting it, before any record exists, so no credential it could carry gets that far
         "--host",
-        # `quackd policy serve`'s: it names the file the token is in and never holds the value,
+        # `roboglot policy serve`'s: it names the file the token is in and never holds the value,
         # which is the reason the flag exists rather than a `--token` on that command
         "--token-file",
-        # `quackd policy serve`'s too: it names the variable the token is in and never holds the
+        # `roboglot policy serve`'s too: it names the variable the token is in and never holds the
         # value, and a value that is not a variable's name is refused without being quoted
         "--token-env",
-        # `quackd policy endpoint up`'s: it names the variable a Hub token for a gated checkpoint
+        # `roboglot policy endpoint up`'s: it names the variable a Hub token for a gated checkpoint
         # is in and never holds the value, which goes into the endpoint's secrets and nowhere
         # a record or a terminal could show it
         "--hub-token-from",
-        # `quackd ui`'s: a switch that makes the page a new token and carries none itself
+        # `roboglot ui`'s: a switch that makes the page a new token and carries none itself
         "--new-token",
-        # `quackd robot add` and `edit`'s, beside `--token-env`: it names the variable the
+        # `roboglot robot add` and `edit`'s, beside `--token-env`: it names the variable the
         # board's token is in and never holds the value, and a value that is not a variable's
         # name is refused without being quoted
         "--host-token-env",
-        # `quackd onboard`'s: the path of an owner key file from the owner's first robot, sealed
+        # `roboglot onboard`'s: the path of an owner key file from the owner's first robot, sealed
         # with their passphrase, and never a key itself; the passphrase is asked for, or read from
         # the file `--passphrase-file` names, and is on no command line
         "--owner-key",
@@ -412,17 +412,17 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
 def test_the_record_leaves_out_the_page_front_and_keeps_every_other_word() -> None:
     """`--front jsonl` is how the page starts a run, and a terminal given it answers in JSON
     lines, so the command a record names, the one to type for the same run, leaves it out."""
-    from quackd.command import without_front
+    from roboglot.command import without_front
 
     assert command_line(["run", "hello-world", "--front", "jsonl", "--robot", "x"]) == [
-        "quackd",
+        "roboglot",
         "run",
         "hello-world",
         "--robot",
         "x",
     ]
     assert command_line(["drive", "--front=jsonl", "--llm", "fake"]) == [
-        "quackd",
+        "roboglot",
         "drive",
         "--llm",
         "fake",

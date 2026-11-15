@@ -1,4 +1,4 @@
-"""Set quackd's version, in the eleven places that have to agree.
+"""Set Roboglot's version, in the eleven places that have to agree.
 
 The core and each adapter carry their own `__version__`, because an adapter's sdist contains
 only its own source and cannot read the core's. They are released together and must not
@@ -22,12 +22,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'^__version__ = "\d+\.\d+\.\d+"$', re.M)
-WINDOW = re.compile(r'"quackd(-[a-z-]+)?(\[[a-z]+\])?>=\d+\.\d+(?:\.\d+)?,<\d+\.\d+"')
+WINDOW = re.compile(r'"roboglot(-[a-z-]+)?(\[[a-z]+\])?>=\d+\.\d+(?:\.\d+)?,<\d+\.\d+"')
 
 
 def version_files() -> list[Path]:
     """Every file holding a `__version__` this owns: the core, then each adapter package."""
-    return [REPO / "quackd" / "__init__.py", *sorted(REPO.glob("adapters/*/src/*/__init__.py"))]
+    return [REPO / "roboglot" / "__init__.py", *sorted(REPO.glob("adapters/*/src/*/__init__.py"))]
 
 
 def main(argv: list[str]) -> int:
@@ -51,7 +51,7 @@ def main(argv: list[str]) -> int:
     for path in [REPO / "pyproject.toml", *sorted(REPO.glob("adapters/*/pyproject.toml"))]:
         text = path.read_text(encoding="utf-8")
         fixed = WINDOW.sub(
-            lambda m: f'"quackd{m.group(1) or ""}{m.group(2) or ""}>={new},<{nxt}"', text
+            lambda m: f'"roboglot{m.group(1) or ""}{m.group(2) or ""}>={new},<{nxt}"', text
         )
         if fixed != text:
             path.write_text(fixed, encoding="utf-8", newline="\n")

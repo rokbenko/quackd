@@ -10,8 +10,8 @@ The thing tested is always the reading and never the hardware.
 
 from __future__ import annotations
 
-from quackd.boards.generic import CHASSIS, DMI, OS_RELEASES
-from quackd.boards.linux import COMPATIBLE, MODEL
+from roboglot.boards.generic import CHASSIS, DMI, OS_RELEASES
+from roboglot.boards.linux import COMPATIBLE, MODEL
 
 NUL = chr(0)
 NL = chr(10)

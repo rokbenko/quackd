@@ -56,9 +56,9 @@ Every identifier below was free when it was chosen, on 2026-10-20, except the Bl
 | `v`, `id`, `sha`, `bt`, `path` | the keys of the DNS-SD TXT record | short, because a key is wire protocol forever once shipped |
 | three 128-bit UUIDs | the Bluetooth service, and its two characteristics | version 5 UUIDs made from the specification's own URL with `#ble-service`, `#ble-rx` and `#ble-tx` after it, which anybody can recompute. The Bluetooth SIG assigns 16-bit UUIDs, which would save 14 bytes of the advert, for a fee, which is not worth paying before anybody else uses the protocol. |
 | `robot-passport+jws`, `robot-passport-msg+jws` | the `typ` of each kind of signature | one per purpose, so an owner's signature on a passport can never pass as a robot's on a message, or the other way round |
-| `robot-passport` | a PyPI distribution, when the module leaves quackd | the same name everywhere |
+| `robot-passport` | a PyPI distribution, when the module leaves Roboglot | the same name everywhere |
 | `"passport": "1.0"` | the first member of every document | names the document and its version in one member, the way `openapi` does |
-| `org.quackd` | quackd's own extension | reverse DNS, so no two makers' extensions collide |
+| `org.roboglot` | Roboglot's own extension | reverse DNS, so no two makers' extensions collide |
 
 ## The words these pages always use
 
@@ -71,6 +71,6 @@ Every identifier below was free when it was chosen, on 2026-10-20, except the Bl
 | short id | fingerprint, hash | a short id is of a key; a digest is of a document; a beacon id is of nothing |
 | courtesy | command, request | a peer asks for a courtesy, and is never obeyed by right |
 | peer | client, master | two robots talking are equals |
-| flock | group, swarm | quackd's one word for robots working together, and a passport is about the robots outside it |
+| team | group, swarm | Roboglot's one word for robots working together, and a passport is about the robots outside it |
 
 [glossary.md](glossary.md) defines every term the folder uses.

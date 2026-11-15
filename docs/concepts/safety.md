@@ -6,10 +6,10 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 
 | Layer | Owner | What it guarantees |
 |---|---|---|
-| Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives a clamp that holds every joint target inside its actuator's travel, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is quackd's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `quackd doctor` prints what the robot itself reported (see "On other bodies"). |
-| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the LLM has said, against the robot's datasheet, whether the task fits the body at all. It is the LLM's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). In `quackd drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
-| Conversation | quackd `Executor` | The LLM and MCP clients can only do what the `.duck` allows, as often as the budget allows, with a human in the loop where the contract says so. |
-| Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a flock one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. In `quackd drive` an empty Enter or Ctrl-C is the brake, and ends every verb moving the body. |
+| Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives a clamp that holds every joint target inside its actuator's travel, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is Roboglot's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `roboglot doctor` prints what the robot itself reported (see "On other bodies"). |
+| Judgement | the pilot, held to it by Roboglot `Executor` | Nothing that moves the body runs until the LLM has said, against the robot's datasheet, whether the task fits the body at all. It is the LLM's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** team's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of team has instead. A **pilot** team's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/team.md](../guides/team.md)). In `roboglot drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
+| Conversation | Roboglot `Executor` | The LLM and MCP clients can only do what the `.glot` allows, as often as the budget allows, with a human in the loop where the contract says so. |
+| Session | Roboglot `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a team one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. In `roboglot drive` an empty Enter or Ctrl-C is the brake, and ends every verb moving the body. |
 
 > [!NOTE]
 > **The optional discrete stepper changes none of this.** With `--decision-mode on`
@@ -34,20 +34,20 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | Gate | What it checks | What you change |
 |---|---|---|
 | `abort` | the run has been aborted. `stop` is exempt, so the brake still works. Read again after the body's state, so a verb admitted before a kill switch or a failed heartbeat never starts after it | nothing: the run is over |
-| `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.duck`'s `verbs.allow` |
-| `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
-| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the LLM calls `assess_task` |
-| `params` | the arguments fit the verb's schema. `stop` as quackd ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the LLM, not a crash |
-| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put, and a verb a backend declares `no_standing_answer` is refused the same way under the first three, where a pipe still answers it: `move_joints` on `rosarm:ws` ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | answer y, or pass `--yes`. For a `dangerous` verb, or one its backend declares `no_standing_answer`, run it from a terminal without `--yes` and answer it yourself |
+| `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.glot`'s `verbs.allow` |
+| `unknown` | Roboglot has never heard of this verb | the spelling, or the robot (`roboglot list-verbs`) |
+| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `roboglot drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the LLM calls `assess_task` |
+| `params` | the arguments fit the verb's schema. `stop` as Roboglot ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the LLM, not a crash |
+| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a team's standing answer, the MCP server or a pipe on stdin, before its question is put, and a verb a backend declares `no_standing_answer` is refused the same way under the first three, where a pipe still answers it: `move_joints` on `rosarm:ws` ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | answer y, or pass `--yes`. For a `dangerous` verb, or one its backend declares `no_standing_answer`, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
-| `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
-| `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.duck`'s `abort_when`, or the robot |
+| `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `glot: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.glot`'s `budgets` and `policy` section, or `--max-steps` |
+| `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.glot`'s `abort_when`, or the robot |
 | `precondition` | what the manifest says this verb needs: not fallen, not sitting, torque on | the robot's state |
 | `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
-| `preempted` | a newer command in `quackd drive`, or its brake, ended this verb while it moved the body, and a `stop` went out after it. A verb admitted before that and still reading the body's state is refused before it sends anything | nothing: the newer command runs |
+| `preempted` | a newer command in `roboglot drive`, or its brake, ended this verb while it moved the body, and a `stop` went out after it. A verb admitted before that and still reading the body's state is refused before it sends anything | nothing: the newer command runs |
 | `stopped` | a call that would move the body and that a `stop` overtook: a verb that had not sent anything yet, and a composite's call: one sent between two of the composite's calls, the composite's own included, or while the call waited on its gates or read the body's state. The call answers to the stops its composite answers to, so it never starts, nobody is asked to confirm it, and a kick or a scoop the brake was pulled on is not sent. A call that only looks or speaks still runs. It is not counted among `abort_when`'s failures in a row, and neither is an `approach_and` whose `then` it kept from starting | nothing: the brake did its job |
-| `peer` | a verb a robot met over Robot Passport started, through the courtesy handler. A courtesy runs `stop`, which a granted pause begins with, and `say`, which an identify is, and a peer reaches nothing else, whatever its tier | nothing: a robot met asks, and fixed code decides ([passport/talk.md](../passport/talk.md#what-quackd-does-with-an-ask)) |
+| `peer` | a verb a robot met over Robot Passport started, through the courtesy handler. A courtesy runs `stop`, which a granted pause begins with, and `say`, which an identify is, and a peer reaches nothing else, whatever its tier | nothing: a robot met asks, and fixed code decides ([passport/talk.md](../passport/talk.md#what-roboglot-does-with-an-ask)) |
 | `paused` | a pause this robot granted a robot it met still holds, so only `stop` and the verbs that move nothing (`observe`, `report_state`, `say`, `quack`, `introspect`, `map`, `mark_place`, `forget_place`) run, whoever asks, the pilot included. `gaze`, `look`, `watch` and `express`, which a pilot may use before its verdict, wait as well, since they turn a head or move antennas. A verb already moving the body when the pause is granted is ended there and then, as an abort ends one, and a stop is sent after it, and one let through a moment before the pause is held once its state read returns. A verb a pause ended is not counted among `abort_when`'s failures in a row | wait it out: a granted pause is 10 s at most, and one a minute |
 
 Execution races a **timeout** against the abort, so a kill switch cancels the verb that is
@@ -58,11 +58,11 @@ rather than an abort.
 A `safe` verb runs once the gates above pass. A `confirm` verb asks first, and `--yes` or a
 standing answer may answer for you, unless its backend has declared `no_standing_answer` for it,
 as `rosarm:ws` has for `move_joints`. A `dangerous` verb asks too, and only a person can answer
-it: wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe
+it: wherever nobody is asked, under `--yes`, a team's standing answer, the MCP server or a pipe
 on stdin, it is refused before its question is put, with a `confirm` gate whose reason says to
 run it from a terminal. A person who answers n stops it as before, and with no task file loaded
 it is not allowed at all. `collect_litter`, which hands a MOSS rover to its own litter mission,
-is the first verb quackd ships in that class
+is the first verb Roboglot ships in that class
 ([ADR-0056](../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 
 The `cancelled` row is the one worth knowing about: that path used to return at once and leave
@@ -80,12 +80,12 @@ on, whether the arm did the task (below). What an answer *caused* was always wri
 whoever acted on it, in `gate.answer` here, `assess.human` for a verdict and the `hand_off`
 and `release` stages for an arm. What was asked, and what somebody said back, was not.
 
-**It is written only where a person was really asked.** `--yes`, a flock's standing answer and
+**It is written only where a person was really asked.** `--yes`, a team's standing answer and
 the MCP server all answer without asking anybody, and none of them leaves a `prompt` event: the
 server has no terminal to ask on, so it refuses a gated verb unless it was started with `--yes`
 and clears it standing if it was, but for a verb its backend has declared `no_standing_answer`,
 which it refuses either way. Neither does a run with no terminal under it.
-`yes | quackd run` and `quackd run < answers.txt` open the gate exactly as they always have,
+`yes | roboglot run` and `roboglot run < answers.txt` open the gate exactly as they always have,
 because `input()` reads a pipe as happily as a person and opening it is what the pipe asked
 for. What is withheld is the testimony: there is no `prompt` event, and the gate's own reason
 reads `the confirm gate was allowed` where a run somebody stood through reads
@@ -102,8 +102,8 @@ rather than inventing somebody.
 The verdict's own record is held to the same rule. `assess.human` is the answer the run was
 given, `go` or `no_go`, which is what the gate reads, whoever gave it. Beside it
 `assess.answered_by` says who gave it: `a person` only where a `prompt` event would say so too,
-and otherwise `--yes`, `a flock's standing answer`, `a pipe`, or `a standing answer` for anything
-else that answers without asking. The line the terminal and `quackd log` draw from it names the
+and otherwise `--yes`, `a team's standing answer`, `a pipe`, or `a standing answer` for anything
+else that answers without asking. The line the terminal and `roboglot log` draw from it names the
 same, `(--yes said go)` where a run was started with `--yes`, and a run recorded before
 `answered_by` existed is drawn as `(answered go, and the record does not say by whom)`. A pilot
 whose doubt was answered no ends the run with the same name in its reason. A prompt that raised,
@@ -136,12 +136,12 @@ saying so, and the header would name a detector the run had stopped using.
 A frame the board could not read is not taken for an empty room. `go_to` and `search_scan` stop
 the body on the first one and fail with the board's reason, so neither turns the body blind,
 and the pilot is told the detector failed rather than that the target is gone. `observe`
-reports nothing seen with the board's reason beside it, and a `quackd run` writes a `note` to
+reports nothing seen with the board's reason beside it, and a `roboglot run` writes a `note` to
 its log when the board's detector stops answering and another when it answers again. A board
 that answers slowly stops the body too. While `go_to` waits for a frame it re-sends its last
 twist for 0.3 s and then sends a zero one, so a body with no deadman of its own does not drive
 on in the meantime: a rosbridge base has none, and a ToddlerBot's is fed by its adapter's
-keepalive for as long as quackd is connected.
+keepalive for as long as Roboglot is connected.
 
 The board's camera never takes over a body's own view. Its frame is the primary view only for
 a body with no camera of its own, because a body's bearings are calibrated for its own lens and
@@ -164,11 +164,11 @@ thinking. A run that ended by itself, a success, a failure or a spent budget, st
 arm at its end, and a first press during that fold stops it where the arm is: the arm is held
 there with torque on, the close keeps it, and the run says so
 (`the fold was stopped where it was, and nothing was released: torque is as the fold left it`).
-Only a press does that. A flock stopping its members, or a heartbeat that fails, ends a run
+Only a press does that. A team stopping its members, or a heartbeat that fails, ends a run
 with the fold still to come, and the fold goes ahead.
 
 Where that rest move misses, the arm is left holding itself up where it stopped, and a run with
-you at its terminal asks two questions before it closes, the same two `quackd robot release`
+you at its terminal asks two questions before it closes, the same two `roboglot robot release`
 asks (under "On hardware" below). The first asks you to clear whatever is in the arm's way and
 press Enter, and the arm folds once more: if it gets there, the close lets go of it at the pose.
 Only if that fold misses too does the second ask, and it says that Enter now takes torque off
@@ -178,7 +178,7 @@ question has been asked over a real arm yet.
 
 A second Ctrl-C raises straight through that teardown. If it lands during the first rest move
 the close is skipped, and a LeRobot arm is left holding rather than sagging. LeRobot can still
-disconnect the arm as the process lets go of it, but quackd builds the arm asking that
+disconnect the arm as the process lets go of it, but Roboglot builds the arm asking that
 disconnect to keep torque, and asks for the release itself only where it may let go. That is
 the safe direction, and it is written up under "A LeRobot arm" below because it is not a tidy
 exit. In 0.14 and before the arm was built asking that disconnect for the release, so it could
@@ -203,28 +203,28 @@ out, and says which it was. Either way the teardown still closes the transport a
 and the summary. From the first of those questions to the close no press quits, however many come,
 since somebody is at the arm. Whatever moves it there ends on a press, and what talks to it has a
 deadline of its own.
-`quackd robot release` holds to the same once it has connected the arm, and `quackd doctor` from
+`roboglot robot release` holds to the same once it has connected the arm, and `roboglot doctor` from
 where it would fold it. `Ctrl-\` where there is one, or closing the window, is what is left for
 somebody who has to kill it. Anywhere else, the first rest move of a run with no hand-back
 included, a second press quits at once, on the terms of the paragraph above.
 
 Once a run has closed, a press changes nothing to the end of the process, so the verdict prints
 however many come. It is still somebody saying stop, so a success comes out as exit 130, and
-`quackd run a && quackd run b` does not go on to move an arm. What it can still end is a `run.gif`
+`roboglot run a && roboglot run b` does not go on to move an arm. What it can still end is a `run.gif`
 being made, which can take minutes on a long run and is left out, and a process still there 5 s
 after its close, which is stuck on something: that press ends it, and says so.
 
-**SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
+**SIGTERM is not one of them.** Roboglot installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
 running, and the process dies where it is. Neither sends the robot a `stop`, so anything you
-wrap `quackd run` in should send SIGINT instead. The Open Duck Mini's bridge and the ToddlerBot
+wrap `roboglot run` in should send SIGINT instead. The Open Duck Mini's bridge and the ToddlerBot
 daemon are the other way round and settle on both, which is what a daemon has to do: one is
 started by a unit this repository ships, and the other is started by hand and stopped by
 somebody typing `kill`.
 
-## A person driving: `quackd drive`
+## A person driving: `roboglot drive`
 
-`quackd drive` ([guides/drive.md](../guides/drive.md)) puts a person in front of the executor,
+`roboglot drive` ([guides/drive.md](../guides/drive.md)) puts a person in front of the executor,
 and every call still passes `Executor.run_verb` with every gate in the table above. Five things
 are its own.
 
@@ -239,7 +239,7 @@ are its own.
   for a brake still on its way, before it sends anything. A stop asked for from beside a verb
   ends it before its next twist: `move`, `go_to`, `search_scan`, `approach_and`, the arm's
   `move_joints`, `gripper` and `place`, and what the other bodies bring that moves an arm, a head or
-  a lift read it as quackd ships them, and so does an MCP session's `stop`. A skill the robot plays
+  a lift read it as Roboglot ships them, and so does an MCP session's `stop`. A skill the robot plays
   out, a `kick` or a `grab`, is stopped from starting, and once it has gone out the verb stops
   waiting on it and says the robot plays it out, since nothing on those robots ends one
   ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
@@ -251,9 +251,9 @@ are its own.
   verb that call runs inside itself is answered by `--yes` alone, and a `dangerous` verb never
   runs in drive, nested or not.
 - **A body that cannot see a fall is driven only with somebody watching it.** Before the first
-  thing that moves such a body, drive asks whether the person is watching, as `quackd run`
+  thing that moves such a body, drive asks whether the person is watching, as `roboglot run`
   asks. `--yes` says they are, and a pipe without it is refused.
-- **A session is held to a contract**, a `--duckfile`'s or one of its own: every verb that is
+- **A session is held to a contract**, a `--glotfile`'s or one of its own: every verb that is
   not dangerous, the battery rule, and the schema's ceilings for its budgets. A goal runs inside
   it: the body's safe verbs behind the session's confirm gates, no more budget than the session
   has left and its steps charged to it, the session's abort rules, the session's `--dry-run`,
@@ -267,27 +267,27 @@ limit (429), an overloaded or failing server (529, or any 5xx), a request the se
 (408), and a call that timed out or lost its connection once the API has answered in this run,
 with a turn or with a status, are each asked again, after 5, 15, 30 and 60 seconds, or after as
 long as the API asked in a `retry-after` where that is longer. Up to a quarter of each scheduled
-wait is taken off at random, so the members of a flock on one key do not all ask again at once.
+wait is taken off at random, so the members of a team on one key do not all ask again at once.
 What decides is the SDK's own exception, its status and its class, and never its message.
 Everything else ends the run as it always did: a key that does not work, a request the API
-refused, an LLM that does not exist, a request quackd built wrong, and an answer quackd could
+refused, an LLM that does not exist, a request Roboglot built wrong, and an answer Roboglot could
 not read as a turn. A connection that failed before the API had answered at all is tried twice
 more, half a second and then a second later, and then ends the run, because that is as often a
 wrong address or a server that is not running as a dropped connection. A server that answers
 `x-should-retry: true` is asked again whatever its status, and one that answers `false` is not.
 
-The SDKs retry nothing of their own: quackd builds every anthropic and openai client with
+The SDKs retry nothing of their own: Roboglot builds every anthropic and openai client with
 `max_retries=0`, and google-genai retries nothing by default. Until 0.24 the first two made two
 tries of their own inside the call, about half a second and a second apart unless the API asked
 for longer, which both honoured, openai up to 120 seconds and anthropic at any length, and a
 first Ctrl-C did not reach into those waits, so a call an API asked to be left for minutes could
-hold a run that long before quackd heard of it. The two quick tries above are what they gave a
-connection that never answered, so every try is now one of quackd's, in the record and under
+hold a run that long before Roboglot heard of it. The two quick tries above are what they gave a
+connection that never answered, so every try is now one of Roboglot's, in the record and under
 the stop.
 
 Nothing moves the robot while the loop waits, the same stillness an LLM taking a minute to
 think leaves it in, and the heartbeat goes on watching it. Ctrl-C or `q`, a heartbeat that
-fails, or a flock that stops its members ends the wait at once: the run ends `aborted`, and the
+fails, or a team that stops its members ends the wait at once: the run ends `aborted`, and the
 robot is put down as at any end. A stop pressed while the call is still out ends it there, as
 above, and nothing is asked again. A turn asked again is the same turn, sent byte for byte, so
 it is not charged to `max_llm_calls`. Captured against the stand-in server in
@@ -295,13 +295,13 @@ it is not charged to `max_llm_calls`. Captured against the stand-in server in
 request is answered 529, and this run pointed at it:
 
 ```bash
-quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8766/api/v1 --robot microduck:mock
+roboglot --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8766/api/v1 --robot microduck:mock
 ```
 
 ```
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
 ⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - the stand-in is busy, by request after 0.1 s, asking again in 4.7 s
-·  note    the LLM's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
+·  note    the LLM's API could not answer this turn (overloaded (529)), so Roboglot waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
    think   turn 1: calling assess_task
 ```
@@ -349,7 +349,7 @@ A no ends the run `aborted` and exits 1, not `infeasible` and 3, because a perso
 stopping a robot is the kill switch's kind of act rather than a statement about the body.
 
 Until a verdict is recorded, when a detector looks at the frame and finds nothing, an
-observation a `quackd run` pilot is handed ends with a line that says this at the moment it
+observation a `roboglot run` pilot is handed ends with a line that says this at the moment it
 decides: nothing detected yet is not by itself a reason for `uncertain`, which is for a limit
 that turns on that unseen thing's mass or size, or on a figure the datasheet does not publish.
 The description says it once, at the top of a run, and on the one LLM measured that was not
@@ -365,9 +365,9 @@ On the 2026-09-23 bench a pilot a person had just cleared assessed the same doub
 sets that answer: the LLM asks you in the chat and records its own verdict again.
 
 **`--yes` answers that question with go**, the same way it answers a confirm gate, and
-`quackd record` always passes it. So a `--yes` in a script no longer only skips
+`roboglot record` always passes it. So a `--yes` in a script no longer only skips
 confirmations: it also clears the pilot's own doubt about whether the task suits the body.
-Its pilot, like one cleared by a flock's standing answer or a pipe, is not told a person read
+Its pilot, like one cleared by a team's standing answer or a pipe, is not told a person read
 the doubt, because nobody did: it hears that the run was started to go ahead without asking
 anybody, and, as after a person's go, that the verbs that move the body now run and it should
 not assess the same doubt again.
@@ -376,7 +376,7 @@ LLM is told to ask the person it is chatting with ([guides/mcp.md](../guides/mcp
 
 ## A pilot that cannot judge: `--controller vla`
 
-`quackd run --controller vla` flies a LeRobot arm with a scripted pilot that hands its learned
+`roboglot run --controller vla` flies a LeRobot arm with a scripted pilot that hands its learned
 policy one instruction at a time ([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 Neither the script nor the policy can tell whether the task was done, so a person is its whole
 verdict, twice. Its answer to `assess_task` is always `uncertain`, so the question above is put
@@ -431,7 +431,7 @@ A body with no datasheet at all gets neither floor: its prompt tells it to treat
 physical limit as not published. And one reading is kinder to a pilot's own sheet than to a
 stranger's: a `work_height_m` against a sheet with no working height band is not held against
 the pilot's own verdict, because the prompt never lists a working height as missing, while the
-coordinator, a flock role and the list of bodies that could still refuse it.
+coordinator, a team role and the list of bodies that could still refuse it.
 
 Up to 0.13.0 there were two, the zero stopped short of `work_height_m`, and the only
 floor was the one for a body that moves. On the 2026-09-23 bench the pilot of an SO-101, filling
@@ -449,7 +449,7 @@ before. And **it asks more of a pilot that answers fully**, which is the same fa
 other side. A duck asked to nudge a 60 g ball has no published payload to compare against, so
 a pilot that honestly writes `payload_kg: 0.06` is refused where one that writes nothing is
 not. That is refuse by default doing what [ADR-0032](../adr/0032-datasheets-and-the-verdict.md)
-says it should, and the way to answer it once rather than every run is a `duck: 2`
+says it should, and the way to answer it once rather than every run is a `glot: 2`
 `datasheet:` block in the task file: a figure given there replaces the adapter's and is
 rendered as coming from you, so the pilot is comparing against a number somebody stands
 behind.
@@ -466,8 +466,8 @@ parameters it chose:
 A parameter the LLM left unset shows as `null` rather than being dropped, because on a dry
 run the omission is the thing you are checking. The verbs whose adapter declared them
 `read_only` still run: `observe` (alias `get_frame`), `report_state`, the rosbridge base's
-`introspect`, and whatever a body quackd never shipped flags for itself. Use it the first
-time you point a new `.duck` at hardware.
+`introspect`, and whatever a body Roboglot never shipped flags for itself. Use it the first
+time you point a new `.glot` at hardware.
 
 It does not get you past the verdict, because that gate runs before this one. A task the
 pilot judges infeasible ends with nothing logged rather than with the list of verbs it would
@@ -484,11 +484,11 @@ instead of going limp.
 hardware. It imports no LeRobot and opens no port: its follower and its cameras are simulated,
 its address is a calibration file read as a regular file, and an address shaped like a serial
 port, `COM5` or `/dev/ttyACM0`, is refused on its shape before anything looks at it, because on
-Windows a port answers to its name in any directory. `quackd preflight`, which drives a robot
+Windows a port answers to its name in any directory. `roboglot preflight`, which drives a robot
 through task file after task file and seed after seed with nobody watching, refuses any robot
 that is not a simulator before building it, so a typo cannot send a rehearsal to the arm
-([adapters/lerobot/README.md](../adapters/lerobot/README.md#rehearsing-a-task-file-quackd-preflight)).
-`quackd doctor` and `quackd robot release` say it is the simulator rather than asking you to
+([adapters/lerobot/README.md](../adapters/lerobot/README.md#rehearsing-a-task-file-roboglot-preflight)).
+`roboglot doctor` and `roboglot robot release` say it is the simulator rather than asking you to
 support or hold an arm that is not there.
 
 A rehearsal that passes is not a safety claim about the arm. The simulated servos do what the
@@ -504,7 +504,7 @@ follower arm ran `lerobot-lookout` and then a series of free-form `--goal` runs,
 OpenAI gpt-6-astra on Windows 11 with lerobot 0.6.1: it waved the wrist about 27 degrees either
 way, waved again from a raised pose, and opened and closed the gripper. **It also fell at the
 end of every one of those runs**, because LeRobot's `disconnect()` drops torque, which is the
-whole reason the rest pose below exists. On 2026-09-23 the same arm ran 26 runs on quackd
+whole reason the rest pose below exists. On 2026-09-23 the same arm ran 26 runs on Roboglot
 0.12.0, under a registered name with a rest pose recorded, and that afternoon is where the
 parking, release and verdict changes on this page come from. None of those changes has run on an
 arm yet. [adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md) is the account, including
@@ -513,31 +513,31 @@ whether the holding band is right, what a joint reads after ten minutes of work,
 is caught on purpose rather than by luck. The other nine bodies have not been on hardware at all.
 
 If the body is a Microduck, run the contract in the physics simulator first
-(`--robot microduck:mujoco`): it is the only place quackd can show you a body that undershoots,
+(`--robot microduck:mujoco`): it is the only place Roboglot can show you a body that undershoots,
 refuses and falls over, and nothing there can be hurt. If it is the LeRobot arm, rehearse it on
-the arm's simulator first (`quackd robot twin`, then `quackd preflight`), which runs the code
+the arm's simulator first (`roboglot robot twin`, then `roboglot preflight`), which runs the code
 that will drive the arm and says nothing about how the arm will move. When you do reach the
-robot, start with `--dry-run` every time, then a `.duck` whose `allow` list is the smallest thing that could work,
+robot, start with `--dry-run` every time, then a `.glot` whose `allow` list is the smallest thing that could work,
 then widen it. **You are responsible for your robot.**
 
-**There are two places where quackd takes torque off a robot, and only a person can ask for
-either.** The first is `quackd run --by-hand`, which releases a LeRobot arm at the start of a
+**There are two places where Roboglot takes torque off a robot, and only a person can ask for
+either.** The first is `roboglot run --by-hand`, which releases a LeRobot arm at the start of a
 run so you can lift it, put whatever the task needs into the gripper, and set the pose the run
 begins from. Every word of that is a limit. Only that arm: the flag is refused on the other six
-bodies by name. Only at the pose recorded with `quackd robot rest-pose`, because an arm held up
+bodies by name. Only at the pose recorded with `roboglot robot rest-pose`, because an arm held up
 by torque alone falls the instant torque goes, so the arm refuses to be let go of anywhere else
 and a run on an arm with no pose recorded is refused before it starts. Only when a person typed
 the flag at a terminal, which is also checked before anything moves. And never by anything else:
 releasing is not a verb, it is in no `allow` list, and it is deliberately not on the
 `RobotAdapter` protocol, so there is nothing for an LLM or an MCP client to call. When you
-press Enter, quackd writes the pose you left the arm in as the goal *before* it re-enables
+press Enter, Roboglot writes the pose you left the arm in as the goal *before* it re-enables
 torque, writes it again, reads it back, and ends the run rather than starting it if a joint
 moved more than five degrees while your hand was still on it.
 
 The second is for an arm left holding itself up, and it puts the arm down before it lets go of
 it, because an SO-101 has no brake and an arm let go of where it stands drops
 ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)).
-`quackd robot release NAME` says that connecting takes torque off every motor for a moment and
+`roboglot robot release NAME` says that connecting takes torque off every motor for a moment and
 that the arm then folds to its rest pose, closes its gripper and is let go of there, so you
 support it while it connects and take your hands away when it says so: it waits 3 seconds for
 them before the fold,
@@ -554,14 +554,14 @@ Only the arm. Only when a person asks: `--yes` skips the question before the con
 else, so the questions about a missed fold are still put wherever a terminal can ask them, each
 needing its own Enter. With no terminal a fold that misses keeps torque on and nothing more is
 tried, an arm with no rest pose is refused, `--yes` or not, and without `--yes` the command
-refuses before it connects. The questions are never put on a dry run, over MCP, in a flock, on
+refuses before it connects. The questions are never put on a dry run, over MCP, in a team, on
 the simulator or over an arm that stopped answering. And never a verb or a tool. None of this
 has run on an arm yet. On 2026-09-23 the power switch was the only other way to put down an arm
 a run had left energised, and every run that got to its end that afternoon finished there
 ([adapters/lerobot/README.md](../adapters/lerobot/README.md#the-torque-rule)).
 
 **If a run ends while the arm is still limp in your hands and no take-hold has been refused,
-quackd picks it up before it folds it.** That state takes a Ctrl-C during the placement wait or
+Roboglot picks it up before it folds it.** That state takes a Ctrl-C during the placement wait or
 a heartbeat that died there, and the way out of it is the `stop` every teardown opens with: on
 an arm that is in somebody's hand that stop takes hold first, at wherever your hand has it, and
 the rest move then puts it down from there. Sending a goal to a limp servo would have been a
@@ -569,15 +569,15 @@ stop that stopped nothing. It never takes while a joint reads outside its calibr
 because a goal written where that joint is lies past the travel and is pulled to the end of it,
 and none leaves the servo the last goal it had, so torque stays off, and you are told at once,
 as the take-hold at Enter tells you, which joint and where it reads, and it goes on the record.
-Once a take-hold has been refused, at the end of the placement wait or in that stop, quackd
+Once a take-hold has been refused, at the end of the placement wait or in that stop, Roboglot
 leaves the arm alone for the rest of the run: no second take-hold, even after you move the joint
 back inside, no goal and no fold, because the arm is in your hands. What you are told is what a
 read found. An arm still lying at its rest pose with every motor off, because you pressed Enter
 without lifting it out of a fold recorded past its travel, is said to be still limp at its rest
-pose, with the joint to lift inside its travel before quackd takes hold. A take-hold whose read
+pose, with the joint to lift inside its travel before Roboglot takes hold. A take-hold whose read
 found some motors on names the joints that hold and says the rest is limp, and to keep hold of
 the arm and cut its power. One that asked for torque with nothing read back may have left the
-arm energised, so you are told quackd cannot confirm whether it has torque, to hold it as though
+arm energised, so you are told Roboglot cannot confirm whether it has torque, to hold it as though
 it may move or drop, and to cut its power to be sure, and the close says the same. Where the
 take-hold switched nothing on, the close says so in the one line that is worth reading:
 
@@ -586,7 +586,7 @@ the arm is limp and in your hands (...): put it down before you let go of it, be
 ```
 
 That line and the "torque was left on" one under "A LeRobot arm" below are opposites on purpose,
-and quackd has to pick the right one. Whoever reads this one is holding the arm, and being told
+and Roboglot has to pick the right one. Whoever reads this one is holding the arm, and being told
 instead that it is holding itself up is the sentence that gets an arm dropped. Where a release
 left some motors energised, "nothing is holding it up" would be the wrong one too, so that close
 names the joints that still read torque on and ends on cutting the power. And where nothing read
@@ -606,7 +606,7 @@ and a read that got the bus just before a write says nothing about what that wri
   switch is the only e-stop and it is not on the network.
 - **The host exits by itself after an hour** with no supervisor anywhere upstream, so a long
   session ends as a heartbeat failure rather than an error.
-- Blocks under the wheels until you have checked the turn direction: quackd converts rad/s to
+- Blocks under the wheels until you have checked the turn direction: Roboglot converts rad/s to
   the deg/s the wire wants, and a wrong conversion is a 57x error.
 - Work through
   [adapters/xlerobot/hardware-checklist.md](../adapters/xlerobot/hardware-checklist.md).
@@ -614,15 +614,15 @@ and a read that got the bus just before a write says nothing about what that wri
 **An AlohaMini (two arms on a 600 mm motorised lift):**
 
 - **As upstream ships it the arms are limp**, so the safest bring-up is on the stock host,
-  where the base and the lift can be exercised with no arm risk. quackd's own host wrapper is
+  where the base and the lift can be exercised with no arm risk. Roboglot's own host wrapper is
   what turns torque on, and upstream's `disconnect()` turns it off again, so a loaded arm
   falls when that host exits.
 - **The watchdog covers the base and the lift, never the arms** (`base_and_lift_only`).
 - **`home()` leaves the lift travelling** at full speed, because the write that would zero
-  that register is commented out upstream. quackd sends `stop` as its first command after
+  that register is commented out upstream. Roboglot sends `stop` as its first command after
   connecting for exactly this reason.
 - Clear the lift's whole travel before powering it. How fast it moves in mm/s is not stated
-  anywhere upstream, so quackd's duration estimate for `lift` is an assumption.
+  anywhere upstream, so Roboglot's duration estimate for `lift` is an assumption.
 - Work through
   [adapters/alohamini/hardware-checklist.md](../adapters/alohamini/hardware-checklist.md).
 
@@ -635,14 +635,14 @@ and a read that got the bus just before a write says nothing about what that wri
   order.** It keeps the feet off the ground until step 13, and steps 11 and 12 (pull the network
   cable mid-move, then send `SIGTERM`) are the two that matter most.
 - **The deadman is a slew, not a stop.** There is no velocity at this hardware boundary:
-  the command is an absolute pose. On silence the daemon quackd ships slews to the safe
+  the command is an absolute pose. On silence the daemon Roboglot ships slews to the safe
   pose at upstream's own rate, waist first, and holds. It never goes limp, because on
   this body torque off is a fall.
-- **quackd owns the control loop here**, which is true of no other body. Upstream's own
+- **Roboglot owns the control loop here**, which is true of no other body. Upstream's own
   `step()` is a no-op, so nothing times out and nothing re-arms without the daemon.
 - **An LLM server or a detector on the same board competes with that loop.** This robot
-  carries a Jetson, and quackd stays on your laptop, but the board can hold an LLM server and
-  quackd's host daemon beside quackd's ToddlerBot daemon ([guides/jetson.md](../guides/jetson.md)).
+  carries a Jetson, and Roboglot stays on your laptop, but the board can hold an LLM server and
+  Roboglot's host daemon beside Roboglot's ToddlerBot daemon ([guides/jetson.md](../guides/jetson.md)).
   An LLM server or a YOLO detector saturating the CPU and the memory bus is the load that starves a
   fifty hertz loop, and here a starved loop is a fall. Nobody has measured that contention on
   any board: keep the robot on a stand the first time, watch `tegrastats` while an LLM answers
@@ -656,29 +656,29 @@ and a read that got the bus just before a write says nothing about what that wri
 
 - **Run on the floor, not a table.** A 25 cm biped and a table edge do not mix.
 - **Keep pets and kids clear of `kick`** (and `grab`, and `roulade`).
-- **A gamepad does not out-rank quackd.** robotd keeps one twist, the newest from any client,
+- **A gamepad does not out-rank Roboglot.** robotd keeps one twist, the newest from any client,
   and ranks no client above another (`padd drives while a pad is connected` on the
   [Microduck page](../adapters/microduck/README.md)). A connected pad whose sticks nobody touches
-  sends a stop every 100 ms, and quackd re-sends its twist every 100 ms while a verb walks, so
+  sends a stop every 100 ms, and Roboglot re-sends its twist every 100 ms while a verb walks, so
   the twist the duck walks on flips between the two, and letting go of sticks nobody was
   touching changes nothing. A stick that asks for motion goes out on every tick of the pad,
-  more often than quackd's twist, so robotd holds the pad's most of the time. Once robotd's
-  state has gone three frames without showing quackd's twist, quackd holds the walk back and
+  more often than Roboglot's twist, so robotd holds the pad's most of the time. Once robotd's
+  state has gone three frames without showing Roboglot's twist, Roboglot holds the walk back and
   the verb fails with `robotd has not taken robot.move`, and letting go of the stick after that
   leaves the pad's stop as the newest twist until the pilot sends its next walk. What ends a
-  quackd walk outright is quackd's own `stop`, from Ctrl-C or `q` at the terminal, or the pad
-  button that sits the duck, `sit_toggle` on A unless the robot's owner moved it, since quackd
+  Roboglot walk outright is Roboglot's own `stop`, from Ctrl-C or `q` at the terminal, or the pad
+  button that sits the duck, `sit_toggle` on A unless the robot's owner moved it, since Roboglot
   sends no walk to a duck that is not standing. On robotd daemon-v0.18.8 or later a stock pad's Y
   and two bumpers end one too: each plays an emotion, robotd holds the twist at zero while one
   plays, and the verb fails with `robotd has not taken robot.move`. Nobody has tried any of this
   on a duck.
-- **robotd's deadman does not fire while quackd walks the duck.** It zeroes a twist older than
-  0.5 s, and quackd re-sends its twist every 100 ms for as long as a verb walks, so the deadman
-  stops the legs only once quackd's twists stop arriving: a tunnel pulled out, a laptop asleep,
+- **robotd's deadman does not fire while Roboglot walks the duck.** It zeroes a twist older than
+  0.5 s, and Roboglot re-sends its twist every 100 ms for as long as a verb walks, so the deadman
+  stops the legs only once Roboglot's twists stop arriving: a tunnel pulled out, a laptop asleep,
   a process killed. A pad that drops out mid-walk is none of those. The walk goes on, and
-  `padd` asks robotd to sit the duck 1 s after the pad went, after which quackd sends no walk
+  `padd` asks robotd to sit the duck 1 s after the pad went, after which Roboglot sends no walk
   to a duck that is not standing.
-- quackd never sends `robot.relax` (torque off — the robot collapses) or `robot.init`
+- Roboglot never sends `robot.relax` (torque off — the robot collapses) or `robot.init`
   (moves every joint). Use `robotctl` for those, with the robot on its stand.
 - A good first contract: `allow: [quack, gaze, stop]`, then add walking.
 
@@ -687,10 +687,10 @@ and a read that got the bus just before a write says nothing about what that wri
 - An arm sweeps a volume. Clear it before `move_joints`, and keep hands out of the path.
   A gripper is a pinch hazard even at the 50 % torque cap LeRobot writes at `configure()`.
 - **That cap is on the gripper and on nothing else**, so the five body joints have no
-  protection but their own firmware and quackd's heat gate: a joint at or above 60 °C refuses
+  protection but their own firmware and Roboglot's heat gate: a joint at or above 60 °C refuses
   to move.
-- **There is no e-stop and quackd cannot give it one.** Cutting the servo supply is the only
-  thing that stops this arm in every case, the one where quackd itself has died included.
+- **There is no e-stop and Roboglot cannot give it one.** Cutting the servo supply is the only
+  thing that stops this arm in every case, the one where Roboglot itself has died included.
 - **A slow move is a long one.** `move_joints` takes the `duration_s` it is given, up to 12
   seconds, a nudge of a few degrees included (only a goal the joint is already within a tenth
   of a degree of goes out at once), and a joint that meets something partway is called stalled
@@ -704,11 +704,11 @@ and a read that got the bus just before a write says nothing about what that wri
   for up to a minute and `manipulate` for 10 s unless a task file says otherwise, up to 60. Both
   are confirm-gated for that reason, a `--goal` run's `manipulate` included, so a person at a
   terminal is asked before each segment unless `--yes`, or a pipe or file on stdin, answers for
-  them. **Under `--yes`, and under `yes | quackd run` or `quackd run < answers.txt`, nobody is
+  them. **Under `--yes`, and under `yes | roboglot run` or `roboglot run < answers.txt`, nobody is
   asked:** a segment the pilot calls goes ahead on the pilot's word and a yes nobody said, and
   the record says the gate was allowed without naming anybody
   ([above](#who-the-record-says-was-asked)). Over MCP both verbs need `serve-mcp --yes`, so
-  quackd asks nobody before any segment there, and `quackd preflight` clears every segment of a
+  Roboglot asks nobody before any segment there, and `roboglot preflight` clears every segment of a
   rehearsal the same way, on the simulator alone. `--controller vla` refuses `--yes`, and a run
   with no terminal to ask on, since its verdict is a person's. Watch every segment, and keep
   `stop` within reach: a stop from anywhere, the heartbeat's included, ends a segment before it
@@ -726,7 +726,7 @@ and a read that got the bus just before a write says nothing about what that wri
   segment will not start with one more than 2 degrees outside. That keeps a policy from starting
   a rise out of a fold. It cannot halt one a move had already started, which the servo finishes
   at its own speed, so the power switch is still the only stop for that stretch.
-- **The policy runs in a server of its own**, `quackd policy serve`, and no quackd command loads
+- **The policy runs in a server of its own**, `roboglot policy serve`, and no Roboglot command loads
   a checkpoint in the process that holds the serial bus, because a checkpoint's processors can
   name code to import. The server's answers move the arm, so it wants a token on every request
   and binds loopback unless a TLS proxy stands in front of it, and the arm checks at connect,
@@ -751,22 +751,22 @@ and a read that got the bus just before a write says nothing about what that wri
   verb never drops what is held. It also writes no goal for a joint that reads past its
   calibrated travel, because the servo would clamp "stay here" to its limit and drive the joint
   there at full speed, and its summary names each joint it left alone. That skip avoids starting
-  a rise out of a fold and cannot halt one already under way: any goal quackd writes to a joint
+  a rise out of a fold and cannot halt one already under way: any goal Roboglot writes to a joint
   while it reads past its travel is the limit to the servo, so a joint a move had begun lifting
   keeps rising to that limit whatever the stop does. The power switch is the only stop for that
   stretch.
 - **A run needs a recorded rest pose, or the arm would fall when it ends.** LeRobot's own
-  `disconnect()` disables torque by its default and quackd asks for that at the end of every
+  `disconnect()` disables torque by its default and Roboglot asks for that at the end of every
   clean session over an arm with no rest pose recorded, which is why the arm fell at the end of
   every run on 2026-09-15. Fold the arm by hand while nothing is connected, record where it sits
-  with `quackd robot rest-pose <name>`, and quackd drives it back there between the `stop` and
+  with `roboglot robot rest-pose <name>`, and Roboglot drives it back there between the `stop` and
   the close, on every exit path there is: success, failure, infeasible, a spent budget, an
   abort, an error and Ctrl-C. It drives the arm there at the start of a run too, before the
   pilot gets control, and a run that cannot reach it aborts before the first LLM call. Only the
   five body joints are ever driven: the gripper is recorded and never commanded, for the same
   reason `stop` leaves it alone. With no pose recorded, which is also where
-  `quackd robot rest-pose <name> --clear` leaves an arm, a run, a dry run, an MCP session and a
-  flock refuse a real arm before anything connects, and `doctor` lets go of it where it stops,
+  `roboglot robot rest-pose <name> --clear` leaves an arm, a run, a dry run, an MCP session and a
+  team refuse a real arm before anything connects, and `doctor` lets go of it where it stops,
   as every session once did
   ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). An MCP session
   parks the arm at both ends too, and refuses to open at all if it cannot get there, because a
@@ -788,47 +788,47 @@ and a read that got the bus just before a write says nothing about what that wri
   [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Whether a joint let go at
   the edge settles onto its fold gently has not been watched on an arm yet, so watch the first
   one with a hand near it.
-- **An arm that did not reach that pose keeps torque instead of letting go.** quackd turns
+- **An arm that did not reach that pose keeps torque instead of letting go.** Roboglot turns
   LeRobot's flag off for that one case, leaves the arm holding itself up, and prints one line:
 
   ```
-  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
   ```
 
   The brackets name the joint furthest from where it was asked to be, what it reads, and why
   nothing put it there. That is a joint stopped short *inside* its travel: one parked at the
   edge of its travel, or folded past it, has reached the pose. `NAME` is the name the arm was
-  registered under wherever quackd knows it, and stays `NAME` where it does not, which is a
+  registered under wherever Roboglot knows it, and stays `NAME` where it does not, which is a
   bare spec such as `doctor --robot lerobot:real`. The arm is energised, the run is over, and
   nothing is going to put it down on its own, but "it will not fall" is true of the arm as it
-  stands and of nothing that connects to it. `quackd robot release` begins with a connect that
+  stands and of nothing that connects to it. `roboglot robot release` begins with a connect that
   takes torque off every motor for a moment, so support the arm while it connects, and then it
   folds the arm to its rest pose from wherever it now is and lets go of it there. Clear the way
   first, because a fold that runs into whatever stopped the last one stops again. The power
   switch works when the command cannot reach the arm. A run at a terminal puts its two questions
   about a missed fold itself, before the line is printed (under "Kill switch" above), and only
   over an arm that answered: an arm that went quiet, which is what cutting its supply looks
-  like, gets a line that says quackd cannot tell whether it is holding itself up, and to hold it
+  like, gets a line that says Roboglot cannot tell whether it is holding itself up, and to hold it
   and cut its power.
 - **A probe and a dry run now leave torque on where they used to drop it.** A dry run never
-  moves the arm and `quackd robot list --probe` never moves it either, so on an arm away from
+  moves the arm and `roboglot robot list --probe` never moves it either, so on an arm away from
   its recorded rest pose both end with torque on: the dry run prints the line above, and the
   probe says `ok, torque left on: not at its rest pose` in its `reachable` column. Its connect
   still takes torque off every motor for a moment, with no warning printed first, so hold an
   arm that is holding itself up before you probe it.
-  `quackd doctor` is the other way round: it drives a probed arm back to the pose and says which
+  `roboglot doctor` is the other way round: it drives a probed arm back to the pose and says which
   it got in a `rest pose` row, because a doctor probe disconnects like anything else, and that
   is one of the ways the arm fell.
 - **On a run with no `--by-hand`, a second Ctrl-C during the end-of-run rest move skips the close
   entirely.** The move is not
-  shielded from a `KeyboardInterrupt`, so the process exits with quackd's close never called,
+  shielded from a `KeyboardInterrupt`, so the process exits with Roboglot's close never called,
   torque never disabled, and the arm holding wherever the move had got to. LeRobot's own
   disconnect can still run as the process lets go of the arm, and it keeps torque, because
-  quackd builds the arm asking it to and asks for the release itself only where it may let go.
+  Roboglot builds the arm asking it to and asks for the release itself only where it may let go.
   In 0.14 and before the arm was built asking that disconnect for the release, so it could fall
   there. A crash that skips the close ends the same way. That is the safe direction and it is
   not a clean exit: the port closes with the arm still energised, so clear its way and run
-  `quackd robot release <name>`, which folds it to its rest pose and lets go of it there,
+  `roboglot robot release <name>`, which folds it to its rest pose and lets go of it there,
   supporting the arm while it connects, or hold it and cut its power. The fold the first
   question over a missed fold asks for is shielded, as every fold of a `--by-hand` run is: a press
   during it stops it and keeps torque on, and the close still happens.
@@ -838,23 +838,23 @@ and a read that got the bus just before a write says nothing about what that wri
 
 **A wheeled base over rosbridge:**
 
-- No deadman was verified anywhere in that stack, so if quackd dies mid-verb the base
+- No deadman was verified anywhere in that stack, so if Roboglot dies mid-verb the base
   keeps its last Twist until its own driver times out, if it does at all. Test on blocks
   with the wheels off the ground before testing on the floor.
-- quackd re-sends the Twist at 10 Hz while a verb runs and publishes a zero Twist on
+- Roboglot re-sends the Twist at 10 Hz while a verb runs and publishes a zero Twist on
   `stop`, on close, and when the heartbeat fails. That is the entire stop authority.
-- The speed limits are quackd's caution (`limits.max_vx`, `max_wz` in the manifest), not
+- The speed limits are Roboglot's caution (`limits.max_vx`, `max_wz` in the manifest), not
   the base's capability. Lower them before the first real drive.
 - A good first contract: `allow: [observe, report_state, introspect, stop]`. Nothing there
   publishes a Twist, so you can read what the bridge says the robot is before you drive it.
 
 **An Open Duck Mini v2:**
 
-- **If it falls, quackd cannot pick it up, and on hardware it cannot tell that it has.**
+- **If it falls, Roboglot cannot pick it up, and on hardware it cannot tell that it has.**
   There is no get-up policy, so `stand_up` does not exist for it, and nothing on the bridge
   backend detects a fall: no verb refuses because the duck is down, and every observation
   says `fall-blind`. You are the fall detector: keep it on a stand until you trust the link.
-- The deadman is quackd's own, and it runs on the robot. quackd's bridge daemon zeroes the
+- The deadman is Roboglot's own, and it runs on the robot. Roboglot's bridge daemon zeroes the
   velocity after 300 ms of silence, inside the call the control loop makes every tick, so a
   server thread that is starved, wedged or dead still stops the duck. Test it by pulling
   your laptop's Wi-Fi mid-walk before you rely on it.
@@ -868,7 +868,7 @@ and a read that got the bus just before a write says nothing about what that wri
   it and upstream's script at the same time.
 - The bridge binds loopback and wants a token, because a port that walks a robot on a shared
   network is a hazard. Prefer `ssh -L 9871:127.0.0.1:9871 your-pi`.
-- The camera is a second process (`quackd_duck_camd.py`) serving one JPEG over HTTP with
+- The camera is a second process (`roboglot_duck_camd.py`) serving one JPEG over HTTP with
   **no authentication at all**. It binds loopback and warns if you bind it wider, because
   it shows whatever the robot can see. Tunnel it rather than exposing it.
 - The only e-stop is the power switch.
@@ -880,38 +880,38 @@ and a read that got the bus just before a write says nothing about what that wri
 
 ## On other bodies
 
-quackd drives more than the duck, and the honest answer to "what stops it when
-quackd goes quiet" differs per body. Each manifest says so
+Roboglot drives more than the duck, and the honest answer to "what stops it when
+Roboglot goes quiet" differs per body. Each manifest says so
 (`safety_authority: {native, deadman}`), and `stop` always means stop, never collapse:
 
 | Body | Native authority | What `stop` does | Never sent |
 |---|---|---|---|
 | Microduck (`microduck:*`) | `robotd_deadman`: velocity zeroes when intents stop | `robot.stop` | `robot.relax`, `robot.init` |
-| Huebot (`huebot:*`) | `none` claimed on `huebot:jsonrpc`, with no deadman, until a Huebot has passed step 3 of [its checklist](../adapters/huebot/hardware-checklist.md), which tests it on a stand before anything walks. quackd relies all the same on the deadman the shim its maker is writing is asked to keep, robotd's: velocity zeroes when intents stop. Nobody has seen it | `robot.stop` | `robot.relax`, `robot.init`, and `robot.look` and `robot.head`, which the shim does not answer yet |
-| LeRobot arm (`lerobot:*`) | `torque_limit`: the gripper's torque and current caps and nothing on the five body joints (`extras.torque_limit_scope` is `gripper_only`), plus a capped step per action that quackd sets; no deadman, a position-controlled arm holds its goal | re-sends the present position as the goal (hold) for each of the five body joints that reads inside its travel, writes none for one that reads past it, and leaves the gripper's goal alone. The rest move that follows a run's last `stop` is the only thing that puts the arm down | `disable_torque`, of quackd's own accord: only a person asks for it, with `--by-hand` at the rest pose, with `quackd robot release` once it has folded the arm there, or where the arm stands, which drops it, only on Enter at a question that says so: after two folds missed, at the end of a run or in that command, or before that command connects to an arm with no rest pose. LeRobot's own `disconnect()` still does, by its default, at the end of a session, but only where quackd's close asks it to, once the arm has been driven back to its recorded rest pose, or to the edge of its travel where that pose lies past it: an arm that did not get there is left holding itself up, with one line saying so, and so is an arm whose exit skipped the close. With no rest pose recorded, a real arm is refused a run, a dry run and an MCP session before anything connects, and a probe, `doctor` or `robot list --probe`, lets it sag where it stands |
-| rosbridge base (`rosbridge:*`) | `none`: neither rosbridge nor the driver has a deadman we verified | publishes a zero Twist; quackd also re-sends the Twist at 10 Hz while a verb runs | silence |
-| Open Duck Mini v2 (`open_duck:*`) | `none` in the robot, but quackd's own bridge daemon runs on it and zeroes the velocity after 300 ms of silence, inside the 50 Hz loop | zero velocity, head held, torque still on | anything that reaches torque, the head-control mode button, any direct servo or IMU read |
+| Huebot (`huebot:*`) | `none` claimed on `huebot:jsonrpc`, with no deadman, until a Huebot has passed step 3 of [its checklist](../adapters/huebot/hardware-checklist.md), which tests it on a stand before anything walks. Roboglot relies all the same on the deadman the shim its maker is writing is asked to keep, robotd's: velocity zeroes when intents stop. Nobody has seen it | `robot.stop` | `robot.relax`, `robot.init`, and `robot.look` and `robot.head`, which the shim does not answer yet |
+| LeRobot arm (`lerobot:*`) | `torque_limit`: the gripper's torque and current caps and nothing on the five body joints (`extras.torque_limit_scope` is `gripper_only`), plus a capped step per action that Roboglot sets; no deadman, a position-controlled arm holds its goal | re-sends the present position as the goal (hold) for each of the five body joints that reads inside its travel, writes none for one that reads past it, and leaves the gripper's goal alone. The rest move that follows a run's last `stop` is the only thing that puts the arm down | `disable_torque`, of Roboglot's own accord: only a person asks for it, with `--by-hand` at the rest pose, with `roboglot robot release` once it has folded the arm there, or where the arm stands, which drops it, only on Enter at a question that says so: after two folds missed, at the end of a run or in that command, or before that command connects to an arm with no rest pose. LeRobot's own `disconnect()` still does, by its default, at the end of a session, but only where Roboglot's close asks it to, once the arm has been driven back to its recorded rest pose, or to the edge of its travel where that pose lies past it: an arm that did not get there is left holding itself up, with one line saying so, and so is an arm whose exit skipped the close. With no rest pose recorded, a real arm is refused a run, a dry run and an MCP session before anything connects, and a probe, `doctor` or `robot list --probe`, lets it sag where it stands |
+| rosbridge base (`rosbridge:*`) | `none`: neither rosbridge nor the driver has a deadman we verified | publishes a zero Twist; Roboglot also re-sends the Twist at 10 Hz while a verb runs | silence |
+| Open Duck Mini v2 (`open_duck:*`) | `none` in the robot, but Roboglot's own bridge daemon runs on it and zeroes the velocity after 300 ms of silence, inside the 50 Hz loop | zero velocity, head held, torque still on | anything that reaches torque, the head-control mode button, any direct servo or IMU read |
 | XLeRobot (`xlerobot:*`) | `none`: the host's own 500 ms watchdog is real but calls `stop_base()`, which zeroes the three wheels and **nothing else**, so the 14 arm and head servos keep holding under torque. `deadman_scope` says `base_only` | zeroes the three velocity keys and leaves every arm goal exactly where it was, deliberately not rebuilding a hold from an unstamped reading that may be cycles old | `disconnect()`, which is upstream's torque-off, and any `enable(on=False)` |
-| AlohaMini (`alohamini:*`) | `none`: the host's 1 s watchdog calls `stop_motion()`, which is the base and the lift and never the arms. `deadman_scope` says `base_and_lift_only` | one payload carrying all three velocity zeros **and** a lift velocity zero, because omitting either leaves the robot travelling | anything that disables arm torque. As shipped the arms are already limp, which is why the arm verbs need quackd's own host wrapper and refuse without it |
-| MOSS (`moss:*`) | `none` in the rover for what quackd starts: the firmware's own 0.3 s command timeout and dimOS's 0.2 s velocity watchdog end a twist, and nothing on the rover halts a goal or an exploration. With quackd's bridge on the rover the manifest claims `deadman: true`, and `deadman_scope` says what it covers: a twist zeroed 0.3 s after its last request, and three missed keepalives after a session goes quiet, the arm cycle, the goal, the exploration or the litter mission that session started | the bridge's `/stop` and the cockpit's soft stop at once. Off `moss-litter` a zero on the pad's channel first, then the arm's cancel and two reads of its joints. On `moss-litter` the mission's own stop, the end of its pick script, the cancel and the zero, then the mission's stop confirmed | the cockpit's `/cmd/stack` and `tools/moss-fly.sh stop`, either of which ends the arm's run and with it the arm's torque, and any torque off of quackd's own |
-| Industrial arm on ROS 2 (`rosarm:*`) | `estop`, with no deadman: the pendant's stop and the controller's own safety system, which are the integrator's and not quackd's. Nothing between quackd and the arm ends a goal on its client's silence: rosbridge cancels nothing for a client that has gone, the JointTrajectoryController's own timeout is off by default, and MotoROS2 is read to watch only its own agent. So when quackd goes quiet the arm finishes the move it was given, at most 12 s long, and holds there, as read and not yet seen on an arm. quackd's heartbeat cancels what it can reach when the socket drops, when the readings stop and when the driver stops the arm itself ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | cancels the running goal and waits up to 2 s for the controller to say it is cancelled, which every one of these controllers ends by holding where the arm is. With no goal running it sends nothing | anything that powers, enables, un-brakes or un-stops an arm: UR's dashboard, KUKA's `robot_manager`, MotoROS2's `start_traj_mode`, a service that clears an alarm or plays a program. And no rest pose: quackd parks none of these arms, since a move nobody asked for at the end of a run is the hazard here |
-| A described body (`described:*`) | `none`, and nothing to claim: quackd drives no part of it, so nothing of quackd's moves it and nothing of quackd's stops it. Whatever stops the real robot is its own, and its file says what its maker publishes about that | answers that there is nothing to stop and sends nothing, because nothing here reaches a robot. The run or the session goes on until its pilot ends it | everything: no intent of any kind leaves quackd for a described body |
-| ToddlerBot (`toddlerbot:*`) | `none` in the robot, and nothing upstream has a watchdog, timeout or e-stop at all. quackd's own daemon runs on it and after 500 ms of silence slews to the safe pose at upstream's own 0.3 rad/s, waist first, and **holds** | holds the last verified-good measured pose. There is no velocity at this hardware boundary, so `stop` cannot mean zero velocity | torque off, ever. Silence on this body means hold forever and torque off means fall, so the deadman is a trajectory rather than a message |
+| AlohaMini (`alohamini:*`) | `none`: the host's 1 s watchdog calls `stop_motion()`, which is the base and the lift and never the arms. `deadman_scope` says `base_and_lift_only` | one payload carrying all three velocity zeros **and** a lift velocity zero, because omitting either leaves the robot travelling | anything that disables arm torque. As shipped the arms are already limp, which is why the arm verbs need Roboglot's own host wrapper and refuse without it |
+| MOSS (`moss:*`) | `none` in the rover for what Roboglot starts: the firmware's own 0.3 s command timeout and dimOS's 0.2 s velocity watchdog end a twist, and nothing on the rover halts a goal or an exploration. With Roboglot's bridge on the rover the manifest claims `deadman: true`, and `deadman_scope` says what it covers: a twist zeroed 0.3 s after its last request, and three missed keepalives after a session goes quiet, the arm cycle, the goal, the exploration or the litter mission that session started | the bridge's `/stop` and the cockpit's soft stop at once. Off `moss-litter` a zero on the pad's channel first, then the arm's cancel and two reads of its joints. On `moss-litter` the mission's own stop, the end of its pick script, the cancel and the zero, then the mission's stop confirmed | the cockpit's `/cmd/stack` and `tools/moss-fly.sh stop`, either of which ends the arm's run and with it the arm's torque, and any torque off of Roboglot's own |
+| Industrial arm on ROS 2 (`rosarm:*`) | `estop`, with no deadman: the pendant's stop and the controller's own safety system, which are the integrator's and not Roboglot's. Nothing between Roboglot and the arm ends a goal on its client's silence: rosbridge cancels nothing for a client that has gone, the JointTrajectoryController's own timeout is off by default, and MotoROS2 is read to watch only its own agent. So when Roboglot goes quiet the arm finishes the move it was given, at most 12 s long, and holds there, as read and not yet seen on an arm. Roboglot's heartbeat cancels what it can reach when the socket drops, when the readings stop and when the driver stops the arm itself ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | cancels the running goal and waits up to 2 s for the controller to say it is cancelled, which every one of these controllers ends by holding where the arm is. With no goal running it sends nothing | anything that powers, enables, un-brakes or un-stops an arm: UR's dashboard, KUKA's `robot_manager`, MotoROS2's `start_traj_mode`, a service that clears an alarm or plays a program. And no rest pose: Roboglot parks none of these arms, since a move nobody asked for at the end of a run is the hazard here |
+| A described body (`described:*`) | `none`, and nothing to claim: Roboglot drives no part of it, so nothing of Roboglot's moves it and nothing of Roboglot's stops it. Whatever stops the real robot is its own, and its file says what its maker publishes about that | answers that there is nothing to stop and sends nothing, because nothing here reaches a robot. The run or the session goes on until its pilot ends it | everything: no intent of any kind leaves Roboglot for a described body |
+| ToddlerBot (`toddlerbot:*`) | `none` in the robot, and nothing upstream has a watchdog, timeout or e-stop at all. Roboglot's own daemon runs on it and after 500 ms of silence slews to the safe pose at upstream's own 0.3 rad/s, waist first, and **holds** | holds the last verified-good measured pose. There is no velocity at this hardware boundary, so `stop` cannot mean zero velocity | torque off, ever. Silence on this body means hold forever and torque off means fall, so the deadman is a trajectory rather than a message |
 
 The verbs a body lacks are not gated, they do not exist: an arm cannot `move`, a base
 cannot `say`, and `validate --robot` says so before a run starts.
 
 What each body can carry, reach and survive is its **datasheet**
-([reference/manifest-spec.md](../reference/manifest-spec.md)): every number with how sure quackd is
+([reference/manifest-spec.md](../reference/manifest-spec.md)): every number with how sure Roboglot is
 of it and who says so, and a figure the maker never published listed as not published rather than
 guessed at. The pilot is shown it and told to judge the task against it before anything moves, which
-is what `assess_task` is for, and a `.duck` file can correct it for the build in front of
+is what `assess_task` is for, and a `.glot` file can correct it for the build in front of
 you ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
 
-## What quackd does not protect against
+## What Roboglot does not protect against
 
 An LLM that is *allowed* to `walk` can walk into a wall; the sim has walls, your living
-room has stairs. The allowlist is your tool: a `.duck` for a new space should start small.
+room has stairs. The allowlist is your tool: a `.glot` for a new space should start small.
 
 The feasibility verdict is the LLM's own guess about the world, weighed against numbers
 that carry confidence labels of their own, and neither is a measurement. A wrong `feasible`
@@ -925,9 +925,9 @@ nothing: a played run has exactly the verbs, limits, budgets and gates the same 
 play. What a part changes is what the pilot chooses to do with them, so a played run moves where
 a plain one might have stopped, and its rules about people, mimes and the record are prose that
 no gate reads. A played run's ending and any note it keeps go into the robot's memory like any
-other run's, so `--no-memory` on `quackd run` keeps a session of parts out of what the robot
-remembers. `quackd record` has no such flag and always keeps them, in the Microduck simulator's
-memory unless `QUACKD_MEMORY_DIR` points it elsewhere.
+other run's, so `--no-memory` on `roboglot run` keeps a session of parts out of what the robot
+remembers. `roboglot record` has no such flag and always keeps them, in the Microduck simulator's
+memory unless `ROBOGLOT_MEMORY_DIR` points it elsewhere.
 
 There is one more thing to know about. A robot's memory
 ([guides/memory.md](../guides/memory.md)) is text an LLM wrote, kept on disk, and handed to the
@@ -937,16 +937,16 @@ being true. What a note can do is persuade a later run, including a later run of
 task on the same body. An LLM that concludes something wrong ("the sofa is safe to walk
 under") will keep telling itself so until somebody deletes the line. That is the whole point
 of the feature and also its whole risk, which is why the file is plain text you can read,
-`quackd memory show` prints exactly what the pilot was told, `quackd memory clear` forgets
+`roboglot memory show` prints exactly what the pilot was told, `roboglot memory clear` forgets
 it, and `--no-memory` runs as if it were never there.
 
 There is a second thing that is not about the body. `--robot microduck:mujoco` downloads an
 MJCF, 38 meshes and two ONNX policies from GitHub and the Hugging Face Hub the first time it
-runs, into `~/.quackd/cache`, and then runs those policies in quackd's own process. What guards
-that: the commit and the revision are pinned in `adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`, every file is
+runs, into `~/.roboglot/cache`, and then runs those policies in Roboglot's own process. What guards
+that: the commit and the revision are pinned in `adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py`, every file is
 checked against a sha256 recorded when it was read and a mismatch is a refusal, and the tarball
 is unpacked by name against a fixed list rather than by whatever it contains. What does not:
-`QUACKD_MICRODUCK_ASSETS` points quackd at a checkout of your own, and there a file that differs
+`ROBOGLOT_MICRODUCK_ASSETS` points Roboglot at a checkout of your own, and there a file that differs
 from the pin is a warning and the run continues, which is deliberate, because a newer export is
 what somebody with a checkout usually wants. The state says which you got
 (`extras.model_pinned`), so the transcript records it. Nothing in this path reaches a robot: the

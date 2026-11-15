@@ -3,31 +3,31 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-moss"
+name = "roboglot-moss"
 dynamic = ["version"]
-description = "The MOSS litter-picking rover adapter for quackd. Install it as quackd[moss]."
+description = "The MOSS litter-picking rover adapter for Roboglot. Install it as roboglot[moss]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35"]
+dependencies = ["roboglot>=0.34.0,<0.35"]
 
 
-[project.entry-points."quackd.adapters"]
-moss = "quackd_moss"
+[project.entry-points."roboglot.adapters"]
+moss = "roboglot_moss"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/moss/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_moss/__init__.py"
+path = "src/roboglot_moss/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_moss"]
+packages = ["src/roboglot_moss"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

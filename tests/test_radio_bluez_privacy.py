@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from quackd.radio.bluez.privacy import (
+from roboglot.radio.bluez.privacy import (
     BACKUP,
     MAIN_CONF,
     PRIVATE,
@@ -107,7 +107,7 @@ def test_installing_backs_up_once_installs_as_root_and_restarts_bluetoothd() -> 
     assert not any("cp" in c for c in again)  # never over the backup of the original
 
 
-def test_uninstall_restores_only_a_file_still_as_quackd_left_it() -> None:
+def test_uninstall_restores_only_a_file_still_as_roboglot_left_it() -> None:
     assert should_restore(with_privacy(STOCK), STOCK)
     assert not should_restore(with_privacy(STOCK) + "# mine\n", STOCK)
     assert not should_restore(with_privacy(STOCK), None)

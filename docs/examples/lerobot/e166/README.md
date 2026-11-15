@@ -1,6 +1,6 @@
 # E166: The power switch, first
 
-**The power switch cut the arm during its lift, twice, and both times quackd ended the run saying the arm did not answer, with no traceback.**
+**The power switch cut the arm during its lift, twice, and both times Roboglot ended the run saying the arm did not answer, with no traceback.**
 
 **Part 1 of 2:** Cut, and left off
 
@@ -14,7 +14,7 @@ Filmed with an external camera. The GIF plays at 5x speed.
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Partly | ERROR / ABORTED | 2026-11-10 | 0.34.0 |
 
@@ -23,9 +23,9 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** An SO-101 has no emergency stop button, and quackd cannot give it one: cutting the servo supply is the one thing that stops this arm in every case, including the one where quackd itself has died. This example cuts it on purpose, mid-move, with the move small and a hand under the arm, to see the arm go limp and quackd end the run cleanly and say why, instead of crashing.
+**Why this example exists:** An SO-101 has no emergency stop button, and Roboglot cannot give it one: cutting the servo supply is the one thing that stops this arm in every case, including the one where Roboglot itself has died. This example cuts it on purpose, mid-move, with the move small and a hand under the arm, to see the arm go limp and Roboglot end the run cleanly and say why, instead of crashing.
 
-**Why this result is important:** The switch stopped the arm both times. quackd's first sign of it came within half a second of the last goal the arm answered, and each run ended saying `the arm did not answer`, with no Python traceback, about 1.7 s and 1.6 s after that goal. Neither asked a person anything, since the arm could not answer, and both closed by telling the person what to do, `hold it, and cut its power`. Part 1 ended on the run's own read of the arm, the path that on 0.31.2 and before ended in a traceback.
+**Why this result is important:** The switch stopped the arm both times. Roboglot's first sign of it came within half a second of the last goal the arm answered, and each run ended saying `the arm did not answer`, with no Python traceback, about 1.7 s and 1.6 s after that goal. Neither asked a person anything, since the arm could not answer, and both closed by telling the person what to do, `hold it, and cut its power`. Part 1 ended on the run's own read of the arm, the path that on 0.31.2 and before ended in a traceback.
 
 ## The goal
 
@@ -36,9 +36,9 @@ Prove the only real emergency stop before any line moves a joint on purpose: cut
 ## What the run showed
 
 * In both parts the LLM read the arm, judged the lift `feasible` and sent `move_joints` with elbow_flex 76 over 10 s, from 96 at rest.
-* In Part 1 the supply went near the end of the lift, 9.7 s into it: the last goal the arm answered was elbow_flex 76.6. 0.4 s later the move had failed, `Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries`, and the stop quackd sent after it was refused. The heartbeat failed next, and the run's own read of the arm ended it in an error, in one line and with no Python traceback: `the arm did not answer`.
+* In Part 1 the supply went near the end of the lift, 9.7 s into it: the last goal the arm answered was elbow_flex 76.6. 0.4 s later the move had failed, `Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries`, and the stop Roboglot sent after it was refused. The heartbeat failed next, and the run's own read of the arm ended it in an error, in one line and with no Python traceback: `the arm did not answer`.
 * In Part 2 the supply went partway through, 6.4 s in: the last goal was elbow_flex 83.4, and 0.2 s later the heartbeat met the silence first, `heartbeat failed: the arm did not answer`. The move failed after it, and the run ended `ABORTED`.
-* Every `stop` quackd sent after the cut was refused, `the hold did not reach the arm`, and the fold failed too, `the arm did not reach its rest pose`. Nothing asked the person anything, and both runs closed with `quackd cannot tell whether the arm is holding itself up`, telling them to hold it and cut its power.
+* Every `stop` Roboglot sent after the cut was refused, `the hold did not reach the arm`, and the fold failed too, `the arm did not reach its rest pose`. Nothing asked the person anything, and both runs closed with `roboglot cannot tell whether the arm is holding itself up`, telling them to hold it and cut its power.
 
 ## What the run did not show
 
@@ -47,7 +47,7 @@ Prove the only real emergency stop before any line moves a joint on purpose: cut
 * It misses the card's `within about a second`. From the last goal the arm answered to the end of the run took about 1.7 s in Part 1 and 1.6 s in Part 2.
 * The same cut ended in an error once and was aborted once. Which one depends on whether the heartbeat had failed by the time the move gave up. In Part 2 it had. In Part 1 the move gave up first, and the run's own next read of the arm met the silence. The card's `ends in an error` fits only Part 1.
 * It does not show how far the arm fell, or whether the hand under it caught it. The record stops at the cut, with the last goals elbow_flex 76.6 and 83.4 from 96 at rest.
-* It does not show the card's third line, `quackd doctor` with the switch off.
+* It does not show the card's third line, `roboglot doctor` with the switch off.
 
 ## How the run ended
 
@@ -67,29 +67,29 @@ The run ended with **ABORTED**. The reason on record:
 
 **Part 1 of 2:** Cut, and left off
 
-The following command was run with quackd 0.34.0:
+The following command was run with Roboglot 0.34.0:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e166/raise-for-the-switch.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
 **Part 2 of 2:** Cut, then switched back on after the run had ended
 
-The following command was run with quackd 0.34.0:
+The following command was run with Roboglot 0.34.0:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e166/raise-for-the-switch.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
 ## The numbers
 
 | | Part 1 | Part 2 |
 |---|---|---|
-| quackd version | 0.34.0 | 0.34.0 |
+| roboglot version | 0.34.0 | 0.34.0 |
 | Started | 2026-11-10 13:10:36 UTC | 2026-11-10 13:16:28 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` |
-| Task file | [`raise-for-the-switch.duck`](raise-for-the-switch.duck) | [`raise-for-the-switch.duck`](raise-for-the-switch.duck) |
+| Task file | [`raise-for-the-switch.glot`](raise-for-the-switch.glot) | [`raise-for-the-switch.glot`](raise-for-the-switch.glot) |
 | Steps | 2 | 2 |
 | LLM calls | 3 | 3 |
 | Total time | 45.6 s | 32.0 s |
@@ -119,10 +119,10 @@ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run docs/examples/lerobot/e166/raise-for-the-switch.glot --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -131,8 +131,8 @@ quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot lerobot:
 <summary>Show the full terminal trace (272 lines)</summary>
 
 ```text
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.34.0, started 2026-11-10T13:10:29Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e166/raise-for-the-switch.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.34.0, started 2026-11-10T13:10:29Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e166-raise-for-the-switch ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -141,7 +141,7 @@ quackd 0.34.0, started 2026-11-10T13:10:29Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 11.62 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -171,7 +171,7 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -179,8 +179,8 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -190,13 +190,13 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -262,12 +262,12 @@ step 1/10 · LLM calls 2/16, 0.3/4 min ─────────────�
 ✗  send    stop REFUSED: the hold did not reach the arm: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out
 ·  note    moving to the rest pose
 ·  note    the arm did not reach its rest pose: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out
-·  note    quackd cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out), so it kept whatever torque the arm has: hold it, and cut its power
+·  note    Roboglot cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out), so it kept whatever torque the arm has: hold it, and cut its power
 ✗ error: the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation
 timed out
 
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.34.0, started 2026-11-10T13:16:24Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e166/raise-for-the-switch.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.34.0, started 2026-11-10T13:16:24Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e166-raise-for-the-switch ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -276,7 +276,7 @@ quackd 0.34.0, started 2026-11-10T13:16:24Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 7.89 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -306,7 +306,7 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -314,8 +314,8 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -325,13 +325,13 @@ system prompt, 5658 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -395,7 +395,7 @@ step 1/10 · LLM calls 2/16, 0.2/4 min ─────────────�
 ✗  send    stop REFUSED: the hold did not reach the arm: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out
 ·  note    moving to the rest pose
 ·  note    the arm did not reach its rest pose: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out
-·  note    quackd cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out), so it kept whatever torque the arm has: hold it, and cut its power
+·  note    Roboglot cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation timed out), so it kept whatever torque the arm has: hold it, and cut its power
 ╭─ ✗ ABORTED ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' from motor IDs [1, 2, 3, 4, 5, 6] after 3 tries. motor 1: Operation      │
 │ timed out                                                                                                                                                │

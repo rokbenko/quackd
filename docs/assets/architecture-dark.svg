@@ -42,7 +42,7 @@
 <g id="family-humanoid">
 <rect x="651" y="218" width="193" height="144" rx="8" fill="#0d1117" stroke="#3d444d"/>
 <text x="667" y="240" font-size="14" fill="#e6edf3" font-weight="600">Humanoid, own loop</text>
-<text x="667" y="258" font-size="13" fill="#9198a1">a loop quackd ships,</text>
+<text x="667" y="258" font-size="13" fill="#9198a1">a loop Roboglot ships,</text>
 <text x="667" y="276" font-size="13" fill="#9198a1">safe-pose slew,</text>
 <text x="667" y="294" font-size="13" fill="#9198a1">keyframes, clamps</text>
 <text x="667" y="318" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="toddlerbot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">toddlerbot</tspan></text>
@@ -72,9 +72,9 @@
 </g>
 <g id="route-bridge">
 <rect x="582.667" y="446" width="261.333" height="180" rx="8" fill="#0d1117" stroke="#3d444d"/>
-<text x="598.667" y="468" font-size="14" fill="#e6edf3" font-weight="600">A bridge quackd ships</text>
-<text x="598.667" y="486" font-size="13" fill="#9198a1">quackd runs a daemon of its own on</text>
-<text x="598.667" y="504" font-size="13" fill="#9198a1">the robot</text>
+<text x="598.667" y="468" font-size="14" fill="#e6edf3" font-weight="600">A bridge Roboglot ships</text>
+<text x="598.667" y="486" font-size="13" fill="#9198a1">Roboglot runs a daemon of its own</text>
+<text x="598.667" y="504" font-size="13" fill="#9198a1">on the robot</text>
 <text x="598.667" y="528" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="open_duck" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">open_duck</tspan><tspan>, </tspan><tspan data-adapter="alohamini" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">alohamini</tspan><tspan>,</tspan></text>
 <text x="598.667" y="546" font-size="13" fill="#e6edf3" xml:space="preserve"><tspan data-adapter="toddlerbot" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">toddlerbot</tspan><tspan>, </tspan><tspan data-adapter="moss" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace">moss</tspan></text>
 </g>

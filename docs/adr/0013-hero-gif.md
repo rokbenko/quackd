@@ -10,13 +10,13 @@ as the README hero. At build time this machine had no provider API key (no
 
 ## Decision
 
-- `docs/assets/hero.gif` is recorded with `quackd record find-and-kick --provider fake
+- `docs/assets/hero.gif` is recorded with `roboglot record find-and-kick --provider fake
   --seed 3` — the built-in simulator driven by the **scripted** pilot — and is labelled as
   such in the README caption and in `docs/assets/README.md`.
 - `docs/assets/transcript-example.jsonl` is the matching transcript, so readers can see
   the observation → tool call → result rhythm even without an LLM in the loop.
 - Regenerating with a real LLM is one command and is tracked as an open item in
-  `PLAN.md`: `quackd record find-and-kick --provider anthropic --seed 3`, then copy
+  `PLAN.md`: `roboglot record find-and-kick --provider anthropic --seed 3`, then copy
   `runs/<ts>/run.gif` and `transcript.jsonl` over the assets and drop the "scripted" label.
 
 ## Consequences

@@ -18,17 +18,17 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.base import AdapterNotInstalled
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_rosarm.bodies import BODIES, arm_body
-from quackd_rosarm.fake import FakeBridge, description_urdf
-from quackd_rosarm.transport import (
+from roboglot.adapters.base import AdapterNotInstalled
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot_rosarm.bodies import BODIES, arm_body
+from roboglot_rosarm.fake import FakeBridge, description_urdf
+from roboglot_rosarm.transport import (
     CANCEL_WAIT_S,
     RosArmWs,
     parse_address,
     trajectory_goal,
 )
-from quackd_rosbridge.ws import build_roslibpy
+from roboglot_rosbridge.ws import build_roslibpy
 
 UR = arm_body("ur5e")
 MOTO = arm_body("yaskawa-motomini")
@@ -96,7 +96,7 @@ def test_the_address_names_what_a_bringup_changed() -> None:
         ("ws://cell:9090?status=maybe", "is on or off"),
     ],
 )
-def test_an_address_quackd_cannot_read_is_refused(address: str, said: str) -> None:
+def test_an_address_roboglot_cannot_read_is_refused(address: str, said: str) -> None:
     with pytest.raises(TransportError, match=said):
         parse_address(address, UR)
 
@@ -195,7 +195,7 @@ async def test_a_goal_an_earlier_run_left_running_refuses_the_connect_until_it_e
     with pytest.raises(TransportError) as refused:
         await _over(fake).connect()
     said = str(refused.value)
-    assert f"{body.action} is still running a goal sent before quackd connected (executing)" in (
+    assert f"{body.action} is still running a goal sent before Roboglot connected (executing)" in (
         said
     )
     assert "stop it on the pendant, then connect again" in said
@@ -218,10 +218,10 @@ async def test_a_goal_an_earlier_run_left_running_refuses_the_connect_until_it_e
 @pytest.mark.parametrize(
     ("statuses", "said"),
     [
-        ([1], "a goal sent before quackd connected (accepted)"),
-        ([2], "a goal sent before quackd connected (executing)"),
-        ([3], "a goal sent before quackd connected (canceling)"),
-        ([4, 2, 3], "2 goals sent before quackd connected (executing, canceling)"),
+        ([1], "a goal sent before Roboglot connected (accepted)"),
+        ([2], "a goal sent before Roboglot connected (executing)"),
+        ([3], "a goal sent before Roboglot connected (canceling)"),
+        ([4, 2, 3], "2 goals sent before Roboglot connected (executing, canceling)"),
         ([4, 5, 6], None),
         ([], None),
     ],
@@ -277,8 +277,8 @@ async def test_an_unreachable_bridge_says_where_it_looked() -> None:
 
 def test_the_missing_extra_names_this_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "roslibpy", None)
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosarm\]") as missing:
-        build_roslibpy("localhost", 9090, False, adapter="rosarm", extra="quackd[rosarm]")
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[rosarm\]") as missing:
+        build_roslibpy("localhost", 9090, False, adapter="rosarm", extra="roboglot[rosarm]")
     assert missing.value.adapter == "rosarm"
 
 
@@ -459,7 +459,7 @@ async def test_no_goal_goes_out_on_a_dropped_socket_and_the_heartbeat_lets_go_fo
     goal = {joint: 10.0 for joint in UR.joints}
     sent = await transport.send_intent(Intent.joint(goal, 4.0))
     assert not sent.accepted and "is not connected, so no goal is sent" in str(sent.reason)
-    with pytest.raises(HeartbeatError, match="quackd let go of the client"):
+    with pytest.raises(HeartbeatError, match="Roboglot let go of the client"):
         await transport.heartbeat()
     assert not fake.terminated
     fake.reconnect()
@@ -598,7 +598,7 @@ async def test_the_heartbeat_ends_a_run_whose_driver_stopped_the_arm() -> None:
 
 async def test_an_arm_already_stopped_at_connect_refuses_moves_and_lets_a_lookout_run() -> None:
     """A driver that says from the start that it cannot move is a precondition, not a fault: the
-    heartbeat is for an arm that stopped itself while quackd watched."""
+    heartbeat is for an arm that stopped itself while Roboglot watched."""
     fake = FakeBridge(MOTO)
     fake.arm.e_stopped = True
     transport = _over(fake)

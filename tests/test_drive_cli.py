@@ -1,4 +1,5 @@
-"""`quackd drive` from the command line, through a pipe, and its record replayed by `quackd log`."""
+"""`roboglot drive` from the command line, through a pipe, and its record replayed by `roboglot
+log`."""
 
 from __future__ import annotations
 
@@ -11,17 +12,17 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from quackd.agent.transcript import Transcript
-from quackd.cli import app, run_counters
-from quackd.drive.run import SESSION_BUDGETS, DriveArgs, run_drive, session_duck
-from quackd.duckfile.schema import Budgets
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app, run_counters
+from roboglot.drive.run import SESSION_BUDGETS, DriveArgs, run_drive, session_glot
+from roboglot.glotfile.schema import Budgets
 
 runner = CliRunner()
 
 
 def test_a_piped_drive_runs_each_line_and_its_record_replays(tmp_path: Path) -> None:
     """Each line routed and run in turn, as a pipe, a record that opens and closes as any run's
-    does, a summary that counts the lanes, and `quackd log` replaying it with the pipe's verdict
+    does, a summary that counts the lanes, and `roboglot log` replaying it with the pipe's verdict
     on each call it ran."""
     lines = "stand\nforward\nkick left\nquit\n"
     args = ["--no-color", "drive", "--robot", "microduck:mock", "--llm", "fake"]
@@ -48,7 +49,7 @@ def test_a_piped_drive_runs_each_line_and_its_record_replays(tmp_path: Path) -> 
 
 
 def test_a_sessions_record_adds_up_what_its_goals_spent(tmp_path: Path) -> None:
-    """A session wrote neither its goals' calls nor their tokens, and `quackd log` read the two
+    """A session wrote neither its goals' calls nor their tokens, and `roboglot log` read the two
     missing keys as zeros, so it said `LLM calls 0 · tokens 0+0` under a session that had flown
     a goal. Each goal's own record is what the session's is held to here."""
     args = ["--no-color", "drive", "--robot", "microduck:mock", "--llm", "fake"]
@@ -107,7 +108,7 @@ def test_a_session_outlasts_one_tasks_budget(tmp_path: Path) -> None:
 def test_a_session_without_a_duck_keeps_the_battery_rule_and_the_ceilings() -> None:
     """Not the rule that ends a run on three failures in a row, which would end a session a
     person was still driving; and each budget the schema's own ceiling, one past it refused."""
-    front = session_duck(["move", "stop"]).frontmatter
+    front = session_glot(["move", "stop"]).frontmatter
     assert front.battery_abort_percent is not None
     assert front.repeat_failure_abort is None
     assert front.budgets == SESSION_BUDGETS
@@ -120,11 +121,11 @@ def test_a_session_without_a_duck_keeps_the_battery_rule_and_the_ceilings() -> N
 def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
     terminal: bool, drawn: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same seam every question quackd puts goes through (`_can_prompt`), and not `isatty`
+    """The same seam every question Roboglot puts goes through (`_can_prompt`), and not `isatty`
     alone, which says yes to NUL on Windows; and an output the prompt can be drawn on, since a
     session whose output was piped to a file died before its first line on Windows."""
-    import quackd.cli
-    import quackd.drive.run
+    import roboglot.cli
+    import roboglot.drive.run
 
     handed: dict[str, object] = {}
 
@@ -132,9 +133,9 @@ def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
         handed.update(kwargs)
         return tmp_path
 
-    monkeypatch.setattr(quackd.cli, "_can_prompt", lambda: terminal)
-    monkeypatch.setattr(quackd.cli, "_can_draw_a_prompt", lambda: drawn)
-    monkeypatch.setattr(quackd.drive.run, "run_drive", run_drive)
+    monkeypatch.setattr(roboglot.cli, "_can_prompt", lambda: terminal)
+    monkeypatch.setattr(roboglot.cli, "_can_draw_a_prompt", lambda: drawn)
+    monkeypatch.setattr(roboglot.drive.run, "run_drive", run_drive)
     result = runner.invoke(app, ["--no-color", "drive", "--robot", "microduck:mock"])
     assert result.exit_code == 0, result.output
     assert handed["keyboard"] is (terminal and drawn)
@@ -146,10 +147,10 @@ def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
 def test_a_registered_robot_is_flown_by_the_pilot_it_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """As `quackd run` reads it: drive took `--llm` alone, and a robot registered against a
+    """As `roboglot run` reads it: drive took `--llm` alone, and a robot registered against a
     vendor was driven by the scripted pilot."""
-    import quackd.agent.providers.factory as factory
-    from quackd.registry import Registry, RobotEntry
+    import roboglot.agent.providers.factory as factory
+    from roboglot.registry import Registry, RobotEntry
 
     registry = tmp_path / "registry"
     Registry(registry).add_robot(RobotEntry(name="duck", spec="microduck:mock", llm="openai"))
@@ -160,7 +161,7 @@ def test_a_registered_robot_is_flown_by_the_pilot_it_names(
         return object()
 
     monkeypatch.setattr(factory, "make_provider", make_provider)
-    monkeypatch.delenv("QUACKD_LLM", raising=False)
+    monkeypatch.delenv("ROBOGLOT_LLM", raising=False)
     args = ["--no-color", "drive", "--robot", "duck", "--registry-dir", str(registry)]
     result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path / "runs")], input="quit\n")
     assert result.exit_code == 0, result.output
@@ -200,13 +201,13 @@ async def test_a_session_whose_input_broke_is_not_recorded_as_a_success(tmp_path
 async def test_a_session_whose_robot_never_connected_is_not_a_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import quackd.mcp_server
-    from quackd.transport.base import TransportError
+    import roboglot.mcp_server
+    from roboglot.transport.base import TransportError
 
     async def refuse(self: object) -> None:
         raise TransportError("the robot did not answer")
 
-    monkeypatch.setattr(quackd.mcp_server.RobotSession, "connect", refuse)
+    monkeypatch.setattr(roboglot.mcp_server.RobotSession, "connect", refuse)
     args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
     with pytest.raises(TransportError):
         await run_drive(args, say=lambda _line: None, stream=None, keyboard=False)
@@ -215,7 +216,7 @@ async def test_a_session_whose_robot_never_connected_is_not_a_success(
 
 
 GATED_KICK = """---
-duck: 0
+glot: 0
 name: gated
 description: kick behind a yes
 verbs:
@@ -232,11 +233,11 @@ x
 async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A kick the `.duck` gates answered to the motion floor rather than the confirm one, the
+    """A kick the `.glot` gates answered to the motion floor rather than the confirm one, the
     bug `verb_class` names in the run's own stepper: under `--yes` it ran unasked at a
     confidence the stepper would have asked about."""
-    import quackd.agent.decision.commands as commands
-    import quackd.agent.decision.factory as factory
+    import roboglot.agent.decision.commands as commands
+    import roboglot.agent.decision.factory as factory
 
     class _Decider:
         name = "scripted"
@@ -254,13 +255,13 @@ async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
     monkeypatch.setattr(
         factory, "make_decision_llm", lambda spec, llm_id=None, url=None: _Decider()
     )
-    duck = tmp_path / "gated.duck"
+    duck = tmp_path / "gated.glot"
     duck.write_text(GATED_KICK, encoding="utf-8")
     args = DriveArgs(
         robot="microduck:mock",
         llm="fake",
         decision_llm="scripted",
-        duckfile=str(duck),
+        glotfile=str(duck),
         runs_dir=str(tmp_path / "runs"),
     )
     await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
@@ -295,7 +296,7 @@ def test_drive_refuses_what_run_refuses_of_the_same_flags(
 ) -> None:
     """In run's words, before anything is built: no run directory is left behind. A person is
     taken to be at the keyboard, so each refusal is its own and not the pipe's."""
-    import quackd.cli as cli
+    import roboglot.cli as cli
 
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     monkeypatch.setattr(cli, "_can_draw_a_prompt", lambda: True)
@@ -346,8 +347,8 @@ def test_max_steps_is_a_goals_steps_within_the_schemas_bounds(
 
 def _decision_stubs(monkeypatch: pytest.MonkeyPatch) -> Any:
     """A decision LLM that is here and builds, and the session it was handed to, kept."""
-    import quackd.agent.decision.factory as factory
-    import quackd.drive.run as drive_run
+    import roboglot.agent.decision.factory as factory
+    import roboglot.drive.run as drive_run
 
     class _Decider:
         name = "scripted"
@@ -374,10 +375,10 @@ def _decision_stubs(monkeypatch: pytest.MonkeyPatch) -> Any:
 async def test_a_goal_gets_a_stepper_only_where_the_command_line_asks_for_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--decision-llm` alone is the fast lane, as it always was, and a `QUACKD_DECISION_MODE`
-    in a `.env` written for `quackd run` gives no goal a stepper."""
+    """`--decision-llm` alone is the fast lane, as it always was, and a `ROBOGLOT_DECISION_MODE`
+    in a `.env` written for `roboglot run` gives no goal a stepper."""
     decider, kept = _decision_stubs(monkeypatch)
-    monkeypatch.setenv("QUACKD_DECISION_MODE", "on")
+    monkeypatch.setenv("ROBOGLOT_DECISION_MODE", "on")
     args = DriveArgs(
         robot="microduck:mock", llm="fake", decision_llm="scripted", runs_dir=str(tmp_path)
     )
@@ -390,7 +391,7 @@ async def test_a_goal_gets_a_stepper_only_where_the_command_line_asks_for_one(
 async def test_decision_mode_gives_every_goal_the_fast_lanes_own_decision_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd.agent.decision.notices import MODE_ON_UNMEASURED
+    from roboglot.agent.decision.notices import MODE_ON_UNMEASURED
 
     decider, kept = _decision_stubs(monkeypatch)
     said: list[str] = []
@@ -415,7 +416,7 @@ async def test_decision_mode_gives_every_goal_the_fast_lanes_own_decision_llm(
 
 async def test_a_bare_session_flies_its_goals_as_it_always_did(tmp_path: Path) -> None:
     """None of run's flags given: no memory, no stepper, no part to play, the default steps."""
-    import quackd.drive.run as drive_run
+    import roboglot.drive.run as drive_run
 
     kept: list[Any] = []
     real = drive_run.DriveSession
@@ -430,7 +431,7 @@ async def test_a_bare_session_flies_its_goals_as_it_always_did(tmp_path: Path) -
         args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
         await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
     (session,) = kept
-    from quackd.drive.session import GoalSettings
+    from roboglot.drive.session import GoalSettings
 
     assert session.settings == GoalSettings()
 
@@ -456,7 +457,7 @@ async def test_memory_and_its_folder_reach_every_goal_and_the_places(tmp_path: P
 
 def _kept_sessions(patch: pytest.MonkeyPatch) -> list[Any]:
     """Every `DriveSession` `run_drive` builds, kept for the test to read."""
-    import quackd.drive.run as drive_run
+    import roboglot.drive.run as drive_run
 
     kept: list[Any] = []
     real = drive_run.DriveSession
@@ -473,7 +474,7 @@ def _kept_sessions(patch: pytest.MonkeyPatch) -> list[Any]:
 async def test_the_lens_is_given_once_as_the_session_connects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import quackd.drive.run as drive_run
+    import roboglot.drive.run as drive_run
 
     given: list[float] = []
     monkeypatch.setattr(drive_run, "_given_lens", lambda robot, fov: given.append(fov))
@@ -487,8 +488,8 @@ async def test_a_contractless_session_has_the_schemas_ceiling_of_policy_seconds(
 ) -> None:
     """A task's two minutes of segments are a dozen short lines to an arm, and a session held to
     them refused the thirteenth, as one held to a task's five minutes refused its sixth."""
-    from quackd.drive.run import SESSION_POLICY_S
-    from quackd.duckfile.schema import POLICY_TOTAL_MAX_S
+    from roboglot.drive.run import SESSION_POLICY_S
+    from roboglot.glotfile.schema import POLICY_TOTAL_MAX_S
 
     kept = _kept_sessions(monkeypatch)
     args = DriveArgs(robot="lerobot:mock", llm="fake", runs_dir=str(tmp_path))
@@ -504,7 +505,7 @@ async def test_frames_give_every_goal_watch_and_say_where_a_frame_goes(
     """The session withdraws `watch` for having nothing to look through, and its goals were
     shown the camera through the decision LLM all the same: they are offered it, as a run that
     asked for frames offers it."""
-    import quackd.agent.decision.factory as factory
+    import roboglot.agent.decision.factory as factory
 
     decider, kept = _decision_stubs(monkeypatch)
     monkeypatch.setattr(factory, "resolve_decision_frames", lambda flag, **_kw: True)
@@ -531,11 +532,11 @@ async def test_frames_give_every_goal_watch_and_say_where_a_frame_goes(
 async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_llm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The robot's registered pilot and `QUACKD_LLM` name an LLM a VLA session never asks, so
+    """The robot's registered pilot and `ROBOGLOT_LLM` name an LLM a VLA session never asks, so
     neither is resolved, and a key missing for it refuses nothing."""
-    from quackd.agent.providers.vla import VlaProvider
+    from roboglot.agent.providers.vla import VlaProvider
 
-    monkeypatch.setenv("QUACKD_LLM", "anthropic")
+    monkeypatch.setenv("ROBOGLOT_LLM", "anthropic")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     kept = _kept_sessions(monkeypatch)
     args = DriveArgs(robot="lerobot:mock", controller="vla", runs_dir=str(tmp_path))
@@ -557,7 +558,7 @@ async def test_a_vla_session_flies_each_goal_by_the_scripted_pilot_and_asks_no_l
 async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import quackd.drive.run as drive_run
+    import roboglot.drive.run as drive_run
 
     def start_of(run_dir: Path) -> dict[str, Any]:
         events = Transcript.read(run_dir / "transcript.jsonl")
@@ -590,7 +591,7 @@ async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_non
 
 
 def test_the_no_policy_refusal_names_drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import quackd.cli as cli
+    import roboglot.cli as cli
 
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     monkeypatch.setattr(cli, "_can_draw_a_prompt", lambda: True)
@@ -598,23 +599,23 @@ def test_the_no_policy_refusal_names_drive(tmp_path: Path, monkeypatch: pytest.M
         app, ["--no-color", "drive", "--robot", "lerobot:mock", "--controller", "vla"]
     )
     said = " ".join(result.output.split())
-    assert "give quackd drive its address with --policy-url" in said, said
+    assert "give roboglot drive its address with --policy-url" in said, said
 
 
 async def test_a_vla_session_whose_duck_does_not_allow_manipulate_is_refused_first(
     tmp_path: Path,
 ) -> None:
     """It started, put every line's doubt to the person, and then failed on the allowlist."""
-    from quackd.drive.run import DriveError
+    from roboglot.drive.run import DriveError
 
-    duck = tmp_path / "look.duck"
+    duck = tmp_path / "look.glot"
     duck.write_text(
-        "---\nduck: 0\nname: look\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
+        "---\nglot: 0\nname: look\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
         "success: [x]\n---\n# Task\nx\n",
         encoding="utf-8",
     )
     runs = tmp_path / "runs"
-    args = DriveArgs(robot="lerobot:mock", controller="vla", duckfile=str(duck), runs_dir=str(runs))
+    args = DriveArgs(robot="lerobot:mock", controller="vla", glotfile=str(duck), runs_dir=str(runs))
     with pytest.raises(DriveError, match="look does not allow it"):
         await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
     assert not runs.exists(), "refused before anything was made"
@@ -637,10 +638,10 @@ async def test_fov_reaches_a_simulators_detector_and_outlasts_a_goal(
 async def test_decision_frames_are_read_from_the_command_line_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`QUACKD_DECISION_FRAMES=1` in a `.env` written for `quackd run` would refuse a session
+    """`ROBOGLOT_DECISION_FRAMES=1` in a `.env` written for `roboglot run` would refuse a session
     whose decision LLM may not be shown a frame, or send one where none was asked for."""
     _decider, kept = _decision_stubs(monkeypatch)
-    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "1")
+    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", "1")
     args = DriveArgs(
         robot="microduck:mock", llm="fake", decision_llm="scripted", runs_dir=str(tmp_path)
     )

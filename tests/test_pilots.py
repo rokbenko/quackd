@@ -1,7 +1,7 @@
-"""`run_pilot_flock`: N agent loops on wall-clock time, and what happens when one of them
+"""`run_pilot_team`: N agent loops on wall-clock time, and what happens when one of them
 does not come back.
 
-Everything here runs on `mock` backends, which is what a pilot flock has ever run on.
+Everything here runs on `mock` backends, which is what a pilot team has ever run on.
 """
 
 from __future__ import annotations
@@ -13,22 +13,22 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.factory import RobotSpec, describe
-from quackd.agent.providers.base import Exchange, ProviderTurn, ToolCall, Usage
-from quackd.agent.providers.fake import FakeProvider
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.flock.pilots import (
+from roboglot.adapters.factory import RobotSpec, describe
+from roboglot.agent.providers.base import Exchange, ProviderTurn, ToolCall, Usage
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.memory import RobotMemory
+from roboglot.team.pilots import (
     MAX_MEMBERS,
     SpecEntry,
     aggregate_outcome,
     roster_from_specs,
-    run_pilot_flock,
+    run_pilot_team,
     trim_contract,
     union_problems,
 )
-from quackd.memory import RobotMemory
-from quackd_lerobot.mock import REST
-from quackd_lerobot.verbs import at_rest, rest_goal
+from roboglot_lerobot.mock import REST
+from roboglot_lerobot.verbs import at_rest, rest_goal
 
 MIXED = {
     "duck": RobotSpec("microduck", "mock", "duck"),
@@ -40,16 +40,16 @@ def _roster(specs: dict[str, RobotSpec] | None = None) -> dict[str, SpecEntry]:
     return roster_from_specs(specs or MIXED)
 
 
-def _providers(roster: dict[str, Any], duck_name: str = "flock-hello") -> dict[str, Any]:
+def _providers(roster: dict[str, Any], duck_name: str = "team-hello") -> dict[str, Any]:
     # one instance per member: a shared strategy closure would be shared state
-    return {name: FakeProvider.for_duck(duck_name) for name in roster}
+    return {name: FakeProvider.for_glot(duck_name) for name in roster}
 
 
 async def _run(tmp_path: Path, roster: dict[str, Any] | None = None, **kw: Any) -> Any:
     roster = roster if roster is not None else _roster()
     return await asyncio.wait_for(
-        run_pilot_flock(
-            load_duck("flock-hello"),
+        run_pilot_team(
+            load_glot("team-hello"),
             roster,
             providers=kw.pop("providers", None) or _providers(roster),
             runs_dir=tmp_path,
@@ -63,30 +63,30 @@ def _summary(result: Any) -> dict[str, Any]:
     return json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
 
 
-def _flock_lines(result: Any) -> list[dict[str, Any]]:
-    text = (result.run_dir / "flock.jsonl").read_text(encoding="utf-8")
+def _team_lines(result: Any) -> list[dict[str, Any]]:
+    text = (result.run_dir / "team.jsonl").read_text(encoding="utf-8")
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-async def test_a_pilot_flock_takes_the_name_you_gave_the_run(tmp_path: Path) -> None:
+async def test_a_pilot_team_takes_the_name_you_gave_the_run(tmp_path: Path) -> None:
     """`--run-name` is for the afternoon somebody runs a hundred examples on one bench, and a
-    flock is as much a run as a solo pilot is: it gets the same label on the same directory and
+    team is as much a run as a solo pilot is: it gets the same label on the same directory and
     the name as typed in the same summary field."""
     result = await _run(tmp_path, run_name="Bench 7")
-    assert result.run_dir.name.endswith("-flock-hello-bench-7"), result.run_dir.name
+    assert result.run_dir.name.endswith("-team-hello-bench-7"), result.run_dir.name
     assert _summary(result)["run_name"] == "Bench 7"
 
 
-async def test_a_pilot_flock_without_a_name_is_named_as_it_always_was(tmp_path: Path) -> None:
-    """Every flock recorded before there was a flag for it, and every one that does not ask,
+async def test_a_pilot_team_without_a_name_is_named_as_it_always_was(tmp_path: Path) -> None:
+    """Every team recorded before there was a flag for it, and every one that does not ask,
     keeps exactly the directory name it had."""
     result = await _run(tmp_path)
-    assert result.run_dir.name.endswith("-flock-hello"), result.run_dir.name
+    assert result.run_dir.name.endswith("-team-hello"), result.run_dir.name
     assert _summary(result)["run_name"] is None
 
 
-async def test_a_pilot_flock_adds_up_what_its_members_cost(tmp_path: Path) -> None:
-    """The flock sums money where it already sums tokens. Its members are scripted here, so
+async def test_a_pilot_team_adds_up_what_its_members_cost(tmp_path: Path) -> None:
+    """The team sums money where it already sums tokens. Its members are scripted here, so
     each of them is free and the total is a real zero rather than a missing number."""
     result = await _run(tmp_path)
     summary = _summary(result)
@@ -98,7 +98,7 @@ async def test_a_pilot_flock_adds_up_what_its_members_cost(tmp_path: Path) -> No
 
 
 async def test_the_price_you_passed_reaches_every_member(tmp_path: Path) -> None:
-    """`--price` is validated on `quackd run` whether or not there is a flock, so a flock that
+    """`--price` is validated on `roboglot run` whether or not there is a team, so a team that
     quietly ignored it would be a flag that checks your typing and then does nothing. Each
     member is costed at the one rate: it is a rate for the run, not one per robot."""
     result = await _run(tmp_path, price="in=1000000,out=0")
@@ -111,9 +111,9 @@ async def test_the_price_you_passed_reaches_every_member(tmp_path: Path) -> None
     assert summary["cost_usd"] == sum(m["cost_usd"] for m in summary["per_member"].values())
 
 
-async def test_one_unpriced_member_makes_the_whole_flock_bill_unpriced(tmp_path: Path) -> None:
-    """A total that quietly left a robot out would read as a cheaper flock rather than an
-    incomplete one, so one member quackd cannot price makes the flock figure None. The member
+async def test_one_unpriced_member_makes_the_whole_team_bill_unpriced(tmp_path: Path) -> None:
+    """A total that quietly left a robot out would read as a cheaper team rather than an
+    incomplete one, so one member Roboglot cannot price makes the team figure None. The member
     is made unpriceable the way a real one would be: a real vendor name and an LLM id no
     catalogue has ever listed."""
     roster = _roster()
@@ -132,23 +132,23 @@ async def test_one_unpriced_member_makes_the_whole_flock_bill_unpriced(tmp_path:
 
 
 def test_each_member_is_handed_the_half_of_the_contract_its_body_can_answer_for() -> None:
-    fm = load_duck("flock-hello").frontmatter
+    fm = load_glot("team-hello").frontmatter
     duck = trim_contract(fm, describe(MIXED["duck"]))
     arm = trim_contract(fm, describe(MIXED["arm"]))
     assert "say" in duck.verbs.allow and "say" not in arm.verbs.allow
     assert "move_joints" in arm.verbs.allow and "move_joints" not in duck.verbs.allow
     assert "report_state" in duck.verbs.allow and "report_state" in arm.verbs.allow
     assert duck.requires == ["report_state"] and arm.requires == ["report_state"]
-    assert fm.verbs.allow == load_duck("flock-hello").frontmatter.verbs.allow, "the file is not"
+    assert fm.verbs.allow == load_glot("team-hello").frontmatter.verbs.allow, "the file is not"
 
 
 def test_a_trimmed_contract_is_still_a_contract() -> None:
     """Rebuilt through the model, so every cross-field rule in the schema still holds."""
     text = (
-        "---\nduck: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, say, move_joints]\n"
+        "---\nglot: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, say, move_joints]\n"
         "  confirm: [move_joints]\nsuccess: [x]\nrequires: [say]\n---\n# Task\nx\n"
     )
-    fm = parse_duck_text(text).frontmatter
+    fm = parse_glot_text(text).frontmatter
     duck = trim_contract(fm, describe(MIXED["duck"]))
     assert duck.verbs.confirm == [], "a gated verb this body lacks is not gated on it"
     assert duck.requires == ["say"]
@@ -158,30 +158,30 @@ def test_a_trimmed_contract_is_still_a_contract() -> None:
 
 def test_a_body_that_can_do_none_of_it_still_gets_stop() -> None:
     text = (
-        "---\nduck: 1\nname: t\ndescription: d\nverbs:\n  allow: [move_joints]\n"
+        "---\nglot: 1\nname: t\ndescription: d\nverbs:\n  allow: [move_joints]\n"
         "success: [x]\n---\n# Task\nx\n"
     )
-    trimmed = trim_contract(parse_duck_text(text).frontmatter, describe(MIXED["duck"]))
+    trimmed = trim_contract(parse_glot_text(text).frontmatter, describe(MIXED["duck"]))
     assert trimmed.verbs.allow == ["stop"]
 
 
 def test_what_no_body_can_do_is_refused_and_what_one_can_is_not() -> None:
     text = (
-        "---\nduck: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, kick, move_joints]\n"
+        "---\nglot: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, kick, move_joints]\n"
         "success: [x]\nrequires: [kick]\n---\n# Task\nx\n"
     )
     manifests = {n: describe(s) for n, s in MIXED.items()}
-    assert union_problems(parse_duck_text(text), manifests) == []
+    assert union_problems(parse_glot_text(text), manifests) == []
     nobody = text.replace("requires: [kick]", "requires: [kick, move_joints]").replace(
         "allow: [stop, kick, move_joints]", "allow: [stop, kick, move_joints, grab]"
     )
-    assert union_problems(parse_duck_text(nobody), manifests) == []
+    assert union_problems(parse_glot_text(nobody), manifests) == []
     lacking = (
-        "---\nduck: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, pick]\n"
+        "---\nglot: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop, pick]\n"
         "success: [x]\nrequires: [pick]\n---\n# Task\nx\n"
     )
     only_duck = {"duck": manifests["duck"]}
-    assert "requires pick" in union_problems(parse_duck_text(lacking), only_duck)[0]
+    assert "requires pick" in union_problems(parse_glot_text(lacking), only_duck)[0]
 
 
 # ── the outcome ─────────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ async def test_two_different_bodies_talk_and_both_declare(tmp_path: Path) -> Non
     assert result.per_member["arm"]["robot"] == "lerobot:mock"
 
 
-async def test_two_bodies_of_one_kind_are_a_flock_too(tmp_path: Path) -> None:
+async def test_two_bodies_of_one_kind_are_a_team_too(tmp_path: Path) -> None:
     """The case the auction could always do and nothing else could: same body, twice."""
     twins = _roster(
         {
@@ -253,13 +253,13 @@ them inside this and gives up on an arm that is about to answer."""
 async def test_a_member_that_connects_late_is_still_heard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CI's macOS runners failed two flock tests with "nobody answered after 3 checks": one
-    member had told the flock and spent all of the scripted pilot's checks before a slower peer
+    """CI's macOS runners failed two team tests with "nobody answered after 3 checks": one
+    member had told the team and spent all of the scripted pilot's checks before a slower peer
     had said anything. An arm that connects AFTER_HELLO_S after the duck's hello does that on
     any machine, and the scripted pilot's checks wait on the wall clock now, so the duck still
     hears the arm."""
-    from quackd.adapters import factory
-    from quackd.flock.bus import InProcessBus
+    from roboglot.adapters import factory
+    from roboglot.team.bus import InProcessBus
 
     hello = asyncio.Event()
 
@@ -290,7 +290,7 @@ async def test_a_member_that_connects_late_is_still_heard(
             monkeypatch.setattr(adapter, "connect", after_hello)
         return adapter
 
-    monkeypatch.setattr("quackd.flock.pilots.make_adapter", late)
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", late)
     result = await _run(tmp_path, bus_factory=bus_factory)
     assert result.outcome == "success", result.reason
     assert result.per_member["duck"]["reason"].endswith("heard back from arm")
@@ -298,22 +298,22 @@ async def test_a_member_that_connects_late_is_still_heard(
 
 async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
     result = await _run(tmp_path)
-    kinds = [line["kind"] for line in _flock_lines(result)]
-    assert kinds[0] == "flock_start" and kinds[-1] == "flock_end"
+    kinds = [line["kind"] for line in _team_lines(result)]
+    assert kinds[0] == "team_start" and kinds[-1] == "team_end"
     assert kinds.count("member_end") == 2
     talks = [
-        line["msg"] for line in _flock_lines(result) if line.get("msg", {}).get("kind") == "TALK"
+        line["msg"] for line in _team_lines(result) if line.get("msg", {}).get("kind") == "TALK"
     ]
     assert len(talks) == 4, "two between the members, two from the runner"
-    assert all("t" in line and "sim_t" not in line for line in _flock_lines(result)), (
-        "a pilot flock runs on wall-clock seconds and must not stamp them as sim time"
+    assert all("t" in line and "sim_t" not in line for line in _team_lines(result)), (
+        "a pilot team runs on wall-clock seconds and must not stamp them as sim time"
     )
     for name in ("duck", "arm"):
-        member = result.run_dir / "ducks" / name
+        member = result.run_dir / "robots" / name
         assert (member / "transcript.jsonl").exists()
         assert not (member / "summary.json").exists(), "a member is not a solo run"
     summary = _summary(result)
-    assert summary["flock"] == {"members": ["duck", "arm"], "method": "pilots", "name": None}
+    assert summary["team"] == {"members": ["duck", "arm"], "method": "pilots", "name": None}
     assert summary["transport"] == "mock"
     assert summary["messages"] == 2 and summary["notices"] == 2
     assert set(summary["per_member"]["duck"]) == {
@@ -332,12 +332,12 @@ async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
         "run_dir",
         "log_dropped",
     }
-    start = _flock_lines(result)[0]
+    start = _team_lines(result)[0]
     assert start["clock"] == "wall"
     assert start["contracts"]["arm"]["allow"] == ["report_state", "observe", "stop", "move_joints"]
 
 
-async def test_a_mixed_flock_reports_its_backends_as_mixed(tmp_path: Path) -> None:
+async def test_a_mixed_team_reports_its_backends_as_mixed(tmp_path: Path) -> None:
     roster = _roster(
         {
             "duck": RobotSpec("microduck", "sim2d", "duck"),
@@ -352,8 +352,8 @@ async def test_the_runners_notice_reaches_the_survivors(tmp_path: Path) -> None:
     result = await _run(tmp_path)
     heard = [
         line["msg"]
-        for line in _flock_lines(result)
-        if line.get("msg", {}).get("kind") == "TALK" and line["msg"]["src"] == "flock"
+        for line in _team_lines(result)
+        if line.get("msg", {}).get("kind") == "TALK" and line["msg"]["src"] == "team"
     ]
     assert len(heard) == 2
     assert all("declared success" in m["text"] for m in heard)
@@ -381,7 +381,7 @@ class _Boom:
 async def test_the_first_exception_stops_the_others_and_names_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
     real = factory.make_adapter
 
@@ -389,7 +389,7 @@ async def test_the_first_exception_stops_the_others_and_names_itself(
         return _Boom() if spec.name == "arm" else real(spec, **kw)
 
     monkeypatch.setattr(factory, "make_adapter", maybe_boom)
-    monkeypatch.setattr("quackd.flock.pilots.make_adapter", maybe_boom)
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", maybe_boom)
     result = await _run(tmp_path)
     assert result.outcome == "error", result.reason
     assert result.per_member["arm"]["outcome"] == "error"
@@ -397,7 +397,7 @@ async def test_the_first_exception_stops_the_others_and_names_itself(
     assert "arm" in result.reason
     others = [n for n in result.per_member if n != "arm"]
     assert all(result.per_member[n]["outcome"] in ("aborted", "success") for n in others)
-    assert (result.run_dir / "ducks" / "arm" / "transcript.jsonl").exists()
+    assert (result.run_dir / "robots" / "arm" / "transcript.jsonl").exists()
 
 
 async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> None:
@@ -413,9 +413,9 @@ async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> N
     result = await _run(tmp_path, roster, providers=providers, price="in=1000000,out=0")
     assert result.outcome == "error"
     assert "429 from the vendor" in result.per_member["arm"]["reason"]
-    # A member that raised never reaches its own `return RunResult(...)`, and the flock used
+    # A member that raised never reaches its own `return RunResult(...)`, and the team used
     # to throw away the wall clock, the LLM seconds and the bill that member had already
-    # measured. A flock of priced LLMs then read `cost_usd: null` on the strength of one of
+    # measured. A team of priced LLMs then read `cost_usd: null` on the strength of one of
     # them being interrupted, which is a bill going missing rather than a bill being unknown.
     for name in ("duck", "arm"):
         member = result.per_member[name]
@@ -477,7 +477,7 @@ async def test_memory_is_keyed_by_the_name_or_the_body_and_can_be_off(tmp_path: 
     assert not off.exists()
 
 
-async def test_a_flock_of_one_or_of_nine_is_refused(tmp_path: Path) -> None:
+async def test_a_team_of_one_or_of_nine_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="2 to 8 members"):
         await _run(tmp_path, _roster({"duck": MIXED["duck"]}))
     big = {f"duck-{i}": RobotSpec("microduck", "mock", f"duck-{i}") for i in range(MAX_MEMBERS + 1)}
@@ -494,9 +494,9 @@ async def test_a_member_with_no_pilot_is_refused(tmp_path: Path) -> None:
 async def test_a_task_no_body_can_do_refuses_before_anything_connects(tmp_path: Path) -> None:
     """Two arms asked to kick. Neither can, so nobody connects and nothing is written."""
     text = (
-        "---\nduck: 1\nname: impossible\ndescription: d\nverbs:\n"
+        "---\nglot: 1\nname: impossible\ndescription: d\nverbs:\n"
         "  allow: [stop, kick]\nsuccess: [x]\nrequires: [kick]\n"
-        "flock:\n  members: [left, right]\n  allocation:\n    method: pilots\n"
+        "team:\n  members: [left, right]\n  allocation:\n    method: pilots\n"
         "---\n# Task\nx\n"
     )
     roster = _roster(
@@ -507,20 +507,20 @@ async def test_a_task_no_body_can_do_refuses_before_anything_connects(tmp_path: 
     )
     with pytest.raises(ValueError, match="requires kick"):
         await asyncio.wait_for(
-            run_pilot_flock(
-                parse_duck_text(text), roster, providers=_providers(roster), runs_dir=tmp_path
+            run_pilot_team(
+                parse_glot_text(text), roster, providers=_providers(roster), runs_dir=tmp_path
             ),
             timeout=30,
         )
     # checked off the event loop: the point is that the directory is empty, not when
-    made = await asyncio.to_thread(lambda: list(tmp_path.glob("*flock*")))
+    made = await asyncio.to_thread(lambda: list(tmp_path.glob("*team*")))
     assert not made, "nothing on disk to explain away"
 
 
 # ── the views ───────────────────────────────────────────────────────────────────────────
 
 
-async def test_each_member_gets_its_own_view_and_the_flock_gets_one(tmp_path: Path) -> None:
+async def test_each_member_gets_its_own_view_and_the_team_gets_one(tmp_path: Path) -> None:
     seen: dict[str, list[str]] = {}
 
     def view(name: str) -> Any:
@@ -528,9 +528,9 @@ async def test_each_member_gets_its_own_view_and_the_flock_gets_one(tmp_path: Pa
         return lambda event: seen[name].append(event.kind)
 
     await _run(tmp_path, view=view)
-    assert set(seen) == {"duck", "arm", "flock"}
-    assert "run_start" in seen["duck"] and "run_start" not in seen["flock"]
-    assert seen["flock"] == ["talk", "talk"], "the flock view carries the runner's own notices"
+    assert set(seen) == {"duck", "arm", "team"}
+    assert "run_start" in seen["duck"] and "run_start" not in seen["team"]
+    assert seen["team"] == ["talk", "talk"], "the team view carries the runner's own notices"
 
 
 def test_usage_is_summed_across_the_members(tmp_path: Path) -> None:
@@ -547,8 +547,8 @@ def test_usage_is_summed_across_the_members(tmp_path: Path) -> None:
     roster = _roster()
     result = asyncio.run(
         asyncio.wait_for(
-            run_pilot_flock(
-                load_duck("flock-hello"),
+            run_pilot_team(
+                load_glot("team-hello"),
                 roster,
                 providers={n: _Costly() for n in roster},
                 runs_dir=tmp_path,
@@ -560,7 +560,7 @@ def test_usage_is_summed_across_the_members(tmp_path: Path) -> None:
     assert result.llm_calls == 2
 
 
-async def test_a_cancelled_flock_records_every_member_rather_than_crashing(
+async def test_a_cancelled_team_records_every_member_rather_than_crashing(
     tmp_path: Path,
 ) -> None:
     """The second Ctrl-C: `asyncio.run` cancels the task. A member that never returned a
@@ -580,7 +580,7 @@ async def test_a_cancelled_flock_records_every_member_rather_than_crashing(
     with pytest.raises(asyncio.CancelledError):
         await task
     # the record survives the interrupt, which is the whole point of writing it first
-    run_dir = await asyncio.to_thread(lambda: sorted(tmp_path.glob("*flock-hello"))[-1])
+    run_dir = await asyncio.to_thread(lambda: sorted(tmp_path.glob("*team-hello"))[-1])
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["outcome"] == "aborted"
     assert set(summary["per_member"]) == set(roster)
@@ -601,10 +601,10 @@ ARM_REST = {
 def _built(monkeypatch: pytest.MonkeyPatch, member: str, **kwargs: Any) -> dict[str, Any]:
     """Keep every adapter a run builds, and hand `member`'s `make()` some extra kwargs.
 
-    The same seam the connect failure above uses: `run_pilot_flock` builds its adapters
+    The same seam the connect failure above uses: `run_pilot_team` builds its adapters
     itself, from a roster that carries no rest pose, so this is where one is put on one
     member's body and where the object is caught to read afterwards."""
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
     real = factory.make_adapter
     built: dict[str, Any] = {}
@@ -613,7 +613,7 @@ def _built(monkeypatch: pytest.MonkeyPatch, member: str, **kwargs: Any) -> dict[
         built[spec.name] = real(spec, **(kw | kwargs)) if spec.name == member else real(spec, **kw)
         return built[spec.name]
 
-    monkeypatch.setattr("quackd.flock.pilots.make_adapter", capture)
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", capture)
     return built
 
 

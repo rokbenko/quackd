@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install quackd's bridge and camera server on an Open Duck Mini v2's Raspberry Pi.
+# Install Roboglot's bridge and camera server on an Open Duck Mini v2's Raspberry Pi.
 #
 # It checks rather than fixes. Every step it refuses is a step you should understand before
 # a 42 cm biped starts taking commands from your network.
@@ -11,9 +11,9 @@ set -euo pipefail
 RUNTIME_DIR="${RUNTIME_DIR:-$HOME/Open_Duck_Mini_Runtime}"
 VENV="${VENV:-$HOME/.virtualenvs/open-duck-mini-runtime}"
 PORT_DEV="${PORT_DEV:-/dev/ttyACM0}"
-TOKEN_FILE="${TOKEN_FILE:-/etc/quackd/duck-bridge.token}"
+TOKEN_FILE="${TOKEN_FILE:-/etc/roboglot/duck-bridge.token}"
 DUCK_CONFIG="${DUCK_CONFIG:-$HOME/duck_config.json}"
-# The walk policy, from the Apache-2.0 design repo. quackd does not ship it, and the unit
+# The walk policy, from the Apache-2.0 design repo. Roboglot does not ship it, and the unit
 # cannot start without it, so it is checked here rather than discovered at first boot.
 ONNX_PATH="${ONNX_PATH:-$HOME/BEST_WALK_ONNX_2.onnx}"
 # The units ship with pi's paths in them because they have to say something. Nothing here
@@ -28,7 +28,7 @@ die() { printf '\nstopped: %s\n' "$1" >&2; exit 1; }
 
 say "checking the robot's own runtime"
 [ -d "$RUNTIME_DIR" ] || die "no runtime at $RUNTIME_DIR. Install it first, from
-  https://github.com/apirrone/Open_Duck_Mini_Runtime (branch v2). quackd does not ship it."
+  https://github.com/apirrone/Open_Duck_Mini_Runtime (branch v2). Roboglot does not ship it."
 [ -x "$VENV/bin/python" ] || die "no virtualenv at $VENV. Upstream's README uses
   mkvirtualenv -p python3 open-duck-mini-runtime, then pip install -e . in the checkout.
   Set VENV=... if yours lives elsewhere."
@@ -71,7 +71,7 @@ fi
 
 say "checking the walk policy"
 [ -f "$ONNX_PATH" ] || die "no walk policy at $ONNX_PATH. It is BEST_WALK_ONNX_2.onnx from
-  https://github.com/apirrone/Open_Duck_Mini (Apache-2.0); quackd does not ship it. Download
+  https://github.com/apirrone/Open_Duck_Mini (Apache-2.0); Roboglot does not ship it. Download
   it, or set ONNX_PATH=... to where yours is."
 
 say "checking upstream's motion data is where its loop will look"
@@ -82,16 +82,16 @@ say "checking upstream's motion data is where its loop will look"
 
 say "checking the walk policy is not paused on boot"
 if grep -q '"start_paused"[[:space:]]*:[[:space:]]*true' "$DUCK_CONFIG" 2>/dev/null; then
-  die "duck_config.json has start_paused true. quackd cannot release it: upstream toggles
+  die "duck_config.json has start_paused true. Roboglot cannot release it: upstream toggles
   pause on its gamepad's A button and the bridge replaces that pad, so a bridge started
-  paused can never walk — and the paused loop runs at about 10 Hz, which quackd's heartbeat
+  paused can never walk — and the paused loop runs at about 10 Hz, which Roboglot's heartbeat
   reports as a starved Pi. Set start_paused false in $DUCK_CONFIG."
 fi
 
 say "checking who owns the camera"
 if grep -q '"camera"[[:space:]]*:[[:space:]]*true' "$DUCK_CONFIG" 2>/dev/null; then
   warn "duck_config.json has expression_features.camera true, so the robot's own runtime
-  claims to own the camera. Upstream's walk loop opens none, so quackd-duck-camd will warn
+  claims to own the camera. Upstream's walk loop opens none, so roboglot-duck-camd will warn
   and start anyway. Setting that flag false is still tidier."
 fi
 
@@ -115,15 +115,15 @@ PROBE
   rather than exist and fail. Re-run this once it can capture."
   fi
 else
-  warn "$VENV cannot import picamzero and cv2, so quackd-duck-camd will not serve frames and
+  warn "$VENV cannot import picamzero and cv2, so roboglot-duck-camd will not serve frames and
   observe, go_to, search_scan and approach_and will not exist for this duck. They are apt
   packages (python3-picamera2, python3-opencv) and cannot be pip-installed into a plain
   virtualenv: recreate it with --system-site-packages, or skip the camera server."
 fi
 
-say "installing the bridge and the camera server to /opt/quackd"
-sudo install -m 0755 -D "$HERE/quackd_duck_bridge.py" /opt/quackd/quackd_duck_bridge.py
-sudo install -m 0755 -D "$HERE/quackd_duck_camd.py" /opt/quackd/quackd_duck_camd.py
+say "installing the bridge and the camera server to /opt/roboglot"
+sudo install -m 0755 -D "$HERE/roboglot_duck_bridge.py" /opt/roboglot/roboglot_duck_bridge.py
+sudo install -m 0755 -D "$HERE/roboglot_duck_camd.py" /opt/roboglot/roboglot_duck_camd.py
 
 say "generating a token"
 # `[ ! -f ]` ran unprivileged against a root-only directory, so it was fail-open: every
@@ -165,15 +165,15 @@ substitute() {  # $1 = source unit, $2 = destination
   sudo chmod 0644 "$2"
 }
 
-substitute "$HERE/quackd-duck-bridge.service" /etc/systemd/system/quackd-duck-bridge.service
-substitute "$HERE/quackd-duck-camd.service" /etc/systemd/system/quackd-duck-camd.service
+substitute "$HERE/roboglot-duck-bridge.service" /etc/systemd/system/roboglot-duck-bridge.service
+substitute "$HERE/roboglot-duck-camd.service" /etc/systemd/system/roboglot-duck-camd.service
 
 # The snapshot URL is what gives this duck observe, go_to, search_scan and approach_and, so
 # it goes in only when a camera was actually proved to work above. A duck that cannot serve
 # frames should not advertise them: the verbs not existing is a refusal at validate time,
 # while a URL nothing answers is four verbs that fail one at a time during a run.
 if [ "$CAMD_OK" = "1" ]; then
-  BRIDGE_UNIT=/etc/systemd/system/quackd-duck-bridge.service
+  BRIDGE_UNIT=/etc/systemd/system/roboglot-duck-bridge.service
   sudo sed -i "s|--bind 127.0.0.1 --deadman-ms 300|& --camera-url $CAMERA_URL|" "$BRIDGE_UNIT"
   sudo grep -q -- "--camera-url" "$BRIDGE_UNIT" || die "could not add --camera-url to
   $BRIDGE_UNIT. Add it to the ExecStart by hand, or observe, go_to, search_scan and
@@ -186,8 +186,8 @@ fi
 # Anything left pointing at pi is a path this script did not know how to rewrite, and it
 # would fail at boot rather than here. `systemd-analyze verify` does not resolve User=
 # against passwd, so it cannot catch this and is not what we gate on.
-for unit in /etc/systemd/system/quackd-duck-bridge.service \
-            /etc/systemd/system/quackd-duck-camd.service; do
+for unit in /etc/systemd/system/roboglot-duck-bridge.service \
+            /etc/systemd/system/roboglot-duck-camd.service; do
   if [ "$SVC_USER" != "pi" ] && sudo grep -nE '/home/pi|^User=pi$' "$unit"; then
     die "$unit still refers to pi after substitution (the lines above). Edit it by hand
   before starting anything: a unit with the wrong User= or the wrong paths fails at boot."
@@ -203,26 +203,26 @@ Before you start anything:
 
   1. Read both installed units. Your user, virtualenv, checkout and walk policy have been
      substituted into them, and this script refused to finish if anything still said pi:
-        systemctl cat quackd-duck-bridge quackd-duck-camd
+        systemctl cat roboglot-duck-bridge roboglot-duck-camd
   2. Put your duck on a stand, with its feet off the ground.
   3. Dry run both, with no robot and no camera at all:
-        python /opt/quackd/quackd_duck_camd.py --fake --seconds 30
-        python /opt/quackd/quackd_duck_bridge.py serve --fake --seconds 30
+        python /opt/roboglot/roboglot_duck_camd.py --fake --seconds 30
+        python /opt/roboglot/roboglot_duck_bridge.py serve --fake --seconds 30
   4. Start the camera first, so the bridge has something behind the URL it advertises.
      --fail matters here: without it curl prints nothing and exits 0 when camd is down.
-        sudo systemctl start quackd-duck-camd
+        sudo systemctl start roboglot-duck-camd
         curl --fail --max-time 5 http://127.0.0.1:9872/healthz || \
-            journalctl -u quackd-duck-camd -n 40
-        sudo systemctl start quackd-duck-bridge
-        journalctl -u quackd-duck-bridge -f
+            journalctl -u roboglot-duck-camd -n 40
+        sudo systemctl start roboglot-duck-bridge
+        journalctl -u roboglot-duck-bridge -f
      Both units are Restart=no or start-limited, so if you end up editing and restarting a
      few times, clear the counter with:
-        sudo systemctl reset-failed quackd-duck-bridge
+        sudo systemctl reset-failed roboglot-duck-bridge
   5. From your laptop, safest first, over an ssh tunnel because the bridge binds loopback.
-     Forward both ports, and tell quackd where the camera is on your side of the tunnel:
+     Forward both ports, and tell Roboglot where the camera is on your side of the tunnel:
         ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 <your-pi>
-        quackd doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
-        quackd run open-duck-lookout --robot open_duck:bridge \
+        roboglot doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
+        roboglot run open-duck-lookout --robot open_duck:bridge \
             --address tcp://127.0.0.1:9871 \
             --camera-url http://127.0.0.1:9872/snapshot.jpg
 

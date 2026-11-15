@@ -11,12 +11,12 @@ from typing import Any
 
 import pytest
 
-from quackd import boards
-from quackd.boards import generic, jetson
-from quackd.boards.generic import GenericBoard
-from quackd.boards.jetson import JetsonBoard
-from quackd.boards.linux import BLUETOOTH
-from quackd.boards.sim import SimBoard
+from roboglot import boards
+from roboglot.boards import generic, jetson
+from roboglot.boards.generic import GenericBoard
+from roboglot.boards.jetson import JetsonBoard
+from roboglot.boards.linux import BLUETOOTH
+from roboglot.boards.sim import SimBoard
 from tests.jetson_fixtures import COMPATIBLE as ORIN_NANO_COMPATIBLE
 from tests.jetson_fixtures import ORIN_NANO, RELEASE_36_4_3
 from tests.linux_board_fixtures import (
@@ -48,7 +48,7 @@ def found(files: Mapping[str, str]) -> boards.BoardFacts:
 
 
 def _among(files: Mapping[str, str]) -> dict[str, Any]:
-    """quackd's own boards, every one reading `files`."""
+    """Roboglot's own boards, every one reading `files`."""
     return {
         "jetson": JetsonBoard(read=files.get),
         boards.SIM: SimBoard(),
@@ -267,8 +267,8 @@ def test_a_desktop_still_passes_with_its_real_name_in_the_passport() -> None:
     }
 
 
-def test_a_jetson_quackd_finds_by_itself_is_told_to_leave_out_the_flag() -> None:
-    """Otherwise a Jetson could sign `other`, and a bare `quackd onboard sign` there, which finds
+def test_a_jetson_roboglot_finds_by_itself_is_told_to_leave_out_the_flag() -> None:
+    """Otherwise a Jetson could sign `other`, and a bare `roboglot onboard sign` there, which finds
     the Jetson, would sign `jetson` over it and take its talk away."""
     with pytest.raises(boards.Unsupported, match="run it without --board") as caught:
         generic.facts(ORIN.get)
@@ -355,8 +355,8 @@ def test_detecting_this_computer_never_comes_back_as_generic() -> None:
     assert board.name != boards.GENERIC
 
 
-def test_it_is_quackds_own_and_adds_no_kind_a_passport_may_say() -> None:
-    from quackd.passport.document import BOARDS
+def test_it_is_roboglots_own_and_adds_no_kind_a_passport_may_say() -> None:
+    from roboglot.passport.document import BOARDS
 
     assert boards.GENERIC in boards.RESERVED and boards.GENERIC not in boards.OFFICIAL
     assert boards.KINDS == BOARDS == ("jetson", "sim", "other")

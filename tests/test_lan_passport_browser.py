@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from quackd.lan.lookup import LanRecord
-from quackd.lan.passports import PassportBrowser, passport_record, record_from_info
-from quackd.passport.beacon import SERVICE_TYPE, new_beacon_id
+from roboglot.lan.lookup import LanRecord
+from roboglot.lan.passports import PassportBrowser, passport_record, record_from_info
+from roboglot.passport.beacon import SERVICE_TYPE, new_beacon_id
 
 SHORT_ID = "0123456789abcdef"
 
@@ -178,7 +178,7 @@ def test_without_zeroconf_installed_the_browser_names_the_extra(
 ) -> None:
     import sys
 
-    from quackd.lan import LanNotInstalled
+    from roboglot.lan import LanNotInstalled
 
     monkeypatch.setitem(sys.modules, "zeroconf", None)
     with pytest.raises(LanNotInstalled):
@@ -191,7 +191,7 @@ def test_with_real_zeroconf_a_robot_announced_on_loopback_is_found_by_its_beacon
     zeroconf = pytest.importorskip("zeroconf", reason="the onboard and lan extras install it")
     import time
 
-    from quackd.lan.passports import announce_passport
+    from roboglot.lan.passports import announce_passport
 
     zc = zeroconf.Zeroconf(interfaces=["127.0.0.1"])
     browser = PassportBrowser(zc=zc).start()

@@ -15,7 +15,7 @@ What `add` needs is the run folder with its video left inside it, under any name
 A run on `lerobot:mock` had no arm to film, so it takes neither, and its log says so in place of a
 GIF. A trace too long for one README page is shown by its first and last lines, with the files.
 A run whose process was killed wrote no summary.json, so what its transcript recorded stands in.
-A command run after the run to put the arm right, such as `quackd robot release`, writes no run
+A command run after the run to put the arm right, such as `roboglot robot release`, writes no run
 folder, so its terminal output, saved as text, comes in with `--after` and follows the run's trace.
 An example run in several parts keeps each under `log/part-N`, named with `--part N`, and has one
 README. A part that is a command with no run folder comes in with `--text <file>` in place of the
@@ -79,7 +79,7 @@ NOT_THE_WORD = re.compile(r"\b(?:AI\s+)?models?\b", re.IGNORECASE)
 """A log says LLM, always: Rok's rule, for what a log writes in its own words (`our_words`)."""
 VLA = "vla"
 """The `provider` of a run `--controller vla` flew. It is `pricing.VLA_PILOT`, spelled here because
-this script imports nothing of quackd's, and a test holds the two together."""
+this script imports nothing of Roboglot's, and a test holds the two together."""
 FAKE = "fake"
 """The `provider` of a run `--llm fake` flew: the task's scripted pilot, which asks no LLM."""
 TABLE_START = "<!-- example-log table: written by scripts/example_log.py, do not edit by hand -->"
@@ -104,7 +104,7 @@ LOG = """\
 
 {films}
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | {category} | {goal_met} | {outcome} | {date} | {version} |
 
@@ -194,7 +194,7 @@ The run did not end on its own: its process was killed, so it wrote no summary a
 reason. What it did record up to then is in the numbers and the trace."""
 
 COMMAND = """\
-The following command was run with quackd {version}:
+The following command was run with Roboglot {version}:
 
 {fence}text
 {command}
@@ -204,7 +204,7 @@ NO_LOG_YET = """\
 # {id}: {title}
 
 This example has no log yet, and no file of its own: its lines run a command, a task that ships
-with quackd or another example's task file.
+with Roboglot or another example's task file.
 They are on [its card on the run sheet](../run-sheet.md#{card}).
 
 Once it has been run, its log replaces this page.
@@ -214,14 +214,14 @@ Once it has been run, its log replaces this page.
 TRY_ON_THE_MOCK = """\
 This runs the same {what} with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra{needs}"""
+with Roboglot's `lerobot` extra{needs}"""
 
 AN_LLM = " and the LLM's own SDK and key. It costs what the LLM charges."
 """What else trying a run on the mock needs when an LLM flew it."""
 
 SCRIPTED = (
-    "Its pilot is a script that ships with quackd in place of an LLM, so it needs no key and costs"
-    " nothing."
+    "Its pilot is a script that ships with Roboglot in place of an LLM, so it needs no key and "
+    "costs nothing."
 )
 """What trying a run `--llm fake` flew needs: nothing, since no LLM is asked."""
 
@@ -229,25 +229,25 @@ TRY_ON_THE_SIMULATOR = """\
 This runs the same {what} with no arm attached, on `lerobot:mujoco`, the arm's simulator, against a
 policy server. Leave the first command running in a terminal of its own, and answer the second's
 questions yourself, as a person did on the arm. It shows a simulated arm and not yours. Run it from
-a checkout of this repository with quackd's `lerobot-sim` extra, and `lerobot-vla` as well if the
+a checkout of this repository with Roboglot's `lerobot-sim` extra, and `lerobot-vla` as well if the
 policy is a checkpoint. No LLM is asked, so it costs nothing."""
 
 TRY_THE_REFUSAL = """\
-This needs no arm and no key, and it costs nothing: quackd refuses the line before it connects to
+This needs no arm and no key, and it costs nothing: Roboglot refuses the line before it connects to
 anything or asks any LLM, so it gets no further on your machine than it did here. The line carries
 `--dry-run`, which is refused the same way, so that it could not move an arm even if it got further.
-Run it from a checkout of this repository with quackd's `lerobot` extra."""
+Run it from a checkout of this repository with Roboglot's `lerobot` extra."""
 
 TRY_AS_IT_RAN = """\
 This ran with no arm attached, on `lerobot:mock`, an arm that lives in memory, so these are the
 lines that ran, with their paths as they read from a checkout of this repository. Run them from one
-with quackd's `lerobot` extra.{beside} {cost}"""
+with Roboglot's `lerobot` extra.{beside} {cost}"""
 
 TRY_A_SESSION = """\
 This starts the same session with no arm attached, on `lerobot:mock`, an arm that lives in memory:
 type the lines under The exact command at its `drive>` prompt, a bare Enter where one is empty. It
 shows the rules a session is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges."""
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges."""
 
 TRACE_HEAD = 200
 TRACE_TAIL = 200
@@ -356,20 +356,20 @@ def _joined(values: Iterable[str]) -> str:
 
 
 def _typed(line: str, name: str) -> str:
-    """The command at the head of a trace: quackd's `$ ...`, or a saved terminal's prompt line."""
+    """The command at the head of a trace: Roboglot's `$ ...`, or a saved terminal's prompt line."""
     if line.startswith("$ "):
         return line.removeprefix("$ ")
-    found = re.search(r"> (quackd .*)$", line)
+    found = re.search(r"> (roboglot .*)$", line)
     if found is None:
         raise LogError(f"{name}'s terminal.txt does not open with the command it ran")
     return found.group(1)
 
 
-def _duck_path(summary: dict[str, Any]) -> str | None:
+def _glot_path(summary: dict[str, Any]) -> str | None:
     """The task file's path inside this repository, if the command named one there."""
     for word in summary["command"]:
         path = word.replace("\\", "/")
-        if path.endswith(".duck") and "docs/examples/lerobot/" in path:
+        if path.endswith((".glot", ".task", ".brief")) and "docs/examples/lerobot/" in path:
             return "docs/examples/lerobot/" + path.split("docs/examples/lerobot/", 1)[1]
     return None
 
@@ -418,7 +418,7 @@ def _try_intro(summary: dict[str, Any], notes: dict[str, Any]) -> str:
         cost = "It needs the LLM's own SDK and key, and costs what the LLM charges."
         if summary.get("provider") == "local":
             cost = (
-                "`--llm local` needs quackd's `openai` extra as well, since it speaks OpenAI's"
+                "`--llm local` needs Roboglot's `openai` extra as well, since it speaks OpenAI's"
                 " protocol, but no key, and nothing is billed: it asks whatever answers at the"
                 " `--base-url` the line gives."
             )
@@ -466,21 +466,23 @@ def _as_it_ran(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[s
 
 
 def _refused(summary: dict[str, Any]) -> bool:
-    """Whether this is a `quackd run` that quackd turned down, so that nothing ever started."""
+    """Whether this is a `roboglot run` that Roboglot turned down, so that nothing ever started."""
     return (
         summary.get("provider") is None
-        and summary["command"][:2] == ["quackd", "run"]
+        and summary["command"][:2] == ["roboglot", "run"]
         and summary["outcome"] == "error"
     )
 
 
 def _try_the_refusal(summary: dict[str, Any]) -> str:
-    """The line quackd refused, which gets no further on anybody else's machine."""
+    """The line Roboglot refused, which gets no further on anybody else's machine."""
     words = summary["command"]
     if not _refused(summary):
         raise LogError(f"`{' '.join(words)}` is no run and no refusal: nothing says how to try it")
-    path = _duck_path(summary)
-    line = [path if path and word.endswith(".duck") else word for word in words]
+    path = _glot_path(summary)
+    line = [
+        path if path and word.endswith((".glot", ".task", ".brief")) else word for word in words
+    ]
     # the refusal covers a dry run as well, and a dry run moves no arm should the refusal ever go
     dry = [] if "--dry-run" in line else ["--dry-run"]
     return " ".join(f'"{word}"' if " " in word else word for word in [*line, *dry])
@@ -501,37 +503,39 @@ def _try_it(summary: dict[str, Any], notes: dict[str, Any], after: Sequence[str]
     words = summary["command"]
     if summary.get("session") is not None:
         # a session's goals are typed at its prompt, and the intro says to type the same lines
-        return f"quackd drive --robot lerobot:mock --llm {_try_llm(summary)}"
-    task = f'--goal "{goal}"' if goal is not None else _duck_path(summary) or words[2]
+        return f"roboglot drive --robot lerobot:mock --llm {_try_llm(summary)}"
+    task = f'--goal "{goal}"' if goal is not None else _glot_path(summary) or words[2]
     if summary.get("provider") != VLA:
         # without it, a log of a dry run would be tried as a run that sends its moves
         dry = " --dry-run" if "--dry-run" in words else ""
-        return f"quackd run {task} --robot lerobot:mock --llm {_try_llm(summary)} --no-memory{dry}"
+        return (
+            f"roboglot run {task} --robot lerobot:mock --llm {_try_llm(summary)} --no-memory{dry}"
+        )
     # `lerobot:mock` plays a scripted policy of its own and reaches no server, so a VLA pilot's run
     # is tried on the simulator, against the policy it ran. A checkpoint's pins, cameras and rate
     # are in no record, so its server's line is the one somebody typed, from the notes.
-    typed = [line for line in notes.get("before") or [] if "quackd policy serve" in line]
+    typed = [line for line in notes.get("before") or [] if "roboglot policy serve" in line]
     served = str((summary.get("policy") or {}).get("policy") or "scripted:hold")
     if not typed and not served.startswith("scripted:"):
         raise LogError(
-            f"this run's policy is {served}: put the `quackd policy serve` line it ran under "
+            f"this run's policy is {served}: put the `roboglot policy serve` line it ran under "
             "`before` in the notes, because what that line pinned is in no record"
         )
-    serve = typed[0] if typed else f"quackd policy serve --policy {served}"
+    serve = typed[0] if typed else f"roboglot policy serve --policy {served}"
     # what the run needed of the command itself, which a try on the simulator needs as well
     kept = [flag for flag in ("--accept-other-frame", "--no-play") if flag in words]
-    line = ["quackd run", task, "--robot lerobot:mujoco", "--policy-url http://127.0.0.1:9875"]
+    line = ["roboglot run", task, "--robot lerobot:mujoco", "--policy-url http://127.0.0.1:9875"]
     return serve + "\n" + " ".join([*line, "--controller vla", *kept, "--no-memory"])
 
 
 def _task_file(summary: dict[str, Any], folder: Path) -> str:
     if summary.get("session") is not None:
         return "none, a person types the goals"
-    path = _duck_path(summary)
+    path = _glot_path(summary)
     if _goal(summary) is not None:
         return "none, the command gave a goal"
     if path is None:
-        return f"`{summary['duck']}`, which ships with quackd"
+        return f"`{summary['glot']}`, which ships with Roboglot"
     inside = path.removeprefix("docs/examples/lerobot/")
     here = f"{folder.name}/"
     link = inside.removeprefix(here) if inside.startswith(here) else f"../{inside}"
@@ -572,11 +576,11 @@ def _numbers(
         asked_for = f"`{asked}`" if asked else "the default robot"
         robot = f"{asked_for} ({summary.get('transport')}), whose connect failed"
     rows: list[tuple[str, object]] = [
-        ("quackd version", summary["version"]),
+        ("roboglot version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
         ("Robot", robot),
         ("Pilot" if vla else "LLM", llm),
-        ("Task file", _task_file(summary, folder) if ran or _duck_path(summary) else "none"),
+        ("Task file", _task_file(summary, folder) if ran or _glot_path(summary) else "none"),
         ("Steps", summary.get("steps", "none")),
         ("Turns" if vla else "LLM calls", summary.get("llm_calls", "none")),
         ("Total time", _seconds(summary.get("wall_s"))),
@@ -784,7 +788,7 @@ def render_table(root: Path) -> str:
             "example set out to show, which is a different question from whether the run ended in "
             "success.",
             "",
-            "| Done | Example | Category | What it showed | Goal met | quackd |",
+            "| Done | Example | Category | What it showed | Goal met | Roboglot |",
             "|---|---|---|---|---|---|",
             *rows,
             "",
@@ -934,7 +938,7 @@ def add_run(
     and git keeps one copy of identical files. A run on `lerobot:mock` had no arm to film, so it
     takes no video, no GIF and no `speed`. A run whose process was killed wrote no summary.json,
     and what its transcript recorded up to then stands in for one, as `record.json`. So does what a
-    `quackd drive` session recorded, whose own summary has no version and no command, and which
+    `roboglot drive` session recorded, whose own summary has no version and no command, and which
     writes no terminal record at all, so `terminal` is what its terminal printed, as saved."""
     matched = re.fullmatch(r"\d{8}-\d{6}-(?:(e\d{3})(?:-.*)?|.*)", run_dir.name)
     name = example or (matched.group(1) if matched else None)
@@ -1017,10 +1021,10 @@ def _place_gif(log: Path, gif: Path | None, video: Path | None) -> None:
 
 
 def _session_record(run_dir: Path) -> str:
-    """What a `quackd drive` session recorded, in the words a run's summary uses. The session's own
-    summary has its counters and its brake, its start has the version, and each goal it flew keeps
-    a summary of its own with the command that started the session, its cost and its waits, which
-    add up to the session's. The lines typed at its prompt are in its transcript, in order."""
+    """What a `roboglot drive` session recorded, in the words a run's summary uses. The session's
+    own summary has its counters and its brake, its start has the version, and each goal it flew
+    keeps a summary of its own with the command that started the session, its cost and its waits,
+    which add up to the session's. The lines typed at its prompt are in its transcript, in order."""
     own: dict[str, Any] = json.loads(_read(run_dir / "summary.json"))
     lines = _read(run_dir / "transcript.jsonl").splitlines()
     rows: list[dict[str, Any]] = [json.loads(line) for line in lines if line.strip()]
@@ -1065,8 +1069,8 @@ def _killed_record(run_dir: Path) -> str:
     """What a run's transcript recorded up to the moment its process was killed, in the words a
     summary would have used: a killed process writes no summary.json and gives no reason. Its last
     LLM call may have been sent and never answered, so that call counts and its wait and tokens do
-    not. First motion is timed as quackd times it, from the start of the verb that moved. The task
-    is named from the start, as a summary names it, since one that ships with quackd has no file
+    not. First motion is timed as Roboglot times it, from the start of the verb that moved. The task
+    is named from the start, as a summary names it, since one that ships with Roboglot has no file
     in the command to name it by."""
     lines = _read(run_dir / "transcript.jsonl").splitlines()
     rows: list[dict[str, Any]] = [json.loads(line) for line in lines if line.strip()]
@@ -1085,7 +1089,7 @@ def _killed_record(run_dir: Path) -> str:
     state = ((seen[-1].get("features") or {}).get("state") or {}) if seen else {}
     last = answered[-1] if answered else {}
     record = {
-        "duck": start.get("duck"),
+        "glot": start.get("glot"),
         "command": start["command"],
         "version": start["version"],
         "started_at": start["started_at"],
@@ -1134,7 +1138,7 @@ def add_text(
     part: int | None = None,
     gif: Path | None = None,
 ) -> Path:
-    """Log what a command with no run folder printed: `quackd robot rest-pose`, a refused run.
+    """Log what a command with no run folder printed: `roboglot robot rest-pose`, a refused run.
 
     Nothing recorded its version or when it ran, so somebody says. What is not in its output reads
     as not recorded, but for the robot, which the command names. It ended as its last line marked
@@ -1214,7 +1218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="with a session's folder: what its terminal printed, since a session saves none",
     )
-    add.add_argument("--version", help="with --text: the quackd version that ran it")
+    add.add_argument("--version", help="with --text: the roboglot version that ran it")
     add.add_argument("--started", help="with --text: when it ran, as 2026-11-06T12:27:26Z")
     verbs.add_parser("write", help="rewrite every log and the table")
     verbs.add_parser("check", help="exit 1 if any log or the table would change")

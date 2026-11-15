@@ -1,26 +1,26 @@
-# quackd and an NVIDIA Jetson
+# Roboglot and an NVIDIA Jetson
 
 A Jetson is small enough to ride on a robot and has a GPU, and on its own it is already a
-robot's computer. quackd meets one in two ways. Every quackd command but one stays on your
-laptop, and `--host` names the board, which gives the quackd there four things: the LLM on the
+robot's computer. Roboglot meets one in two ways. Every Roboglot command but one stays on your
+laptop, and `--host` names the board, which gives the Roboglot there four things: the LLM on the
 board's GPU, the board's health, frames from a camera on the board, and detections computed on
 its GPU. The first is your own LLM server, installed on the board. The other three come from
-one small daemon quackd ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
+one small daemon Roboglot ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
 the way it ships a camera daemon for the Open Duck Mini's Pi. The other way is the one part of
-quackd that runs on the board itself, `quackd onboard`, which a robot that carries a Jetson runs
+Roboglot that runs on the board itself, `roboglot onboard`, which a robot that carries a Jetson runs
 so that it can introduce itself to robots it meets, and which drives the robot from there when
 the robot's file names an adapter ([Robot Passport on the board](#robot-passport-on-the-board)).
 
 Nothing on this page has been run on a Jetson by this project. It is written from NVIDIA's own
-documentation, and quackd's side of it, the daemon, the client, the detector, the camera and
-`quackd onboard`, was exercised against fakes on a laptop. The [Status](#status) section at the
+documentation, and Roboglot's side of it, the daemon, the client, the detector, the camera and
+`roboglot onboard`, was exercised against fakes on a laptop. The [Status](#status) section at the
 end says exactly what that does and does not prove, and what to send back if you run it on
 yours.
 
 > [!NOTE]
-> A Jetson is not a robot. It never appears in `quackd list-adapters` and there is no
+> A Jetson is not a robot. It never appears in `roboglot list-adapters` and there is no
 > `--robot jetson:...`. An adapter is a body with a manifest and intents. A Jetson is a
-> computer: `--host` names it beside the body `--robot` names, and `quackd onboard` calls it a
+> computer: `--host` names it beside the body `--robot` names, and `roboglot onboard` calls it a
 > board, the computer a robot carries
 > ([ADR-0044](../adr/0044-a-jetson-is-a-host-not-a-body.md) decided the first half,
 > [ADR-0046](../adr/0046-the-jetson-is-reached-not-run-on.md) the second, and
@@ -29,47 +29,47 @@ yours.
 
 ## Reached, not run on
 
-The arrangement `--host` makes is two machines. The laptop runs quackd: the loop, the executor,
+The arrangement `--host` makes is two machines. The laptop runs Roboglot: the loop, the executor,
 the gates and the record. The board runs what needs the board: the LLM server on its GPU
-(Ollama, or `llama-server` or vLLM), quackd's host daemon, and, when the board is a robot's own
-computer, that robot's daemon. quackd reaches the LLM server through the local presets that
+(Ollama, or `llama-server` or vLLM), Roboglot's host daemon, and, when the board is a robot's own
+computer, that robot's daemon. Roboglot reaches the LLM server through the local presets that
 already exist ([guides/local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port
 9874.
 
-`--host HOST[:PORT]` names the board on `quackd run`, `serve-mcp`, `doctor`, `robot add` and
+`--host HOST[:PORT]` names the board on `roboglot run`, `serve-mcp`, `doctor`, `robot add` and
 `robot edit`, and `--host-token` goes with it. The port is the daemon's, 9874 unless you changed
 it. `--robot` still names the body, so the flag is the same whatever the body is. Without the
-flag, a command uses the host a registered robot keeps, then `QUACKD_HOST`. The token is found
-in the same order, `--host-token`, then the robot's, then `QUACKD_HOST_TOKEN`, and a robot's
+flag, a command uses the host a registered robot keeps, then `ROBOGLOT_HOST`. The token is found
+in the same order, `--host-token`, then the robot's, then `ROBOGLOT_HOST_TOKEN`, and a robot's
 token is only used when that robot keeps a board. A `--host-token` typed where nothing names a
 board refuses a run or a server, as `robot add` refuses one without `--host`, and fails
-`doctor`'s host section, while a `QUACKD_HOST_TOKEN` with no board to go to is left unread.
+`doctor`'s host section, while a `ROBOGLOT_HOST_TOKEN` with no board to go to is left unread.
 When the daemon refuses a token, the refusal says how to change the one that was sent. For a
-token the robot keeps, that is `quackd robot edit NAME --host-token`, because the robot's
-token outranks `QUACKD_HOST_TOKEN` and setting the variable changes nothing. A run asks the
+token the robot keeps, that is `roboglot robot edit NAME --host-token`, because the robot's
+token outranks `ROBOGLOT_HOST_TOKEN` and setting the variable changes nothing. A run asks the
 daemon's `/hello` before anything connects to the body, and refuses when it does not answer:
 
 ```
 ✗ error: --host 127.0.0.1:1 did not answer: 127.0.0.1:1 did not answer /hello within 2s: is
-the board up, and is quackd-jetson-hostd running on it?
-  quackd doctor --host 127.0.0.1:1 shows what the board says; drop --host to run without it
+the board up, and is roboglot-jetson-hostd running on it?
+  roboglot doctor --host 127.0.0.1:1 shows what the board says; drop --host to run without it
 ```
 
-A host is one camera and one detector, so a flock is refused with `--host`, and with a host
-stored with one of its members. `QUACKD_HOST` does not stop a flock: it is the board you usually
-use rather than a claim about these bodies, and for a flock it moves only a local preset's LLM
+A host is one camera and one detector, so a team is refused with `--host`, and with a host
+stored with one of its members. `ROBOGLOT_HOST` does not stop a team: it is the board you usually
+use rather than a claim about these bodies, and for a team it moves only a local preset's LLM
 server. A robot keeps a board the way it keeps an address:
 
 ```bash
-quackd robot add duck open_duck:bridge --address tcp://127.0.0.1:9871 --host 127.0.0.1
+roboglot robot add duck open_duck:bridge --address tcp://127.0.0.1:9871 --host 127.0.0.1
 ```
 
 ```
 ✓ added duck: open_duck:bridge at tcp://127.0.0.1:9871, host 127.0.0.1
-  quackd run <duck> --robot duck
+  roboglot run <task> --robot duck
 ```
 
-`quackd robot edit duck --clear host` forgets the board and its token together.
+`roboglot robot edit duck --clear host` forgets the board and its token together.
 
 Three things about the board are worth knowing before anything else.
 
@@ -82,12 +82,12 @@ LLM size table below matters more here than on a desktop with a discrete card.
 application note puts NVML under unsupported features: it is supported on Thor and later
 only. Use `tegrastats`, whose `GR3D_FREQ` field is the GPU, or `jtop` from `jetson-stats`
 for the same numbers with a screen around them. The host daemon reads one `tegrastats` line
-for `quackd doctor --host`.
+for `roboglot doctor --host`.
 
-**Two of quackd's ten bodies can carry a Jetson.** A ToddlerBot has one on its back,
+**Two of Roboglot's ten bodies can carry a Jetson.** A ToddlerBot has one on its back,
 and `bridge/toddlerbot/` is the daemon that runs there
 ([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)), and one of MOSS's builds puts
-a Jetson Orin Nano Super in the rover, where MOSS's own stack runs and quackd's bridge beside it
+a Jetson Orin Nano Super in the rover, where MOSS's own stack runs and Roboglot's bridge beside it
 ([adapters/moss/README.md](../adapters/moss/README.md)). That is the case where the host
 daemon, and perhaps an LLM server, share a board with a robot's control loop, and it has a section
 of its own below. The Microduck's onboard computer is a Radxa Zero 3W on an alpha and Seeed's
@@ -117,13 +117,13 @@ Ollama bundles all exist today.
 The L4T column is off NVIDIA's JetPack archive and the Ubuntu column off each release's own
 download page, both read on 2026-09-22. **NVIDIA publishes no Python version at all**: that
 column is Ubuntu's own default `python3` for the release beside it. All of it is version
-sensitive by nature, so check it against the board in front of you. `quackd doctor --host`
-names your board's JetPack out of this same table in `quackd/boards/l4t.py`, and
+sensitive by nature, so check it against the board in front of you. `roboglot doctor --host`
+names your board's JetPack out of this same table in `roboglot/boards/l4t.py`, and
 `tests/test_docs.py` holds the two copies to each other so the page and the command cannot
 drift apart. The releases are spelled in three parts here, which is the form the parser
 normalises to, so JetPack 6.1 appears as `36.4.0` where NVIDIA's own table writes `36.4`.
 
-For `--host`, quackd's own Python floor does not reach the board, because the quackd package is
+For `--host`, Roboglot's own Python floor does not reach the board, because the Roboglot package is
 not installed there. The board runs only the host daemon, one file under JetPack's own
 `python3`, written for Python 3.10 with nothing but the standard library at import, and each
 thing it serves asks for a little more:
@@ -141,7 +141,7 @@ for, so this page stops at 6. JetPack 7 brought the Orin family onto Ubuntu 24.0
 3.12, and its wheel ecosystem is younger: treat it as forward looking and keep 6.2 as the one
 this page is written for.
 
-`quackd onboard` is the exception to all of this, because it is quackd itself. It needs Python
+`roboglot onboard` is the exception to all of this, because it is Roboglot itself. It needs Python
 3.11 or newer, which JetPack 6 does not ship, so there it runs on a Python uv fetches for it,
 with `--python 3.12`, and leaves JetPack's own `python3` to the host daemon. It takes an Orin on
 JetPack 6 or 7.2, L4T 36 or 39, and a Thor on JetPack 7, L4T 38 or 39, and refuses a Xavier and
@@ -158,12 +158,12 @@ df -h /                          # LLMs are gigabytes each: this wants to be NVM
 sudo tegrastats                  # live: RAM, GR3D_FREQ (the GPU), temperatures, power rails
 ```
 
-Those run on the board. Once the host daemon is up, `quackd doctor --host` answers most of it
+Those run on the board. Once the host daemon is up, `roboglot doctor --host` answers most of it
 from the laptop in one screen, and that screen is the output to paste into an issue.
 
 ## Set up the board
 
-Two things go on the board: an LLM server, which is your own install, and quackd's host
+Two things go on the board: an LLM server, which is your own install, and Roboglot's host
 daemon. Neither needs the other, so a board can run one without the other.
 
 ### The LLM server
@@ -200,10 +200,10 @@ all ([guides/local-llms.md](local-llms.md#knobs)). `--llm openai` is not a local
 at the board by `OPENAI_BASE_URL`, it sends the board everything the `openai` package sends by
 itself, those three included ([SECURITY.md](../../SECURITY.md)).
 
-### quackd's host daemon
+### Roboglot's host daemon
 
-The daemon is one file, `bridge/jetson/quackd_jetson_hostd.py`, run by systemd under the
-board's own `/usr/bin/python3`. It is not in quackd's wheel, so clone the repository on the
+The daemon is one file, `bridge/jetson/roboglot_jetson_hostd.py`, run by systemd under the
+board's own `/usr/bin/python3`. It is not in Roboglot's wheel, so clone the repository on the
 board or copy the file and its unit across. Its install is written out, with the reason for
 each step, in [bridge/jetson/README.md](../../bridge/jetson/README.md#install), and this page does
 not repeat it: it installs the file, writes a random token readable by the service's group,
@@ -222,7 +222,7 @@ remove it.
 Read the token once, then tunnel both ports:
 
 ```bash
-export QUACKD_HOST_TOKEN="$(ssh <board> cat /etc/quackd/jetson-hostd.token)"
+export ROBOGLOT_HOST_TOKEN="$(ssh <board> cat /etc/roboglot/jetson-hostd.token)"
 ssh -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434 <board>
 ```
 
@@ -240,12 +240,12 @@ probes none of them:
 1. `--base-url`: a URL given for this run is used exactly as given.
 2. `--host`, or the host a registered robot was stored with: the preset's address moved to that
    machine, port and path kept.
-3. `QUACKD_BASE_URL`, used exactly as given.
+3. `ROBOGLOT_BASE_URL`, used exactly as given.
 4. `OPENAI_BASE_URL`, used exactly as given.
-5. `QUACKD_HOST`: the preset's address moved to that machine.
+5. `ROBOGLOT_HOST`: the preset's address moved to that machine.
 6. The preset's own address, on localhost.
 
-So `QUACKD_HOST=127.0.0.1` in `.env` saves typing the flag, unless `QUACKD_BASE_URL` or
+So `ROBOGLOT_HOST=127.0.0.1` in `.env` saves typing the flag, unless `ROBOGLOT_BASE_URL` or
 `OPENAI_BASE_URL` is set as well. Either of those outranks it for the LLM server, so the
 preset stays at that URL while the host daemon is still reached on the board. `--host`
 outranks both, on purpose: a board typed for this run, or registered with this robot, is a
@@ -271,11 +271,11 @@ what fits beside everything else rather than what is fastest.
 Download sizes are what Ollama's own library page printed on 2026-09-22 and they are not the
 runtime figure: add the KV cache and the runner, and leave headroom for the operating system
 and for the host daemon's detector. **No speed is quoted here on purpose.** Nobody has timed
-quackd's loop on any Jetson, and a tokens-per-second number copied from a benchmark of a
+Roboglot's loop on any Jetson, and a tokens-per-second number copied from a benchmark of a
 different prompt on a different quantisation would be a guess wearing a number's clothes.
 
-The LLM has to support tool calling, because that is how quackd offers the robot's verbs. If
-yours does not, quackd falls back to asking for JSON in the text and retries once, which works
+The LLM has to support tool calling, because that is how Roboglot offers the robot's verbs. If
+yours does not, Roboglot falls back to asking for JSON in the text and retries once, which works
 and is worse ([guides/local-llms.md](local-llms.md)). Qwen3 thinks by default, which costs tokens on
 every turn; `--extra-body` turns that off and that page shows how.
 
@@ -284,12 +284,12 @@ every turn; `--extra-body` turns that off and that page shows how.
 Start with doctor, which asks the board what it is before anything else does:
 
 ```bash
-quackd doctor --host 127.0.0.1
+roboglot doctor --host 127.0.0.1
 ```
 
 ```
 Jetson at 127.0.0.1:9874 (the board the daemon runs on) ───────────────────────────────────
-✓ daemon      quackd-jetson-hostd 0.1.0, protocol 1, on orin-nano
+✓ daemon      roboglot-jetson-hostd 0.1.0, protocol 1, on orin-nano
 ✓ camera      640x480 at 5 fps from csi, field of view 62.2 degrees
 ✓ detector    yolov8n.pt on cuda
 ✓ health      ok
@@ -311,20 +311,20 @@ That block came from a fake board, not a Jetson. It is what doctor printed on Wi
 `tests/fake_jetson_hostd.py` listening on port 9874, a fake of the daemon's protocol whose
 answers describe an Orin Nano with a camera and a CUDA detector, and whose board files and
 `tegrastats` line are the ones in `tests/jetson_fixtures.py`.
-[What quackd doctor shows](#what-quackd-doctor-shows) goes through it row by row.
+[What roboglot doctor shows](#what-roboglot-doctor-shows) goes through it row by row.
 
 Then the cartoon duck, with the LLM on the board. It needs no robot, and it is the honest
 first test of the arrangement: if the duck kicks the ball, the LLM on the board is answering
-the quackd on your laptop.
+the Roboglot on your laptop.
 
 ```bash
-quackd run find-and-kick --robot microduck:sim2d --llm ollama:qwen3:4b --host 127.0.0.1
+roboglot run find-and-kick --robot microduck:sim2d --llm ollama:qwen3:4b --host 127.0.0.1
 ```
 
 > [!IMPORTANT]
 > The `openai` extra is the client every local preset speaks through, and `microduck` is a
-> robot, because `uv pip install quackd` installs the core and no body at all, so this run
-> wants `quackd[openai,microduck]`. `--llm ollama` means `http://localhost:11434/v1` on its
+> robot, because `uv pip install roboglot` installs the core and no body at all, so this run
+> wants `roboglot[openai,microduck]`. `--llm ollama` means `http://localhost:11434/v1` on its
 > own, and `--host` moves it to the board with its port kept, so there is no address to pass.
 
 The header says what the run will use. This is the one that command printed against the same
@@ -352,7 +352,7 @@ the board brings the LLM and a detector. With the duck's own tunnel up, as its
 it:
 
 ```bash
-quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+roboglot run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
   --host 127.0.0.1 --llm ollama:qwen3:4b
 ```
 
@@ -379,7 +379,7 @@ board's detector, `yolo@host`, whenever the daemon says it can detect. A simulat
 the colour detector is tuned for what a simulator draws. `--detector color` opts out and keeps
 the colour detector on the laptop. `--detector host` asks for the board's even on a simulator,
 and is refused before anything connects when the daemon cannot detect. `--detector yolo` is
-YOLO on the laptop and needs `quackd[yolo]`. Whichever it is, the run keeps it: a board that
+YOLO on the laptop and needs `roboglot[yolo]`. Whichever it is, the run keeps it: a board that
 stops answering mid-run gives each frame no detections and a reason, never the colour
 detector in its place. The two do not label the same things on a real camera, and a quiet
 switch would change what `go_to` steers at with nothing in the record saying so. Nor is a frame
@@ -397,18 +397,18 @@ a frame has a `detect` block: how many frames went, how long the laptop waited f
 time the board says it spent in the model
 ([concepts/architecture.md](../concepts/architecture.md#transcript-format)).
 
-`quackd serve-mcp` takes `--host`, `--host-token` and `--detector` the same way, so a chat
+`roboglot serve-mcp` takes `--host`, `--host-token` and `--detector` the same way, so a chat
 client drives the body with the board's camera and detector ([guides/mcp.md](mcp.md)).
 
 A body described without a camera of its own, such as a ToddlerBot on its bridge, gains a
-board's camera, and `observe` with it, before a run judges the task file. `quackd validate`
-and `quackd list-verbs` ask no board anything, so they judge that body without the board's
+board's camera, and `observe` with it, before a run judges the task file. `roboglot validate`
+and `roboglot list-verbs` ask no board anything, so they judge that body without the board's
 camera, and say so when a board is named for the robot:
 
 ```
 ⚠ validate does not ask the host 127.0.0.1 from robot tb (robots.json), so the board's camera
 is not counted: a run adds it to tb (toddlerbot:bridge), with the verbs a camera unlocks, when
-the board has one; quackd doctor --host 127.0.0.1 shows whether it does
+the board has one; roboglot doctor --host 127.0.0.1 shows whether it does
 ```
 
 If all you want from the board is its LLM, none of this is needed:
@@ -436,7 +436,7 @@ Add `-L 8000:127.0.0.1:8000` to the tunnel and `--decision-llm opendecision` fin
 already looks, `http://127.0.0.1:8000`. Bound wide on a network you trust, it is
 `--decision-llm opendecision --decision-url http://jetson.local:8000`.
 
-`laya` runs inside quackd's own process, and that process is on the laptop, so it has nothing
+`laya` runs inside Roboglot's own process, and that process is on the laptop, so it has nothing
 to do with the board.
 
 Neither has been run on a Jetson, and the gap is wider than this page: nobody has run the
@@ -451,7 +451,7 @@ None of this is required by the host daemon. All of it matters once an LLM is re
 LLM is loaded from disk every time the server restarts.
 
 **Swap, on the NVMe, instead of zram.** JetPack enables zram by default, which compresses RAM
-rather than adding any, so it cannot hold what memory could not. `quackd doctor --host` warns
+rather than adding any, so it cannot hold what memory could not. `roboglot doctor --host` warns
 when the only swap the board has is zram.
 
 ```bash
@@ -491,22 +491,22 @@ gives the LLM back whatever the graphical session was holding, and
 ## Beside a robot's own daemon
 
 This is where the board does the most. A ToddlerBot carries a Jetson, and `bridge/toddlerbot/`
-is quackd's own daemon for it, owning the fifty hertz control loop that upstream has none for
-and listening on port 9873. quackd stays on the laptop here too, and the board holds up to
+is Roboglot's own daemon for it, owning the fifty hertz control loop that upstream has none for
+and listening on port 9873. Roboglot stays on the laptop here too, and the board holds up to
 three processes: the daemon that moves the robot, an LLM server if you put one there, and the
 host daemon started with `--camera none`, because the ToddlerBot's daemon owns the robot's
-cameras and two processes cannot own one camera. quackd takes the frames from the robot's
+cameras and two processes cannot own one camera. Roboglot takes the frames from the robot's
 daemon, sends them back to the board's YOLO to be detected, and reads the board's health from
 the host daemon.
 
-Every boundary stays where it was: the robot's daemon still owns the body, quackd still owns
+Every boundary stays where it was: the robot's daemon still owns the body, Roboglot still owns
 the deciding and the gating, and the LLM still only ever picks one verb. The ToddlerBot's
 daemon binds loopback too, so its port joins the tunnel, and doctor shows the board and the
 body in one screen:
 
 ```bash
 ssh -L 9873:127.0.0.1:9873 -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434 <board>
-quackd doctor --robot toddlerbot:bridge --address tcp://127.0.0.1:9873 --host 127.0.0.1
+roboglot doctor --robot toddlerbot:bridge --address tcp://127.0.0.1:9873 --host 127.0.0.1
 ```
 
 Against a fake board started without a camera, the host section of that doctor printed these
@@ -526,12 +526,12 @@ two rows, and the body's section an error, since no ToddlerBot was there:
 > pinning the LLM server off the cores the loop runs on.
 
 That is why the host daemon's systemd unit runs it at `Nice=10`, under `MemoryMax=2G` and with
-`OOMScoreAdjust=500`: it is the process the board should lose first. Losing it costs quackd a
+`OOMScoreAdjust=500`: it is the process the board should lose first. Losing it costs Roboglot a
 camera, detections and the board's health. Losing the control loop mid-step costs the robot.
 
 ## Robot Passport on the board
 
-`quackd onboard` is the one part of quackd that runs on a Jetson, and it runs there because a
+`roboglot onboard` is the one part of Roboglot that runs on a Jetson, and it runs there because a
 robot's identity belongs to its body. It keeps the robot's [Robot Passport](../passport/README.md),
 listens over Bluetooth LE for robots that come close, checks their passports, and lets the
 robot's brain talk to them over the LAN or a Bluetooth link
@@ -544,36 +544,36 @@ Three commands, on the board:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install "quackd[onboard]"
-quackd onboard
+uv tool install "roboglot[onboard]"
+roboglot onboard
 ```
 
 What the board needs for them:
 
-- **An Orin on JetPack 6 or 7.2, or a Thor on JetPack 7.** `quackd onboard` reads the board from
+- **An Orin on JetPack 6 or 7.2, or a Thor on JetPack 7.** `roboglot onboard` reads the board from
   its device tree and `/etc/nv_tegra_release`, and refuses a Xavier and JetPack 5 with the
   reason. On any other computer it refuses and names `--board sim`, which stands in for a robot's
   computer on a laptop and says so in the passport it signs, and on Linux `--board generic`, which
   is any other robot's computer by what it calls itself.
 - **Python 3.11 or newer.** JetPack 6 ships 3.10, so there the second command is
-  `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the
+  `uv tool install --python 3.12 "roboglot[onboard]"`, and uv fetches a Python of its own for the
   tool. JetPack's own `python3` is left to the host daemon.
 - **A Bluetooth adapter BlueZ can drive,** advertising and accepting a link at once.
-  `quackd onboard preflight` says what the adapter, `bluetoothd` and your permissions allow
+  `roboglot onboard preflight` says what the adapter, `bluetoothd` and your permissions allow
   before the wizard installs the service.
-- **systemd.** The wizard installs `quackd-onboard.service`, a system unit that runs the service
+- **systemd.** The wizard installs `roboglot-onboard.service`, a system unit that runs the service
   as your user in the `bluetooth` group, at `Nice=10`, under `MemoryMax=1G` and with
   `OOMScoreAdjust=300`, and it prints the sudo lines before it runs them. It refuses to run as
   root.
 
 The wizard asks what only the owner knows, writes `robot.yaml` and `robot.env` under
-`~/.quackd/onboard/`, makes the robot's key and the owner's, sealed with a passphrase, signs the
+`~/.roboglot/onboard/`, makes the robot's key and the owner's, sealed with a passphrase, signs the
 passport, and offers to switch on BlueZ's address privacy, `Privacy = device` in
 `/etc/bluetooth/main.conf` with the old file kept as a backup, which is meant to keep the
 radio's own address from following the robot. Switching it on restarts bluetoothd, which drops
 every Bluetooth connection the robot has for a moment, a remote or an e-stop among them, so the
 wizard asks first. [passport/quickstart.md](../passport/quickstart.md) has the steps, and
-[passport/quackd.md](../passport/quackd.md) the file, the service and every command.
+[passport/roboglot.md](../passport/roboglot.md) the file, the service and every command.
 
 On a robot whose board already holds a control daemon, the service is one process more beside
 the three [above](#beside-a-robots-own-daemon): a Bluetooth scanner, during a meeting or a goal
@@ -582,14 +582,14 @@ Nobody has measured what that costs a robot's control loop, and the unit's limit
 precaution, not a measurement.
 
 > [!WARNING]
-> `quackd onboard` has run on the `sim` board, a laptop standing in for a robot's computer, and
+> `roboglot onboard` has run on the `sim` board, a laptop standing in for a robot's computer, and
 > its Bluetooth half against fakes. Recognising a real board, uv's Python on JetPack, BlueZ
 > advertising and accepting a link at once, address privacy and the unit across a reboot are
 > untested on a Jetson.
 
-## What quackd doctor shows
+## What roboglot doctor shows
 
-With a host named, by `--host`, by the robot `--robot` names or by `QUACKD_HOST`, doctor grows
+With a host named, by `--host`, by the robot `--robot` names or by `ROBOGLOT_HOST`, doctor grows
 a section above the usual ones, titled for what the daemon said. It is `Jetson at HOST` when
 the daemon or the board's own files say the board is a Tegra, and `host at HOST` otherwise, so
 a daemon on a laptop for a test is not called a Jetson. The block under
@@ -612,7 +612,7 @@ What does fail the report is a daemon that does not answer, the way a bad `--add
 
 ```
 host at 127.0.0.1:1 ───────────────────────────────────────────────────────────────────────
-✗ error: 127.0.0.1:1 did not answer /hello within 2s: is the board up, and is quackd-jetson-hostd running on it?
+✗ error: 127.0.0.1:1 did not answer /hello within 2s: is the board up, and is roboglot-jetson-hostd running on it?
   tried GET http://127.0.0.1:1/hello
 ```
 
@@ -626,7 +626,7 @@ LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ───�
 ┌──────────┬───────────────────────────────────┬─────────────┐
 │ preset   │ base url                          │ status      │
 ├──────────┼───────────────────────────────────┼─────────────┤
-│ local    │ set QUACKD_BASE_URL or --base-url │             │
+│ local    │ set ROBOGLOT_BASE_URL or --base-url │           │
 │ ollama   │ http://127.0.0.1:11434/v1         │ up qwen3:4b │
 │ vllm     │ http://127.0.0.1:8000/v1          │ not running │
 │ llamacpp │ http://127.0.0.1:8080/v1          │ not running │
@@ -650,7 +650,7 @@ because doctor never reads the files of the machine it runs on.
 **Ollama answers off the CPU.** `ollama ps` names the processor for a loaded LLM. The generic
 arm64 build has no Tegra CUDA in it; the JetPack build does, and the official installer picks
 it by reading `/etc/nv_tegra_release`. If you installed from a tarball by hand, that is the
-thing to redo. `quackd doctor --host` asks Ollama the same question and warns when an LLM sits
+thing to redo. `roboglot doctor --host` asks Ollama the same question and warns when an LLM sits
 on a Tegra's CPU.
 
 **`no kernel image is available for execution on the device`** means a CUDA binary built for a
@@ -660,7 +660,7 @@ replacing with the Jetson artifact.
 **llama.cpp fails to allocate with memory apparently free.** It is the unified pool.
 `GGML_CUDA_ENABLE_UNIFIED_MEMORY=1` in the server's environment lets an oversized KV cache
 spill instead of failing. Build with CUDA on and the architecture set to Orin's, then point
-quackd at it with `--llm llamacpp` and the same `--host`, which asks port 8080 on the board,
+Roboglot at it with `--llm llamacpp` and the same `--host`, which asks port 8080 on the board,
 and add `-L 8080:127.0.0.1:8080` to the tunnel.
 
 **vLLM is not the easy option here.** It is worth it on a big board serving several clients at
@@ -675,7 +675,7 @@ your own board.
 
 **Nothing on this page has been run on a Jetson by this project.** What has been done:
 
-- The host daemon has run in-process in quackd's test suite, against a board built from files,
+- The host daemon has run in-process in Roboglot's test suite, against a board built from files,
   a fake ultralytics and torch (with CUDA and without), a stubbed OpenCV capture and a Python
   one-liner standing in for `tegrastats`. Its source is parsed with Python 3.10's grammar and
   checked for names 3.10 lacks, and it has never run under 3.10 itself.
@@ -683,9 +683,9 @@ your own board.
   fake daemon in `tests/fake_jetson_hostd.py`, and a contract test runs the real daemon against
   the real client and doctor, which is what would catch the two sides of the protocol drifting
   apart.
-- Every block of quackd output on this page was printed on Windows. Where a board answered, it
+- Every block of Roboglot output on this page was printed on Windows. Where a board answered, it
   was that fake daemon, and the Ollama in the servers table was a stub.
-- `quackd onboard` has run on the `sim` board alone: the wizard, the service and two simulated
+- `roboglot onboard` has run on the `sim` board alone: the wizard, the service and two simulated
   robots meeting on one laptop, over a simulated air, with the radio's code against fakes, and
   its BlueZ half has never met bluetoothd.
 - The JetPack table and the LLM download sizes were read from NVIDIA's and Ollama's own
@@ -696,15 +696,15 @@ What that leaves unproven is everything about the board: the CSI pipeline, a USB
 detection, how long a frame takes to go from the laptop to the board's YOLO and back inside
 `go_to`'s loop, Ollama on the Orin GPU, `nvpmodel`, what doctor reads off a real board's files
 and a real `tegrastats` line, and whether an LLM server or a detector can share a robot's
-Jetson without its control loop suffering. For `quackd onboard` it leaves all of it: a real
+Jetson without its control loop suffering. For `roboglot onboard` it leaves all of it: a real
 board recognised, uv's Python on JetPack, BlueZ advertising and accepting a link, the signal
 strength at which two robots meet, address privacy taking effect, and the unit across a reboot.
 
 If you run it, please open a Discussion or an issue with:
 
-- `quackd doctor --host <board> --json` from the laptop, which carries the whole `host` block
+- `roboglot doctor --host <board> --json` from the laptop, which carries the whole `host` block
 - what the daemon's `/hello` says, fetched through the tunnel with
-  `curl -s -H "X-Quackd-Token: $QUACKD_HOST_TOKEN" http://127.0.0.1:9874/hello`
+  `curl -s -H "X-Roboglot-Token: $ROBOGLOT_HOST_TOKEN" http://127.0.0.1:9874/hello`
 - what its `/board` says, fetched the same way from `http://127.0.0.1:9874/board`: the
   board's own files, `nvpmodel -q` and a `tegrastats` line as raw text, most of which
   doctor's `--json` carries only as the values it parsed out of them
@@ -713,7 +713,7 @@ If you run it, please open a Discussion or an issue with:
   `detect` blocks are the round trip inside `go_to`'s loop, split into the board's share
   and the rest
 - which board, which JetPack, and which camera
-- for `quackd onboard`, `quackd onboard status --json`, `journalctl -u quackd-onboard` from a
+- for `roboglot onboard`, `roboglot onboard status --json`, `journalctl -u roboglot-onboard` from a
   meeting, the signal strength another robot was heard at 1, 3 and 10 m, and a `tegrastats` line
   captured while the two talked
 

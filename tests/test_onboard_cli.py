@@ -1,4 +1,4 @@
-"""`quackd onboard` at the command line: the wizard run from a file the way a script runs it, and
+"""`roboglot onboard` at the command line: the wizard run from a file the way a script runs it, and
 every subcommand that works without a service running.
 
 The service's own behaviour, two robots meeting, is tests/test_onboard_service.py's. Here each
@@ -25,19 +25,19 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import boards
-from quackd.adapters import factory
-from quackd.adapters.base import AdapterNotInstalled
-from quackd.boards import generic
-from quackd.boards.linux import BLUETOOTH
-from quackd.cli import _status_rows, app
-from quackd.onboard import config, demo, radio_side, service
-from quackd.onboard import facts as facts_module
-from quackd.onboard import preflight as preflight_module
-from quackd.onboard.control import ControlError, connect, request
-from quackd.onboard.store import OnboardDir
-from quackd.passport import document
-from quackd.radio import NoRadio
+from roboglot import boards
+from roboglot.adapters import factory
+from roboglot.adapters.base import AdapterNotInstalled
+from roboglot.boards import generic
+from roboglot.boards.linux import BLUETOOTH
+from roboglot.cli import _status_rows, app
+from roboglot.onboard import config, demo, radio_side, service
+from roboglot.onboard import facts as facts_module
+from roboglot.onboard import preflight as preflight_module
+from roboglot.onboard.control import ControlError, connect, request
+from roboglot.onboard.store import OnboardDir
+from roboglot.passport import document
+from roboglot.radio import NoRadio
 from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
 
 runner = CliRunner()
@@ -52,7 +52,7 @@ def flat(output: str) -> str:
 @pytest.fixture
 def robot_file(tmp_path: Path) -> Path:
     """The demo's courier as a robot file a person handed the wizard, with the scripted pilot."""
-    text = (resources.files("quackd.onboard") / "demo" / f"{COURIER}.yaml").read_text(
+    text = (resources.files("roboglot.onboard") / "demo" / f"{COURIER}.yaml").read_text(
         encoding="utf-8"
     )
     path = tmp_path / "courier.yaml"
@@ -124,7 +124,7 @@ def signed_board(home: Path) -> dict[str, Any]:
 def test_a_board_named_once_is_remembered_so_nothing_later_needs_the_flag(
     tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
 ) -> None:
-    """The unit runs `quackd onboard serve`, and every hint says `quackd onboard sign`, with no
+    """The unit runs `roboglot onboard serve`, and every hint says `roboglot onboard sign`, with no
     flag. A board only ever found by name would refuse them all, and point at `--board sim`."""
     home = tmp_path / "robot"
     first = onboard_named(home, robot_file, secret)
@@ -143,7 +143,7 @@ def test_a_board_named_once_is_remembered_so_nothing_later_needs_the_flag(
     rows = {row["check"]: row for row in json.loads(checked.output)["checks"]}
     assert rows["board"]["state"] == "ok" and "Radxa Dragon Q6A" in rows["board"]["detail"]
     assert rows["passport"]["state"] == "ok"
-    start = "sudo systemctl start quackd-onboard, or quackd onboard serve"
+    start = "sudo systemctl start roboglot-onboard, or roboglot onboard serve"
     assert rows["service"]["hint"] == start
     again = runner.invoke(
         app,
@@ -361,7 +361,7 @@ def test_a_plugins_reason_for_having_no_radio_reaches_preflight(
     assert "OSError: its SDK is gone" in said["board radio"].detail
 
 
-def test_quackds_own_board_adds_no_row_beside_the_radios_own(
+def test_roboglots_own_board_adds_no_row_beside_the_radios_own(
     tmp_path: Path, robot_file: Path, secret: Path, named_computer: None
 ) -> None:
     home = tmp_path / "robot"
@@ -401,7 +401,7 @@ def test_the_radio_is_handed_the_question_of_which_adapter(
 
 @pytest.fixture
 def body_file(robot_file: Path) -> Path:
-    """A robot file that names a body quackd drives, whose manifest supplies what it can do."""
+    """A robot file that names a body Roboglot drives, whose manifest supplies what it can do."""
     text = robot_file.read_text(encoding="utf-8")
     body = text.replace("\nmeeting:\n", "\nrobot:\n  adapter: microduck:sim2d\n\nmeeting:\n", 1)
     assert body != text
@@ -439,8 +439,8 @@ def status_said(home: Path) -> dict[str, str]:
 #: What a body's adapter may raise, a third party's above all, and what a person must be told of it.
 UNREADABLE_BODIES = [
     pytest.param(
-        AdapterNotInstalled("microduck", "quackd[microduck]"),
-        "quackd[microduck]",
+        AdapterNotInstalled("microduck", "roboglot[microduck]"),
+        "roboglot[microduck]",
         id="not-installed",
     ),
     pytest.param(
@@ -532,11 +532,11 @@ def test_sign_says_so_when_the_running_service_will_not_take_it(
     def refuses(_home: Any, _op: Any) -> dict[str, Any]:
         return {"ok": True, "passport_refused": "signed on another computer"}
 
-    monkeypatch.setattr("quackd.cli._tell_service", refuses)
+    monkeypatch.setattr("roboglot.cli._tell_service", refuses)
     said = flat(runner.invoke(app, argv).output)
     assert "keeps the passport it had" in said and "signed on another computer" in said
     assert "serves it from now on" not in said
-    monkeypatch.setattr("quackd.cli._tell_service", lambda _home, _op: {"ok": True})
+    monkeypatch.setattr("roboglot.cli._tell_service", lambda _home, _op: {"ok": True})
     assert "serves it from now on" in flat(runner.invoke(app, argv).output)
 
 
@@ -546,7 +546,7 @@ def test_the_wizard_says_so_when_the_running_service_will_not_take_it(
     def refuses(_home: Any, _op: Any) -> dict[str, Any]:
         return {"ok": True, "passport_refused": "signed on another computer"}
 
-    monkeypatch.setattr("quackd.cli._tell_service", refuses)
+    monkeypatch.setattr("roboglot.cli._tell_service", refuses)
     said = flat(onboard(tmp_path / "robot", robot_file, secret).output)
     assert "keeps the passport it had" in said and "signed on another computer" in said
 
@@ -610,7 +610,7 @@ def test_a_cannot_the_body_supplied_does_not_look_deleted_while_it_cannot_be_rea
     assert signed.document["cannot"], "the manifest's own lines"
 
     def not_here(file: Any) -> Any:
-        raise AdapterNotInstalled("microduck", "quackd[microduck]")
+        raise AdapterNotInstalled("microduck", "roboglot[microduck]")
 
     monkeypatch.setattr(facts_module, "manifest_of", not_here)
     _, rows = preflight_rows(home, "--board", "sim")
@@ -656,17 +656,17 @@ def test_an_edit_is_still_named_while_the_body_cannot_be_read(
     (home / "robot.yaml").write_text(edited, encoding="utf-8")
 
     def not_here(file: Any) -> Any:
-        raise AdapterNotInstalled("microduck", "quackd[microduck]")
+        raise AdapterNotInstalled("microduck", "roboglot[microduck]")
 
     monkeypatch.setattr(facts_module, "manifest_of", not_here)
     _, rows = preflight_rows(home, "--board", "sim")
     assert f"changed since it was signed: {member};" in rows["signed"]["detail"]
-    assert "quackd[microduck]" in rows["signed"]["detail"]
+    assert "roboglot[microduck]" in rows["signed"]["detail"]
     assert not rows["signed"].get("hint"), "signing stops at the body too"
     said = status_said(home)
     assert f"changed since it was signed: {member}," in said["unsigned"]
-    assert "quackd onboard sign" not in said["unsigned"]
-    assert "quackd[microduck]" in said["robot.yaml"]
+    assert "roboglot onboard sign" not in said["unsigned"]
+    assert "roboglot[microduck]" in said["robot.yaml"]
 
 
 @pytest.mark.parametrize(
@@ -695,7 +695,7 @@ def test_a_manifest_that_makes_no_passport_stops_neither_preflight_nor_status(
     _, rows = preflight_rows(home, "--board", "sim")
     assert told in rows["signed"]["detail"]
     assert "robot.yaml and the body it names" in rows["signed"]["detail"]
-    assert "PassportError" not in rows["signed"]["detail"], "quackd's own refusal needs no type"
+    assert "PassportError" not in rows["signed"]["detail"], "Roboglot's own refusal needs no type"
     assert told in status_said(home)["robot.yaml"]
 
 
@@ -861,7 +861,7 @@ def test_the_wizard_and_sign_say_why_they_cannot_sign_for_a_body_they_cannot_rea
 def test_a_flag_before_a_command_is_refused_and_not_dropped(
     before: list[str], command: list[str], said: str
 ) -> None:
-    """`quackd onboard --dir ~/two sign` parsed, reached nothing, and signed the robot in the
+    """`roboglot onboard --dir ~/two sign` parsed, reached nothing, and signed the robot in the
     default folder."""
     refused = runner.invoke(app, ["onboard", *before, *command])
     assert refused.exit_code == 1
@@ -949,7 +949,7 @@ def test_the_wizard_from_a_file_writes_the_robot_signs_it_and_says_how_to_start_
     said = flat(first.output)
     assert "sim" in said and "signed" in said
     # a long path wraps at the terminal's width, so the command is read without its spaces
-    assert f"quackdonboardserve--dir{home}--boardsim" in "".join(first.output.split())
+    assert f"roboglotonboardserve--dir{home}--boardsim" in "".join(first.output.split())
     reading = document.read_jws((home / "passport.jws").read_text(encoding="utf-8").strip())
     assert reading.name == COURIER and reading.board()["kind"] == "sim"
     assert reading.owner_id != reading.id
@@ -1160,9 +1160,9 @@ def test_preflight_on_a_jetson_offers_the_terminal_beside_the_unit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A Jetson set up with --no-service has no unit to start, so the service's row offers
-    `quackd onboard serve` beside it, as `status` and `goal` do."""
-    from quackd.onboard.preflight import preflight
-    from quackd.onboard.store import OnboardDir
+    `roboglot onboard serve` beside it, as `status` and `goal` do."""
+    from roboglot.onboard.preflight import preflight
+    from roboglot.onboard.store import OnboardDir
 
     class Jetson:
         name = "jetson"
@@ -1176,7 +1176,7 @@ def test_preflight_on_a_jetson_offers_the_terminal_beside_the_unit(
     monkeypatch.setattr(boards, "detect", lambda name=None, **_: (Jetson(), facts))
     checks = preflight(OnboardDir(tmp_path), None, service=lambda: None, radio_rows=lambda *_: [])
     service = {check.name: check for check in checks}["service"]
-    assert service.hint == "sudo systemctl start quackd-onboard, or quackd onboard serve"
+    assert service.hint == "sudo systemctl start roboglot-onboard, or roboglot onboard serve"
 
 
 def test_a_brain_on_a_server_of_your_own_needs_no_key(

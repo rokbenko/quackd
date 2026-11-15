@@ -1,4 +1,4 @@
-"""`quackd.release`: what both the end of a run and `quackd robot release` do with a fold that
+"""`roboglot.release`: what both the end of a run and `roboglot robot release` do with a fold that
 missed, tested on its own with a stand-in person and a stand-in arm.
 
 The run's and the command's own tests cover each path end to end (tests/test_loop.py,
@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.base import HandResult, RestResult
-from quackd.release import (
+from roboglot.adapters.base import HandResult, RestResult
+from roboglot.release import (
     CLEAR_THE_WAY,
     CLEAR_THE_WAY_S,
     DECLINED,
@@ -315,7 +315,7 @@ async def test_a_press_after_the_write_has_gone_out_says_it_may_be_limp() -> Non
 
 
 async def test_the_drop_at_the_second_question_hears_a_press() -> None:
-    """Through the two questions, the way a run and `quackd robot release` come to it."""
+    """Through the two questions, the way a run and `roboglot robot release` come to it."""
 
     class Stopping(Person):
         def __init__(self, *answers: bool) -> None:
@@ -419,8 +419,8 @@ async def test_a_fold_that_will_not_go_does_not_hold_up_what_comes_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A press can no longer quit past it (`KillSwitch.stay_to_the_close`), so nothing else would
-    end the wait. No fold quackd ships ignores a cancellation: this is for a third party's."""
-    monkeypatch.setattr("quackd.release.STOPPED_FOLD_S", 0.05)
+    end the wait. No fold Roboglot ships ignores a cancellation: this is for a third party's."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
     let_go = asyncio.Event()
 
     async def stubborn() -> None:

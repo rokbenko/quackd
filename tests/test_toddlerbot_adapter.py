@@ -1,6 +1,6 @@
 """The ToddlerBot adapter: a humanoid, and the verbs it does not get to have.
 
-quackd's first full humanoid, and the manifest is mostly absences. Three of them are the
+Roboglot's first full humanoid, and the manifest is mostly absences. Three of them are the
 point of this file: there is no text to speech, so `say` does not exist; there is no walk
 checkpoint in the repository, so locomotion does not exist unless the daemon says one is
 staged; and there is no get-up policy, so a fall is terminal and every moving verb has to say
@@ -12,20 +12,20 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import RobotAdapter
-from quackd.adapters.factory import make_adapter, parse_robot_spec
-from quackd.agent.prompts import build_system_prompt
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck
-from quackd.duckfile.validate import validate_duck
-from quackd.host import HostClient
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.perception.host import HostDetector
-from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import Intent
-from quackd.verbs.core import scan_mode
-from quackd.verbs.registry import VerbNotFound, registry_from_manifest
-from quackd_toddlerbot import (
+from roboglot.adapters.base import RobotAdapter
+from roboglot.adapters.factory import make_adapter, parse_robot_spec
+from roboglot.agent.prompts import build_system_prompt
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot
+from roboglot.glotfile.validate import validate_glot
+from roboglot.host import HostClient
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.perception.host import HostDetector
+from roboglot.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
+from roboglot.transport.base import Intent
+from roboglot.verbs.core import scan_mode
+from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
+from roboglot_toddlerbot import (
     MAX_VX,
     MAX_VY,
     MAX_WZ,
@@ -36,9 +36,9 @@ from quackd_toddlerbot import (
     implementations,
     toddlerbot_manifest,
 )
-from quackd_toddlerbot.mock import ToddlerBotMock
-from quackd_toddlerbot.sim2d import ToddlerBotSim2D
-from quackd_toddlerbot.verbs import MOTIONS, SHIPPED_MOTIONS, neck_limits
+from roboglot_toddlerbot.mock import ToddlerBotMock
+from roboglot_toddlerbot.sim2d import ToddlerBotSim2D
+from roboglot_toddlerbot.verbs import MOTIONS, SHIPPED_MOTIONS, neck_limits
 from tests.fake_jetson_hostd import FakeHostd
 
 runner = CliRunner()
@@ -67,7 +67,7 @@ def _verb_column(output: str) -> set[str]:
 #: Verbs other robots have and this body has not, at this pin.
 ABSENT = {"say", "quack", "express", "play_sound", "wake_up", "sit", "kick", "grab", "stand_up"}
 
-DUCK = load_duck("toddlerbot-lookout")
+DUCK = load_glot("toddlerbot-lookout")
 
 
 def _executor(adapter: ToddlerBotAdapter, manifest: object) -> Executor:
@@ -94,7 +94,7 @@ def test_manifest_is_a_humanoid_with_no_voice() -> None:
 
 def test_without_a_walk_checkpoint_there_is_no_locomotion_at_all() -> None:
     """The walk policy is an ONNX artifact from a wandb run that upstream does not publish
-    and does not check in. Nothing about that is quackd's to gate: the verbs do not exist."""
+    and does not check in. Nothing about that is Roboglot's to gate: the verbs do not exist."""
     walking = toddlerbot_manifest("bridge", camera=True, walk=True)
     grounded = toddlerbot_manifest("bridge", camera=True, walk=False)
     needs_legs = {"move", "go_to", "approach_and"}
@@ -120,7 +120,7 @@ def test_grippers_exist_only_on_the_builds_that_have_them() -> None:
     assert with_grip.provides("grip") and "gripper" in with_grip.intents
 
 
-def test_the_deadman_is_only_claimed_when_quackd_owns_the_loop() -> None:
+def test_the_deadman_is_only_claimed_when_roboglot_owns_the_loop() -> None:
     """There is no watchdog, no timeout and no e-stop anywhere upstream, and silence on this
     body means hold forever. The only deadman that can exist is the daemon's own."""
     m = toddlerbot_manifest("bridge", deadman=True)
@@ -141,9 +141,9 @@ def test_extras_say_what_is_missing_and_what_is_assumed() -> None:
 
 
 def test_limits_stay_inside_the_schema() -> None:
-    from quackd.verbs.core import MAX_VX as SCHEMA_VX
-    from quackd.verbs.core import MAX_VY as SCHEMA_VY
-    from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
+    from roboglot.verbs.core import MAX_VX as SCHEMA_VX
+    from roboglot.verbs.core import MAX_VY as SCHEMA_VY
+    from roboglot.verbs.core import MAX_WZ as SCHEMA_WZ
 
     m = toddlerbot_manifest("mock", camera=True, walk=True)
     assert m.limits["max_vx"] <= SCHEMA_VX
@@ -166,10 +166,10 @@ def test_the_bridge_claims_nothing_until_the_daemon_has_spoken() -> None:
     assert describe(parse_robot_spec("toddlerbot:mock").backend).provides("move")
 
 
-# ── the motions quackd will and will not offer ─────────────────────────────────────────
+# ── the motions Roboglot will and will not offer ─────────────────────────────────────────
 
 
-def test_quackd_curates_the_motion_list_and_says_so() -> None:
+def test_roboglot_curates_the_motion_list_and_says_so() -> None:
     """Every shipped motion is something the robot can do, so this is a safety judgement
     rather than a capability claim, and the docs say which and why."""
     assert set(MOTIONS) < set(SHIPPED_MOTIONS)
@@ -189,12 +189,12 @@ def test_the_neck_is_clamped_to_a_fraction_of_its_travel() -> None:
 
 def test_search_scan_sweeps_the_head_rather_than_turning_a_humanoid() -> None:
     """A body turn is available once a walk policy is staged, but turning a humanoid with no
-    fall recovery to look around is not what quackd reaches for first."""
+    fall recovery to look around is not what Roboglot reaches for first."""
     grounded = toddlerbot_manifest("bridge", camera=True, walk=False)
     assert scan_mode(grounded) == "gaze"
 
 
-# ── the registry, the prompt and .duck validation all agree ────────────────────────────
+# ── the registry, the prompt and .glot validation all agree ────────────────────────────
 
 
 def test_an_absent_verb_is_absent_everywhere() -> None:
@@ -211,7 +211,7 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_the_shipped_lookout_task_validates_and_moves_no_legs() -> None:
-    assert validate_duck(DUCK, [toddlerbot_manifest("mock", camera=True, walk=True)]) == []
+    assert validate_glot(DUCK, [toddlerbot_manifest("mock", camera=True, walk=True)]) == []
     allowed = set(DUCK.frontmatter.verbs.allow)
     assert not (allowed & {"move", "go_to", "approach_and", "perform", "stand"}), (
         "the first task pointed at a real humanoid must not move it"
@@ -220,7 +220,7 @@ def test_the_shipped_lookout_task_validates_and_moves_no_legs() -> None:
 
 def test_the_cli_refuses_a_task_this_robot_cannot_do() -> None:
     result = runner.invoke(
-        app, ["validate", "ducks/find-and-kick.duck", "--robot", "toddlerbot:mock"]
+        app, ["validate", "tasks/find-and-kick.glot", "--robot", "toddlerbot:mock"]
     )
     assert result.exit_code != 0
 
@@ -260,7 +260,7 @@ async def test_the_mock_refuses_what_this_body_cannot_do() -> None:
     assert not (await adapter.send_intent(Intent.sound("chirp"))).accepted
     assert not (await adapter.send_intent(Intent.do("kick_left"))).accepted
     assert not (await adapter.send_intent(Intent.do("motion:cartwheel"))).accepted
-    # quackd never limps a robot, and here there is no way back: torque-on is unreachable
+    # Roboglot never limps a robot, and here there is no way back: torque-on is unreachable
     assert not (await adapter.send_intent(Intent.enable(False))).accepted
 
 
@@ -412,13 +412,13 @@ def test_the_factory_builds_every_backend(backend: str) -> None:
 
 
 def test_an_unknown_backend_names_the_real_ones() -> None:
-    from quackd_toddlerbot import make
+    from roboglot_toddlerbot import make
 
     with pytest.raises(ValueError, match="unknown toddlerbot backend"):
         make("real")
 
 
-def test_only_the_builds_quackd_will_drive_are_listed() -> None:
+def test_only_the_builds_roboglot_will_drive_are_listed() -> None:
     """Upstream also ships teleop_leader, which is the arm a human holds, not a robot."""
     assert "teleop_leader" not in ROBOTS
     assert set(ROBOTS) == {
@@ -454,9 +454,9 @@ def test_the_manifest_declares_exactly_this_set_and_no_more() -> None:
 
 
 def test_a_kicking_task_is_refused_against_this_body_with_the_validators_words() -> None:
-    problems = validate_duck(load_duck("find-and-kick"), [describe("mock", "toddlerbot-01")])
+    problems = validate_glot(load_glot("find-and-kick"), [describe("mock", "toddlerbot-01")])
     assert any("does not provide it" in p.message for p in problems), [p.message for p in problems]
-    cli = runner.invoke(app, ["validate", "ducks/find-and-kick.duck", "--robot", "toddlerbot:mock"])
+    cli = runner.invoke(app, ["validate", "tasks/find-and-kick.glot", "--robot", "toddlerbot:mock"])
     assert cli.exit_code == 1 and "does not provide it" in cli.output
 
 
@@ -471,9 +471,9 @@ def test_list_verbs_shows_the_real_set() -> None:
 async def test_search_scan_sweeps_the_head_and_never_turns_the_body() -> None:
     """`scan_mode` turns any robot with mobility and the twist intent, which is right for a
     duck and wrong for a humanoid that cannot get up. With a walk checkpoint staged this body
-    is mobile, so the shared verb would pirouette it to look for a ball. quackd supplies its
+    is mobile, so the shared verb would pirouette it to look for a ball. Roboglot supplies its
     own implementation, and the manifest's own comment claims exactly this."""
-    from quackd.verbs.core import scan_mode
+    from roboglot.verbs.core import scan_mode
 
     # The ball starts BEHIND the robot, outside the camera's field of view. With it in view
     # the verb succeeds on the first frame without sweeping anything, and this guard passes

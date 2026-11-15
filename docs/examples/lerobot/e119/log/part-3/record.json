@@ -1,6 +1,6 @@
 {
   "command": [
-    "quackd",
+    "roboglot",
     "robot",
     "rest-pose",
     "arm-01"

@@ -1,12 +1,12 @@
 # E214: A word typed at the question
 
-**Typed `yes` at the question that opens the jaws, and quackd took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold.**
+**Typed `yes` at the question that opens the jaws, and Roboglot took it as a no: only a bare Enter opens them, so the gripper stayed shut through the fold.**
 
 ![E214, filmed with an external camera](log/run.gif)
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Yes | SUCCESS | 2026-11-14 | 0.34.0 |
 
@@ -15,28 +15,28 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** At the end of a by-hand run quackd asks the person to take hold of whatever is in the gripper and press Enter, and that Enter opens the jaws on what is in them. Most programs want `yes` typed at a question, so a person may type it out of habit, and until 0.30.1 a typed `yes` counted as yes. Since then only a bare Enter opens the jaws: a line with anything on it is a no. This example types `yes` at that question to check.
+**Why this example exists:** At the end of a by-hand run Roboglot asks the person to take hold of whatever is in the gripper and press Enter, and that Enter opens the jaws on what is in them. Most programs want `yes` typed at a question, so a person may type it out of habit, and until 0.30.1 a typed `yes` counted as yes. Since then only a bare Enter opens the jaws: a line with anything on it is a no. This example types `yes` at that question to check.
 
 **Why this result is important:** The typed word was a no, said in plain words, and the run went on to fold the arm with the jaws shut: `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`. A word typed from habit cannot open the jaws on something a person has not taken hold of yet; only the bare Enter the question asks for does.
 
 ## The goal
 
-Show that at the question that opens the jaws, a typed word, even `yes`, counts as no, as it has since 0.30.1, and that quackd says so.
+Show that at the question that opens the jaws, a typed word, even `yes`, counts as no, as it has since 0.30.1, and that Roboglot says so.
 
 **What we expected:** What you type shows as you type it. After Enter: `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`, with the question on the record as `-> no`. Then the 3 s count, and the fold with the jaws shut.
 
 ## What the run showed
 
-* This ran on a computer whose CPU was under heavy load from other work, as a real setup can be. quackd took 20.34 s to connect, where this command connected the same arm in 2.6 to 8 s in its other runs, and its calls to the arm took 9.3 ms at the median, 588.5 ms at the 99th percentile and up to 1.06 s.
+* This ran on a computer whose CPU was under heavy load from other work, as a real setup can be. Roboglot took 20.34 s to connect, where this command connected the same arm in 2.6 to 8 s in its other runs, and its calls to the arm took 9.3 ms at the median, 588.5 ms at the 99th percentile and up to 1.06 s.
 * With no LLM and no key, `--llm fake` flew the task's scripted pilot. The arm was lifted by hand and held, Enter at `the arm is yours`, and the pilot's three calls ended in its `declare_success`.
-* At `Take hold of whatever is in the gripper and press Enter`, `yes` was typed and entered, and quackd answered `(a line was typed rather than a bare Enter, which is a no)`. The question is on the record as `-> no` and the hand-back as `skipped: a line was typed`, and quackd said `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`.
+* At `Take hold of whatever is in the gripper and press Enter`, `yes` was typed and entered, and Roboglot answered `(a line was typed rather than a bare Enter, which is a no)`. The question is on the record as `-> no` and the hand-back as `skipped: a line was typed`, and Roboglot said `a line was typed rather than a bare Enter, so the gripper stays shut and the arm folds up`.
 * Then the 3 s count, `folding the arm to its rest pose in 3 s: take your hands away from it now`, and the fold, with the jaws left shut.
 * The loaded computer slowed that fold: its sends came about 2.5 a second, against about 9 in this arm's other runs, and when its 4 s ran out it had reached only shoulder_lift -32 of -101. Enter at the question that followed tried the fold once more, which stopped at -81, and Enter at the second question took torque off where the arm stood, nearly folded, with both hands at the laptop. It stayed where it stood, and was put down by hand after the run. The run ended SUCCESS, the scripted pilot's own verdict.
 * The video's caption marks only the typed `yes`, the point of the example.
 
 ## What the run did not show
 
-* The record does not hold the typed word itself: quackd draws what is typed on the screen as it is typed, but its trace keeps only its own lines, and the camera does not see the screen. So that it showed as it was typed is not on record; the video's caption names the word.
+* The record does not hold the typed word itself: Roboglot draws what is typed on the screen as it is typed, but its trace keeps only its own lines, and the camera does not see the screen. So that it showed as it was typed is not on record; the video's caption names the word.
 * It does not show a bare Enter opening the jaws, the other half of the question, or anything held in them: nothing was.
 * The slow step the card's block asks for was not on: the record gives 5 degrees per send.
 * No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, and its tokens are that pilot's own estimate. Nothing was billed. The table gives no first motion because no verb moved the arm: the person lifted it, and the folds were the run's own close.
@@ -50,21 +50,21 @@ The run ended with **SUCCESS**. The reason on record:
 
 ## The exact command
 
-The following command was run with quackd 0.34.0:
+The following command was run with Roboglot 0.34.0:
 
 ```text
-quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
 ```
 
 ## The numbers
 
 | | |
 |---|---|
-| quackd version | 0.34.0 |
+| roboglot version | 0.34.0 |
 | Started | 2026-11-14 11:35:38 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `fake:scripted:lerobot-lookout` |
-| Task file | `lerobot-lookout`, which ships with quackd |
+| Task file | `lerobot-lookout`, which ships with Roboglot |
 | Steps | 1 |
 | LLM calls | 3 |
 | Total time | 84.1 s |
@@ -84,11 +84,11 @@ This run used no camera.
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra.
-Its pilot is a script that ships with quackd in place of an LLM, so it needs no key and costs nothing.
+with Roboglot's `lerobot` extra.
+Its pilot is a script that ships with Roboglot in place of an LLM, so it needs no key and costs nothing.
 
 ```bash
-quackd run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
+roboglot run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 ```
 
 ## Full terminal trace
@@ -97,8 +97,8 @@ quackd run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 <summary>Show the full terminal trace (326 lines)</summary>
 
 ```text
-$ quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
-quackd 0.34.0, started 2026-11-14T11:35:35Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+Roboglot 0.34.0, started 2026-11-14T11:35:35Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  fake (scripted:lerobot-lookout)                                                                                                                │
@@ -130,7 +130,7 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -138,8 +138,8 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -149,12 +149,12 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## Where this run starts
-   A person placed this body by hand before your first turn, and quackd is holding it exactly
+   A person placed this body by hand before your first turn, and Roboglot is holding it exactly
    where they left it. This run does **not** start from the recorded rest pose, so do not assume
    a folded arm or a known shape: read `report_state` and work from the joint angles it gives you. They
    are where somebody decided the work should begin.
@@ -163,11 +163,11 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    reported as held, and nothing should be: this task cannot work the gripper, so whatever is between the jaws is held at the squeeze the person left and you cannot tighten it.
 
    When the run ends, the arm is handed back the same way: it holds where you left it, the person
-   is asked to take whatever is in the gripper, and only then does quackd fold the arm up.
+   is asked to take whatever is in the gripper, and only then does Roboglot fold the arm up.
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE

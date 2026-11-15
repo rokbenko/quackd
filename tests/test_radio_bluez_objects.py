@@ -7,7 +7,7 @@ in and out. dbus-fast builds each object's introspection from its annotations, w
 BlueZ reads, so a type spelt wrong here is a registration BlueZ would refuse on a robot.
 
 Needs dbus-fast, which the onboard extra installs on Linux; the CI job `onboard` runs this with
-QUACKD_REQUIRE_DBUS=1, so a missing package fails there instead of skipping.
+ROBOGLOT_REQUIRE_DBUS=1, so a missing package fails there instead of skipping.
 """
 
 from __future__ import annotations
@@ -18,15 +18,15 @@ import os
 import pytest
 
 if importlib.util.find_spec("dbus_fast") is None:
-    if os.environ.get("QUACKD_REQUIRE_DBUS") == "1":
-        raise RuntimeError("QUACKD_REQUIRE_DBUS=1 and dbus-fast is not installed")
+    if os.environ.get("ROBOGLOT_REQUIRE_DBUS") == "1":
+        raise RuntimeError("ROBOGLOT_REQUIRE_DBUS=1 and dbus-fast is not installed")
     pytest.skip("dbus-fast comes with the onboard extra, on Linux", allow_module_level=True)
 
 from dbus_fast.constants import PropertyAccess
 
-from quackd.passport.beacon import BLE_RX_UUID, BLE_SERVICE_UUID, BLE_TX_UUID
-from quackd.radio.bluez.core import PeripheralCore
-from quackd.radio.bluez.objects import (
+from roboglot.passport.beacon import BLE_RX_UUID, BLE_SERVICE_UUID, BLE_TX_UUID
+from roboglot.radio.bluez.core import PeripheralCore
+from roboglot.radio.bluez.objects import (
     SERVICE_PATH,
     Advertisement,
     Rx,

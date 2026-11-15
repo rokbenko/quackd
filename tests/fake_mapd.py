@@ -1,7 +1,7 @@
-"""A stand-in for the Microduck's `mapd` on a TCP port, which quackd's client reaches as it reaches
-the real one through a tunnel (`quackd_microduck.transports.mapd`).
+"""A stand-in for the Microduck's `mapd` on a TCP port, which Roboglot's client reaches as it
+reaches the real one through a tunnel (`roboglot_microduck.transports.mapd`).
 
-It answers what mapd answers at the branch quackd read (`mapd_upstream_api`): `map.status`,
+It answers what mapd answers at the branch Roboglot read (`mapd_upstream_api`): `map.status`,
 `map.stream` (the status, then a `map.state` every `period_s` until the link closes), `map.grid`
 and `map.wipe`, and METHOD_NOT_FOUND for every other call, `hello` among them. Each state is built
 from its attributes when it is sent, so a test can lose the robot, take a keyframe or move it
@@ -18,8 +18,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from quackd_microduck import mapd_upstream_api as mapd
-from quackd_microduck import upstream_api as up
+from roboglot_microduck import mapd_upstream_api as mapd
+from roboglot_microduck import upstream_api as up
 
 
 class FakeMapd:

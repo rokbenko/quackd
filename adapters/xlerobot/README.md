@@ -1,10 +1,10 @@
-# quackd-xlerobot
+# roboglot-xlerobot
 
-The `xlerobot` robot adapter for [quackd](https://github.com/rokbenko/quackd). Install it through
-quackd rather than directly:
+The `xlerobot` robot adapter for [Roboglot](https://github.com/rokbenko/quackd). Install it through
+Roboglot rather than directly:
 
 ```bash
-uv pip install "quackd[xlerobot]"
+uv pip install "roboglot[xlerobot]"
 ```
 
 Every upstream name it relies on is read from upstream source at a pinned commit and listed in

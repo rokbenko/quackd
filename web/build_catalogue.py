@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write `web/src/catalogue.js` from `quackd/agent/providers/catalogue.py`.
+"""Write `web/src/catalogue.js` from `roboglot/agent/providers/catalogue.py`.
 
 The browser demo needs the LLM list, and it cannot import Python. So there are two copies of
 it, and the only safe number of hand-maintained copies is one: this generates the second from
@@ -14,7 +14,7 @@ change in one place.
 
     python web/build_catalogue.py
 
-Stdlib only, like `web/serve.py` beside it. `quackd.agent.providers.catalogue` imports nothing
+Stdlib only, like `web/serve.py` beside it. `roboglot.agent.providers.catalogue` imports nothing
 but the standard library either, so this runs without the vendor SDKs installed.
 """
 
@@ -24,12 +24,12 @@ import json
 import sys
 from pathlib import Path
 
-# Run as `python web/build_catalogue.py`, sys.path[0] is `web/`, so `quackd` would resolve to
+# Run as `python web/build_catalogue.py`, sys.path[0] is `web/`, so `roboglot` would resolve to
 # whatever is installed in the environment rather than to the checkout this file sits in. The
 # repository root goes first, so the generated file always describes THIS tree's catalogue.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from quackd.agent.providers.catalogue import (
+from roboglot.agent.providers.catalogue import (
     CATALOGUE,
     CLOUD_NAMES,
     STATUSES,
@@ -44,14 +44,14 @@ HEADER = """\
 /**
  * GENERATED FILE. Do not edit.
  *
- * The LLM list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
+ * The LLM list, copied out of `roboglot/agent/providers/catalogue.py`, which is the only place
  * an LLM is ever added. Regenerate after editing that file:
  *
  *     python web/build_catalogue.py
  *
  * `tests/test_web.py` fails if this file and that one disagree, so the two cannot drift.
  *
- * Every cloud vendor quackd knows is here, including the ones this page cannot call: a vendor
+ * Every cloud vendor Roboglot knows is here, including the ones this page cannot call: a vendor
  * whose API refuses a cross-origin preflight stays out of `PROVIDERS` in `providers.js` and is
  * named in `web/README.md` with the reason. The data stays whole either way.
  */

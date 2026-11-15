@@ -1,0 +1,57 @@
+name: .glot submission
+description: Share a .glot file (or open a PR to tasks/ directly — that is the preferred route).
+labels: ["duck"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PRs to `tasks/` are the fastest way in. Use this form if you want feedback first.
+  - type: input
+    id: name
+    attributes:
+      label: Duck name
+      placeholder: e.g. guard-the-snacks
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: The .glot file
+      render: markdown
+    validations:
+      required: true
+  - type: input
+    id: robot
+    attributes:
+      label: Which robot is it for?
+      description: >-
+        The `--robot <adapter>:<backend>` it targets, or the `robots:` line in the file.
+        `roboglot validate your.glot --robot <spec>` should pass for it.
+      placeholder: e.g. microduck:sim2d, or open_duck:sim2d
+    validations:
+      required: true
+  - type: dropdown
+    id: tested
+    attributes:
+      label: Tested with
+      multiple: true
+      options:
+        - "fake (the scripted pilot)"
+        - "anthropic"
+        - "openai"
+        - "gemini"
+        - "grok"
+        - "mistral"
+        - "deepseek"
+        - "cohere"
+        - "qwen"
+        - "kimi"
+        - "glm"
+        - "meta"
+        - "openrouter"
+        - "a local LLM (ollama, vllm, llamacpp, lmstudio, local)"
+        - "a real robot"
+  - type: textarea
+    id: notes
+    attributes:
+      label: What worked, what did not

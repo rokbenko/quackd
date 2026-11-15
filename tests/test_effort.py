@@ -17,13 +17,13 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import Exchange, ProviderError, ProviderTurn, ToolCall
-from quackd.agent.providers.factory import EFFORTS, effort_refusal, make_provider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.schema import DuckFile
-from quackd.transport.mock import MockTransport
+from roboglot import cli
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import Exchange, ProviderError, ProviderTurn, ToolCall
+from roboglot.agent.providers.factory import EFFORTS, effort_refusal, make_provider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.schema import GlotFile
+from roboglot.transport.mock import MockTransport
 from tests import fake_openai_sdk as fake_sdk
 
 runner = CliRunner()
@@ -45,10 +45,10 @@ def _claude(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_flag_reaches_claude_beats_the_variable_and_says_whose_word_it_was(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`QUACKD_EFFORT` and quackd's own medium still stand where the flag is absent, and the
+    """`ROBOGLOT_EFFORT` and Roboglot's own medium still stand where the flag is absent, and the
     record names which of the three set the level every request was sent at."""
     _claude(monkeypatch)
-    monkeypatch.delenv("QUACKD_EFFORT", raising=False)
+    monkeypatch.delenv("ROBOGLOT_EFFORT", raising=False)
     flagged = make_provider("anthropic", effort=" LOW ")
     assert flagged._params("system", [], [])["output_config"] == {"effort": "low"}
     assert flagged.asked_effort == {"value": "low", "from": "--effort"}  # type: ignore[attr-defined]
@@ -57,10 +57,10 @@ def test_the_flag_reaches_claude_beats_the_variable_and_says_whose_word_it_was(
         "value": "medium",
         "from": "default",
     }
-    monkeypatch.setenv("QUACKD_EFFORT", "high")
+    monkeypatch.setenv("ROBOGLOT_EFFORT", "high")
     assert make_provider("anthropic").asked_effort == {  # type: ignore[attr-defined]
         "value": "high",
-        "from": "QUACKD_EFFORT",
+        "from": "ROBOGLOT_EFFORT",
     }
     over = make_provider("anthropic", effort="low")
     assert over.asked_effort == {"value": "low", "from": "--effort"}  # type: ignore[attr-defined]
@@ -72,15 +72,15 @@ def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.Mo
     record says so with a null rather than guessing at the LLM's own default."""
     fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI())
     monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key")
-    monkeypatch.delenv("QUACKD_OPENAI_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("ROBOGLOT_OPENAI_REASONING_EFFORT", raising=False)
     gpt = make_provider("openai", effort="high")
     assert gpt.reasoning_effort == "high"  # type: ignore[attr-defined]
     assert gpt.asked_effort == {"value": "high", "from": "--effort"}  # type: ignore[attr-defined]
     assert make_provider("openai").asked_effort is None  # type: ignore[attr-defined]
-    monkeypatch.setenv("QUACKD_OPENAI_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("ROBOGLOT_OPENAI_REASONING_EFFORT", "medium")
     assert make_provider("openai").asked_effort == {  # type: ignore[attr-defined]
         "value": "medium",
-        "from": "QUACKD_OPENAI_REASONING_EFFORT",
+        "from": "ROBOGLOT_OPENAI_REASONING_EFFORT",
     }
     own = make_provider("ollama", effort="low")
     assert own.reasoning_effort == "low"  # type: ignore[attr-defined]
@@ -153,10 +153,10 @@ class _Asking:
 
 
 async def test_the_record_says_what_was_asked_and_whose_word_it_was(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=_Asking(), transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=_Asking(), transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["kind"] == "run_start"

@@ -6,8 +6,8 @@ import math
 
 import pytest
 
-from quackd.space.odometry import PERIOD_SAMPLES, OdometrySource, OdometryTrack
-from quackd.space.pose import Pose2D
+from roboglot.space.odometry import PERIOD_SAMPLES, OdometrySource, OdometryTrack
+from roboglot.space.pose import Pose2D
 
 
 def track(**kwargs: float) -> OdometryTrack:

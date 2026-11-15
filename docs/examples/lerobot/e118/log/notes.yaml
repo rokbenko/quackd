@@ -1,7 +1,7 @@
 hook: Asked to stop halfway, the LLM could only stop an arm that had already stopped.
 goal_met: "No"
 why_example: >
-  `stop` is the one verb quackd always allows, and it is what an LLM reaches for when something looks
+  `stop` is the one verb Roboglot always allows, and it is what an LLM reaches for when something looks
   wrong. How far the arm still travels after it decides how much room a person or an object needs,
   and nobody had measured that on this arm. This example asks for the number.
 why_result: >

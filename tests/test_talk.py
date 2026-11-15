@@ -1,6 +1,6 @@
 """`tell`, `TALK`, and what a pilot is told about the others.
 
-Two `AgentLoop`s on one bus is the smallest real pilot flock, and it is what most of this
+Two `AgentLoop`s on one bus is the smallest real pilot team, and it is what most of this
 file runs: no runner, no registry, just the link the loop was handed.
 """
 
@@ -13,24 +13,24 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from quackd.adapters.factory import RobotSpec, describe
-from quackd.agent.loop import AgentLoop, RunConfig
-from quackd.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import parse_duck_text
-from quackd.flock.bus import InProcessBus
-from quackd.flock.messages import FlockMessage, TalkMsg
-from quackd.flock.talk import FLOCK_SRC, FlockLink, Peer, make_links, notice
-from quackd.transport.mock import MockTransport
+from roboglot.adapters.factory import RobotSpec, describe
+from roboglot.agent.loop import AgentLoop, RunConfig
+from roboglot.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.team.bus import InProcessBus
+from roboglot.team.messages import TalkMsg, TeamMessage
+from roboglot.team.talk import TEAM_SRC, Peer, TeamLink, make_links, notice
+from roboglot.transport.mock import MockTransport
 
 DUCK = (
-    "---\nduck: 1\nname: talker\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
+    "---\nglot: 1\nname: talker\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
     "success: [said hello]\n---\n# Task\nSay hello to the others.\n"
 )
 
 
 def _duck() -> Any:
-    return parse_duck_text(DUCK)
+    return parse_glot_text(DUCK)
 
 
 def _peer(name: str, spec: str = "microduck:mock") -> Peer:
@@ -95,7 +95,7 @@ def _records(run_dir: Path) -> list[dict[str, Any]]:
 
 
 def test_a_talk_message_round_trips_through_the_union() -> None:
-    adapter = TypeAdapter(FlockMessage)
+    adapter = TypeAdapter(TeamMessage)
     message = TalkMsg(t=1.0, src="duck-a", task_id="t", to="arm", text="hello")
     assert adapter.validate_python(adapter.dump_python(message, mode="json")) == message
 
@@ -110,7 +110,7 @@ def test_a_talk_message_has_to_say_something_and_not_too_much() -> None:
 # ── the link ────────────────────────────────────────────────────────────────────────────
 
 
-def _pair() -> tuple[InProcessBus, dict[str, FlockLink]]:
+def _pair() -> tuple[InProcessBus, dict[str, TeamLink]]:
     bus = InProcessBus()
     peers = {"duck": _peer("duck"), "arm": _peer("arm", "lerobot:mock")}
     return bus, make_links(["duck", "arm"], peers, bus=bus, task_id="t", now=lambda: 0.0)
@@ -135,7 +135,7 @@ def test_a_message_addressed_to_one_member_is_not_heard_by_a_third() -> None:
 
 def test_the_sender_is_told_which_names_exist() -> None:
     _bus, links = _pair()
-    with pytest.raises(ValueError, match="no member called 'ghost'; this flock is arm"):
+    with pytest.raises(ValueError, match="no member called 'ghost'; this team is arm"):
         links["duck"].send("ghost", "hello")
     with pytest.raises(ValueError, match="you are duck"):
         links["duck"].send("duck", "hello")
@@ -161,17 +161,17 @@ def test_a_duplicate_delivery_is_heard_once() -> None:
     assert len(links["arm"].drain()) == 1
 
 
-def test_the_runners_notice_comes_from_the_flock_and_not_from_a_member() -> None:
+def test_the_runners_notice_comes_from_the_team_and_not_from_a_member() -> None:
     bus, links = _pair()
     notice(bus, task_id="t", t=1.0, text="duck declared success: said hello")
     heard = links["arm"].drain()
-    assert heard == [{"from": FLOCK_SRC, "to": None, "text": "duck declared success: said hello"}]
+    assert heard == [{"from": TEAM_SRC, "to": None, "text": "duck declared success: said hello"}]
 
 
 def test_the_prompt_section_names_every_peer_and_its_body() -> None:
     _bus, links = _pair()
     text = links["duck"].prompt_section()
-    assert "## Your flock" in text
+    assert "## Your team" in text
     assert "You are `duck`, one of 2 pilots" in text
     assert "`arm` (lerobot:mock)" in text
     assert "lerobot-so101" in text, "a peer is described by its own datasheet"
@@ -181,9 +181,9 @@ def test_the_prompt_section_names_every_peer_and_its_body() -> None:
     assert links["duck"].describe() == {"me": "duck", "members": ["arm", "duck"]}
 
 
-def test_a_flock_of_one_has_nothing_to_say() -> None:
+def test_a_team_of_one_has_nothing_to_say() -> None:
     bus = InProcessBus()
-    link = FlockLink("duck", [], bus=bus, task_id="t", now=lambda: 0.0)
+    link = TeamLink("duck", [], bus=bus, task_id="t", now=lambda: 0.0)
     assert link.prompt_section() == ""
 
 
@@ -206,11 +206,11 @@ async def test_a_tell_lands_in_the_peers_next_observation(tmp_path: Path) -> Non
     )
     await AgentLoop(duck_cfg).run()
     await AgentLoop(arm_cfg).run()
-    heard = [o for o in arm_provider.observations if "Messages from your flock" in o.text]
+    heard = [o for o in arm_provider.observations if "Messages from your team" in o.text]
     assert heard, "the arm never saw what the duck said"
     assert "duck -> all: I have the ball" in heard[0].text
     assert heard[0].features["inbox"] == [{"from": "duck", "to": None, "text": "I have the ball"}]
-    assert heard[0].features["flock"] == {"me": "arm", "members": ["duck", "arm"]}
+    assert heard[0].features["team"] == {"me": "arm", "members": ["duck", "arm"]}
 
 
 async def test_a_tell_costs_no_step_and_is_recorded_as_talk(tmp_path: Path) -> None:
@@ -255,30 +255,30 @@ async def test_a_tell_to_nobody_is_refused_and_the_run_goes_on(tmp_path: Path) -
     assert next(r for r in _records(tmp_path / "duck") if r["kind"] == "talk")["ok"] is False
 
 
-async def test_the_tell_tool_and_the_flock_section_are_solo_runs_absent(tmp_path: Path) -> None:
+async def test_the_tell_tool_and_the_team_section_are_solo_runs_absent(tmp_path: Path) -> None:
     cfg, provider = _config("duck", [VERDICT, DONE], None, tmp_path / "solo")
     await AgentLoop(cfg).run()
     assert "tell" not in provider.tools
-    assert "Your flock" not in provider.systems[0]
+    assert "Your team" not in provider.systems[0]
     assert "inbox" not in provider.observations[0].features
-    assert "flock" not in provider.observations[0].features
+    assert "team" not in provider.observations[0].features
     start = next(r for r in _records(tmp_path / "solo") if r["kind"] == "run_start")
-    assert start["flock"] is None
+    assert start["team"] is None
 
 
-async def test_a_flock_run_offers_tell_and_carries_the_section(tmp_path: Path) -> None:
+async def test_a_team_run_offers_tell_and_carries_the_section(tmp_path: Path) -> None:
     _bus, links = _pair()
     cfg, provider = _config("duck", [VERDICT, DONE], links["duck"], tmp_path / "duck")
     await AgentLoop(cfg).run()
     assert "tell" in provider.tools
-    assert "## Your flock" in provider.systems[0]
+    assert "## Your team" in provider.systems[0]
     start = next(r for r in _records(tmp_path / "duck") if r["kind"] == "run_start")
-    assert start["flock"] == {"me": "duck", "members": ["arm", "duck"]}
+    assert start["team"] == {"me": "duck", "members": ["arm", "duck"]}
     assert "tell" in start["tools"]
 
 
 async def test_talking_still_works_under_dry_run(tmp_path: Path) -> None:
-    """A dry run of a flock in which nobody may speak is not a dry run of a flock."""
+    """A dry run of a team in which nobody may speak is not a dry run of a team."""
     _bus, links = _pair()
     cfg, _ = _config(
         "duck",
@@ -291,15 +291,15 @@ async def test_talking_still_works_under_dry_run(tmp_path: Path) -> None:
     assert links["arm"].drain() == [{"from": "duck", "to": None, "text": "pretending"}]
 
 
-async def test_a_member_stopped_by_the_flock_records_why(tmp_path: Path) -> None:
+async def test_a_member_stopped_by_the_team_records_why(tmp_path: Path) -> None:
     _bus, links = _pair()
     cfg, _ = _config("duck", [VERDICT, DONE], links["duck"], tmp_path / "duck")
     loop = AgentLoop(cfg)
-    links["duck"].abort_reason = "stopped by the flock: arm raised TransportError: no socket"
+    links["duck"].abort_reason = "stopped by the team: arm raised TransportError: no socket"
     loop.executor.abort.set()
     result = await loop.run()
     assert result.outcome == "aborted"
-    assert result.reason == "stopped by the flock: arm raised TransportError: no socket"
+    assert result.reason == "stopped by the team: arm raised TransportError: no socket"
 
 
 async def test_a_member_stopped_by_a_person_still_says_kill_switch(tmp_path: Path) -> None:
@@ -312,7 +312,7 @@ async def test_a_member_stopped_by_a_person_still_says_kill_switch(tmp_path: Pat
 
 
 async def test_a_member_writes_no_summary_of_its_own(tmp_path: Path) -> None:
-    """A member's directory must not read as a solo run: the rollup is the flock's."""
+    """A member's directory must not read as a solo run: the rollup is the team's."""
     _bus, links = _pair()
     cfg, _ = _config("duck", [VERDICT, DONE], links["duck"], tmp_path / "duck")
     await AgentLoop(cfg).run()

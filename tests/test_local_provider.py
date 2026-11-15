@@ -8,22 +8,22 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.providers.base import (
+from roboglot.agent.providers.base import (
     Exchange,
     NamedPng,
     Observation,
     ProviderError,
     ToolCall,
 )
-from quackd.agent.providers.factory import LOCAL_NAMES, PROVIDER_NAMES, make_provider
-from quackd.agent.providers.local import (
+from roboglot.agent.providers.factory import LOCAL_NAMES, PROVIDER_NAMES, make_provider
+from roboglot.agent.providers.local import (
     PRESETS,
     LocalProvider,
     on_host,
     parse_tool_call_from_text,
     split_thinking,
 )
-from quackd.agent.providers.openai import OpenAIProvider
+from roboglot.agent.providers.openai import OpenAIProvider
 
 TOOLS = [
     {"name": "walk_to", "description": "d", "input_schema": {"type": "object", "properties": {}}},
@@ -74,7 +74,7 @@ def test_presets_and_names() -> None:
 
 
 def test_local_needs_an_address(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("QUACKD_BASE_URL", raising=False)
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     with pytest.raises(ProviderError, match="--base-url"):
         LocalProvider("m", preset="local", client=FakeClient())
@@ -83,13 +83,13 @@ def test_local_needs_an_address(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_env_base_url_overrides_preset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_BASE_URL", "http://box:9999/v1")
+    monkeypatch.setenv("ROBOGLOT_BASE_URL", "http://box:9999/v1")
     assert LocalProvider("m", preset="ollama", client=FakeClient()).base_url == "http://box:9999/v1"
 
 
 # ── where the server is: the address ladder, and --host moving a preset ─────────────────
 
-_ADDRESS_ENV = ("QUACKD_BASE_URL", "OPENAI_BASE_URL", "QUACKD_HOST")
+_ADDRESS_ENV = ("ROBOGLOT_BASE_URL", "OPENAI_BASE_URL", "ROBOGLOT_HOST")
 
 
 def _address(
@@ -116,9 +116,9 @@ def _address(
 LADDER: list[tuple[str, str, str]] = [
     ("base_url", "http://given:1/v1", "http://given:1/v1"),
     ("host", "flag-board", "http://flag-board:11434/v1"),
-    ("QUACKD_BASE_URL", "http://quackd-env:2/v1", "http://quackd-env:2/v1"),
+    ("ROBOGLOT_BASE_URL", "http://roboglot-env:2/v1", "http://roboglot-env:2/v1"),
     ("OPENAI_BASE_URL", "http://openai-env:3/v1", "http://openai-env:3/v1"),
-    ("QUACKD_HOST", "env-board", "http://env-board:11434/v1"),
+    ("ROBOGLOT_HOST", "env-board", "http://env-board:11434/v1"),
 ]
 
 
@@ -141,42 +141,42 @@ def test_a_base_url_on_the_line_beats_the_one_in_the_environment(
 ) -> None:
     """The oldest two rungs, and until the ladder grew a host nothing had ever put them against
     each other: `test_env_base_url_overrides_preset` only proves the variable beats a preset."""
-    url = _address(monkeypatch, base_url="http://typed:1/v1", QUACKD_BASE_URL="http://env:2/v1")
+    url = _address(monkeypatch, base_url="http://typed:1/v1", ROBOGLOT_BASE_URL="http://env:2/v1")
     assert url == "http://typed:1/v1"
 
 
-def test_a_host_named_for_the_run_beats_quackd_base_url_and_one_from_the_environment_does_not(
+def test_a_host_named_for_the_run_beats_roboglot_base_url_and_one_from_the_environment_does_not(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The two hosts sit on different rungs on purpose. `--host` (or the robot's own) is a
     decision about this run and moves the preset past an LLM server's URL in `.env`;
-    `QUACKD_HOST` is the board you usually use, and a URL in the same `.env` is more exact."""
-    typed = _address(monkeypatch, host="jetson.local", QUACKD_BASE_URL="http://env:2/v1")
+    `ROBOGLOT_HOST` is the board you usually use, and a URL in the same `.env` is more exact."""
+    typed = _address(monkeypatch, host="jetson.local", ROBOGLOT_BASE_URL="http://env:2/v1")
     assert typed == "http://jetson.local:11434/v1"
-    usual = _address(monkeypatch, QUACKD_HOST="jetson.local", QUACKD_BASE_URL="http://env:2/v1")
+    usual = _address(monkeypatch, ROBOGLOT_HOST="jetson.local", ROBOGLOT_BASE_URL="http://env:2/v1")
     assert usual == "http://env:2/v1"
 
 
 def test_a_blank_rung_is_no_rung(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_HOST=` in a `.env` is a shell saying unset, and a blank flag is nothing typed.
+    """`ROBOGLOT_HOST=` in a `.env` is a shell saying unset, and a blank flag is nothing typed.
     Neither may become a machine named "" in the LLM server's URL."""
-    assert _address(monkeypatch, host="  ", QUACKD_HOST="") == "http://localhost:11434/v1"
+    assert _address(monkeypatch, host="  ", ROBOGLOT_HOST="") == "http://localhost:11434/v1"
 
 
 @pytest.mark.parametrize(
     "blank",
-    [{"base_url": " "}, {"QUACKD_BASE_URL": " "}, {"OPENAI_BASE_URL": " "}],
-    ids=["--base-url", "QUACKD_BASE_URL", "OPENAI_BASE_URL"],
+    [{"base_url": " "}, {"ROBOGLOT_BASE_URL": " "}, {"OPENAI_BASE_URL": " "}],
+    ids=["--base-url", "ROBOGLOT_BASE_URL", "OPENAI_BASE_URL"],
 )
 def test_a_url_of_spaces_is_no_rung_either(
     blank: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A URL rung was taken as it came, so one of spaces won it, beat `QUACKD_HOST` below it,
+    """A URL rung was taken as it came, so one of spaces won it, beat `ROBOGLOT_HOST` below it,
     and was then read as no address at all and sent on to wherever the SDK would have gone:
     `OPENAI_BASE_URL`, or OpenAI's own API with `OPENAI_API_KEY`. It is nothing typed, and the
     board below it is where the server is."""
     env = {name: value for name, value in blank.items() if name.isupper()}
-    url = _address(monkeypatch, base_url=blank.get("base_url"), QUACKD_HOST="jetson.local", **env)
+    url = _address(monkeypatch, base_url=blank.get("base_url"), ROBOGLOT_HOST="jetson.local", **env)
     assert url == "http://jetson.local:11434/v1"
 
 
@@ -222,14 +222,14 @@ def test_on_host_refuses_what_is_not_a_machine_in_parse_hosts_words() -> None:
         on_host(PRESETS["ollama"] or "", "http://jetson.local")
 
 
-def test_a_bad_quackd_host_is_one_line_that_names_the_variable(
+def test_a_bad_roboglot_host_is_one_line_that_names_the_variable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every `parse_host` sentence says `--host`, and somebody who never typed one would look
     for it on the wrong line. A ProviderError, because that is what every caller of a
     provider's constructor prints as one line rather than a traceback."""
-    with pytest.raises(ProviderError, match=r"^QUACKD_HOST: --host takes a machine, not a URL"):
-        _address(monkeypatch, QUACKD_HOST="http://jetson.local")
+    with pytest.raises(ProviderError, match=r"^ROBOGLOT_HOST: --host takes a machine, not a URL"):
+        _address(monkeypatch, ROBOGLOT_HOST="http://jetson.local")
     with pytest.raises(ProviderError, match=r"^--host takes a machine, not a URL"):
         _address(monkeypatch, host="http://jetson.local")
 
@@ -243,7 +243,7 @@ def test_local_with_only_a_host_is_refused_and_told_a_host_moves_only_a_preset(
         _address(monkeypatch, preset="local", host="jetson.local")
     assert "--base-url" in str(typed.value)
     with pytest.raises(ProviderError, match="a host only moves a preset's"):
-        _address(monkeypatch, preset="local", QUACKD_HOST="jetson.local")
+        _address(monkeypatch, preset="local", ROBOGLOT_HOST="jetson.local")
     given = _address(
         monkeypatch, preset="local", host="jetson.local", base_url="http://gpu:8000/v1"
     )
@@ -264,8 +264,8 @@ def test_make_provider_hands_the_host_to_the_local_presets_and_to_no_vendor(
 
         return build
 
-    monkeypatch.setattr("quackd.agent.providers.local.LocalProvider", recorder("local"))
-    monkeypatch.setattr("quackd.agent.providers.openai.OpenAIProvider", recorder("openai"))
+    monkeypatch.setattr("roboglot.agent.providers.local.LocalProvider", recorder("local"))
+    monkeypatch.setattr("roboglot.agent.providers.openai.OpenAIProvider", recorder("openai"))
     make_provider("ollama", llm_id="m", host="jetson.local")
     assert seen["local"]["host"] == "jetson.local"
     make_provider("openai", host="jetson.local")
@@ -288,7 +288,7 @@ def test_no_key_needed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_local_sends_relaxed_tool_params(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("QUACKD_TOOL_CHOICE", raising=False)
+    monkeypatch.delenv("ROBOGLOT_TOOL_CHOICE", raising=False)
     client = FakeClient(reply(tool_calls=[NS(id="c1", function=NS(name="kick", arguments="{}"))]))
     turn = await LocalProvider("m", preset="ollama", client=client).step("S", history(), TOOLS)
     assert client.kwargs["tool_choice"] == "auto"
@@ -297,7 +297,7 @@ async def test_local_sends_relaxed_tool_params(monkeypatch: pytest.MonkeyPatch) 
 
 
 async def test_tool_choice_none_omits_the_field(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_TOOL_CHOICE", "none")
+    monkeypatch.setenv("ROBOGLOT_TOOL_CHOICE", "none")
     client = FakeClient(reply(text="{}"))
     await LocalProvider("m", preset="ollama", client=client).step("S", history(), TOOLS)
     assert "tool_choice" not in client.kwargs
@@ -325,22 +325,22 @@ async def test_cloud_openai_keeps_strict_params() -> None:
 
 
 def test_vision_off_by_default_on_for_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("QUACKD_VISION", raising=False)
+    monkeypatch.delenv("ROBOGLOT_VISION", raising=False)
     assert LocalProvider("m", preset="ollama", client=FakeClient()).supports_vision is False
     assert LocalProvider("m", preset="ollama", client=FakeClient(), vision=True).supports_vision
-    monkeypatch.setenv("QUACKD_VISION", "1")
+    monkeypatch.setenv("ROBOGLOT_VISION", "1")
     assert LocalProvider("m", preset="ollama", client=FakeClient()).supports_vision is True
 
 
 async def test_every_camera_reaches_a_local_server_in_one_message() -> None:
     """A local server speaks the OpenAI wire format, so it inherits multi-camera rendering
     without a line of its own here. That inheritance is the thing worth pinning: the one
-    provider quackd cannot test against a real endpoint is the one most likely to be handed
+    provider Roboglot cannot test against a real endpoint is the one most likely to be handed
     two pictures by somebody with a webcam on each side of an arm.
 
     It is also where the cost lands. Two cameras is two image parts in a single message, and
     `docs/guides/local-llms.md` warns that a server or an LLM may accept only one. This says what
-    quackd sends; whether a given server takes it is that server's business."""
+    Roboglot sends; whether a given server takes it is that server's business."""
     client = FakeClient(reply(text="{}"))
     p = LocalProvider("m", preset="ollama", client=client, vision=True)
     two = [
@@ -550,7 +550,7 @@ def test_prompt_hint_only_for_local() -> None:
 
 
 def test_factory_builds_local_presets(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("quackd.agent.providers.local.LocalProvider.__init__", _record_init)
+    monkeypatch.setattr("roboglot.agent.providers.local.LocalProvider.__init__", _record_init)
     p = make_provider(
         "vllm",
         llm_id="Qwen/Qwen3-8B",

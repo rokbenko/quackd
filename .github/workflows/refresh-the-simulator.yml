@@ -1,13 +1,13 @@
 name: refresh the simulator
 
 # The browser demo lives here in `web/`, but the page that serves it to the public is built by a
-# different repository: quackd-web owns www.quackd.org, and its build fetches this directory into
+# different repository: roboglot-web owns www.roboglot.org, and its build fetches this directory into
 # `/simulator` at build time. That is what makes the demo reachable without a second Vercel project
 # or a subdomain — and it is also why a push here does not, on its own, change anything a visitor
 # can see. The landing page has to rebuild before the fetched copy is refreshed.
 #
 # This is that trigger, and nothing else. It pings a Vercel deploy hook, which starts a build of
-# quackd-web against its own main. It ships no code and reads no secret beyond the hook URL.
+# roboglot-web against its own main. It ships no code and reads no secret beyond the hook URL.
 #
 # The hook is a URL that starts a deployment for whoever holds it, so it is a secret in the real
 # sense. It lives in `VERCEL_DEPLOY_HOOK`. Until that secret exists the job says so and stops,
@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   ping:
-    name: ask quackd-web to rebuild
+    name: ask roboglot-web to rebuild
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # A fork gets no secrets, and pinging the upstream site from a fork would be wrong even if it
@@ -46,7 +46,7 @@ jobs:
         run: |
           if [ -z "$HOOK" ]; then
             echo "No VERCEL_DEPLOY_HOOK secret is set, so there is nothing to ping."
-            echo "Create a deploy hook on the quackd-web Vercel project and add it as that secret."
+            echo "Create a deploy hook on the roboglot-web Vercel project and add it as that secret."
             exit 0
           fi
           # --fail turns an HTTP error into a non-zero exit; without it curl reports success on a

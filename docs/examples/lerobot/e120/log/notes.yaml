@@ -6,7 +6,7 @@ why_example: >
   does not depend on the LLM agreeing to it. This example gives a task far more work than its budget
   allows, to watch the budget end the run.
 why_result: >
-  The LLM never got as far as the limit. quackd tells it its budget before the first turn, and this one
+  The LLM never got as far as the limit. Roboglot tells it its budget before the first turn, and this one
   did the sum, said so and stopped, with two of its three steps unspent. An honest refusal is a good
   outcome for a robot beside a person, and it also means the budget was not what ended this run: a
   limit an LLM can see is one it can decide not to reach.
@@ -21,7 +21,7 @@ showed:
     The task asks for five waves on a budget of three steps. The LLM spent one step reading the arm,
     then declared failure instead of moving: `cannot complete five waves within the three-step budget`.
   - >
-    It knew its budget before it began, because quackd says so at the top of what it sends: `Budgets: 3
+    It knew its budget before it began, because Roboglot says so at the top of what it sends: `Budgets: 3
     steps, 4 minutes, 10 LLM calls`. It called this `an action-budget limitation, not a physical
     inability to wave`.
   - >
@@ -30,7 +30,7 @@ showed:
 did_not_show:
   - >
     It does not show the budget stopping anything. The run ended on the LLM's own decision with two of
-    its three steps unspent, so quackd's limit never fired and no `BUDGET` line was printed.
+    its three steps unspent, so Roboglot's limit never fired and no `BUDGET` line was printed.
   - >
     It does not show a gesture cut off partway, because no gesture started.
   - >

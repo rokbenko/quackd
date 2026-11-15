@@ -2,7 +2,7 @@
 
 The vectors are the spec's conformance suite: passports, signed passports and talk messages,
 each with the result a reader must reach. This script makes them from five published test keys,
-and it signs with `cryptography` directly rather than through `quackd.passport`, so the module is
+and it signs with `cryptography` directly rather than through `roboglot.passport`, so the module is
 checked against a second implementation of the same rules rather than against itself. Ed25519
 signatures are deterministic, so the same keys always write the same files.
 

@@ -166,7 +166,7 @@
   {"id": "E165", "title": "Place", "category": "Hardware"},
   {"id": "E166", "title": "The power switch, first", "category": "Safety"},
   {"id": "E167", "title": "No rest pose, no run", "category": "Safety"},
-  {"id": "E168", "title": "A connect quackd refuses lets go", "category": "Safety"},
+  {"id": "E168", "title": "A connect Roboglot refuses lets go", "category": "Safety"},
   {"id": "E169", "title": "What it would have done", "category": "Safety"},
   {"id": "E170", "title": "Out of range, three times", "category": "Safety"},
   {"id": "E171", "title": "Let go means put it down first", "category": "Safety"},

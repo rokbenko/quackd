@@ -16,20 +16,20 @@ import time
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.factory import make_adapter
-from quackd.agent.loop import RunConfig, RunResult, run_duck
-from quackd.agent.providers.fake import BALL_STOP_M, FakeProvider
-from quackd.duckfile.parser import load_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import allow_all
-from quackd.sim2d.world import DUCK_R
-from quackd.space.room import load_room
+from roboglot.adapters.factory import make_adapter
+from roboglot.agent.loop import RunConfig, RunResult, run_glot
+from roboglot.agent.providers.fake import BALL_STOP_M, FakeProvider
+from roboglot.glotfile.parser import load_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import allow_all
+from roboglot.sim2d.world import DUCK_R
+from roboglot.space.room import load_room
 
 ROOM = "two-rooms"
 SEEDS = range(10)
-# CI sets QUACKD_STRICT_SEEDS=1: the shipped claim is 10 of 10, and a refactor must not quietly
+# CI sets ROBOGLOT_STRICT_SEEDS=1: the shipped claim is 10 of 10, and a refactor must not quietly
 # spend the two seeds of slack the local default allows.
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 BODY_WIDTH_M = 2 * DUCK_R
 
 
@@ -50,10 +50,10 @@ async def _run(name: str, seed: int, runs_dir: Path) -> tuple[RunResult, dict[st
 
     adapter.transport.add_tick_hook(watch)
     try:
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
-                duck=load_duck(name),
-                provider=FakeProvider.for_duck(name),
+                duck=load_glot(name),
+                provider=FakeProvider.for_glot(name),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=runs_dir,
@@ -130,10 +130,10 @@ async def test_a_recorder_is_told_each_verb_as_it_starts(tmp_path: Path) -> None
     captions: list[str] = []
     adapter = make_adapter("microduck:sim2d", seed=3, room=ROOM)
     try:
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
-                duck=load_duck("find-the-ball"),
-                provider=FakeProvider.for_duck("find-the-ball"),
+                duck=load_glot("find-the-ball"),
+                provider=FakeProvider.for_glot("find-the-ball"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,

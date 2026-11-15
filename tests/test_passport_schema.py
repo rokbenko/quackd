@@ -1,6 +1,6 @@
 """The JSON Schemas, the module and the pages agree about what a passport is.
 
-The schema is what another implementer reads first, the module is what quackd runs, and
+The schema is what another implementer reads first, the module is what Roboglot runs, and
 passport.md and the spec are what people read. Each test here fails the day one of them learns
 a member the others do not know.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from quackd.passport import PassportError, document, jws
+from roboglot.passport import PassportError, document, jws
 from tests.passport_helpers import REFERENCE
 
 REPO = Path(__file__).resolve().parents[1]

@@ -2,9 +2,9 @@
 
 On the SO-101 arm, `manipulate` and `pick` hand the arm to a learned policy for one short
 segment. The pilot plans, one subtask at a time, and the policy executes: it reads the arm and
-its cameras many times a second and answers with a goal for every motor, which quackd paces on
+its cameras many times a second and answers with a goal for every motor, which Roboglot paces on
 the arm's clock and holds to the arm's rules before each one is sent. The policy runs in a
-server of its own, `quackd policy serve`, which you start, and a run reaches it with
+server of its own, `roboglot policy serve`, which you start, and a run reaches it with
 `--policy-url`. This page is how to set that up, on the laptop beside the arm or on a rented
 GPU, which policies it serves and under what licences, and where the data a policy learns from
 comes from. What the verbs do and what refuses them is on
@@ -15,8 +15,8 @@ is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 > **Nothing on this page has driven the arm.** Every segment so far has run against the test
 > suite's fake arm and on the arm's simulator. On 2026-09-28 a trained ACT from the Hub,
 > `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, drove a
-> twin of the lab's arm on the simulator through `quackd policy serve` and `quackd serve-mcp`,
-> and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `quackd run --goal`.
+> twin of the lab's arm on the simulator through `roboglot policy serve` and `roboglot serve-mcp`,
+> and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `roboglot run --goal`.
 > SmolVLA loaded on the same laptop and never answered a step in time on its CPU
 > ([below](#smolvla-and-act)), pi05, pi0, GR00T N1.7 and a trained X-VLA have not run, and
 > FLUX 3 Action is not served at all. Rehearse on the simulator first, keep a hand on the arm's
@@ -25,13 +25,13 @@ is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 
 ## Two processes, two terminals
 
-No quackd command loads a checkpoint in the process that owns the arm's serial bus, because a
+No Roboglot command loads a checkpoint in the process that owns the arm's serial bus, because a
 checkpoint is code ([below](#a-checkpoint-is-code)). So there are two:
 
 | | The arm's process | The policy server |
 |---|---|---|
-| Command | `quackd run`, `quackd preflight` or `quackd serve-mcp`, with `--policy-url` | `quackd policy serve --policy OWNER/NAME@REVISION` |
-| Install | `quackd[lerobot]` for the arm, `quackd[lerobot-sim]` for its simulator | `quackd[lerobot-vla]`: LeRobot, torch and transformers |
+| Command | `roboglot run`, `roboglot preflight` or `roboglot serve-mcp`, with `--policy-url` | `roboglot policy serve --policy OWNER/NAME@REVISION` |
+| Install | `roboglot[lerobot]` for the arm, `roboglot[lerobot-sim]` for its simulator | `roboglot[lerobot-vla]`: LeRobot, torch and transformers |
 | Python | 3.12 for the arm, 3.11 or newer for the simulator | 3.12 |
 | Owns | the serial bus, the pacing, the step cap, every guard and every stop | the checkpoint, its processors and the inference |
 | Reaches the other | an HTTP client with no torch in it | nothing: it answers on port 9875 |
@@ -53,7 +53,7 @@ than the arm, since a twin of your arm reaches a server exactly as the arm does.
 hold it too:
 
 ```bash
-uv pip install "quackd[lerobot-vla]"
+uv pip install "roboglot[lerobot-vla]"
 ```
 
 **Where the download goes.** A checkpoint, and any model it names inside itself, is fetched into
@@ -61,17 +61,17 @@ the Hugging Face Hub's cache, `~/.cache/huggingface/hub` unless you say otherwis
 another disk, set `HF_HUB_CACHE`, which moves that cache and nothing else. Not `HF_HOME`: LeRobot
 looks for an arm's calibration under `$HF_HOME/lerobot/calibration` unless
 `HF_LEROBOT_CALIBRATION` or `HF_LEROBOT_HOME` says otherwise, so an `HF_HOME` set where the arm's
-process runs moves where its calibration is looked for as well, and `quackd robot twin` could not
+process runs moves where its calibration is looked for as well, and `roboglot robot twin` could not
 find the lab arm's file under one
 ([the calibration id](../adapters/lerobot/README.md#the-name-you-give-the-arm-is-its-calibration-id)).
 
-**2. Check the checkpoint before you serve it, and bench it twice.** `quackd policy check
+**2. Check the checkpoint before you serve it, and bench it twice.** `roboglot policy check
 --policy` serves it for the length of the check, and `--bench` times one warm step, then streams
 synthetic observations through the real client at the policy's rate, paced and queued as a
 segment is:
 
 ```bash
-quackd policy check --policy OWNER/NAME@REVISION --bench
+roboglot policy check --policy OWNER/NAME@REVISION --bench
 ```
 
 It prints the features the policy wants, its rate and where that came from, its chunks, the
@@ -84,7 +84,7 @@ on 2026-10-25. Its training config names its dataset at no revision, so it takes
 rows about the policy itself are cut:
 
 ```
-$ quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench
+$ roboglot policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench
 achieved    28.3 Hz of 30: 283 of the 300 ticks in 10.0 s sent an action
 starved     0 ticks with nothing to send
 skipped     17 ticks: the policy declares no --latency-s, so a chunk asked for with nothing left to
@@ -109,7 +109,7 @@ holds each chunk back by, so that a rehearsal there plays what the arm would. **
 again**, served with that latency and with the `--fps` the first bench needed:
 
 ```bash
-quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench --latency-s 0.52
+roboglot policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench --latency-s 0.52
 ```
 
 A good second bench skips no tick, starves only while its first chunk is on its way, which a
@@ -120,7 +120,7 @@ second bench timed a step at 930.4 ms and said to serve with 0.94. Served with t
 `--seconds 30` for more steps to read the percentile from, it looked like this:
 
 ```
-$ quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94 --bench --seconds 30
+$ roboglot policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94 --bench --seconds 30
 achieved    29.4 Hz of 30: 883 of the 900 ticks in 30.0 s sent an action
 starved     17 ticks with nothing to send, waiting for a chunk to come back, every one before the
             first came back, which a segment gives time for
@@ -142,7 +142,7 @@ serve it on a GPU.
 Given `--no-async-chunks` beside `--policy-url`, it plays each chunk out instead, holds the arm
 still while the next is on its way and plays that from its first action, as LeRobot's own loop
 plays chunks. That is slower by a round trip a chunk, and is there to compare against or to
-fall back on. `quackd policy check --bench --no-async-chunks` paces a bench the same way, and
+fall back on. `roboglot policy check --bench --no-async-chunks` paces a bench the same way, and
 the run's record says which it was (`async_chunks`).
 
 Before it loads anything, the server reads the checkpoint's own files and refuses what it has
@@ -176,13 +176,13 @@ fine-tune from, not a policy for your task: [SmolVLA and ACT](#smolvla-and-act) 
 the `--fps` its checks were given:
 
 ```bash
-quackd policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94
+roboglot policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94
 ```
 
 A checkpoint that took `--fps` to be checked takes it to be served, and without it `serve`
 refuses as the check did. It prints where it serves, `http://127.0.0.1:9875`, the token file it
 wrote or read, and the rate and where that came from, and serves until Ctrl+C. The first time,
-it writes a token to `~/.quackd/policy.token`, readable by you alone where the OS allows, and
+it writes a token to `~/.roboglot/policy.token`, readable by you alone where the OS allows, and
 every client on the same machine reads it from there. `--latency-s` matters on the simulator,
 whose clock stands still while the policy thinks, and which holds each chunk back that long so
 it lands where it would have on the arm. The time `manipulate` is given there is sized from that
@@ -192,7 +192,7 @@ and the timeout then says so, with how long a request took and the latency decla
 **4. Point a run at it**, in the first terminal:
 
 ```bash
-quackd run task.duck --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
+roboglot run task.glot --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
 ```
 
 `127.0.0.1` and not `localhost`: the client refuses `localhost`, whose lookup costs about two
@@ -200,18 +200,18 @@ seconds a call on some machines. A server that is not there is one sentence, bef
 connects. On Linux and macOS a closed port refuses at once:
 
 ```
-✗ error: nothing is listening at http://127.0.0.1:9875: start quackd policy serve, or point
+✗ error: nothing is listening at http://127.0.0.1:9875: start roboglot policy serve, or point
 --policy-url at the port it printed
-  quackd policy check --policy-url http://127.0.0.1:9875 asks it what it serves
+  roboglot policy check --policy-url http://127.0.0.1:9875 asks it what it serves
 ```
 
 Windows retries a refused connection for about two seconds, a little longer than the client
 waits for one, so there the same missing server reads as one that did not answer:
 
 ```
-✗ error: http://127.0.0.1:9875 did not take a connection within 2 s: is quackd policy serve running
+✗ error: http://127.0.0.1:9875 did not take a connection within 2 s: is roboglot policy serve running
 there, and the tunnel up?
-  quackd policy check --policy-url http://127.0.0.1:9875 asks it what it serves
+  roboglot policy check --policy-url http://127.0.0.1:9875 asks it what it serves
 ```
 
 **A segment starts only with every joint inside its travel.** A joint that reads further outside
@@ -241,14 +241,14 @@ words. The lasting fix is to calibrate the arm again folded, so the fold lies in
 its travel, which is the bench item in [PLAN.md](../../PLAN.md) that reads the calibrated value at
 each of the arm's stops.
 
-A task file that means to use the policy allows `manipulate`, and a `duck: 3` file can list the
+A task file that means to use the policy allows `manipulate`, and a `glot: 3` file can list the
 subtasks it may be told, how long each segment runs and how long they run in all
-([reference/duck-spec.md](../reference/duck-spec.md#policy-v3)). A `--goal` run given `--policy-url`
+([reference/glot-spec.md](../reference/glot-spec.md#policy-v3)). A `--goal` run given `--policy-url`
 allows `manipulate` too, and asks you before each segment when it runs at a terminal. `--yes`, or a
 pipe or file on stdin, answers in your place, and nobody is asked. With `--controller vla` no
 LLM is involved at all: a scripted pilot hands the policy each listed instruction in turn
 and then asks you whether the arm did it ([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
-A goal in `quackd drive` given `--policy-url` does the same, asking you at its keyboard or in the
+A goal in `roboglot drive` given `--policy-url` does the same, asking you at its keyboard or in the
 page, and under `--controller vla` each line you type is its one instruction
 ([guides/drive.md](drive.md#a-vla-pilot-a-line-at-a-time)).
 
@@ -267,8 +267,8 @@ on the laptop, with the arm.
 **On the GPU machine**, a Linux box with an NVIDIA GPU and Python 3.12:
 
 ```bash
-uv pip install "quackd[lerobot-vla]"
-quackd policy serve --policy OWNER/NAME@REVISION --jpeg-quality 90
+uv pip install "roboglot[lerobot-vla]"
+roboglot policy serve --policy OWNER/NAME@REVISION --jpeg-quality 90
 ```
 
 A checkpoint that took `--fps` on the laptop takes it here too. A tunnel looks like loopback to
@@ -284,11 +284,11 @@ ssh -L 9875:127.0.0.1:9875 you@gpu-host
 ```
 
 **The token.** The server wrote its token on the GPU machine, and the laptop's client looks in
-its own `~/.quackd/policy.token`, which is not that one. Hand it the server's through the one
+its own `~/.roboglot/policy.token`, which is not that one. Hand it the server's through the one
 variable there is for it:
 
 ```bash
-export QUACKD_POLICY_TOKEN="$(ssh you@gpu-host cat .quackd/policy.token)"
+export ROBOGLOT_POLICY_TOKEN="$(ssh you@gpu-host cat .roboglot/policy.token)"
 ```
 
 `--policy-token` does the same on one command. Either way the token goes in a header and never
@@ -296,8 +296,8 @@ in a URL, and a run's record keeps `***` in its place. Then check the server thr
 which measures the round trip a segment will see, and run as on the laptop:
 
 ```bash
-quackd policy check --policy-url http://127.0.0.1:9875 --bench
-quackd run task.duck --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
+roboglot policy check --policy-url http://127.0.0.1:9875 --bench
+roboglot run task.glot --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
 ```
 
 A tunnel that drops mid-segment ends the segment with the arm held, and `manipulate` fails,
@@ -305,23 +305,23 @@ saying why. The server's port is 9875 unless `--port` says otherwise, the one af
 daemon's 9874, and [SECURITY.md](../../SECURITY.md) lists it with the rest.
 
 Hugging Face rents a GPU by the hour as well, with no machine of yours to set up and no tunnel,
-and quackd starts the server on it for you ([below](#on-a-hugging-face-endpoint)).
+and Roboglot starts the server on it for you ([below](#on-a-hugging-face-endpoint)).
 
 ## On a Hugging Face Endpoint
 
 > [!WARNING]
-> **quackd has never created a Hugging Face Endpoint: everything here ran against the test
+> **Roboglot has never created a Hugging Face Endpoint: everything here ran against the test
 > suite's stand-ins on 127.0.0.1 with a scripted policy behind them.** The stand-ins answer as
 > Hugging Face's own pages say the API and its proxy do. What those pages leave out is in
 > [the endpoint's table](../adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints),
 > each row UNVERIFIED until a first real endpoint settles it, and no bench through one has been
 > timed.
 
-Instead of a GPU machine of your own, `quackd policy endpoint up` rents one from Hugging Face by
+Instead of a GPU machine of your own, `roboglot policy endpoint up` rents one from Hugging Face by
 the hour, as an [Inference Endpoint](https://huggingface.co/docs/inference-endpoints), and runs
-the same `quackd policy serve` on it, behind Hugging Face's TLS. The arm's process stays on the
+the same `roboglot policy serve` on it, behind Hugging Face's TLS. The arm's process stays on the
 laptop and reaches it with `--policy-url hf:NAME`, and the arm checks it before any torque as it
-checks any server. Each time the endpoint starts, its container installs this release of quackd
+checks any server. Each time the endpoint starts, its container installs this release of Roboglot
 from PyPI with `uvx`, so a build from a checkout cannot start one, and nothing uploaded after an
 hour past the release is installed, so a start a month later resolves the same torch as the
 first.
@@ -329,36 +329,36 @@ first.
 **What it needs.** A Hugging Face account with a way to pay, since an Inference Endpoint bills
 it by the minute, and a token of that account that may create, pause and delete its endpoints,
 which the API's own document marks as writes. Make it on huggingface.co, fine-grained where you
-can, since what the token may do goes wherever it does. quackd finds it where huggingface_hub
+can, since what the token may do goes wherever it does. Roboglot finds it where huggingface_hub
 does, in `HF_TOKEN`, then `HUGGING_FACE_HUB_TOKEN`, then the file `hf auth login` writes, and no
-variable moves where it is sent. The laptop needs `quackd[lerobot]` and nothing more: the
+variable moves where it is sent. The laptop needs `roboglot[lerobot]` and nothing more: the
 container installs the server's extra itself.
 
-**Start it**, with the flags the checkpoint needs, as `quackd policy serve` would take them:
+**Start it**, with the flags the checkpoint needs, as `roboglot policy serve` would take them:
 
 ```bash
-quackd policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
+roboglot policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
 ```
 
-Before anything bills, `up` checks what it can: that this quackd is a release on PyPI, that the
+Before anything bills, `up` checks what it can: that this Roboglot is a release on PyPI, that the
 instance is a GPU Hugging Face offers in that region and its price that day, that the account has
 quota left for one, that the checkpoint and every `--pin` exist at their revisions and are not
 gated or private, and that the checkpoint's `config.json` is one the server serves. Every flag is
-checked as `quackd policy serve` checks it, and a scripted policy is refused, since it needs no
+checked as `roboglot policy serve` checks it, and a scripted policy is refused, since it needs no
 GPU. Then it asks, and with no terminal to ask at it needs `--yes`. Here it is against the test
 suite's stand-ins, run with `python tests/fake_hugging_face.py`, with the `y` a person types:
 
 ```
-$ quackd policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
+$ roboglot policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
 This starts a Hugging Face Inference Endpoint on rok's account: arm-smolvla, serving lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 on nvidia-l4 x1 in aws us-east-1. It bills $0.80 an hour while it runs (Hugging Face's price, read just now), scales to zero after 15 minutes with no request, and bills nothing then or while paused. Start it? [y/N]: y
 created  arm-smolvla on rok's account, nvidia-l4 x1 in aws us-east-1, $0.80 an hour while it runs
 state    pending at 0 s
 state    initializing at 1 s
 state    running at 2 s
 url      http://127.0.0.1:51814
-token    kept in ~/.quackd/endpoints.json, for hf:arm-smolvla
-serving  scripted:sweep (quackd-policy 1, quackd 0.28.0), gpu yes
-  Run with --policy-url hf:arm-smolvla. quackd policy endpoint pause arm-smolvla stops the bill.
+token    kept in ~/.roboglot/endpoints.json, for hf:arm-smolvla
+serving  scripted:sweep (roboglot-policy 1, Roboglot 0.28.0), gpu yes
+  Run with --policy-url hf:arm-smolvla. roboglot policy endpoint pause arm-smolvla stops the bill.
 ```
 
 That is the stand-ins' output, and three of its rows would read otherwise on a real endpoint. Its
@@ -373,8 +373,8 @@ are quoted, every token taken out of them.
 **Check it and run on it**, as on any server, with no tunnel and no token to hand over:
 
 ```bash
-quackd policy check --policy-url hf:arm-smolvla --bench
-quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
+roboglot policy check --policy-url hf:arm-smolvla --bench
+roboglot run task.glot --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
 ```
 
 Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
@@ -382,25 +382,25 @@ that token to the endpoint only when the API says the endpoint by that name carr
 gave it, at the address `up` recorded. A record left behind by an endpoint deleted on
 huggingface.co is refused unless the API confirms it, and your token goes nowhere else. The
 record is read only from a registry your shell or `--registry-dir` names, so a project's `.env`
-cannot choose which endpoint drives your arm: a `QUACKD_REGISTRY_DIR` that came from one is
+cannot choose which endpoint drives your arm: a `ROBOGLOT_REGISTRY_DIR` that came from one is
 refused, saying so.
 
 **Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
 
 ```bash
-quackd policy endpoint pause arm-smolvla
+roboglot policy endpoint pause arm-smolvla
 ```
 
 A run that reaches a paused endpoint, or one still starting, is told so before the arm connects.
 Against the stand-ins:
 
 ```
-✗ error: hf:arm-smolvla is not serving (HTTP 503 from Hugging Face, not from quackd's server): it
-is starting, paused or scaled to zero. quackd policy endpoint up arm-smolvla wakes it and waits
+✗ error: hf:arm-smolvla is not serving (HTTP 503 from Hugging Face, not from Roboglot's server): it
+is starting, paused or scaled to zero. roboglot policy endpoint up arm-smolvla wakes it and waits
 until it answers
 ```
 
-`quackd policy endpoint list` says what this machine started and how each is now, and `delete`
+`roboglot policy endpoint list` says what this machine started and how each is now, and `delete`
 removes one from Hugging Face and forgets it here. `up`, `pause` and `delete` each read the
 endpoint first, and leave alone one by that name that does not carry the tag `up` gave yours, as
 one made on huggingface.co after yours was deleted there, or by another machine's `up`, would
@@ -408,7 +408,7 @@ not: `delete NAME --forget` forgets such a record and asks Hugging Face nothing.
 has no request for `--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and bills
 nothing, and the next request wakes it, which takes minutes: start it with `up` before a run
 rather than waking it with one. `up` asks before it wakes one, as before it resumes a paused one.
-quackd starts no endpoint that never scales to zero.
+Roboglot starts no endpoint that never scales to zero.
 
 **What it costs.** Hugging Face's price list, `GET /v2/provider`, which `up` reads with no token
 before it asks you, said this of AWS on 2026-10-25. An endpoint bills by the minute while it is
@@ -429,7 +429,7 @@ is the server's own token, which no account holds:
 | Token | Where it comes from | Where it goes | Where it never goes |
 |---|---|---|---|
 | Your Hugging Face token | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` or `hf auth login`'s file | huggingface.co and api.endpoints.huggingface.cloud, to manage the endpoint, and as the bearer to the one endpoint address `up` recorded, once the API has said it still is that endpoint's | the endpoint, PyPI, the price list, any other address |
-| The server's token | made by `up`, 64 hex digits | the endpoint's secrets as `QUACKD_POLICY_TOKEN`, and `~/.quackd/endpoints.json` | a URL, a run's record, the terminal |
+| The server's token | made by `up`, 64 hex digits | the endpoint's secrets as `ROBOGLOT_POLICY_TOKEN`, and `~/.roboglot/endpoints.json` | a URL, a run's record, the terminal |
 | A Hub token for a gated checkpoint | the variable `--hub-token-from` names | the endpoint's secrets as `HF_TOKEN`, and huggingface.co, to read the checkpoint's config | refused when it is your account's own token |
 
 **Gated and private checkpoints.** The endpoint fetches its checkpoint with a token of its own or
@@ -439,18 +439,18 @@ it. Make that a fine-grained read token for those repositories alone, since it g
 endpoint: your account's own token is refused there.
 
 What a first real endpoint would settle, an ACT on a T4 for a few cents, is an open item in
-[PLAN.md](../../PLAN.md), and why quackd starts a server for you here, where
+[PLAN.md](../../PLAN.md), and why Roboglot starts a server for you here, where
 [ADR-0048](../adr/0048-policies-are-the-arms-executor.md) has you start it, is
-[ADR-0061](../adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md).
+[ADR-0061](../adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-roboglot-starts.md).
 
 ## The policies
 
-quackd's server serves six LeRobot policy types, ACT, SmolVLA, pi05, pi0, X-VLA and GR00T
+Roboglot's server serves six LeRobot policy types, ACT, SmolVLA, pi05, pi0, X-VLA and GR00T
 N1.7, each allowed the processor steps read for it at LeRobot 0.7.0 and no other type's, an
 X-VLA in its `auto` action mode alone ([below](#x-vla)) and a GR00T whose every action group is
 joints ([below](#gr00t-n17)). Any other type is refused before a byte of its weights is fetched,
 and pi0-FAST in a sentence of its own ([below](#pi0-and-why-not-pi0-fast)). MolmoAct2 is not
-served yet ([below](#molmoact2)). `quackd policy list` prints the types and the ones refused, on
+served yet ([below](#molmoact2)). `roboglot policy list` prints the types and the ones refused, on
 a machine with no LeRobot.
 
 ### SmolVLA and ACT
@@ -462,8 +462,8 @@ a GPU, because it has to answer inside a tick. On 2026-09-28 an ACT trained on a
 published on the Hub, `natsuki0000/act-so101-bluecap` at commit
 `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, answered a step in about two thirds of a second on
 this project's laptop, an Intel Core i5-10210U with no GPU, and drove a twin of the lab's arm
-through two 10 s segments over `quackd serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that
-twin with `quackd run --goal` and `--policy-url`, handed the same ACT two more and declared
+through two 10 s segments over `roboglot serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that
+twin with `roboglot run --goal` and `--policy-url`, handed the same ACT two more and declared
 failure on seeing no blue cap, since the simulator's table holds a red cube and a pen. Those runs
 prove the plumbing, and nothing about whether it would do its task on an arm. On 2026-10-25 the
 same ACT answered a step there in about half a second (the benches above).
@@ -479,7 +479,7 @@ tensors are bfloat16, which that CPU has no native arithmetic for, and cast to f
 same script it still took about 18 s a chunk, past the 10 s the client waits for a step, so it
 never returned a chunk through the client. Serve it on a rented GPU
 ([above](#on-a-rented-gpu)). Those are one run's numbers on one machine, kept as a record, and
-nothing in quackd is set from them.
+nothing in Roboglot is set from them.
 
 ### Pi0.5
 
@@ -506,7 +506,7 @@ loader hands back a random network when its weights do not load, as pi05's does,
 loads them itself, strictly (`PI0_FROM_PRETRAINED` in
 [the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070)).
 
-**Pi0 has not run anywhere.** quackd has not loaded, benched or served one, on this project's
+**Pi0 has not run anywhere.** Roboglot has not loaded, benched or served one, on this project's
 laptop or on a GPU. Its checks were written against the SO-101 fine-tunes on the Hub on
 2026-10-25: `Harrysunshine/so101-pi0-real-9task` at commit
 `e2bfbfaec63723db4ede582e07ff27e2cf1eb436` and `haydendoo/so101_pickup_pi0_medium_new_v1` at
@@ -525,7 +525,7 @@ checkpoint is fetched. An SO-101 fine-tune on the Hub, checked in LeRobot 0.6.1'
 ```
 ✗ error: kominetti/pi0fast-so101-pickup-place-v2@2d74f0b0cb9cc7b2cc96330293c4b6c4daa7d349 is a
 'pi0_fast' policy, which turns its answer into actions with the FAST tokenizer's own Python code
-from the Hub, loaded with trust_remote_code=True inside the policy, and quackd runs no code a
+from the Hub, loaded with trust_remote_code=True inside the policy, and Roboglot runs no code a
 repository brings with it: serve a pi0 or pi05 instead (upstream_api.PI0_FAST_REMOTE_CODE)
 ```
 
@@ -539,7 +539,7 @@ Florence-2 is built from its own `config.json` and never fetched, so the one mod
 BART's tokenizer, `facebook/bart-large`, which is not gated. Pin it with
 `--pin facebook/bart-large@REVISION`, and the server fetches its tokenizer files, 2.7 MB on
 2026-10-25, since BART publishes no safetensors at all. What its answer means is set by
-`action_mode` in its config, and quackd serves `auto` alone: the dataset's own action, which for
+`action_mode` in its config, and Roboglot serves `auto` alone: the dataset's own action, which for
 an SO-101's data is the arm's own joint positions. `ee6d`, the default, and `agibot_ee6d` are an
 end effector's pose, and `joint`, `franka_joint7` and `so101_bimanual` other robots' joints, so
 each is refused before a pin or a weight, and so is LIBERO's post-processor step,
@@ -550,7 +550,7 @@ domain step hands the model the domain its data came from, which has to be one o
 own. Its chunks are 32 actions by LeRobot's default and 30 in the SO-101 fine-tunes, it runs with
 a camera it is not given padded, and its own loader is strict.
 
-**No trained X-VLA has run anywhere.** quackd has not loaded, benched or served one, on this
+**No trained X-VLA has run anywhere.** Roboglot has not loaded, benched or served one, on this
 project's laptop or on a GPU. CI's `policy` job serves a tiny random one, offline, through the
 real server and client: a Florence-2 a layer or two deep, built from its config, and a tokenizer
 of a few words pinned at a commit in a Hub cache of its own, which proves the plumbing and
@@ -568,7 +568,7 @@ files and none of its 3.52 GB of weights:
 
 ```
 ✗ error: lerobot/xvla-base@cdb7964e4fe842935d671bfab5a5ebe00a96648c is an X-VLA whose action_mode
-is 'ee6d', which is not this arm's joints, and quackd serves an X-VLA in 'auto' mode
+is 'ee6d', which is not this arm's joints, and Roboglot serves an X-VLA in 'auto' mode
 (upstream_api.XVLA_ACTION_MODES)
 ```
 
@@ -611,7 +611,7 @@ percentiles of the state it learned from are kept where LeRobot's normaliser kee
 processors' grouped statistics, so the server reads them from there, group by group, and the
 arm's frame check is made on them as on any other policy's (`GROOT_PERCENTILE_STATS`).
 
-**GR00T N1.7 has not run anywhere.** quackd has not loaded, benched or served one, on this
+**GR00T N1.7 has not run anywhere.** Roboglot has not loaded, benched or served one, on this
 project's laptop or on a GPU. Its checks were written against two SO-101 fine-tunes on the Hub,
 read on 2026-10-25: `jammyyang/groot17_so101_pick_place` at commit
 `36d374074e5604ed1348cccf10ab64cd1996b393`, relative with the gripper absolute, and
@@ -650,10 +650,10 @@ first exemption from that rule, which was deferred rather than written
 ### FLUX 3 Action
 
 Black Forest Labs' action model has an official SO-101 checkpoint,
-`black-forest-labs/flux-3-action-so101`. **quackd does not serve it, and has not run it
-anywhere.** quackd's server refuses its policy type, and what would change that is a spike on a
-rented Linux GPU that has not happened: that `quackd policy check --bench` holds the checkpoint's
-rate through the tunnel, that its actions stay anchored when quackd clips a goal, and that the
+`black-forest-labs/flux-3-action-so101`. **Roboglot does not serve it, and has not run it
+anywhere.** Roboglot's server refuses its policy type, and what would change that is a spike on a
+rented Linux GPU that has not happened: that `roboglot policy check --bench` holds the checkpoint's
+rate through the tunnel, that its actions stay anchored when Roboglot clips a goal, and that the
 official checkpoint drives the simulator end to end. PLAN.md carries it as an open item. What
 running it takes, from Black Forest Labs'
 [SO-101 guide](https://docs.bfl.ai/flux_3/flux3_action_so101) and
@@ -673,15 +673,15 @@ running it takes, from Black Forest Labs'
   camera. Their example was trained on about 200 teleoperated demonstrations.
 - **Its actions are deltas**, all but the gripper's, integrated against the last command every
   tick, and its percentiles are its training arm's calibration, which its makers say are not
-  universal SO-101 values. quackd's check at connect would compare them with your arm's travel.
+  universal SO-101 values. Roboglot's check at connect would compare them with your arm's travel.
 
-[Its card](https://huggingface.co/black-forest-labs/flux-3-action-so101) says what quackd's step
+[Its card](https://huggingface.co/black-forest-labs/flux-3-action-so101) says what Roboglot's step
 cap and guards are for: "Nothing in the model bounds joint velocity, force or workspace; the
 application must enforce those limits and keep a hardware stop within reach."
 
 ## Licences
 
-A policy's weights are your download, under their own licence, and quackd ships none of them.
+A policy's weights are your download, under their own licence, and Roboglot ships none of them.
 LeRobot, which the server runs them in, is Apache-2.0. This table is what each one's own page
 said on 2026-09-28, and the Pi0, X-VLA and GR00T N1.7 rows' on 2026-10-25, and it is not legal
 advice:
@@ -698,17 +698,17 @@ advice:
 
 ## Recording episodes, and training
 
-quackd does not record, train or fine-tune, and it does not wrap LeRobot's tools that do. Record
-with `lerobot-record`, a leader arm and the follower quackd drives, and train with
+Roboglot does not record, train or fine-tune, and it does not wrap LeRobot's tools that do. Record
+with `lerobot-record`, a leader arm and the follower Roboglot drives, and train with
 `lerobot-train`, as [LeRobot's own documentation](https://huggingface.co/docs/lerobot) describes.
 How many episodes depends on the policy and the task. SmolVLA's documentation recommends about
 50 as a starting point, and Black Forest Labs' SO-101 example used about 200, so 50 to 200 is
-the range to plan for. Four things make a recording one quackd can serve on this arm:
+the range to plan for. Four things make a recording one Roboglot can serve on this arm:
 
-- **Record on the calibration quackd drives with.** The arm's connect refuses a policy whose
+- **Record on the calibration Roboglot drives with.** The arm's connect refuses a policy whose
   learned state lies outside this arm's calibrated travel, because a policy learned on an arm
   calibrated another way asks for goals that pin this one at its limits. Record with the same
-  calibration id you give quackd, `arm-01` in the first-run guide. Calibrate the arm again and a
+  calibration id you give Roboglot, `arm-01` in the first-run guide. Calibrate the arm again and a
   policy learned on the old calibration may no longer fit it. `--accept-other-frame`, beside
   `--policy-url`, lets such a policy connect when you know the two arms' frames match. Every goal
   it answers is still clipped to this arm's travel, so the flag changes what drives the arm and
@@ -730,7 +730,7 @@ the range to plan for. Four things make a recording one quackd can serve on this
 
 Loading a LeRobot checkpoint imports whatever class its processor files name, a tokenizer step
 can be asked to trust a repository's own code, and SmolVLA loads its backbone by name. That is
-why no quackd command loads a checkpoint in the process that holds the serial bus, and why the
+why no Roboglot command loads a checkpoint in the process that holds the serial bus, and why the
 server reads before it builds:
 
 - `config.json` and both processor files are fetched first, at the revision named, and a step
@@ -750,7 +750,7 @@ server reads before it builds:
   their attention, name experts or carry a `quantization_config`: each is a way to a kernel that
   transformers fetches from the Hub and runs.
 - Nothing is loaded at all on a machine where the `kernels` package, which transformers fetches
-  and runs those kernels through, is installed at a version transformers takes. Nothing quackd
+  and runs those kernels through, is installed at a version transformers takes. Nothing Roboglot
   serves needs it, so the refusal says to uninstall it.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
@@ -765,7 +765,7 @@ issue in the server itself.
 
 A segment's result says why it ended, how long it ran, the chunks, the goals clipped to the
 travel and the ticks a second, and never that the subtask was done. This one is `scripted:sweep`
-driving a twin of the arm, over MCP (`quackd serve-mcp --robot arm-01-sim --policy-url
+driving a twin of the arm, over MCP (`roboglot serve-mcp --robot arm-01-sim --policy-url
 http://127.0.0.1:9875 --yes --no-memory --no-log`), the `summary` `robot_run_verb` returned:
 
 ```

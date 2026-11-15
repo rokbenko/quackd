@@ -6,19 +6,19 @@ import inspect
 
 import pytest
 
-import quackd.safety
-from quackd.adapters.base import RobotAdapter, adapter_name, backend_name
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception import ASSUMED_LENS
-from quackd.perception.base import Detection
-from quackd.safety import Executor
-from quackd.transport.base import DuckState, Intent, Posture
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import default_registry, registry_from_manifest
-from quackd_microduck import MicroduckAdapter
+import roboglot.safety
+from roboglot.adapters.base import RobotAdapter, adapter_name, backend_name
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception import ASSUMED_LENS
+from roboglot.perception.base import Detection
+from roboglot.safety import Executor
+from roboglot.transport.base import DuckState, Intent, Posture
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import default_registry, registry_from_manifest
+from roboglot_microduck import MicroduckAdapter
 
-DUCK = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, get_frame]\n"
+DUCK = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, get_frame]\n"
     "success: [x]\n---\n# T\nx\n"
 )
 SCRIPT: list[tuple[str, dict[str, float | str]]] = [
@@ -35,7 +35,7 @@ async def test_a_microduck_with_no_camera_does_not_advertise_the_verbs_that_need
     The manifest used to say `camera` either way, which made `observe` a core verb on a run
     that could only ever answer "this transport has no camera".
     """
-    from quackd_microduck import microduck_manifest
+    from roboglot_microduck import microduck_manifest
 
     seeing = microduck_manifest("jsonrpc", camera=True)
     blind = microduck_manifest("jsonrpc", camera=False)
@@ -48,11 +48,11 @@ async def test_a_microduck_with_no_camera_does_not_advertise_the_verbs_that_need
 
 
 async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> None:
-    """`quackd run` takes the lens its detector measures bearings through from the manifest's
+    """`roboglot run` takes the lens its detector measures bearings through from the manifest's
     `camera_fov_deg` when no `--fov-deg` names one, and `serve-mcp` has no `--fov-deg` at all.
     A real Microduck camera that reports its lens puts it there at connect, and a body that
     reports none, or something that is not a lens, leaves the limits as they were."""
-    from quackd_microduck import microduck_manifest
+    from roboglot_microduck import microduck_manifest
 
     assert microduck_manifest("jsonrpc", camera_fov_deg=41.5).limits["camera_fov_deg"] == 41.5
     assert "camera_fov_deg" not in microduck_manifest("jsonrpc").limits
@@ -80,11 +80,11 @@ async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> No
 def test_each_package_makes_its_body_through_the_one_path() -> None:
     """`make_for` is what the Microduck's `make` and Huebot's come to, so a fix to how a transport
     is built reaches both. Each gets an adapter of its own class over its own body."""
-    from quackd_huebot import HuebotAdapter
-    from quackd_huebot import make as make_huebot
-    from quackd_huebot.body import HUEBOT
-    from quackd_microduck import MICRODUCK, make_for
-    from quackd_microduck import make as make_microduck
+    from roboglot_huebot import HuebotAdapter
+    from roboglot_huebot import make as make_huebot
+    from roboglot_huebot.body import HUEBOT
+    from roboglot_microduck import MICRODUCK, make_for
+    from roboglot_microduck import make as make_microduck
 
     assert type(make_microduck("mock")) is MicroduckAdapter
     assert type(make_huebot("mock")) is HuebotAdapter
@@ -98,7 +98,7 @@ def test_each_package_makes_its_body_through_the_one_path() -> None:
 def test_huebot_is_a_robot_adapter_though_it_is_one_record_over_the_microducks() -> None:
     """Its adapter subclasses the Microduck's and fixes the body, and `RobotAdapter` is a protocol
     read at run time, so nothing else would notice a member lost in the subclass."""
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.factory import make_adapter
 
     assert isinstance(make_adapter("huebot:mock"), RobotAdapter)
 
@@ -170,8 +170,8 @@ class _BallAhead:
 
 
 WALKS_ON_SIGHT = ("go_to", "search_scan", "approach_and")
-SIGHTED = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+SIGHTED = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
     "  allow: [walk, kick, grab, go_to, search_scan, approach_and]\nsuccess: [x]\n---\n# T\nx\n"
 )
 
@@ -183,7 +183,7 @@ async def test_the_verbs_that_walk_on_what_the_camera_sees_need_the_duck_standin
     """`go_to`, `search_scan` and `approach_and` walk the duck as surely as `move`, and had no
     precondition at all, so a seated or fallen duck was steered at a ball for as long as the
     verb ran. They need `standing` now, which a blind manifest leaves out with the verbs."""
-    from quackd_microduck import microduck_manifest
+    from roboglot_microduck import microduck_manifest
 
     seeing = microduck_manifest("jsonrpc")
     for verb in WALKS_ON_SIGHT:
@@ -212,7 +212,7 @@ async def test_the_verbs_that_walk_on_what_the_camera_sees_need_the_duck_standin
 
 async def test_a_posture_nobody_can_vouch_for_refuses_every_verb_that_walks() -> None:
     """`unknown` used to pass `standing`. The simulators and the mock never report it, but a
-    real robot does for everything quackd cannot vouch for, and says why in `posture_reason`.
+    real robot does for everything Roboglot cannot vouch for, and says why in `posture_reason`.
     The mock here would take every twist it was sent, so only the precondition stands between
     an unknown duck and a walk."""
     why = "robotd reports policy 'homing' (the joints are ramping to the home pose)"
@@ -233,13 +233,13 @@ async def test_a_posture_nobody_can_vouch_for_refuses_every_verb_that_walks() ->
 
 
 def test_the_executor_hardcodes_no_posture() -> None:
-    source = inspect.getsource(quackd.safety)
+    source = inspect.getsource(roboglot.safety)
     assert "sitting" not in source and "fallen" not in source
 
 
 def test_robot_spec_parsing() -> None:
-    from quackd.adapters.base import AdapterError
-    from quackd.adapters.factory import RobotSpec, parse_robot_spec, parse_robots
+    from roboglot.adapters.base import AdapterError
+    from roboglot.adapters.factory import RobotSpec, parse_robot_spec, parse_robots
 
     assert parse_robot_spec("microduck:mock") == RobotSpec("microduck", "mock")
     assert parse_robot_spec("microduck") == RobotSpec("microduck", "sim2d")  # first backend
@@ -261,8 +261,8 @@ def test_resolve_robot_is_the_flag_then_the_duck_then_the_simulator() -> None:
     """0.4's `--transport X` alias was promised for removal in 0.5, and is gone."""
     import inspect
 
-    from quackd.adapters import factory
-    from quackd.adapters.factory import resolve_robot
+    from roboglot.adapters import factory
+    from roboglot.adapters.factory import resolve_robot
 
     assert resolve_robot("microduck:mock").key == "microduck:mock"
     assert resolve_robot(None, duck_default="microduck:mock").key == "microduck:mock"
@@ -272,7 +272,7 @@ def test_resolve_robot_is_the_flag_then_the_duck_then_the_simulator() -> None:
 
 
 async def test_factory_describes_and_makes_adapters() -> None:
-    from quackd.adapters.factory import (
+    from roboglot.adapters.factory import (
         describe,
         list_adapters,
         make_adapter,
@@ -309,7 +309,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "described",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
-    assert rows[1]["extra"] == "quackd[lerobot]" and "real" in rows[1]["backends"]
+    assert rows[1]["extra"] == "roboglot[lerobot]" and "real" in rows[1]["backends"]
 
 
 async def test_health_wraps_the_heartbeat() -> None:
@@ -344,7 +344,7 @@ tests/test_rosarm_adapter.py holds."""
 
 ADDRESSES = {"huebot:jsonrpc": "tcp://127.0.0.1:9870"}
 """What a body needs to be built at all: huebot:jsonrpc refuses to be built without one,
-since quackd knows no default for its shim. Building one connects to nothing."""
+since Roboglot knows no default for its shim. Building one connects to nothing."""
 
 ONE_CAMERA = (
     "microduck:sim2d",
@@ -370,10 +370,10 @@ async def test_a_body_that_cannot_park_refuses_a_rest_pose_instead_of_ignoring_i
 ) -> None:
     """A rest pose is a joint-angle map for an arm that goes limp when it is disconnected,
     and none of these bodies is one. The only way a pose reaches one is a hand-edited
-    `robots.json`, and taking it without ever driving to it would read as a promise quackd
+    `robots.json`, and taking it without ever driving to it would read as a promise Roboglot
     is keeping, so the file names itself instead."""
-    from quackd.adapters.base import AdapterError, RestResult
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.base import AdapterError, RestResult
+    from roboglot.adapters.factory import make_adapter
 
     with pytest.raises(AdapterError, match="does not return to a rest pose"):
         make_adapter(spec, rest_pose={"shoulder_pan": 1.0})
@@ -389,8 +389,8 @@ def test_a_one_camera_body_refuses_a_second_camera_url_instead_of_dropping_it(sp
     that repeats on the command line repeats for every body. Opening the first url and
     quietly dropping the rest would put the reason the second camera is missing nowhere on
     the screen, so a body that reads one refuses and names the body that reads several."""
-    from quackd.adapters.base import AdapterError
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.base import AdapterError
+    from roboglot.adapters.factory import make_adapter
 
     with pytest.raises(AdapterError) as refusal:
         make_adapter(spec, camera_url=["opencv://0?name=top", "opencv://1?name=side"])

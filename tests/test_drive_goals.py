@@ -12,17 +12,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.factory import RobotSpec, make_adapter
-from quackd.agent.providers.fake import FakeProvider
-from quackd.drive.run import DriveArgs, run_drive
-from quackd.drive.session import Answered, DriveSession
-from quackd.duckfile.parser import duck_from_goal, parse_duck_text
-from quackd.duckfile.schema import Budgets
-from quackd.log import EventLog
-from quackd.mcp_server import RobotSession
-from quackd.safety import Budget, Executor, Heartbeat
-from quackd.transport.base import DuckState
-from quackd.verbs.registry import default_registry
+from roboglot.adapters.factory import RobotSpec, make_adapter
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.drive.run import DriveArgs, run_drive
+from roboglot.drive.session import Answered, DriveSession
+from roboglot.glotfile.parser import glot_from_goal, parse_glot_text
+from roboglot.glotfile.schema import Budgets
+from roboglot.log import EventLog
+from roboglot.mcp_server import RobotSession
+from roboglot.safety import Budget, Executor, Heartbeat
+from roboglot.transport.base import DuckState
+from roboglot.verbs.registry import default_registry
 from tests.test_drive_session import _drive, _settled
 
 VERBS = ["report_state", "observe", "search_scan", "go_to", "kick", "move", "stop"]
@@ -60,7 +60,7 @@ async def test_a_goal_does_not_start_once_the_sessions_budget_is_spent(tmp_path:
     """The session refused a typed walk with its steps spent, and walked a goal straight after:
     the goal's own contract was a fresh one with steps of its own."""
     drive, body, _records = await _drive(tmp_path)
-    duck = duck_from_goal("drive", VERBS)
+    duck = glot_from_goal("drive", VERBS)
     budgets = duck.frontmatter.budgets.model_copy(update={"max_steps": 1})
     drive.robot.adopt(
         duck.model_copy(
@@ -98,10 +98,10 @@ async def test_a_goals_steps_are_the_sessions_too(tmp_path: Path) -> None:
 
 
 async def test_a_goal_keeps_the_battery_rule_of_the_sessions_duck(tmp_path: Path) -> None:
-    """The session's `.duck` ends every call below half its battery, and at a third of it a goal
+    """The session's `.glot` ends every call below half its battery, and at a third of it a goal
     walked, under the goal's own rule of 15%."""
     drive, body, _records = await _drive(tmp_path)
-    duck = duck_from_goal("drive", VERBS)
+    duck = glot_from_goal("drive", VERBS)
     front = duck.frontmatter.model_copy(update={"abort_when": ["Battery below 50%"]})
     drive.robot.adopt(duck.model_copy(update={"frontmatter": front}))
     body._states = [DuckState(policy="mock", posture="standing", battery_percent=30)]
@@ -112,7 +112,7 @@ async def test_a_goal_keeps_the_battery_rule_of_the_sessions_duck(tmp_path: Path
 
 
 ARM_DUCK = """---
-duck: 3
+glot: 3
 name: arm-session
 description: drive an arm with short segments
 verbs:
@@ -151,13 +151,13 @@ async def test_a_goal_leaves_the_arms_segment_length_as_the_session_set_it(
         executor=executor,
         heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
     )
-    robot.adopt(parse_duck_text(ARM_DUCK))
+    robot.adopt(parse_glot_text(ARM_DUCK))
     await robot.connect()
     assert adapter.segment_s == 1.5, "control: the session's contract set the segment"
     drive = DriveSession(
         robot,
         record=lambda kind, **data: None,
-        pilot=lambda goal: FakeProvider.for_duck("goal", goal),
+        pilot=lambda goal: FakeProvider.for_glot("goal", goal),
         goals=tmp_path / "goals",
         goal_verbs=["report_state", "observe", "stop"],
     )

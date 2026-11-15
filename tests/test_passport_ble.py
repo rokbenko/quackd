@@ -2,7 +2,7 @@
 bytes it makes on the air, and the rule that decides which of two robots dials.
 
 The vectors in docs/passport/vectors/ are written by scripts/passport_vectors.py with `struct`
-and `uuid` and nothing of quackd's, so the advert is checked against a second implementation."""
+and `uuid` and nothing of Roboglot's, so the advert is checked against a second implementation."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from quackd.passport import beacon
-from quackd.passport.beacon import (
+from roboglot.passport import beacon
+from roboglot.passport.beacon import (
     BLE_RX_UUID,
     BLE_SERVICE_UUID,
     BLE_TX_UUID,

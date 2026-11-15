@@ -453,9 +453,9 @@
    "yellow"
   ]
  ],
- "assess_uncertain_flock_go": [
+ "assess_uncertain_team_go": [
   [
-   "assess  uncertain: the basket is out of frame (a flock's standing answer said go)",
+   "assess  uncertain: the basket is out of frame (a team's standing answer said go)",
    "yellow"
   ]
  ],
@@ -495,111 +495,111 @@
    "dim"
   ]
  ],
- "flock_auction": [
+ "team_auction": [
   [
    "auction first bid duck-1 0.42 m",
    "cyan"
   ]
  ],
- "flock_claim": [
+ "team_claim": [
   [
    "claim   duck-1 (0.62 m), spotter duck-2",
    "bold"
   ]
  ],
- "flock_claim_no_spotter": [
+ "team_claim_no_spotter": [
   [
    "claim   duck-1 (0.62 m)",
    "bold"
   ]
  ],
- "flock_miss": [
+ "team_miss": [
   [
    "miss    duck-0: the ball rolled away, re-searching",
    "red"
   ]
  ],
- "flock_miss_bare": [
+ "team_miss_bare": [
   [
    "miss    duck-0, re-searching",
    "red"
   ]
  ],
- "flock_kick_done": [
+ "team_kick_done": [
   [
    "kicked  by duck-2, the spotter judges",
    "bold"
   ]
  ],
- "flock_verdict": [
+ "team_verdict": [
   [
    "verdict moved 0.51 m by duck-1",
    "bold"
   ]
  ],
- "flock_verdict_no_distance": [
+ "team_verdict_no_distance": [
   [
    "verdict unchanged by duck-1",
    "bold"
   ]
  ],
- "flock_separation": [
+ "team_separation": [
   [
    "hold    duck-0 0.30 m away, ordered back",
    "yellow"
   ]
  ],
- "flock_auction_void": [
+ "team_auction_void": [
   [
    "auction 2 void: nobody eligible",
    "yellow"
   ]
  ],
- "flock_auction_waiting": [
+ "team_auction_waiting": [
   [
    "auction waiting for a bid: spotter, kicker",
    "yellow"
   ]
  ],
- "flock_member_dead": [
+ "team_member_dead": [
   [
    "dead    duck-2, last heartbeat at 3.0 s",
    "red"
   ]
  ],
- "flock_member_excluded": [
+ "team_member_excluded": [
   [
    "out     duck-1 (no kick verb)",
    "red"
   ]
  ],
- "flock_wedges_rotated": [
+ "team_wedges_rotated": [
   [
    "search  round 2, wedges rotated 45 deg",
    "cyan"
   ]
  ],
- "flock_bid_rejected_why": [
+ "team_bid_rejected_why": [
   [
    "bid     duck-0 for kicker rejected: too far",
    "yellow"
   ]
  ],
- "flock_bid_rejected_missing": [
+ "team_bid_rejected_missing": [
   [
    "bid     duck-0 for kicker rejected: missing kick, walk_to",
    "yellow"
   ]
  ],
- "flock_talk": [
+ "team_talk": [
   [
    "talk    duck-a -> arm: I have the ball, you spot",
    "cyan"
   ]
  ],
- "flock_talk_refused": [
+ "team_talk_refused": [
   [
-   "talk    duck-a -> ghost: hello (refused: no member called 'ghost'; this flock is arm)",
+   "talk    duck-a -> ghost: hello (refused: no member called 'ghost'; this team is arm)",
    "cyan"
   ]
  ],
@@ -871,7 +871,7 @@
   "assess  uncertain: the basket is out of frame (the question went unanswered: the prompt raised EOFError) [the run ends before any motion]",
   "assess  uncertain: the basket is out of frame (a person said go)",
   "assess  uncertain: the basket is out of frame (--yes said go)",
-  "assess  uncertain: the basket is out of frame (a flock's standing answer said go)",
+  "assess  uncertain: the basket is out of frame (a team's standing answer said go)",
   "assess  uncertain: the basket is out of frame (a pipe said go)",
   "assess  invalid: invalid: verdict: maybe",
   "declare success: ball displaced",
@@ -895,7 +895,7 @@
   "bid     duck-0 for kicker rejected: too far",
   "bid     duck-0 for kicker rejected: missing kick, walk_to",
   "talk    duck-a -> arm: I have the ball, you spot",
-  "talk    duck-a -> ghost: hello (refused: no member called 'ghost'; this flock is arm)",
+  "talk    duck-a -> ghost: hello (refused: no member called 'ghost'; this team is arm)",
   "end     stopped after 7 steps",
   "tool    robot_run_verb verb='go_to', params={'target': 'ball'} on duck",
   "done    ok in 1.1 s budget: step 1/40",

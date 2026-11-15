@@ -1,37 +1,38 @@
-# RELEASING.md — what a version says, and how quackd ships one
+# RELEASING.md — what a version says, and how Roboglot ships one
 
-quackd is eleven distributions with one version between them: `quackd`, and `quackd-microduck`,
-`quackd-lerobot`, `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`,
-`quackd-toddlerbot`, `quackd-huebot`, `quackd-moss` and `quackd-rosarm`. Sixteen releases,
-0.1.0 to 0.16.0, were all minors whatever each one held, so the number said only that something
-had shipped. 0.16.1 is the first patch. This file is the rule that says which a release is, and
-then the order a maintainer ships one in. [ADR-0049](docs/adr/0049-a-version-says-what-changed.md)
-records why it was written down. A contributor needs only the part about the changelog, and
+Roboglot is eleven distributions with one version between them: `roboglot`, and
+`roboglot-microduck`, `roboglot-lerobot`, `roboglot-rosbridge`, `roboglot-open-duck`,
+`roboglot-xlerobot`, `roboglot-alohamini`, `roboglot-toddlerbot`, `roboglot-huebot`,
+`roboglot-moss` and `roboglot-rosarm`. Sixteen releases, 0.1.0 to 0.16.0, were all minors
+whatever each one held, so the number said only that something had shipped. 0.16.1 is the first
+patch. This file is the rule that says which a release is, and then the order a maintainer ships
+one in. [ADR-0049](docs/adr/0049-a-version-says-what-changed.md) records why it was written
+down. A contributor needs only the part about the changelog, and
 [CONTRIBUTING.md](CONTRIBUTING.md#versions-and-releases) says what that asks of a pull request.
 
 ## What a version number speaks about
 
-A version is a promise about quackd's public surface: everything a person, a script or another
-program relies on without reading quackd's source.
+A version is a promise about Roboglot's public surface: everything a person, a script or another
+program relies on without reading Roboglot's source.
 
 - **The CLI:** its commands and flags, their defaults, its exit codes, the refusals a script
   relies on to stop, and what `--json` prints for a script: each object's keys and the types
   of their values.
-- **Task files:** a `.duck`, which carries its own version in its `duck:` field, and the
+- **Task files:** a `.glot`, which carries its own version in its `glot:` field, and the
   `.sim.yaml` sidecar beside one.
-- **What quackd keeps between runs:** the robot registry, `robots.json`, and the memory files,
-  including whether an older quackd can read what a newer one wrote.
+- **What Roboglot keeps between runs:** the robot registry, `robots.json`, and the memory files,
+  including whether an older Roboglot can read what a newer one wrote.
 - **The MCP server:** its tools and their parameters.
 - **The adapter interface a third party implements:** `make()`, `describe()`, the manifest, the
-  verbs and the factory's calls, which is how a robot quackd does not publish joins it
+  verbs and the factory's calls, which is how a robot Roboglot does not publish joins it
   ([docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md)).
 - **Run records:** `summary.json`, the event kinds in `transcript.jsonl`, and the fields
-  `run_counters` reads back from them, which `quackd log` and people's own scripts read.
+  `run_counters` reads back from them, which `roboglot log` and people's own scripts read.
 - **The wire protocols that carry a version of their own:** the policy server's
-  `quackd-policy`, the Jetson host daemon's `quackd-jetson-hostd`, and the bridges that run on
-  the Open Duck Mini and the ToddlerBot, `quackd-open-duck-bridge` and
-  `quackd-toddlerbot-bridge`.
-- **Packaging:** the extras' names, which adapters exist, the Python versions quackd supports,
+  `roboglot-policy`, the Jetson host daemon's `roboglot-jetson-hostd`, and the bridges that run on
+  the Open Duck Mini and the ToddlerBot, `roboglot-open-duck-bridge` and
+  `roboglot-toddlerbot-bridge`.
+- **Packaging:** the extras' names, which adapters exist, the Python versions Roboglot supports,
   and the windows that tie the eleven packages together.
 - **Safety behaviour:** what the executor refuses, what it asks a person to confirm, and what it
   clips.
@@ -41,26 +42,26 @@ Not part of it: the README and the pages under `docs/`, the images, the examples
 modules, the tests, `scripts/`, the web demo, `uv.lock` and the repository's CI and Dependabot
 configuration. Any release may change those.
 
-## While quackd is 0.x
+## While Roboglot is 0.x
 
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) lets anything change at any time
-while the major is 0. quackd holds itself to more than that: the minor does the job a major will
+while the major is 0. Roboglot holds itself to more than that: the minor does the job a major will
 do after 1.0.0, and the patch does the rest.
 
 **A patch, 0.Y.Z+1, changes nothing a user has to act on and adds nothing to learn.** What
 worked before it works after it, but for the safety exception below. It holds fixes that bring
-shipped behaviour back to what the docs or quackd's own output said it would do, safety fixes,
+shipped behaviour back to what the docs or Roboglot's own output said it would do, safety fixes,
 corrections to the docs, the examples and the images, catalogue data that changes no default
 (a price, an LLM row), and dependency and packaging fixes. It adds no command, flag, verb,
-backend, adapter, extra, MCP tool, configuration key, `.duck` version or protocol version, and
+backend, adapter, extra, MCP tool, configuration key, `.glot` version or protocol version, and
 it changes no default. A record, or an object `--json` prints, may gain a field in a patch only
 as part of a fix, and only if a reader that does not know the field still works. A patch may
-refuse what the release before it accepted only when what it accepted never did what quackd
+refuse what the release before it accepted only when what it accepted never did what Roboglot
 said it would, or under the safety exception.
 
 **A minor, 0.Y+1.0, is everything else.** Anything new on the surface, any changed default, and
 any removal or rename, which is announced a minor ahead with a `Deprecated` entry and a warning
-at run time wherever that is practical. Any file a newer quackd writes that an older one cannot
+at run time wherever that is practical. Any file a newer Roboglot writes that an older one cannot
 read. A dropped Python version, a new required dependency, or a raised floor a user has to act
 on.
 
@@ -74,7 +75,7 @@ what the release is:
 | `Changed` | a default, or behaviour on the surface, that is now different for something that worked, and a refusal of something that worked | a minor |
 | `Deprecated` | something still there that a later minor will remove | a minor |
 | `Removed` | something gone from the surface | a minor |
-| `Fixed` | shipped behaviour brought back to what the docs or quackd's own output said it would do, a refusal of what never did, catalogue data that changes no default, a dependency or packaging fix nobody has to act on, and the safety fixes below | a patch |
+| `Fixed` | shipped behaviour brought back to what the docs or Roboglot's own output said it would do, a refusal of what never did, catalogue data that changes no default, a dependency or packaging fix nobody has to act on, and the safety fixes below | a patch |
 | `Security` | a vulnerability closed | a patch |
 | `Documentation` | the README, the pages under `docs/`, the examples, the images, the web demo, a CI job or nightly that stands on its own, and a refresh of `uv.lock` or of the tooling that makes one | no bump of its own |
 | `Known limitations` | what the release does not do, written as it ships | no bump of its own |
@@ -86,7 +87,7 @@ a deleted picture, so it never raises the bump. That is where the bench steps, t
 sidecars and the corrected pages written after 0.16.0 are filed. A test, a CI job or a script is
 said in the entry of the change it checks. One that stands on its own, such as a new nightly
 job, goes under `Documentation` too, since what it changes is the evidence the pages cite and
-not what quackd does. So does a refresh of `uv.lock`, a Dependabot pull request among them, and
+not what Roboglot does. So does a refresh of `uv.lock`, a Dependabot pull request among them, and
 a change to the tooling that makes one. The lock is what a checkout and CI install, and a
 wheel's requirements are its `pyproject.toml`'s, so a refresh changes no requirement a user
 installs against. A floor raised in a `pyproject.toml` does, and is filed by what it asks of a
@@ -94,8 +95,8 @@ user.
 
 The line between `Fixed` and `Changed` is whether what changed worked. A fix may change how
 something the pages describe works inside, since the pages are not the surface, and it may
-refuse what the release before accepted when that never did what quackd said it would. A
-latency that `quackd policy serve` took, and that `quackd policy check --bench` said covered
+refuse what the release before accepted when that never did what Roboglot said it would. A
+latency that `roboglot policy serve` took, and that `roboglot policy check --bench` said covered
 what it timed, but that left a segment nothing to play for part of every chunk, is that kind.
 So the fix that refuses it goes under `Fixed`, and its entry says what is refused now and what
 to do instead. A refusal of something that worked goes under `Changed`, and makes a minor.
@@ -119,8 +120,8 @@ minor is the one trade these rules will not make.
    - in `tests/test_docs.py`, the guards that fail when a command has no row in the README's
      table, or a flag or an environment variable they list is missing from the pages that
      document it;
-   - `test_schema_json_in_sync` in `tests/test_duckfile.py`, which holds
-     `quackd/duckfile/schema.json` to the parser, and `test_manifest_schema_on_disk_is_current`
+   - `test_schema_json_in_sync` in `tests/test_glotfile.py`, which holds
+     `roboglot/glotfile/schema.json` to the parser, and `test_manifest_schema_on_disk_is_current`
      in `tests/test_manifest.py`, which holds the manifest's schema to its model;
    - the MCP tool list in `tests/test_docs.py`, which fails when a tool the server registers is
      missing from [docs/guides/mcp.md](docs/guides/mcp.md) or a page counts them wrong, and beside
@@ -133,7 +134,7 @@ minor is the one trade these rules will not make.
    match on, the keys `--json` prints and the safety behaviour are tested case by case, and
    none of them is written down as one list that a test holds a change to. The registry has
    tests that a robot with no board and one with a single camera are written the way an older
-   quackd reads them, and nothing covers the rest of it or the memory files. Nothing guards the
+   Roboglot reads them, and nothing covers the rest of it or the memory files. Nothing guards the
    rest of `summary.json`'s keys, and each wire protocol is tested only against its other half
    from the same commit, never against an older one.
 2. **At least one body has taken its bench checklist to the end on real hardware.** None has
@@ -141,10 +142,10 @@ minor is the one trade these rules will not make.
 3. **A deprecation path exists:** announced a minor ahead, warned at run time, and removed in
    the next major.
 4. **The registry and the records carry a version that an older file is read by.**
-   `robots.json` carries `"version": 1` and has never moved it, while quackd since 0.15.0 can
+   `robots.json` carries `"version": 1` and has never moved it, while Roboglot since 0.15.0 can
    write a registry that older releases cannot read: one holding a robot stored with a host is
    unreadable to 0.12 to 0.14, and one holding a `lerobot:mujoco` twin to 0.14 and earlier.
-   `summary.json` carries the version of quackd that wrote it, and the memory files carry none.
+   `summary.json` carries the version of Roboglot that wrote it, and the memory files carry none.
 
 After 1.0.0 it is Semantic Versioning proper: a major for anything that breaks the surface, a
 minor for additions and deprecations that break nothing, and a patch for fixes. The safety
@@ -153,20 +154,20 @@ exception still holds.
 ## How the numbers move
 
 - **Eleven distributions, one version, released together,** even when only one of them changed,
-  so nobody has to work out which `quackd-lerobot` goes with which `quackd`.
+  so nobody has to work out which `roboglot-lerobot` goes with which `roboglot`.
 - **Every window starts at the release it ships in.** Each adapter allows the core from its own
-  release up to the next minor (`quackd>=X.Y.Z,<X.Y+1`), and each of the core's extras allows
+  release up to the next minor (`roboglot>=X.Y.Z,<X.Y+1`), and each of the core's extras allows
   its adapter's the same way. `scripts/set_version.py X.Y.Z` writes both from the whole version,
   beside the eleven `__version__` lines, so a patch raises every floor in the eleven
   `pyproject.toml` files to itself, and a minor or a major moves the whole window. The window
   quoted in prose, in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037, is edited
   by hand at every release.
-- **So an adapter from a patch never installs beside a core from before it.** `quackd-lerobot`
-  0.16.1 needs `quackd` 0.16.1 or a later 0.16, and `quackd[lerobot]` 0.16.1 installs
-  `quackd-lerobot` 0.16.1 or a later 0.16, so an adapter's fix may need what the core gained in
+- **So an adapter from a patch never installs beside a core from before it.** `roboglot-lerobot`
+  0.16.1 needs `roboglot` 0.16.1 or a later 0.16, and `roboglot[lerobot]` 0.16.1 installs
+  `roboglot-lerobot` 0.16.1 or a later 0.16, so an adapter's fix may need what the core gained in
   the same patch. An installer that upgrades the adapter upgrades the core with it, so the
-  raised floor asks nothing of anybody. The other way round still installs: `quackd` 0.16.1
-  upgraded on its own beside `quackd-lerobot` 0.16.0 is inside that adapter's window, so the
+  raised floor asks nothing of anybody. The other way round still installs: `roboglot` 0.16.1
+  upgraded on its own beside `roboglot-lerobot` 0.16.0 is inside that adapter's window, so the
   core's fix may not break an adapter from earlier in its minor. A fix that would is a minor.
 - **A patch is cut from `main`** when `main` holds nothing above patch level since the last
   tag, which its `[Unreleased]` headings say. Otherwise it is cut from the last tag, on its own
@@ -187,7 +188,7 @@ exception still holds.
 ## Cutting a release
 
 The commands are for Git Bash on this project's Windows machine. A running MCP server holds
-`.venv`'s `quackd.exe` open there, and a plain `uv run` fails trying to replace it, so every
+`.venv`'s `roboglot.exe` open there, and a plain `uv run` fails trying to replace it, so every
 `uv run` below carries `--no-sync`. Set the two versions once, here for 0.16.1, and a scratch
 directory outside the checkout for everything the steps write:
 
@@ -218,7 +219,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    It changes the eleven `__version__` lines and every window in the eleven `pyproject.toml`
    files: a patch raises each floor to itself, and a minor moves the whole window. Then the
    copies of the window in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037 are
-   edited by hand, and so is the version in the `policy` line of the two `quackd policy check`
+   edited by hand, and so is the version in the `policy` line of the two `roboglot policy check`
    outputs quoted in docs/adapters/lerobot/README.md, which a check run on the release has to print.
    A minor also moves the `Version X.Y` line under the README's Status.
 4. **The changelog.** `## [Unreleased]` becomes `## [X.Y.Z] — YYYY-MM-DD`, dated the day it
@@ -257,11 +258,11 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    uv run --no-sync python -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'
    uv run --no-sync mypy
    UV_PROJECT_ENVIRONMENT=.venv312 uv run --no-sync mypy
-   QUACKD_STRICT_SEEDS=1 uv run --no-sync pytest -n auto -m "not serial"
-   QUACKD_STRICT_SEEDS=1 uv run --no-sync pytest -m serial
-   QUACKD_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -n auto -m "not serial"
-   QUACKD_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -m serial
-   uv run --no-sync quackd validate ducks/*.duck
+   ROBOGLOT_STRICT_SEEDS=1 uv run --no-sync pytest -n auto -m "not serial"
+   ROBOGLOT_STRICT_SEEDS=1 uv run --no-sync pytest -m serial
+   ROBOGLOT_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -n auto -m "not serial"
+   ROBOGLOT_STRICT_SEEDS=1 GITHUB_ACTIONS=true uv run --no-sync pytest -m serial
+   uv run --no-sync roboglot validate tasks/*.glot
    ```
 
    mypy runs under 3.11 and 3.12 because CI's 3.12 jobs see stricter numpy stubs. `.venv` is the
@@ -306,7 +307,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    them:` naming all eleven, and last `The full note is in CHANGELOG.md.` It goes out under the
    maintainer's name, so it keeps the first two rules of
    [How the reply is written](CONTRIBUTING.md#how-the-reply-is-written): no dash used as
-   punctuation, with a hyphen only inside a name such as `quackd-lerobot`, and none of the
+   punctuation, with a hyphen only inside a name such as `roboglot-lerobot`, and none of the
    assistant tells. That section's rule on length is for a reply to one person, and a minor's
    release body has a heading for each theme. Pushing the tag runs CI again on the same commit.
    That run is for the record, since this order exists so that a red run never sits behind a
@@ -320,8 +321,8 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     ls "$out/dist" | wc -l
     ```
 
-    That is twenty-two, eleven wheels and eleven sdists. The core's wheel takes `quackd/` whole, and
-    its sdist takes `quackd/`, `ducks/`, `docs/`, `tests/` and `bridge/` whole, so a file the
+    That is twenty-two, eleven wheels and eleven sdists. The core's wheel takes `roboglot/` whole,
+    and its sdist takes `roboglot/`, `tasks/`, `docs/`, `tests/` and `bridge/` whole, so a file the
     checkout has and no commit does would ship. The archive holds exactly what the tag names.
 11. **The GitHub Release**, with all twenty-two attached:
 
@@ -333,11 +334,11 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     The title is the tag's first line without its colon. The body is in the tag's voice, with a
     heading for each theme in a minor and a paragraph or two in a patch.
 12. **Publish to PyPI, the core first.** Every adapter depends on it, and a resolver that meets
-    `quackd-lerobot` before `quackd` has nothing to resolve against.
+    `roboglot-lerobot` before `roboglot` has nothing to resolve against.
 
     ```bash
     export UV_PUBLISH_TOKEN="$(grep '^UV_PUBLISH_TOKEN=' .env | cut -d= -f2-)"
-    uv publish --check-url https://pypi.org/simple/ "$out"/dist/quackd-"$v"*
+    uv publish --check-url https://pypi.org/simple/ "$out"/dist/roboglot-"$v"*
     uv publish --check-url https://pypi.org/simple/ "$out"/dist/*
     ```
 
@@ -347,7 +348,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
 13. **Compare every hash in three places.**
 
     ```bash
-    names="quackd quackd-microduck quackd-lerobot quackd-rosbridge quackd-open-duck quackd-xlerobot quackd-alohamini quackd-toddlerbot quackd-huebot quackd-moss quackd-rosarm"
+    names="roboglot roboglot-microduck roboglot-lerobot roboglot-rosbridge roboglot-open-duck roboglot-xlerobot roboglot-alohamini roboglot-toddlerbot roboglot-huebot roboglot-moss roboglot-rosarm"
     (cd "$out/dist" && sha256sum *) | awk '{sub(/^\*/, "", $2); print "sha256:" $1, $2}' | sort > "$out/local.txt"
     for n in $names; do curl -s "https://pypi.org/pypi/$n/$v/json" | python -c "import json, sys; [print('sha256:' + u['digests']['sha256'], u['filename']) for u in json.load(sys.stdin)['urls']]"; done | tr -d '\r' | sort > "$out/pypi.txt"
     gh release view "v$v" -R rokbenko/quackd --json assets --jq '.assets[] | "\(.digest) \(.name)"' | tr -d '\r' | sort > "$out/github.txt"
@@ -366,16 +367,16 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     solution, while PyPI's JSON already listed every file. And this asks the origin, where a client
     with an empty cache takes what the CDN holds, for as long as the index's `max-age` of ten
     minutes: after the 0.30.1 upload every line said 2 and `uvx` went on refusing for about five
-    minutes, with `only quackd-microduck<=0.30.0 is available`. Nothing is wrong with a release
+    minutes, with `only roboglot-microduck<=0.30.0 is available`. Nothing is wrong with a release
     that says that. Wait a minute and run the next step again from a new empty cache, and stop only
     if it outlasts the ten minutes.
 15. **Smoke the published release from an empty cache.**
 
     ```bash
-    export UV_CACHE_DIR="$(mktemp -d)" QUACKD_MEMORY_DIR="$(mktemp -d)"
-    uvx --refresh --from "quackd[microduck]==$v" quackd run find-and-kick --robot microduck:sim2d --llm fake
-    uvx --refresh --from "quackd[microduck]==$v" quackd run find-and-kick --robot microduck:sim2d --llm fake
-    uvx --refresh --from "quackd==$v" quackd run find-and-kick
+    export UV_CACHE_DIR="$(mktemp -d)" ROBOGLOT_MEMORY_DIR="$(mktemp -d)"
+    uvx --refresh --from "roboglot[microduck]==$v" roboglot run find-and-kick --robot microduck:sim2d --llm fake
+    uvx --refresh --from "roboglot[microduck]==$v" roboglot run find-and-kick --robot microduck:sim2d --llm fake
+    uvx --refresh --from "roboglot==$v" roboglot run find-and-kick
     ```
 
     The first run's header says `0 notes, 0 earlier runs` on its `memory` line, and the
@@ -383,7 +384,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     memory keeps the smoke out of the maintainer's own. The third installs no body, so it must
     refuse with `no robot adapter is installed` and the line that installs one, and run
     nothing. A release that touched the arm's policy path also runs
-    `uvx --refresh --from "quackd[lerobot]==$v" quackd policy check --policy scripted:sweep`,
+    `uvx --refresh --from "roboglot[lerobot]==$v" roboglot policy check --policy scripted:sweep`,
     whose `policy` line names the new version.
 16. **Dispatch the nightlies on `main`** when the release touched what they cover:
     `lerobot-sim-assets.yml` for the arm's simulator and the model it fetches,

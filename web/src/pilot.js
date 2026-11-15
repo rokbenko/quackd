@@ -1,8 +1,8 @@
 /**
- * quackd, in about two hundred lines: the loop, the verbs and the contract.
+ * Roboglot, in about two hundred lines: the loop, the verbs and the contract.
  *
- * This is the browser's version of `quackd/agent/loop.py`, `quackd/verbs/core.py` and
- * `quackd/safety.py`, kept deliberately small so the whole idea fits on one screen. The
+ * This is the browser's version of `roboglot/agent/loop.py`, `roboglot/verbs/core.py` and
+ * `roboglot/safety.py`, kept deliberately small so the whole idea fits on one screen. The
  * LLM never sees a joint, a motor or a pixel. It sees a list of verbs the robot's own
  * manifest declares, one observation per turn, and a contract: which verbs are allowed,
  * how many steps it gets, and how long. It answers with exactly one verb per turn. The

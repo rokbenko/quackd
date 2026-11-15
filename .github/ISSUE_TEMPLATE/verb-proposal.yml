@@ -15,7 +15,7 @@ body:
       label: Kind
       description: See CONTRIBUTING.md "Add a verb". A verb not in a manifest does not exist.
       options:
-        - "core (any robot whose manifest meets its requirements, in quackd/verbs/core.py)"
+        - "core (any robot whose manifest meets its requirements, in roboglot/verbs/core.py)"
         - "extension (one body's own behaviour, in that adapter's verbs.py)"
         - "learned (ONNX policy — v2 track, see docs/concepts/learned-verbs.md)"
     validations:
@@ -26,7 +26,7 @@ body:
       label: Which robot provides it?
       description: >-
         For an extension, the adapter whose manifest will declare it (any of the ten
-        `quackd list-adapters` prints, or a new one). For a core verb, what a manifest must
+        `roboglot list-adapters` prints, or a new one). For a core verb, what a manifest must
         have for it to appear (a camera, a twist intent, a sound intent).
       placeholder: e.g. lerobot, or for a core verb, needs a camera and a gaze intent
     validations:

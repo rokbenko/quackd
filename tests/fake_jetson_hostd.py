@@ -1,6 +1,6 @@
 """A fake of the Jetson host daemon's protocol, on loopback, whose every answer is an attribute.
 
-This is not a copy of `bridge/jetson/quackd_jetson_hostd.py`. It has no camera, no model, no
+This is not a copy of `bridge/jetson/roboglot_jetson_hostd.py`. It has no camera, no model, no
 board and no logic beyond routing and the token: it answers each path with whatever a test put
 in the matching attribute, and records every request it was sent. That is what the client, the
 doctor's host section, the host detector and the host camera need to be tested against: a
@@ -16,10 +16,10 @@ Use it as a context manager, or as a fixture built from one::
 
     def test_something(hostd: FakeHostd) -> None:
         client = HostClient(hostd.address)
-        hostd.token = "s3cret"                 # every path now wants X-Quackd-Token
+        hostd.token = "s3cret"                 # every path now wants X-Roboglot-Token
         hostd.camera_stopped(age_s=3.2)       # /snapshot.jpg now answers camd's stale 503
         hostd.without_detector()              # /hello says no detector, /detect answers 503
-        assert hostd.requests_to("/hello")[0].headers.get("x-quackd-token") == "s3cret"
+        assert hostd.requests_to("/hello")[0].headers.get("x-roboglot-token") == "s3cret"
 
 The defaults describe one plausible board, and every one of them is a plain attribute a test
 may replace: a Tegra (an Orin Nano developer kit) with a camera (62.2 degrees, 640x480 at 5 fps)
@@ -30,7 +30,7 @@ that runs either detector on it sees the same ball. The board texts are imported
 the daemon removes them, so this fake cannot come to describe a different board from the one
 the daemon's own tests build as files.
 
-What it proves is that quackd reads the protocol as written. What it cannot prove is anything
+What it proves is that Roboglot reads the protocol as written. What it cannot prove is anything
 about a Jetson, which no test here has seen.
 """
 
@@ -62,9 +62,9 @@ from tests.jetson_fixtures import (
 )
 
 HOSTD_VERSION = "0.1.0"
-PROTOCOL = "quackd-jetson-hostd"
+PROTOCOL = "roboglot-jetson-hostd"
 PROTOCOL_VERSION = 1
-TOKEN_HEADER = "X-Quackd-Token"
+TOKEN_HEADER = "X-Roboglot-Token"
 MAX_JPEG_BYTES = 8 * 1024 * 1024
 
 #: The device tree's compatible list with its NUL separators removed, as `/board` sends it. The
@@ -194,7 +194,7 @@ def dead_address() -> str:
 @dataclass(frozen=True)
 class SeenRequest:
     """One request as the fake received it. Header names are lower-cased, because HTTP's are
-    case-insensitive and urllib capitalises them its own way (`X-quackd-token`)."""
+    case-insensitive and urllib capitalises them its own way (`X-roboglot-token`)."""
 
     method: str
     path: str
@@ -216,7 +216,7 @@ class CannedReply:
 
 
 class FakeHostd:
-    """quackd-jetson-hostd's protocol on `127.0.0.1` and a free port, served from a thread.
+    """roboglot-jetson-hostd's protocol on `127.0.0.1` and a free port, served from a thread.
 
     Settable, all read afresh on every request:
 
@@ -228,7 +228,7 @@ class FakeHostd:
       `frame_age_s` is set, as the camera daemon does for a stale frame.
     - `detect_status` and `detect_reply`: what `POST /detect` answers once the body passed the
       protocol's checks (411 without a length, 413 over 8 MB, 400 when it is not a JPEG).
-    - `token`: when set, every path wants it in `X-Quackd-Token`, compared in constant time,
+    - `token`: when set, every path wants it in `X-Roboglot-Token`, compared in constant time,
       and answers 401 without it. A token in the query string is never read.
     - `replies`: path to a `CannedReply`, served verbatim after the token check.
     - `delays`: path to seconds to sit on a request before answering it.

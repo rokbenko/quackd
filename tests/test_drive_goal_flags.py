@@ -1,4 +1,4 @@
-"""A drive session's goals flown as `quackd run` flies one: their questions put to the person
+"""A drive session's goals flown as `roboglot run` flies one: their questions put to the person
 driving, a VLA pilot's lines with the session's policy seconds, and the flags given once for every
 goal (`GoalSettings`)."""
 
@@ -11,21 +11,21 @@ from typing import Any
 
 import pytest
 
-import quackd.agent.loop as loop_module
-from quackd.adapters.factory import RobotSpec, make_adapter
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.providers.vla import VlaProvider
-from quackd.drive.attached import AttachedBody
-from quackd.drive.run import SESSION_POLICY_S, _given_lens, session_duck
-from quackd.drive.session import Answered, DriveSession, GoalSettings
-from quackd.duckfile.parser import duck_from_goal, load_duck
-from quackd.duckfile.schema import Budgets
-from quackd.log import EventLog
-from quackd.mcp_server import RobotSession
-from quackd.memory import RobotMemory
-from quackd.safety import Budget, Executor, Heartbeat
-from quackd.verbs.registry import default_registry
+import roboglot.agent.loop as loop_module
+from roboglot.adapters.factory import RobotSpec, make_adapter
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.providers.vla import VlaProvider
+from roboglot.drive.attached import AttachedBody
+from roboglot.drive.run import SESSION_POLICY_S, _given_lens, session_glot
+from roboglot.drive.session import Answered, DriveSession, GoalSettings
+from roboglot.glotfile.parser import glot_from_goal, load_glot
+from roboglot.glotfile.schema import Budgets
+from roboglot.log import EventLog
+from roboglot.mcp_server import RobotSession
+from roboglot.memory import RobotMemory
+from roboglot.safety import Budget, Executor, Heartbeat
+from roboglot.verbs.registry import default_registry
 from tests.test_drive_session import _drive, _settled, _until
 
 VERBS = ["report_state", "observe", "search_scan", "go_to", "kick", "move", "stop"]
@@ -76,9 +76,9 @@ class _Person:
 
 
 async def _gated(tmp_path: Path, person: Any) -> tuple[DriveSession, Any]:
-    """The mock duck under a `.duck` that gates `move`, so the scripted patrol's walk asks."""
+    """The mock duck under a `.glot` that gates `move`, so the scripted patrol's walk asks."""
     drive, body, _records = await _drive(tmp_path)
-    drive.robot.adopt(duck_from_goal("drive", VERBS, confirm=["move"]))
+    drive.robot.adopt(glot_from_goal("drive", VERBS, confirm=["move"]))
     drive.ask = person
     return drive, body
 
@@ -221,7 +221,7 @@ async def _arm(
 ) -> tuple[DriveSession, list[dict[str, Any]]]:
     """A session on the LeRobot mock, whose scripted policy answers `manipulate`, its goals
     flown by the VLA pilot unless `pilot` says otherwise. Contractless as `run_drive` leaves one,
-    or under `duck`, adopted before the connect as `run_drive` adopts a `--duckfile`."""
+    or under `duck`, adopted before the connect as `run_drive` adopts a `--glotfile`."""
     adapter = make_adapter(RobotSpec("lerobot", "mock", "arm"))
     event_log = EventLog()
     executor = Executor(
@@ -241,12 +241,12 @@ async def _arm(
         heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
     )
     if duck is not None:
-        robot.adopt(load_duck(str(duck)))
+        robot.adopt(load_glot(str(duck)))
     await robot.connect()
     if duck is None:
         registry = executor.registry
         robot.adopt(
-            session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
+            session_glot([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
         )
         assert executor.budget is not None
         executor.budget.policy_total_s = SESSION_POLICY_S
@@ -267,7 +267,7 @@ async def _arm(
 async def test_a_vla_line_is_one_instruction_the_person_driving_clears_and_judges(
     tmp_path: Path,
 ) -> None:
-    """As `quackd run --controller vla --goal` asks at its terminal: the doubt before the first
+    """As `roboglot run --controller vla --goal` asks at its terminal: the doubt before the first
     segment, the segment itself behind its gate, and whether the arm did it after. The seconds
     it ran are the session's too."""
     person = _Person(then=True)
@@ -408,7 +408,7 @@ async def test_a_goal_reads_the_places_the_session_keeps(
 ) -> None:
     """Each goal kept places of its own, empty, that died with it, so a place a person marked
     between goals was nowhere for the next goal to walk to."""
-    from quackd.space.places import Place
+    from roboglot.space.places import Place
 
     built: list[Any] = []
     real = loop_module.AgentLoop
@@ -458,7 +458,7 @@ def test_the_lens_is_told_to_the_body_once_by_the_session_and_never_by_a_goal() 
 
 
 def test_the_sessions_record_names_the_policy_server_as_a_runs_does() -> None:
-    from quackd.drive.run import _served
+    from roboglot.drive.run import _served
 
     class Arm:
         policy_served = {"server": "http://127.0.0.1:8080", "async_chunks": False}
@@ -480,10 +480,10 @@ BOWL = "put the block in the bowl"
 def _bowl(
     tmp_path: Path, *, allow: str = "manipulate, report_state, stop", policy: str = ""
 ) -> Path:
-    """A `.duck` whose policy may be told one thing alone."""
-    path = tmp_path / "bowl.duck"
+    """A `.glot` whose policy may be told one thing alone."""
+    path = tmp_path / "bowl.glot"
     path.write_text(
-        "---\nduck: 3\nname: bowl\ndescription: Only the bowl.\nverbs:\n"
+        "---\nglot: 3\nname: bowl\ndescription: Only the bowl.\nverbs:\n"
         f"  allow: [{allow}]\n  confirm: [manipulate]\nsuccess: [the block is in the bowl]\n"
         f"policy:\n  instructions: [{BOWL}]\n{policy}"
         "---\nPut the block in the bowl, and nothing else.\n",
@@ -500,8 +500,8 @@ async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
     tmp_path: Path,
 ) -> None:
     """A goal held `manipulate` to its own contract, which lists nothing, so a session whose
-    `.duck` lists one instruction let a goal's pilot tell the policy anything, unasked under
-    `--yes`, where `quackd run` and a typed `manipulate` refuse every word off the list."""
+    `.glot` lists one instruction let a goal's pilot tell the policy anything, unasked under
+    `--yes`, where `roboglot run` and a typed `manipulate` refuse every word off the list."""
 
     def pilot(goal: str) -> Any:
         return FakeProvider(
@@ -519,7 +519,7 @@ async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
     goal = drive.submit("clear the table", by="cli", channel="pipe")
     await _settled(goal)
     await _done(drive)
-    assert _policy_runs(drive) == [BOWL], "the policy was told words the .duck never listed"
+    assert _policy_runs(drive) == [BOWL], "the policy was told words the .glot never listed"
 
 
 async def test_a_vla_line_the_sessions_duck_does_not_list_is_refused_before_the_arm_moves(
@@ -569,9 +569,9 @@ async def test_a_goal_typed_over_a_goal_spends_what_the_first_left(tmp_path: Pat
             ]
         )
 
-    duck = tmp_path / "arm.duck"
+    duck = tmp_path / "arm.glot"
     duck.write_text(
-        "---\nduck: 3\nname: arm\ndescription: The arm.\nverbs:\n"
+        "---\nglot: 3\nname: arm\ndescription: The arm.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 30\n---\nUse the arm.\n",
         encoding="utf-8",
@@ -627,8 +627,8 @@ async def test_a_goal_changes_the_kept_places_only_where_the_session_keeps_a_mem
     tmp_path: Path, memory: bool
 ) -> None:
     """Off, as drive's default is, a goal's `forget_place` deleted the robot's kept place, which
-    `quackd run --no-memory` could never do: what a goal marks or forgets lasts as long as it."""
-    from quackd.space.places import Place, PlaceStore
+    `roboglot run --no-memory` could never do: what a goal marks or forgets lasts as long as it."""
+    from roboglot.space.places import Place, PlaceStore
 
     drive, _body, _records = await _drive(tmp_path)
     kept = PlaceStore("microduck:mock", tmp_path / "home")
@@ -654,7 +654,7 @@ async def test_a_goal_measures_through_the_sessions_lens_after_its_own_connect(
 ) -> None:
     """Each goal recalibrates the session's detector as it connects, so one flown without the
     session's `--fov-deg` set its lens back to the body's own."""
-    from quackd.perception import detector_for
+    from roboglot.perception import detector_for
 
     drive, _body, _records = await _drive(tmp_path)
     robot = drive.robot
@@ -676,11 +676,11 @@ async def test_a_y_after_a_gated_line_typed_over_a_goals_question_answers_that_l
 ) -> None:
     """Shown oldest first, `kick left` typed over a goal's question was queued unseen behind it,
     and the `y` the person meant for the kick cleared the goal's walk instead."""
-    from quackd.drive.terminal import Asker
+    from roboglot.drive.terminal import Asker
 
     said: list[str] = []
     drive, body, _records = await _drive(tmp_path)
-    drive.robot.adopt(duck_from_goal("drive", VERBS, confirm=["move", "kick"]))
+    drive.robot.adopt(glot_from_goal("drive", VERBS, confirm=["move", "kick"]))
     drive.exact = drive._exact()
     asker = Asker(said.append)
     drive.ask = asker
@@ -701,9 +701,9 @@ async def test_a_y_after_a_gated_line_typed_over_a_goals_question_answers_that_l
 async def test_a_goals_question_never_takes_the_screen_from_one_showing() -> None:
     """A goal asks when it gets there, and a question of its own that took the screen just
     before a keystroke would take the answer meant for the one the person was reading."""
-    from quackd.answers import confirm_question
-    from quackd.drive.session import GoalAsker
-    from quackd.drive.terminal import Asker
+    from roboglot.answers import confirm_question
+    from roboglot.drive.session import GoalAsker
+    from roboglot.drive.terminal import Asker
 
     said: list[str] = []
     asker = Asker(said.append)
@@ -738,9 +738,9 @@ async def test_a_vla_line_typed_over_a_goal_that_spent_the_last_seconds_is_refus
                 await asyncio.Event().wait()
             return await super().__call__(question, **more)
 
-    duck = tmp_path / "one.duck"
+    duck = tmp_path / "one.glot"
     duck.write_text(
-        "---\nduck: 3\nname: one\ndescription: One segment.\nverbs:\n"
+        "---\nglot: 3\nname: one\ndescription: One segment.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 10\n---\nOne segment.\n",
         encoding="utf-8",

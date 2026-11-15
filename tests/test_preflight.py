@@ -1,4 +1,4 @@
-"""`quackd preflight`: task files rehearsed on the arm's simulator, and judged by its truth.
+"""`roboglot preflight`: task files rehearsed on the arm's simulator, and judged by its truth.
 
 What is refused before anything is built comes first, and needs no physics: a robot that is not
 a simulator, a registered real arm and the mock among them, and a pilot nobody named. Then the
@@ -6,7 +6,7 @@ sidecar, `<task>.sim.yaml`, read and refused as a person would write it, and eac
 against synthetic truths and transcripts. The runs themselves are last, on the stand-in arm with
 the scripted pilot typed in full: a run that passes, one whose predicates fail, the JSON the
 same report makes, and the same seed giving the same report twice. Those skip without the
-physics extra or a GL context, unless `QUACKD_REQUIRE_GL=1` says they must not.
+physics extra or a GL context, unless `ROBOGLOT_REQUIRE_GL=1` says they must not.
 
 No number here comes off an arm. The calibration is synthetic, built from the stand-in's own
 ranges with ids out of the bus table's order, a joint's move is a share of the travel that
@@ -24,10 +24,10 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import RestResult
-from quackd.adapters.factory import describe, parse_robot_spec
-from quackd.cli import app
-from quackd.preflight import (
+from roboglot.adapters.base import RestResult
+from roboglot.adapters.factory import describe, parse_robot_spec
+from roboglot.cli import app
+from roboglot.preflight import (
     FIRST_SEED,
     SIDECAR_SUFFIX,
     CycleReport,
@@ -43,15 +43,15 @@ from quackd.preflight import (
     refuse_default_pilot,
     sidecar_path,
 )
-from quackd.registry import Registry, RobotEntry
-from quackd.transport.base import TransportError
-from quackd_lerobot.verbs import JOINTS
+from roboglot.registry import Registry, RobotEntry
+from roboglot.transport.base import TransportError
+from roboglot_lerobot.verbs import JOINTS
 from tests.gl import REQUIRE_ENV
 from tests.test_robot_twin import PORTS, guard_ports
 
 runner = CliRunner()
 REPO = Path(__file__).resolve().parents[1]
-LOOKOUT = REPO / "ducks" / "lerobot-lookout.duck"
+LOOKOUT = REPO / "tasks" / "lerobot-lookout.glot"
 PAN = "shoulder_pan"
 
 
@@ -60,7 +60,7 @@ def _flat(text: str) -> str:
 
 
 PAN_TASK = """---
-duck: 1
+glot: 1
 name: preflight-pan
 description: "Turn the base a little and say so."
 requires: [move_joints]
@@ -82,7 +82,7 @@ Turn your base a little, then say what you did.
 allows no verb that moves a joint."""
 
 GRASP_TASK = """---
-duck: 1
+glot: 1
 name: preflight-grasp
 description: "Close the gripper on the block between the jaws and lift it."
 requires: [gripper, move_joints]
@@ -109,7 +109,7 @@ def _duck(
 ) -> Path:
     """A task file in tmp, the bundled arm lookout unless `text` is given, with a sidecar beside
     it when one is given."""
-    duck = tmp_path / f"{name}.duck"
+    duck = tmp_path / f"{name}.glot"
     duck.write_text(text or LOOKOUT.read_text(encoding="utf-8"), encoding="utf-8")
     if sidecar is not None:
         (tmp_path / f"{name}{SIDECAR_SUFFIX}").write_text(sidecar, encoding="utf-8")
@@ -126,8 +126,8 @@ def nothing_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
     def built(*_a: Any, **_k: Any) -> Any:
         raise AssertionError("preflight built a robot it should have refused")
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", built)
-    monkeypatch.setattr("quackd_lerobot.make", built)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", built)
+    monkeypatch.setattr("roboglot_lerobot.make", built)
 
 
 @pytest.mark.parametrize("robot", ["lerobot:real", "lerobot:mock", "arm-01"])
@@ -141,7 +141,7 @@ def test_anything_but_a_simulator_is_refused_before_it_is_built(
     said = _flat(result.output)
     assert result.exit_code == 1, said
     assert "is not a simulator, and preflight runs only on one" in said, said
-    assert "quackd robot twin NAME" in said, said
+    assert "roboglot robot twin NAME" in said, said
     assert "AssertionError" not in said and "Traceback" not in said, said
     assert not (tmp_path / "runs").exists()
 
@@ -158,7 +158,7 @@ def test_a_simulator_whose_address_is_a_port_is_refused_before_anything_opens_it
     def read(*_a: Any, **_k: Any) -> Any:
         raise AssertionError("a calibration was read from a port")
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.read_calibration", read)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.read_calibration", read)
     Registry().add_robot(RobotEntry(name="bench-sim", spec="lerobot:mujoco", address=port))
     runs = tmp_path / "runs"
     args = ["preflight", str(_duck(tmp_path)), "--robot", "bench-sim", "--llm", "fake"]
@@ -174,7 +174,7 @@ def test_a_pilot_nobody_named_is_refused_and_fake_runs_only_when_typed(
     tmp_path: Path, nothing_is_built: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`resolve_llm` falls back to the scripted pilot when nothing names one, and a rehearsal
-    with it would pass for a rehearsal of the LLM. The conftest empties QUACKD_LLM."""
+    with it would pass for a rehearsal of the LLM. The conftest empties ROBOGLOT_LLM."""
     Registry().add_robot(RobotEntry(name="arm-sim", spec="lerobot:mujoco"))
     for robot in ("lerobot:mujoco", "arm-sim"):
         result = runner.invoke(app, ["preflight", str(_duck(tmp_path)), "--robot", robot])
@@ -182,9 +182,9 @@ def test_a_pilot_nobody_named_is_refused_and_fake_runs_only_when_typed(
         assert result.exit_code == 1, said
         assert "none was named" in said and "--llm fake" in said, said
     refuse_default_pilot("--llm")
-    refuse_default_pilot("QUACKD_LLM")
+    refuse_default_pilot("ROBOGLOT_LLM")
     # named anywhere, it is past the refusal and on to building the robot, which here fails
-    monkeypatch.setenv("QUACKD_LLM", "fake")
+    monkeypatch.setenv("ROBOGLOT_LLM", "fake")
     result = runner.invoke(app, ["preflight", str(_duck(tmp_path)), "--robot", "arm-sim"])
     assert "none was named" not in _flat(result.output)
     assert "preflight built a robot" in str(result.exception), result.output
@@ -407,12 +407,12 @@ def _twin(
     twinned as arm-01-sim on the stand-in model. Returns every joint's travel in degrees, from
     that calibration, and the pan's on its own."""
     pytest.importorskip("mujoco")
-    from quackd_lerobot.real import joint_ranges
-    from quackd_lerobot.sim import standin
-    from quackd_lerobot.sim.model import calibration_path, load, read_calibration
+    from roboglot_lerobot.real import joint_ranges
+    from roboglot_lerobot.sim import standin
+    from roboglot_lerobot.sim.model import calibration_path, load, read_calibration
     from tests.test_lerobot_sim import _synthetic
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
     path = calibration_path("arm-01")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(_synthetic(load(standin.mjcf(), seed=0))), encoding="utf-8")
@@ -435,9 +435,9 @@ def twin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 def pan_pilot(twin: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> float:
     """The scripted pilot, taught `PAN_TASK`: read the arm, turn the pan half of the way to the
     end of its travel, and say so. Returns how far it turns, in degrees."""
-    from quackd.agent.providers import fake
-    from quackd.agent.providers.base import ToolCall
-    from quackd_lerobot.verbs import MOVE_MIN_S
+    from roboglot.agent.providers import fake
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot_lerobot.verbs import MOVE_MIN_S
 
     turn = twin["pan"][1] / 2
 
@@ -463,11 +463,11 @@ def grasp_pilot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, An
     of the way from where it starts to the end of its travel, and say so. The teardown then
     drives the arm back down to that pose, still holding the block, because a rest move never
     opens a hand (`verbs.rest_goal`)."""
-    from quackd.agent.providers import fake
-    from quackd.agent.providers.base import ToolCall
-    from quackd_lerobot.sim import standin
-    from quackd_lerobot.sim.model import CUBE, PLACE_FAR, PLACE_NEAR, load
-    from quackd_lerobot.verbs import MOVE_MIN_S
+    from roboglot.agent.providers import fake
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot_lerobot.sim import standin
+    from roboglot_lerobot.sim.model import CUBE, PLACE_FAR, PLACE_NEAR, load
+    from roboglot_lerobot.verbs import MOVE_MIN_S
     from tests.test_lerobot_sim import _pointing_down
 
     down = _pointing_down(
@@ -645,8 +645,8 @@ def test_objects_are_judged_on_the_truth_latched_before_the_teardown_moved_them(
     block still in its hand, so by the time the world is let go of the block is barely off the
     table. Every check here asks for the block's own height, which holds as the run left it and
     at its peak, and would not have held on the live world at the end."""
-    from quackd_lerobot.sim.model import CUBE
-    from quackd_lerobot.sim.world import ArmWorld
+    from roboglot_lerobot.sim.model import CUBE
+    from roboglot_lerobot.sim.world import ArmWorld
 
     tall = 2 * CUBE.size[2]
     live: list[Any] = []

@@ -10,16 +10,16 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.factory import RobotSpec, describe
-from quackd.adapters.manifest import RobotManifest, VerbSpec
-from quackd.cli import app
-from quackd.lan import LanNotInstalled
-from quackd.lan import announce as lan_announce
-from quackd.lan import discover as lan_discover
-from quackd.lan import passports as lan_passports
-from quackd.lan.announce import ServiceRecord, announce, service_record
-from quackd.lan.discover import discover, robot_from_info
-from quackd.lan.txt import (
+from roboglot.adapters.factory import RobotSpec, describe
+from roboglot.adapters.manifest import RobotManifest, VerbSpec
+from roboglot.cli import app
+from roboglot.lan import LanNotInstalled
+from roboglot.lan import announce as lan_announce
+from roboglot.lan import discover as lan_discover
+from roboglot.lan import passports as lan_passports
+from roboglot.lan.announce import ServiceRecord, announce, service_record
+from roboglot.lan.discover import discover, robot_from_info
+from roboglot.lan.txt import (
     KEYS,
     MAX_PAIR_BYTES,
     SERVICE_TYPE,
@@ -30,7 +30,7 @@ from quackd.lan.txt import (
     robot_from_txt,
     txt_record,
 )
-from quackd.passport.beacon import TXT_VERSION, WELL_KNOWN_JSON
+from roboglot.passport.beacon import TXT_VERSION, WELL_KNOWN_JSON
 from tests.passport_helpers import RUNTIME, A, B
 
 DUCK = describe(RobotSpec("microduck", "mock", "duck-01"))
@@ -110,8 +110,8 @@ def test_robot_from_txt_rejects_other_versions_and_missing_identity() -> None:
         assert robot_from_txt(broken, instance="x", host="h", port=0, addresses=()) is None
     odd = robot_from_txt({**good, "nverbs": "many"}, instance="x", host="h", port=0, addresses=())
     assert odd is not None and odd.n_verbs == 0
-    assert instance_name("duck-01") == "duck-01._quackd._tcp.local."
-    assert SERVICE_TYPE == "_quackd._tcp.local."
+    assert instance_name("duck-01") == "duck-01._roboglot._tcp.local."
+    assert SERVICE_TYPE == "_roboglot._tcp.local."
 
 
 # ── announce / discover on fakes ───────────────────────────────────────────────────
@@ -123,7 +123,7 @@ def test_announce_registers_a_record_and_close_withdraws_it() -> None:
         DUCK, adapter="microduck", zc=zc, info_factory=lambda r: r, addresses=["10.0.0.7"]
     )
     assert zc.registered == [ann.record]
-    assert ann.record.name == "duck-01._quackd._tcp.local." and ann.record.port == 0
+    assert ann.record.name == "duck-01._roboglot._tcp.local." and ann.record.port == 0
     assert ann.record.addresses == ("10.0.0.7",) and ann.record.server.endswith(".local.")
     assert ann.record.properties == txt_record(DUCK, adapter="microduck")
     ann.close()
@@ -146,7 +146,7 @@ def test_discover_reads_back_what_was_announced_sorted_by_name() -> None:
 
 def test_robot_from_info_accepts_zeroconf_style_objects() -> None:
     class Info:
-        name = "duck-01._quackd._tcp.local."
+        name = "duck-01._roboglot._tcp.local."
         server = "desk.local."
         port = 0
         properties = {
@@ -187,7 +187,7 @@ def fake_lan(monkeypatch: pytest.MonkeyPatch) -> FakeZeroconf:
             addresses=["10.0.0.9"],
         )
 
-    # `quackd discover` browses Robot Passport beacons too, on the same fake registrar
+    # `roboglot discover` browses Robot Passport beacons too, on the same fake registrar
     real_discover_passports = lan_passports.discover_passports
 
     def fake_discover_passports(timeout_s: float = 3.0, **_: Any) -> list[Any]:
@@ -202,12 +202,12 @@ def fake_lan(monkeypatch: pytest.MonkeyPatch) -> FakeZeroconf:
 def test_cli_discover_prints_a_table_or_json(fake_lan: FakeZeroconf) -> None:
     runner = CliRunner()
     empty = runner.invoke(app, ["discover", "--timeout", "0"])
-    assert empty.exit_code == 0 and "no quackd robots answered" in empty.output
+    assert empty.exit_code == 0 and "no Roboglot robots answered" in empty.output
     announce(HEAD, adapter="head", zc=fake_lan, info_factory=lambda r: r, addresses=["10.0.0.2"])
     table = runner.invoke(app, ["discover", "--timeout", "0"])
     assert table.exit_code == 0, table.output
     # the rich table wraps in an 80-column terminal; the exact fields are checked as JSON
-    assert "quackd robots on the LAN (1)" in table.output and "head-01" in table.output
+    assert "Roboglot robots on the LAN (1)" in table.output and "head-01" in table.output
     as_json = runner.invoke(app, ["discover", "--timeout", "0", "--json"])
     rows = [json.loads(line) for line in as_json.output.splitlines() if line.startswith("{")]
     assert len(rows) == 1 and rows[0]["manifest_id"] == "head-01"
@@ -232,7 +232,7 @@ def test_cli_discover_lists_the_robot_passports_that_speak_txt_v2_and_no_older_o
     laptop = lan_passports.passport_record(
         instance="duck-01", port=8790, short_id=B.short_id, digest="12" * 32, host="lab-pc"
     )
-    # what quackd 0.23 to 0.28 announced for the robots a laptop fronted: a 1.0 reader skips it
+    # what Roboglot 0.23 to 0.28 announced for the robots a laptop fronted: a 1.0 reader skips it
     fake_lan.register_service(replace(laptop, properties={**laptop.properties, "v": "1"}))
     fake_lan.register_service(robot)
     runner = CliRunner()
@@ -253,7 +253,7 @@ def test_cli_announce_advertises_a_static_manifest_then_withdraws(fake_lan: Fake
         app, ["announce", "--robot", "microduck:mock", "--name", "duck-7", "--for", "0"]
     )
     assert res.exit_code == 0, res.output
-    assert "duck-7._quackd._tcp.local." in res.output and "10.0.0.9" in res.output
+    assert "duck-7._roboglot._tcp.local." in res.output and "10.0.0.9" in res.output
     assert "withdrawn" in res.output and fake_lan.registered == []  # closed on the way out
     bad = runner.invoke(app, ["announce", "--robot", "nope:x", "--for", "0"])
     assert bad.exit_code == 1 and "unknown adapter" in bad.output
@@ -263,7 +263,7 @@ def test_cli_announce_advertises_a_static_manifest_then_withdraws(fake_lan: Fake
     importlib.util.find_spec("zeroconf") is not None, reason="zeroconf is installed here"
 )
 def test_without_the_extra_the_message_names_it() -> None:
-    with pytest.raises(LanNotInstalled, match=r"quackd\[lan\]"):
+    with pytest.raises(LanNotInstalled, match=r"roboglot\[lan\]"):
         announce(DUCK, adapter="microduck")
-    with pytest.raises(LanNotInstalled, match=r"quackd\[lan\]"):
+    with pytest.raises(LanNotInstalled, match=r"roboglot\[lan\]"):
         discover(0.0)

@@ -6,9 +6,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.factory import RobotSpec, make_adapter
-from quackd.mcp_server import TOOL_NAMES
-from quackd.memory import RobotMemory
+from roboglot.adapters.factory import RobotSpec, make_adapter
+from roboglot.mcp_server import TOOL_NAMES
+from roboglot.memory import RobotMemory
 from tests.test_mcp_fleet import _data, connected
 
 
@@ -87,7 +87,7 @@ async def test_the_tool_descriptions_only_ask_for_a_recall_when_memory_is_on(
 async def test_the_instructions_only_sell_memory_when_it_is_on(tmp_path: Path) -> None:
     """Both tools stay registered with `--no-memory` and both answer "memory is off", so an
     instruction to call robot_recall early is an instruction to waste a turn."""
-    from quackd.mcp_server import _instructions
+    from roboglot.mcp_server import _instructions
 
     async with connected(two_robots(), memory_dir=tmp_path) as (_client, fleet):
         assert "robot_recall" in _instructions(fleet)

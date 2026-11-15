@@ -8,7 +8,7 @@ PropertiesChanged signals, and a device and bluetoothd going away. bleak never r
 scanner is off), because it talks to the system bus's real BlueZ; the central half is untested
 until a robot.
 
-Needs dbus-fast and a session bus. Skips without either, unless QUACKD_REQUIRE_DBUS=1.
+Needs dbus-fast and a session bus. Skips without either, unless ROBOGLOT_REQUIRE_DBUS=1.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from typing import Annotated, Any
 import pytest
 
 if importlib.util.find_spec("dbus_fast") is None or not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
-    if os.environ.get("QUACKD_REQUIRE_DBUS") == "1":
-        raise RuntimeError("QUACKD_REQUIRE_DBUS=1, and there is no dbus-fast or no session bus")
+    if os.environ.get("ROBOGLOT_REQUIRE_DBUS") == "1":
+        raise RuntimeError("ROBOGLOT_REQUIRE_DBUS=1, and there is no dbus-fast or no session bus")
     pytest.skip("needs dbus-fast and a session bus: dbus-run-session", allow_module_level=True)
 
 from dbus_fast import BusType, Message, Variant
@@ -40,8 +40,8 @@ from dbus_fast.annotations import (
 from dbus_fast.constants import PropertyAccess
 from dbus_fast.service import ServiceInterface, dbus_method, dbus_property
 
-import quackd.radio.bluez.radio as bluez_radio
-from quackd.passport.beacon import (
+import roboglot.radio.bluez.radio as bluez_radio
+from roboglot.passport.beacon import (
     BLE_RX_UUID,
     BLE_SERVICE_UUID,
     BLE_TX_UUID,
@@ -49,7 +49,7 @@ from quackd.passport.beacon import (
     ble_service_data,
     new_beacon_id,
 )
-from quackd.passport.link import (
+from roboglot.passport.link import (
     PERIPHERAL_BIT,
     Accept,
     Data,
@@ -63,21 +63,21 @@ from quackd.passport.link import (
     new_tag,
     split,
 )
-from quackd.passport.link import (
+from roboglot.passport.link import (
     Message as LinkMessage,
 )
-from quackd.radio import Pipe
-from quackd.radio.bluez.core import INVALID_LENGTH, NOT_SUPPORTED
-from quackd.radio.bluez.objects import (
+from roboglot.radio import Pipe
+from roboglot.radio.bluez.core import INVALID_LENGTH, NOT_SUPPORTED
+from roboglot.radio.bluez.objects import (
     ADVERT_PATH,
     APP_PATH,
     RX_PATH,
     SERVICE_PATH,
     TX_PATH,
 )
-from quackd.radio.bluez.peripheral import BlueZError, call
-from quackd.radio.bluez.radio import BlueZRadio
-from quackd.radio.links import Link, LinkTable
+from roboglot.radio.bluez.peripheral import BlueZError, call
+from roboglot.radio.bluez.radio import BlueZRadio
+from roboglot.radio.links import Link, LinkTable
 
 DBusStrings = Annotated[list[str], DBusSignature("as")]
 ADAPTER = "/org/bluez/hci0"

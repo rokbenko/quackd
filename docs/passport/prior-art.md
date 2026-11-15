@@ -76,7 +76,7 @@ maker's system, down to a robot that only reports its position and path. It has 
 robots that have never met. ([project](https://github.com/open-rmf/rmf))
 
 - **Not borrowed:** participation by a robot that can do almost nothing. A passport is for a robot
-  that can run quackd itself.
+  that can run Roboglot itself.
 
 ### ROS 2
 
@@ -146,7 +146,7 @@ encrypted, for a better guess at distance.
 
 - **Borrowed:** an identifier that changes about every 15 minutes; distance guessed from signal
   strength, with a calibration.
-- **Not yet matched:** changing the radio address and the identifier at the same moment. quackd
+- **Not yet matched:** changing the radio address and the identifier at the same moment. Roboglot
   rotates its beacon id on its own clock and leaves the address to BlueZ, so a listener who hears one
   change while the other holds can tie the two together ([privacy.md](privacy.md#tracking)).
 

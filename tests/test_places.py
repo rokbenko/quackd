@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from quackd.memory import RobotMemory
-from quackd.space.places import (
+from roboglot.memory import RobotMemory
+from roboglot.space.places import (
     MAX_PLACES,
     FrameRecord,
     Place,
@@ -19,8 +19,8 @@ from quackd.space.places import (
     place_listing,
     places_line,
 )
-from quackd.space.pose import Fix, FrameRef, Pose2D
-from quackd.space.source import SpatialError, SpatialSourceBase
+from roboglot.space.pose import Fix, FrameRef, Pose2D
+from roboglot.space.source import SpatialError, SpatialSourceBase
 
 ODOM = FrameRef("odometry", "odom:c1", persistent=False)
 MAP = FrameRef("map", "map:m1", persistent=True)
@@ -98,7 +98,7 @@ def test_the_spaces_in_a_name_are_made_one_as_a_note_s_are() -> None:
     assert clean_name("Rok's chair") == "Rok's chair"
 
 
-def test_start_is_quackds_own_to_mark(tmp_path: Path) -> None:
+def test_start_is_roboglots_own_to_mark(tmp_path: Path) -> None:
     book = PlaceBook(PlaceStore("r", tmp_path), Source(at(0.0, 0.0)))
     with pytest.raises(ValueError, match="where an explore or a find began"):
         book.mark("Start")

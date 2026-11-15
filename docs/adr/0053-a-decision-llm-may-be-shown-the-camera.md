@@ -1,6 +1,6 @@
 # ADR-0053: A decision LLM may be shown the camera, on one row, when the run says so
 
-**Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (what the stepper is sent, and what its record and its summary keep) and [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) (`openai` may be shown a picture, where it was sent text alone) · Implemented in `quackd/agent/decision/frames.py`, with changes in `base.py`, the catalogue, the factory, `decisions_api.py`, the stepper, the loop, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md#showing-it-the-camera---decision-frames)
+**Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (what the stepper is sent, and what its record and its summary keep) and [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) (`openai` may be shown a picture, where it was sent text alone) · Implemented in `roboglot/agent/decision/frames.py`, with changes in `base.py`, the catalogue, the factory, `decisions_api.py`, the stepper, the loop, the CLI and `roboglot log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md#showing-it-the-camera---decision-frames)
 
 ## Context
 
@@ -11,7 +11,7 @@ detections. Its own docstring said "Never a picture", every row's `sees` was fal
 that needed eyes escalated to the pilot LLM.
 
 [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) added the first decision LLM
-quackd names whose API takes a picture. OpenAI's `POST /v1/decisions` takes inline images beside
+Roboglot names whose API takes a picture. OpenAI's `POST /v1/decisions` takes inline images beside
 the text, as `input_image` parts of a user message, at most 128 a request, and OpenAI's own launch
 video for it has a chapter on making decisions from images and one guiding a Microduck. ADR-0052
 kept that row blind and said that whether a camera frame should ever reach a decision LLM was a
@@ -24,12 +24,12 @@ keeps what was sent.
 ## Decision
 
 - **A flag, off unless a run says so.** `--decision-frames`, `--no-decision-frames` and
-  `QUACKD_DECISION_FRAMES` (`1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any
+  `ROBOGLOT_DECISION_FRAMES` (`1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any
   other word stops the run), resolved in `factory.resolve_decision_frames` while the CLI reads its
   flags. It is refused there, before anything connects and on every machine, when no decision LLM
   is named, when the one named cannot see, and when its address is not one of OpenAI's hosts, a
   server of your own on this machine included. `--decision-llm off` turns it off, and
-  `quackd record` pins it off. It is independent of `--decision-mode`, because whether a frame may
+  `roboglot record` pins it off. It is independent of `--decision-mode`, because whether a frame may
   go is a different question from how much the stepper's answer may do, and the CLI builds the
   decision LLM when the mode is not off or frames are on; with the mode off the stepper is asked
   nothing, so nothing is sent. It is independent of `--vision`, which is the pilot's. One line
@@ -38,7 +38,7 @@ keeps what was sent.
   row is built with it false whatever the plugin says. `base.SeeingDecisionLLM` adds `frames:
   bool` and `decide(state, questions, *, frames=(), timeout_s=None)`; every other row and every
   plugin keeps the two-argument `decide` and is never handed the keyword.
-- **One gate for every frame.** `frames.may_send_frames(llm)` is true only for quackd's own
+- **One gate for every frame.** `frames.may_send_frames(llm)` is true only for Roboglot's own
   `DecisionsAPILLM`, that class and no subclass, built with `frames`, at an address
   `decisions_api.is_openai_host` accepts, the one function that also decides where
   `OPENAI_API_KEY` goes and what a turn costs. `Stepper.build(frames=True)` refuses any other
@@ -66,7 +66,7 @@ keeps what was sent.
   apart. An `OSError` on the write removes what part of the copy was written and sets `kept: false`,
   the frame still going, and never ends the run. A turn asked without a frame says why, as
   `frame_skipped`. Beside them, `run_start.decision_llm.frames`, `frames` and `frames_sent` in the
-  summary's `decision` block, and `1 frame` on the turn's line in `quackd log`.
+  summary's `decision` block, and `1 frame` on the turn's line in `roboglot log`.
 
 ## Why not
 
@@ -110,7 +110,7 @@ keeps what was sent.
 - What a frame costs in tokens and in time on `gpt-6-luna` is unpublished and unmeasured, and the
   `openai` page lists it as unverified. A turn that failed after its frame was handed over, and so
   has no count from OpenAI, is estimated on its text alone, which is low for such a turn.
-- **Nothing here has answered a real robot, and no frame from quackd has reached OpenAI.** In CI
-  the client runs against a fake of the SDK. Wherever the SDK is installed, a real `quackd run`
+- **Nothing here has answered a real robot, and no frame from Roboglot has reached OpenAI.** In CI
+  the client runs against a fake of the SDK. Wherever the SDK is installed, a real `roboglot run`
   sends its frames through it to a stand-in on 127.0.0.1 treated as OpenAI's, which checks each
   image part against the reference's shape, and those tests have run against 3.22.1 alone.

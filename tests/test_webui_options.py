@@ -1,5 +1,5 @@
-"""The page's options: read off `quackd run` and `quackd drive`, and turned back into the command
-a set of choices makes (`quackd.webui.options`). Plain Python, no Streamlit."""
+"""The page's options: read off `roboglot run` and `roboglot drive`, and turned back into the
+command a set of choices makes (`roboglot.webui.options`). Plain Python, no Streamlit."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 import typer
 
-from quackd.agent.decision.factory import MODES
-from quackd.agent.providers.factory import EFFORTS
-from quackd.cli import CONTROLLERS, app
-from quackd.command import SECRET_FLAGS
-from quackd.perception import DETECTOR_CHOICES
-from quackd.webui.options import LEFT_OUT, PANELS, argv_for, by_panel, options, parsed
+from roboglot.agent.decision.factory import MODES
+from roboglot.agent.providers.factory import EFFORTS
+from roboglot.cli import CONTROLLERS, app
+from roboglot.command import SECRET_FLAGS
+from roboglot.perception import DETECTOR_CHOICES
+from roboglot.webui.options import LEFT_OUT, PANELS, argv_for, by_panel, options, parsed
 
 
 def _visible(command: str) -> set[str]:
@@ -25,7 +25,7 @@ def _visible(command: str) -> set[str]:
 def test_every_option_a_command_has_is_offered_but_the_ones_the_page_leaves_out(
     command: str,
 ) -> None:
-    """Derived, never listed: a flag quackd gains is on the page the day it lands."""
+    """Derived, never listed: a flag Roboglot gains is on the page the day it lands."""
     offered = {o.name for o in options(command)}
     assert offered == _visible(command) - LEFT_OUT
     assert "front" not in offered, "the page's own flag is not one of its choices"
@@ -40,9 +40,9 @@ def test_nothing_chosen_makes_the_bare_command(command: str) -> None:
     assert argv_for(command, defaults) == [command], "the command's own defaults, said outright"
 
 
-def test_every_kind_of_option_comes_back_through_quackds_own_parser() -> None:
+def test_every_kind_of_option_comes_back_through_roboglots_own_parser() -> None:
     chosen: dict[str, Any] = {
-        "duckfile": "hello-world",
+        "glotfile": "hello-world",
         "image": ["front.png", "side.png"],
         "seed": 7,
         "dry_run": True,
@@ -84,7 +84,7 @@ def test_one_set_of_choices_makes_both_commands() -> None:
     parsed(drive)
 
 
-def test_the_words_an_option_takes_come_from_where_quackd_defines_them() -> None:
+def test_the_words_an_option_takes_come_from_where_roboglot_defines_them() -> None:
     by_name = {o.name: o for o in options("run")}
     assert by_name["effort"].choices == tuple(EFFORTS)
     assert by_name["decision_mode"].choices == tuple(MODES)
@@ -99,7 +99,7 @@ def test_the_panels_come_in_the_order_help_shows_them() -> None:
 
 
 def test_a_vla_pilot_takes_no_llm_and_no_decision_llm_however_it_was_chosen() -> None:
-    """`quackd run` refuses an LLM's flag, a picture and --play beside --controller vla, and
+    """`roboglot run` refuses an LLM's flag, a picture and --play beside --controller vla, and
     the Policies screen chooses a VLA without passing through Setup's pilot section."""
     values = {
         "robot": "lerobot:mujoco",

@@ -1,0 +1,33 @@
+# SO-101 run sheet. E089: More. More. More..
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   roboglot run docs/examples/lerobot/e089/less.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 16 --no-memory
+---
+glot: 4
+name: e089-less
+description: "Wave, then smaller and smaller until you barely move."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 16
+  max_minutes: 6
+  max_llm_calls: 36
+success:
+  - "You have shown what the task asks with this arm's joints and gripper, in moves someone watching could read, anything the task asks to happen to a thing really happened, as best you can tell from your joints and any camera pictures, and your reason says what the arm did, what it was meant to show, anything it could not show and anything the task asks you to say."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Game for anything: commit to the bit, and say plainly in your reasons what it actually did."
+play: true
+---
+
+# Task
+
+Wave. Then wave again, smaller. Keep making every wave smaller than the last one, until you are barely moving at all.
+
+## Strategy
+
+1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what the arm did and what it was meant to show, with anything the task asks you to say, or failure with a reason that says what the arm could not do.

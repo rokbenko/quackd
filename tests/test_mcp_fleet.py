@@ -15,10 +15,10 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 
-from quackd.adapters.factory import RobotSpec, make_adapter
-from quackd.mcp_server import Fleet, build_fleet_server
-from quackd.transport.base import TransportError
-from quackd.transport.mock import MockTransport
+from roboglot.adapters.factory import RobotSpec, make_adapter
+from roboglot.mcp_server import Fleet, build_fleet_server
+from roboglot.transport.base import TransportError
+from roboglot.transport.mock import MockTransport
 
 
 def one_duck() -> dict[str, Any]:
@@ -108,7 +108,7 @@ def test_build_needs_a_robot_and_a_known_default() -> None:
 
 @pytest.mark.parametrize("spec", ["open_duck:mock", "microduck:mock"])
 async def test_a_camera_robot_that_is_not_the_simulator_gets_a_detector(spec: str) -> None:
-    """The 0.5 fix landed in `quackd run` and missed this entry point.
+    """The 0.5 fix landed in `roboglot run` and missed this entry point.
 
     `build_fleet_server` still keyed the detector on the backend being `sim2d`, so every
     hardware body over MCP fetched frames, detected nothing because nothing was detecting,
@@ -129,8 +129,8 @@ def test_the_detector_policy_is_the_camera_and_nothing_else() -> None:
     """Both entry points call one function so they cannot drift again. Every body that can
     connect offline has a camera, so the two negative cases are pinned here: a body with no
     camera gets nothing, and an explicit `--detector` is never overruled."""
-    from quackd.perception import detector_for
-    from quackd.perception.color_blob import ColorBlobDetector
+    from roboglot.perception import detector_for
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     assert detector_for(["camera", "imu"]) is not None
     assert detector_for(["joint_state"]) is None  # lerobot:real
@@ -163,7 +163,7 @@ async def test_an_infeasible_verdict_names_the_robot_that_could() -> None:
         assert answer["verdict"] == "infeasible"
         assert answer["could"] == ["cart"]
         assert "a gripper" in answer["could_datasheets"]["cart"]
-        assert "robot_load_duckfile" in answer["note"]
+        assert "robot_load_glotfile" in answer["note"]
         assert not fleet.sessions["duck"].executor.cleared
 
         # and the body that was named can be asked
@@ -198,14 +198,14 @@ async def test_a_described_body_is_never_named_as_the_robot_that_could() -> None
             )
         )
         assert answer["could"] == [], answer
-        assert "No robot in this flock meets what it needs" in answer["note"]
+        assert "No robot in this team meets what it needs" in answer["note"]
 
 
 async def test_the_instructions_describe_each_body_before_anything_connects() -> None:
     """`_instructions` runs when the server is built, which is before `connect_all`. Read
     from the static descriptions it says what each body is; without them it said `a small
     robot` about every one of them."""
-    from quackd.adapters.factory import describe
+    from roboglot.adapters.factory import describe
 
     specs = {"duck": RobotSpec("microduck", "sim2d", "duck")}
     server, _fleet = build_fleet_server(

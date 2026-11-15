@@ -1,7 +1,7 @@
 # Talk: what two robots say once they have met
 
 > [!NOTE]
-> Spec 1.0. quackd speaks all six messages over an HTTP inbox on a LAN and over a Bluetooth link,
+> Spec 1.0. Roboglot speaks all six messages over an HTTP inbox on a LAN and over a Bluetooth link,
 > and decides every `ask` with its courtesy handler. The suite runs talk over loopback HTTP and the
 > link's frames on their own, and neither has run on a Jetson or over a real Bluetooth radio
 > ([roadmap.md](roadmap.md)).
@@ -106,7 +106,7 @@ therefore never signs. The robot key signs them, with the rest of the message:
 
 | Member | What it is |
 |---|---|
-| `software` | what the robot runs, `quackd/0.29.0` say |
+| `software` | what the robot runs, `roboglot/0.29.0` say |
 | `beacon` | the beacon id the robot advertises right now |
 | `reach` | how to send to it on a LAN: `http_port`, the port of its inbox |
 
@@ -121,13 +121,13 @@ an inbox is refused, and a session ends when the passport it was opened on expir
 
 Every later message carries `nonces: [nA, nB]`, and a receiver refuses one whose nonces match no
 session of its own, so freshness needs no clock. A passport's validity does, which is why a robot
-whose clock reads earlier than its own passport's `issued` stops talking. quackd ends a session after
+whose clock reads earlier than its own passport's `issued` stops talking. Roboglot ends a session after
 ten quiet minutes, forgets a `hello` not finished in thirty seconds, and holds at most 64 sessions and
 64 half-finished hellos, so a flood of hellos from fresh keys is a flood of `429`s, not of memory.
 
 ## say and bye
 
-`say` carries 1 to 400 characters, the cap quackd's flock messages have always had. It is never an
+`say` carries 1 to 400 characters, the cap Roboglot's team messages have always had. It is never an
 instruction: a stranger's `say` never reaches a brain, and a known robot's reaches it in quotes, as
 words somebody said ([security.md](security.md#prompt-injection)). `bye` ends the session, and a
 robot whose signal falls away says it before it closes the link.
@@ -158,9 +158,9 @@ specification puts four duties on every receiver, whoever made it:
 - No `ask` can keep the robot from stopping. Its own stop stays above any peer's request.
 - It answers within five seconds, or not at all.
 
-### What quackd does with an ask
+### What Roboglot does with an ask
 
-quackd's handler is fixed code, not the brain. It looks up the asker's tier
+Roboglot's handler is fixed code, not the brain. It looks up the asker's tier
 ([trust.md](trust.md#the-tiers)), checks the skill is on that tier's list and that the global budget
 allows it, and only then runs it through the executor with the source `peer`, so every gate the
 executor has still applies. `pause` ends whatever verb is moving the body, becomes the executor's own
@@ -184,7 +184,7 @@ in and no others, never its `why`, and a known robot's as it was sent, JSON-quot
 ```
 
 It names a place, never a coordinate: two robots that have just met share no frame of reference,
-which quackd learned building its own flocks ([ADR-0020](../adr/0020-heterogeneous-flocks.md)), and
+which Roboglot learned building its own teams ([ADR-0020](../adr/0020-heterogeneous-teams.md)), and
 "the front door" means the same to both. A stranger's `share` is withheld from a brain whole, as its
 `say` is.
 
@@ -194,7 +194,7 @@ What a robot says is up to its brain. A robot with nothing to do holds a **meeti
 that came close: a short run on the standing task in `robot.yaml`, which can only report the robot's
 state, stop it, and speak with `tell`. A robot already on a goal does not stop for a newcomer, which
 appears in that run's `Robots nearby` instead. Either way the messages are the same six
-([quackd.md](quackd.md#meeting-another-robot)).
+([roboglot.md](roboglot.md#meeting-another-robot)).
 
 ## Versions
 

@@ -1,6 +1,6 @@
 """The physics world keeps the cartoon's rules, and the transport over it speaks the protocol.
 
-Skipped wholesale without `quackd[mujoco]`. The rendering tests are skipped separately when
+Skipped wholesale without `roboglot[mujoco]`. The rendering tests are skipped separately when
 no OpenGL context can be made, which is what a bare CI runner without EGL or OSMesa looks
 like; everything else runs headless.
 """
@@ -17,14 +17,14 @@ import pytest
 
 mujoco = pytest.importorskip("mujoco")
 
-from quackd.perception.color_blob import ColorBlobDetector  # noqa: E402
-from quackd.sim2d.recorder import FrameRecorder  # noqa: E402
-from quackd.sim2d.world import World  # noqa: E402
-from quackd.transport.base import Intent, TransportError  # noqa: E402
-from quackd_microduck.sim3d.render import render_headcam, render_overview  # noqa: E402
-from quackd_microduck.sim3d.scene import BALL_PARK  # noqa: E402
-from quackd_microduck.sim3d.world import CONTROL_DT, DEADMAN_S, MujocoWorld, Puppet  # noqa: E402
-from quackd_microduck.transports.mujoco import MujocoTransport  # noqa: E402
+from roboglot.perception.color_blob import ColorBlobDetector  # noqa: E402
+from roboglot.sim2d.recorder import FrameRecorder  # noqa: E402
+from roboglot.sim2d.world import World  # noqa: E402
+from roboglot.transport.base import Intent, TransportError  # noqa: E402
+from roboglot_microduck.sim3d.render import render_headcam, render_overview  # noqa: E402
+from roboglot_microduck.sim3d.scene import BALL_PARK  # noqa: E402
+from roboglot_microduck.sim3d.world import CONTROL_DT, DEADMAN_S, MujocoWorld, Puppet  # noqa: E402
+from roboglot_microduck.transports.mujoco import MujocoTransport  # noqa: E402
 from tests.gl import require_render  # noqa: E402
 
 
@@ -281,7 +281,7 @@ def test_the_head_camera_shows_the_detector_what_the_cartoon_would() -> None:
 
 def test_upstreams_blue_scene_is_never_mistaken_for_a_person() -> None:
     """The scene is upstream's, and upstream's policies are blind: nothing in `microduck_rl`
-    ever looks at its own floor. quackd put a colour detector in front of it, and that floor
+    ever looks at its own floor. Roboglot put a colour detector in front of it, and that floor
     is the blue that detector calls a person — hue 105 against 114, and overlapping on
     saturation and value too, so no threshold separates them. Measured before the head camera
     got its own view: a person 0.12 m ahead in 48 of 48 frames, whichever way the duck faced.
@@ -313,7 +313,7 @@ def test_upstreams_blue_scene_is_never_mistaken_for_a_person() -> None:
 
 def test_the_two_floors_are_the_same_floor_seen_by_different_eyes() -> None:
     """One collides and one does not, so the physics cannot notice which is drawn."""
-    from quackd_microduck.sim3d.scene import FLOOR_CAM_GROUP, FLOOR_GROUP
+    from roboglot_microduck.sim3d.scene import FLOOR_CAM_GROUP, FLOOR_GROUP
 
     w = MujocoWorld(seed=0, body=Puppet())
     groups = {}
@@ -321,8 +321,10 @@ def test_the_two_floors_are_the_same_floor_seen_by_different_eyes() -> None:
         name = mujoco.mj_id2name(w.model, mujoco.mjtObj.mjOBJ_GEOM, i)
         if name and "floor" in name:
             groups[name] = (int(w.model.geom_group[i]), int(w.model.geom_contype[i]))
-    assert groups["quackd_floor"] == (FLOOR_GROUP, 1), "the scene's floor is the one that collides"
-    assert groups["quackd_floor_cam"] == (FLOOR_CAM_GROUP, 0), "the camera's floor is a picture"
+    assert groups["roboglot_floor"] == (FLOOR_GROUP, 1), (
+        "the scene's floor is the one that collides"
+    )
+    assert groups["roboglot_floor_cam"] == (FLOOR_CAM_GROUP, 0), "the camera's floor is a picture"
     assert FLOOR_CAM_GROUP >= 3, "MuJoCo hides 3 and up by default, the live viewer included"
     w.close()
 
@@ -362,15 +364,15 @@ async def test_the_recorder_draws_the_physics_panes(tmp_path: Path) -> None:
 def test_a_physics_run_on_the_puppet_still_writes_its_gif(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run` on `microduck:mujoco` as a person types it, with no `--no-gif`. The
+    """`roboglot run` on `microduck:mujoco` as a person types it, with no `--no-gif`. The
     recorder is built only for a body that has a world to draw, and the Microduck's physics
     transport has none until connect() builds it, after the recorder is made. A gate that read
     the world's value rather than asking whether the body has one would quietly stop every
     physics GIF, so this pins that the duck still gets its run.gif."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
-    from quackd_microduck.transports.mujoco import BODY_ENV
+    from roboglot.cli import app
+    from roboglot_microduck.transports.mujoco import BODY_ENV
 
     probe = MujocoWorld(seed=0, body=Puppet())
     require_render(probe)
@@ -419,8 +421,8 @@ def test_standing_up_does_not_leave_the_duck_inside_something() -> None:
 
     The ball is the only thing left in this arena to be inside of, now that nobody stands in
     it, so it is the ball that covers the obstacle branch the person used to cover."""
-    from quackd_microduck.sim3d.scene import ARENA_HALF, BALL_R
-    from quackd_microduck.sim3d.world import DUCK_R
+    from roboglot_microduck.sim3d.scene import ARENA_HALF, BALL_R
+    from roboglot_microduck.sim3d.world import DUCK_R
 
     w = MujocoWorld(seed=0, body=Puppet())
     bx, by = w.ball_x, w.ball_y
@@ -441,8 +443,8 @@ def test_standing_up_does_not_leave_the_duck_inside_something() -> None:
 def test_a_frame_bigger_than_the_offscreen_buffer_is_refused_by_name() -> None:
     """The buffer is compiled into the model, so a larger frame fails inside MuJoCo. Refuse it
     where the number lives, and bound `--gif-size` to the same figure."""
-    from quackd_microduck.sim3d.scene import OFFSCREEN_PX
-    from quackd_microduck.sim3d.world import RenderError
+    from roboglot_microduck.sim3d.scene import OFFSCREEN_PX
+    from roboglot_microduck.sim3d.world import RenderError
 
     w = MujocoWorld(seed=0, body=Puppet())
     with pytest.raises(RenderError, match="OFFSCREEN_PX"):
@@ -454,8 +456,8 @@ def test_a_frame_bigger_than_the_offscreen_buffer_is_refused_by_name() -> None:
 def test_the_cli_caps_a_gif_pane_at_the_size_the_model_can_actually_render() -> None:
     """`cli.py` spells 1024 rather than importing it, because importing `sim3d` on the default
     path would drag in the physics extra. This is the thread between the two numbers."""
-    from quackd.cli import _GIFSIZE
-    from quackd_microduck.sim3d.scene import OFFSCREEN_PX
+    from roboglot.cli import _GIFSIZE
+    from roboglot_microduck.sim3d.scene import OFFSCREEN_PX
 
     assert _GIFSIZE.max == OFFSCREEN_PX
 
@@ -465,7 +467,7 @@ def test_a_machine_with_no_opengl_is_told_which_variable_to_set(
 ) -> None:
     """docs/faq.md promises this sentence. A bare OpenGL traceback is the least useful thing
     to hand someone on a server."""
-    from quackd_microduck.sim3d.world import RenderError
+    from roboglot_microduck.sim3d.world import RenderError
 
     w = MujocoWorld(seed=0, body=Puppet())
 
@@ -479,7 +481,7 @@ def test_a_machine_with_no_opengl_is_told_which_variable_to_set(
 
 def test_a_world_can_be_closed_twice_and_refuses_to_render_after() -> None:
     w = MujocoWorld(seed=0, body=Puppet())
-    from quackd_microduck.sim3d.world import RenderError
+    from roboglot_microduck.sim3d.world import RenderError
 
     w.close()
     w.close()
@@ -503,7 +505,7 @@ async def test_a_world_that_cannot_step_ends_the_run_instead_of_hanging_it() -> 
     """The advancer is a task nobody awaits until `stop()`. An exception in it used to sit
     unretrieved while every sleeper waited on a future that would never resolve: the run hung
     until a verb timed out and the reason was collected by the garbage collector."""
-    from quackd.transport.base import HeartbeatError
+    from roboglot.transport.base import HeartbeatError
 
     t = MujocoTransport(seed=0, body="puppet")
     await t.connect()
@@ -618,7 +620,7 @@ def test_a_policy_of_the_wrong_shape_is_refused_by_name() -> None:
     would have failed inside onnxruntime on the first tick, with nothing naming the file."""
     from types import SimpleNamespace
 
-    from quackd_microduck.sim3d.microduck import ACTION_LEN, OBS_LEN, PolicyError, _check_io
+    from roboglot_microduck.sim3d.microduck import ACTION_LEN, OBS_LEN, PolicyError, _check_io
 
     def session(inputs: list[Any], outputs: list[Any]) -> Any:
         return SimpleNamespace(get_inputs=lambda: inputs, get_outputs=lambda: outputs)
@@ -626,7 +628,7 @@ def test_a_policy_of_the_wrong_shape_is_refused_by_name() -> None:
     good_in = SimpleNamespace(name="obs", shape=[1, OBS_LEN])
     good_out = SimpleNamespace(name="actions", shape=[1, ACTION_LEN])
     assert _check_io(session([good_in], [good_out]), "walk.onnx") == "obs"
-    # whatever upstream calls it, quackd asks by the name the file declares
+    # whatever upstream calls it, Roboglot asks by the name the file declares
     renamed = SimpleNamespace(name="observation", shape=[1, OBS_LEN])
     assert _check_io(session([renamed], [good_out]), "walk.onnx") == "observation"
 
@@ -649,7 +651,7 @@ def test_a_policy_of_the_wrong_shape_is_refused_by_name() -> None:
 #: caller carries `@pytest.mark.real_duck`, which is what exempts it from the conftest's
 #: throwaway cache; without the marker this would look in an empty directory and always skip.
 def _cached_microduck() -> Any:
-    from quackd_microduck.sim3d.assets import AssetError, ensure_microduck
+    from roboglot_microduck.sim3d.assets import AssetError, ensure_microduck
 
     try:
         return ensure_microduck(offline=True)
@@ -660,7 +662,7 @@ def _cached_microduck() -> Any:
 @pytest.mark.real_duck
 def test_the_real_duck_walks_turns_and_stays_upright() -> None:
     assets = _cached_microduck()
-    from quackd_microduck.sim3d.microduck import MicroduckBody
+    from roboglot_microduck.sim3d.microduck import MicroduckBody
 
     w = MujocoWorld(seed=6, body=MicroduckBody(assets))
     assert w.posture == "standing"
@@ -694,8 +696,8 @@ def test_a_duck_that_has_stood_still_walks_when_asked_for_the_forward_floor() ->
     """The floor was measured from a reset, where the walking policy stepped at 0.23. Once the
     stand policy had held the duck still two seconds it stepped at 0.23 on no seed, so a `move`
     raised to the floor after a stop said it walked and covered nothing."""
-    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX
-    from quackd_microduck.sim3d.microduck import MicroduckBody
+    from roboglot_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX
+    from roboglot_microduck.sim3d.microduck import MicroduckBody
 
     w = MujocoWorld(seed=3, body=MicroduckBody(_cached_microduck()))
     for _ in range(round(2.0 / CONTROL_DT)):
@@ -715,15 +717,15 @@ def test_a_duck_that_has_stood_still_walks_when_asked_for_the_forward_floor() ->
 
 @pytest.mark.real_duck
 @pytest.mark.parametrize("way", [1.0, -1.0], ids=["left", "right"])
-def test_a_duck_that_has_stood_still_turns_both_ways_when_asked_at_quackds_clamp(
+def test_a_duck_that_has_stood_still_turns_both_ways_when_asked_at_roboglots_clamp(
     way: float,
 ) -> None:
-    """The turning floor was 1.0 rad/s, quackd's own turn clamp, and asked for that the duck turned
-    right no more than sixteen degrees in five seconds, from a stand or a reset, and from a stand
-    stalled two seconds before it turned left: a `turn` right barely turned."""
-    from quackd_microduck import microduck_manifest
-    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_WZ
-    from quackd_microduck.sim3d.microduck import MicroduckBody
+    """The turning floor was 1.0 rad/s, Roboglot's own turn clamp, and asked for that the duck
+    turned right no more than sixteen degrees in five seconds, from a stand or a reset, and from a
+    stand stalled two seconds before it turned left: a `turn` right barely turned."""
+    from roboglot_microduck import microduck_manifest
+    from roboglot_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_WZ
+    from roboglot_microduck.sim3d.microduck import MicroduckBody
 
     clamp = float(microduck_manifest("mujoco").limits["max_wz"])
     w = MujocoWorld(seed=3, body=MicroduckBody(_cached_microduck()))
@@ -750,7 +752,7 @@ def test_a_duck_that_fell_on_its_face_stands_up_facing_the_way_it_was_going() ->
     how a biped most often lands: measured on the real model, a duck facing +x that goes onto
     its nose reads as yaw 3.14, so `stand_up` used to put it back on its feet facing
     backwards, one step into whatever it had been walking towards."""
-    from quackd_microduck.sim3d.microduck import MicroduckBody
+    from roboglot_microduck.sim3d.microduck import MicroduckBody
 
     w = MujocoWorld(seed=0, body=MicroduckBody(_cached_microduck()))
     b = w.body
@@ -781,8 +783,8 @@ def test_a_duck_that_fell_on_its_face_stands_up_facing_the_way_it_was_going() ->
 
 @pytest.mark.real_duck
 def test_the_real_duck_refuses_to_sit_and_stands_itself_up() -> None:
-    from quackd_microduck.sim3d.microduck import MicroduckBody
-    from quackd_microduck.sim3d.world import NotSupported
+    from roboglot_microduck.sim3d.microduck import MicroduckBody
+    from roboglot_microduck.sim3d.world import NotSupported
 
     w = MujocoWorld(seed=0, body=MicroduckBody(_cached_microduck()))
     with pytest.raises(NotSupported, match="sit"):

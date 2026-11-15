@@ -1,5 +1,5 @@
-"""The suite's own plumbing, held to what it was put there to do. None of this is quackd: it is what
-keeps a run of quackd's tests finishing, and finishing in the time it says."""
+"""The suite's own plumbing, held to what it was put there to do. None of this is Roboglot: it is
+what keeps a run of Roboglot's tests finishing, and finishing in the time it says."""
 
 from __future__ import annotations
 

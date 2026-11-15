@@ -1,10 +1,10 @@
-# quackd-rosbridge
+# roboglot-rosbridge
 
-The `rosbridge` robot adapter for [quackd](https://github.com/rokbenko/quackd). Install it through
-quackd rather than directly:
+The `rosbridge` robot adapter for [Roboglot](https://github.com/rokbenko/quackd). Install it through
+Roboglot rather than directly:
 
 ```bash
-uv pip install "quackd[rosbridge]"
+uv pip install "roboglot[rosbridge]"
 ```
 
 Every upstream name it relies on is read from upstream source at a pinned commit and listed in

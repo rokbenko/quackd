@@ -5,8 +5,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: quackd version
-      description: Output of `quackd --version`
+      label: roboglot version
+      description: Output of `roboglot --version`
     validations:
       required: true
   - type: input
@@ -14,7 +14,7 @@ body:
     attributes:
       label: Robot
       description: >-
-        The `--robot <adapter>:<backend>` you ran. `quackd list-adapters` lists every one.
+        The `--robot <adapter>:<backend>` you ran. `roboglot list-adapters` lists every one.
         Put `browser demo` if you hit it in the web page, or `not robot specific` for the
         CLI, docs, validation or MCP.
       placeholder: "microduck:mujoco"
@@ -47,7 +47,7 @@ body:
   - type: textarea
     id: command
     attributes:
-      label: Exact command and `.duck` file
+      label: Exact command and `.glot` file
       render: shell
     validations:
       required: true
@@ -60,7 +60,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: Output of `quackd doctor`
+      label: Output of `roboglot doctor`
       render: shell
   - type: textarea
     id: terminal
@@ -70,7 +70,7 @@ body:
         The whole session as you saw it, which is usually the one file that answers the
         question, because it opens with
         the command that started the run and the version that ran it. Check it before you
-        paste: quackd replaces the values of `--api-key` and `--token` and the credentials
+        paste: Roboglot replaces the values of `--api-key` and `--token` and the credentials
         in a `--base-url`, an `--address` or a `--camera-url`, and nothing else on that
         screen (see SECURITY.md).
       render: text

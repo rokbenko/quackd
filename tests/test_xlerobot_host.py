@@ -1,4 +1,4 @@
-"""quackd's XLeRobot client against a fake host, over real loopback sockets.
+"""Roboglot's XLeRobot client against a fake host, over real loopback sockets.
 
 This is what the `zmq` backend's 🧪 in `docs/adapters/status.md` rests on. It proves the client
 is correct against our reading of `xlerobot_host.py` at the pin: the ports, the JSON, the
@@ -19,12 +19,12 @@ from collections.abc import Callable
 
 import pytest
 
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.core import stop as stop_verb
-from quackd.verbs.registry import NoParams, VerbContext
-from quackd_xlerobot import XLerobotAdapter, zmq_host
-from quackd_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
-from quackd_xlerobot.zmq_host import (
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.core import stop as stop_verb
+from roboglot.verbs.registry import NoParams, VerbContext
+from roboglot_xlerobot import XLerobotAdapter, zmq_host
+from roboglot_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
+from roboglot_xlerobot.zmq_host import (
     CMD_PORT,
     OBS_PORT,
     XLerobotZmq,
@@ -33,7 +33,7 @@ from quackd_xlerobot.zmq_host import (
 )
 from tests.fake_xlerobot_host import FakeXLerobotHost
 
-pytest.importorskip("zmq", reason="the xlerobot zmq backend needs quackd[xlerobot]")
+pytest.importorskip("zmq", reason="the xlerobot zmq backend needs roboglot[xlerobot]")
 
 
 async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
@@ -121,7 +121,7 @@ async def test_a_camera_that_failed_to_encode_is_advertised_but_yields_no_frame(
 
 
 async def test_turn_rate_goes_out_in_degrees_per_second() -> None:
-    """quackd speaks rad/s and this wire is deg/s. Sending rad/s straight through would be a
+    """Roboglot speaks rad/s and this wire is deg/s. Sending rad/s straight through would be a
     57x error on a 12 kg cart, which is the worst bug this adapter could have."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
@@ -215,7 +215,7 @@ async def test_two_intents_in_one_host_cycle_both_land_despite_conflate() -> Non
 
 async def test_an_arm_command_commands_zero_base_velocity() -> None:
     """Upstream writes the wheels on every action, so an arms-only command halts the base.
-    quackd reproduces that deliberately rather than leaving it to emerge."""
+    Roboglot reproduces that deliberately rather than leaving it to emerge."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
         assert (await link.send_intent(Intent.move(vx=0.25))).accepted
@@ -232,7 +232,7 @@ async def test_an_arm_command_commands_zero_base_velocity() -> None:
 async def test_stop_zeroes_the_wheels_and_holds_the_arms_where_they_are() -> None:
     """Stop is a hold, never a collapse: the wheels zeroed and an arm that has arrived staying
     there. A reading the client has not caught up on must not move it, which is the bug a fake
-    caught at this adapter's bring-up (ADR-0026), and what makes any of it safe is that quackd
+    caught at this adapter's bring-up (ADR-0026), and what makes any of it safe is that Roboglot
     never sends the disconnect that would disable torque."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
@@ -249,7 +249,7 @@ async def test_stop_zeroes_the_wheels_and_holds_the_arms_where_they_are() -> Non
         held = host.actions[-1]
         assert held["left_arm_shoulder_pan.pos"] == pytest.approx(33.0), "the goal still stands"
         assert all(v == 0.0 for k, v in held.items() if k.endswith(".vel")), "the wheels zeroed"
-        assert "head_motor_1.pos" not in held, "quackd never commands the head, even to hold it"
+        assert "head_motor_1.pos" not in held, "Roboglot never commands the head, even to hold it"
         await link.close()
 
 
@@ -347,7 +347,7 @@ async def test_the_wheels_do_not_wait_on_a_reading() -> None:
 @pytest.mark.usefixtures("_a_slow_machine_is_no_stale_link")
 async def test_a_stop_leaves_the_gripper_and_a_joint_nobody_sent_a_goal() -> None:
     """What it reads would open a hand squeezing something against its goal, and every failed verb
-    ends in a stop. A joint with no goal from quackd is holding what its host holds it at."""
+    ends in a stop. A joint with no goal from Roboglot is holding what its host holds it at."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
         grip = "right_arm_gripper.pos"
@@ -499,7 +499,7 @@ async def test_a_host_that_dies_mid_verb_is_a_refusal_and_not_a_crash() -> None:
     """The host exits by itself after an hour, and there is no supervisor anywhere upstream
     to restart it, so this is a scheduled event rather than a rare one. Refusal is data: the
     pilot must be told the link is gone, not handed a ZMQ error through the executor's
-    catch-all, which reads like a crash in quackd."""
+    catch-all, which reads like a crash in Roboglot."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
 

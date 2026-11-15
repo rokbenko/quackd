@@ -1,10 +1,10 @@
-"""The bodies quackd only describes (ADR-0077), and the tiers every backend carries (ADR-0076).
+"""The bodies Roboglot only describes (ADR-0077), and the tiers every backend carries (ADR-0076).
 
-A described body is one YAML under `quackd/adapters/bodies/` and no code, reached as
+A described body is one YAML under `roboglot/adapters/bodies/` and no code, reached as
 `described:<name>` through the catalogue's last row. What these tests hold is the honesty of
 that: every figure names a source and the day it was read, the body's only verbs are
 `report_state` and `stop`, every path that could claim to reach a robot is refused, the prompt
-says quackd drives no part of it, and the last row never counts as an adapter anywhere an
+says Roboglot drives no part of it, and the last row never counts as an adapter anywhere an
 adapter is counted. The tier tests hold the owner rule: bound and verified code names who
 answers for it and when.
 """
@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 from rich.console import Console
 
-from quackd.adapters.base import AdapterError
-from quackd.adapters.catalogue import (
+from roboglot.adapters.base import AdapterError
+from roboglot.adapters.catalogue import (
     ADAPTERS,
     BY_NAME,
     DESCRIBED,
@@ -36,7 +36,7 @@ from quackd.adapters.catalogue import (
     Tier,
     status_line,
 )
-from quackd.adapters.described import (
+from roboglot.adapters.described import (
     ALLOWED,
     BodyFileError,
     DescribedAdapter,
@@ -46,7 +46,7 @@ from quackd.adapters.described import (
     manifest_from,
     parse_body,
 )
-from quackd.adapters.factory import (
+from roboglot.adapters.factory import (
     ADAPTER_NAMES,
     BACKENDS,
     RobotSpec,
@@ -59,15 +59,15 @@ from quackd.adapters.factory import (
     list_adapters,
     make_adapter,
 )
-from quackd.adapters.factory import describe as describe_spec
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.prompts import DESCRIBED_LINE, body_lines, body_summary
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import duck_from_goal
-from quackd.registry import RegistryError, check_name
-from quackd.verdict import missing_needs, solo_hint
+from roboglot.adapters.factory import describe as describe_spec
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.prompts import DESCRIBED_LINE, body_lines, body_summary
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import glot_from_goal
+from roboglot.registry import RegistryError, check_name
+from roboglot.verdict import missing_needs, solo_hint
 
 FRANKA = f"{DESCRIBED}:franka-research-3"
 
@@ -103,11 +103,11 @@ def test_a_described_body_is_honest_about_itself(name: str) -> None:
     assert m.id == name and m.backend == name
     assert m.verb_names() == ["report_state", "stop"]
     assert m.intents == [] and m.limits == {} and m.preconditions == {}
-    # no sensors either: a manifest's sensors are what quackd reads, a verb's requirements are
-    # judged against them, and quackd reads nothing from a body it only describes
+    # no sensors either: a manifest's sensors are what Roboglot reads, a verb's requirements are
+    # judged against them, and Roboglot reads nothing from a body it only describes
     assert m.sensors == []
     assert m.extras == {"described": "maker"}
-    assert m.blurb.endswith("; quackd drives no part of it"), m.blurb
+    assert m.blurb.endswith("; Roboglot drives no part of it"), m.blurb
     sheet = m.datasheet
     assert sheet is not None
     assert sheet.known(), f"{name} publishes no figure at all"
@@ -115,7 +115,7 @@ def test_a_described_body_is_honest_about_itself(name: str) -> None:
         assert "read 20" in figure.source, f"{name}'s {label} does not say when it was read"
     # an arm stands still and a legged body walks: the two fields agree
     assert (m.mobility == "none") == (m.embodiment == "arm"), name
-    # the same body reads the same twice, which is what keeps a flock's roster stable, and the
+    # the same body reads the same twice, which is what keeps a team's roster stable, and the
     # same under a registered name: the digest is the body's, as every adapter's is
     assert describe(name).digest() == m.digest()
     named = describe(name, "b2")
@@ -123,7 +123,7 @@ def test_a_described_body_is_honest_about_itself(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", DESCRIBED_BODIES)
-def test_the_prompt_says_quackd_drives_no_part_of_it(name: str) -> None:
+def test_the_prompt_says_roboglot_drives_no_part_of_it(name: str) -> None:
     m = describe(name)
     lines = body_lines(m)
     assert DESCRIBED_LINE in lines
@@ -145,10 +145,10 @@ async def test_the_body_connects_reports_and_stops_and_nothing_else(name: str) -
     state = await adapter.get_state()
     assert state.policy == "described" and state.posture == "unknown"
     assert state.extras["fall_detection"] is False
-    assert state.extras["posture_reason"] == "quackd reads nothing from a described body"
+    assert state.extras["posture_reason"] == "Roboglot reads nothing from a described body"
     assert await adapter.get_frame() is None
     health = await adapter.health()
-    assert health.ok and health.reason == "quackd reads nothing from a described body"
+    assert health.ok and health.reason == "Roboglot reads nothing from a described body"
     await adapter.stop()
     rest = await adapter.go_to_rest()
     assert rest.how == "none" and "keeps no rest pose" in rest.reason, rest
@@ -158,23 +158,23 @@ async def test_the_body_connects_reports_and_stops_and_nothing_else(name: str) -
 
 async def test_its_stop_says_there_is_nothing_to_stop_and_sends_nothing() -> None:
     """The core's words are "stopped (velocity zeroed)", a claim about a velocity it never had."""
-    from quackd.safety import Executor
-    from quackd.verbs.registry import registry_from_manifest
+    from roboglot.safety import Executor
+    from roboglot.verbs.registry import registry_from_manifest
 
     adapter = make("unitree-b2")
     manifest = await adapter.connect()
     executor = Executor(registry_from_manifest(manifest, adapter), adapter, contract=None)
     result = await executor.run_verb("stop", {})
-    assert result.ok and result.summary == "nothing to stop: quackd drives no part of it", result
+    assert result.ok and result.summary == "nothing to stop: Roboglot drives no part of it", result
     assert adapter.transport.intents == [] and adapter.transport.stops == 0
     await adapter.close()
 
 
 def test_a_robot_yaml_body_is_as_it_was_and_is_not_told_it_has_a_maker() -> None:
-    """`quackd onboard`'s body shares the class and none of this: the robot is there, on the
+    """`roboglot onboard`'s body shares the class and none of this: the robot is there, on the
     computer this runs on, and its figures are its owner's."""
-    from quackd.onboard import config
-    from quackd.onboard.body import DescribedAdapter as OnboardAdapter
+    from roboglot.onboard import config
+    from roboglot.onboard.body import DescribedAdapter as OnboardAdapter
 
     file = config.load(Path(config.__file__).with_name("demo") / "g1-edu-mock.yaml")
     adapter = OnboardAdapter(file)
@@ -229,7 +229,7 @@ GOOD = HEAD + SHEET
 def test_a_body_file_takes_the_manifests_fields_and_nothing_else() -> None:
     m = manifest_from("walker", parse_body("walker", GOOD))
     assert m.model == "walker" and m.verb_names() == ["report_state", "stop"]
-    assert m.blurb == "a walking test body; quackd drives no part of it"
+    assert m.blurb == "a walking test body; Roboglot drives no part of it"
     # what a body nobody drives cannot honestly claim is refused by name, before pydantic
     claims = ("limits", "intents", "verbs", "sensors", "safety_authority", "extras", "id")
     for key in claims:
@@ -277,7 +277,9 @@ def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_r
     assert rows[DESCRIBED]["family"] == ["described"] and rows[DESCRIBED]["route"] == []
     # nothing installs it, so `--json` names no package a script would go and install
     assert rows[DESCRIBED]["extra"] is None
-    assert all(row["extra"] == f"quackd[{name}]" for name, row in rows.items() if name != DESCRIBED)
+    assert all(
+        row["extra"] == f"roboglot[{name}]" for name, row in rows.items() if name != DESCRIBED
+    )
     assert rows[DESCRIBED]["tiers"]["unitree-b2"] == {
         "tier": "described",
         "owner": None,
@@ -298,7 +300,7 @@ def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_r
 
 
 def test_a_described_body_is_never_among_the_bodies_a_task_can_be_handed_to() -> None:
-    """`bodies_that_could` names bodies to hand a task to, and quackd drives no part of a
+    """`bodies_that_could` names bodies to hand a task to, and Roboglot drives no part of a
     described one, so they are a list of their own, each named by the spec that reaches it."""
     assert [name for name, _m in installed_manifests()] == list(ADAPTER_NAMES)
     assert [name for name, _m in described_manifests()] == [
@@ -314,27 +316,27 @@ def test_the_hint_names_a_described_body_apart_and_says_nothing_drives_it() -> N
     hint = solo_hint({"manipulator": "gripper"}, None)
     assert hint.startswith("By their datasheets, lerobot, xlerobot, alohamini and moss could")
     assert hint.endswith(
-        f" By their makers' figures alone, {FRANKA} could too, and quackd drives no part of it: "
+        f" By their makers' figures alone, {FRANKA} could too, and Roboglot drives no part of it: "
         "each is a described body."
     ), hint
-    # of the bodies quackd drives, the industrial arm's rehearsal carries 3 kg by its UR5e's
+    # of the bodies Roboglot drives, the industrial arm's rehearsal carries 3 kg by its UR5e's
     # figure, and seven described bodies do by their makers': the first sentence names it, the
     # last names three and counts, and each says which kind of body it names
     three = solo_hint({"payload_kg": 3.0}, None)
     assert three.startswith("By their datasheets, rosarm could (needs payload_kg=3)."), three
     assert three.endswith(
         f" By their makers' figures alone, {FRANKA}, {DESCRIBED}:kuka-lbr-iisy-3-r760, "
-        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 4 more could too, and quackd drives no part of "
+        f"{DESCRIBED}:kuka-lbr-iiwa-7-r800 and 4 more could too, and Roboglot drives no part of "
         "them: each is a described body."
     ), three
-    # nobody quackd drives carries 6 kg, and two described bodies do: the first sentence still
-    # says no robot here could, with the most about bodies quackd drives
+    # nobody Roboglot drives carries 6 kg, and two described bodies do: the first sentence still
+    # says no robot here could, with the most about bodies Roboglot drives
     nobody = solo_hint({"payload_kg": 6.0}, None)
     assert nobody.startswith("No robot installed here meets needs payload_kg=6"), nobody
-    assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies quackd drives"
+    assert "the most is rosarm at 5 kg" in nobody, "the most is about bodies Roboglot drives"
     assert nobody.endswith(
         f" By their makers' figures alone, {DESCRIBED}:kuka-lbr-iiwa-7-r800 and "
-        f"{DESCRIBED}:ur7e could, and quackd drives no part of them: each is a described body."
+        f"{DESCRIBED}:ur7e could, and Roboglot drives no part of them: each is a described body."
     ), nobody
     assert "described" not in solo_hint({"payload_kg": 500.0}, None)
     assert solo_hint({}, None) == ""
@@ -344,10 +346,10 @@ def test_a_described_body_is_never_the_default_robot(monkeypatch: pytest.MonkeyP
     """A bare core has the described row and nothing that drives, and a command with no robot
     named must still say no robot adapter is installed rather than hand over a body that moves
     nothing and reads as a run."""
-    from quackd.adapters import factory
-    from quackd.adapters.factory import NoRobotNamed
+    from roboglot.adapters import factory
+    from roboglot.adapters.factory import NoRobotNamed
 
-    monkeypatch.setattr(factory, "_installed", lambda: {DESCRIBED: "quackd.adapters.described"})
+    monkeypatch.setattr(factory, "_installed", lambda: {DESCRIBED: "roboglot.adapters.described"})
     with pytest.raises(NoRobotNamed, match="no robot adapter is installed"):
         default_spec()
 
@@ -355,7 +357,7 @@ def test_a_described_body_is_never_the_default_robot(monkeypatch: pytest.MonkeyP
 def test_the_row_names_no_body_by_itself() -> None:
     """The ten have a first backend a bare name means. This row's backends are each a different
     robot, so a bare `--robot described` is refused with the bodies there are."""
-    from quackd.adapters.factory import parse_robot_spec
+    from roboglot.adapters.factory import parse_robot_spec
 
     with pytest.raises(AdapterError, match="names no body by itself") as e:
         parse_robot_spec(DESCRIBED)
@@ -366,7 +368,7 @@ def test_the_row_names_no_body_by_itself() -> None:
 
 def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_path: Path) -> None:
     """Refused at the door rather than at the first run, in the words its `make()` uses."""
-    from quackd.registry import Registry, RobotEntry, probe_all
+    from roboglot.registry import Registry, RobotEntry, probe_all
 
     registry = Registry(str(tmp_path))
     for field, flag in (
@@ -374,11 +376,11 @@ def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_pa
         ("camera_url", "--camera-url"),
         ("token", "--token"),
     ):
-        with pytest.raises(RegistryError, match=f"takes no {flag}: quackd drives no part"):
+        with pytest.raises(RegistryError, match=f"takes no {flag}: Roboglot drives no part"):
             registry.add_robot(
                 RobotEntry(name="b2", spec="described:unitree-b2", **{field: "192.168.1.9"})
             )
-    with pytest.raises(RegistryError, match="takes no rest pose: quackd drives no part"):
+    with pytest.raises(RegistryError, match="takes no rest pose: Roboglot drives no part"):
         registry.add_robot(
             RobotEntry(name="b2", spec="described:unitree-b2", rest_pose={"elbow_flex": 1.0})
         )
@@ -388,7 +390,7 @@ def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_pa
         RobotEntry(name="b2", spec="described:unitree-b2", llm="fake", note="in the lab")
     )
     assert entry.robot_spec.key == "described:unitree-b2"
-    with pytest.raises(RegistryError, match="takes no --address: quackd drives no part"):
+    with pytest.raises(RegistryError, match="takes no --address: Roboglot drives no part"):
         registry.update_robot("b2", {"address": "192.168.1.9"})
     assert registry.update_robot("b2", {"note": "moved"}).note == "moved"
     # a probe says neither reachable nor down: a tick would read as a robot that answered
@@ -397,12 +399,12 @@ def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_pa
 
 
 def test_a_hand_edited_line_takes_no_other_robot_down_and_can_be_mended(tmp_path: Path) -> None:
-    """The door is strict and the shelf is not, as for a spec this quackd cannot build: a
+    """The door is strict and the shelf is not, as for a spec this Roboglot cannot build: a
     described body with an address in the file used to stop every command that read the file,
     `robot edit` and `robot remove` among them, until somebody opened it in an editor."""
     import json
 
-    from quackd.registry import Registry, RobotEntry
+    from roboglot.registry import Registry, RobotEntry
 
     registry = Registry(str(tmp_path))
     registry.add_robot(RobotEntry(name="duck-a", spec="microduck:mock"))
@@ -441,8 +443,8 @@ def test_one_bare_arm_is_told_it_holds_nothing_and_meets_no_need_for_hands() -> 
 def test_announce_refuses_a_body_that_is_on_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    from quackd.cli import app
-    from quackd.lan import announce as lan_announce
+    from roboglot.cli import app
+    from roboglot.lan import announce as lan_announce
 
     def never(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("it announced a robot that is not here")
@@ -458,8 +460,8 @@ def test_announce_refuses_a_body_that_is_on_no_network(monkeypatch: pytest.Monke
 def test_the_refusal_with_nothing_installed_names_the_nine_and_never_the_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from quackd.adapters import factory
-    from quackd.adapters.factory import NoRobotNamed
+    from roboglot.adapters import factory
+    from roboglot.adapters.factory import NoRobotNamed
 
     monkeypatch.setattr(factory, "_installed", dict)
     with pytest.raises(NoRobotNamed) as e:
@@ -473,7 +475,7 @@ def test_a_third_partys_import_is_not_asked_whether_it_drives(
 ) -> None:
     """A command with no robot named asks every adapter here whether it drives, and one that
     raises as it is imported must not take that command down."""
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
     def explodes(name: str) -> Any:
         raise RuntimeError("it imports badly")
@@ -499,9 +501,9 @@ def test_a_third_partys_odd_tiers_are_read_as_none_and_stop_nothing(
 ) -> None:
     import types
 
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
-    module: Any = types.ModuleType("quackd_acme")
+    module: Any = types.ModuleType("roboglot_acme")
     module.BACKENDS = ("mock",)
     module.STATUS = "installed here"
     module.TIERS = tiers
@@ -511,7 +513,7 @@ def test_a_third_partys_odd_tiers_are_read_as_none_and_stop_nothing(
 
 
 def test_the_registry_refuses_the_row_and_its_bodies_as_robot_names() -> None:
-    with pytest.raises(RegistryError, match="the row of bodies quackd only describes"):
+    with pytest.raises(RegistryError, match="the row of bodies Roboglot only describes"):
         check_name(DESCRIBED)
     with pytest.raises(RegistryError, match="memory file name of an unregistered robot"):
         check_name("described-unitree-b2")
@@ -519,7 +521,7 @@ def test_the_registry_refuses_the_row_and_its_bodies_as_robot_names() -> None:
 
 
 def test_doctor_counts_the_described_bodies_apart_from_the_adapters() -> None:
-    from quackd import doctor
+    from roboglot import doctor
 
     report = doctor.collect()
     kinds = {row["name"]: row["kind"] for row in report.adapters}
@@ -532,24 +534,24 @@ def test_doctor_counts_the_described_bodies_apart_from_the_adapters() -> None:
 
 
 def test_the_web_page_offers_no_connect_block_for_a_described_body() -> None:
-    from quackd.webui import catalog
+    from roboglot.webui import catalog
 
     assert catalog.drives("microduck") and not catalog.drives(DESCRIBED)
     assert catalog.connect(DESCRIBED, "unitree-b2") is None
     assert catalog.drives("nobody-published-this"), "an unknown adapter is left to the page"
 
 
-# ── a flock ────────────────────────────────────────────────────────────────────────────────────
+# ── a team ────────────────────────────────────────────────────────────────────────────────────
 
 
-async def test_a_pilot_flock_takes_a_described_body_beside_a_duck(tmp_path: Path) -> None:
+async def test_a_pilot_team_takes_a_described_body_beside_a_duck(tmp_path: Path) -> None:
     """The member's pilot has `report_state`, `stop` and `tell`, is told its body moves only if
-    someone else moves it, and the flock plans and ends without an error."""
+    someone else moves it, and the team plans and ends without an error."""
     import asyncio
 
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd.duckfile.parser import load_duck
-    from quackd.flock.pilots import roster_from_specs, run_pilot_flock
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.team.pilots import roster_from_specs, run_pilot_team
 
     roster = roster_from_specs(
         {
@@ -558,10 +560,10 @@ async def test_a_pilot_flock_takes_a_described_body_beside_a_duck(tmp_path: Path
         }
     )
     result = await asyncio.wait_for(
-        run_pilot_flock(
-            load_duck("flock-hello"),
+        run_pilot_team(
+            load_glot("team-hello"),
             roster,
-            providers={name: FakeProvider.for_duck("flock-hello") for name in roster},
+            providers={name: FakeProvider.for_glot("team-hello") for name in roster},
             runs_dir=tmp_path,
         ),
         timeout=120,
@@ -603,7 +605,7 @@ OWNER_RULE = "bound code needs a named owner and a date for its first hardware r
 
 
 def _refused_by_the_owner_rule(info: AdapterInfo, backend: str) -> None:
-    from quackd.adapters.factory import refusal
+    from roboglot.adapters.factory import refusal
 
     for robot_type in info.robot_types or (None,):
         spec = RobotSpec(info.name, backend, robot_type=robot_type)
@@ -688,7 +690,7 @@ def test_a_grandfathered_backend_prints_no_date_and_the_described_row_names_no_b
 def test_the_table_prints_one_tier_to_a_line() -> None:
     """Read off the real table: the cell used to be one run of text that wrapped where the
     column happened to end, so a reader could not see where rehearsed stopped and bound began."""
-    from quackd import ui
+    from roboglot import ui
 
     buf = io.StringIO()
     Console(file=buf, width=240).print(ui.adapters_table(list_adapters()))
@@ -700,7 +702,7 @@ def test_the_table_prints_one_tier_to_a_line() -> None:
         line.split("│")[2] for line in narrow.getvalue().splitlines() if line.count("│") >= 4
     ), narrow.getvalue()
     (first,) = [i for i, line in enumerate(lines) if "│ microduck" in line]
-    assert "rehearsed: sim2d, mujoco (physics, needs quackd[mujoco]), mock" in lines[first]
+    assert "rehearsed: sim2d, mujoco (physics, needs roboglot[mujoco]), mock" in lines[first]
     assert "bound" not in lines[first] and "bound: jsonrpc" in lines[first + 1], lines[first + 1]
     (described,) = [line for line in lines if f"│ {DESCRIBED}" in line]
     assert "described" in described.split("│")[3] and "built-in" in described
@@ -762,9 +764,9 @@ def test_a_third_party_may_declare_tiers_a_family_and_a_route(
     """Read tolerantly, as `CONNECT` is: absent gives nothing and the module's `STATUS` prints."""
     import types
 
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
-    module: Any = types.ModuleType("quackd_acme")
+    module: Any = types.ModuleType("roboglot_acme")
     module.BACKENDS = ("mock", "ws")
     module.STATUS = "installed here"
     module.TIERS = {
@@ -798,9 +800,9 @@ def _cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """A command line over a registry and a run directory of this test's own."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
-    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(tmp_path / "registry"))
+    monkeypatch.setenv("ROBOGLOT_REGISTRY_DIR", str(tmp_path / "registry"))
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     return lambda *argv: runner.invoke(app, list(argv))
@@ -825,7 +827,7 @@ def test_a_described_body_goes_from_robot_add_to_its_two_verbs_on_the_command_li
 def test_a_goal_on_a_described_body_runs_dry_on_the_command_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole of `quackd run` over a body nothing drives: a goal, the scripted pilot and no
+    """The whole of `roboglot run` over a body nothing drives: a goal, the scripted pilot and no
     robot. The scripted pilot has no judgement of a body and says it fits, as it does of every body,
     so what this holds is that a run reaches its end here and sends nothing but stops."""
     cli = _cli(tmp_path, monkeypatch)
@@ -845,10 +847,10 @@ async def test_a_task_its_sheet_rules_out_ends_at_the_verdict_and_nothing_is_sen
     tmp_path: Path,
 ) -> None:
     """What a described body is for: an LLM reads the maker's figures and says the task cannot be
-    done on this body, and what it read is the sheet's own `cannot` and the line that says quackd
+    done on this body, and what it read is the sheet's own `cannot` and the line that says Roboglot
     drives none of it. The verdict is scripted here, since judging is what an LLM is asked for."""
     adapter = make_adapter("described:unitree-b2")
-    duck = duck_from_goal("carry this box upstairs", ["report_state", "stop"])
+    duck = glot_from_goal("carry this box upstairs", ["report_state", "stop"])
 
     class Reading(FakeProvider):
         """Keeps the system prompt it was handed, which is all the LLM knows of the body."""
@@ -870,7 +872,7 @@ async def test_a_task_its_sheet_rules_out_ends_at_the_verdict_and_nothing_is_sen
             ),
         ]
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(duck=duck, provider=provider, transport=adapter, runs_dir=tmp_path)
     )
     assert result.outcome == "infeasible", result.reason

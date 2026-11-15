@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import VerbsSection
-from quackd.safety import Executor, allow_all
-from quackd.transport.mock import MockTransport
-from quackd.verbs.aliases import ALIASES, aliases_of, canonical
-from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbRegistry, VerbResult
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.schema import VerbsSection
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.aliases import ALIASES, aliases_of, canonical
+from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbRegistry, VerbResult
 
 
 async def _ok(_ctx: VerbContext, _p: NoParams) -> VerbResult:
@@ -68,10 +68,10 @@ def test_same_verb_pairs() -> None:
 
 async def test_executor_allowlist_and_gates_are_alias_aware() -> None:
     reg = _registry_with("move", "stop")
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk]\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk]\n"
         "success: [x]\n---\n# T\nx\n",
-        "t.duck",
+        "t.glot",
     )
     ex = Executor(registry=reg, transport=MockTransport(), contract=duck.frontmatter)
     assert ex.allowed == ["walk"]  # the contract's own spelling, verbatim
@@ -85,10 +85,10 @@ async def test_executor_allowlist_and_gates_are_alias_aware() -> None:
 async def test_confirm_list_resolves_aliases_and_never_gates_stop() -> None:
     reg = _registry_with("move")
     reg.register(Verb("stop", "stop", _ok, NoParams, safety_class="confirm"))
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
         "  confirm: [walk]\nsuccess: [x]\n---\n# T\nx\n",
-        "t.duck",
+        "t.glot",
     )
     ex = Executor(registry=reg, transport=MockTransport(), contract=duck.frontmatter)
     assert ex.needs_confirm(reg.get("move"))

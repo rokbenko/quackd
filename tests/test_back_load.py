@@ -19,10 +19,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from quackd import verdict as verdict_module
-from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
-from quackd.adapters.manifest import (
+from roboglot import verdict as verdict_module
+from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+from roboglot.adapters.manifest import (
     TASK_FILE,
     Datasheet,
     Figure,
@@ -31,16 +31,16 @@ from quackd.adapters.manifest import (
     VerbSpec,
     apply_datasheet_override,
 )
-from quackd.adapters.passport import passport_from_manifest
-from quackd.agent.prompts import ASSESS_TASK, body_lines, body_summary
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import DatasheetOverride, DuckFrontmatter, FlockRole
-from quackd.flock.messages import BidMsg, FlockTask, TaskMsg
-from quackd.flock.mqtt_bus import MqttBus, decode, encode
-from quackd.mcp_server import NEEDS_WORDS_TEXT
-from quackd.onboard import config
-from quackd.passport import document
-from quackd.verdict import (
+from roboglot.adapters.passport import passport_from_manifest
+from roboglot.agent.prompts import ASSESS_TASK, body_lines, body_summary
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.schema import DatasheetOverride, GlotFrontmatter, TeamRole
+from roboglot.mcp_server import NEEDS_WORDS_TEXT
+from roboglot.onboard import config
+from roboglot.passport import document
+from roboglot.team.messages import BidMsg, TaskMsg, TeamTask
+from roboglot.team.mqtt_bus import MqttBus, decode, encode
+from roboglot.verdict import (
     Verdict,
     check_needs,
     missing_needs,
@@ -192,10 +192,10 @@ def test_the_word_is_in_the_vocabulary_a_pilot_is_shown() -> None:
     assert "carries_kg" in NEEDS_WORDS_TEXT and "back or deck" in NEEDS_WORDS_TEXT
 
 
-def _duck_with(datasheet_line: str) -> DuckFrontmatter:
-    return parse_duck_text(
+def _duck_with(datasheet_line: str) -> GlotFrontmatter:
+    return parse_glot_text(
         "---\n"
-        "duck: 2\n"
+        "glot: 2\n"
         "name: haul\n"
         "description: Carry the crate.\n"
         "robots: lerobot:mock\n"
@@ -223,7 +223,7 @@ def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
 
 def test_a_task_file_that_does_not_say_it_dumps_no_such_key() -> None:
     """A task file written before the word reads as it always did: the contract
-    `robot_load_duckfile` hands back and the run records (`run_start`) carry no new key."""
+    `robot_load_glotfile` hands back and the run records (`run_start`) carry no new key."""
     front = _duck_with("payload_kg: 0.3")
     assert "carries_kg" not in front.model_dump()["datasheet"]
     assert "carries_kg" not in front.model_dump(mode="json")["datasheet"]
@@ -306,14 +306,14 @@ def test_a_task_naming_the_need_is_dropped_by_a_release_that_cannot_read_it(
     `needs`, through `check_needs`. A release that does not know the word cannot decode the
     TASK, so the bus counts it and drops it, as any message it cannot read, and that member
     takes no part in a task it could not have judged."""
-    role = FlockRole(requires=["move"], needs={"carries_kg": 5})
+    role = TeamRole(requires=["move"], needs={"carries_kg": 5})
     payload = encode(
         TaskMsg(
             t=0.0,
             src="coordinator",
             task_id="t",
             members=["a", "b"],
-            task=FlockTask(task_id="t", name="haul", goal="carry it", roles={"hauler": role}),
+            task=TeamTask(task_id="t", name="haul", goal="carry it", roles={"hauler": role}),
         )
     )
     older = tuple(key for key in verdict_module.NEEDS_NUMBERS if key != "carries_kg")
@@ -321,7 +321,7 @@ def test_a_task_naming_the_need_is_dropped_by_a_release_that_cannot_read_it(
     with pytest.raises(ValidationError, match="datasheet vocabulary"):
         decode(payload)
     bus = MqttBus("t", client=SimpleNamespace())  # type: ignore[arg-type]
-    bus._on_message(None, None, SimpleNamespace(topic="quackd/t/ctl", payload=payload))
+    bus._on_message(None, None, SimpleNamespace(topic="roboglot/t/ctl", payload=payload))
     assert bus.rejected == 1 and bus.received == 0
 
 
@@ -388,4 +388,4 @@ def test_their_figures_answer_a_task_that_needs_a_back_load() -> None:
     # the matcher reads the same figure, and says whose figure it is
     hint = solo_hint({"carries_kg": 10}, None)
     assert "unitree-b2" in hint and "unitree-go2-edu" not in hint, hint
-    assert "quackd drives no part of" in hint
+    assert "Roboglot drives no part of" in hint

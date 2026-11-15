@@ -16,26 +16,26 @@ import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from quackd.adapters import factory
-from quackd.adapters.base import AdapterError
-from quackd.adapters.factory import describe, make_adapter, parse_robot_spec
-from quackd.agent.transcript import Transcript
-from quackd.cli import app
-from quackd.drive.run import DriveArgs, run_drive
-from quackd.mcp_server import fleet_from_flags
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.sim2d.recorder import CAPTION_H, FrameRecorder
-from quackd.sim2d.render import render_duckcam, render_topdown
-from quackd.sim2d.world import DT, DUCK_R, Ball, World
-from quackd.space.grid import UNKNOWN
-from quackd.space.places import PlaceBook, PlaceStore
-from quackd.space.room import RoomError, load_room
-from quackd.space.simmap import STAND_IN, BodyNow, SimulatedMap
-from quackd.transport.base import spatial_of
-from quackd.transport.sim2d import Sim2DTransport
-from quackd.verbs.places import PLACE_VERBS, MapParams, MarkPlaceParams
-from quackd.verbs.registry import VerbContext
-from quackd_microduck.transports.mapd import sim_map_params
+from roboglot.adapters import factory
+from roboglot.adapters.base import AdapterError
+from roboglot.adapters.factory import describe, make_adapter, parse_robot_spec
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app
+from roboglot.drive.run import DriveArgs, run_drive
+from roboglot.mcp_server import fleet_from_flags
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.sim2d.recorder import CAPTION_H, FrameRecorder
+from roboglot.sim2d.render import render_duckcam, render_topdown
+from roboglot.sim2d.world import DT, DUCK_R, Ball, World
+from roboglot.space.grid import UNKNOWN
+from roboglot.space.places import PlaceBook, PlaceStore
+from roboglot.space.room import RoomError, load_room
+from roboglot.space.simmap import STAND_IN, BodyNow, SimulatedMap
+from roboglot.transport.base import spatial_of
+from roboglot.transport.sim2d import Sim2DTransport
+from roboglot.verbs.places import PLACE_VERBS, MapParams, MarkPlaceParams
+from roboglot.verbs.registry import VerbContext
+from roboglot_microduck.transports.mapd import sim_map_params
 from tests.test_simmap import PARAMS, Body
 from tests.test_simmap import _still as _map_still
 from tests.test_simmap import _turn as _map_turn
@@ -326,14 +326,14 @@ def test_an_adapter_whose_make_takes_no_room_is_refused_by_name(
         calls.append(kwargs)
         return object()
 
-    module = ModuleType("quackd_toybot")
+    module = ModuleType("roboglot_toybot")
     module.BACKENDS = ("sim",)  # type: ignore[attr-defined]
     module.make = make  # type: ignore[attr-defined]
     module.describe = lambda backend, robot_id=None: describe(  # type: ignore[attr-defined]
         parse_robot_spec("microduck:sim2d")
     )
-    monkeypatch.setitem(sys.modules, "quackd_toybot", module)
-    installed = {**factory._installed(), "toybot": "quackd_toybot"}
+    monkeypatch.setitem(sys.modules, "roboglot_toybot", module)
+    installed = {**factory._installed(), "toybot": "roboglot_toybot"}
     monkeypatch.setattr(factory, "_installed", lambda: installed)
     said = "toybot:sim has no simulator that lays out a room"
     with pytest.raises(AdapterError, match=said):
@@ -399,7 +399,7 @@ def test_serve_mcp_describes_the_duck_in_its_room_and_refuses_a_room_nobody_ship
 async def test_a_drive_in_a_room_marks_places_on_the_map(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(tmp_path / "memory"))
+    monkeypatch.setenv("ROBOGLOT_MEMORY_DIR", str(tmp_path / "memory"))
     said: list[str] = []
     args = DriveArgs(
         robot="microduck:sim2d", llm="fake", room="two-rooms", runs_dir=str(tmp_path / "runs")

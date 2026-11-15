@@ -2,11 +2,11 @@ hook: Asked to plan a twelve-step dance at high effort, the LLM had not answered
 goal_met: "Yes"
 why_example: >
   An LLM told to think hard can take a long time over one answer, and the arm waits where it is while
-  it does. Until 0.24.0, quackd acted on a Ctrl-C only once that answer came back, so a press could
+  it does. Until 0.24.0, Roboglot acted on a Ctrl-C only once that answer came back, so a press could
   sit unanswered for as long as the LLM kept thinking. This example sets the effort high, asks for a
   twelve-step dance worked out in detail, and presses Ctrl-C while the LLM is still working it out.
 why_result: >
-  The kill switch did not wait for the LLM. The press cut the call 7.7 s in, quackd threw away
+  The kill switch did not wait for the LLM. The press cut the call 7.7 s in, Roboglot threw away
   whatever it would have said, sent a `stop` and folded the arm to its rest pose 0.44 s later, and
   the run ended `ABORTED` on `kill switch` under a second after the call was cut. For a person next
   to the arm, a stop that answers at once matters more than any answer the LLM had yet to give.
@@ -25,7 +25,7 @@ showed:
     It lifted the forearm, `move_joints` with elbow_flex 76 over 8 s, which ended at 78, and then the
     next call went out, the one the task meant for working out the dance.
   - >
-    Ctrl-C came 7.7 s into that call: `ERROR Aborted: kill switch after 7.7 s`. quackd sent a `stop`,
+    Ctrl-C came 7.7 s into that call: `ERROR Aborted: kill switch after 7.7 s`. Roboglot sent a `stop`,
     the arm was `at the rest pose` 0.44 s later, and the run ended `ABORTED` on `kill switch`, under a
     second after the call was cut.
   - >

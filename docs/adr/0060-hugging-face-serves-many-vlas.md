@@ -1,6 +1,6 @@
 # ADR-0060: Hugging Face serves many VLAs, one family read at a time
 
-**Status:** accepted · **Date:** 2026-10-25 · Extends [ADR-0048](0048-policies-are-the-arms-executor.md) (the policy server serves the types whose processors it has read, and each type now allows its own steps and no other type's) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/pipeline.py` (`STEPS_BY_TYPE`, `REFUSED_STEPS`, `nested_patterns`, `check_family`), `policy/upstream_api.py`, and `quackd/adapters/policies.py` for what is served and what is not ([policies](../guides/policies.md#the-policies))
+**Status:** accepted · **Date:** 2026-10-25 · Extends [ADR-0048](0048-policies-are-the-arms-executor.md) (the policy server serves the types whose processors it has read, and each type now allows its own steps and no other type's) · Implemented in `adapters/lerobot/src/roboglot_lerobot/policy/pipeline.py` (`STEPS_BY_TYPE`, `REFUSED_STEPS`, `nested_patterns`, `check_family`), `policy/upstream_api.py`, and `roboglot/adapters/policies.py` for what is served and what is not ([policies](../guides/policies.md#the-policies))
 
 ## Context
 
@@ -13,14 +13,14 @@ many LLMs behind one key. The research that day found none:
 - Physical Intelligence's Pi API, a beta since 2026-10-13, serves its own models behind a
   waitlist and publishes no protocol.
 - The Gemini Robotics VLA is offered to partners only. Gemini Robotics-ER 2 is public, and it
-  is a planner, which quackd already carries as a pilot row (`gemini-robotics-er-2-preview`)
+  is a planner, which Roboglot already carries as a pilot row (`gemini-robotics-er-2-preview`)
   and nothing on record has flown.
 - vLLM-Omni serves several VLAs over OpenPI's WebSocket protocol, but it is a server you run,
   not a vendor.
 
 What does play OpenRouter's part is LeRobot and the Hub. One library and one checkpoint format
-carry 19 policy types at LeRobot 0.6.1, the release quackd's server pins, and the Hub holds
-hundreds of SO-101 fine-tunes of them. quackd's server served three, ACT, SmolVLA and pi05,
+carry 19 policy types at LeRobot 0.6.1, the release Roboglot's server pins, and the Hub holds
+hundreds of SO-101 fine-tunes of them. Roboglot's server served three, ACT, SmolVLA and pi05,
 and refused every other type before a byte of its weights was fetched, because a checkpoint's
 processors are code (`PROCESSOR_CLASS_IMPORT`) and each type's steps were read before it was
 served.
@@ -59,9 +59,9 @@ Reading for more families turned up two things wrong with what the server alread
    N1.7, pi0, pi0-FAST, X-VLA and MolmoAct2, and their reading decided the rest: pi0, X-VLA in its
    `auto` action mode and GR00T N1.7 with joint action groups are served, pi0-FAST is refused,
    and MolmoAct2 is deferred, at Rok's word.
-4. **What is served, and what is not, is data in the core.** `quackd/adapters/policies.py`
+4. **What is served, and what is not, is data in the core.** `roboglot/adapters/policies.py`
    holds a row per served type, in the server's order, and a row per policy or service people
-   ask about that quackd does not serve, with why and what would change that. It imports nothing
+   ask about that Roboglot does not serve, with why and what would change that. It imports nothing
    of the arm's, as `catalogue.py` does not for the robots, so a page or a command can print it
    on a machine with no LeRobot, and a test ties its rows to the types the server serves.
 
@@ -95,7 +95,7 @@ Reading for more families turned up two things wrong with what the server alread
 ## Why not
 
 - **A vendor that serves many VLAs.** None existed on 2026-10-25, for the reasons above. A
-  rented GPU running quackd's own server is what can be had, and the server is what decides
+  rented GPU running Roboglot's own server is what can be had, and the server is what decides
   what runs on it.
 - **Every type LeRobot registers at once.** Each type's processors are code, and its loader, its
   padding and its decoding differ from the others': pi0's loader hands back a random network
@@ -105,10 +105,10 @@ Reading for more families turned up two things wrong with what the server alread
 - **One allowlist for every type, with the new families' steps added to it.** It is the hole
   above, made wider by each family.
 - **MolmoAct2 with an exemption for its code.** Its base model maps its classes to code of its
-  own (`auto_map`), which quackd refuses in every model it loads. Rok's call is to defer it
+  own (`auto_map`), which Roboglot refuses in every model it loads. Rok's call is to defer it
   rather than write the first exemption.
 - **pi0-FAST.** Its policy loads the FAST action tokenizer with `trust_remote_code=True`,
-  hard-wired in its constructor, so no override quackd could pass would stop the tokenizer's own
+  hard-wired in its constructor, so no override Roboglot could pass would stop the tokenizer's own
   Python running in the server.
 
 ## Consequences

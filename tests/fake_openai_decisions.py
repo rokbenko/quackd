@@ -12,7 +12,7 @@ that carries a camera frame, a user message of an `input_text` part and an `inpu
 is checked against the reference's shape for both and kept whole, and `Recorded.pictures` reads
 the frames back out of it.
 
-It proves what quackd puts on the wire through the real SDK, and what quackd makes of an answer
+It proves what Roboglot puts on the wire through the real SDK, and what Roboglot makes of an answer
 shaped like OpenAI's. It proves nothing about OpenAI, and nothing that passes against it has ever
 reached `gpt-6-luna`.
 
@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 PATH = "/v1/decisions"
-"""The one request it answers. quackd hands the SDK `<address>/v1` and the SDK appends
+"""The one request it answers. Roboglot hands the SDK `<address>/v1` and the SDK appends
 `/decisions`, so this is where a correct client lands and anything else is a 404."""
 
 # ── what the reference says a request is ────────────────────────────────────────────────
@@ -48,14 +48,14 @@ PATH = "/v1/decisions"
 # Read from OpenAI's API reference for `POST /v1/decisions` and from openai-python's request
 # types (`decision_create_params.py` and the input types beside it) on 2026-10-08. Checked here
 # more strictly than OpenAI promise to check it: a field the reference does not list is
-# refused, because quackd sending one is a translation gone wrong, whatever the real API would
+# refused, because Roboglot sending one is a translation gone wrong, whatever the real API would
 # make of it. What could not be read again is not checked at all. The reference was once read
 # as allowing 2 to 255 options to a choice, each unique, and no source said so a second time
 # (`CHOICE_BOUNDS` on docs/guides/decision-llms/openai.md), so a stand-in that refused 256
 # would be asserting a rule nobody has seen.
 
 FIELDS = frozenset({"model", "input", "questions", "safety_identifier"})
-"""Every field a request may carry. `safety_identifier` is the one optional one, and quackd
+"""Every field a request may carry. `safety_identifier` is the one optional one, and Roboglot
 never sends it."""
 
 REQUIRED = ("model", "input", "questions")
@@ -274,7 +274,7 @@ def _answer(
 def usage(body: Mapping[str, Any]) -> dict[str, Any]:
     """The reference's usage block, counting input and no output, because a decision bills only
     what it reads. The count is the stand-in's own, a quarter of the request body's characters,
-    which is not the estimate quackd makes for itself, so a turn costed on it was costed on what
+    which is not the estimate Roboglot makes for itself, so a turn costed on it was costed on what
     the server said."""
     tokens = max(1, len(json.dumps(body)) // 4)
     return {
@@ -289,7 +289,7 @@ def usage(body: Mapping[str, Any]) -> dict[str, Any]:
 def answering(*, refuse: Iterable[str] = (), picks: Mapping[str, Any] | None = None) -> Reply:
     """Answer every question in the order asked, under the name it was asked by.
 
-    A choice picks `picks[name]`, else its first option, which for quackd's `next_verb` is the
+    A choice picks `picks[name]`, else its first option, which for Roboglot's `next_verb` is the
     first call on offer, `escalate` being last; a predicate says `picks[name]`, else 0.0; and
     every name in `refuse` is declined rather than answered."""
     declined = frozenset(refuse)
@@ -460,7 +460,8 @@ class FakeOpenAIDecisions:
 
     @property
     def url(self) -> str:
-        """The address alone, which is what `--decision-url` takes: quackd adds `/v1/decisions`."""
+        """The address alone, which is what `--decision-url` takes: Roboglot adds
+        `/v1/decisions`."""
         assert self._server is not None, "start the stand-in first"
         return f"http://127.0.0.1:{self._server.server_address[1]}"
 
@@ -564,10 +565,10 @@ async def send_once_through_the_sdk(spec: Any = None) -> Recorded:
     moment, it is as long as the disk takes, and a turn has a second. A request sent here first
     leaves a later one only its own connection to open.
 
-    The one function in this file that imports quackd, and lazily, so the stand-in still runs
+    The one function in this file that imports Roboglot, and lazily, so the stand-in still runs
     by hand on the standard library alone."""
-    from quackd.agent.decision.catalogue import PRESETS
-    from quackd.agent.decision.factory import make_decision_llm
+    from roboglot.agent.decision.catalogue import PRESETS
+    from roboglot.agent.decision.factory import make_decision_llm
 
     with FakeOpenAIDecisions() as stand_in:
         llm = make_decision_llm(spec or PRESETS["openai"], url=stand_in.url)

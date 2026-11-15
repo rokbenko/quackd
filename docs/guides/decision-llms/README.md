@@ -1,6 +1,6 @@
 # Decision LLMs: a discrete stepper in front of the pilot LLM
 
-quackd asks one question a turn -- *which single tool call now* -- and pays a frontier LLM's
+Roboglot asks one question a turn -- *which single tool call now* -- and pays a frontier LLM's
 full latency for it whether the answer is `report_state` or a six-joint pose. On the SO-101 run at
 the top of [README.md](../../../README.md) that is **62.1 seconds of a 78.8 second run** spent
 waiting on the LLM, against 12.2 seconds of the arm actually moving.
@@ -16,12 +16,12 @@ gave the wire format its name -- *System One* -- and there are several now: **[K
 `POST /v1/systemone` is reached with `--decision-url` ([local](local.md)).
 **[OpenAI's Decisions API](openai.md)** is a second hosted one, which asks the same kind of
 question in a wire format of its own, `POST /v1/decisions`, and so has a client of its own to
-translate it. quackd treats them all as one seam with a row of data in front of it, so most of this
+translate it. Roboglot treats them all as one seam with a row of data in front of it, so most of this
 page is about the half that does not change with the vendor.
 
 **A decision LLM is not another pilot LLM, and it is not a smaller one.** That is the whole point of it,
 so it is worth being precise about the difference before any of the rest makes sense. A pilot
-LLM generates tokens: you ask it for a verb and it writes one, and everything quackd does around
+LLM generates tokens: you ask it for a verb and it writes one, and everything Roboglot does around
 that -- the tool schemas, the one-call-per-turn rule, the re-prompt when it answers with prose --
 exists to squeeze a text generator into a shape software can branch on. A decision LLM generates
 nothing. It scores a fixed set of options against a state and hands back which one, with a
@@ -35,14 +35,14 @@ decisions"*, and it is *"more like code: reliable, fast, self-consistent, and ty
 | Can it write a joint angle? | yes | **no**, and not by rule: there is nowhere in the answer for a number to come from |
 | Can it be used as a chatbot? | it is one | no, at all |
 | What uncertainty looks like | a hedge in prose, or none | a number, per option, which your code reads |
-| Where it sits in quackd | the pilot | in front of the pilot, for the turns that are a choice |
+| Where it sits in Roboglot | the pilot | in front of the pilot, for the turns that are a choice |
 
 The practical consequence is the one this page is about. A frontier LLM takes about six seconds
 to say `report_state` on this arm, because it takes about six seconds to say anything. A
 classifier answers a six-way choice in a fraction of one, and charges for the question rather than
 for the essay.
 
-`--decision-llm` is **off by default**, and stays off unless you name one. quackd installs no
+`--decision-llm` is **off by default**, and stays off unless you name one. Roboglot installs no
 decision LLM, needs no key for one, and never switches this on because it found a key in your
 `.env`.
 
@@ -60,7 +60,7 @@ decision LLM, needs no key for one, and never switches this on because it found 
 **Contents**
 
 - [What it is, and what it is not](#what-it-is-and-what-it-is-not)
-- [The ones quackd names](#the-ones-quackd-names)
+- [The ones Roboglot names](#the-ones-roboglot-names)
   * A page each: [jev](jev.md) · [openai](openai.md) · [kev](kev.md) · [openjev](openjev.md) ·
     [opendecision](opendecision.md) · [local](local.md) · [laya](laya.md)
 - [What is not covered, and why](#what-is-not-covered-and-why)
@@ -85,7 +85,7 @@ decision LLM, needs no key for one, and never switches this on because it found 
 | | |
 |---|---|
 | **It is** | a classifier that answers typed questions about a state: which of these calls, is this statement true, where on this rubric |
-| **It is not** | a provider. `--llm` does not take it, `quackd list-models --kind decision` lists it apart from the pilots, and it cannot pilot a robot on its own |
+| **It is not** | a provider. `--llm` does not take it, `roboglot list-models --kind decision` lists it apart from the pilots, and it cannot pilot a robot on its own |
 | **It decides** | which single verb, out of the ones this body's contract allows *and* whose parameters are a closed set |
 | **The pilot LLM decides** | every pose, every target, every sentence, every feasibility verdict, every `declare_success`, and every turn the stepper is not confident about |
 | **The executor still decides** | whether the verb runs at all: the allowlist, the budgets, the confirm gates, the preconditions and the robot's own safety authority are untouched |
@@ -101,32 +101,32 @@ alike. `--llm` names the pilot, which is a provider and an LLM: `--llm openai:gp
 other, though two words are in both, and the flag is what says which seam one means: `--llm local`
 is an LLM server of your own flying the robot and `--decision-llm local` a System One server of
 your own in front of it, and `--llm openai` is OpenAI's chat LLMs where `--decision-llm openai` is
-their Decisions API. A run that names no decision LLM is quackd exactly as it has always been.
+their Decisions API. A run that names no decision LLM is Roboglot exactly as it has always been.
 
-## The ones quackd names
+## The ones Roboglot names
 
 Every row below is data in
-[`quackd/agent/decision/catalogue.py`](../../../quackd/agent/decision/catalogue.py) and nothing else
+[`roboglot/agent/decision/catalogue.py`](../../../roboglot/agent/decision/catalogue.py) and nothing else
 -- a name, a summary, an install line, an address, an LLM id, a key variable and a rate. Adding a
 wire-compatible server is one row, one page and no code, which is why the escape hatch near the
-bottom of the table exists for the ones quackd has never heard of.
+bottom of the table exists for the ones Roboglot has never heard of.
 
 | Name | Who makes it | Where it runs | How you get it running | Key | Default URL | Default LLM | Page |
 |---|---|---|---|---|---|---|---|
-| `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.14.0` | [jev](jev.md) |
-| `openai` | OpenAI ([platform.openai.com](https://platform.openai.com/)) | their machines, hosted | `quackd[openai] and OPENAI_API_KEY (platform.openai.com)` | `OPENAI_API_KEY` | `https://api.openai.com` | `gpt-6-luna` | [openai](openai.md) |
+| `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `roboglot[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.14.0` | [jev](jev.md) |
+| `openai` | OpenAI ([platform.openai.com](https://platform.openai.com/)) | their machines, hosted | `roboglot[openai] and OPENAI_API_KEY (platform.openai.com)` | `OPENAI_API_KEY` | `https://api.openai.com` | `gpt-6-luna` | [openai](openai.md) |
 | `kev` | [jaredpalmer/kev](https://github.com/jaredpalmer/kev) | your own GPU | `git clone --branch kev-1.0 https://github.com/jaredpalmer/kev && cd kev && uv sync --extra serve && uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b@v1.0 --port 8009` | none needed | `http://127.0.0.1:8009` | `kev-latest` | [kev](kev.md) |
 | `openjev` | `razorback16/openjev` | your own GPU, or MLX on Apple silicon | `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.7.0`, or `OPENJEV_BACKEND=mlx python -m openjev` on Apple silicon | none needed | `http://127.0.0.1:8080` | `openjev-latest` | [openjev](openjev.md) |
 | `opendecision` | `OpenDecision` on PyPI | your own machine, no GPU needed | `pip install OpenDecision && opendecision serve` | none needed | `http://127.0.0.1:8000` | `opendecision` | [opendecision](opendecision.md) |
-| `local` | whoever wrote your server | wherever you put it | `--decision-url http://host:port (or QUACKD_DECISION_URL)` | none needed | you have to say | the server names its own | [local](local.md) |
-| `laya` | an encoder off Hugging Face | **in this process**, no server at all | `uv pip install "quackd[laya]"`, which pulls torch. Its weights download on first use | none needed | none at all | `typed-decisions` | [laya](laya.md) |
+| `local` | whoever wrote your server | wherever you put it | `--decision-url http://host:port (or ROBOGLOT_DECISION_URL)` | none needed | you have to say | the server names its own | [local](local.md) |
+| `laya` | an encoder off Hugging Face | **in this process**, no server at all | `uv pip install "roboglot[laya]"`, which pulls torch. Its weights download on first use | none needed | none at all | `typed-decisions` | [laya](laya.md) |
 
 **How you get it running** is a command you can paste on four of the seven rows, and the catalogue
 row holds exactly that command with nothing else inside it: where a cell here adds a clause, as
 `openjev`'s does for Apple silicon and `laya`'s does for what it pulls, the clause is the table's
 and starts after the code span ends. The three rows that are not commands say so by being
 unrunnable: `jev` and `openai` name an extra and a key you have to get from a vendor, and `local`
-names the flag that tells quackd where your server already is. Each page carries the same line and
+names the flag that tells Roboglot where your server already is. Each page carries the same line and
 the sentence around it.
 
 Two more columns are worth reading twice. **Key** is `none needed` on every row but the two hosted
@@ -137,43 +137,43 @@ than shared, and [openjev](openjev.md) is what happens to anyone who assumes oth
 accepted ids are a closed set, and a pinned Jev version is refused with a 400 on every request.
 
 Five of the seven rows speak the same wire format over the same client, which is why a server
-quackd has never heard of costs no code at all. `openai` is the sixth, and speaks OpenAI's own
+Roboglot has never heard of costs no code at all. `openai` is the sixth, and speaks OpenAI's own
 `POST /v1/decisions` through a client of its own that translates the same four questions out and
 the answers back. `laya` is the seventh and the proof that the seam here is a protocol rather than
 an HTTP call: the same four questions go to it unchanged, and it has no address to send them to.
 
 > [!WARNING]
-> **Two of the confidence floors on this page are numbers TypeSafe publish, and two are quackd's
+> **Two of the confidence floors on this page are numbers TypeSafe publish, and two are Roboglot's
 > own.** Every row here inherits all four unmeasured, and each server computes its confidence
-> differently: a 4B decoder with a decision head, an encoder in quackd's own process and a
+> differently: a 4B decoder with a decision head, an encoder in Roboglot's own process and a
 > zero-shot classifier do not mean the same thing by 0.87. `--decision-mode shadow` before
 > `--decision-mode on` is the rule and not a suggestion, and it is the rule on every row, the one
 > the published half came from included.
 
-`quackd doctor` prints the same table against your own machine, saying what is installed and what
+`roboglot doctor` prints the same table against your own machine, saying what is installed and what
 is not:
 
 ```
-discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name one) --------------
+discrete stepper: decision LLMs (roboglot run --decision-llm; off unless you name one) ------------
 +-------------------------------------------------------------------------------------------------+
-| decision llm | extra              | key                | LLM                | url               |
-|--------------+--------------------+--------------------+--------------------+-------------------|
-| jev          | missing            | TYPESAFE_API_KEY   | jev-1.14.0         |                   |
-|              | (quackd[decision]) | unset              |                    |                   |
-| openai       | missing            | OPENAI_API_KEY     | gpt-6-luna         | https://api.opena |
-|              | (quackd[openai])   | unset              |                    | i.com             |
-| kev          | missing            | none needed        | kev-latest         | http://127.0.0.1: |
-|              | (quackd[decision]) |                    |                    | 8009              |
-| openjev      | missing            | none needed        | openjev-latest     | http://127.0.0.1: |
-|              | (quackd[decision]) |                    |                    | 8080              |
-| opendecision | missing            | none needed        | opendecision       | http://127.0.0.1: |
-|              | (quackd[decision]) |                    |                    | 8000              |
-| local        | missing            | none needed        | auto (the server   | unset:            |
-|              | (quackd[decision]) |                    | names it)          | --decision-url or |
-|              |                    |                    |                    | QUACKD_DECISION_U |
-|              |                    |                    |                    | RL                |
-| laya         | missing            | none needed        | typed-decisions    | in this process   |
-|              | (quackd[laya])     |                    |                    |                   |
+| decision llm | extra                | key               | LLM               | url               |
+|--------------+----------------------+-------------------+-------------------+-------------------|
+| jev          | missing              | TYPESAFE_API_KEY  | jev-1.14.0        |                   |
+|              | (roboglot[decision]) | unset             |                   |                   |
+| openai       | missing              | OPENAI_API_KEY    | gpt-6-luna        | https://api.opena |
+|              | (roboglot[openai])   | unset             |                   | i.com             |
+| kev          | missing              | none needed       | kev-latest        | http://127.0.0.1: |
+|              | (roboglot[decision]) |                   |                   | 8009              |
+| openjev      | missing              | none needed       | openjev-latest    | http://127.0.0.1: |
+|              | (roboglot[decision]) |                   |                   | 8080              |
+| opendecision | missing              | none needed       | opendecision      | http://127.0.0.1: |
+|              | (roboglot[decision]) |                   |                   | 8000              |
+| local        | missing              | none needed       | auto (the server  | unset:            |
+|              | (roboglot[decision]) |                   | names it)         | --decision-url or |
+|              |                      |                   |                   | ROBOGLOT_DECISION |
+|              |                      |                   |                   | _URL              |
+| laya         | missing              | none needed       | typed-decisions   | in this process   |
+|              | (roboglot[laya])     |                   |                   |                   |
 +-------------------------------------------------------------------------------------------------+
 ```
 
@@ -183,11 +183,11 @@ discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name 
 > (OpenAI's guide on 2026-10-08, Kev and OpenJev again on 2026-11-14 at the pins their rows name),
 > and each page marks the lines it could not run. No output is pasted for any of them, because
 > inventing a line a server printed would be the one kind of mistake these pages cannot afford.
-> The `quackd` commands on this page were run, and say so where it matters.
+> The `roboglot` commands on this page were run, and say so where it matters.
 
 Each row has a page under [`docs/guides/decision-llms/`](./), in the shape of the robot pages
 under [`docs/adapters/`](../../adapters/): the row it has to agree with, what was read from that
-project's README and source and on what date, what quackd assumes about it and what it does about
+project's README and source and on what date, what Roboglot assumes about it and what it does about
 each assumption, and the word *never* until one of them has answered a real robot. The **Page**
 column is the way in, and a test reads every row back off its page.
 
@@ -198,23 +198,23 @@ not, and saying why is more useful than leaving a reader to find out.
 
 **SemIf** ([TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf)) is a batch CLI over a JSONL
 file. It is choice-only, it has an input schema of its own, and it has no server at all: you hand
-it a file and it hands you a file. quackd asks one question about one state per turn and reads the
+it a file and it hands you a file. Roboglot asks one question about one state per turn and reads the
 answer inside a one-second timeout, so a batch tool over a file is the wrong shape rather than a
 missing row. Someone who wants it can wrap it in a System One shim and reach that with
-`--decision-llm local`, or write a plugin; either way the work is the adapter, and quackd needs no
+`--decision-llm local`, or write a plugin; either way the work is the adapter, and Roboglot needs no
 change for either.
 
 **OpenRouter's two decision endpoints** are not rows either, for two different reasons. Its System
 One endpoint, `POST /api/v1/systemone`, is documented for TypeSafe's own client and for System One
 LLMs such as Jev, and that client appends `/v1/systemone` to whatever address it is handed, so the
 path is not what keeps it out. The key is what does: an address given with `--decision-url` is a
-server you run as far as quackd is concerned, so it is sent the word `local` rather than a key, and
+server you run as far as Roboglot is concerned, so it is sent the word `local` rather than a key, and
 reaching OpenRouter there would take a row of its own that sends OpenRouter's key to OpenRouter and
 nowhere else, the way `openai` sends OpenAI's. Its alpha Decisions API is a different path: it
 answers at `/api/alpha/decisions`, and the System One client's path is a fixed constant rather than
 something `--decision-url` can reach into, so a row for it would need a transport of its own, not a
 second address. The Luna it serves there, `openai/gpt-6-luna-decisions`, is OpenAI's own Decisions
-API underneath, which quackd reaches at OpenAI as the [`openai`](openai.md) row. Nor is either of
+API underneath, which Roboglot reaches at OpenAI as the [`openai`](openai.md) row. Nor is either of
 them `--llm openrouter`, which reaches OpenRouter's chat LLMs as a pilot
 ([../openrouter.md](../openrouter.md)).
 
@@ -227,7 +227,7 @@ seam: `--llm ollama:llama3.2` is a pilot, and that is [guides/local-llms.md](../
 sharpest objection. You can absolutely prompt an LLM for a label and a number between 0 and 1,
 and it will give you both. But that number is a *prompted* number rather than a *calibrated* one:
 it is what an LLM writes when asked how sure it is, not a statement about how a population of
-answers at that value behaves. quackd's floors gate real motion on calibration -- 0.85 to send an
+answers at that value behaves. Roboglot's floors gate real motion on calibration -- 0.85 to send an
 intent, 0.90 behind a confirm gate -- and a prompted 0.87 and a calibrated 0.87 are not the same
 claim. Someone could ship exactly this as a plugin, and it would be a genuinely useful thing to
 have. They would have to measure it first, which is what `--decision-mode shadow` is for.
@@ -235,15 +235,15 @@ have. They would have to measure it first, which is what `--decision-mode shadow
 ## Install and switch on
 
 ```bash
-uv pip install "quackd[decision]"                  # the System One client, for every System One row
-uv pip install "quackd[openai]"                    # the openai row, on the pilot's own SDK
-uv pip install "quackd[laya]"                      # the one that runs in this process
-uv pip install "quackd[lerobot,decision,openai]"   # the arm, a decision LLM and a pilot LLM
+uv pip install "roboglot[decision]"                  # the System One client, for every System One row
+uv pip install "roboglot[openai]"                    # the openai row, on the pilot's own SDK
+uv pip install "roboglot[laya]"                      # the one that runs in this process
+uv pip install "roboglot[lerobot,decision,openai]"   # the arm, a decision LLM and a pilot LLM
 ```
 
-Neither `quackd[decision]` nor `quackd[laya]` is part of `quackd[all]`, for the same reason the
+Neither `roboglot[decision]` nor `roboglot[laya]` is part of `roboglot[all]`, for the same reason the
 simulators are not: `laya` pulls torch, and nobody should pay for a vendor that is not in their
-run. The `openai` row needs neither: its client is the pilot's own SDK, which `quackd[all]`
+run. The `openai` row needs neither: its client is the pilot's own SDK, which `roboglot[all]`
 already carries.
 
 Four flags, because there are many decision LLMs now rather than one, and one of them may see:
@@ -260,12 +260,12 @@ flag you also have to remember. The three modes:
 
 | `--decision-mode` | What happens |
 |---|---|
-| `off` | quackd exactly as it has always been. No stepper is built and no backend is imported. `--decision-llm off` says the same thing |
+| `off` | Roboglot exactly as it has always been. No stepper is built and no backend is imported. `--decision-llm off` says the same thing |
 | `shadow` | it is asked on every turn and its answer is recorded beside the pilot LLM's. **The run is unchanged**: the pilot LLM still decides everything. This is the mode to start in, and the one that measures |
 | `on` | it takes the turns it is confident about, and hands back the rest. Switching it on prints one line saying it has never been measured against a robot, because that is still true |
 
-`QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL`, `QUACKD_DECISION_MODE` and `QUACKD_DECISION_FRAMES`
-do the same when the flag is absent; the flag wins. `QUACKD_DECISION_URL` is read only for a row
+`ROBOGLOT_DECISION_LLM`, `ROBOGLOT_DECISION_URL`, `ROBOGLOT_DECISION_MODE` and `ROBOGLOT_DECISION_FRAMES`
+do the same when the flag is absent; the flag wins. `ROBOGLOT_DECISION_URL` is read only for a row
 that wants no key, so a line left in a `.env` after an afternoon with a server of your own never
 moves `jev` or `openai`.
 
@@ -275,15 +275,15 @@ the robot on a machine with no key and no extra. It says so once, before anythin
 and carries on without it:
 
 ```
-$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm local
-⚠ --decision-llm local asked for, running without it: --decision-llm local needs the optional extra quackd[decision] — run: uvx --from "quackd[decision]" quackd ...  or: uv pip install "quackd[decision]"
+$ roboglot run arm-grip-check --robot lerobot:mock --llm fake --decision-llm local
+⚠ --decision-llm local asked for, running without it: --decision-llm local needs the optional extra roboglot[decision] — run: uvx --from "roboglot[decision]" roboglot ...  or: uv pip install "roboglot[decision]"
 ```
 
 A name nobody defined is a different matter, because that is a typo rather than a missing install,
 and it stops the run before anything connects:
 
 ```
-$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm nope
+$ roboglot run arm-grip-check --robot lerobot:mock --llm fake --decision-llm nope
 ✗ error: unknown decision LLM 'nope' from --decision-llm; choose one of jev, openai, kev, openjev,
 opendecision, local, laya
 ```
@@ -291,7 +291,7 @@ opendecision, local, laya
 So does a mode nobody defined:
 
 ```
-$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-mode maybe
+$ roboglot run arm-grip-check --robot lerobot:mock --llm fake --decision-mode maybe
 ✗ error: unknown --decision-mode 'maybe'; choose one of off, shadow, on
 ```
 
@@ -300,9 +300,9 @@ with it. A run that asked for `shadow` and named nothing would quietly do nothin
 worse than stopping:
 
 ```
-$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-mode shadow
+$ roboglot run arm-grip-check --robot lerobot:mock --llm fake --decision-mode shadow
 ✗ error: --decision-mode shadow needs a decision LLM to run: --decision-llm jev (or
-QUACKD_DECISION_LLM)
+ROBOGLOT_DECISION_LLM)
 ```
 
 And so does a run that asks for frames where no frame may go: with no decision LLM named, with a
@@ -311,7 +311,7 @@ one of OpenAI's hosts, a server of your own on this machine included. A frame is
 wherever the robot is, so a typo here stops the run rather than being read either way:
 
 ```
-$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm kev --decision-frames --no-memory
+$ roboglot run arm-grip-check --robot lerobot:mock --llm fake --decision-llm kev --decision-frames --no-memory
 ✗ error: --decision-frames shows a decision LLM the camera, and --decision-llm kev is sent text
 alone: only openai may be shown a picture
 ```
@@ -334,10 +334,10 @@ to be explained and where it has to be right.
 | **A segment** | `manipulate`, when a task file lists its instructions² | one per instruction | **always the pilot LLM**, with the stepper's answer recorded beside it |
 
 ¹ `observe` is in the manifest only when a camera is configured, which is why
-[`lerobot-lookout`](../../../ducks/lerobot-lookout.duck) leaves it out.
+[`lerobot-lookout`](../../../tasks/lerobot-lookout.glot) leaves it out.
 
 ² With no list its instruction is a free string, a sentence, and it is not offered at all. A v3
-task file's `policy.instructions` ([reference/duck-spec.md](../../reference/duck-spec.md#policy-v3))
+task file's `policy.instructions` ([reference/glot-spec.md](../../reference/glot-spec.md#policy-v3))
 make it a closed set, one call per instruction, and which subtask to hand the policy next is then
 exactly the choice a decision LLM might one day make between segments. It is offered and never
 taken, under `--decision-mode on` too: it answers to the confirm floor, and under `--yes` nobody is
@@ -351,7 +351,7 @@ verb is a **choice** when every parameter it has is a closed set -- an enum, a c
 boolean -- or is *inert*, meaning it is optional, defaults to null, and accepts null, so leaving
 it out chooses nothing. Everything else is a number, and a number is the pilot LLM's. That rule is
 read off each tool's own JSON Schema, so it gives the same answer whichever decision LLM is behind
-it, and gives an answer at all for a body quackd has never shipped.
+it, and gives an answer at all for a body Roboglot has never shipped.
 
 That one rule is why `move_joints` can never be the stepper's, on this arm or the two other bodies
 that have one. Its `positions` is a required object. And there is a second reason that is stronger
@@ -381,17 +381,17 @@ and how much cheaper](#how-much-faster-and-how-much-cheaper).
 
 ### 3. Where the arm does hand over: the grip check
 
-[`ducks/arm-grip-check.duck`](../../../ducks/arm-grip-check.duck) is the same arm and the opposite
+[`tasks/arm-grip-check.glot`](../../../tasks/arm-grip-check.glot) is the same arm and the opposite
 shape: read the state, shut the gripper, read it again, release, stop. Every turn is a choice, and
 nothing in it authors an angle, because `move_joints` is deliberately not in its allowlist.
 
 ```bash
-quackd run arm-grip-check --robot lerobot:mock --decision-llm jev        # no arm needed
-quackd run arm-grip-check --robot arm-01 --by-hand --decision-llm jev    # something in the gripper
+roboglot run arm-grip-check --robot lerobot:mock --decision-llm jev        # no arm needed
+roboglot run arm-grip-check --robot arm-01 --by-hand --decision-llm jev    # something in the gripper
 ```
 
 With `--by-hand`, the arm is let go at its rest pose, or at the edge of its travel where the
-pose lies past it, and quackd takes hold of it again at Enter only when every joint reads inside
+pose lies past it, and Roboglot takes hold of it again at Enter only when every joint reads inside
 its calibrated travel. On an arm whose rest pose was recorded folded past that travel, as
 `arm-01`'s `shoulder_lift` was on 2026-09-23, lift the arm clear of the fold before you press
 Enter, not only the gripper. Press it over the fold and the take-hold is refused: torque stays
@@ -437,13 +437,13 @@ Five things in that are worth reading twice.
   observation it is next shown, and told who chose them.
 - **`0.00 s`** is a fake answering instantly in a test, not a measurement. A run made today puts
   two more figures in that parenthesis, the tokens the question spent and what they cost; see
-  [Measuring it yourself](#measuring-it-yourself). This transcript was recorded before quackd
+  [Measuring it yourself](#measuring-it-yourself). This transcript was recorded before Roboglot
   counted either, and replays exactly as it was written.
 
 ### 4. The other six bodies
 
 The same loop and the same rule, with no per-body code anywhere.
-[`microduck-lookout`](../../../ducks/microduck-lookout.duck) is the most discrete task quackd ships:
+[`microduck-lookout`](../../../tasks/microduck-lookout.glot) is the most discrete task Roboglot ships:
 `gaze` in five directions, `observe`, `report_state`, `quack` and `stop` are all choices, and only
 `say` is not, because it needs a sentence. `open-duck-lookout` is the identical allowlist on an
 Open Duck Mini.
@@ -456,8 +456,8 @@ broken, and the log says `not_offered` for it without a request being made at al
 
 > [!IMPORTANT]
 > **Everything in this section is an estimate, and nobody has run any decision LLM against a
-> quackd robot.** It combines two measured things with published ones: quackd's own timings from
-> the SO-101 run on 2026-09-15 and the size of the request quackd actually builds (measured against
+> roboglot robot.** It combines two measured things with published ones: Roboglot's own timings from
+> the SO-101 run on 2026-09-15 and the size of the request Roboglot actually builds (measured against
 > the mock arm), with TypeSafe's published per-call latency and price, and OpenAI's published rate
 > for the one paragraph about `openai`. Every input is named below so you can disagree with any of
 > them. It rests on the `jev` row because that is the only row with a published latency as well
@@ -471,7 +471,7 @@ broken, and the log says `not_offered` for it without a request being made at al
 Two of these are TypeSafe's own figures for Jev, and what they do and do not support is on [its
 page](jev.md). The short version is that their headline pair disagrees with their
 own worked example, so what is used here is the underlying numbers rather than the multiple.
-Nothing in this repository repeats a vendor's multiple as a quackd measurement, no other row on
+Nothing in this repository repeats a vendor's multiple as a Roboglot measurement, no other row on
 that table publishes a latency, and the one other that publishes a rate is `openai`, at $0.10 per
 million input tokens ([its page](openai.md)).
 
@@ -481,9 +481,9 @@ million input tokens ([its page](openai.md)).
 | **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](jev.md)) |
 | **238x lower input price** than a frontier LLM | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
 | **$0.10 per million input tokens**, output not charged, on `openai` | [OpenAI's Decisions guide](https://developers.openai.com/api/docs/guides/decisions) ([openai](openai.md)) |
-| **$0** per question on every row you run yourself | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
+| **$0** per question on every row you run yourself | a server you run bills you in electricity ([pricing](../../../roboglot/agent/providers/pricing.py)) |
 
-And what quackd brings to it, all measured:
+And what Roboglot brings to it, all measured:
 
 | Figure | Source |
 |---|---|
@@ -493,14 +493,14 @@ And what quackd brings to it, all measured:
 
 ### One decision
 
-On the turns it can answer, quackd's own baseline gives **6.21 s against 0.114 s, about 54x**.
-That is lower than TypeSafe's headline because quackd's baseline is a slower LLM on a bigger
+On the turns it can answer, Roboglot's own baseline gives **6.21 s against 0.114 s, about 54x**.
+That is lower than TypeSafe's headline because Roboglot's baseline is a slower LLM on a bigger
 prompt, and it is the number that matters here.
 
 On price, the whole request is 527 tokens against a pilot LLM call that averaged 4,910 input tokens on
 that run, at a 238th of the price per token. That works out at **about a two-thousandth of the
 cost of the call it replaces**, which is a wider gap than TypeSafe's own 445x rather than a
-narrower one, and for a reason worth knowing: quackd hands its pilot LLM a large prompt, nearly five
+narrower one, and for a reason worth knowing: Roboglot hands its pilot LLM a large prompt, nearly five
 thousand tokens a call once the contract, the datasheet, the memory and the observations are in
 it, while the question it hands the stepper is about a tenth of that. The stepper is cheaper per
 token *and* asked a much smaller question.
@@ -518,10 +518,10 @@ to **about a thousandth of the cost of the call they replace**. OpenAI count tho
 tokeniser of their own, and their count is what an `openai` turn records and is costed on, so a
 real run's request will not come to 527 exactly. The time half cannot be worked out for that row
 at all: OpenAI publish no latency for it, only that it is about ten times faster than their own
-Responses API, and nothing here repeats that ratio as a quackd measurement.
+Responses API, and nothing here repeats that ratio as a Roboglot measurement.
 
 On a server you run yourself the money half of this collapses entirely. There is no rate card,
-quackd costs those turns at the self-hosted $0 it already uses for an LLM on your own machine,
+Roboglot costs those turns at the self-hosted $0 it already uses for an LLM on your own machine,
 and the only question left is the time one.
 
 ### One run: it depends entirely on how many turns are a choice
@@ -531,7 +531,7 @@ question. The stepper is asked on every turn and only answers some of them, so t
 whole run is capped by that share. With *f* the fraction of turns it answers, *M* the pilot LLM's mean
 call and *L* the stepper's, the think time goes from `N*M` to `N*L + (1-f)*N*M`, so:
 
-**speedup = 1 / (1 - f + L/M)**, and with quackd's numbers *L/M* is 0.018.
+**speedup = 1 / (1 - f + L/M)**, and with Roboglot's numbers *L/M* is 0.018.
 
 | Turns the stepper answers | Think time | Pilot LLM spend |
 |---|---|---|
@@ -577,7 +577,7 @@ arithmetic gives close to three times less waiting.
 ### What would make this wrong
 
 - **The real latency against a robot's state.** 0.114 s is TypeSafe's figure on TypeSafe's task,
-  and it is the only published one on this page. quackd sends a different shape of request from a
+  and it is the only published one on this page. Roboglot sends a different shape of request from a
   different network, and a zero-shot encoder on your own CPU or a 4B decoder on your own GPU is a
   different number again. The per-call timeout is one second, so the worst case is bounded, but
   the worst case is also where the saving goes.
@@ -615,7 +615,7 @@ and the two Nouls before the choice, so a stepper that thinks the job is finishe
 anything else:
 
 1. any of the four questions was declined rather than answered -> the pilot LLM's turn, on the gate
-   `refused`, with the names declined on the record. Of the rows quackd names, only `openai`
+   `refused`, with the names declined on the record. Of the rows Roboglot names, only `openai`
    reports one, and a declined `feasible` counts too: a refusal is the vendor's policy speaking
    about this state, not its LLM answering a question
 2. any of the three probabilities is not a probability, a number from 0 to 1, or the answer names
@@ -648,23 +648,23 @@ at 0.99 took all twelve turns of `lerobot-lookout` and the run died with nothing
 reflex that fires twice identically is looping, not deciding.
 
 The floors. TypeSafe's [confidence page](https://docs.typesafe.ai/confidence) publishes exactly
-two numbers, and both are here. The other two are quackd's own, set between them, and the table
+two numbers, and both are here. The other two are Roboglot's own, set between them, and the table
 says which is which because a number nobody published is a number nobody has calibrated either:
 
 | Verb class | Floor | Why that number |
 |---|---|---|
-| `stop` | **0.50** | **theirs.** Below 0.5 is "genuinely unsure" in TypeSafe's words and the point where their own example routes to a human. quackd puts the brake exactly there instead, because that is where an unsure stepper should still be allowed to reach for it: a wrong `stop` costs one step, a wrong anything-else costs a move nobody chose |
-| a read (`report_state`, `observe`, `introspect`) | **0.60** | **quackd's.** Sends no intent at all, so it sits just above their 0.5: a read that is wrong costs a wasted turn and nothing else. TypeSafe publish no number here |
-| anything that sends an intent | **0.85** | **quackd's.** Below the 0.9 they pair with "proceed with confirmation", because quackd expresses confirmation separately, and well above their 0.5. Nothing published sits between the two, so this is an appetite for risk rather than a calibration |
-| a confirm-gated verb | **0.90** | **theirs,** literally their ">0.9, high stakes, proceed with confirmation" -- and quackd's own confirm gate still asks a person at a terminal on top of it, unless `--yes`, or a pipe or file on stdin, answers for them |
+| `stop` | **0.50** | **theirs.** Below 0.5 is "genuinely unsure" in TypeSafe's words and the point where their own example routes to a human. Roboglot puts the brake exactly there instead, because that is where an unsure stepper should still be allowed to reach for it: a wrong `stop` costs one step, a wrong anything-else costs a move nobody chose |
+| a read (`report_state`, `observe`, `introspect`) | **0.60** | **Roboglot's.** Sends no intent at all, so it sits just above their 0.5: a read that is wrong costs a wasted turn and nothing else. TypeSafe publish no number here |
+| anything that sends an intent | **0.85** | **Roboglot's.** Below the 0.9 they pair with "proceed with confirmation", because Roboglot expresses confirmation separately, and well above their 0.5. Nothing published sits between the two, so this is an appetite for risk rather than a calibration |
+| a confirm-gated verb | **0.90** | **theirs,** literally their ">0.9, high stakes, proceed with confirmation" -- and Roboglot's own confirm gate still asks a person at a terminal on top of it, unless `--yes`, or a pipe or file on stdin, answers for them |
 | a `dangerous` verb | never offered | not a floor, a refusal |
 
 > [!WARNING]
-> **Two of these are Jev's numbers, two are quackd's, and every decision LLM here inherits all four
+> **Two of these are Jev's numbers, two are Roboglot's, and every decision LLM here inherits all four
 > unmeasured.** The floors are one table shared by all seven rows, because a floor is a property of
-> quackd's appetite for risk as much as of anybody's calibration -- but the confidence they are
+> Roboglot's appetite for risk as much as of anybody's calibration -- but the confidence they are
 > compared against is computed by whatever answered, and a 4B decoder with a decision head, an
-> encoder in quackd's own process and a zero-shot classifier do not mean the same thing by 0.87.
+> encoder in Roboglot's own process and a zero-shot classifier do not mean the same thing by 0.87.
 > TypeSafe say plainly that the right thresholds depend on your domain and your data. So:
 > `--decision-mode shadow` first, on whichever one you picked, and move a floor only once you have
 > a calibration curve of your own.
@@ -672,9 +672,9 @@ says which is which because a number nobody published is a number nobody has cal
 **Why `assess_task` stays the pilot LLM's.** `feasible|infeasible|uncertain` is a textbook Choice, and
 the stepper is asked it on every turn -- but its answer is only recorded, never acted on. The
 verdict tool needs a written `reason`, which no decision LLM writes, and it needs `needs`, which
-[`own_sheet_objection`](../../../quackd/verdict.py) reads to refuse a `feasible` verdict that names
+[`own_sheet_objection`](../../../roboglot/verdict.py) reads to refuse a `feasible` verdict that names
 a figure the datasheet does not publish. A verdict with an empty `needs` would pass that guard
-trivially and silently disable it. And when a pilot answers `uncertain`, quackd puts its reason to
+trivially and silently disable it. And when a pilot answers `uncertain`, Roboglot puts its reason to
 the person in the room; an empty question is not a question. Recording the Choice beside the
 LLM's real verdict is the cheapest way to find out whether a future version should check the
 LLM's verdict rather than write it.
@@ -689,8 +689,8 @@ hold whichever decision LLM answered.
 - **Author a sentence.** Same reason. Every meta tool takes a required free string.
 - **End a run.** `declare_success`, `declare_failure` and `assess_task` are all sentences, so the
   stepper cannot call any of them. Every ending goes through the pilot LLM or through a budget.
-- **Write to memory, or speak to a flock.** `remember` and `tell` are sentences too.
-- **See anything a run did not ask it to.** quackd sends every row text and nothing else, whatever
+- **Write to memory, or speak to a team.** `remember` and `tell` are sentences too.
+- **See anything a run did not ask it to.** Roboglot sends every row text and nothing else, whatever
   the row takes, and TypeSafe's page now lists images as Jev's input too. The one exception is
   `openai`: on a run that asks with `--decision-frames` it is shown the robot's primary camera
   beside the state, at OpenAI's own hosts alone, and the record keeps every frame it is sent,
@@ -705,14 +705,14 @@ hold whichever decision LLM answered.
 - **Start a policy segment.** `manipulate` is offered and compared, and never taken, in either
   mode, so every segment of a learned policy driving the arm is one the pilot LLM asked for.
 - **Get past a gate.** The allowlist, the budgets, the confirm gates, the preconditions and the
-  robot's own safety authority are exactly what they were. A `.duck` binds the stepper the way it
+  robot's own safety authority are exactly what they were. A `.glot` binds the stepper the way it
   binds the pilot LLM, because it binds the executor and both of them go through it.
 
 And one more that is worth saying out loud: **a decision LLM may never end a run by failing.**
 Every `Exception` `decide` raises is caught, recorded as a turn with `gate: error`, and handed to
 the pilot LLM. A server that is not listening, a plugin that throws on import, a timeout at one
 second: all of them cost that turn and none of them costs the run. An interrupt is not a failure,
-and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
+and a second Ctrl-C or a team's cancel while a request is out still ends the run, with that turn
 on the record as `interrupted`. In `shadow` the stepper is asked beside the pilot LLM's own call, and
 a request still out when that call ends the run, on a stop, on the task's minutes or on a failed
 call, is cut off and recorded the same way.
@@ -726,9 +726,9 @@ waits out its second before the pilot LLM is asked. In `shadow` it is asked besi
 so the second runs while the pilot LLM thinks, and the turn waits only for what is left of it once the
 pilot LLM has answered.
 
-## In `quackd drive`: which call a person meant
+## In `roboglot drive`: which call a person meant
 
-`quackd drive --decision-llm NAME` ([guides/drive.md](../drive.md)), or `QUACKD_DECISION_LLM`,
+`roboglot drive --decision-llm NAME` ([guides/drive.md](../drive.md)), or `ROBOGLOT_DECISION_LLM`,
 puts the same decision LLM a question of another kind. A line the exact lane cannot read, "have
 a seat", becomes one closed question, `command`: which of the body's calls, labelled as the
 stepper labels them, or which of its presets does the person mean? It may also be a line for
@@ -736,7 +736,7 @@ the `pilot`, or `unclear`. The state it is asked over is the line as it was type
 the robot is doing now (`doing`), which quotes the line of a command still running, and the
 body's one-line description (`body`). So the lines you type go wherever that decision LLM runs,
 a vendor's host for a hosted one ([SECURITY.md](../../../SECURITY.md)). The answer is read as a
-turn's is, against the stepper's floor for the class of the call it names, with the `.duck`'s
+turn's is, against the stepper's floor for the class of the call it names, with the `.glot`'s
 own confirm gates counted as a run's stepper counts them and a preset answering to the motion
 floor, and within the stepper's one second:
 
@@ -768,10 +768,10 @@ and on the turn after a request that failed, which may have taken its connection
 that ended on `refused` names the questions declined, as `refused`. One that ended on `error`
 names the exception's type, and its HTTP status where it carries one, as `error`, and never its
 message, because an SDK puts the server's reply there and a reply can quote the request. The only
-words kept are quackd's own: `no answer within 1.0 s` on a turn the stepper's own second ended,
-and on no other, and what quackd says about a reply it could not read, which names the type of
+words kept are Roboglot's own: `no answer within 1.0 s` on a turn the stepper's own second ended,
+and on no other, and what Roboglot says about a reply it could not read, which names the type of
 what came back and nothing it said, as `UnreadableReply`. One that ended on `interrupted` is the
-request a second Ctrl-C or a flock's cancel cut off, named the same way, and the run ended with it.
+request a second Ctrl-C or a team's cancel cut off, named the same way, and the run ended with it.
 
 On a run that shows the camera (`--decision-frames`), every `decision` also carries `frame`, null
 where no frame went with the turn and otherwise what went: its `camera`, `media_type`, `width`,
@@ -793,7 +793,7 @@ cleared its floor, and what each of them cost. Its fields are `decision_choice`,
 `decision_confidence`, `decision_gate`, `decision_latency_s` and `decision_cost_usd` beside
 `llm_verb`, `llm_latency_s`, `llm_usage` and `llm_cost_usd`, with `decision_choice` null where the
 stepper chose nothing, `decision_gate` saying why, and `refused`, the questions declined, on a row
-whose gate is `refused`. `quackd log` names that gate on the row's `decide=` line where there is no
+whose gate is `refused`. `roboglot log` names that gate on the row's `decide=` line where there is no
 choice. Agreement is about the whole call rather than the verb's name, because `gripper(open=true)`
 and `gripper(open=false)` are opposite instructions that share a word, and on `arm-grip-check` that
 is most of what there is to compare. `same_verb` records the coarser reading beside it.
@@ -842,19 +842,19 @@ and it records the per-call token figures the hero run never kept.
 
 ```bash
 # the grip loop on the mock arm: every turn is a choice, and no arm is needed
-quackd run arm-grip-check --robot lerobot:mock --llm openai \
+roboglot run arm-grip-check --robot lerobot:mock --llm openai \
   --decision-llm jev --decision-mode shadow --runs-dir runs/bench --no-log
 
 # the same run with no stepper, as the baseline to read it against
-quackd run arm-grip-check --robot lerobot:mock --llm openai \
+roboglot run arm-grip-check --robot lerobot:mock --llm openai \
   --runs-dir runs/bench --no-log
 
 # the README's wave, shadowed: the counter-case, on the arm that ran it
-quackd run --goal "Wave to the camera with an extended arm" --robot arm-01 \
+roboglot run --goal "Wave to the camera with an extended arm" --robot arm-01 \
   --max-steps 10 --decision-llm jev --decision-mode shadow --runs-dir runs/bench
 
 # the same bench against a server you run, which is the comparison nobody has made yet
-quackd run arm-grip-check --robot lerobot:mock --llm openai \
+roboglot run arm-grip-check --robot lerobot:mock --llm openai \
   --decision-llm kev --decision-mode shadow --runs-dir runs/bench --no-log
 ```
 
@@ -873,17 +873,17 @@ Then, per run directory:
 | **Coverage** | how many `gate` values are `taken`, out of all of them | every `{"kind":"decision"}` |
 | **Agreement** | how often `agree` is true, and separately among rows where `would_have_acted` is true | every `{"kind":"decision_shadow"}` |
 | **Calibration** | `confidence` bucketed against `agree` -- the plot that earns the right to move a floor, and the one thing that has to be redone per decision LLM | join the two kinds on `step` |
-| **What a stepper turn cost** | `usage` and `cost_usd`, with `usage_estimated` for whether that token count came from the server or from quackd's own arithmetic | every `{"kind":"decision"}` |
+| **What a stepper turn cost** | `usage` and `cost_usd`, with `usage_estimated` for whether that token count came from the server or from Roboglot's own arithmetic | every `{"kind":"decision"}` |
 | **What the pilot LLM cost** | `latency_s`, `usage`, `cost_usd` | every `{"kind":"llm"}` |
 | **The two bills, on one turn** | `llm_cost_usd` beside `decision_cost_usd`: the ratio the section above could only reach by hand, now on the record for the turn that produced it | every `{"kind":"decision_shadow"}` |
 | **Which one answered** | `decision_llm` as `{name, llm_id, url}`, and `decision_price` beside it | `run_start` |
-| **The rollup** | `steps`, `llm_calls`, `elapsed_s`, `wall_s`, `usage`, `cost_usd`, `decision`, and `command` and `version` beside them, so a bench directory says which flags and which quackd produced the row rather than leaving it to your notes | `summary.json` |
+| **The rollup** | `steps`, `llm_calls`, `elapsed_s`, `wall_s`, `usage`, `cost_usd`, `decision`, and `command` and `version` beside them, so a bench directory says which flags and which Roboglot produced the row rather than leaving it to your notes | `summary.json` |
 | **The stepper's rollup** | `llm`, `llm_id`, `url`, `usage`, `cost_usd`, `cost_estimated`, and `price`, which is the rate that run was actually costed at rather than whatever the rate is when you read it back | the `decision` block of `summary.json` |
 
-**quackd prices a stepper turn now, and marks the ones it had to guess at.** TypeSafe publish Jev
+**Roboglot prices a stepper turn now, and marks the ones it had to guess at.** TypeSafe publish Jev
 at **$0.042 per million input tokens, with output not charged**
 ([models](https://docs.typesafe.ai/models), re-read 2026-09-21), and that is the rate a `jev` turn
-with no `--decision-url` is costed at unless `QUACKD_DECISION_PRICE` says otherwise. OpenAI
+with no `--decision-url` is costed at unless `ROBOGLOT_DECISION_PRICE` says otherwise. OpenAI
 publish their Decisions API at **$0.10 per million input tokens, with nothing charged for output**
 ([their guide](https://developers.openai.com/api/docs/guides/decisions), read 2026-10-08), and
 that is the rate an `openai` turn at OpenAI's own address is costed at, with the same exception. A
@@ -894,8 +894,8 @@ missing figure: it billed you in electricity. The turns that never reach the net
 at all, `not_offered` and `state_too_large`, are charged nothing and carry no figure whatsoever.
 
 Which half of that is measured and which half is arithmetic is never left to be inferred. The rate
-is the vendor's, or quackd's own self-hosted zero. The token count under it is measured only where
-the backend reports one: where it does not, quackd estimates the request as the state plus the
+is the vendor's, or Roboglot's own self-hosted zero. The token count under it is measured only where
+the backend reports one: where it does not, Roboglot estimates the request as the state plus the
 questions at four characters to the token, and flags the estimate three times over, with
 `usage_estimated` on the turn, `cost_estimated` on the run's `decision` block, and a `~` in front
 of both the tokens and the money on the log line and in front of the run's cost on the verdict
@@ -904,7 +904,7 @@ and both are taken as a measurement.
 
 That path is not a hypothetical. The SDK types both counts on `SystemOneResponse.usage` as `int |
 None`, documented as "when the API did not report it", and a call that raised after its request
-had already left the machine reports nothing while quite possibly still being billed. quackd
+had already left the machine reports nothing while quite possibly still being billed. Roboglot
 charges both at the estimate rather than at nothing.
 
 Here is the estimated reading, on the mock arm with a fake in the server's place and no count
@@ -922,12 +922,12 @@ existed and because the criteria are one line per verb on offer, which is two he
 the verdict clears. The record keeps `state_chars` beside the estimate for exactly that reason: an
 estimate you cannot re-derive is a number you have to take on faith.
 
-The LLM's half of the bill comes from quackd's own price catalogue, or from `--price` where your
+The LLM's half of the bill comes from Roboglot's own price catalogue, or from `--price` where your
 rate is negotiated or your LLM is not in it. The two halves are kept apart **in the record**,
 which is where the ratio this section exists to answer is read from: `cost_usd` on every `llm` row
 against `cost_usd` on every `decision` row, and both of them on one `decision_shadow` row for the
 same turn. The verdict panel is the one place they are added together, because a person watching a
-run wants what it cost rather than a division; the exception is a pilot LLM quackd has no rate for,
+run wants what it cost rather than a division; the exception is a pilot LLM Roboglot has no rate for,
 where the panel says `cost unpriced (stepper ~$0.0002)` rather than throw away the half it does
 know.
 
@@ -939,7 +939,7 @@ fake answering in its place. If you run any of it, the numbers are worth an issu
 
 A decision LLM that is not a System One server -- its own API, its own transport, a wrapper round
 something that was never meant for this -- announces itself through the entry point group
-`quackd.decision_llms`, exactly the way a third party's robot adapter does. quackd never has to
+`roboglot.decision_llms`, exactly the way a third party's robot adapter does. Roboglot never has to
 know about you, and nothing here has to change to let you in. The one exception is a server that
 answers OpenAI's `POST /v1/decisions`, which needs no plugin: it is the `openai` row, with
 `--decision-url` at its own address ([openai](openai.md)).
@@ -957,7 +957,7 @@ INSTALL = "pip install mydecider"
 LLM_ID = "mydecider-1"  # the id used when the spec names none
 URL = "http://127.0.0.1:9000"  # or None, for something with no address
 KEY_ENV = "MYDECIDER_API_KEY"  # or None, for something that wants no key
-EXTRA = None  # None: quackd found you, so you are installed by definition
+EXTRA = None  # None: Roboglot found you, so you are installed by definition
 
 
 class MyDecider:
@@ -978,7 +978,7 @@ def make(spec: Any, *, url: str | None = None, llm_id: str | None = None) -> MyD
 ```
 
 ```toml
-[project.entry-points."quackd.decision_llms"]
+[project.entry-points."roboglot.decision_llms"]
 mydecider = "mydecider"
 ```
 
@@ -986,21 +986,21 @@ Then `--decision-llm mydecider` reaches it, `--decision-llm mydecider:some-id` n
 and `--decision-url` overrides your `URL`. A built-in name always wins over a plugin that took it,
 so a package called `jev` cannot quietly become the thing `--decision-llm jev` reaches.
 
-The protocol is in [`quackd/agent/decision/base.py`](../../../quackd/agent/decision/base.py) and it
+The protocol is in [`roboglot/agent/decision/base.py`](../../../roboglot/agent/decision/base.py) and it
 is three attributes and one method:
 
 | | |
 |---|---|
 | `name` | the preset that built you. What `--decision-llm` took, and what the record says answered |
 | `llm_id` | the id you answer as, for the record. Empty where you name none |
-| `url` | where you were reached, or `None`. quackd redacts it before writing it down |
-| `async decide(state, questions)` | one fan-out. `state` is a flat mapping of short English strings; `questions` is a mapping of name to `{"type": "choice" \| "noul" \| "score", "instructions": ..., "criteria": ...}`. quackd only ever sends the first two |
+| `url` | where you were reached, or `None`. Roboglot redacts it before writing it down |
+| `async decide(state, questions)` | one fan-out. `state` is a flat mapping of short English strings; `questions` is a mapping of name to `{"type": "choice" \| "noul" \| "score", "instructions": ..., "criteria": ...}`. Roboglot only ever sends the first two |
 
-What you hand back may be anything quackd's reader can get at: an object carrying `answers`, or a
+What you hand back may be anything Roboglot's reader can get at: an object carrying `answers`, or a
 mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and optionally
 `probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the label as a string,
 and a `confidence` or a `noul` is a number from 0 to 1, never a word or a flag: anything else, in
-`next_verb`, `done` or `need_human`, is an answer quackd cannot read, and the turn goes to the
+`next_verb`, `done` or `need_human`, is an answer Roboglot cannot read, and the turn goes to the
 pilot LLM on `unreadable`. A `usage` with `input_tokens` is used where it is there and estimated where
 it is not, so a backend that counts nothing costs the run an estimate rather than an error. A list
 of question names under `refused`, beside the answers and read the same way, says which questions
@@ -1009,14 +1009,14 @@ it declined rather than answered, and any name there hands the turn to the pilot
 
 A plugin is never shown a picture. Its row is built with `sees` false whatever its module says
 about itself, `--decision-frames` with a plugin named stops the run before anything connects, and
-its `decide` is only ever called with the two arguments above. The one decision LLM quackd may
+its `decide` is only ever called with the two arguments above. The one decision LLM Roboglot may
 show the camera is its own client for `openai` ([openai](openai.md)).
 
 Raising is allowed and is not fatal. `Stepper.advise` catches every `Exception`, records the
 turn as `gate: error`, and hands it to the pilot LLM. A plugin may never end a run. The record keeps
 the exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
 itself or on its `response`, and never its message, which can quote what the server sent back.
-The one message it keeps is an `UnreadableReply`'s, from `quackd.agent.decision.base`, which a
+The one message it keeps is an `UnreadableReply`'s, from `roboglot.agent.decision.base`, which a
 plugin raises for a reply it could not read: so that message has to say what shape the reply
 had, by the type of what came back, and never what the reply said.
 
@@ -1030,15 +1030,15 @@ Four flags and five variables. The flag always beats the variable.
 
 | What | Flag | Variable | Default |
 |---|---|---|---|
-| Which decision LLM answers, as `NAME[:LLM]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
-| Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
-| What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
-| Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `QUACKD_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision`. On a Microduck it also gives the pilot `watch`, which shows that row a frame a look whatever the mode |
-| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
+| Which decision LLM answers, as `NAME[:LLM]` | `--decision-llm` | `ROBOGLOT_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
+| Where your own server listens | `--decision-url` | `ROBOGLOT_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
+| What its answer may do, `off\|shadow\|on` | `--decision-mode` | `ROBOGLOT_DECISION_MODE` | `on` once one is named, `off` when none is |
+| Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `ROBOGLOT_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision`. On a Microduck it also gives the pilot `watch`, which shows that row a frame a look whatever the mode |
+| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `ROBOGLOT_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
 
-`QUACKD_DECISION_PRICE` takes the same form `--price` does for the pilot LLM, and it is quackd's own
+`ROBOGLOT_DECISION_PRICE` takes the same form `--price` does for the pilot LLM, and it is Roboglot's own
 variable rather than any SDK's, which is why it is not spelled `TYPESAFE_*`: everything with that
-prefix is read by `typesafe_sdk` itself, while this one quackd reads and applies. Either way the
+prefix is read by `typesafe_sdk` itself, while this one Roboglot reads and applies. Either way the
 rate a run was actually costed at is written into `run_start` and into the `decision` block, so
 reading a bench directory back next month does not depend on the rate card not having moved.
 
@@ -1047,11 +1047,11 @@ And the rest:
 | What | How |
 |---|---|
 | Key | `TYPESAFE_API_KEY` for `jev` and `OPENAI_API_KEY` for `openai`, in the environment or a `.env`, the first sent by TypeSafe's own client only when no `--decision-url` is given and the second to OpenAI's own API and nowhere else. Every other row needs none, and is sent the word `local` instead, as `jev` is at a `--decision-url` and `openai` at any other address, where neither wants its key |
-| Install | `quackd[decision]` for every System One row, `quackd[openai]` for `openai` and `quackd[laya]` for the in-process one. Only `quackd[openai]`, the pilot's own, is in `quackd[all]` |
+| Install | `roboglot[decision]` for every System One row, `roboglot[openai]` for `openai` and `roboglot[laya]` for the in-process one. Only `roboglot[openai]`, the pilot's own, is in `roboglot[all]` |
 | LLM | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 
-`TYPESAFE_BASE_URL` is not read by quackd at all: it belongs to the SDK, and `--decision-url` is
-how you tell quackd where a server is. On `openai`, `OPENAI_BASE_URL` never moves the address,
+`TYPESAFE_BASE_URL` is not read by Roboglot at all: it belongs to the SDK, and `--decision-url` is
+how you tell Roboglot where a server is. On `openai`, `OPENAI_BASE_URL` never moves the address,
 because the client is always handed one, and `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
 `OPENAI_PROJECT_ID` go where they go for the pilot: to OpenAI's own API exactly as the SDK sends
 them, and to any other `--decision-url` not at all ([openai](openai.md)). `TYPESAFE_DEFAULT_MODEL`
@@ -1059,14 +1059,14 @@ is honoured for the one row that declares it, `jev`, as a fallback when the spec
 but naming it in the spec is the way to say it, because that is the form every other row takes and
 the only one that reaches the record as a choice somebody made.
 
-The four flags are on `quackd run` and nowhere else. They are deliberately not on `quackd
+The four flags are on `roboglot run` and nowhere else. They are deliberately not on `roboglot
 record`, which makes the README's recordings and has to stay reproducible without a network call,
 and which pins the mode and the frames off whatever the variables say, and not on
-`quackd serve-mcp`, where the pilot LLM is the client and quackd has no think path to sit in front of.
+`roboglot serve-mcp`, where the pilot LLM is the client and Roboglot has no think path to sit in front of.
 
 ## Limitations
 
-- **Text only, but for one row on a run that asks.** quackd sends no image, audio or video to any
+- **Text only, but for one row on a run that asks.** Roboglot sends no image, audio or video to any
   row here, though Jev's own page now lists images among what it takes
   ([models](https://docs.typesafe.ai/models)), except that `openai` is shown one camera frame a
   turn on a run with `--decision-frames`, and one a look while a Microduck's `watch` runs. What a
@@ -1080,7 +1080,7 @@ and which pins the mode and the frames off whatever the variables say, and not o
   find that out before it matters.
 - **The in-process one trades the network for a load.** `laya` needs no port and no key, and pays
   about seven seconds the first time a run asks it anything, plus a download the first time ever.
-- **English first.** Other languages are supported with lower accuracy, and a `.duck` written in
+- **English first.** Other languages are supported with lower accuracy, and a `.glot` written in
   one would be worth measuring before trusting.
 - **Not the fast loops.** The steering loop runs at 10 Hz and the robot's own controllers faster
   than that. This sits in the slow loop, beside the pilot LLM, and nothing about it changes what stops
@@ -1116,7 +1116,7 @@ The open ones, each with a page here: [kev](kev.md) · [openjev](openjev.md) ·
 [opendecision](opendecision.md) · [laya](laya.md), and
 [TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf) (and why it is not a row, above)
 
-quackd: [architecture](../../concepts/architecture.md) · [safety](../../concepts/safety.md) ·
+Roboglot: [architecture](../../concepts/architecture.md) · [safety](../../concepts/safety.md) ·
 [local LLMs](../local-llms.md) · [the LeRobot arm](../../adapters/lerobot/README.md) ·
 [ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) ·
 [ADR-0043](../../adr/0043-decision-llms-are-a-wire-format-and-a-data-row.md) ·

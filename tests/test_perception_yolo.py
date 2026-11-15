@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd.perception.base import Detection
-from quackd.perception.yolo import (
+from roboglot.perception.base import Detection
+from roboglot.perception.yolo import (
     COCO_TO_LABEL,
     HEIGHT_M,
     YoloDetector,
@@ -27,7 +27,7 @@ from quackd.perception.yolo import (
 
 Box = tuple[str, float, float, float, float, float]
 
-#: COCO's own class numbers for the names quackd maps, and one it does not.
+#: COCO's own class numbers for the names Roboglot maps, and one it does not.
 COCO_NAMES = {0: "person", 15: "cat", 16: "dog", 32: "sports ball", 58: "potted plant"}
 CLASS_OF = {name: cls for cls, name in COCO_NAMES.items()}
 
@@ -77,7 +77,7 @@ def _inline_maths_before_the_refactor(
 
 
 class _FakeYOLO:
-    """`ultralytics.YOLO`, reduced to the constructor and the one method quackd calls."""
+    """`ultralytics.YOLO`, reduced to the constructor and the one method Roboglot calls."""
 
     made: list[_FakeYOLO] = []
     results: list[Any] = []
@@ -251,5 +251,5 @@ def test_without_ultralytics_the_detector_names_the_extra_to_install(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "ultralytics", None)
-    with pytest.raises(ImportError, match=r"quackd\[yolo\]"):
+    with pytest.raises(ImportError, match=r"roboglot\[yolo\]"):
         YoloDetector()

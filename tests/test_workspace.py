@@ -1,6 +1,6 @@
 """Eleven packages are released together, so nothing about them may drift apart.
 
-quackd is one repository and eleven distributions now: the core and one per robot. That buys
+Roboglot is one repository and eleven distributions now: the core and one per robot. That buys
 an install with no robot in it, and it costs a set of facts that have to agree and that no
 single file owns. A version in eleven places, a catalogue in the core that names ten
 adapters none of which it imports, an entry point in each of those ten, and a dependency
@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-import quackd
-from quackd.adapters.catalogue import ADAPTERS, BY_NAME, ENTRY_POINT_GROUP
-from quackd.adapters.factory import adapter_names, info, is_installed
-from quackd_lerobot import upstream_api
+import roboglot
+from roboglot.adapters.catalogue import ADAPTERS, BY_NAME, ENTRY_POINT_GROUP
+from roboglot.adapters.factory import adapter_names, info, is_installed
+from roboglot_lerobot import upstream_api
 
 REPO = Path(__file__).resolve().parents[1]
 MEMBERS = sorted(p for p in (REPO / "adapters").glob("*/pyproject.toml"))
@@ -40,7 +40,7 @@ def _dist(requirement: str) -> str:
 
 
 WINDOW = re.compile(
-    r"(?P<dist>quackd(?:-[a-z-]+)?)(?:\[[a-z]+\])?"
+    r"(?P<dist>roboglot(?:-[a-z-]+)?)(?:\[[a-z]+\])?"
     r">=(?P<floor>\d+\.\d+(?:\.\d+)?),<(?P<ceiling>\d+\.\d+)"
 )
 """A window one of the eleven packages pins another with, as `scripts/set_version.py` writes it."""
@@ -77,7 +77,7 @@ def test_every_adapter_directory_is_a_workspace_member() -> None:
     assert root["tool"]["uv"]["workspace"]["members"] == ["adapters/*"]
     sources = root["tool"]["uv"]["sources"]
     for name in NAMES:
-        dist = f"quackd-{name.replace('_', '-')}"
+        dist = f"roboglot-{name.replace('_', '-')}"
         assert sources.get(dist) == {"workspace": True}, dist
 
 
@@ -86,10 +86,10 @@ def test_an_adapter_carries_the_same_version_as_the_core(member: Path) -> None:
     """Each package carries its own `__version__`, because an adapter's sdist holds only its
     own source and cannot read the core's. They ship together, so they must not differ.
     `scripts/set_version.py` writes all eleven at once for exactly this reason."""
-    src = next((member.parent / "src").glob("quackd_*/__init__.py"))
+    src = next((member.parent / "src").glob("roboglot_*/__init__.py"))
     found = re.search(r'^__version__ = "([^"]+)"$', src.read_text(encoding="utf-8"), re.M)
     assert found, f"{src} has no __version__"
-    assert found.group(1) == quackd.__version__
+    assert found.group(1) == roboglot.__version__
 
 
 @pytest.mark.parametrize("member", MEMBERS, ids=NAMES)
@@ -99,8 +99,8 @@ def test_an_adapter_allows_the_core_it_is_released_with_and_none_before_it(membe
     so an adapter from a patch never installs beside a core that lacks what the patch gave it,
     and it ends before the next minor, where the interface moves (RELEASING.md)."""
     data = _toml(member)
-    pin = next(d for d in data["project"]["dependencies"] if d.startswith("quackd>="))
-    breach = _window_breach(pin, quackd.__version__)
+    pin = next(d for d in data["project"]["dependencies"] if d.startswith("roboglot>="))
+    breach = _window_breach(pin, roboglot.__version__)
     assert breach is None, breach
 
 
@@ -110,7 +110,7 @@ def test_an_adapter_declares_the_entry_point_that_makes_it_findable(member: Path
     installed and invisible, which looks exactly like an adapter that is not installed."""
     name = member.parent.name
     declared = _toml(member)["project"]["entry-points"][ENTRY_POINT_GROUP]
-    assert declared == {name: f"quackd_{name}"}, declared
+    assert declared == {name: f"roboglot_{name}"}, declared
 
 
 def test_huebot_installs_the_family_it_is_a_body_of_in_the_same_window() -> None:
@@ -119,11 +119,11 @@ def test_huebot_installs_the_family_it_is_a_body_of_in_the_same_window() -> None
     tested it on. `scripts/set_version.py` moves every window it finds, which this holds too: a
     release that moved one of the two would leave the package uninstallable."""
     deps = _toml(REPO / "adapters" / "huebot" / "pyproject.toml")["project"]["dependencies"]
-    core = next(d for d in deps if d.startswith("quackd>="))
-    family = next(d for d in deps if d.startswith("quackd-microduck>="))
-    assert family.removeprefix("quackd-microduck") == core.removeprefix("quackd"), deps
+    core = next(d for d in deps if d.startswith("roboglot>="))
+    family = next(d for d in deps if d.startswith("roboglot-microduck>="))
+    assert family.removeprefix("roboglot-microduck") == core.removeprefix("roboglot"), deps
     sources = _toml(REPO / "adapters" / "huebot" / "pyproject.toml")["tool"]["uv"]["sources"]
-    assert sources["quackd-microduck"] == {"workspace": True}
+    assert sources["roboglot-microduck"] == {"workspace": True}
     script = (REPO / "scripts" / "set_version.py").read_text(encoding="utf-8")
     pattern = re.search(r"WINDOW = re\.compile\(r'(.+)'\)", script)
     assert pattern, "scripts/set_version.py has no WINDOW to read"
@@ -132,17 +132,17 @@ def test_huebot_installs_the_family_it_is_a_body_of_in_the_same_window() -> None
 
 def test_the_arm_family_installs_the_binding_it_drives_through_in_the_same_window() -> None:
     """The industrial arms are a family over rosbridge's binding (ADR-0075): their transport
-    builds its roslibpy through `quackd_rosbridge.ws` and reads the protocol from its refs, so
+    builds its roslibpy through `roboglot_rosbridge.ws` and reads the protocol from its refs, so
     an arm with no rosbridge package does not import, and the SDK it asks for is the binding's
     own extra. Both windows are the core's and move with it, as the Huebot's do."""
     member = _toml(REPO / "adapters" / "rosarm" / "pyproject.toml")
     deps = member["project"]["dependencies"]
-    core = next(d for d in deps if d.startswith("quackd>="))
-    binding = next(d for d in deps if d.startswith("quackd-rosbridge>="))
-    assert binding.removeprefix("quackd-rosbridge") == core.removeprefix("quackd"), deps
+    core = next(d for d in deps if d.startswith("roboglot>="))
+    binding = next(d for d in deps if d.startswith("roboglot-rosbridge>="))
+    assert binding.removeprefix("roboglot-rosbridge") == core.removeprefix("roboglot"), deps
     (sdk,) = member["project"]["optional-dependencies"]["sdk"]
-    assert sdk == "quackd-rosbridge[sdk]" + core.removeprefix("quackd"), sdk
-    assert member["tool"]["uv"]["sources"]["quackd-rosbridge"] == {"workspace": True}
+    assert sdk == "roboglot-rosbridge[sdk]" + core.removeprefix("roboglot"), sdk
+    assert member["tool"]["uv"]["sources"]["roboglot-rosbridge"] == {"workspace": True}
 
 
 def test_the_core_publishes_an_extra_for_every_robot_it_names() -> None:
@@ -151,17 +151,17 @@ def test_the_core_publishes_an_extra_for_every_robot_it_names() -> None:
     extras = _toml(REPO / "pyproject.toml")["project"]["optional-dependencies"]
     for row in ADAPTERS:
         assert row.extra, f"{row.name} names no extra to install it with"
-        key = row.extra.removeprefix("quackd[").removesuffix("]")
+        key = row.extra.removeprefix("roboglot[").removesuffix("]")
         assert key in extras, f"{row.extra} is not an extra this package has"
-        dist = f"quackd-{row.name.replace('_', '-')}"
+        dist = f"roboglot-{row.name.replace('_', '-')}"
         assert any(d.startswith(dist) for d in extras[key]), (key, extras[key])
     assert {_dist(d) for d in extras["robots"]} == {
-        f"quackd-{r.name.replace('_', '-')}" for r in ADAPTERS
+        f"roboglot-{r.name.replace('_', '-')}" for r in ADAPTERS
     }
 
 
 def test_every_extra_pins_the_adapter_it_installs_to_this_release() -> None:
-    """An extra that names an adapter and no window lets `quackd[microduck]==0.10.0` resolve an
+    """An extra that names an adapter and no window lets `roboglot[microduck]==0.10.0` resolve an
     adapter from another release, which for the first release that publishes them means a later
     one, and the only thing that rejects that is the adapter's own back-pin, which arrives as a
     resolver error rather than as the right version. Both windows are written by
@@ -174,9 +174,9 @@ def test_every_extra_pins_the_adapter_it_installs_to_this_release() -> None:
         if key == "dev":
             continue
         for requirement in requirements:
-            if not requirement.startswith("quackd-"):
+            if not requirement.startswith("roboglot-"):
                 continue
-            if (breach := _window_breach(requirement, quackd.__version__)) is not None:
+            if (breach := _window_breach(requirement, roboglot.__version__)) is not None:
                 breaches.append(f"{key}: {breach}")
     assert not breaches, breaches
 
@@ -185,7 +185,7 @@ def _windows(root: Path) -> list[str]:
     """Every window in the eleven `pyproject.toml` files under `root`, as written."""
     found = []
     for path in [root / "pyproject.toml", *sorted(root.glob("adapters/*/pyproject.toml"))]:
-        found += re.findall(r'"(quackd[^"]*>=[^"]*)"', path.read_text(encoding="utf-8"))
+        found += re.findall(r'"(roboglot[^"]*>=[^"]*)"', path.read_text(encoding="utf-8"))
     return found
 
 
@@ -211,7 +211,7 @@ def test_set_version_starts_every_window_at_the_release_for_a_patch_and_for_a_mi
     monkeypatch.setattr(script, "REPO", tmp_path)
     count = len(_windows(REPO))
     assert count > len(MEMBERS), "the core's extras pin adapters too"
-    major, minor, patch = _release(quackd.__version__)
+    major, minor, patch = _release(roboglot.__version__)
     for version in (f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0"):
         assert script.main(["set_version.py", version]) == 0
         windows = _windows(tmp_path)
@@ -232,18 +232,18 @@ def test_the_catalogue_and_the_installed_adapter_agree_about_the_robot() -> None
         if not is_installed(name):
             continue
         # the described row lives in the core and lists bodies, not a package (ADR-0077)
-        where = f"quackd_{name}" if info(name).kind == "adapter" else f"quackd.adapters.{name}"
+        where = f"roboglot_{name}" if info(name).kind == "adapter" else f"roboglot.adapters.{name}"
         module = importlib.import_module(where)
         assert tuple(module.BACKENDS) == info(name).backends, name
-        assert name in BY_NAME, f"{name} is installed but quackd does not publish it"
+        assert name in BY_NAME, f"{name} is installed but Roboglot does not publish it"
 
 
 def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
     """LeRobot 0.7.0 replaced the library that talks to the arm's motors with rustypot, and
-    upstream_api.py was read against it, so `quackd[lerobot]` and `quackd[lerobot-vla]` ask for
+    upstream_api.py was read against it, so `roboglot[lerobot]` and `roboglot[lerobot-vla]` ask for
     that release and stop below its next patch, which may move the bus again, and the arm's extra
     holds rustypot below its next minor. Both reach LeRobot through
-    quackd-lerobot's own extras, which is where the window is. Whoever reads a newer one changes
+    roboglot-lerobot's own extras, which is where the window is. Whoever reads a newer one changes
     `PYPI_VERSION_READ`, and this sends them to the windows and the ignore in dependabot.yml.
 
     The override that lifted 0.6.1's cap on Pillow for a checkout went with 0.6.1: a checkout
@@ -253,13 +253,15 @@ def test_the_arms_extras_ask_for_the_release_upstream_api_read() -> None:
     extras = member["project"]["optional-dependencies"]
     for name in ("sdk", "vla"):
         (asks,) = [r for r in extras[name] if _dist(r) == "lerobot"]
-        assert ">=0.7,<0.7.1;" in asks, f"quackd-lerobot[{name}] asks for {asks}"
+        assert ">=0.7,<0.7.1;" in asks, f"roboglot-lerobot[{name}] asks for {asks}"
     (bus,) = [r for r in extras["sdk"] if _dist(r) == "rustypot"]
-    assert ">=1.13.1,<1.14;" in bus, f"quackd-lerobot[sdk] asks for {bus}"
+    assert ">=1.13.1,<1.14;" in bus, f"roboglot-lerobot[sdk] asks for {bus}"
     core = _toml(REPO / "pyproject.toml")
     for extra, theirs in (("lerobot", "sdk"), ("lerobot-vla", "vla")):
         (asks,) = core["project"]["optional-dependencies"][extra]
-        assert asks.startswith(f"quackd-lerobot[{theirs}]>="), f"quackd[{extra}] asks for {asks}"
+        assert asks.startswith(f"roboglot-lerobot[{theirs}]>="), (
+            f"roboglot[{extra}] asks for {asks}"
+        )
     assert "override-dependencies" not in core.get("tool", {}).get("uv", {})
     ignores = yaml.safe_load((REPO / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     (uv,) = [u for u in ignores["updates"] if u["package-ecosystem"] == "uv"]
@@ -278,7 +280,7 @@ def test_ci_serves_the_policies_on_the_lerobot_their_refs_read() -> None:
     arm's real backend over LeRobot's own bus, which the arm's refs were read at too, and which
     needs rustypot, so it is the same release and its `[feetech]` extra, and the run requires
     rustypot rather than skipping without it."""
-    from quackd_lerobot.policy import upstream_api as policies
+    from roboglot_lerobot.policy import upstream_api as policies
 
     assert policies.VERSION == upstream_api.VERSION
     ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
@@ -288,7 +290,7 @@ def test_ci_serves_the_policies_on_the_lerobot_their_refs_read() -> None:
     assert f'"lerobot[xvla,feetech]=={policies.VERSION}"' in install, install
     assert '"torch>=2.7,<2.16" "torchvision>=0.22,<0.30"' in install, install
     assert any("tests/test_lerobot_real_bus.py" in run for run in runs), runs
-    assert job["env"]["QUACKD_REQUIRE_LEROBOT_BUS"] == "1"
+    assert job["env"]["ROBOGLOT_REQUIRE_LEROBOT_BUS"] == "1"
 
 
 def test_every_published_adapter_is_installed_for_the_suite() -> None:

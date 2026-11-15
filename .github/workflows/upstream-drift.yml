@@ -9,7 +9,7 @@ name: upstream drift
 # which that suite never does.
 #
 # Red means one of two things, and the summary says which. Exit 1: an upstream moved, or a ref
-# of quackd's own cannot be followed, and somebody should go and read it. Exit 2: something did
+# of Roboglot's own cannot be followed, and somebody should go and read it. Exit 2: something did
 # not answer as it should and nothing else was found, so the night says nothing either way.
 #
 # It stays red while any upstream has moved under a ref that nobody has read again. That is the
@@ -50,8 +50,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync quackd and its ten adapters, no SDKs
-        # The ref modules import `quackd.upstream` and nothing of any robot's SDK, so the dev
+      - name: Sync Roboglot and its ten adapters, no SDKs
+        # The ref modules import `roboglot.upstream` and nothing of any robot's SDK, so the dev
         # extra is enough and nothing heavy is fetched.
         run: uv sync --python 3.12 --extra dev
 

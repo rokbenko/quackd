@@ -1,12 +1,12 @@
-# quackd's host daemon for an NVIDIA Jetson
+# Roboglot's host daemon for an NVIDIA Jetson
 
-Every quackd command but one runs on your laptop, and `--host` names the board. This daemon is
-what answers there: one file, `quackd_jetson_hostd.py`, serving HTTP on port 9874. It gives the
-quackd on your laptop three things from the board: a frame from a camera on it, detections
+Every Roboglot command but one runs on your laptop, and `--host` names the board. This daemon is
+what answers there: one file, `roboglot_jetson_hostd.py`, serving HTTP on port 9874. It gives the
+Roboglot on your laptop three things from the board: a frame from a camera on it, detections
 computed on its GPU, and the board's own health (model, L4T release, memory, swap, power mode,
 one `tegrastats` line). The fourth thing, the LLM on the board's GPU, is your own
-LLM server (Ollama or another), and quackd reaches it through the same `--host`. The one that
-does run on a robot's own Jetson, `quackd onboard`, Robot Passport's service, has nothing to do
+LLM server (Ollama or another), and Roboglot reaches it through the same `--host`. The one that
+does run on a robot's own Jetson, `roboglot onboard`, Robot Passport's service, has nothing to do
 with this daemon
 ([docs/guides/jetson.md](../../docs/guides/jetson.md#robot-passport-on-the-board)).
 
@@ -19,17 +19,17 @@ Three rules it lives by, the same as the other daemons under `bridge/`:
 - **It cannot move a robot.** There is no control path in the file. It reads a camera, runs a
   detector on JPEGs it is sent, reads five files and runs two read-only commands. A test reads
   the source and fails if that ever changes.
-- **It never imports quackd**, and it imports nothing outside the standard library until it
+- **It never imports Roboglot**, and it imports nothing outside the standard library until it
   needs to. It is written for Python 3.10, which is JetPack 6's system python. OpenCV, Pillow,
   torch and ultralytics are imported where they are used, and a board without one of them
   starts anyway and says what it lacks in `/hello`.
-- **It parses nothing.** `/board` ships raw file text and raw command output, and quackd reads
-  them with the parsers `quackd doctor` already has.
+- **It parses nothing.** `/board` ships raw file text and raw command output, and Roboglot reads
+  them with the parsers `roboglot doctor` already has.
 
 ## Endpoints
 
 Every request on every path needs the token when the daemon has one. It goes in the
-`X-Quackd-Token` header and is compared in constant time. A token in the query string is never
+`X-Roboglot-Token` header and is compared in constant time. A token in the query string is never
 read, because URLs get logged. Every JSON reply carries `"ok"`, and every failure carries a
 one-sentence `"reason"`.
 
@@ -42,13 +42,13 @@ then is answered 503).
 
 | Path | Method | What it answers |
 |---|---|---|
-| `/hello` | GET | the protocol and its version, the board's model name, and what started: `camera`, `detect` and `tegra`. Anything that did not start says why in `camera_error` or `detect_error`. quackd refuses `--host` until this answers |
+| `/hello` | GET | the protocol and its version, the board's model name, and what started: `camera`, `detect` and `tegra`. Anything that did not start says why in `camera_error` or `detect_error`. Roboglot refuses `--host` until this answers |
 | `/healthz` | GET | always 200. `ok` is whether everything the daemon was asked to run is running: the camera's frame is fresh, the detector's last call worked, and neither was asked for and failed to start. `reason` names whichever is not. `--camera none` and `--no-detect` are not held against it |
 | `/board` | GET | raw text: `/proc/device-tree/model` and `compatible` with their NULs removed, `/etc/nv_tegra_release`, `/proc/meminfo`, `/proc/swaps`, the output of `nvpmodel -q`, one `tegrastats` line, and which of `/dev/nvgpu/igpu0`, `/dev/nvhost-ctrl-gpu` and `/dev/nvidia0` exist. Anything that is null has its reason under `errors` |
 | `/snapshot.jpg` | GET | the newest frame, with `X-Frame-Age` in seconds. A 503 before the first frame, once the frame is older than `max(1.5, 4 / fps)` seconds, and when there is no camera, each with its reason |
-| `/detect` | POST | a JPEG in (at most 8 MB, `?conf=` optional), boxes out in that image's pixels with the model's own class names, plus the model, `cuda` or `cpu`, and `ms`, the time spent in the model. quackd maps the names and does the geometry |
+| `/detect` | POST | a JPEG in (at most 8 MB, `?conf=` optional), boxes out in that image's pixels with the model's own class names, plus the model, `cuda` or `cpu`, and `ms`, the time spent in the model. Roboglot maps the names and does the geometry |
 
-There is no `/detections` endpoint that runs the detector on this board's own camera. quackd
+There is no `/detections` endpoint that runs the detector on this board's own camera. Roboglot
 detects on the primary frame, which is the body's own camera whenever it has one, so such an
 endpoint would serve one arrangement of two and add a second code path. It is the next step if
 `ms` and `X-Frame-Age` show that the round trip is too slow. A run with the board's detector
@@ -58,7 +58,7 @@ a frame here has a `detect` block with the laptop's wait for each frame beside t
 ## Flags
 
 ```
-python3 quackd_jetson_hostd.py [flags]
+python3 roboglot_jetson_hostd.py [flags]
 ```
 
 | Flag | Default | What it does |
@@ -66,34 +66,34 @@ python3 quackd_jetson_hostd.py [flags]
 | `--bind` | `127.0.0.1` | loopback on purpose. Bound anywhere else with no token, it warns and starts |
 | `--port` | `9874` | the Open Duck Mini takes 9871 and 9872 and the ToddlerBot daemon 9873, so a board running both never collides |
 | `--camera` | `none` | `csi`, a V4L2 index such as `0`, a GStreamer pipeline of your own (anything containing `!`, ending in an appsink), or `fake` |
-| `--fps` | `5` | the capture rate, at least 1. It captures on a timer, so a slow client cannot stall it, and `go_to` steers on these frames. quackd refuses a frame older than 2 s as a camera that has stopped, so a slower rate would have it refuse a working one |
+| `--fps` | `5` | the capture rate, at least 1. It captures on a timer, so a slow client cannot stall it, and `go_to` steers on these frames. Roboglot refuses a frame older than 2 s as a camera that has stopped, so a slower rate would have it refuse a working one |
 | `--size` | `640x480` | the box a frame is shrunk into. The aspect ratio is kept, so the horizontal field of view is the lens's, and a frame is never enlarged. A 16:9 camera comes out 640x360 |
-| `--fov-deg` | unset | the lens's horizontal field of view, passed on in `/hello`. Unset, quackd treats the lens as uncalibrated rather than guess |
+| `--fov-deg` | unset | the lens's horizontal field of view, passed on in `/hello`. Unset, Roboglot treats the lens as uncalibrated rather than guess |
 | `--yolo-model` | `yolov8n.pt` | anything ultralytics' `YOLO()` loads |
 | `--no-detect` | off | no detector at all, and no ultralytics import |
-| `--conf` | `0.4` | the confidence floor, the same as quackd's own `YoloDetector`, unless a request sends `?conf=` |
-| `--token` | `$QUACKD_HOST_TOKEN` | the token clients must send. Empty means none |
+| `--conf` | `0.4` | the confidence floor, the same as Roboglot's own `YoloDetector`, unless a request sends `?conf=` |
+| `--token` | `$ROBOGLOT_HOST_TOKEN` | the token clients must send. Empty means none |
 | `--token-file` | unset | read the token from a file. If the file is named and cannot be read, or is empty, the daemon refuses to start rather than run with authentication silently off |
 | `--once` | off | print what `/hello` would say, as JSON, and exit. A quick check that the camera opens and the model loads |
 
 ## Install
 
-`bridge/` ships in quackd's sdist and in the repository, never in the wheel, so `pip install
-quackd` does not give you this file. Clone the repository on the board, or copy the two files
+`bridge/` ships in Roboglot's sdist and in the repository, never in the wheel, so `pip install
+roboglot` does not give you this file. Clone the repository on the board, or copy the two files
 across, then from this directory:
 
 ```bash
-sudo install -m 0755 -D quackd_jetson_hostd.py /opt/quackd/quackd_jetson_hostd.py
-openssl rand -hex 32 | sudo install -m 0640 -o root -g jetson -D /dev/stdin /etc/quackd/jetson-hostd.token
-sudo test -s /etc/quackd/jetson-hostd.token || echo "no token was written: fix the line above first"
-sudo install -m 0644 quackd-jetson-hostd.service /etc/systemd/system/quackd-jetson-hostd.service
+sudo install -m 0755 -D roboglot_jetson_hostd.py /opt/roboglot/roboglot_jetson_hostd.py
+openssl rand -hex 32 | sudo install -m 0640 -o root -g jetson -D /dev/stdin /etc/roboglot/jetson-hostd.token
+sudo test -s /etc/roboglot/jetson-hostd.token || echo "no token was written: fix the line above first"
+sudo install -m 0644 roboglot-jetson-hostd.service /etc/systemd/system/roboglot-jetson-hostd.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now quackd-jetson-hostd
+sudo systemctl enable --now roboglot-jetson-hostd
 ```
 
 `jetson` is a placeholder. Substitute the account you created on the board, as the token file's
 group in the second command and as `User=` in the unit before the fourth. The token file is
-readable by that group and nobody else, and `/etc/quackd` stays traversable, which is the
+readable by that group and nobody else, and `/etc/roboglot` stays traversable, which is the
 mistake the Open Duck Mini's installer once made: a token the service user could not read.
 
 The third command is there because the second writes a file even when `openssl` is missing:
@@ -104,12 +104,12 @@ too, so skipping the check costs a unit that fails at start, not one that runs o
 Then, on the laptop, read the token once and tunnel the ports:
 
 ```bash
-export QUACKD_HOST_TOKEN="$(ssh <board> cat /etc/quackd/jetson-hostd.token)"
+export ROBOGLOT_HOST_TOKEN="$(ssh <board> cat /etc/roboglot/jetson-hostd.token)"
 ssh -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434 <board>
 ```
 
 After which `--host 127.0.0.1` reaches this daemon, and the LLM server on the board's port
-11434 (Ollama's), through the tunnel. `quackd doctor --host 127.0.0.1` shows what the board
+11434 (Ollama's), through the tunnel. `roboglot doctor --host 127.0.0.1` shows what the board
 reported. Binding the daemon wide instead is for a network you trust, and keep the token.
 
 The unit runs the system `/usr/bin/python3` rather than a virtualenv, because the OpenCV that
@@ -119,20 +119,20 @@ first (see the ToddlerBot note below).
 
 ## From the laptop
 
-`--host` is how the quackd on your laptop names this daemon, on `quackd doctor`, `quackd run`
-and `quackd serve-mcp`, and on `quackd robot add` and `edit`, which keep it with a robot. Leave
+`--host` is how the Roboglot on your laptop names this daemon, on `roboglot doctor`, `roboglot run`
+and `roboglot serve-mcp`, and on `roboglot robot add` and `edit`, which keep it with a robot. Leave
 the port off and it is 9874. Without the flag a command uses the host the robot keeps, then
-`QUACKD_HOST`, and the token comes from `--host-token`, the robot's own, then
-`QUACKD_HOST_TOKEN`. One board is one camera and one detector, so `--host` is refused for a
-fleet: `--robots`, `--flock` or a flock duck.
+`ROBOGLOT_HOST`, and the token comes from `--host-token`, the robot's own, then
+`ROBOGLOT_HOST_TOKEN`. One board is one camera and one detector, so `--host` is refused for a
+fleet: `--robots`, `--team` or a team task.
 
-**`quackd doctor --host <board>`** reads `/hello`, `/healthz` and `/board`, parses the board's
+**`roboglot doctor --host <board>`** reads `/hello`, `/healthz` and `/board`, parses the board's
 files on the laptop, and probes the four local LLM presets on the board rather than on the
 laptop:
 
 ```
 Jetson at 127.0.0.1:61332 (the board the daemon runs on) ──────────────────────────────────
-✓ daemon      quackd-jetson-hostd 0.1.0, protocol 1, on orin-nano
+✓ daemon      roboglot-jetson-hostd 0.1.0, protocol 1, on orin-nano
 ✓ camera      640x480 at 5 fps from csi, field of view 62.2 degrees
 ✓ detector    yolov8n.pt on cuda
 ✓ health      ok
@@ -150,8 +150,8 @@ Jetson at 127.0.0.1:61332 (the board the daemon runs on) ───────�
               VDD_CPU_GPU_CV 480mW/480mW VDD_SOC 1400mW/1400mW
 ```
 
-That is the board's section of `quackd doctor --host 127.0.0.1:61332`, whole, run against
-quackd's test fake of this daemon, `tests/fake_jetson_hostd.py`. The fake serves the board
+That is the board's section of `roboglot doctor --host 127.0.0.1:61332`, whole, run against
+Roboglot's test fake of this daemon, `tests/fake_jetson_hostd.py`. The fake serves the board
 files the daemon's own tests build, and an `nvpmodel` answer and a `tegrastats` line written to
 the shape of published ones rather than captured from a board. It is not a Jetson. The last row
 is the raw `tegrastats` line the GPU load was read from. Against this daemon itself, started on
@@ -162,7 +162,7 @@ installed, health not ok for that reason, and the power mode and GPU load unknow
 board's facts under `host.jetson`. A daemon that does not answer fails the report, and nothing
 the board reports changes the verdict.
 
-**`quackd run --host <board>`** asks `/hello` before anything connects, and refuses the run when
+**`roboglot run --host <board>`** asks `/hello` before anything connects, and refuses the run when
 the daemon does not answer. The camera joins whatever body the run drives. It is the primary
 view for a body with no camera of its own, and otherwise an extra view named `host`, which the
 LLM is shown and the detector does not read. The detector is this daemon's YOLO, `yolo@host`,
@@ -184,7 +184,7 @@ body on it and fail with the reason, and the run never switches detector. The he
 
 That was the cartoon duck against this daemon started with `--camera fake` on Windows, with a
 board made of files and no ultralytics. A simulator keeps the colour detector, and the duck has
-a camera of its own, so the board's is an extra view. `quackd serve-mcp` takes `--host`,
+a camera of its own, so the board's is an extra view. `roboglot serve-mcp` takes `--host`,
 `--host-token` and `--detector` the same way, for one robot.
 
 ## Try it on a laptop first
@@ -192,14 +192,14 @@ a camera of its own, so the board's is an extra view. `quackd serve-mcp` takes `
 No board, no camera, no GPU:
 
 ```bash
-python quackd_jetson_hostd.py --camera fake --no-detect
+python roboglot_jetson_hostd.py --camera fake --no-detect
 curl -s http://127.0.0.1:9874/hello
 curl -s -o frame.jpg http://127.0.0.1:9874/snapshot.jpg
 ```
 
 `/hello` says `"tegra": false` there, honestly, and `/board` ships whatever the laptop has
 (a Linux one has `/proc/meminfo` and `/proc/swaps`) and null with a reason for the rest.
-`--camera fake` paints an orange ball on a pale floor, which quackd's own colour
+`--camera fake` paints an orange ball on a pale floor, which Roboglot's own colour
 detector sees. It needs no OpenCV, and without Pillow it serves a 2 by 2 grey JPEG instead.
 
 ## The camera
@@ -215,13 +215,13 @@ detector sees. It needs no OpenCV, and without Pillow it serves a 2 by 2 grey JP
 - **The daemon reads one frame at start**, so a camera that opens and delivers nothing is
   reported in `/hello` rather than advertised and discovered at the first snapshot. A camera
   that was asked for and did not open keeps `/healthz` from saying ok, and the daemon serves
-  everything else. It does not retry: `sudo systemctl restart quackd-jetson-hostd` once the
+  everything else. It does not retry: `sudo systemctl restart roboglot-jetson-hostd` once the
   camera is there.
 - **A password in a pipeline stays on the board.** A pipeline of your own may carry one, as
   `rtsp://user:pass@...`, as a query parameter such as `?pwd=` or `?token=`, or as a property
   such as `user-pw=` or `extra-headers=`. The capture gets the real string; `/hello`, every
   reason that names the camera and the log show it as `***`. The masking goes by name, as
-  quackd's own does, so a credential under a name it does not know, such as a stream key in a
+  Roboglot's own does, so a credential under a name it does not know, such as a stream key in a
   URL's path, is shown as it is.
 - **Two processes cannot own one camera.** If something else on the board has it, use
   `--camera none`.
@@ -256,22 +256,22 @@ installs three packages along with it that are the wrong builds for a Jetson:
 `torch.cuda.is_available()` on the board, not from what anyone intended.
 
 The first start with the default `yolov8n.pt` downloads it into the working directory, which
-the unit sets to `/var/lib/quackd-jetson-hostd`. On a board with no internet, put the file
+the unit sets to `/var/lib/roboglot-jetson-hostd`. On a board with no internet, put the file
 there first, or pass `--yolo-model` a full path. A model that does not load, or whose first
 prediction fails, is reported in `detect_error`, and the daemon serves everything else. The
 same goes for a board with no ultralytics at all. Either way `/healthz` is not ok until the
 detector starts or the daemon runs with `--no-detect`.
 
 **ultralytics is AGPL-3.0.** It runs on the board as your own install. This file imports it
-only when it is there, and quackd itself imports none of it and ships none of it. Read its
+only when it is there, and Roboglot itself imports none of it and ships none of it. Read its
 licence before you build a service on it.
 
 ## Beside a ToddlerBot
 
-On a ToddlerBot the Jetson is the robot's own computer, and quackd's ToddlerBot daemon
+On a ToddlerBot the Jetson is the robot's own computer, and Roboglot's ToddlerBot daemon
 ([`bridge/toddlerbot/`](../toddlerbot/README.md)) runs the fifty hertz loop there and owns the
 robot's cameras. Run this one with `--camera none` beside it, which means changing the unit's
-`--camera csi` before you install it. quackd, on the laptop, still gets frames from the robot's
+`--camera csi` before you install it. Roboglot, on the laptop, still gets frames from the robot's
 daemon and sends them here to be detected, by itself, because a ToddlerBot is a real body.
 `--detector color` keeps the colour detector on the laptop instead. The board's health still
 comes from here.
@@ -279,7 +279,7 @@ comes from here.
 What to watch is contention. An LLM server or a detector saturating this board can starve
 the control loop, and nobody has measured by how much. That is why the unit runs this daemon at
 a lower priority, under a memory ceiling, and first in line for the OOM killer: losing it costs
-quackd a camera, detections and the board's health, and losing the control loop mid-step costs
+Roboglot a camera, detections and the board's health, and losing the control loop mid-step costs
 the robot.
 
 ## Why there is no install.sh
@@ -294,14 +294,14 @@ Six commands you can read replace a script you would have to.
 Nothing on this page has been run on a Jetson by this project.
 
 What was exercised: `tests/test_jetson_hostd.py` drives the real server in-process, in
-quackd's test suite, against a board built from files, a fake ultralytics and torch (with CUDA
+Roboglot's test suite, against a board built from files, a fake ultralytics and torch (with CUDA
 and without), a stubbed OpenCV capture, and a Python one-liner standing in for `tegrastats`.
-`tests/test_jetson_host_contract.py` runs quackd's own client and `quackd doctor` against the
+`tests/test_jetson_host_contract.py` runs Roboglot's own client and `roboglot doctor` against the
 real server on the same kind of board, which is what catches the two sides drifting apart.
 Never opened: the CSI pipeline, a USB camera, CUDA, a real model. The source is parsed with
 Python 3.10's grammar and checked for names 3.10 lacks, but it has not been executed on 3.10:
-quackd's own floor is 3.11.
+Roboglot's own floor is 3.11.
 
 If you run it on a board, please open an issue with what the Status section of
 [docs/guides/jetson.md](../../docs/guides/jetson.md#status) asks for, which is one list for the
-daemon and quackd together and includes the raw `/board` this daemon serves.
+daemon and Roboglot together and includes the raw `/board` this daemon serves.

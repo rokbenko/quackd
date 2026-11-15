@@ -1,6 +1,6 @@
 # ADR-0066: A person's command is the verdict for its own call
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a call a person named clears the gate before motion by itself) · Implemented in `quackd/safety.py` (`Source`, `PERSONS`, the verdict gate), `quackd/log.py` (`A_PERSON`, `A_PIPE`), `quackd/drive/session.py` (`Answered`) and `tests/test_verdict.py` (the guard on who may say a call is a person's) · Documented in [docs/guides/drive.md](../guides/drive.md#your-command-is-the-verdict-for-its-own-call)
+**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a call a person named clears the gate before motion by itself) · Implemented in `roboglot/safety.py` (`Source`, `PERSONS`, the verdict gate), `roboglot/log.py` (`A_PERSON`, `A_PIPE`), `roboglot/drive/session.py` (`Answered`) and `tests/test_verdict.py` (the guard on who may say a call is a person's) · Documented in [docs/guides/drive.md](../guides/drive.md#your-command-is-the-verdict-for-its-own-call)
 
 ## Context
 
@@ -27,8 +27,8 @@ a person.
    chose it. `run_verb` takes `picked_by`, the decision LLM that read the person's words as the
    call, and under `--decision-llm jev` the gate writes "jev read what a person typed as this
    call" in its place. A call the person said yes to, `did you mean ...?`, is theirs.
-3. **Only drive says a call is a person's.** A test reads every module under `quackd/` and
-   refuses `source="person"` or `source="cli"` outside `quackd/drive/`. The loop passes `agent`
+3. **Only drive says a call is a person's.** A test reads every module under `roboglot/` and
+   refuses `source="person"` or `source="cli"` outside `roboglot/drive/`. The loop passes `agent`
    and `decision`, MCP passes `mcp`, and the courtesy handler passes `peer`.
 4. **A line typed at the keyboard is a person's, and one from a pipe or a file is `cli`.** Both
    clear the gate for their own call, and the record names them apart.
@@ -44,7 +44,7 @@ a person.
    the nested verb's answer too, a yes to a composite cleared a dangerous verb nobody had been
    asked about, and the record wrote down a question put to a person that nobody had put.
 7. **A dangerous verb never runs in drive**, however it is named, and not inside another call
-   either. Only a person answering at a terminal in `quackd run` may clear one.
+   either. Only a person answering at a terminal in `roboglot run` may clear one.
 
 ## Why not
 

@@ -5,7 +5,7 @@ when the run asks with the flag, only for a row that can see, and only at OpenAI
 the record keeps what was sent, written before the request that carries it is sent (ADR-0053).
 
 Nothing here needs the `openai` package. CI installs no provider SDK, so every client that may
-see is quackd's own `DecisionsAPILLM` built on `tests/fake_decisions_api.py`, which records what
+see is Roboglot's own `DecisionsAPILLM` built on `tests/fake_decisions_api.py`, which records what
 it was handed and never builds a request. What the real SDK puts on the wire with a frame in it is
 `tests/test_decisions_api_wire.py`, wherever the SDK is installed.
 """
@@ -28,18 +28,18 @@ import pytest
 from PIL import Image, ImageDraw
 from typer.testing import CliRunner
 
-from quackd.agent.decision import decisions_api, factory, frames
-from quackd.agent.decision import stepper as stepper_module
-from quackd.agent.decision.base import DecisionError, state_text
-from quackd.agent.decision.catalogue import ENTRY_POINT_GROUP, PRESETS
-from quackd.agent.decision.decisions_api import MAX_IMAGES, DecisionsAPILLM
-from quackd.agent.decision.factory import (
+from roboglot.agent.decision import decisions_api, factory, frames
+from roboglot.agent.decision import stepper as stepper_module
+from roboglot.agent.decision.base import DecisionError, state_text
+from roboglot.agent.decision.catalogue import ENTRY_POINT_GROUP, PRESETS
+from roboglot.agent.decision.decisions_api import MAX_IMAGES, DecisionsAPILLM
+from roboglot.agent.decision.factory import (
     find_preset,
     make_decision_llm,
     resolve_decision_frames,
     resolve_decision_price,
 )
-from quackd.agent.decision.frames import (
+from roboglot.agent.decision.frames import (
     MAX_BYTES,
     MAX_SIDE_PX,
     Snapshot,
@@ -47,12 +47,12 @@ from quackd.agent.decision.frames import (
     may_send_frames,
     too_large,
 )
-from quackd.agent.decision.stepper import Call, Stepper
-from quackd.cli import _DECISION_FRAMES, _DECISION_MODE, _frames_notice, app
-from quackd.verbs.registry import default_registry
+from roboglot.agent.decision.stepper import Call, Stepper
+from roboglot.cli import _DECISION_FRAMES, _DECISION_MODE, _frames_notice, app
+from roboglot.verbs.registry import default_registry
 from tests import fake_decisions_api as fake_api
 from tests import fake_laya, fake_systemone
-from tests.conftest import DUCKS, plain_text
+from tests.conftest import TASKS, plain_text
 
 runner = CliRunner()
 OPENAI = PRESETS["openai"]
@@ -224,7 +224,7 @@ def test_a_frame_over_the_limit_says_how_large_it_came_to(monkeypatch: pytest.Mo
 
 
 @pytest.mark.parametrize("url", [None, "https://eu.api.openai.com"], ids=["api", "a region"])
-def test_quackds_own_client_built_to_see_at_openai_may_be_shown_a_frame(
+def test_roboglots_own_client_built_to_see_at_openai_may_be_shown_a_frame(
     url: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     llm, _fake = _seeing(monkeypatch, url=url)
@@ -262,7 +262,7 @@ def test_a_plugin_that_says_it_sees_at_openai_may_not() -> None:
 
 
 def test_a_subclass_of_the_client_may_not(monkeypatch: pytest.MonkeyPatch) -> None:
-    """quackd's own client and no other, so code that dresses itself as that client, or changes
+    """Roboglot's own client and no other, so code that dresses itself as that client, or changes
     what its `decide` does, is not taken for it."""
     llm, _fake = _seeing(monkeypatch)
 
@@ -316,7 +316,7 @@ def test_the_variable_turns_frames_off_and_blank_is_off(
 
 def test_a_word_the_variable_does_not_take_stops_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(factory.ENV_FRAMES, "maybe")
-    with pytest.raises(DecisionError, match="unknown QUACKD_DECISION_FRAMES 'maybe'"):
+    with pytest.raises(DecisionError, match="unknown ROBOGLOT_DECISION_FRAMES 'maybe'"):
         resolve_decision_frames(None, spec=OPENAI)
 
 
@@ -335,7 +335,7 @@ def test_decision_llm_off_on_the_line_turns_frames_off(monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize(
     ("flag", "env", "where"),
-    [(True, "", "--decision-frames"), (None, "1", "QUACKD_DECISION_FRAMES")],
+    [(True, "", "--decision-frames"), (None, "1", "ROBOGLOT_DECISION_FRAMES")],
     ids=["the flag", "the variable"],
 )
 def test_frames_with_no_decision_llm_named_stop_the_run_naming_who_asked(
@@ -770,24 +770,24 @@ def test_a_stepper_that_shows_frames_is_built_only_for_a_client_that_may_be_show
 
 
 def _lookout() -> Any:
-    from quackd.duckfile.parser import load_duck
+    from roboglot.glotfile.parser import load_glot
 
-    return load_duck(str(DUCKS / "lerobot-lookout.duck"))
+    return load_glot(str(TASKS / "lerobot-lookout.glot"))
 
 
 async def _run(tmp_path: Path, llm: Any, *, frames_on: bool) -> Any:
     """`lerobot-lookout` on the mock arm, which has a camera, with the scripted pilot and the
     stepper in shadow mode, so it is asked on every turn and nothing it says moves the arm."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd_lerobot import LeRobotAdapter
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot_lerobot import LeRobotAdapter
+    from roboglot_lerobot.mock import LeRobotMock
 
     duck = _lookout()
-    return await run_duck(
+    return await run_glot(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck(duck.name),
+            provider=FakeProvider.for_glot(duck.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="shadow",
@@ -799,7 +799,7 @@ async def _run(tmp_path: Path, llm: Any, *, frames_on: bool) -> Any:
 
 
 def _events(run_dir: Path, kind: str) -> list[dict[str, Any]]:
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     return [e for e in Transcript.read(run_dir / "transcript.jsonl") if e["kind"] == kind]
 
@@ -978,8 +978,8 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
             "",
             "http://127.0.0.1:9 is not one of its hosts",
         ),
-        ((), "maybe", "unknown QUACKD_DECISION_FRAMES 'maybe'"),
-        ((), "1", "QUACKD_DECISION_FRAMES shows a decision LLM the camera, and none is named"),
+        ((), "maybe", "unknown ROBOGLOT_DECISION_FRAMES 'maybe'"),
+        ((), "1", "ROBOGLOT_DECISION_FRAMES shows a decision LLM the camera, and none is named"),
     ],
     ids=[
         "nothing named",
@@ -993,7 +993,7 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
 def test_frames_where_none_may_go_stop_the_run_before_anything_connects(
     argv: tuple[str, ...], env: str, said: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("QUACKD_DECISION_FRAMES", env)
+    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", env)
     result = _cli(tmp_path, *argv)
     assert result.exit_code == 1, result.output
     assert said in plain_text(result.output)
@@ -1003,7 +1003,7 @@ def test_frames_where_none_may_go_stop_the_run_before_anything_connects(
 def test_no_decision_frames_beats_the_variable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "1")
+    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", "1")
     asked = _cli(tmp_path / "asked", "--decision-llm", "kev", "--decision-mode", "off")
     assert asked.exit_code == 1 and "is sent text alone" in plain_text(asked.output)
     said_no = _cli(
@@ -1025,8 +1025,8 @@ def test_record_never_shows_a_frame_whatever_the_environment_says(
 ) -> None:
     """`record` makes the recordings and pins the stepper off; frames, which the mode does not
     decide, are pinned off with it, so a `.env` asking for both changes nothing."""
-    monkeypatch.setenv("QUACKD_DECISION_LLM", "kev")
-    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "1")
+    monkeypatch.setenv("ROBOGLOT_DECISION_LLM", "kev")
+    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", "1")
     result = runner.invoke(
         app,
         ["record", "hello-world", "--llm", "fake", "--gif-size", "64", "--runs-dir", str(tmp_path)],
@@ -1076,7 +1076,7 @@ def test_frames_with_no_sdk_run_on_without_the_stepper_and_promise_no_frame(
 ) -> None:
     """With no decision LLM there is nothing to show a frame to, so the run is the run it would
     have been with frames off: no line promising frames, no copy, and a config that says off."""
-    import quackd.agent.loop as loop
+    import roboglot.agent.loop as loop
 
     configs: list[Any] = []
 
@@ -1119,15 +1119,15 @@ def test_an_address_with_a_path_stops_a_run_that_asks_only_for_frames(
     assert not list(tmp_path.iterdir()), "the run started before the typo was noticed"
 
 
-def test_a_flock_says_it_sends_no_frame(tmp_path: Path) -> None:
-    """A flock builds no decision LLM, so a run that asks for one, with frames and the mode off,
+def test_a_team_says_it_sends_no_frame(tmp_path: Path) -> None:
+    """A team builds no decision LLM, so a run that asks for one, with frames and the mode off,
     is told once that none applies and that no frame is sent."""
     result = runner.invoke(
         app,
         [
             "--no-color",
             "run",
-            "flock-hello",
+            "team-hello",
             "--llm",
             "fake",
             "--decision-llm",
@@ -1142,7 +1142,7 @@ def test_a_flock_says_it_sends_no_frame(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert (
-        "--decision-llm openai does not apply to a flock: every member is piloted by its LLM, "
+        "--decision-llm openai does not apply to a team: every member is piloted by its LLM, "
         "as before, and no camera frame is sent"
     ) in plain_text(result.output)
 

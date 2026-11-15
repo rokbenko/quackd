@@ -2,8 +2,8 @@
 
 Upstream ships no test, no CI and no simulator that runs: its ManiSkill host imports
 `xlerobot_single`, which is defined nowhere in the repository. So the only way to exercise
-quackd's client against the real wire is to write the other end of it, from the host's source
-at the pin (`quackd/adapters/xlerobot/upstream_api.py`).
+Roboglot's client against the real wire is to write the other end of it, from the host's source
+at the pin (`roboglot/adapters/xlerobot/upstream_api.py`).
 
 This reproduces the host's semantics, including the ones that are easy to get wrong:
 
@@ -14,7 +14,7 @@ This reproduces the host's semantics, including the ones that are easy to get wr
 - cameras are base64 JPEG strings inside the same JSON object as the seventeen float keys.
 
 What it cannot prove: anything about serial timing, calibration, or a real camera. It proves
-quackd's client is correct against *our reading* of the host, which is why the adapter's row
+Roboglot's client is correct against *our reading* of the host, which is why the adapter's row
 in `docs/adapters/status.md` says exactly that and no more.
 """
 

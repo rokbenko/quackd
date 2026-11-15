@@ -21,21 +21,21 @@ from typing import Any
 import numpy as np
 import pytest
 
-from quackd.adapters.base import (
+from roboglot.adapters.base import (
     AdapterError,
     AdapterNotInstalled,
     GripperResult,
     RobotAdapter,
     close_gripper_if_any,
 )
-from quackd.adapters.factory import RobotSpec, describe, make_adapter, parse_robot_spec
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.duckfile.schema import Budgets
-from quackd.duckfile.validate import validate_duck
-from quackd.log import EventLog
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.release import HANDS_AWAY_S, FoldStopped, fold_unless_stopped
-from quackd.safety import (
+from roboglot.adapters.factory import RobotSpec, describe, make_adapter, parse_robot_spec
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.glotfile.schema import Budgets
+from roboglot.glotfile.validate import validate_glot
+from roboglot.log import EventLog
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.release import HANDS_AWAY_S, FoldStopped, fold_unless_stopped
+from roboglot.safety import (
     Aborted,
     Budget,
     ConfirmDenied,
@@ -45,10 +45,10 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import DuckState, HeartbeatError, Intent, TransportError, primary_of
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
-from quackd_lerobot import (
+from roboglot.transport.base import DuckState, HeartbeatError, Intent, TransportError, primary_of
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
+from roboglot_lerobot import (
     JOINTS,
     ROBOT_TYPE,
     LeRobotAdapter,
@@ -56,11 +56,11 @@ from quackd_lerobot import (
     make,
     published_travel,
 )
-from quackd_lerobot.arms import ARMS
-from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
-from quackd_lerobot.arms import SO_HOT_C as HOT_C
-from quackd_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
-from quackd_lerobot.real import (
+from roboglot_lerobot.arms import ARMS
+from roboglot_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from roboglot_lerobot.arms import SO_HOT_C as HOT_C
+from roboglot_lerobot.mock import GRIP_ON_OBJECT, MOCK_RANGES, OBJECT_AT, REST, LeRobotMock
+from roboglot_lerobot.real import (
     CLIP_SUSTAIN_S,
     CONNECT_ATTEMPTS,
     FAILED_SENDS,
@@ -85,8 +85,8 @@ from quackd_lerobot.real import (
     parse_camera_urls,
     step_from_env,
 )
-from quackd_lerobot.upstream_api import SO_MOTOR_IDS
-from quackd_lerobot.verbs import (
+from roboglot_lerobot.upstream_api import SO_MOTOR_IDS
+from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     GRIPPER_S,
@@ -155,8 +155,8 @@ ARM_VERBS = {
     "manipulate",
 }
 DUCK_ONLY = {"move", "walk", "go_to", "walk_to", "search_scan", "say", "gaze", "kick", "sit"}
-ARM_DUCK = parse_duck_text(
-    "---\nduck: 1\nname: arm\ndescription: d\nrequires: [move_joints, gripper]\nverbs:\n"
+ARM_DUCK = parse_glot_text(
+    "---\nglot: 1\nname: arm\ndescription: d\nrequires: [move_joints, gripper]\nverbs:\n"
     "  allow: [observe, report_state, stop, move_joints, gripper, place, pick]\n"
     "  confirm: [pick]\nsuccess: [x]\n---\n# Task\nx\n"
 )
@@ -206,7 +206,7 @@ def test_the_datasheet_declines_to_guess_a_mass() -> None:
 def test_the_reach_is_read_off_the_makers_urdf_and_says_so() -> None:
     """Nobody publishes a reach for the SO-101, and the sheet said so, which told the pilot to
     decline whatever turned on reaching: every task an arm has. The maker's URDF gives every
-    link, so the reach is quackd's arithmetic on the maker's file, and it is labelled as that:
+    link, so the reach is Roboglot's arithmetic on the maker's file, and it is labelled as that:
     an estimate, the file named, what was summed in the note. The cannot line that used to say
     "the reach is not published" states the figure itself, so the two cannot disagree.
 
@@ -363,7 +363,7 @@ type no `FakeArm` can be, and a marked test over it would fail at the fake."""
 
 
 class FakeCalibration:
-    """The two fields quackd reads off a `MotorCalibration` (`up.MOTOR_CALIBRATION`)."""
+    """The two fields Roboglot reads off a `MotorCalibration` (`up.MOTOR_CALIBRATION`)."""
 
     def __init__(self, travel_deg: float) -> None:
         span = travel_deg * (ENCODER_TICKS - 1) / 360.0
@@ -389,7 +389,7 @@ class FakeBus:
             if motors is not None
             else {joint: SimpleNamespace(id=n) for joint, n in MOTOR_TABLES[arm.robot_type].items()}
         )
-        """name -> something with an `.id`, the one field of a `Motor` quackd reads. A test
+        """name -> something with an `.id`, the one field of a `Motor` Roboglot reads. A test
         about naming the joint in an error builds its own table, in no particular order."""
 
     @property
@@ -414,7 +414,7 @@ class FakeBus:
             self.arm.connected = False
 
     def _handshake(self) -> None:
-        """`up.BUS_HANDSHAKE`, under upstream's own name, because the name is how quackd tells
+        """`up.BUS_HANDSHAKE`, under upstream's own name, because the name is how Roboglot tells
         a failure in here from one in `configure()`: reads, and no write. The next of
         `arm.handshake_errors` is raised."""
         if self.arm.handshake_errors and (refused := self.arm.handshake_errors.pop(0)):
@@ -459,7 +459,7 @@ class FakeBus:
             self.arm.stuck.add(joint)
 
     def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
-        """`up.BUS_DISABLE_TORQUE`: the one call in quackd that de-energises a robot.
+        """`up.BUS_DISABLE_TORQUE`: the one call in Roboglot that de-energises a robot.
 
         It goes through the bus and never through the `Robot`, which is why this fake has no
         `disable_torque` of its own for a test to be accidentally green against."""
@@ -480,7 +480,7 @@ class FakeArm:
 
     And it clamps like the servo (`up.POSITION_LIMITS_CLAMP_GOALS`): after the step cap, a
     body joint's goal is clamped into the travel its own `FakeCalibration` gives it, computed
-    from the ticks with LeRobot's degrees formula rather than borrowed from quackd, while a
+    from the ticks with LeRobot's degrees formula rather than borrowed from Roboglot, while a
     test is free to set a position anywhere, a fold past the limit included. Before this the
     fake followed any goal, which is how a rest pose past the travel was "driven to" in a test
     that passed for a week while the arm on the bench could never arrive.
@@ -569,7 +569,7 @@ class FakeArm:
         copying it at construction (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), which is the
         seam `close()` uses to leave an arm holding a pose it could not reach. It starts at
         upstream's default, True, as a follower handed in by whoever built it would; `built_arm`
-        gives it the flag quackd builds its own follower with.
+        gives it the flag Roboglot builds its own follower with.
 
         `send_action()` reads the step cap off it the same way, on every send, as upstream's
         does (`up.SO_ACTION_CLAMP`), so a test, or a later change to the cap between two sends,
@@ -748,7 +748,7 @@ async def test_real_backend_maps_intents_to_verified_names_and_never_limps() -> 
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
     manifest = await adapter.connect()
     assert arm.calls[0] == ("connect", False)  # calibration is interactive: never triggered
-    # no camera without --camera-url, whatever the arm's own features say: quackd passes
+    # no camera without --camera-url, whatever the arm's own features say: Roboglot passes
     # cameras={} to the follower and owns any webcam itself
     assert not manifest.provides("observe") and not manifest.provides("pick")
     assert "camera" not in manifest.sensors and manifest.backend == "real"
@@ -790,7 +790,7 @@ async def test_real_backend_maps_intents_to_verified_names_and_never_limps() -> 
 def test_the_config_spells_out_every_field_that_is_a_safety_choice() -> None:
     """Inheriting an upstream default is fine until upstream changes one. The step cap is
     the field upstream leaves at None, and it has to be a float, not an int. The flag that
-    decides whether a disconnect lets go is the opposite of upstream's, so a disconnect quackd
+    decides whether a disconnect lets go is the opposite of upstream's, so a disconnect Roboglot
     did not ask for, the one LeRobot makes of a follower nobody closed, keeps torque."""
     kwargs = LeRobotReal("COM5", robot_id="arm-09")._config_kwargs()
     assert kwargs == {
@@ -860,7 +860,7 @@ class SteppedClock:
 async def _paced(
     arm: FakeArm, *, step: float = MAX_STEP_DEG
 ) -> tuple[LeRobotAdapter, Executor, SteppedClock]:
-    """The real backend over `arm`, on a stepped clock, with `step` as quackd's own cap."""
+    """The real backend over `arm`, on a stepped clock, with `step` as Roboglot's own cap."""
     clock = SteppedClock()
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm, max_step_deg=step, clock=clock))
     manifest = await adapter.connect()
@@ -1203,7 +1203,7 @@ async def test_a_joint_read_past_its_travel_starts_its_ramp_at_its_limit(
     travel, so a ramp from the reading would be a ramp whose first stretch the servo turns into
     "go to the limit", and whose first targets the backend refuses outright. The ramp starts at
     the limit the manifest publishes: the joint gets there at the servo's own speed, as it
-    would whatever quackd sent, and is paced from there."""
+    would whatever Roboglot sent, and is paced from there."""
     arm = _spanned()
     for joint, by in past.items():
         arm.positions[joint] = _past(arm, joint, by)
@@ -1561,7 +1561,7 @@ async def test_an_unplugged_arm_fails_the_heartbeat_even_though_is_connected_is_
 )
 @every_arm
 async def test_a_state_read_the_arm_does_not_answer_fails_as_the_transport(lost: Exception) -> None:
-    """A read that fails is the transport failing, as it is for the heartbeat. `quackd run` says
+    """A read that fails is the transport failing, as it is for the heartbeat. `roboglot run` says
     one line for that, and treats anything else as a crash, so LeRobot's own error leaving here as
     it was made a supply cut mid-move end in a traceback, after the stop and the close had run."""
 
@@ -1969,7 +1969,7 @@ async def test_a_queued_call_spends_its_budget_while_the_call_ahead_waits_for_a_
     loop = asyncio.get_running_loop()
     budget = transport.timeout_s
     pool = ThreadPoolExecutor(1)
-    monkeypatch.setattr("quackd_lerobot.real._THREADS", pool)
+    monkeypatch.setattr("roboglot_lerobot.real._THREADS", pool)
     free = threading.Event()
     elsewhere = loop.run_in_executor(pool, free.wait, 5.0)  # the pool's one thread is busy
     sent: list[str] = []
@@ -2290,10 +2290,10 @@ async def test_a_policy_that_raises_is_a_failed_pick_and_says_so() -> None:
 async def test_the_lookout_duck_validates_against_the_arm_and_moves_nothing() -> None:
     """`lerobot:real` has no camera configured, so it has no `observe`: the bring-up task
     has to ask for something the arm it is pointed at actually provides."""
-    duck = load_duck("lerobot-lookout")
+    duck = load_glot("lerobot-lookout")
     for backend in ("mock", "real"):
         manifest = describe(parse_robot_spec(f"lerobot:{backend}"))
-        assert validate_duck(duck, [manifest]) == [], backend
+        assert validate_glot(duck, [manifest]) == [], backend
     mock = LeRobotMock()
     adapter = LeRobotAdapter(mock)
     manifest = await adapter.connect()
@@ -2310,7 +2310,7 @@ async def test_the_lookout_duck_validates_against_the_arm_and_moves_nothing() ->
 @pytest.mark.skipif(not NO_LEROBOT, reason="lerobot is installed here")
 async def test_real_backend_without_the_extra_names_it() -> None:
     adapter = make_adapter(RobotSpec("lerobot", "real", "arm-01"), address="COM5")
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[lerobot\]"):
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[lerobot\]"):
         await adapter.connect()
 
 
@@ -2486,7 +2486,7 @@ async def test_a_hot_gripper_does_not_gate_the_body_joints() -> None:
 
 @every_arm
 async def test_the_pilot_is_told_the_calibrated_travel_and_not_the_schema_bound() -> None:
-    from quackd.agent.prompts import body_lines
+    from roboglot.agent.prompts import body_lines
 
     arm = FakeArm()
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
@@ -2502,7 +2502,7 @@ async def test_doctor_shows_each_joint_s_travel_as_the_pilot_is_told_it() -> Non
     """`doctor` printed the travel rounded to whole degrees, so an end could read up to half a
     degree wider than the pilot is told and the arm accepts. It prints what the manifest
     publishes: to a tenth, rounded inward, from the calibration the arm answered with."""
-    from quackd.agent.prompts import body_lines
+    from roboglot.agent.prompts import body_lines
 
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=_spanned()))
     manifest = await adapter.connect()
@@ -2526,7 +2526,7 @@ async def test_a_reading_past_the_travel_is_explained_to_the_pilot_in_this_arm_s
     it is past, computed off this arm, and the prompt's travel line states the rule. Neither
     claims how the joint got there: a joint parked at its limit that sagged past it qualifies
     too."""
-    from quackd.agent.prompts import body_lines
+    from roboglot.agent.prompts import body_lines
 
     arm = _spanned()
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
@@ -2563,7 +2563,7 @@ async def test_report_state_puts_the_arm_s_own_facts_where_a_pilot_can_read_them
     """A pilot reads a verb's summary text and never its data. The core verb's summary is a
     posture and a policy name, which an arm has not got, so `lerobot-lookout` asked for three
     things no real LLM could have seen. The arm supplies its own `report_state`."""
-    from quackd.agent.prompts import build_observation_text
+    from roboglot.agent.prompts import build_observation_text
 
     adapter = LeRobotAdapter(LeRobotMock(hot_joints=("elbow_flex",)))
     manifest = await adapter.connect()
@@ -2585,11 +2585,11 @@ async def test_report_state_puts_the_arm_s_own_facts_where_a_pilot_can_read_them
     assert "torque on" in text and "elbow_flex" in text
 
 
-# ── the camera: one USB webcam, quackd's own, beside the follower ───────────────────────
+# ── the camera: one USB webcam, Roboglot's own, beside the follower ───────────────────────
 
 
 class FakeCamera:
-    """The slice of a LeRobot `Camera` quackd touches, verified names only."""
+    """The slice of a LeRobot `Camera` Roboglot touches, verified names only."""
 
     def __init__(
         self,
@@ -2665,7 +2665,7 @@ def test_a_camera_url_is_read_strictly_or_refused() -> None:
 
 def test_the_camera_is_not_the_followers_and_the_config_says_so() -> None:
     """A follower's cameras are part of its connected state, so a webcam that came unplugged
-    would make every move and every hold raise. quackd passes cameras={} and owns its own."""
+    would make every move and every hold raise. Roboglot passes cameras={} and owns its own."""
     transport = LeRobotReal("COM5", camera=parse_camera_url("opencv://0"))
     assert transport._config_kwargs()["cameras"] == {}
 
@@ -2859,7 +2859,7 @@ async def test_a_read_the_arm_did_not_answer_says_the_stop_after_it_held_nothing
 async def test_a_stop_with_every_body_joint_past_its_travel_sends_nothing_and_is_a_stop() -> None:
     """The branch where the skip leaves nothing to send. Nothing is written, and the stop is
     not reported as undelivered, because it started nothing. That is all it can say: any goal
-    quackd writes to a joint while it reads past its travel is the limit to the servo, so a
+    Roboglot writes to a joint while it reads past its travel is the limit to the servo, so a
     joint a move had begun lifting out of its fold goes on rising to that limit whatever a stop
     does, and only the power switch stops that stretch. What the stop owes the pilot is the list of
     joints it wrote no goal for, which here is all five. A stop reported as undelivered over
@@ -3202,7 +3202,7 @@ async def test_a_rest_pose_past_the_travel_parks_at_the_limit_and_is_let_go_of_t
     for joint, recorded, reachable in result.clipped:
         assert f"{joint} at {recorded:.0f}" in note, note
         assert f"{reachable:.0f}" in note, note
-    assert "lerobot-calibrate" in note and "quackd robot rest-pose NAME" in note, note
+    assert "lerobot-calibrate" in note and "roboglot robot rest-pose NAME" in note, note
 
     await adapter.close()
     assert arm.torque_disabled == 1 and arm.torque is False, "parked, so torque may drop"
@@ -3246,7 +3246,7 @@ async def test_a_pose_inside_the_travel_is_driven_exactly_as_it_always_was() -> 
     """The clip is for a pose past the travel and for nothing else. A pose inside it, on the
     same several-span calibration, gets the result it always got, byte for byte, and the
     manifest gains no key: every arm whose fold is inside its travel is unchanged."""
-    from quackd.adapters.base import RestResult
+    from roboglot.adapters.base import RestResult
 
     arm = _spanned(step=40.0)
     pose = {
@@ -3369,7 +3369,7 @@ async def test_a_miss_names_the_joint_that_is_short_and_never_the_one_that_is_fo
 
 def test_at_rest_is_a_half_line_on_the_side_a_clipped_joint_was_recorded() -> None:
     """The rule on its own, both ways round, on a goal and pose of no particular arm. Past the
-    limit nothing quackd sends moves a servo there, so a reading anywhere out there is a fold;
+    limit nothing Roboglot sends moves a servo there, so a reading anywhere out there is a fold;
     short of it by more than the tolerance is a joint that has not arrived. A joint recorded
     inside its travel keeps the point rule, and the two-argument call is that rule for all."""
     floor, ceiling, inside = -61.0, 47.0, 12.0
@@ -3430,7 +3430,7 @@ async def test_an_arm_that_cannot_reach_its_rest_pose_keeps_its_torque_and_says_
 
 @every_arm
 async def test_a_pose_that_names_no_joint_this_arm_drives_is_refused_rather_than_ignored() -> None:
-    """`quackd robot rest-pose` reads the pose off the arm and cannot write one of these. A
+    """`roboglot robot rest-pose` reads the pose off the arm and cannot write one of these. A
     hand-edited `robots.json` can, by typing `elbow` where the arm says `elbow_flex`, and the
     registry does not know this arm's motors and should not.
 
@@ -3456,11 +3456,11 @@ async def test_a_pose_that_names_no_joint_this_arm_drives_is_refused_rather_than
     assert "torque was left on" in (adapter.close_note or ""), adapter.close_note
 
 
-async def test_an_arm_quackd_cannot_keep_powered_is_told_so_instead_of_the_opposite() -> None:
+async def test_an_arm_roboglot_cannot_keep_powered_is_told_so_instead_of_the_opposite() -> None:
     """The one seam that holds torque is a flag written on LeRobot's config just before the
     disconnect that reads it. If that write does not take on a follower handed in still
     carrying upstream's True, the disconnect releases torque anyway, and the usual note would
-    tell somebody the arm is being held while it goes limp. A follower quackd built is the
+    tell somebody the arm is being held while it goes limp. A follower Roboglot built is the
     other side, and has its own tests below.
 
     A config object that refuses writes is not a case anybody has seen; it is a case where
@@ -3513,7 +3513,7 @@ def built_arm(monkeypatch: Any, arm: FakeArm) -> FakeArm:
 
 async def test_an_exit_that_skips_the_close_leaves_the_arm_holding(monkeypatch: Any) -> None:
     """A second Ctrl-C during the end-of-run rest move raises through the teardown, and a
-    crash never reaches it, so `close()` never runs and nothing of quackd's decides what the
+    crash never reaches it, so `close()` never runs and nothing of Roboglot's decides what the
     arm does. LeRobot still disconnects the follower as it is collected, by the flag its
     config holds, and the follower used to be built with upstream's True: the arm could fall
     wherever the move had got to, while `docs/concepts/safety.md` said it was left holding."""
@@ -3587,7 +3587,7 @@ async def test_a_connect_that_fails_once_the_arm_is_energised_keeps_it_and_says_
     monkeypatch: Any, where: str
 ) -> None:
     """LeRobot's connect went through, so `configure()` has switched torque on, and then
-    something that is not one of quackd's refusals raised: the first read, the calibration
+    something that is not one of Roboglot's refusals raised: the first read, the calibration
     check, or the travel read off a calibration that does not have it. Nobody closes a
     transport whose connect raised, so the arm used to be left to LeRobot's disconnect of a
     follower nobody closed, which let it go under the old flag and holds it under the new
@@ -3638,13 +3638,13 @@ async def test_a_second_connect_asks_for_the_hold_again(monkeypatch: Any) -> Non
 async def test_a_flag_that_will_not_take_is_read_back_rather_than_assumed(
     monkeypatch: Any,
 ) -> None:
-    """The other side of an arm quackd cannot keep powered. On a follower quackd built, a
+    """The other side of an arm Roboglot cannot keep powered. On a follower Roboglot built, a
     write that does not take leaves the hold it was built with, so the arm keeps torque, and
     the line saying it was released where it stood would be wrong the other way: the close
     reads the flag back and says what the disconnect did."""
 
     class NoWrites:
-        """A config that will not take the flag, holding the one quackd builds with."""
+        """A config that will not take the flag, holding the one Roboglot builds with."""
 
         disable_torque_on_disconnect = False
 
@@ -3693,12 +3693,12 @@ async def test_a_flag_that_cannot_be_read_back_is_taken_for_the_release(
 async def test_a_refused_release_the_close_could_not_repeat_is_not_said_to_have_gone_out() -> None:
     """After a release that did not take, a close at the rest pose asks the disconnect to
     send it again and says it did (`released_by_the_close`). Where the config will not take
-    that ask, a follower quackd built still holds the hold it was built with, so the
+    that ask, a follower Roboglot built still holds the hold it was built with, so the
     disconnect sends nothing, and the line saying the close took torque off would be one
     more thing the person was told that did not happen."""
 
     class NoWrites:
-        """A config that will not take the flag, holding the one quackd builds with."""
+        """A config that will not take the flag, holding the one Roboglot builds with."""
 
         disable_torque_on_disconnect = False
 
@@ -3963,7 +3963,7 @@ def test_the_lerobot_factory_hands_the_rest_pose_to_both_backends() -> None:
 
 
 def test_several_camera_urls_each_name_their_own_camera_and_no_name_repeats() -> None:
-    """With one camera the name is quackd's own default and nothing depends on it. With
+    """With one camera the name is Roboglot's own default and nothing depends on it. With
     several it is the only thing telling two views apart, in the LLM's prompt, in a
     policy's observation dict and in frames/NNNN-<name>.png. Two handles on one webcam is
     not two views either: it is a camera that will not open twice."""
@@ -4148,7 +4148,7 @@ async def test_let_go_without_a_rest_pose_recorded_says_where_to_record_one() ->
     assert refused.how == "refused" and not refused.ok
     assert refused.joints == {}, "a refusal that read nothing should report nothing"
     assert "no rest pose is recorded for this arm" in refused.reason
-    assert "quackd robot rest-pose NAME" in refused.reason, refused.reason
+    assert "roboglot robot rest-pose NAME" in refused.reason, refused.reason
     assert arm.timeline == [], "torque was touched on an arm with nowhere safe to put it down"
     assert arm.torque is True and transport._in_hand is False
 
@@ -4341,7 +4341,7 @@ async def test_take_hold_leaves_torque_off_under_a_joint_placed_past_its_travel(
     lo, hi = published_travel(*transport.joint_range_deg[joint])
     assert refused.reason.startswith(
         f"{joint} reads {placed:.1f}, outside its calibrated travel of {lo:.1f}..{hi:.1f}, so "
-        "quackd left torque off"
+        "Roboglot left torque off"
     ), refused.reason
     assert refused.reason.endswith(f"takes hold of the arm only with {joint} inside its travel")
 
@@ -4372,7 +4372,7 @@ async def test_take_hold_names_every_joint_placed_past_its_travel_at_either_end(
     assert refused.reason.startswith(
         f"shoulder_lift reads {low:.1f} and elbow_flex reads {high:.1f}, outside their "
         f"calibrated travel of {shoulder[0]:.1f}..{shoulder[1]:.1f} and "
-        f"{elbow[0]:.1f}..{elbow[1]:.1f}, so quackd left torque off"
+        f"{elbow[0]:.1f}..{elbow[1]:.1f}, so Roboglot left torque off"
     ), refused.reason
     assert refused.reason.endswith("only with shoulder_lift and elbow_flex inside their travel")
     assert "goals written where those joints are lie past their travel" in refused.reason
@@ -4521,7 +4521,7 @@ async def test_the_mock_refuses_the_hand_off_wherever_the_real_backend_refuses_i
     nowhere = await bare.let_go()
     assert nowhere.how == "refused" and not nowhere.ok
     assert "no rest pose is recorded for this arm" in nowhere.reason
-    assert "quackd robot rest-pose NAME" in nowhere.reason, nowhere.reason
+    assert "roboglot robot rest-pose NAME" in nowhere.reason, nowhere.reason
     assert bare.torque is True and bare.in_hand is False
     assert bare.sequence == ["let_go"], "a refusal is still an attempt, and it is recorded"
     await bare.close()
@@ -4553,7 +4553,7 @@ async def test_a_hand_off_over_a_mock_nobody_connected_is_refused_as_the_arm_s_w
     assert mock.torque is True and mock.in_hand is False
     await mock.close()
     note = mock.close_note or ""
-    assert note.startswith("quackd cannot tell whether the arm is holding itself up"), note
+    assert note.startswith("Roboglot cannot tell whether the arm is holding itself up"), note
     assert mock.torque is True, "the close of a mock nobody connected let go of it"
 
 
@@ -4769,9 +4769,9 @@ class _Hands:
 def _by_hand_run(transport: LeRobotReal, hands: _Hands, runs: Any) -> Any:
     """A `--by-hand` run on the real backend with one terminal for both questions, as the CLI
     wires it, and a pilot that would declare success if a run ever got as far as asking it."""
-    from quackd.agent.loop import RunConfig
-    from quackd.agent.providers.base import ToolCall
-    from quackd.agent.providers.fake import FakeProvider
+    from roboglot.agent.loop import RunConfig
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
 
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
@@ -4792,7 +4792,7 @@ async def test_the_hand_back_opens_the_gripper_all_the_way_before_the_count(
     of the hundred, and the fold began at once with the pencil in the jaws and a hand on the
     pencil. A mock whose goals land at once could never show it. And at a lowered cap, which is
     how the run sheet slows the arm for a first run, it takes as long as it takes."""
-    from quackd.agent.loop import run_duck
+    from roboglot.agent.loop import run_glot
 
     arm = FakeArm(step=step)
     clock = SteppedClock()
@@ -4814,7 +4814,7 @@ async def test_the_hand_back_opens_the_gripper_all_the_way_before_the_count(
         return await real_fold()
 
     transport.go_to_rest = fold  # type: ignore[method-assign]
-    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    result = await run_glot(_by_hand_run(transport, hands, tmp_path))
     assert result.outcome == "success", result.reason
     assert where["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, f"only {where['gripper']} of the way"
     assert folded_at[-1] - where["at"] >= HANDS_AWAY_S, "and the hands got their seconds"
@@ -4870,7 +4870,7 @@ async def test_the_gripper_opens_all_the_way_at_a_lowered_step_cap() -> None:
 
 
 def _notes(run_dir: Any) -> list[str]:
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     events = Transcript.read(run_dir / "transcript.jsonl")
     return [str(e["text"]) for e in events if e["kind"] == "note"]
@@ -4895,16 +4895,16 @@ async def test_a_take_hold_refused_after_its_torque_write_is_never_called_limp_o
     torque write went out: the torque register stops answering from Enter on, or the torque
     call energises the arm and then raises. Either way the arm may be holding itself up.
 
-    What went wrong: the person was told quackd never took hold and the arm was still in their
+    What went wrong: the person was told Roboglot never took hold and the arm was still in their
     hands, the teardown's stop sent the torque write again, they were told to reach into the
     gripper and keep hold of the arm, and the rest move then folded the energised arm under
     those hands with nothing asked. The close then said the arm was limp and nothing held it,
     from the read that confirmed the release, before the torque write.
 
-    Now they are told quackd cannot confirm whether the arm has torque, to hold it as though it
+    Now they are told Roboglot cannot confirm whether the arm has torque, to hold it as though it
     may move or drop and cut its power; the one torque write is the take-hold's own, nothing is
     written after it, nothing folds, and the close says what a read found, or that none did."""
-    from quackd.agent.loop import AgentLoop, run_duck
+    from roboglot.agent.loop import AgentLoop, run_glot
 
     arm = FakeArm()
     quiet = fault == "the torque register goes quiet"
@@ -4917,10 +4917,10 @@ async def test_a_take_hold_refused_after_its_torque_write_is_never_called_limp_o
             arm.bus.dead = ("Torque_Enable",)  # from the moment Enter is pressed, for good
 
     hands = _Hands(arm, HAND_PLACED, on_wait=enter)
-    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    result = await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     assert result.outcome == "aborted", result.reason
-    assert result.reason.startswith("quackd could not confirm whether the arm has torque ("), (
+    assert result.reason.startswith("Roboglot could not confirm whether the arm has torque ("), (
         result.reason
     )
     assert hands.said == [result.reason, AgentLoop.STILL_UNCONFIRMED], hands.said
@@ -4953,13 +4953,13 @@ async def test_a_joint_moved_back_inside_after_a_refused_hold_gets_no_torque_and
     Nothing takes hold after a refusal now, whenever the joint comes inside, and nothing is
     written: the arm's whole record after the release is empty, and the close says it is limp
     in their hands, let go of for them to place."""
-    from quackd.agent.loop import AgentLoop, run_duck
+    from roboglot.agent.loop import AgentLoop, run_glot
 
     arm = _spanned()
     joint = "elbow_flex"
     transport = _handed_over_far_from(arm, joint, PLACED_PAST_BY)
     transport.clock = SteppedClock()
-    line = AgentLoop.NOT_TAKEN_HOLD if when == "as the refusal is said" else "quackd never took"
+    line = AgentLoop.NOT_TAKEN_HOLD if when == "as the refusal is said" else "Roboglot never took"
 
     def moves_it_inside(said: str) -> None:
         if said.startswith(line):
@@ -4967,7 +4967,7 @@ async def test_a_joint_moved_back_inside_after_a_refused_hold_gets_no_torque_and
 
     placed = {joint: _past(arm, joint, PLACED_PAST_BY), "gripper": HAND_PLACED["gripper"]}
     hands = _Hands(arm, placed, on_say=moves_it_inside)
-    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    result = await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     assert result.reason.startswith(f"{AgentLoop.NOT_TAKEN_HOLD}: {joint} reads"), result.reason
     assert hands.said == [result.reason, AgentLoop.STILL_IN_YOUR_HANDS], hands.said
@@ -4985,7 +4985,7 @@ async def test_a_ctrl_c_in_the_placement_wait_on_the_arm_still_takes_hold_and_fo
     take-hold refused yet, reaches the teardown's stop, which is the run's first take-hold. It
     energises the arm where their hand has it, the rest move folds it, narrated as a fold, and
     the close lets go at the fold with nothing to say."""
-    from quackd.agent.loop import AgentLoop
+    from roboglot.agent.loop import AgentLoop
 
     arm, transport = _handover_arm()
     transport.clock = SteppedClock()
@@ -5018,7 +5018,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_fold_past_the_travel_writes
     nothing; and the close reads it lying in its fold with every motor off. It used to end the
     run telling somebody who never touched the arm that it was limp in their hands, and to put
     it down."""
-    from quackd.agent.loop import AgentLoop
+    from roboglot.agent.loop import AgentLoop
 
     arm = _spanned()
     rest = {j: 0.0 for j in SPANS} | {"shoulder_lift": _past(arm, "shoulder_lift", -TOL_DEG * 2)}
@@ -5036,7 +5036,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_fold_past_the_travel_writes
     notes = _notes(result.run_dir)
     assert notes[-1] == LIMP_AT_REST and AgentLoop.NOT_FOLDED not in notes, notes
     # the stop's refusal is said once, as the arm it is about: lying at its rest pose
-    stopped = "quackd did not take hold of the arm when the run stopped and the arm is still limp"
+    stopped = "Roboglot did not take hold of the arm when the run stopped and the arm is still limp"
     assert len(hands.said) == 1 and hands.said[0].startswith(stopped), hands.said
     assert "only once shoulder_lift is lifted inside its travel" in hands.said[0], hands.said
 
@@ -5186,9 +5186,9 @@ async def test_enter_over_a_fold_nobody_lifted_says_the_arm_is_still_limp_at_its
     last told them the arm was up and needed holding, and no read said that.
 
     Now the refusal and the hand-back say what the take-hold's own read found: the arm is still
-    limp at its rest pose, and quackd takes hold only once the folded joint is lifted inside its
+    limp at its rest pose, and Roboglot takes hold only once the folded joint is lifted inside its
     travel. Nothing is written to the arm, and the close is unchanged."""
-    from quackd.agent.loop import AgentLoop, run_duck
+    from roboglot.agent.loop import AgentLoop, run_glot
 
     arm = _spanned()
     joint = "shoulder_lift"
@@ -5196,7 +5196,7 @@ async def test_enter_over_a_fold_nobody_lifted_says_the_arm_is_still_limp_at_its
     arm.positions.update(rest)
     transport = LeRobotReal("COM5", robot=arm, rest_pose=rest, clock=SteppedClock())
     hands = _Hands(arm, {"gripper": HAND_PLACED["gripper"]})
-    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    result = await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     assert result.reason.startswith(f"{AgentLoop.NOT_TAKEN_AT_REST}: {joint} reads"), result.reason
     assert result.reason.endswith(f"only once {joint} is lifted inside its travel"), result.reason
@@ -5216,14 +5216,14 @@ async def test_enter_over_a_fold_nobody_lifted_says_the_arm_is_still_limp_at_its
 
 async def test_a_take_hold_some_motors_took_is_told_by_which_joints_hold(tmp_path: Any) -> None:
     """A torque write two motors took and the rest did not, read back that way. The person was
-    told quackd could not confirm whether the arm had torque, ahead of a parenthesis in which
+    told Roboglot could not confirm whether the arm had torque, ahead of a parenthesis in which
     the read confirmed it motor by motor, and the same again at the hand-back; the refusal
     itself ran the two motors into "and the rest of the arm" as though that were a third.
 
     Now both lines say what the read found, which joints hold and that the rest is limp, and
     tell the person to keep hold of the arm and cut its power; the refusal lists the motors the
     way every other sentence here does. Which two motors is synthetic, in the bus's order."""
-    from quackd.agent.loop import AgentLoop, run_duck
+    from roboglot.agent.loop import AgentLoop, run_glot
 
     arm, transport = _handover_arm()
     transport.clock = SteppedClock()
@@ -5234,10 +5234,10 @@ async def test_a_take_hold_some_motors_took_is_told_by_which_joints_hold(tmp_pat
         arm.torque_holdouts = set(holds)
 
     hands = _Hands(arm, HAND_PLACED, on_wait=enter)
-    result = await run_duck(_by_hand_run(transport, hands, tmp_path))
+    result = await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     assert result.reason == (
-        f"quackd did not take hold of the arm, so the run stops here: torque came on for {first} "
+        f"Roboglot did not take hold of the arm, so the run stops here: torque came on for {first} "
         f"and {second}, so those joints hold and any joint not named is limp. Keep hold of "
         "the arm, and cut its power to let go of them"
     ), result.reason
@@ -5263,7 +5263,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_joint_past_its_travel_is_sa
 
     Now it is said to them and noted once, naming the joint, as the take-hold at Enter is, and
     nothing is written to the arm."""
-    from quackd.agent.loop import AgentLoop
+    from roboglot.agent.loop import AgentLoop
 
     arm = _spanned()
     joint = "wrist_flex"
@@ -5280,11 +5280,11 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_joint_past_its_travel_is_sa
     result = await loop.run()
 
     assert result.reason == "kill switch"
-    stopped = "quackd did not take hold of the arm when the run stopped and the arm is still in"
+    stopped = "Roboglot did not take hold of the arm when the run stopped and the arm is still in"
     assert len(hands.said) == 1 and hands.said[0].startswith(f"{stopped} your hands: {joint} reads")
     notes = _notes(result.run_dir)
     assert len([n for n in notes if n.startswith(f"the arm did not take hold: {joint} reads")]) == 1
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     held = [e for e in events if e["kind"] == "hand_off" and e["stage"] == "held"]
@@ -5300,7 +5300,7 @@ async def test_a_close_after_a_take_hold_cut_off_past_its_torque_write_never_cal
     the close used to judge the arm in the person's hands by the refusal it kept: none, so the
     last write was taken to be the release's, and with the torque register silent it told them
     to hold the arm as though nothing held it, over an arm that write may have energised. The
-    close goes by the writes now, and says quackd cannot confirm whether the arm has torque. The
+    close goes by the writes now, and says Roboglot cannot confirm whether the arm has torque. The
     fault and the pose are made up for this test."""
     arm, transport = _handover_arm()
     transport.clock = SteppedClock()
@@ -5332,7 +5332,7 @@ async def test_a_take_hold_an_interrupt_landed_on_is_told_by_what_the_arm_says(
 ) -> None:
     """A second Ctrl-C lands on the take-hold at Enter, so the run keeps no refusal of its own,
     and the teardown's stop makes the next take-hold. The hand-back then assumed the worst and
-    told somebody holding an arm nothing had switched on that quackd could not confirm whether
+    told somebody holding an arm nothing had switched on that Roboglot could not confirm whether
     it had torque, straight before the close said, from its own read, that it was limp.
 
     Before the torque write, the stop's take-hold is refused over the joint placed past its
@@ -5342,7 +5342,7 @@ async def test_a_take_hold_an_interrupt_landed_on_is_told_by_what_the_arm_says(
     took for a release nobody read back ("hold it as though nothing holds it") over an arm the
     interrupted write may have energised. It says it cannot confirm now, and so does every line.
     Poses are built from the arm's calibration; the faults are made up."""
-    from quackd.agent.loop import AgentLoop, run_duck
+    from roboglot.agent.loop import AgentLoop, run_glot
 
     before = lands == "before the torque write"
     arm = _spanned()
@@ -5385,21 +5385,21 @@ async def test_a_take_hold_an_interrupt_landed_on_is_told_by_what_the_arm_says(
 
     hands = _Hands(arm, placed, on_wait=enter)
     with pytest.raises(press):
-        await run_duck(_by_hand_run(transport, hands, tmp_path))
+        await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     refused = transport.refused_hold
     assert refused is not None, "the stop's take-hold was not refused"
     if before:
         assert refused.energised is False and arm.torque is False
-        stopped = "quackd did not take hold of the arm when the run stopped and the arm is still"
+        stopped = "Roboglot did not take hold of the arm when the run stopped and the arm is still"
         assert hands.said[0].startswith(f"{stopped} in your hands: {joint} reads"), hands.said
         assert hands.said[1:] == [AgentLoop.STILL_IN_YOUR_HANDS], hands.said
         assert transport.close_note == LIMP_IN_HAND.format(why=LET_GO_TO_PLACE)
     else:
         assert refused.energised is None and arm.torque is True, refused
-        assert hands.said[0].startswith("quackd could not confirm whether the arm has torque ("), (
-            hands.said
-        )
+        assert hands.said[0].startswith(
+            "Roboglot could not confirm whether the arm has torque ("
+        ), hands.said
         assert hands.said[0].endswith(
             ") when the run stopped: keep hold of the arm as though it may move or drop, and cut "
             "its power to be sure"
@@ -5416,10 +5416,10 @@ async def test_a_take_hold_refused_over_an_arm_read_on_throughout_names_every_jo
     arm is energised, and the teardown's stop makes the next take-hold, which reads every motor
     on and is then refused at its own goal write. The refusal used to carry the joints that
     read on only where some read off, so a read that found the whole arm on fell through to
-    "quackd could not confirm whether the arm has torque", said twice, before the close named
+    "Roboglot could not confirm whether the arm has torque", said twice, before the close named
     every motor as holding. A read that found every motor on confirmed the torque, and the
     lines say what it found. The joint, the pose and the faults are synthetic."""
-    from quackd.agent.loop import AgentLoop, _listed, run_duck
+    from roboglot.agent.loop import AgentLoop, _listed, run_glot
 
     arm = _spanned()
     joint = "elbow_flex"
@@ -5445,7 +5445,7 @@ async def test_a_take_hold_refused_over_an_arm_read_on_throughout_names_every_jo
 
     hands = _Hands(arm, placed, on_wait=enter)
     with pytest.raises(KeyboardInterrupt):
-        await run_duck(_by_hand_run(transport, hands, tmp_path))
+        await run_glot(_by_hand_run(transport, hands, tmp_path))
 
     refused = transport.refused_hold
     assert refused is not None and refused.energised is True, refused
@@ -5461,7 +5461,7 @@ async def test_a_take_hold_refused_over_an_arm_read_on_throughout_names_every_jo
 
 # ── a person at the arm asks for torque off, wherever it stands ─────────────────────────
 #
-# `let_go(anywhere=True)` is the second door, and only a person at a terminal opens it: `quackd
+# `let_go(anywhere=True)` is the second door, and only a person at a terminal opens it: `roboglot
 # robot release` and the offer at the end of a run whose rest move missed. Both tell the person
 # to hold the arm first, so the two refusals about the pose are skipped and nothing else is:
 # the joints are read before, the release is read back after, and the arm is in somebody's
@@ -5546,7 +5546,7 @@ async def test_a_person_can_have_torque_taken_off_an_arm_that_is_away_from_its_r
 
 async def test_an_arm_with_no_rest_pose_recorded_is_released_only_through_the_second_door() -> None:
     """No pose recorded is the first door's other refusal, and it is about where the arm may
-    be let go of on quackd's own judgement. A person holding it is judging for themselves."""
+    be let go of on Roboglot's own judgement. A person holding it is judging for themselves."""
     arm = _spanned()
     arm.positions.update({j: _inside(arm, j, 0.5) for j in SPANS})
     transport = LeRobotReal("COM5", robot=arm)
@@ -5587,7 +5587,7 @@ async def test_a_motor_that_kept_its_torque_through_the_release_is_named_and_nev
     the arm is still in a hand, because the rest of it is limp.
 
     And the close's last line names them too. It used to end every release on `LIMP_IN_HAND`,
-    "nothing is holding it up", which `quackd robot release` printed right after "torque still
+    "nothing is holding it up", which `roboglot robot release` printed right after "torque still
     reads on for elbow_flex: cut the power", as the last thing a person holding the arm read,
     over a joint still energised and kept so past the close."""
     arm = _spanned()
@@ -5615,7 +5615,7 @@ async def test_a_motor_that_kept_its_torque_through_the_release_is_named_and_nev
 
 
 async def test_the_mock_names_a_joint_its_release_left_holding() -> None:
-    """The mock's twin of the partial release, so a rehearsal of `quackd robot release` and of
+    """The mock's twin of the partial release, so a rehearsal of `roboglot robot release` and of
     the end-of-run offer ends on the line the arm would: its in-memory release used to take on
     every motor, so its close could only ever say nothing held the arm."""
     mock = LeRobotMock(rest_pose=dict(REST))
@@ -5636,7 +5636,7 @@ async def test_an_arm_that_kept_torque_on_every_motor_was_not_released_and_is_in
     holding itself up that it is: away from its pose, torque is kept and said to be kept.
 
     In words that do not send the person back to the release that just failed. The close
-    used to end on `TORQUE_LEFT_ON`, which names `quackd robot release`, printed by that very
+    used to end on `TORQUE_LEFT_ON`, which names `roboglot robot release`, printed by that very
     command one line below its own failure; the one way out left is the switch."""
     arm = _spanned()
     recorded, reading = _stopped_short(arm)
@@ -5653,7 +5653,7 @@ async def test_an_arm_that_kept_torque_on_every_motor_was_not_released_and_is_in
     note = transport.close_note or ""
     assert note.startswith(TORQUE_LEFT_ON.split("(")[0]), note
     assert "the release did not take" in note and note.endswith("hold it and cut its power")
-    assert "quackd robot release" not in note, "sent back to the command that just failed"
+    assert "roboglot robot release" not in note, "sent back to the command that just failed"
     assert arm.config.disable_torque_on_disconnect is False and arm.torque_disabled == 0
 
 
@@ -5662,8 +5662,8 @@ async def test_an_arm_that_kept_torque_on_every_motor_was_not_released_and_is_in
 async def test_a_refused_release_the_close_then_let_go_of_says_the_close_did(pose: str) -> None:
     """The other half. An arm at its rest pose, or with none recorded, is let go of by the
     close's disconnect, as every such session ends, and that used to happen without a word
-    after `quackd robot release` had just printed "torque still reads on: cut the power".
-    What the person was told then no longer matched what quackd did: the same `Torque_Enable`
+    after `roboglot robot release` had just printed "torque still reads on: cut the power".
+    What the person was told then no longer matched what Roboglot did: the same `Torque_Enable`
     0 went out again, and nothing read it back. It is said now, with what to do if it did not
     take this time either. A close with no refused release before it still says nothing."""
     arm = _spanned()
@@ -5735,7 +5735,7 @@ async def test_an_arm_that_did_not_answer_before_the_release_was_never_released(
 ) -> None:
     """The read before the release failed, so nothing was sent and the arm still holds itself.
     It used to come back `released` from either door, which on `--by-hand` told a person that
-    an energised arm was theirs to lift, and from `quackd robot release` would have said torque
+    an energised arm was theirs to lift, and from `roboglot robot release` would have said torque
     was off on an arm that had not been touched."""
     arm, transport = _handover_arm()
     await transport.connect()
@@ -5755,7 +5755,7 @@ async def test_an_arm_that_did_not_answer_before_the_release_was_never_released(
 async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks(
     away: dict[str, float],
 ) -> None:
-    """The rehearsal of `quackd robot release` and of the end-of-run offer: the mock refuses
+    """The rehearsal of `roboglot robot release` and of the end-of-run offer: the mock refuses
     the first door where the arm does and opens the second in the same words, and its close
     then says the arm is limp in a hand."""
     mock = LeRobotMock(rest_pose=dict(REST))
@@ -5783,7 +5783,7 @@ async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks
 
 
 def _asked_arm(backend: str) -> tuple[Any, Any]:
-    """An arm at its recorded rest pose, as `quackd robot release` leaves one once its fold has
+    """An arm at its recorded rest pose, as `roboglot robot release` leaves one once its fold has
     arrived: the fake arm under the real backend, or the mock. Returns the arm and the adapter's
     transport, which is the same object for the mock."""
     if backend == "real":
@@ -5795,7 +5795,7 @@ def _asked_arm(backend: str) -> tuple[Any, Any]:
 @pytest.mark.parametrize("backend", ["real", "mock"])
 @every_arm
 async def test_a_release_asked_for_at_the_rest_pose_says_it_rests_there(backend: str) -> None:
-    """`quackd robot release` folds the arm and then lets go of it at its rest pose through the
+    """`roboglot robot release` folds the arm and then lets go of it at its rest pose through the
     first door, which refuses anywhere else, so it can never drop the arm. The close's own read
     then finds the arm still at the pose with every motor off, and says it rests limp there
     because the person asked: not that it was let go of for them to place, which is
@@ -5820,7 +5820,7 @@ async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend
     """The first door asked for refuses anywhere but the rest pose, exactly as `--by-hand`'s
     does, because an arm standing up is held up by torque alone. Its refusal is one a person
     asked for, so the close neither lets go of the standing arm nor sends the person back to
-    `quackd robot release`, the command that was just refused: it says the release did not take
+    `roboglot robot release`, the command that was just refused: it says the release did not take
     and to cut the power."""
     if backend == "real":
         arm: Any = _spanned()
@@ -5841,7 +5841,7 @@ async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend
     await adapter.close()
     note = adapter.close_note or ""
     assert "the release did not take, so torque was left on" in note, note
-    assert "quackd robot release" not in note, "sent back to the command that just refused"
+    assert "roboglot robot release" not in note, "sent back to the command that just refused"
     assert arm.torque is True, "the close let go of an arm standing up"
 
 
@@ -5875,7 +5875,7 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
 ) -> None:
     """The note used to end at "hold the arm and cut its power, or run again", and on the
     bench every run that got that far ended at the switch. It names the one command that puts
-    the arm down, `quackd robot release`, which folds it to its rest pose and lets go there,
+    the arm down, `roboglot robot release`, which folds it to its rest pose and lets go there,
     spelled with this arm's own name: the registry builds a robot with its name as the id
     (`make(robot_id=...)`), and a command with the wrong name in it fails, or reaches another
     arm. Doctor is no longer named beside it: the release parks the arm now.
@@ -5902,7 +5902,7 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
         assert note.startswith(TORQUE_LEFT_ON.split("(")[0]), note
         assert "it will not fall as it stands" in note, note
         clear = note.index("clear whatever is in its way")
-        release = note.index(f"quackd robot release {name}, which folds it to its rest pose")
+        release = note.index(f"roboglot robot release {name}, which folds it to its rest pose")
         support = note.index("support the arm while that connects, because connecting takes")
         power = note.index("Or hold it and cut its power")
         assert clear < release < support < power, "the way out is not said in the order done"
@@ -5926,7 +5926,7 @@ async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id(
     await transport.close()
 
     for note in (mock.close_note or "", transport.close_note or ""):
-        assert "quackd robot release NAME" in note and "doctor" not in note, note
+        assert "roboglot robot release NAME" in note and "doctor" not in note, note
         assert transport.robot_id not in note, "the default id was offered as the name"
 
 
@@ -5934,11 +5934,11 @@ async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id(
 async def test_the_clip_note_names_the_arm_as_the_torque_note_does(name: str | None) -> None:
     """The two sentences a clipped pose and a missed one end on both give a person a command
     to type, and only one of them used to spell it with the arm's name: the clip note said
-    `quackd robot rest-pose NAME` in a run on a registered arm, and in `quackd robot
+    `roboglot robot rest-pose NAME` in a run on a registered arm, and in `roboglot robot
     rest-pose <name>` itself, one line above a hint that used the name. Both now take the name
     the arm was built with, and both fall back to the same visible placeholder without one.
     Asked of the real backend's rest move, the mock's, and the adapter's own `rest_pose_note`,
-    which is what `quackd robot rest-pose` prints."""
+    which is what `roboglot robot rest-pose` prints."""
     shown = name or "NAME"
     arm = _spanned(step=60.0)
     pose = dict.fromkeys(SPANS, 0.0) | {"elbow_flex": _past(arm, "elbow_flex", 17.0)}
@@ -5955,7 +5955,7 @@ async def test_the_clip_note_names_the_arm_as_the_torque_note_does(name: str | N
     assert rehearsed.reached and rehearsed.note, rehearsed
 
     for note in (parked.note, rehearsed.note, adapter.rest_pose_note(pose) or ""):
-        assert f"(quackd robot rest-pose {shown}) to make the fold reachable" in note, note
+        assert f"(roboglot robot rest-pose {shown}) to make the fold reachable" in note, note
     await adapter.close()
     await mock.close()
 
@@ -5990,17 +5990,17 @@ async def test_the_close_of_an_arm_that_did_not_answer_never_says_it_holds_itsel
     """The close keeps what torque there may be when its own read of the joints fails, which
     is right, and it used to say "torque was left on and it will not fall" over that arm. An
     arm that stopped answering is as often one whose supply was cut at the switch, limp in
-    somebody's hands, as one whose cable came out in front of live servos, and quackd cannot
+    somebody's hands, as one whose cable came out in front of live servos, and Roboglot cannot
     tell them apart. So it says it cannot, and what to do either way: hold it, cut its power.
     `robot list --probe` keeps which way round the note is when it shortens it."""
-    from quackd.registry import _torque_phrase
+    from roboglot.registry import _torque_phrase
 
     arm, transport = _handover_arm()
     await transport.connect()
     arm.dead = True
     await transport.close()
     note = transport.close_note or ""
-    assert note.startswith("quackd cannot tell whether the arm is holding itself up"), note
+    assert note.startswith("Roboglot cannot tell whether the arm is holding itself up"), note
     assert "Present_Position" in note and "cut its power" in note, note
     assert "will not fall" not in note and "torque was left on" not in note, note
     assert arm.config.disable_torque_on_disconnect is False, "whatever torque there is, is kept"
@@ -6105,7 +6105,7 @@ class GivesUpPartWay(FakeBus):
 
 
 async def test_a_release_that_raised_part_way_on_an_arm_with_no_pose_is_not_called_limp() -> None:
-    """`quackd robot release` on an arm registered with no rest pose: the release raised, which
+    """`roboglot robot release` on an arm registered with no rest pose: the release raised, which
     leaves the motor LeRobot names energised, and the close, which makes no read of its own
     without a pose to judge against, ended on "nothing is holding it up" right after telling the
     person that a joint may still hold. It ends on nothing having read the release back now, and
@@ -6392,7 +6392,7 @@ async def test_a_fold_or_a_policy_start_over_a_wedged_bus_quotes_the_wedge(where
 
 
 async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_words() -> None:
-    """The mock's twin, so a rehearsal of `quackd robot release` or of the end-of-run offer can
+    """The mock's twin, so a rehearsal of `roboglot robot release` or of the end-of-run offer can
     end the way an arm whose read-back failed ends: its in-memory release always read back, so
     its close could only ever say the arm was limp or name a joint still on."""
     mock = LeRobotMock()
@@ -6536,7 +6536,7 @@ async def test_a_corrupt_temperature_packet_cannot_answer_for_the_torque_registe
     A servo that takes `enable_torque()` and stays limp is the case `take_hold` reads the
     register back for. The two registers used to share one `try`, so a corrupt temperature
     packet set the same error flag as a corrupt torque one, and the guard was written to skip
-    the torque check whenever that flag was set. quackd therefore had an honest reading saying
+    the torque check whenever that flag was set. Roboglot therefore had an honest reading saying
     the arm was limp, discarded it, answered `held`, and the run told the person holding an
     unpowered arm 70 degrees out of the fold that they could let go."""
     arm = FakeArm()
@@ -6590,7 +6590,7 @@ async def test_an_arm_closed_on_while_still_in_a_hand_keeps_whatever_torque_it_h
 
     And its line is not the limp one. It said "the arm is limp and in your hands ... nothing is
     holding it up" from the read that confirmed the release, taken before the take-hold's
-    torque write went out, over an arm that write may have energised. It says quackd cannot
+    torque write went out, over an arm that write may have energised. It says Roboglot cannot
     tell, to hold the arm against both, and the switch."""
     arm = FakeArm()
     arm.positions.update(FOLDED)
@@ -6603,7 +6603,7 @@ async def test_an_arm_closed_on_while_still_in_a_hand_keeps_whatever_torque_it_h
     assert (await transport.take_hold()).how == "refused"
 
     await transport.close()
-    assert arm.config.disable_torque_on_disconnect is False, "quackd kept what torque there is"
+    assert arm.config.disable_torque_on_disconnect is False, "Roboglot kept what torque there is"
     assert arm.torque_disabled == 0, "and the disconnect dropped none"
     assert transport.close_note == UNCONFIRMED_IN_HAND, transport.close_note
 
@@ -6705,7 +6705,7 @@ def _port_refused(port: str) -> ConnectionError:
 
 
 SOME_MODEL = 4321
-"""A servo model number for a handshake's message. Made up: nothing quackd does reads it."""
+"""A servo model number for a handshake's message. Made up: nothing Roboglot does reads it."""
 
 
 def _motor_check_failed(
@@ -6767,7 +6767,7 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
 ) -> None:
     """Bench, 2026-09-23, on LeRobot 0.6.1: runs ended before they began, at connect, on
     LeRobot's `Failed to write ... after 1 tries`, each on the first connect after a power cut
-    and on a different motor each time, and the next connect by hand went through. quackd gave
+    and on a different motor each time, and the next connect by hand went through. Roboglot gave
     up on the first lost packet and left the port open behind it. At 0.7.0 a lost `Torque_Enable`
     or `Lock` reply is a torque call's error naming the motor by name and id, and any other write
     is the bus's own sentence naming its id, and either is the same lost packet.
@@ -6781,7 +6781,7 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
     lost = _lost_write(register, motor_id, value, result)
     arm.connect_errors = [lost] * failures
     adapter = LeRobotAdapter(transport)
-    with caplog.at_level(logging.WARNING, logger="quackd.lerobot"):
+    with caplog.at_level(logging.WARNING, logger="roboglot.lerobot"):
         manifest = await adapter.connect()
 
     attempt = [("connect", False)]
@@ -6797,9 +6797,9 @@ async def test_a_packet_lost_at_connect_closes_the_port_writing_nothing_and_conn
             f"connect attempt {k} of {CONNECT_ATTEMPTS} failed on {joint} (id {motor_id}): {lost}"
         ), note
         assert result in note and "without a write to any motor" in note, note
-    warned = [r.getMessage() for r in caplog.records if r.name == "quackd.lerobot"]
+    warned = [r.getMessage() for r in caplog.records if r.name == "roboglot.lerobot"]
     assert warned == list(notes), "said in the log as it happened, and the same words kept"
-    assert all(r.levelno == logging.WARNING for r in caplog.records if r.name == "quackd.lerobot")
+    assert all(r.levelno == logging.WARNING for r in caplog.records if r.name == "roboglot.lerobot")
 
 
 @pytest.mark.parametrize(
@@ -6856,7 +6856,7 @@ def test_the_joint_is_named_through_the_bus_s_own_table_and_never_by_position() 
 
     The words are LeRobot 0.7.0's: `of motor ID <N>` for a write (motors_bus.py lines 1182 to
     1185), `from motor ID <N>` for a read (1134 to 1137) and `motor ID <N> refused it` for a
-    refusal (1187 to 1191). quackd read 0.6.1's `id_=<N>`, which 0.7.0 says nowhere, so every
+    refusal (1187 to 1191). Roboglot read 0.6.1's `id_=<N>`, which 0.7.0 says nowhere, so every
     one of them named no joint until it was read again.
 
     The handshake names its motors in lists instead, and only the id was read, so a servo that
@@ -6911,7 +6911,7 @@ def test_a_torque_error_names_every_joint_it_could_not_switch() -> None:
     that names every motor of the arm names none, as a handshake that found no motor does, since
     that is the arm's cables or its power. The message counts as a failed write, so a connect
     that met one warns that the arm may be half energised."""
-    from quackd_lerobot.real import failed_on_a_write, motors_in_error, torque_failed_on
+    from roboglot_lerobot.real import failed_on_a_write, motors_in_error, torque_failed_on
 
     table = {joint: SimpleNamespace(id=n) for joint, n in REWIRED.items()}
     some = {joint: table[joint] for joint in ("wrist_roll", "shoulder_pan", "gripper")}
@@ -7007,8 +7007,8 @@ def test_the_torque_calls_deadline_covers_every_motor_tried_on_a_silent_arm() ->
     ends at its first write that gets no reply, so some 1.8 s over six silent motors is past the
     second every other call gets, and inside this. The numbers are the refs' own, so this holds
     the deadline to what was read, and only an arm can say what rustypot takes."""
-    from quackd_lerobot import upstream_api as up
-    from quackd_lerobot.real import TORQUE_CALL_S, TORQUE_WRITES
+    from roboglot_lerobot import upstream_api as up
+    from roboglot_lerobot.real import TORQUE_CALL_S, TORQUE_WRITES
 
     assert f"waits {round(up.STATUS_TIMEOUT_S * 1000)} ms" in up.STATUS_TIMEOUT_MS.name
     assert f"`default_timeout: int = {round(up.STATUS_TIMEOUT_S * 1000)}`" in (
@@ -7190,7 +7190,7 @@ async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_t
     """A servo that stopped answering, or the cable to it that came out, is the failure a
     further attempt will not fix, and LeRobot reports it from the handshake that opens every
     connect: a list of the ids that did not answer, or a firmware read that lost a reply, which
-    names the first motor that did not answer. quackd once read 0.6.1's `id_=` alone, so the
+    names the first motor that did not answer. Roboglot once read 0.6.1's `id_=` alone, so the
     refusal sent the person to "the arm's cables and power" although LeRobot had named the
     servo, and told them to keep a hand under the arm because the port had opened, when the
     handshake reads and not one torque write had gone out.
@@ -7204,7 +7204,7 @@ async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_t
     other sign torque can have been written, read off the words and those of the error it was
     raised from, and it warns wherever it was raised: the handshake at 0.7.0 writes nothing, and
     a LeRobot whose handshake did would be one to warn about."""
-    from quackd_lerobot.real import PORT_CLOSED_BY_THE_HANDSHAKE, PORT_CLOSED_WRITING_NOTHING
+    from roboglot_lerobot.real import PORT_CLOSED_BY_THE_HANDSHAKE, PORT_CLOSED_WRITING_NOTHING
 
     arm, camera, transport = _rewired()
     joint, n = next(iter(REWIRED.items()))
@@ -7219,7 +7219,7 @@ async def test_a_connect_refused_in_the_handshake_names_the_servo_and_wrote_no_t
             f"Failed to write 0 to 'Lock': motor ID {n} refused it with error status 0x08."
         ),
         # 0.6.1 raised its port error from a write its handshake lost; 0.7.0 raises nothing so,
-        # and quackd still reads the cause
+        # and Roboglot still reads the cause
         "a lost write": _beneath(_port_refused("COM7"), _lost_write("Lock", n, 0, NOT_SENT)),
     }[script]
     arm.handshake_errors = [refused] * CONNECT_ATTEMPTS
@@ -7273,9 +7273,9 @@ async def test_a_connect_that_ends_on_a_timeout_says_hold_the_arm_when_torque_ma
     before it had done. So a connect whose first attempt lost a torque write, leaving some
     motors holding and others limp, and whose next attempt then blew its deadline, was refused
     without the warning to keep a hand under the arm. A timeout earns the warning on its own
-    as well: an attempt still on the wire when quackd stopped waiting is somewhere in the
+    as well: an attempt still on the wire when Roboglot stopped waiting is somewhere in the
     handshake or in `configure()` and nothing says which, and one LeRobot timed out itself
-    could have been in either. quackd's own refusal of a wedged bus says it when an earlier
+    could have been in either. Roboglot's own refusal of a wedged bus says it when an earlier
     attempt can have written torque (a close between attempts that did not come back wedges the
     bus as any call does), and only then: with nothing written before it, it is the one exit
     through here that sent nothing and says nothing about torque."""
@@ -7439,7 +7439,7 @@ class ChecksItsCalibration(FakeArm):
             return bool(self.read_calibration())
 
         if not is_calibrated() and calibrate:
-            raise AssertionError("quackd never asks for a calibration")
+            raise AssertionError("Roboglot never asks for a calibration")
 
         def configure() -> None:
             if not self.configure_errors:
@@ -7464,7 +7464,7 @@ async def test_a_read_lost_in_the_calibration_check_before_configure_wrote_no_to
     where: str, torque_said: bool
 ) -> None:
     """LeRobot's connect checks the calibration between the handshake and `configure()`,
-    reading each motor's limits and offset with no retry, and writes nothing there. quackd
+    reading each motor's limits and offset with no retry, and writes nothing there. Roboglot
     placed every failure after the handshake in `configure()`, so a read lost in that check
     told the person to keep a hand under an arm nothing had written to. A failure placed in the
     check is a read now, like one in the handshake; one placed under `configure()`, or one that
@@ -7563,8 +7563,8 @@ async def test_a_run_whose_kill_switch_was_pressed_during_a_failing_connect_conn
     """The same, through the agent loop, which is where the kill switch is: the loop hands the
     arm its abort flag before it connects, so a press during the first failing attempt is one
     connect call, no rest move and no second attempt, and the run is refused as stopped."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
 
     holder: dict[str, Any] = {}
     running = asyncio.get_running_loop()
@@ -8179,7 +8179,7 @@ async def test_a_press_with_a_read_on_the_bus_still_gets_the_stop_to_the_arm() -
 async def test_a_fold_stopped_with_a_read_on_the_bus_does_not_say_cut_the_power() -> None:
     """A press stops a fold wherever it is, and the close that follows read the arm in the same
     breath. With the fold's read still on the bus that read was refused, so somebody who had just
-    stopped a fold was told quackd could not tell whether the arm was holding itself up, and to
+    stopped a fold was told Roboglot could not tell whether the arm was holding itself up, and to
     hold it and cut its power, over an arm that was fine and holding."""
     arm = FakeArm(step=MAX_STEP_DEG)
     stall, on_bus, answer = _stalling(arm)
@@ -8709,7 +8709,7 @@ async def test_a_call_whose_budget_a_segment_s_call_spent_never_goes_out() -> No
     the bus free when the loop resumed and went out anyway, before anything judged its budget,
     and then timed out as late. A call that spent its budget waiting on the bus never goes out,
     and says so, as one queued on the lock does."""
-    from quackd_lerobot.real import POLICY_TASK
+    from roboglot_lerobot.real import POLICY_TASK
 
     transport = LeRobotReal("COM5", robot=FakeArm(), timeout_s=ANSWERED_S)
     loop = asyncio.get_running_loop()
@@ -8754,7 +8754,7 @@ async def _cancelled_cancelled_call(
     """File a policy segment's call the way a stop's cancel leaves one: a read made in the
     segment's own task and cancelled there while it is out on the bus, where it stays until
     the test sets the event this returns. Returns that call's future and the event."""
-    from quackd_lerobot.real import POLICY_TASK
+    from roboglot_lerobot.real import POLICY_TASK
 
     on_bus, answer = threading.Event(), threading.Event()
 
@@ -8900,7 +8900,7 @@ async def test_a_wait_for_a_segment_s_call_that_is_cancelled_goes_up_and_leaves_
     is back, a heartbeat or a stop. The cancellation goes up from each as it does from any
     other wait, sends nothing, leaves the segment's call filed for whatever comes next, and
     leaves no deadline of its own set on the loop."""
-    from quackd_lerobot.real import POLICY_TASK
+    from roboglot_lerobot.real import POLICY_TASK
 
     arm = _segment_arm()
     _, transport, adapter, _ = await _segment(Scripted(_pan), arm, timeout_s=ANSWERED_S)
@@ -9093,7 +9093,7 @@ async def test_a_fold_that_missed_over_servos_that_lost_their_torque_says_they_r
     and the arm's own reads say so. The miss carries the joints that read off, and the close no
     longer says torque was left on and the arm will not fall: its read found it off. `robot list
     --probe` keeps that direction when it shortens the note."""
-    from quackd.registry import _torque_phrase
+    from roboglot.registry import _torque_phrase
 
     arm = _BrownsOut(after=2)
     transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
@@ -9181,7 +9181,7 @@ async def test_a_gripper_alone_reading_torque_off_is_no_limp_arm() -> None:
     assert "torque reads off" not in note and "torque was left on" in note, note
 
 
-# ── closing the gripper before `quackd robot release` lets go ───────────────────────────────────
+# ── closing the gripper before `roboglot robot release` lets go ───────────────────────────────────
 
 
 async def _shut(arm: FakeArm, *, step: float = MAX_STEP_DEG) -> tuple[GripperResult, LeRobotReal]:
@@ -9345,7 +9345,7 @@ async def test_a_cancelled_gripper_stops_sending() -> None:
 @pytest.mark.parametrize("backend", ["real", "mock"])
 async def test_the_adapter_closes_the_gripper_of_the_transport_under_it(backend: str) -> None:
     """Reached the way a rest move is, through the adapter and `close_gripper_if_any`, which is
-    what `quackd robot release` holds."""
+    what `roboglot robot release` holds."""
     arm, transport = _asked_arm(backend)
     adapter = LeRobotAdapter(transport)
     await adapter.connect()
@@ -9405,7 +9405,7 @@ async def test_a_fold_stopped_partway_is_said_to_have_been_stopped() -> None:
 
 
 async def test_an_asked_release_at_rest_is_never_put_down_from_a_hand() -> None:
-    """`quackd robot release` folds the arm and lets go of it at its pose, and the person was
+    """`roboglot robot release` folds the arm and lets go of it at its pose, and the person was
     told to take their hands away before it folded. Where a motor still reads on afterwards, or
     nothing read the release back, the close used to tell them to put down an arm lying in its
     fold, from hands nobody had on it. It says to leave it where it rests now."""
@@ -9429,7 +9429,7 @@ async def test_an_asked_release_at_rest_is_never_put_down_from_a_hand() -> None:
 
 
 async def test_an_arm_read_for_its_rest_pose_is_let_go_of_where_it_reads() -> None:
-    """`quackd robot rest-pose` reads an arm a person folded by hand, which has no pose recorded
+    """`roboglot robot rest-pose` reads an arm a person folded by hand, which has no pose recorded
     yet, and the close of such an arm keeps its torque. Told it rests where it reads, the close
     finds it at that pose and lets go of it there, saying nothing, as at the end of any run."""
     arm = FakeArm()

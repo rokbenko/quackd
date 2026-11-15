@@ -1,7 +1,7 @@
 # How it works
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation. The meeting below is what the demo's first
+> Spec 1.0. Roboglot 0.29.0 is its first implementation. The meeting below is what the demo's first
 > act plays on the sim board ([quickstart.md](quickstart.md#the-demo)), and none of it has run on a
 > Jetson or over a real Bluetooth radio ([roadmap.md](roadmap.md)).
 
@@ -20,8 +20,8 @@ TALK      hello · say · bye · ask · answer · share      small signed messag
 
 ## One meeting, step by step
 
-`courier-01` is a humanoid that delivers parcels, with quackd on its Jetson, owned by a courier
-company. `home-01` is a humanoid that lives in a flat, with quackd on its Jetson, owned by the
+`courier-01` is a humanoid that delivers parcels, with Roboglot on its Jetson, owned by a courier
+company. `home-01` is a humanoid that lives in a flat, with Roboglot on its Jetson, owned by the
 household. They have never met, and they end up at the same front door, where the household's
 Wi-Fi is not the courier's.
 
@@ -75,9 +75,9 @@ would go over the LAN instead, and nothing else would change.
 
 ## What a person sees
 
-- **On the robot**: `quackd onboard status` shows the robots near now, with tier and signal, and
-  `quackd onboard met` the robots met and refused, and why
-  ([quackd.md](quackd.md#status-preflight-and-show)).
+- **On the robot**: `roboglot onboard status` shows the robots near now, with tier and signal, and
+  `roboglot onboard met` the robots met and refused, and why
+  ([roboglot.md](roboglot.md#status-preflight-and-show)).
 - **In a meeting's record**: each robot met, each word and each `ask`, a stranger's words included.
 - **In the service's journal**: every refusal, with the rule it broke.
 
@@ -88,12 +88,12 @@ would go over the LAN instead, and nothing else would change.
 | written | the wizard writes the passport section of `robot.yaml` from your answers |
 | signed | your owner key signs it, with your passphrase, valid for 365 days unless `--days` says otherwise |
 | served | the service carries it in every `hello`, and serves it at the well-known URL on a LAN |
-| edited | the passport section changes: `quackd onboard status` names the change, and the old passport is served until `quackd onboard sign` signs the new one |
+| edited | the passport section changes: `roboglot onboard status` names the change, and the old passport is served until `roboglot onboard sign` signs the new one |
 | beacon rotated | every 15 minutes the beacon gets a new id, and the passport stays what it is |
-| renewed | within 30 days of `expires`, `quackd onboard sign` signs it again |
+| renewed | within 30 days of `expires`, `roboglot onboard sign` signs it again |
 | expired | every robot refuses it, and the robot itself stops talking until it is signed again |
 | handed on | a new owner sets the robot up from the start: a new robot key, their own owner's signature |
-| retired | `quackd onboard uninstall` stops the service, and nothing advertises; pins of it stay until a person removes them |
+| retired | `roboglot onboard uninstall` stops the service, and nothing advertises; pins of it stay until a person removes them |
 
 ## When something goes wrong
 

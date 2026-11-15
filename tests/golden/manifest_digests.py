@@ -4,7 +4,7 @@
 of the family says it changed no description: a digest changes with anything a pilot or a peer
 reads off a manifest, and the verb list says in what order. Run
 `uv run python -m tests.golden.manifest_digests` only when a manifest is meant to change, and say
-why in the commit: a digest is the fingerprint a LAN announce carries (`quackd.lan.txt`).
+why in the commit: a digest is the fingerprint a LAN announce carries (`roboglot.lan.txt`).
 This is on its own and not in `generate.py` because that one rewrites the simulators' goldens too.
 """
 
@@ -24,10 +24,10 @@ TRI = (None, True, False)
 def digests() -> dict[str, Any]:
     """Every manifest over what a connection can settle: `{body: {case: digest}}`, and `verbs`,
     what each digest offers in order."""
-    from quackd_huebot import BACKENDS as HUEBOT_BACKENDS
-    from quackd_huebot import huebot_manifest
-    from quackd_huebot.verbs import KICK_SKILLS, SIT_TOGGLE
-    from quackd_microduck import BACKENDS, microduck_manifest
+    from roboglot_huebot import BACKENDS as HUEBOT_BACKENDS
+    from roboglot_huebot import huebot_manifest
+    from roboglot_huebot.verbs import KICK_SKILLS, SIT_TOGGLE
+    from roboglot_microduck import BACKENDS, microduck_manifest
 
     microduck: dict[str, str] = {}
     huebot: dict[str, str] = {}

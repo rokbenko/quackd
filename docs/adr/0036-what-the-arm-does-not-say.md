@@ -1,10 +1,10 @@
 # ADR-0036: The arm adapter stops taking the arm's word for it
 
-**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0022](0022-per-adapter-upstream-refs.md) (every SDK name is a verified ref) and [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is a manifest) · Implemented in `quackd/adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
+**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0022](0022-per-adapter-upstream-refs.md) (every SDK name is a verified ref) and [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is a manifest) · Implemented in `roboglot/adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 **Amended 2026-09-18 by [ADR-0039](0039-an-arm-placed-by-hand.md):** the decision below that
-opens "Nothing here changes what quackd never does" loses one clause of one sentence. quackd now
-disables torque in one place, `let_go()`, which `quackd run --by-hand` calls once and nothing
+opens "Nothing here changes what Roboglot never does" loses one clause of one sentence. Roboglot now
+disables torque in one place, `let_go()`, which `roboglot run --by-hand` calls once and nothing
 else calls at all. It refuses anywhere but the recorded rest pose, which is the same read this
 ADR's `close()` already makes before it lets torque drop on `disconnect()`, and it happens only
 because a person standing at the arm asked for it: there is no verb for it, no MCP tool, and no
@@ -56,10 +56,10 @@ tenth unless a tenth would round it onto that travel, in which case as it was gi
 degrees a goal in that sliver was named inside the range the same sentence gave, and so would a
 tenth name a goal a few hundredths past an edge.
 
-**Amended 2026-09-26:** the decision below that opens "Nothing here changes what quackd never
+**Amended 2026-09-26:** the decision below that opens "Nothing here changes what Roboglot never
 does" kept LeRobot's default of dropping torque on `disconnect()`, documented rather than
 overridden, and the first amendment above said it still did. It is overridden now, because that
-default reached a disconnect quackd never makes. LeRobot disconnects a robot that is still
+default reached a disconnect Roboglot never makes. LeRobot disconnects a robot that is still
 connected when it is garbage collected (`up.ROBOT_DEL`), so an exit that skipped `close()`, a
 second Ctrl-C during the end-of-run rest move or a crash, could drop the arm wherever it stood,
 while `docs/safety.md` said it was left holding. Nobody saw it happen: it was found by reading
@@ -67,7 +67,7 @@ upstream while planning the arm's simulator. The follower is now built with
 `disable_torque_on_disconnect` False, and every connect asks for False again, so a transport
 connected twice does not carry a release into its second session. `close()` already wrote the
 flag just before its own disconnect every time, True at the rest pose or with none recorded and
-False away from it, so every close lets go where it did before. The three connects quackd
+False away from it, so every close lets go where it did before. The three connects Roboglot
 refuses once the arm is energised (not calibrated, no calibration file, no motors bus) now
 write True before their disconnect, so they let go as a refusal of a freshly built follower
 always did. One refusal changed with that: on a transport connected again after a close that
@@ -103,7 +103,7 @@ The decision below that clips a policy's goal past the travel stands, with two g
 it: a goal held clipped for a second ends the segment, and an action that is not a finite
 number ends it rather than being clipped into the joint's floor, which it was. What no cap
 covers is a joint that reads past its travel, which the servo drives to its limit at its own
-speed whatever quackd sends. So a policy's action leaves such a joint out, as a stop does, a
+speed whatever Roboglot sends. So a policy's action leaves such a joint out, as a stop does, a
 segment will not start with one more than 2 degrees outside, and the power switch is still the
 only stop for a rise already under way.
 
@@ -132,7 +132,7 @@ how little of what the adapter needed the SDK actually says:
   torque by default.
 
 None of this is a defect in LeRobot. It is a teleoperation library whose human is the safety
-system. quackd's human is an LLM three seconds away, so each gap had to be closed on quackd's
+system. Roboglot's human is an LLM three seconds away, so each gap had to be closed on Roboglot's
 side, and each closure is a decision worth recording, because every one of them puts a number
 or a rule between the pilot and the arm that upstream never had.
 
@@ -141,7 +141,7 @@ or a rule between the pilot and the arm that upstream never had.
 **The adapter reads two registers below the `Robot` interface.** Torque state and per-joint
 temperature come off the Feetech bus by name (`Torque_Enable`, `Present_Temperature`), through
 `SOFollower.bus` and `MotorsBus.sync_read`, in the same worker thread as the position read so
-nothing interleaves on a half-duplex wire. This is the one place quackd steps below an SDK's
+nothing interleaves on a half-duplex wire. This is the one place Roboglot steps below an SDK's
 public interface, and it stays inside [ADR-0022](0022-per-adapter-upstream-refs.md): the
 attribute, the method, the two register names and their addresses are verified refs at the pin.
 The position read is the liveness check and may raise; a failed register read costs one
@@ -164,11 +164,11 @@ action outside it is clipped and counted (`extras.range_clips`), because a learn
 that is one tick over should not abort a grasp it is in the middle of, and because it is
 confirm-gated already.
 
-**One action moves a joint at most one step, so verbs re-send and watch.** quackd sets
+**One action moves a joint at most one step, so verbs re-send and watch.** Roboglot sets
 `max_relative_target` to `MAX_STEP_DEG` (`real.py`), re-sent at the core verbs' tick, which
-makes the step also the top joint speed; `QUACKD_LEROBOT_MAX_STEP_DEG` changes it. It is a
+makes the step also the top joint speed; `ROBOGLOT_LEROBOT_MAX_STEP_DEG` changes it. It is a
 float, because upstream's clamp raises on an int, and a scalar rather than a per-motor dict,
-because the dict form must name exactly the joints in the action and quackd sends partial
+because the dict form must name exactly the joints in the action and Roboglot sends partial
 actions. The same cap applies to the gripper in its own 0..100 units. Because one action no
 longer reaches the goal, and because nothing upstream reports arrival, `move_joints` and
 `gripper` compare the goal with the measurement every tick: `duration_s` became a budget, a
@@ -193,7 +193,7 @@ so the transport refuses every later call, names the wedged call in `stop_error`
 heartbeat fails until the thread comes back. The arm holds its goal meanwhile, which is the
 one thing that needs no rescue.
 
-**Nothing here changes what quackd never does.** It never disables torque, never calibrates
+**Nothing here changes what Roboglot never does.** It never disables torque, never calibrates
 (upstream's calibration is interactive, and an arm without a calibration file is refused
 because that file is where the joint ranges come from), and keeps LeRobot's default of
 dropping torque on `disconnect()`, documented rather than overridden.
@@ -215,16 +215,16 @@ that is not published, not an estimate.
   instead of reporting the move they were asked for.
 - An operator has an order to try it in
   ([lerobot-hardware-checklist.md](../adapters/lerobot/hardware-checklist.md)), a calibration id that
-  must match quackd's robot id, and one environment variable for the step. What only a real arm
+  must match Roboglot's robot id, and one environment variable for the step. What only a real arm
   can settle is that checklist's *What to report*, and this ADR does not repeat it.
-- A camera is one USB webcam named by `--camera-url opencv://N`, and quackd builds it
+- A camera is one USB webcam named by `--camera-url opencv://N`, and Roboglot builds it
   itself rather than handing it to the follower, because a follower's `is_connected`,
   `send_action` and `disconnect()` all include its cameras and one unplugged webcam would
   make every move and every hold raise. A camera asked for and not opened refuses at
   connect, before the arm is touched at all; one that dies later costs `observe` and a `pick`
   in flight and nothing else. The lookout task still asks
-  for `report_state`, because a `.duck` is checked against the static manifest, which cannot
-  know whether this arm has a camera; and quackd's
+  for `report_state`, because a `.glot` is checked against the static manifest, which cannot
+  know whether this arm has a camera; and Roboglot's
   executor still does not serialise concurrent verbs, so two MCP calls can still fight over one
   joint, which is a property of every adapter and not of this one.
 - The numbers named above live with their constants in `real.py` and `verbs.py`, and are

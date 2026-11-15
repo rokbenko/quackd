@@ -1,7 +1,7 @@
 """Record the README's simulator figure: the same sentence, the same duck, with and
-without quackd.
+without Roboglot.
 
-This was the README hero until 2026-09-15, when a real SO-101 arm ran quackd and the
+This was the README hero until 2026-09-15, when a real SO-101 arm ran Roboglot and the
 recording of that became the picture at the top of the page
 ([ADR-0038](../adr/0038-the-readme-hero-is-a-real-run.md)). It is still what argues for
 the simulator, under *No robot yet? Try it in 60 seconds*, and it is still the one file
@@ -9,25 +9,25 @@ here that renders upstream's model and carries its meshes' CC BY-NC-SA 4.0 terms
 
 Two runs of one arena, side by side.
 
-**Left, quackd on.** A real run through the real loop. The scripted pilot is handed the goal
+**Left, Roboglot on.** A real run through the real loop. The scripted pilot is handed the goal
 and the Microduck's verbs, picks one per turn, and the executor checks each against the
 contract before the robot moves. Nobody writes a square: the pilot walks a leg, reads the
 pose the robot actually reached, and corrects.
 
-**Right, quackd off.** The identical world, the identical robot, the identical walking
-policy, and no quackd. Nothing in a Microduck reads English. It takes a twist, which is
+**Right, Roboglot off.** The identical world, the identical robot, the identical walking
+policy, and no Roboglot. Nothing in a Microduck reads English. It takes a twist, which is
 three numbers, and nine learned policies, so a typed sentence has nowhere to go and the duck
 stands there. That is not a rigged comparison against a worse LLM. There is no LLM,
-because before quackd there was nowhere to put one.
+because before Roboglot there was nowhere to put one.
 
 A chase camera on a 25 cm robot shows a duck walking rather than a square, so each pane
 carries a top-down inset of the path so far. The inset is a plot drawn over the frame, not
 part of the simulation.
 
-    uv run python docs/assets/hero3d.py        # writes docs/assets/quackd-on-off.gif
+    uv run python docs/assets/hero3d.py        # writes docs/assets/roboglot-on-off.gif
 
-Needs `quackd[mujoco]`. The first run downloads upstream's model and policies into
-`~/.quackd/cache` (about 10 MB) and prints their licence. Nothing of theirs is written here
+Needs `roboglot[mujoco]`. The first run downloads upstream's model and policies into
+`~/.roboglot/cache` (about 10 MB) and prints their licence. Nothing of theirs is written here
 except the frames of this recording, which render CC BY-NC-SA 4.0 meshes and are labelled in
 `docs/assets/README.md` and `docs/reference/licenses.md`.
 """
@@ -44,16 +44,16 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from quackd.adapters.factory import parse_robot_spec, registry_for
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.fake import FakeProvider
-from quackd.duckfile.parser import duck_from_goal
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck.sim3d.render import render_overview
-from quackd_microduck.sim3d.scene import ARENA_HALF
-from quackd_microduck.sim3d.world import CONTROL_DT, MujocoWorld
-from quackd_microduck.transports.mujoco import MujocoTransport
+from roboglot.adapters.factory import parse_robot_spec, registry_for
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.glotfile.parser import glot_from_goal
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck.sim3d.render import render_overview
+from roboglot_microduck.sim3d.scene import ARENA_HALF
+from roboglot_microduck.sim3d.world import CONTROL_DT, MujocoWorld
+from roboglot_microduck.transports.mujoco import MujocoTransport
 
 GOAL = "walk in a square, half a metre a side"
 SAMPLE_S = 0.4  # sim seconds between recorded frames
@@ -120,10 +120,14 @@ class PaneRecorder:
         return sum(math.dist(a, b) for a, b in zip(self.trail, self.trail[1:], strict=False))
 
 
-async def run_with_quackd(seed: int, size: int) -> PaneRecorder:
+async def run_with_roboglot(seed: int, size: int) -> PaneRecorder:
     """The left pane: the whole loop, the scripted pilot, the contract, the robot's gait."""
     spec = parse_robot_spec("microduck:mujoco")
-    allowed = [v.name for v in registry_for(spec).verbs() if v.safety_class == "safe"]
+    # `watch` only on a run that asked for frames, as `roboglot run --goal` allows it: it looks
+    # through a decision LLM that can see, and a goal that allows it without one is refused
+    allowed = [
+        v.name for v in registry_for(spec).verbs() if v.safety_class == "safe" and v.name != "watch"
+    ]
     transport = MujocoTransport(seed=seed, body="microduck")
     adapter = MicroduckAdapter(transport)
     pane = PaneRecorder(size)
@@ -132,22 +136,22 @@ async def run_with_quackd(seed: int, size: int) -> PaneRecorder:
         pane.maybe_capture(world)
 
     transport.add_tick_hook(hook)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=duck_from_goal(GOAL, allowed),
-            provider=FakeProvider.for_duck("", goal=GOAL),
+            duck=glot_from_goal(GOAL, allowed),
+            provider=FakeProvider.for_glot("", goal=GOAL),
             transport=adapter,
             detector=ColorBlobDetector(),
             runs_dir="runs",
         )
     )
-    print(f"  quackd on:  {result.outcome} in {result.steps} steps, {result.reason[:60]}")
+    print(f"  Roboglot on:  {result.outcome} in {result.steps} steps, {result.reason[:60]}")
     if result.outcome != "success":
         raise SystemExit("the left pane must be a successful run")
     return pane
 
 
-def run_without_quackd(seed: int, size: int, seconds: float) -> PaneRecorder:
+def run_without_roboglot(seed: int, size: int, seconds: float) -> PaneRecorder:
     """The right pane: the same world and the same policy, and nothing that reads English.
 
     The duck is sent no twist at all, which is what a Microduck receives when no brain is
@@ -158,7 +162,7 @@ def run_without_quackd(seed: int, size: int, seconds: float) -> PaneRecorder:
     for _ in range(round(seconds / CONTROL_DT)):
         world.step()
         pane.maybe_capture()
-    print(f"  quackd off: stood for {world.t:.0f} s and walked {pane.walked:.2f} m")
+    print(f"  Roboglot off: stood for {world.t:.0f} s and walked {pane.walked:.2f} m")
     return pane
 
 
@@ -173,9 +177,9 @@ def compose(left: PaneRecorder, right: PaneRecorder, size: int) -> list[Image.Im
         frame.paste(left.frames[i], (0, CAPTION_H))
         frame.paste(right.frames[i], (size + GUTTER, CAPTION_H))
         draw = ImageDraw.Draw(frame)
-        draw.text((7, 5), "quackd ON", fill=DUCK_YELLOW)
+        draw.text((7, 5), "Roboglot ON", fill=DUCK_YELLOW)
         draw.text((7, 18), f'you type: "{GOAL.split(",")[0]}"', fill=INK)
-        draw.text((size + GUTTER + 7, 5), "quackd OFF", fill=OFF_ORANGE)
+        draw.text((size + GUTTER + 7, 5), "Roboglot OFF", fill=OFF_ORANGE)
         draw.text((size + GUTTER + 7, 18), "same duck, same sentence, no brain", fill=DIM)
         out.append(frame)
     return out
@@ -195,7 +199,7 @@ def save(frames: list[Image.Image], path: Path, *, keep: int, colours: int, fps:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default="docs/assets/quackd-on-off.gif")
+    parser.add_argument("--out", default="docs/assets/roboglot-on-off.gif")
     parser.add_argument("--seed", type=int, default=6)
     parser.add_argument("--pane", type=int, default=288, help="pixels per pane")
     parser.add_argument("--keep", type=int, default=84, help="frames to keep")
@@ -204,12 +208,12 @@ async def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
-    left = await run_with_quackd(args.seed, args.pane)
+    left = await run_with_roboglot(args.seed, args.pane)
     if left.world is None:
         # `PaneRecorder.world` is set by the first capture, so without this the next line
         # raises an AttributeError about NoneType rather than saying what went wrong.
         raise SystemExit("no frames were captured: the tick hook never ran, or rendering failed")
-    right = run_without_quackd(args.seed, args.pane, seconds=left.world.t)
+    right = run_without_roboglot(args.seed, args.pane, seconds=left.world.t)
     out = save(
         compose(left, right, args.pane),
         Path(args.out),

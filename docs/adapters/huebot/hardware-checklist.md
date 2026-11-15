@@ -1,13 +1,13 @@
 # Huebot: the first hardware run
 
-Nobody has run quackd against a Huebot, and nobody has seen the shim its maker is writing for it. If
+Nobody has run Roboglot against a Huebot, and nobody has seen the shim its maker is writing for it. If
 you have one, this page is the order to do it in. Every step that can go wrong has an abort
 condition, and the first two that send a twist test what stops the robot, with its feet off the
 ground: the deadman, then `robot.stop`. It lies on a mat at step 9, and its feet touch the floor
 at step 10 and not before.
 
-**Know what stops Huebot before anything moves.** quackd's own `stop` is a `robot.stop` over the
-socket, which Ctrl-C or `q` in the terminal running quackd sends. When the socket is the thing
+**Know what stops Huebot before anything moves.** Roboglot's own `stop` is a `robot.stop` over the
+socket, which Ctrl-C or `q` in the terminal running Roboglot sends. When the socket is the thing
 that broke, what stops the legs is the robot's own deadman: the velocity goes to zero once
 `robot.move` stops arriving for 500 ms, which Huebot's shim is asked to keep
 ([what the shim must answer](README.md#what-huebots-shim-must-answer)) and which nobody has
@@ -17,8 +17,8 @@ maker's app, is the maker's to say: know it, and keep it in reach.
 ## 0. Rehearse on the mock
 
 ```bash
-uv pip install 'quackd[huebot,anthropic]'   # Huebot's package, and your provider
-quackd run hello-world --robot huebot:mock --llm fake --no-memory
+uv pip install 'roboglot[huebot,anthropic]'   # Huebot's package, and your provider
+roboglot run hello-world --robot huebot:mock --llm fake --no-memory
 ```
 
 `huebot:mock` is the core's scripted body under Huebot's manifest, so it rehearses the pilot,
@@ -28,12 +28,12 @@ socket, no handshake, no deadman. There is no simulator of Huebot's body or gait
 ## Before step 1: Huebot's own behaviours off
 
 Huebot runs behaviour code of its own, the maker wrote on 2026-10-15: needs, an LED face, coming to
-your hand. That code can move the robot without quackd, and nothing quackd reads tells that motion
+your hand. That code can move the robot without Roboglot, and nothing Roboglot reads tells that motion
 from its own: a robot that turned to your hand in the middle of step 3 would look like a deadman
-that failed. quackd assumes the code is off whenever the shim is driven.
+that failed. Roboglot assumes the code is off whenever the shim is driven.
 
 Switch the behaviours off the way the maker says, then see that they are off before anything
-connects. With quackd not running, put Huebot on its stand, watch it for a minute, and hold a
+connects. With Roboglot not running, put Huebot on its stand, watch it for a minute, and hold a
 hand out in front of it. Nothing should move.
 
 > Abort if anything moves, and ask the maker the two questions on
@@ -47,7 +47,7 @@ network, so from a laptop it is an ssh forward:
 
 ```bash
 ssh -L 9870:/path/to/the/shim.sock <user>@<huebot>    # or 9870:127.0.0.1:<port> for a port
-quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
+roboglot doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 ```
 
 Read four rows of what the robot itself reported:
@@ -59,54 +59,54 @@ Read four rows of what the robot itself reported:
   `stand` and `kick` whose skills the shim did not list.
 - `pickup_detection` should say `True`.
 
-> Abort if the handshake is refused: quackd prints why. A shim on an API version other than 41
+> Abort if the handshake is refused: Roboglot prints why. A shim on an API version other than 41
 > is served, and `doctor`'s advice says so. One that has no `robot.subscribe` is refused as not
 > robotd.
 
 > Abort if `pickup_detection` is `False`. The shim does not report `safety.picked_up`, so nothing
-> tells quackd when somebody is holding Huebot, and walks would go out to a robot in your hands.
+> tells Roboglot when somebody is holding Huebot, and walks would go out to a robot in your hands.
 > Ask the maker for it before going on.
 
 > Abort if `healthy` is false, or if the battery is low.
 
-## 2. Does quackd see the robot? A dry run moves nothing
+## 2. Does Roboglot see the robot? A dry run moves nothing
 
 ```bash
-quackd run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+roboglot run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
   --llm fake --dry-run --no-memory
 ```
 
 Watch the robot while it runs: it should not twitch. Then read `report_state` in the transcript.
-**`posture` must not be `unknown`.** `unknown` means quackd cannot vouch for the robot's
+**`posture` must not be `unknown`.** `unknown` means Roboglot cannot vouch for the robot's
 posture, and `extras.posture_reason` says why: no `robot.state` has arrived, the newest is older
 than a second, a frame carries no `safety` block, or the shim reports a `policy` other than
-`walk`, `stand` or `sit`. quackd refuses to walk in every one of those cases, on purpose.
+`walk`, `stand` or `sit`. Roboglot refuses to walk in every one of those cases, on purpose.
 
 > Abort if anything moves, or if posture is `unknown`. `report_state` carries the subscribe
 > answer in `extras.subscribed`, with the skills the shim listed.
 
-## 3. The deadman, on a stand: freeze quackd, then pull the tunnel out
+## 3. The deadman, on a stand: freeze Roboglot, then pull the tunnel out
 
 **Feet off the ground.** Put Huebot on a stand where its legs can move freely. This step cuts
-quackd off in the middle of a walk twice, two ways. Pulling the tunnel out closes the socket, and
-a shim might stop the legs when its socket closes and have no deadman at all. Freezing quackd
+Roboglot off in the middle of a walk twice, two ways. Pulling the tunnel out closes the socket, and
+a shim might stop the legs when its socket closes and have no deadman at all. Freezing Roboglot
 leaves the socket open with nothing more on it, which only a deadman stops, so it goes first.
 
 The walk has to be long enough to interrupt, and `--llm fake` answers a free-form goal with a
 fixed script that ignores it, so this needs a real LLM:
 
 ```bash
-quackd run --goal "walk forward slowly for ten seconds, then stop" \
+roboglot run --goal "walk forward slowly for ten seconds, then stop" \
     --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
     --llm anthropic --max-steps 6 --no-memory
 ```
 
-**Freeze quackd.** Once the legs are moving, suspend the process running quackd from another
+**Freeze Roboglot.** Once the legs are moving, suspend the process running Roboglot from another
 terminal. Its socket stays open, and nothing more is written to it:
 
-- Linux or macOS: `kill -STOP <pid>`, with the pid from `pgrep -f "quackd run"`.
+- Linux or macOS: `kill -STOP <pid>`, with the pid from `pgrep -f "roboglot run"`.
 - Windows: `pssuspend <pid>`, from Sysinternals, or Resource Monitor: right-click the process on
-  its CPU tab, then Suspend Process. quackd runs in a `python.exe`, and Task Manager's Details
+  its CPU tab, then Suspend Process. Roboglot runs in a `python.exe`, and Task Manager's Details
   tab shows each one's command line once you add that column.
 
 Suspending the ssh client that carries the tunnel does the same, and on Windows it is the easier
@@ -116,13 +116,13 @@ What should happen: the legs stop within about half a second of the last `robot.
 socket still open. That is the deadman, and nothing else.
 
 Then cut the link before anything resumes. Kill the ssh tunnel, a suspended one too, with
-`kill -9 <pid>` or End task, and only then resume quackd if it was quackd you froze, with
+`kill -9 <pid>` or End task, and only then resume Roboglot if it was Roboglot you froze, with
 `kill -CONT <pid>`, `pssuspend -r <pid>` or Resume Process. It finds the link gone, says it is
 sending a stop that could not be delivered, and ends the run. Resuming a frozen tunnel instead
-would hand the robot every twist quackd wrote while it was frozen.
+would hand the robot every twist Roboglot wrote while it was frozen.
 
-> **Abort the whole session if the legs keep driving while quackd is frozen.** A shim that stops
-> the legs only when its socket closes leaves a robot walking whenever quackd stalls with the
+> **Abort the whole session if the legs keep driving while Roboglot is frozen.** A shim that stops
+> the legs only when its socket closes leaves a robot walking whenever Roboglot stalls with the
 > link up: a process that hangs, a laptop that sleeps with the tunnel open. Tell the maker, and
 > go no further.
 
@@ -130,24 +130,24 @@ would hand the robot every twist quackd wrote while it was frozen.
 kill the ssh tunnel.
 
 What should happen: `robot.move` notifications stop arriving, and 0.5 s after the last one the
-shim's deadman zeroes the velocity, and the legs stop. quackd's heartbeat fails, says it is
+shim's deadman zeroes the velocity, and the legs stop. Roboglot's heartbeat fails, says it is
 sending a stop, and aborts the run, and it says when that stop could not be delivered, which is
 the honest outcome when the link is the thing that broke.
 
 > **Abort the whole session if the legs keep driving.** The deadman is what stops a walk whose
-> link dies: a tunnel that drops, a laptop that sleeps, every run over MCP. Nothing else quackd
+> link dies: a tunnel that drops, a laptop that sleeps, every run over MCP. Nothing else Roboglot
 > does matters if it is not there. Tell the maker, and go no further.
 
-Both halves passing on a Huebot is what lets quackd's description of `huebot:jsonrpc` claim a
-deadman. Until somebody reports that they did (step 11), it claims none, and quackd relies on
+Both halves passing on a Huebot is what lets Roboglot's description of `huebot:jsonrpc` claim a
+deadman. Until somebody reports that they did (step 11), it claims none, and Roboglot relies on
 the shim's all the same.
 
 ## 4. `stop`, mid-walk, on a stand
 
 Bring the tunnel back, and run the same walk, still on the stand. Once the legs are moving,
-press `q` in the terminal running quackd.
+press `q` in the terminal running Roboglot.
 
-What should happen: quackd sends `robot.stop`, the shim answers it, the legs stop at once, and
+What should happen: Roboglot sends `robot.stop`, the shim answers it, the legs stop at once, and
 the next state frame's `move.requested` reads zero. The run ends there.
 
 > Abort if the legs go on after the stop, or stop only half a second later, which is the
@@ -159,7 +159,7 @@ the next state frame's `move.requested` reads zero. The run ends there.
 on the stand:
 
 ```bash
-quackd run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+roboglot run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
   --llm fake --no-memory
 ```
 
@@ -174,7 +174,7 @@ With the legs still, lift Huebot off the stand by its body, hold it in the air, 
 `hello-world`:
 
 ```bash
-quackd run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+roboglot run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
   --llm fake --no-memory
 ```
 
@@ -193,7 +193,7 @@ Before the feet touch the floor, run `stand_up` once, and each verb whose skill 
 in step 1, still on the stand:
 
 ```bash
-quackd run --goal "run stand_up, sit, stand, then kick left and kick right, then stop" \
+roboglot run --goal "run stand_up, sit, stand, then kick left and kick right, then stop" \
     --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
     --llm anthropic --max-steps 8 --no-memory
 ```
@@ -214,11 +214,11 @@ still image, forward it the same way and pass it:
 
 ```bash
 ssh -L 8080:127.0.0.1:<port> <user>@<huebot>      # in another terminal
-quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+roboglot doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
   --camera-url http://127.0.0.1:8080/<path>
 ```
 
-`doctor` fetches a frame and prints its size. quackd waits 5 s for the first one.
+`doctor` fetches a frame and prints its size. Roboglot waits 5 s for the first one.
 
 > Abort if no frame arrives: `doctor` prints the last failure under the camera's row. Without a
 > camera, `observe`, `go_to`, `search_scan` and `approach_and` are not offered, and every other
@@ -232,7 +232,7 @@ floor. Send it here instead: lay Huebot on its back on a soft mat, with nothing 
 and a hand ready to take hold of it, and run `stand_up` on its own:
 
 ```bash
-quackd run --goal "run stand_up once, then report your state and stop" \
+roboglot run --goal "run stand_up once, then report your state and stop" \
     --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
     --llm anthropic --max-steps 4 --no-memory
 ```
@@ -240,7 +240,7 @@ quackd run --goal "run stand_up once, then report your state and stop" \
 What should happen: the state reads the robot as fallen, with nobody holding it, and `stand_up`
 sends `robot.enable {on: true}`. It answers `upright after` so many seconds once the robot reads
 standing, or says after 10 s that it may need a hand. Write down what the robot did, and how
-long it took against the 10 s quackd waits.
+long it took against the 10 s Roboglot waits.
 
 > Abort and take hold of it if it thrashes: legs driving against the mat without getting it
 > anywhere, or anything moving harder than getting up needs. Stop it the way its maker says, and
@@ -252,12 +252,12 @@ Now, and only now, put Huebot on the floor and run a short walk, with a hand rea
 Its maker says the walk's balance is still being tuned.
 
 ```bash
-quackd run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+roboglot run hello-world --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
   --llm fake --no-memory
 ```
 
-quackd checks each walk against the shim's own `move.requested`: once the state goes three
-frames after the shim answered a later call without showing quackd's twist, the verb sending it
+Roboglot checks each walk against the shim's own `move.requested`: once the state goes three
+frames after the shim answered a later call without showing Roboglot's twist, the verb sending it
 stops the robot at its next twist and fails with `Huebot's shim has not taken robot.move`.
 
 > Abort and catch it if Huebot goes over. `stand_up` asks the shim to drive again with
@@ -267,7 +267,7 @@ stops the robot at its next twist and fails with `Huebot's shim has not taken ro
 ## 11. Tell everyone
 
 `huebot:jsonrpc` is 🧪 in [`docs/adapters/status.md`](../status.md) because nobody has done this.
-What flips it is a `quackd doctor` output and `runs/<timestamp>-<name>/terminal.txt`, in an
+What flips it is a `roboglot doctor` output and `runs/<timestamp>-<name>/terminal.txt`, in an
 issue: that file is the whole session as plain text, opening with the command that started it
 and the version that ran it. Send `transcript.jsonl` beside it when the question is about one
 record rather than the session. Read the first line before you paste it: the values of
@@ -277,7 +277,7 @@ parameter in `--base-url`, `--address` and `--camera-url`. Nothing else on the s
 
 What is most worth writing down, because it is what nobody can check without a Huebot:
 
-- what step 3 showed: how long after the last `robot.move` the legs stopped, with quackd
+- what step 3 showed: how long after the last `robot.move` the legs stopped, with Roboglot
   frozen and with the tunnel pulled
 - what step 4 showed: whether `robot.stop` stopped the legs at once
 - whether `posture` tracked the real robot: whether `policy` said `sit` when it sat, and whether
@@ -286,5 +286,5 @@ What is most worth writing down, because it is what nobody can check without a H
   showed it, which is the number the echo window (three state frames) was set without
 - what the shim listed in `skills`, and what each skill did
 - what step 9 showed: what Huebot did after `stand_up` sent `robot.enable` to it on its back,
-  and how long it took against the 10 s quackd waits
+  and how long it took against the 10 s Roboglot waits
 - whether `extras.head_yaw_deg` agreed with where the head visibly pointed

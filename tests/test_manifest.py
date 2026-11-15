@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-import quackd.adapters
-from quackd.adapters.manifest import (
+import roboglot.adapters
+from roboglot.adapters.manifest import (
     Datasheet,
     Figure,
     RobotManifest,
@@ -19,8 +19,8 @@ from quackd.adapters.manifest import (
     apply_datasheet_override,
     manifest_json_schema,
 )
-from quackd.verbs.registry import ManifestError, default_registry, registry_from_manifest
-from quackd_microduck import microduck_manifest
+from roboglot.verbs.registry import ManifestError, default_registry, registry_from_manifest
+from roboglot_microduck import microduck_manifest
 
 
 def _manifest(**over: Any) -> RobotManifest:
@@ -124,11 +124,11 @@ def test_registry_from_manifest_refuses_what_no_code_implements() -> None:
 
 def test_manifest_schema_on_disk_is_current() -> None:
     on_disk = json.loads(
-        (Path(quackd.adapters.__file__).with_name("manifest.schema.json")).read_text(
+        (Path(roboglot.adapters.__file__).with_name("manifest.schema.json")).read_text(
             encoding="utf-8"
         )
     )
-    assert on_disk == manifest_json_schema(), "run: uv run python -m quackd.adapters.export"
+    assert on_disk == manifest_json_schema(), "run: uv run python -m roboglot.adapters.export"
 
 
 # ── the datasheet ───────────────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ def test_the_datasheet_is_part_of_the_capability_fingerprint() -> None:
 
 
 def test_the_task_file_replaces_figures_and_only_ever_adds_sentences() -> None:
-    from quackd.duckfile.schema import DatasheetOverride
+    from roboglot.glotfile.schema import DatasheetOverride
 
     base = microduck_manifest("sim2d")
     assert base.datasheet is not None
@@ -210,7 +210,7 @@ def test_the_task_file_replaces_figures_and_only_ever_adds_sentences() -> None:
 
 
 def test_a_task_file_cannot_hand_an_armless_body_a_payload() -> None:
-    from quackd.duckfile.schema import DatasheetOverride
+    from roboglot.glotfile.schema import DatasheetOverride
 
     with pytest.raises(ValidationError, match="no payload"):
         apply_datasheet_override(

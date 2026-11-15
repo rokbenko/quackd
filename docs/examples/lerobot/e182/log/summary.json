@@ -1,10 +1,10 @@
 {
-  "duck": "e182-think-hard",
+  "glot": "e182-think-hard",
   "run_name": null,
   "command": [
-    "quackd",
+    "roboglot",
     "run",
-    "D:/Development/quackd-shoot/docs/examples/lerobot/e182/think-hard.duck",
+    "D:/Development/roboglot-shoot/docs/examples/lerobot/e182/think-hard.glot",
     "--robot",
     "arm-01",
     "--camera-url",

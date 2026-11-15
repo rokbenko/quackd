@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from quackd.passport.beacon import (
+from roboglot.passport.beacon import (
     BLE_SERVICE_UUID,
     FLAG_LAN,
     FLAG_LINK,
@@ -17,9 +17,9 @@ from quackd.passport.beacon import (
     ble_service_data,
     new_beacon_id,
 )
-from quackd.passport.link import MAX_DATAGRAM, MIN_DATAGRAM, Accept, Open, decode, encode, new_tag
-from quackd.radio import PipeClosed
-from quackd.radio.bluez.core import (
+from roboglot.passport.link import MAX_DATAGRAM, MIN_DATAGRAM, Accept, Open, decode, encode, new_tag
+from roboglot.radio import PipeClosed
+from roboglot.radio.bluez.core import (
     DEFAULT_MTU,
     FAILED,
     INVALID_LENGTH,
@@ -41,7 +41,7 @@ from quackd.radio.bluez.core import (
     settled_write_size,
     sighting_from,
 )
-from quackd.radio.links import Link
+from roboglot.radio.links import Link
 
 DEVICE = "/org/bluez/hci0/dev_11_22_33_44_55_66"
 

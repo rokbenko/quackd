@@ -1,4 +1,4 @@
-"""`quackd passport check`: what a person types to read a passport the way a robot reads it, and
+"""`roboglot passport check`: what a person types to read a passport the way a robot reads it, and
 what they get back.
 
 URL and address checks run against a real HTTP server on 127.0.0.1, so the fetch rules are proved
@@ -23,9 +23,9 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli
-from quackd.cli import app
-from quackd.passport import document, strict
+from roboglot import cli
+from roboglot.cli import app
+from roboglot.passport import document, strict
 from tests.passport_helpers import OWNER, VECTORS, A, doc
 
 runner = CliRunner()
@@ -128,7 +128,7 @@ def test_check_reads_stdin(signed: Path) -> None:
 @pytest.mark.parametrize(
     ("version", "why"),
     [
-        # what a quackd 0.23 to 0.28 laptop served at its well-known URL for several robots
+        # what a Roboglot 0.23 to 0.28 laptop served at its well-known URL for several robots
         ("0.1", "refused under rule 4"),
         (document.VERSION, "refused under rule 3"),
     ],

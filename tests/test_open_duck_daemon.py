@@ -22,26 +22,26 @@ from types import ModuleType
 
 import pytest
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, allow_all
-from quackd.verbs.registry import registry_from_manifest
-from quackd_open_duck import OpenDuckAdapter
-from quackd_open_duck.bridge import PROTOCOL, PROTOCOL_VERSION, OpenDuckBridge
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor, allow_all
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.bridge import PROTOCOL, PROTOCOL_VERSION, OpenDuckBridge
 
 REPO = Path(__file__).resolve().parents[1]
-DAEMON = REPO / "bridge" / "open_duck" / "quackd_duck_bridge.py"
+DAEMON = REPO / "bridge" / "open_duck" / "roboglot_duck_bridge.py"
 
-DUCK = parse_duck_text(
-    "---\nduck: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
+DUCK = parse_glot_text(
+    "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
     "  allow: [move, gaze, say, quack, express, report_state, stop]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
 
 
 def load_daemon() -> ModuleType:
-    """It lives outside the package on purpose: quackd's core must never import it."""
-    spec = importlib.util.spec_from_file_location("quackd_duck_bridge", DAEMON)
+    """It lives outside the package on purpose: Roboglot's core must never import it."""
+    spec = importlib.util.spec_from_file_location("roboglot_duck_bridge", DAEMON)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module  # dataclasses resolves annotations through sys.modules
@@ -154,7 +154,7 @@ def test_head_control_is_clamped_inside_upstream_and_rate_limited(daemon: Module
     core = daemon.BridgeCore(now=clock, limits=daemon.Limits(head_enabled=True))
     hello(core)
     ceiling = daemon.HEAD_YAW[1] * daemon.HEAD_SAFETY
-    assert ceiling < daemon.HEAD_YAW[1], "quackd stays inside upstream's own clamp"
+    assert ceiling < daemon.HEAD_YAW[1], "Roboglot stays inside upstream's own clamp"
 
     # one command, then let the loop run: the head arrives, which it never used to
     core.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
@@ -290,12 +290,12 @@ def test_a_queued_sound_becomes_one_button_press(daemon: ModuleType) -> None:
 
 
 def test_the_daemon_needs_nothing_but_the_standard_library_and_numpy() -> None:
-    """`pip install --no-deps quackd` has to work on a Pi Zero 2 W, so none of quackd's own
+    """`pip install --no-deps roboglot` has to work on a Pi Zero 2 W, so none of Roboglot's own
     dependencies may reach it, and neither may the robot's runtime."""
     script = f"""
 import sys
 for name in ('pydantic', 'typer', 'rich', 'mcp', 'cv2', 'PIL', 'torch', 'onnxruntime',
-             'mini_bdx_runtime', 'quackd'):
+             'mini_bdx_runtime', 'roboglot'):
     sys.modules[name] = None
 import importlib.util
 spec = importlib.util.spec_from_file_location('b', r'{DAEMON}')
@@ -345,7 +345,7 @@ async def test_the_real_daemon_and_the_real_client_agree(daemon: ModuleType) -> 
             confirm=allow_all,
         )
         # the verb ends by stopping, so watch a single command instead of the whole verb
-        from quackd.transport.base import Intent
+        from roboglot.transport.base import Intent
 
         await adapter.send_intent(Intent.move(0.3, 0.0, 0.0))  # over this robot's limit
         await asyncio.sleep(0.05)
@@ -478,9 +478,9 @@ def test_a_camera_with_no_snapshot_url_is_not_advertised(daemon: ModuleType, tmp
 
 
 def test_the_documented_camera_setup_actually_has_a_camera(daemon: ModuleType, tmp_path) -> None:
-    """`expression_features.camera` says who owns the *device*, not whether quackd can see.
+    """`expression_features.camera` says who owns the *device*, not whether Roboglot can see.
 
-    quackd_duck_camd.py refuses to start while that flag is true, so install.sh and
+    roboglot_duck_camd.py refuses to start while that flag is true, so install.sh and
     docs/adapters/open_duck/README.md both tell the owner to set it false and let camd serve frames.
     Reading the capability from the same flag meant that a duck configured exactly as
     documented reported no camera, dropped observe, go_to, search_scan and approach_and at
@@ -540,9 +540,9 @@ def test_the_shipped_unit_is_a_command_the_daemon_accepts(daemon: ModuleType) ->
 
     This also pins the flags that a `nargs=REMAINDER` fix would have silently eaten: --bind
     and --deadman-ms would revert to defaults and nothing would say so."""
-    unit = REPO / "bridge" / "open_duck" / "quackd-duck-bridge.service"
+    unit = REPO / "bridge" / "open_duck" / "roboglot-duck-bridge.service"
     argv = exec_start(unit)
-    assert argv[1].endswith("quackd_duck_bridge.py")
+    assert argv[1].endswith("roboglot_duck_bridge.py")
     args = daemon.parser().parse_args(argv[2:])
     assert args.command == "serve"
     assert args.script_arg == ["--onnx_model_path", "/home/pi/BEST_WALK_ONNX_2.onnx"]
@@ -556,7 +556,7 @@ def test_the_unit_runs_upstream_from_the_directory_its_data_is_in() -> None:
     relative to the working directory, and the pkl is read inside RLWalk.__init__ *after*
     the servo bus is powered. A WorkingDirectory one level up is a traceback over fourteen
     energised joints, so the unit and `script_workdir()` have to agree on scripts/."""
-    path = REPO / "bridge" / "open_duck" / "quackd-duck-bridge.service"
+    path = REPO / "bridge" / "open_duck" / "roboglot-duck-bridge.service"
     workdir = next(
         line.split("=", 1)[1].strip()
         for line in path.read_text(encoding="utf-8").splitlines()
@@ -657,7 +657,7 @@ def test_a_stop_leaves_the_duck_stopped_even_with_nobody_commanding(daemon: Modu
 
 
 def test_a_watching_client_does_not_stop_a_walking_duck(daemon: ModuleType) -> None:
-    """The hardware checklist tells the operator to run `quackd doctor` in a second terminal
+    """The hardware checklist tells the operator to run `roboglot doctor` in a second terminal
     while the duck walks, and doctor disconnects with a bare FIN. Zeroing on *any* drop cut
     the velocity mid-stride, and looked exactly like the Wi-Fi latency step 5 warns about."""
     clock = Clock()
@@ -802,7 +802,7 @@ def test_a_paused_policy_is_named_rather_than_blamed_on_the_pi(daemon: ModuleTyp
     assert health["healthy"] is False
     assert health["paused"] is True
     assert "paused" in health["reason"] and "start_paused" in health["reason"]
-    assert "A button" in health["reason"], "and it says why quackd cannot just unpause it"
+    assert "A button" in health["reason"], "and it says why Roboglot cannot just unpause it"
 
 
 def test_serve_refuses_to_start_a_policy_it_could_never_release(

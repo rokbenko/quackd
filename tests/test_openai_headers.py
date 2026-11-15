@@ -7,7 +7,7 @@ environment and adds them to every request, wherever the client points. A gatewa
 OpenAI's account headers went to every vendor built on the SDK and to every LLM server you run.
 They go now where the SDK itself would send them and nowhere else: OpenAI's own API, and the
 address `OPENAI_BASE_URL` gives `--llm openai` when it is asked for no other.
-`quackd.agent.providers.openai_headers` holds the rule, and `OpenAIProvider._build_client` builds
+`roboglot.agent.providers.openai_headers` holds the rule, and `OpenAIProvider._build_client` builds
 every one of those clients by it.
 
 Nothing here needs the `openai` package: CI installs no provider SDK, and every test that builds a
@@ -26,12 +26,12 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.providers import openai_headers
-from quackd.agent.providers.base import ProviderError, ProviderNotInstalled
-from quackd.agent.providers.catalogue import LOCAL_NAMES
-from quackd.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
-from quackd.agent.providers.openai import DEFAULT_BASE_URL, _where_it_points
-from quackd.agent.providers.openai_headers import (
+from roboglot.agent.providers import openai_headers
+from roboglot.agent.providers.base import ProviderError, ProviderNotInstalled
+from roboglot.agent.providers.catalogue import LOCAL_NAMES
+from roboglot.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
+from roboglot.agent.providers.openai import DEFAULT_BASE_URL, _where_it_points
+from roboglot.agent.providers.openai_headers import (
     OPENAI_HOSTS,
     SENDS_JSON,
     ambient_headers,
@@ -41,7 +41,7 @@ from quackd.agent.providers.openai_headers import (
     request_headers,
     sdks_own_address,
 )
-from quackd.agent.providers.openrouter import ATTRIBUTION
+from roboglot.agent.providers.openrouter import ATTRIBUTION
 from tests import fake_openai_sdk as fake_sdk
 from tests.conftest import REPO
 
@@ -169,15 +169,15 @@ def test_at_openais_own_api_the_client_is_built_as_the_sdk_builds_it(
     spelling: str, release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The variables are OpenAI's SDK's own, and at OpenAI's own API they go exactly as that SDK
-    sends them by itself: the client is handed no header of quackd's, so a gateway's
+    sends them by itself: the client is handed no header of Roboglot's, so a gateway's
     `Authorization` line goes where the release puts it, and the account headers and the other
-    lines with it. That is what every release did before quackd answered any of it, and what the
+    lines with it. That is what every release did before Roboglot answered any of it, and what the
     rule as first built took away: the account headers' lines in the SDK's own spelling, and the
-    gateway's own `Authorization`, which quackd named the key over."""
+    gateway's own `Authorization`, which Roboglot named the key over."""
     _gateway(monkeypatch, spelling)
     provider, fake = _built(monkeypatch, "openai", release=release)
     assert provider.client_address() == DEFAULT_BASE_URL
-    assert "default_headers" not in fake.kwargs, "quackd named a header at OpenAI's own API"
+    assert "default_headers" not in fake.kwargs, "Roboglot named a header at OpenAI's own API"
     assert fake_sdk.sent(fake, release) == _alone(fake, release)
 
 
@@ -240,7 +240,7 @@ def test_a_vendors_own_headers_still_go_whatever_the_variable_says_about_them(
 
     Named in OpenRouter's own spelling and then in another, the header went nowhere at all in
     3.22.1, which merges the variable's slots in the variable's order without regard to case: the
-    `Omit` quackd handed under the second spelling took OpenRouter's value away from the first.
+    `Omit` Roboglot handed under the second spelling took OpenRouter's value away from the first.
     Every spelling the variable gives now carries OpenRouter's value, so a release that merges
     spellings sends it once, and a release that keeps them apart sends it once for each spelling
     the variable gave."""
@@ -347,8 +347,8 @@ def test_through_openai_base_url_a_gateway_is_sent_what_the_sdk_sends_it(
 def test_a_local_preset_that_reads_openai_base_url_is_not_the_sdks_own_address(
     preset: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A local preset reads `OPENAI_BASE_URL` too, as one rung of quackd's own ladder, for a
-    server you run. That is quackd's choice and not the SDK's, the server is sent no hosted key,
+    """A local preset reads `OPENAI_BASE_URL` too, as one rung of Roboglot's own ladder, for a
+    server you run. That is Roboglot's choice and not the SDK's, the server is sent no hosted key,
     and the leak this answers was a board over plain HTTP, so none of the SDK's variables go there
     either: the server's own key and nothing ambient, as at any other rung."""
     board = "http://jetson.local:11434/v1"
@@ -367,8 +367,8 @@ def test_a_local_preset_that_reads_openai_base_url_is_not_the_sdks_own_address(
 def test_a_gateway_reached_with_base_url_is_sent_the_key_alone(
     release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--base-url` is an address quackd was told for this run, not the one the SDK found, so it
-    is held to the rule as built, whatever is behind it: the key quackd was given and nothing the
+    """`--base-url` is an address Roboglot was told for this run, not the one the SDK found, so it
+    is held to the rule as built, whatever is behind it: the key Roboglot was given and nothing the
     environment holds. A gateway that wants the variable's lines is reached through
     `OPENAI_BASE_URL` instead, and one that takes its token as the authorization is given it as
     the key."""
@@ -384,7 +384,7 @@ def test_a_gateway_reached_with_base_url_is_sent_the_key_alone(
 def test_with_no_address_variable_openais_own_preset_goes_to_openai(
     unset: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Blank is absent, as it is everywhere quackd reads a setting. The SDK took the empty string
+    """Blank is absent, as it is everywhere Roboglot reads a setting. The SDK took the empty string
     for an address, and the run failed on its first turn."""
     if unset:
         monkeypatch.delenv("OPENAI_BASE_URL")
@@ -430,7 +430,7 @@ def test_a_blank_base_url_is_no_base_url(
 def test_a_provider_left_holding_a_blank_address_is_refused_not_sent_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Nothing quackd builds can hold one any more. A blank that got there anyway is refused
+    """Nothing Roboglot builds can hold one any more. A blank that got there anyway is refused
     rather than read as no address, which only OpenAI's own provider may have and which falls
     through to the SDK's."""
     provider, _fake = _built(monkeypatch, "grok")
@@ -558,13 +558,13 @@ def test_a_refusal_never_quotes_an_address_redaction_cannot_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`http://rok:pw@[::1` has a password in it and no host redaction can find, so it would be
-    quoted as it is. A refusal names it as an address quackd cannot read instead."""
+    quoted as it is. A refusal names it as an address Roboglot cannot read instead."""
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI(moves_to="http://rok:pw-SECRET@[::1"))
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     with pytest.raises(ProviderError) as e:
         make_provider("openai")
-    assert "an address quackd cannot read" in str(e.value)
+    assert "an address Roboglot cannot read" in str(e.value)
     assert "pw-SECRET" not in str(e.value)
 
 
@@ -573,7 +573,7 @@ def test_a_release_that_would_still_send_the_variables_authorization_is_refused_
     preset: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The backstop for a release nobody has read: once the client is built its own headers are
-    read back, and an authorization quackd did not write stops the build, naming the release and
+    read back, and an authorization Roboglot did not write stops the build, naming the release and
     the variable and never the value, which is the credential this exists to keep at home."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", f"authorization: {GATEWAY_AUTH}")
     with pytest.raises(ProviderError) as e:
@@ -596,10 +596,10 @@ def test_a_release_that_would_still_send_the_variables_authorization_is_refused_
 def test_a_release_that_would_send_any_other_line_of_the_variable_is_refused_by_name(
     preset: str, lines: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The backstop reads every name quackd answered, not the authorization alone. A release that
-    put the variable's lines back over quackd's `Omit` would send a gateway's own credential, or
+    """The backstop reads every name Roboglot answered, not the authorization alone. A release that
+    put the variable's lines back over Roboglot's `Omit` would send a gateway's own credential, or
     an account the request should not be billed to, to a vendor or a server you run, and the read
-    -back used to let it through because the authorization was quackd's. A line naming one of
+    -back used to let it through because the authorization was Roboglot's. A line naming one of
     OpenRouter's own headers is answered with OpenRouter's value, and a release that put the
     line's own value back over that is refused the same way."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
@@ -649,7 +649,7 @@ def test_a_client_that_cannot_be_read_back_is_not_used(monkeypatch: pytest.Monke
     assert "gw-auth-secret" not in said
 
 
-def test_the_read_back_takes_quackds_own_value_and_omits_and_nothing_else() -> None:
+def test_the_read_back_takes_roboglots_own_value_and_omits_and_nothing_else() -> None:
     bearer = f"Bearer {KEY}"
     omit = fake_sdk.Omit
     assert not foreign_authorization({"Authorization": bearer}, bearer, omit)
@@ -700,7 +700,7 @@ def test_an_sdk_without_what_the_client_is_built_from_is_the_extras_sentence(
     than an `AttributeError` out of the CLI, which catches only a `ProviderError`."""
     fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI(), without=(missing,))
     monkeypatch.setenv("XAI_API_KEY", KEY)
-    with pytest.raises(ProviderNotInstalled, match=r"quackd\[grok\]"):
+    with pytest.raises(ProviderNotInstalled, match=r"roboglot\[grok\]"):
         make_provider("grok")
 
 
@@ -722,7 +722,7 @@ def test_an_sdk_that_raises_anything_while_it_is_imported_is_the_extras_sentence
     monkeypatch.delitem(sys.modules, "openai", raising=False)
     monkeypatch.setattr(sys, "meta_path", [_Broken(), *sys.meta_path])
     monkeypatch.setenv("XAI_API_KEY", KEY)
-    with pytest.raises(ProviderNotInstalled, match=r"quackd\[grok\]"):
+    with pytest.raises(ProviderNotInstalled, match=r"roboglot\[grok\]"):
         make_provider("grok")
 
 
@@ -758,21 +758,21 @@ def test_an_sdk_that_raises_anything_while_it_is_imported_is_the_extras_sentence
             "https://evil.example/\x1b[2Jv1",
             "https://api.x.ai/v1/chat/completions",
             "https://api.x.ai/v1",
-            "an address quackd will not quote",
+            "an address Roboglot will not quote",
             None,
         ),
         (
             "ftp://files.example/v1/models",
             "http://box:8000/v1/models",
             "http://box:8000/v1",
-            "an address quackd will not quote",
+            "an address Roboglot will not quote",
             None,
         ),
         (
             "http://[::1",
             "http://box:8000/v1/models",
             "http://box:8000/v1",
-            "an address quackd will not quote",
+            "an address Roboglot will not quote",
             None,
         ),
     ],
@@ -877,7 +877,7 @@ def test_at_openai_the_rule_gives_the_account_headers_what_the_two_variables_say
 
     Named in two spellings, the value goes once where a release merges them, and twice where it
     keeps both, the variable's two lines in 3.1.0 and 3.6.0 and in 1.66.0, which never reads the
-    variable, the SDK's own entry and the one quackd handed under the other spelling."""
+    variable, the SDK's own entry and the one Roboglot handed under the other spelling."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
     if unset:
         monkeypatch.delenv("OPENAI_ORG_ID")
@@ -1095,17 +1095,17 @@ def _reaches_the_sdk(tree: ast.AST) -> list[str]:
 def test_no_client_is_built_on_openais_sdk_anywhere_but_through_the_rule() -> None:
     """SECURITY.md calls a client built on OpenAI's SDK that does not go through `openai_headers`
     a security issue, because whatever builds one by itself sends whatever the environment put
-    there to wherever it points. So every module quackd ships is read for a way to reach the SDK,
+    there to wherever it points. So every module Roboglot ships is read for a way to reach the SDK,
     and `openai_headers.sdk_parts` is the one place that may: every client is built from what it
     hands back, and by its rule."""
-    roots = [REPO / "quackd", REPO / "bridge", *sorted((REPO / "adapters").glob("*/src"))]
+    roots = [REPO / "roboglot", REPO / "bridge", *sorted((REPO / "adapters").glob("*/src"))]
     reached = {
         path.relative_to(REPO).as_posix(): where
         for root in roots
         for path in sorted(root.rglob("*.py"))
         if (where := _reaches_the_sdk(ast.parse(path.read_text(encoding="utf-8"))))
     }
-    assert set(reached) == {"quackd/agent/providers/openai_headers.py"}, reached
+    assert set(reached) == {"roboglot/agent/providers/openai_headers.py"}, reached
 
 
 def test_the_guard_finds_each_way_of_reaching_the_sdk() -> None:
@@ -1121,5 +1121,5 @@ def test_the_guard_finds_each_way_of_reaching_the_sdk() -> None:
         "client = getattr(sdk, 'OpenAI')",
     ):
         assert _reaches_the_sdk(ast.parse(source)), source
-    for source in ("from quackd.agent.providers.openai import OpenAIProvider", "x = 'openai'"):
+    for source in ("from roboglot.agent.providers.openai import OpenAIProvider", "x = 'openai'"):
         assert not _reaches_the_sdk(ast.parse(source)), source

@@ -1,10 +1,10 @@
 # ADR-0075: An adapter is a family, a body file and a binding
 
-**Status:** accepted · **Date:** 2026-11-05 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is an adapter that declares a manifest) and [ADR-0037](0037-adapters-are-their-own-packages.md) (an adapter is its own package) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md) (a package may import another package's VERIFIED refs when it speaks that package's protocol) · Implemented in 0.33.0 by the changes that follow this record: the Huebot body in `quackd-microduck`, the arm's robot types in `quackd-lerobot`, and the tiers and described bodies of [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) and [ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md) · Documented in [docs/adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md#three-layers-four-tiers-one-rule)
+**Status:** accepted · **Date:** 2026-11-05 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is an adapter that declares a manifest) and [ADR-0037](0037-adapters-are-their-own-packages.md) (an adapter is its own package) · Amends [ADR-0022](0022-per-adapter-upstream-refs.md) (a package may import another package's VERIFIED refs when it speaks that package's protocol) · Implemented in 0.33.0 by the changes that follow this record: the Huebot body in `roboglot-microduck`, the arm's robot types in `roboglot-lerobot`, and the tiers and described bodies of [ADR-0076](0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md) and [ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md) · Documented in [docs/adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md#three-layers-four-tiers-one-rule)
 
 ## Context
 
-Nine robots join quackd through nine adapters, each its own package, and fifteen more are
+Nine robots join Roboglot through nine adapters, each its own package, and fifteen more are
 wanted. The question that prompted this record was whether fewer adapters could cover more
 robots, for instance one adapter for everything that connects over USB. The answer is that
 connectivity is the wrong axis: a USB adapter could not tell an SO-101 from an Open Duck,
@@ -45,7 +45,7 @@ shared motor buses, chosen by `--robot.type`. phosphobot drives seven arms throu
    withheld (`extras.not_offered`), its limits, its safety authority, its rest pose. Inside a
    package that drives bodies of one kind, each body is a record the package loads rather than
    code it runs: the Microduck's `Body`, of which Huebot is the second. Where nothing drives the
-   body, it is one YAML in the core ([ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)).
+   body, it is one YAML in the core ([ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)).
    `describe()` loads a body; it does not build one.
 2. **A family is the code every body of a kind needs**, shared by the bodies that declare it,
    and it is extracted only where two bodies already share it. In 0.33.0 that is the biped on
@@ -55,8 +55,8 @@ shared motor buses, chosen by `--robot.type`. phosphobot drives seven arms throu
    `koch_follower` is a Dynamixel bus with the same methods. The arm's mock, which repeats the
    real backend's hand-off by hand, becomes the real backend over a fake follower in 0.34.0.
    Nothing is extracted for a robot nobody has: a family of one is a package as it is today.
-3. **A binding is one of three routes and nothing else**: an SDK quackd imports, a wire quackd
-   speaks, or a bridge quackd ships for the robot's own computer. Transport, the serial port,
+3. **A binding is one of three routes and nothing else**: an SDK Roboglot imports, a wire Roboglot
+   speaks, or a bridge Roboglot ships for the robot's own computer. Transport, the serial port,
    the socket, the radio, carries bytes and knows nothing about the body.
 
 **A package over a family.** A robot that speaks a protocol another package already speaks is
@@ -72,7 +72,7 @@ name is used only inside its own package.
 
 - The next robot's cost depends on its route and not on its name. A robot in a covered
   ecosystem (ROS 2 over rosbridge, a LeRobot robot type) costs a body file and a hardware
-  checklist run. A robot that speaks a protocol quackd already speaks costs a body record and a
+  checklist run. A robot that speaks a protocol Roboglot already speaks costs a body record and a
   `not_offered` list. A robot with a network API of its own costs a wire binding in the nearest
   family. A robot with no API costs a bridge on the robot. None of them costs a package of
   2,000 to 9,000 lines again.

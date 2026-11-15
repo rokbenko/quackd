@@ -1,14 +1,14 @@
-"""The arm simulator on the stand-in arm, from its model to `quackd run`: no network and
+"""The arm simulator on the stand-in arm, from its model to `roboglot run`: no network and
 nothing fetched.
 
-`quackd_lerobot/sim/model.py` sets an arm in quackd's scene and maps LeRobot's units onto it;
+`roboglot_lerobot/sim/model.py` sets an arm in Roboglot's scene and maps LeRobot's units onto it;
 `sim/world.py` steps it, holds or drops its joints and keeps the truth about the table;
 `sim/follower.py` is the follower the real backend drives over it, and `sim/faults.py` the
 seeded bus faults that follower can be told to have. `sim/clock.py` is the world's time,
 `sim/camera.py` its cameras, and `sim/transport.py` the backend they make, `lerobot:mujoco`.
 What the real backend makes of the follower is `tests/test_lerobot_sim_parity.py`'s; here is
 what the follower does on its own, and what the backend adds to the real one's code. The tests
-that render skip where no GL context can be made, unless `QUACKD_REQUIRE_GL=1` says they must
+that render skip where no GL context can be made, unless `ROBOGLOT_REQUIRE_GL=1` says they must
 not (`tests/gl.py`).
 Every test here runs on the primitives-only stand-in, which is what CI's physics job has, except
 the one marked `so101_model`, which needs the maker's model already fetched and skips without
@@ -42,15 +42,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from quackd.adapters.base import AdapterError, AdapterNotInstalled, RestResult
-from quackd.perception.color_blob import DEFAULT_FOV_DEG, DEFAULT_TARGETS, ColorBlobDetector
-from quackd.preflight import load_sidecar
-from quackd.safety import Heartbeat, allow_all
-from quackd.transport.base import HeartbeatError, TransportError
-from quackd_lerobot import REACH, LeRobotAdapter, lerobot_manifest, make
-from quackd_lerobot import upstream_api as lr
-from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
-from quackd_lerobot.real import (
+from roboglot.adapters.base import AdapterError, AdapterNotInstalled, RestResult
+from roboglot.perception.color_blob import DEFAULT_FOV_DEG, DEFAULT_TARGETS, ColorBlobDetector
+from roboglot.preflight import load_sidecar
+from roboglot.safety import Heartbeat, allow_all
+from roboglot.transport.base import HeartbeatError, TransportError
+from roboglot_lerobot import REACH, LeRobotAdapter, lerobot_manifest, make
+from roboglot_lerobot import upstream_api as lr
+from roboglot_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from roboglot_lerobot.real import (
     MAX_STEP_DEG,
     POLICY_HZ,
     TORQUE_RETRIES,
@@ -59,12 +59,12 @@ from quackd_lerobot.real import (
     motor_in_error,
     parse_camera_url,
 )
-from quackd_lerobot.sim import standin
-from quackd_lerobot.sim import upstream_api as up
-from quackd_lerobot.sim.camera import CAMERA_HINT, RenderError, SimCamera, vertical_fov
-from quackd_lerobot.sim.clock import SUBSTEPS, SimClock
-from quackd_lerobot.sim.faults import EXAMPLE, TORQUE_READ, FaultPlan
-from quackd_lerobot.sim.follower import (
+from roboglot_lerobot.sim import standin
+from roboglot_lerobot.sim import upstream_api as up
+from roboglot_lerobot.sim.camera import CAMERA_HINT, RenderError, SimCamera, vertical_fov
+from roboglot_lerobot.sim.clock import SUBSTEPS, SimClock
+from roboglot_lerobot.sim.faults import EXAMPLE, TORQUE_READ, FaultPlan
+from roboglot_lerobot.sim.follower import (
     DISCONNECT_RETRIES,
     NO_STATUS,
     NOT_SENT,
@@ -74,7 +74,7 @@ from quackd_lerobot.sim.follower import (
     SimFollowerConfig,
     ensure_safe_goal_position,
 )
-from quackd_lerobot.sim.model import (
+from roboglot_lerobot.sim.model import (
     CUBE,
     DEFAULT_OBJECTS,
     FIXED_PAD,
@@ -102,15 +102,15 @@ from quackd_lerobot.sim.model import (
     parse_scene,
     read_calibration,
 )
-from quackd_lerobot.sim.transport import GENERIC_ARM, SIM_EXTRA, LeRobotSim
-from quackd_lerobot.sim.world import (
+from roboglot_lerobot.sim.transport import GENERIC_ARM, SIM_EXTRA, LeRobotSim
+from roboglot_lerobot.sim.world import (
     LIFT_MIN_M,
     ROOM_TEMPERATURE_C,
     START_CLEAR_M,
     ArmWorld,
     WorldError,
 )
-from quackd_lerobot.verbs import (
+from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     GRIPPER_S,
@@ -186,8 +186,8 @@ def test_the_scene_is_laid_out_from_the_model(mjcf: str) -> None:
     table = arm.table
     top = model.geom_pos[table][2] + model.geom_size[table][2]
     assert top == pytest.approx(arm.workspace.table_top)
-    # the views are laid out for the lens quackd's detector assumes by default
-    from quackd.perception.color_blob import DEFAULT_FOV_DEG
+    # the views are laid out for the lens Roboglot's detector assumes by default
+    from roboglot.perception.color_blob import DEFAULT_FOV_DEG
 
     assert VIEW_HFOV_DEG == DEFAULT_FOV_DEG
 
@@ -577,7 +577,7 @@ def test_a_rest_pose_the_settle_cannot_clear_is_refused(mjcf: str) -> None:
     assert re.search(r"of settling still leaves \w+ \d+ mm into ", said), said
     assert "so the simulated arm cannot start there" in said, said
     assert up.JOINT_ZERO.name in said and up.JOINT_SIGN.name in said, said
-    assert "quackd robot rest-pose bench-twin records the model's zero" in said, said
+    assert "roboglot robot rest-pose bench-twin records the model's zero" in said, said
 
 
 def test_a_joint_the_settle_pushes_past_its_stop_starts_at_the_stop(mjcf: str) -> None:
@@ -760,7 +760,7 @@ def test_the_truth_follows_a_grasp_and_a_latch_keeps_what_it_saw(mjcf: str) -> N
 
 
 def _jaws_scene(**block: Any) -> list[dict[str, Any]]:
-    """A scene as `quackd preflight` reads one from a sidecar: a box between the jaws, the size
+    """A scene as `roboglot preflight` reads one from a sidecar: a box between the jaws, the size
     of the simulator's own cube, and a capsule on the table, both under names of their own."""
     return [
         {"name": "block", "kind": "box", "size": list(CUBE.size), "place": "jaws", **block},
@@ -902,7 +902,7 @@ def test_a_scene_starts_with_nothing_but_the_table_touching_anything(
         # with no draws to spare, a table the seed laid on the arm or the block is refused,
         # which is how the ones below that needed laying again are known to have been met
         with monkeypatch.context() as m:
-            m.setattr("quackd_lerobot.sim.world.PLACE_TRIES", 0)
+            m.setattr("roboglot_lerobot.sim.world.PLACE_TRIES", 0)
             try:
                 sim._lay_out(arm).close()
             except ModelError as e:
@@ -957,14 +957,14 @@ def test_the_sidecar_the_arms_page_shows_lays_out_on_a_bare_lerobot_mujoco(
 ) -> None:
     """The one sidecar docs/adapters/lerobot/README.md shows is the one a reader copies, and the
     same page starts that reader on a bare `--robot lerobot:mujoco`. So its table has to lay out on
-    the generic arm, as `quackd preflight` would build it. An object it put between the jaws
+    the generic arm, as `roboglot preflight` would build it. An object it put between the jaws
     could not: the generic arm starts at the model's zero, its hand nowhere near the table, and
     every connect of every rehearsal refused it."""
     page = Path(__file__).resolve().parents[1] / "docs" / "adapters" / "lerobot" / "README.md"
     section = page.read_text(encoding="utf-8").split("\n### The sidecar\n", 1)[1]
     sidecar_yaml = section.split("```yaml\n", 1)[1].split("```", 1)[0]
     (tmp_path / "task.sim.yaml").write_text(sidecar_yaml, encoding="utf-8")
-    sidecar = load_sidecar(tmp_path / "task.duck", joints=JOINTS)
+    sidecar = load_sidecar(tmp_path / "task.glot", joints=JOINTS)
     assert sidecar is not None and sidecar.scene is not None
     transport = make("mujoco", scene=sidecar.scene_items()).transport
     assert isinstance(transport, LeRobotSim)
@@ -1493,7 +1493,7 @@ def test_a_fault_spec_is_read_strictly() -> None:
         assert said.endswith(f"such as {EXAMPLE}."), said
 
 
-def test_a_follower_is_built_only_the_way_quackd_builds_one(mjcf: str) -> None:
+def test_a_follower_is_built_only_the_way_roboglot_builds_one(mjcf: str) -> None:
     arm = _arm(mjcf)
     calibration = _calibration(arm)
     for config, why in (
@@ -1535,7 +1535,7 @@ def test_a_clock_step_divides_every_wait_the_verbs_make(mjcf: str) -> None:
 
 
 async def test_a_wait_of_nothing_registers_nothing(mjcf: str) -> None:
-    """The flock clock registers an id even for a zero wait and never lets it go, and a
+    """The team clock registers an id even for a zero wait and never lets it go, and a
     registered id that nobody parks stops time for good: the one sleep after these would never
     wake."""
     clock = SimClock(ArmWorld(_arm(mjcf)))
@@ -1592,7 +1592,7 @@ async def test_the_viewer_closing_reaches_a_direct_sleep_as_an_abort(mjcf: str) 
     """The rest move, the take-hold and the policy loop sleep on the clock itself rather than
     through the transport, and a person closing the viewer must stop them as it stops a verb.
     Time goes on afterwards, because the teardown still has to move the arm."""
-    from quackd.safety import Aborted
+    from roboglot.safety import Aborted
 
     clock = SimClock(ArmWorld(_arm(mjcf)))
 
@@ -1823,19 +1823,19 @@ async def test_a_machine_without_the_physics_is_told_the_extra_before_anything_i
     def fetched() -> str:
         raise AssertionError("the model was fetched with no physics to load it in")
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", fetched)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", fetched)
     monkeypatch.setitem(sys.modules, "mujoco", None)  # any import of it now fails
     adapter = make("mujoco")
     with pytest.raises(AdapterNotInstalled, match=re.escape(SIM_EXTRA)):
         await adapter.connect()
     # the extra doctor's row names for MuJoCo on this adapter, the same words
-    from quackd.doctor import EXTRAS
+    from roboglot.doctor import EXTRAS
 
     assert ("mujoco", SIM_EXTRA) in EXTRAS.values()
 
 
 def test_the_simulator_is_known_before_anything_is_built(mjcf: str) -> None:
-    from quackd.adapters.factory import describe, is_simulator, make_adapter, parse_robot_spec
+    from roboglot.adapters.factory import describe, is_simulator, make_adapter, parse_robot_spec
 
     assert is_simulator("lerobot:mujoco")
     assert not any(is_simulator(s) for s in ("lerobot:real", "lerobot:mock", "microduck:mujoco"))
@@ -1932,8 +1932,8 @@ async def test_an_mcp_sessions_minutes_start_at_its_connect_on_the_simulators_cl
     clock, and the simulator's clock is the wall's until it connects and the world's after. The
     minutes were one taken from the other, ran negative and never reached `max_minutes`. They
     start at 0 at the connect and count the world's seconds, so `max_minutes` trips on them."""
-    from quackd.duckfile.schema import Budgets
-    from quackd.mcp_server import build_fleet_server
+    from roboglot.glotfile.schema import Budgets
+    from roboglot.mcp_server import build_fleet_server
 
     transport = LeRobotSim(model=mjcf)
     transport.connect_pause_s = 0.0
@@ -1988,7 +1988,7 @@ async def test_a_rest_move_a_hand_off_and_a_verb_all_run_in_one_task(mjcf: str) 
 
 
 async def test_the_gripper_closes_under_physics_once_the_arm_is_at_rest(mjcf: str) -> None:
-    """`quackd robot release` closes the gripper after its fold through the real backend's own
+    """`roboglot robot release` closes the gripper after its fold through the real backend's own
     send, and here the jaws are bodies that meet rather than a number that reaches zero. Opened
     all the way first, they close, the read says so, and the arm is still at its rest pose for
     the release that comes next."""
@@ -2135,14 +2135,14 @@ def test_a_parked_pose_no_close_could_call_at_rest_is_refused(
     arm = _arm(mjcf)
     fold, raw = _folded_past_its_travel(arm)
     travel = joint_ranges({name: MotorCalibration(**fields) for name, fields in raw.items()})
-    monkeypatch.setattr("quackd_lerobot.sim.world.joint_at_rest", lambda *_: False)
+    monkeypatch.setattr("roboglot_lerobot.sim.world.joint_at_rest", lambda *_: False)
     with pytest.raises(WorldError) as refused:
         ArmWorld(arm, rest_pose=fold, name="bench-twin", travel=travel)
     said = str(refused.value)
     assert "with shoulder_pan and shoulder_lift at the edges of the travel" in said, said
     assert "shoulder_lift pushed back into its travel" in said and "into the table" in said, said
     assert "would end with its rest move stalled" in said, said
-    assert "quackd robot rest-pose bench-twin" in said, said
+    assert "roboglot robot rest-pose bench-twin" in said, said
 
 
 async def test_a_twin_the_settle_cannot_clear_is_refused_at_connect(mjcf: str) -> None:
@@ -2156,7 +2156,7 @@ async def test_a_twin_the_settle_cannot_clear_is_refused_at_connect(mjcf: str) -
         await LeRobotAdapter(transport).connect()
     said = str(refused.value)
     assert "so the simulated arm cannot start there" in said, said
-    assert "quackd robot rest-pose NAME" in said, said
+    assert "roboglot robot rest-pose NAME" in said, said
     assert transport.sim_world is None
 
 
@@ -2258,9 +2258,9 @@ async def test_a_policy_thinks_in_no_sim_time_and_its_chunk_lands_its_latency_la
     runner's declared latency later, where it would have landed on the arm."""
     import time as wall
 
-    from quackd.transport.base import Intent
-    from quackd_lerobot.policy.runner import Observation
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.transport.base import Intent
+    from roboglot_lerobot.policy.runner import Observation
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 2 / TICK_S  # a whole number of the clock's steps a tick
     k = 3
@@ -2327,10 +2327,10 @@ async def test_manipulates_timeout_covers_the_thinking_the_simulators_clock_wait
     timed out with every second of the thinking covered."""
     import time as wall
 
-    from quackd.duckfile import narrow
-    from quackd.duckfile.schema import DuckFrontmatter
-    from quackd_lerobot.policy.runner import Observation
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.glotfile import narrow
+    from roboglot.glotfile.schema import GlotFrontmatter
+    from roboglot_lerobot.policy.runner import Observation
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 1 / TICK_S
     swing: dict[str, float] = {}
@@ -2347,9 +2347,9 @@ async def test_manipulates_timeout_covers_the_thinking_the_simulators_clock_wait
     try:
         swing[PAN] = transport.joint_range_deg[PAN][1] / 8
         segment_s = 10 / rate
-        contract = DuckFrontmatter.model_validate(
+        contract = GlotFrontmatter.model_validate(
             {
-                "duck": 3,
+                "glot": 3,
                 "name": "slow",
                 "description": "d",
                 "verbs": {"allow": ["manipulate"]},
@@ -2393,10 +2393,10 @@ async def test_a_policy_slower_than_it_declares_is_named_when_manipulate_times_o
     one request took and the latency declared, and to bench it."""
     import time as wall
 
-    from quackd.duckfile import narrow
-    from quackd.duckfile.schema import DuckFrontmatter
-    from quackd_lerobot.policy.runner import Observation
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.glotfile import narrow
+    from roboglot.glotfile.schema import GlotFrontmatter
+    from roboglot_lerobot.policy.runner import Observation
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 1 / TICK_S
     slower = 3  # times the latency it declares
@@ -2411,9 +2411,9 @@ async def test_a_policy_slower_than_it_declares_is_named_when_manipulate_times_o
     try:
         swing[PAN] = transport.joint_range_deg[PAN][1] / 8
         segment_s = 10 / rate
-        contract = DuckFrontmatter.model_validate(
+        contract = GlotFrontmatter.model_validate(
             {
-                "duck": 3,
+                "glot": 3,
                 "name": "slow",
                 "description": "d",
                 "verbs": {"allow": ["manipulate"]},
@@ -2435,7 +2435,7 @@ async def test_a_policy_slower_than_it_declares_is_named_when_manipulate_times_o
         took = re.search(r"one request took (\d+\.\d+) s on the wall's clock", said)
         assert took and float(took[1]) >= slower / rate - TICK_S / 2, said
         assert f"against the {runner.latency_s():g} s it declares" in said, said
-        assert "quackd policy check --bench" in said, said
+        assert "roboglot policy check --bench" in said, said
     finally:
         await adapter.close()
 
@@ -2448,14 +2448,14 @@ async def test_a_rate_or_a_latency_the_loop_would_not_run_leaves_no_thinking_to_
     so neither has thinking the timeout must cover. Their numbers are left out of the bound,
     which a rate past any policy's made too large to count requests in, and which raised out of
     the narrowing, at connect over MCP or after a task file was adopted."""
-    from quackd.duckfile.narrow import (
+    from roboglot.glotfile.narrow import (
         FROZEN_INFERENCE_MAX_S,
         frozen_inference_s,
         narrow_policy_verb,
     )
-    from quackd.duckfile.schema import SEGMENT_HEADROOM_S, SEGMENT_MAX_S, DuckFrontmatter
-    from quackd_lerobot.policy.loop import FIRST_CHUNK_S
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.glotfile.schema import SEGMENT_HEADROOM_S, SEGMENT_MAX_S, GlotFrontmatter
+    from roboglot_lerobot.policy.loop import FIRST_CHUNK_S
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 1 / TICK_S
     runner = ScriptedRunner(lambda _o, _s: None, rate_hz=rate, latency_ticks=1)
@@ -2465,9 +2465,9 @@ async def test_a_rate_or_a_latency_the_loop_would_not_run_leaves_no_thinking_to_
         # a segment too long to count its ticks in is bounded by nothing, and says so
         assert transport.frozen_inference_s(sys.float_info.max) == math.inf
         assert frozen_inference_s(adapter, sys.float_info.max) == FROZEN_INFERENCE_MAX_S
-        contract = DuckFrontmatter.model_validate(
+        contract = GlotFrontmatter.model_validate(
             {
-                "duck": 3,
+                "glot": 3,
                 "name": "long",
                 "description": "d",
                 "verbs": {"allow": ["manipulate"]},
@@ -2497,8 +2497,8 @@ async def test_a_policy_whose_period_is_no_whole_number_of_steps_still_sends_onc
     """The simulator's clock wakes on its own steps, the nearest number of them to what a sleep
     asks for, and a policy's period need not be a whole number of them. Every tick is still sent
     inside its own period, never before its deadline and never two to a period."""
-    from quackd.transport.base import Intent
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.transport.base import Intent
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 3 / TICK_S
     swing: dict[str, float] = {}
@@ -2547,13 +2547,13 @@ async def test_a_long_chunk_lands_as_the_last_runs_out_and_a_segment_plays_its_o
     mjcf: str,
 ) -> None:
     """On the simulator's own clock, a runner of chunks `LONG_CHUNK_S` long at a named rate that
-    declares half a chunk of latency, the most `quackd policy serve` takes. It is asked again as
+    declares half a chunk of latency, the most `roboglot policy serve` takes. It is asked again as
     each chunk runs down to that half, so every chunk after the first lands as the last runs
     out and the arm is starved only while a segment's first is on its way. Two segments each
     play exactly the ticks their seconds hold, at a period that is no whole number of the
     clock's steps, and the run's record adds up what they said they played."""
-    from quackd.transport.base import Intent
-    from quackd_lerobot.policy.scripted import ScriptedRunner
+    from roboglot.transport.base import Intent
+    from roboglot_lerobot.policy.scripted import ScriptedRunner
 
     rate = 3 / TICK_S
     chunk = round(LONG_CHUNK_S * rate)
@@ -2666,8 +2666,8 @@ async def test_the_viewer_closing_while_the_arm_falls_stops_the_take_hold(mjcf: 
     """Closing the viewer during the settle is a person's stop, as it is during a verb. The
     take-hold ends there with torque still off, and the run's own take-hold reports it as a
     refusal, rather than going on to energise an arm nobody is watching any more."""
-    from quackd.adapters.base import take_hold_if_any
-    from quackd.safety import Aborted
+    from roboglot.adapters.base import take_hold_if_any
+    from roboglot.safety import Aborted
 
     tilt = _arm(mjcf).joints["shoulder_lift"].stops[1] / 6
     adapter, transport = await _sim_arm(mjcf, rest_pose={"shoulder_lift": tilt})
@@ -2887,7 +2887,7 @@ async def test_a_close_away_from_rest_says_what_that_means_on_a_simulator(mjcf: 
     note = transport.close_note or ""
     assert note.startswith(f"the simulated arm is not at its rest pose ({PAN} is at "), note
     assert "torque was left on" in note and "ends with the run" in note, note
-    for real in ("quackd robot release", "doctor --robot", "cut its power", "hold it first"):
+    for real in ("roboglot robot release", "doctor --robot", "cut its power", "hold it first"):
         assert real not in note, note
 
 
@@ -2898,10 +2898,10 @@ async def test_a_run_on_the_simulator_is_not_asked_to_hold_the_arm(
     to hold the arm first, because the release drops it. On the simulator that asked them to
     hold an arm that is not there, and the close then said there was nothing to hold. No offer
     is made on a simulator, and the close's own line is what is said."""
-    from quackd.agent.loop import RunConfig, run_duck
-    from quackd.agent.providers.base import ToolCall
-    from quackd.agent.providers.fake import FakeProvider
-    from tests.test_loop import ARM_REST, ScriptedPerson, _arm_duck
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
+    from tests.test_loop import ARM_REST, ScriptedPerson, _arm_glot
 
     transport = LeRobotSim(model=mjcf, rest_pose=ARM_REST)
     transport.connect_pause_s = 0.0
@@ -2921,7 +2921,7 @@ async def test_a_run_on_the_simulator_is_not_asked_to_hold_the_arm(
         return missed
 
     transport.go_to_rest = go_to_rest  # type: ignore[method-assign]
-    duck = _arm_duck()
+    duck = _arm_glot()
     duck.frontmatter.verbs.allow = [*duck.frontmatter.verbs.allow, "move_joints"]
     script = [
         ToolCall(name="move_joints", arguments={"positions": {PAN: ARM_REST[PAN] / 2}}),
@@ -2937,7 +2937,7 @@ async def test_a_run_on_the_simulator_is_not_asked_to_hold_the_arm(
         person=person,
     )
     with _needs_gl():
-        await asyncio.wait_for(run_duck(config), WALL_S)
+        await asyncio.wait_for(run_glot(config), WALL_S)
     assert moves == 2, "the teardown made no rest move"
     assert person.asked == [], person.asked
     note = transport.close_note or ""
@@ -2947,9 +2947,9 @@ async def test_a_run_on_the_simulator_is_not_asked_to_hold_the_arm(
 @pytest.mark.parametrize(
     ("names", "said"),
     [
-        (("front", "wrist"), "the front camera is quackd's default view of the table"),
-        (("top",), "the top camera is quackd's default view of the table"),
-        (("front", "top"), "the front and top cameras are quackd's default views of the table"),
+        (("front", "wrist"), "the front camera is Roboglot's default view of the table"),
+        (("top",), "the top camera is Roboglot's default view of the table"),
+        (("front", "top"), "the front and top cameras are Roboglot's default views of the table"),
         (("wrist",), None),
     ],
 )
@@ -2957,7 +2957,7 @@ async def test_the_default_views_note_names_the_views_the_run_has(
     mjcf: str, names: tuple[str, ...], said: str | None
 ) -> None:
     """A run on front and wrist, the lab's layout, was told the front and top cameras were
-    quackd's views, naming a camera it never opened. The note and the state's assumptions name
+    Roboglot's views, naming a camera it never opened. The note and the state's assumptions name
     the ones open, and a run with neither says nothing about them."""
     adapter = make("mujoco", camera_url=[f"opencv://{i}?name={n}" for i, n in enumerate(names)])
     transport = adapter.transport
@@ -3048,7 +3048,7 @@ def test_the_gif_flag_and_the_readme_say_the_arm_simulator_writes_no_gif() -> No
 def test_the_lookout_runs_on_the_simulated_arm_end_to_end(
     mjcf: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run` as a person types it, on the stand-in, with the scripted pilot and memory
+    """`roboglot run` as a person types it, on the stand-in, with the scripted pilot and memory
     off: the task connects, reads the arm back, succeeds and closes. With the GIF left on, as
     it is by default: the recorder draws a world the arm's simulator does not have, so no GIF
     is written, and the run used to finish and then crash writing a GIF of no frames. The
@@ -3056,10 +3056,10 @@ def test_the_lookout_runs_on_the_simulated_arm_end_to_end(
     which it was while both notes keyed on the backend name alone."""
     from typer.testing import CliRunner
 
-    from quackd.agent.transcript import Transcript
-    from quackd.cli import app
+    from roboglot.agent.transcript import Transcript
+    from roboglot.cli import app
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", lambda: mjcf)
     runs = tmp_path / "runs"
     result = CliRunner().invoke(
         app,
@@ -3099,9 +3099,9 @@ def test_an_arm_that_stops_answering_ends_the_run_in_a_verdict_and_no_traceback(
     screen was a page of Python, over an arm that had done what it should."""
     from typer.testing import CliRunner
 
-    from quackd.agent.transcript import Transcript
-    from quackd.cli import app
-    from quackd_lerobot.sim.transport import LeRobotSim
+    from roboglot.agent.transcript import Transcript
+    from roboglot.cli import app
+    from roboglot_lerobot.sim.transport import LeRobotSim
 
     built = LeRobotSim.__init__
 
@@ -3109,7 +3109,7 @@ def test_an_arm_that_stops_answering_ends_the_run_in_a_verdict_and_no_traceback(
         built(self, *args, **{**kwargs, "faults": FaultPlan.parse("read_loss_from=3", seed=0)})
 
     monkeypatch.setattr(LeRobotSim, "__init__", lost)
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", lambda: mjcf)
     runs = tmp_path / "runs"
     result = CliRunner().invoke(
         app,
@@ -3148,10 +3148,10 @@ def test_doctor_and_release_on_a_registered_simulated_arm_say_it_is_the_simulato
     can draw the scene."""
     from typer.testing import CliRunner
 
-    from quackd import doctor
-    from quackd.cli import app
+    from roboglot import doctor
+    from roboglot.cli import app
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", lambda: mjcf)
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     given = tmp_path / "arm-sim.json"
     given.write_text(json.dumps(_synthetic(_arm(mjcf))), encoding="utf-8")
@@ -3201,9 +3201,9 @@ def test_release_on_a_simulated_arm_with_a_rest_pose_folds_and_never_asks(
     so the command ends with torque read off and exit 0."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", lambda: mjcf)
     given = tmp_path / "arm-sim.json"
     given.write_text(json.dumps(_synthetic(_arm(mjcf))), encoding="utf-8")
     reg = ["--registry-dir", str(tmp_path / "registry")]
@@ -3237,15 +3237,15 @@ def test_doctor_connects_a_registered_simulator_that_was_given_no_address(
 ) -> None:
     """A simulator registered without `--address` runs on the calibration LeRobot keeps under
     its name, and doctor only ever connected a robot that had an address. So it reported a
-    machine healthy on which `quackd run --robot NAME` was refused at connect, and never made
+    machine healthy on which `roboglot run --robot NAME` was refused at connect, and never made
     the one render that says this machine can draw the scene. It connects the simulator now,
     and a real body with no address is still never guessed at."""
     from typer.testing import CliRunner
 
-    from quackd import doctor
-    from quackd.cli import app
+    from roboglot import doctor
+    from roboglot.cli import app
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", lambda: mjcf)
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))
     reg = ["--registry-dir", str(tmp_path / "registry")]
     runner = CliRunner()
@@ -3286,7 +3286,7 @@ def test_doctor_connects_a_registered_simulator_that_was_given_no_address(
 
 @pytest.mark.so101_model
 def test_the_so101_model_loads_with_its_fingers_cut_to_pads() -> None:
-    from quackd_lerobot.sim.assets import AssetError, ensure_so101
+    from roboglot_lerobot.sim.assets import AssetError, ensure_so101
 
     try:
         so101 = ensure_so101(offline=True)

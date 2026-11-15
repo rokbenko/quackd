@@ -35,12 +35,12 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception import ASSUMED_LENS
-from quackd.perception.base import Detection
-from quackd.safety import Executor
-from quackd.space.places import PlaceBook, PlaceStore
-from quackd.transport.base import (
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception import ASSUMED_LENS
+from roboglot.perception.base import Detection
+from roboglot.safety import Executor
+from roboglot.space.places import PlaceBook, PlaceStore
+from roboglot.transport.base import (
     HeartbeatError,
     Intent,
     TransportError,
@@ -48,13 +48,13 @@ from quackd.transport.base import (
     spatial_of,
     twist_shown_since_of,
 )
-from quackd.transport.mock import MockTransport
-from quackd.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
-from quackd.verbs.registry import STOP_ENDED, VerbRegistry, registry_from_manifest
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck import upstream_api as up
-from quackd_microduck.transports import jsonrpc_unix
-from quackd_microduck.transports.jsonrpc_unix import (
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
+from roboglot.verbs.registry import STOP_ENDED, VerbRegistry, registry_from_manifest
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck import upstream_api as up
+from roboglot_microduck.transports import jsonrpc_unix
+from roboglot_microduck.transports.jsonrpc_unix import (
     CAMERA_FPS,
     GAZE_HOLD_S,
     HELD_FOR_A_VERB,
@@ -70,7 +70,7 @@ from quackd_microduck.transports.jsonrpc_unix import (
     release_key,
     state_stale_after_s,
 )
-from quackd_microduck.webrtc import WebRtcCamera
+from roboglot_microduck.webrtc import WebRtcCamera
 from tests.fake_robotd import (
     CURRENT_API,
     DOWN_ON_THE_FLOOR,
@@ -88,13 +88,13 @@ from tests.fake_robotd import (
     on_its_own_loop,
 )
 
-DUCK = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
+DUCK = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
 #: Every verb that moves the duck, for the tests of what a duck that is not standing refuses.
-MOVERS = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+MOVERS = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
     "  allow: [walk, go_to, search_scan, kick, gaze, sit, stand, stand_up]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
@@ -141,7 +141,7 @@ def _executor(adapter: MicroduckAdapter, **kwargs: Any) -> Executor:
 
 async def _until(t: JsonRpcUnixTransport, check: Callable[[dict[str, Any]], bool]) -> None:
     """Wait until the transport has read a state frame `check` accepts, which is when a change
-    made on the fake has reached quackd. The fake sends one every tenth of a second."""
+    made on the fake has reached Roboglot. The fake sends one every tenth of a second."""
     for _ in range(200):
         if check(t._last_state or {}):
             return
@@ -234,13 +234,13 @@ async def test_a_robotd_newer_than_the_read_is_served_and_says_so(
     on was a closed socket, the first of them six days after the read. No robotd refuses a peer
     for a different number, and a call whose shape moved refuses itself by name
     (`up.VERSION_SKEW`), so a newer one is served now, and the log, `doctor` and every state
-    say which robot it is and that quackd has not read it."""
+    say which robot it is and that Roboglot has not read it."""
     newer = CURRENT_API + 1
     fake = FakeRobotd(api_version=newer)
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        with caplog.at_level(logging.WARNING, logger="quackd.transport.jsonrpc"):
+        with caplog.at_level(logging.WARNING, logger="roboglot.transport.jsonrpc"):
             await t.connect()
         warning = t.runtime_warning or ""
         assert f"API v{newer}" in warning and f"API v{CURRENT_API}" in warning
@@ -267,15 +267,15 @@ async def test_a_robotd_newer_than_the_read_is_served_and_says_so(
         await fake.stop()
 
 
-async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
+async def test_the_version_roboglot_was_written_against_is_the_one_upstream_ships(
     member: Member,
 ) -> None:
-    """A robot older than the oldest contract quackd has read is refused, not guessed at, whether
+    """A robot older than the oldest contract Roboglot has read is refused, not guessed at, whether
     a robotd or a shim answers `hello`.
 
     `API_VERSION` was 16 for a week after upstream had moved to 23, and nothing here noticed
     because the fake was pinned to the same stale number. It was then 23 while every robotd
-    release from daemon-v0.12.0 on said 27 or more, and quackd refused each of them. Naming the
+    release from daemon-v0.12.0 on said 27 or more, and Roboglot refused each of them. Naming the
     number means a bump has to come past this test rather than sliding through with the fake,
     and so does the floor, the oldest read: 16 stays refused, and so does the version just
     below the floor, in words that name both numbers.
@@ -284,7 +284,7 @@ async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
     # rather than sailing through because the number only went up. 41 was daemon-v0.16.1's, read
     # on 2026-10-08, and 50 is daemon-v0.18.8's, read on 2026-11-08.
     assert CURRENT_API == 50, "re-read duck-ipc-proto at a new pin before changing this"
-    assert FLOOR == 23, "the floor is the oldest contract quackd has read end to end"
+    assert FLOOR == 23, "the floor is the oldest contract Roboglot has read end to end"
     for below in (16, FLOOR - 1):
         fake = member.fake(api_version=below)
         await fake.start()
@@ -300,7 +300,7 @@ async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
 
 
 async def test_a_robotd_older_than_the_read_but_not_the_floor_is_served_and_warned_about() -> None:
-    """The floor is the oldest version quackd has read, not a promise about every version
+    """The floor is the oldest version Roboglot has read, not a promise about every version
     between it and the pin: daemon-v0.15.0 to daemon-v0.15.2 all say API 37, and only the last
     reports `safety.picked_up`. So an older robotd is warned about as a newer one is."""
     fake = FakeRobotd(api_version=FLOOR, picked_up=None)
@@ -333,7 +333,7 @@ async def test_the_version_read_connects_without_a_warning(robotd: FakeRobotd) -
     ids=["missing", "null", "string", "float", "bool"],
 )
 async def test_a_hello_that_names_no_version_is_refused(member: Member, answered: object) -> None:
-    """Whatever answered `hello` without an integer `api_version` is not a robot quackd can
+    """Whatever answered `hello` without an integer `api_version` is not a robot Roboglot can
     check against anything, a robotd or a shim alike. It used to be served, because the old gate
     compared only a version that was there, and `True` passed as the number 1 would have."""
     fake = member.fake(api_version=answered)
@@ -392,7 +392,7 @@ def test_the_default_address_is_robotds_own_socket_whatever_duck_runtime_dir_say
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`DUCK_RUNTIME_DIR` moves the directory upstream's daemons publish their identity files in,
-    never robotd's socket, which is a literal `--socket` default (`up.RUNTIME_DIR_ENV`). quackd
+    never robotd's socket, which is a literal `--socket` default (`up.RUNTIME_DIR_ENV`). Roboglot
     read it on the machine it ran on, so in a shell that set it, for upstream's tests or a daemon
     run by hand, the default named a socket no robotd creates."""
     monkeypatch.setenv(up.RUNTIME_DIR_ENV.name, "/home/someone/.cache/duck-sim")
@@ -567,7 +567,7 @@ async def test_stop_says_when_it_could_not_be_delivered(robotd: FakeRobotd) -> N
     await t.close()
 
 
-async def test_quackd_never_sends_the_two_methods_that_move_or_drop_every_joint(
+async def test_roboglot_never_sends_the_two_methods_that_move_or_drop_every_joint(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:
     """`robot.init` moves every joint and `robot.relax` collapses the robot.
@@ -655,7 +655,7 @@ async def test_an_upstream_error_carries_its_code(robotd: FakeRobotd) -> None:
     with pytest.raises(TransportError) as caught:
         await t.request(up.ROBOT_LOOK.name, {"x": 1.0, "elevation": 0.2})
     assert caught.value.code == up.ERR_INVALID_PARAMS and "`elevation`" in str(caught.value)
-    # on the version quackd read, which upstream does not promise means the same calls
+    # on the version Roboglot read, which upstream does not promise means the same calls
     assert f"API v{CURRENT_API}" in str(caught.value) and "has not read" in str(caught.value)
     await t.close()
 
@@ -670,19 +670,19 @@ async def test_no_camera_without_url(robotd: FakeRobotd) -> None:
 # ── the robot at the pin ─────────────────────────────────────────────────────────────────
 
 #: Every verb of the Microduck's that reaches robotd's socket without a camera.
-WIRE_VERBS = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+WIRE_VERBS = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
     "  allow: [walk, kick, quack, gaze, stand_up]\nsuccess: [x]\n---\n# Task\nx\n"
 )
 
 
-async def test_nothing_quackd_sends_is_a_member_robotd_does_not_know(
+async def test_nothing_roboglot_sends_is_a_member_robotd_does_not_know(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:
     """Every params type robotd decodes denies unknown fields, so a member it does not know is
     refused by name, on that one call. That is how a robotd from another release says a call
     changed shape, and a notification gets no answer at all: a `robot.move` robotd refused
-    would be a walk quackd reported and the duck never took. The fake decodes the way robotd
+    would be a walk Roboglot reported and the duck never took. The fake decodes the way robotd
     does at the pin, and every verb that reaches the socket, a held gaze, a pose and a stop go
     through it with nothing refused."""
     robotd.fallen, robotd.recover_on_enable = True, True  # so that stand_up has to ask
@@ -718,7 +718,7 @@ async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
     """A robotd from another release answers METHOD_NOT_FOUND naming a call it does not have,
     which is the refusal upstream put where the version gate was. The verb that needed the call
     fails with the code, the name and both versions, instead of reporting what the duck did not
-    do, since a robot quackd has not read is served now and this is how it says no."""
+    do, since a robot Roboglot has not read is served now and this is how it says no."""
     newer = CURRENT_API + 1
     fake = FakeRobotd(api_version=newer, missing=frozenset({up.ROBOT_LOOK.name}))
     await fake.start()
@@ -729,7 +729,7 @@ async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
         result = await ex.run_verb("gaze", {"direction": "left"})
         assert not result.ok and str(up.ERR_METHOD_NOT_FOUND) in result.summary
         assert up.ROBOT_LOOK.name in result.summary
-        assert f"robotd speaks API v{newer} and quackd read API v{CURRENT_API}" in result.summary
+        assert f"robotd speaks API v{newer} and Roboglot read API v{CURRENT_API}" in result.summary
         await t.close()
     finally:
         await fake.stop()
@@ -789,7 +789,7 @@ async def test_the_two_labels_that_stand_the_duck_up(label: str, posture: str) -
 async def test_every_other_label_reads_as_unknown_and_refuses_a_walk(
     registry: VerbRegistry, label: str
 ) -> None:
-    """robotd reports far more labels than the three quackd reads, and every one without `sit`
+    """robotd reports far more labels than the three Roboglot reads, and every one without `sit`
     in it used to read as standing unless the duck had fallen, so a duck in somebody's hands,
     one riding a fall down, one halfway through a kick and whatever a newer robot adds could
     each be sent a walk. Each now reads as unknown, says which label it was, and refuses twice:
@@ -1070,7 +1070,7 @@ async def test_stand_up_waits_for_a_duck_the_policy_gets_up_late(
     up a moment later had already been told it may need a hand. It reads the duck as it waits,
     up to `STAND_UP_WAIT_S`, and a duck that stands six seconds in is upright. Nothing is sent
     while it waits but the one request."""
-    from quackd_microduck.verbs import STAND_UP_WAIT_S
+    from roboglot_microduck.verbs import STAND_UP_WAIT_S
 
     fake = FakeRobotd(policy="walk", fallen=True)
     await fake.start()
@@ -1097,7 +1097,7 @@ async def test_stand_up_stops_waiting_for_a_duck_somebody_picks_up(
 ) -> None:
     """A duck somebody picks up while `stand_up` waits for it is in their hands, and the wait
     ends there rather than running on to judge legs a person is holding."""
-    from quackd_microduck.verbs import STAND_UP_WAIT_S
+    from roboglot_microduck.verbs import STAND_UP_WAIT_S
 
     fake = FakeRobotd(policy="walk", fallen=True)
     await fake.start()
@@ -1120,7 +1120,7 @@ async def test_stand_up_stops_waiting_for_a_duck_somebody_picks_up(
 async def test_stand_up_asks_nothing_of_a_duck_nobody_can_see(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:
-    """With no state arriving, quackd cannot see whether the duck is down or in somebody's
+    """With no state arriving, Roboglot cannot see whether the duck is down or in somebody's
     hands, so it does not ask the policy to drive it either way."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
@@ -1173,8 +1173,8 @@ def _block(base: dict[str, Any], key: str, value: object) -> dict[str, Any]:
     return block
 
 
-async def _what_quackd_makes_of(member: Member, safety: dict[str, Any]) -> dict[str, Any]:
-    """What quackd makes of a robot whose every frame carries `safety`: the state it reads,
+async def _what_roboglot_makes_of(member: Member, safety: dict[str, Any]) -> dict[str, Any]:
+    """What Roboglot makes of a robot whose every frame carries `safety`: the state it reads,
     whether a twist a verb sends is accepted, whether a walk, a `stand_up` and, on a body that
     turns its head, a `gaze` run, and which calls went out for them. `walked` is the walk verb's
     own `robot.move`, told apart from the bare twist sent before it, and `moved` any `robot.move`
@@ -1224,19 +1224,19 @@ async def _what_quackd_makes_of(member: Member, safety: dict[str, Any]) -> dict[
     "value", [1, "true", {"held": True}, [True]], ids=["1", "string", "object", "list"]
 )
 @pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
-async def test_a_safety_flag_quackd_cannot_read_moves_nothing(
+async def test_a_safety_flag_roboglot_cannot_read_moves_nothing(
     member: Member, key: str, value: object
 ) -> None:
     """Null is a flag not reported, but a `1`, a `"true"`, an object or a list is a flag sent in a
-    shape quackd cannot read, and a robot quackd cannot vouch for. Reading it as absent let a walk
-    out: `picked_up: 1` beside `policy: walk` read as standing and sent three robot.move, and so
-    did `limp: "true"`, while `picked_up: "false"` read as held for being a word that is not
+    shape Roboglot cannot read, and a robot Roboglot cannot vouch for. Reading it as absent let a
+    walk out: `picked_up: 1` beside `policy: walk` read as standing and sent three robot.move, and
+    so did `limp: "true"`, while `picked_up: "false"` read as held for being a word that is not
     empty, and `fallen: "false"` read as a robot on the floor. It reads as `unknown` now, the
     reason quotes the value, and nothing that moves it goes out, on its feet or on the floor: a
     twist a verb sends, a walk, `stand_up`, and the head too, since the flag may be the one that
     says somebody holds it."""
     for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
-        made = await _what_quackd_makes_of(member, _block(base, key, value))
+        made = await _what_roboglot_makes_of(member, _block(base, key, value))
         assert made["posture"] == "unknown", (base, made)
         assert f"safety.{key} is {json.dumps(value)}" in made["reason"], made["reason"]
         assert not made["twist_accepted"], (base, made)
@@ -1276,8 +1276,8 @@ async def test_a_null_safety_flag_reads_as_the_key_being_absent(member: Member, 
     drive. Null now reads exactly as the key being absent, as not reported, on a robot on its
     feet and on one on the floor."""
     for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
-        given = await _what_quackd_makes_of(member, _block(base, key, None))
-        absent = await _what_quackd_makes_of(member, _block(base, key, _ABSENT))
+        given = await _what_roboglot_makes_of(member, _block(base, key, None))
+        absent = await _what_roboglot_makes_of(member, _block(base, key, _ABSENT))
         # the reason and what `stand_up` said may say which of the two it read, and nothing else
         # may differ
         reason = given.pop("reason")
@@ -1297,15 +1297,15 @@ async def test_a_null_fall_or_pick_up_flag_sends_nothing_its_absence_would_not(
     nothing is reporting. With `picked_up` null nothing reports whether somebody holds the robot,
     so `stand_up` refuses a robot on the floor rather than ask its legs to drive. `limp` null is
     not limp."""
-    blind = await _what_quackd_makes_of(member, _block(UPRIGHT, "fallen", None))
+    blind = await _what_roboglot_makes_of(member, _block(UPRIGHT, "fallen", None))
     assert blind["fall_detection"] is False and blind["posture"] == "unknown"
     assert "safety.fallen is null" in blind["reason"], blind["reason"]
     assert not blind["moved"] and not blind["enabled"]
     assert not blind["stand_up_ok"] and "nothing is reporting" in blind["stand_up_said"]
-    unheld = await _what_quackd_makes_of(member, _block(DOWN_ON_THE_FLOOR, "picked_up", None))
+    unheld = await _what_roboglot_makes_of(member, _block(DOWN_ON_THE_FLOOR, "picked_up", None))
     assert unheld["pickup_detection"] is False and unheld["picked_up"] is None
     assert not unheld["enabled"]
-    loose = await _what_quackd_makes_of(member, _block(UPRIGHT, "limp", None))
+    loose = await _what_roboglot_makes_of(member, _block(UPRIGHT, "limp", None))
     assert loose["posture"] == "standing" and loose["walk_ok"] and loose["walked"]
 
 
@@ -1402,7 +1402,7 @@ async def test_a_move_held_back_holds_every_move_until_its_verb_ends(
     """The robot reading standing again is not enough: the verb that was walking when it stopped
     standing is still sending, and what it sends is the walk it was doing before. While it is
     held back the state reads `unknown` and says why, where `report_state` said `standing` of a
-    robot whose walk quackd was holding back, with nothing saying so.
+    robot whose walk Roboglot was holding back, with nothing saying so.
 
     Nor is the verb's own stop. It used to lift the hold, which was right for a verb whose stop
     is its last act, and wrong for `search_scan`, which stops after every turn and turns again:
@@ -1708,7 +1708,7 @@ async def test_a_duck_picked_up_while_a_scan_looks_between_turns_ends_the_scan(
     await t.close()
 
 
-# ── a robotd quackd has not read ─────────────────────────────────────────────────────────
+# ── a robotd Roboglot has not read ─────────────────────────────────────────────────────────
 
 
 async def _eventually(check: Callable[[], bool], what: str, wait_s: float = 30.0) -> None:
@@ -1727,7 +1727,7 @@ def _drop_by_switch(fake: FakeRobotd) -> None:
 
 
 def _drop_by_renaming(fake: FakeRobotd) -> None:
-    # a robotd whose MoveParams call the turn rate `wz`, as a newer one might: quackd's `vyaw`
+    # a robotd whose MoveParams call the turn rate `wz`, as a newer one might: Roboglot's `vyaw`
     # is then a member it does not know, which it refuses by name, to nobody, as a notification
     fake.params["robot.move"] = (frozenset({"vx", "vy", "wz"}), frozenset())
 
@@ -1737,9 +1737,9 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_its_verb_ends(
     robotd: FakeRobotd, drop: Callable[[FakeRobotd], None]
 ) -> None:
     """robotd answers no notification, so a `robot.move` it could not parse used to be a walk
-    quackd reported and the duck never took, and serving a robotd quackd has not read is what
+    Roboglot reported and the duck never took, and serving a robotd Roboglot has not read is what
     makes one likely. Its own state says what it was last asked for (`up.MOVE_ECHO`): a twist
-    that state has not shown, once robotd has answered a call quackd made after it and a few
+    that state has not shown, once robotd has answered a call Roboglot made after it and a few
     frames have come since, holds every `robot.move` back, the way a duck that stops standing
     does, until the verb that sent it ends, its own stops along the way included. The state
     says so before the next twist is tried."""
@@ -1754,7 +1754,7 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_its_verb_ends(
     ack = await walk.send(Intent.move(0.1, 0.0, 0.0))
     reason = ack.reason or ""
     assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
-    assert "has since answered a call quackd made after it" in reason
+    assert "has since answered a call Roboglot made after it" in reason
     assert "still says it was asked for [0, 0, 0]" in reason
     # both things that look like this from here: a robotd that could not parse the twist, and
     # another client, a gamepad's padd among them, sending one after it (`up.PAD_DRIVES`)
@@ -1790,10 +1790,10 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_its_verb_ends(
 
 async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRobotd) -> None:
     """A frame robotd built before a twist reached it can be read well after the twist went
-    out: when quackd's own process stalls with the frame still in its socket, and every frame
-    robotd sends while a link holds quackd's own lines back. Counted from the send, either read
+    out: when Roboglot's own process stalls with the frame still in its socket, and every frame
+    robotd sends while a link holds Roboglot's own lines back. Counted from the send, either read
     as robotd not taking the twist, and held back a walk it took. The echo counts only frames
-    read after robotd has answered a call quackd made after the twist, `MOVE_ECHO_FRAMES` of
+    read after robotd has answered a call Roboglot made after the twist, `MOVE_ECHO_FRAMES` of
     them, so a stall delays the verdict rather than inventing one.
 
     The stream is stopped and the frames handed to the transport one at a time, all of them
@@ -1810,7 +1810,7 @@ async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRob
     robotd._stream = None
     await _landed(t)  # every frame the stream wrote has been read; from here, only these
     stale = robotd.frame()["params"]
-    robotd.link.clear()  # robotd reads nothing more for now, the question quackd asks included
+    robotd.link.clear()  # robotd reads nothing more for now, the question Roboglot asks included
     t._took_state(stale)  # so the duck reads standing however long the lines above took
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
     sent = t._unshown[0]
@@ -1833,7 +1833,7 @@ async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRob
 async def test_a_walk_a_link_held_back_for_a_while_is_taken_and_never_held(
     robotd: FakeRobotd,
 ) -> None:
-    """A link that holds quackd's lines back for longer than the echo window, as one lost
+    """A link that holds Roboglot's lines back for longer than the echo window, as one lost
     segment on an ssh tunnel does until it is sent again, used to stop a walk robotd took.
     Frames kept coming, each showing the twist from before the stall, so every twist sent into
     it read as refused after three of them, and a `go_to` stopped dead on a healthy robot,
@@ -1842,7 +1842,7 @@ async def test_a_walk_a_link_held_back_for_a_while_is_taken_and_never_held(
 
     Each twist differs from the last, as `go_to`'s do while the ball drifts across the
     picture, so no frame from before the stall can show one by value. The timeout is long, so
-    that the question quackd asks during the stall is still waiting for its answer when the
+    that the question Roboglot asks during the stall is still waiting for its answer when the
     stall ends, rather than counted as one robotd did not answer."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=60.0)
     await t.connect()
@@ -1896,7 +1896,7 @@ async def test_a_walk_asks_robotd_once_as_it_starts(robotd: FakeRobotd) -> None:
 async def test_a_robotd_that_does_not_answer_cannot_be_said_to_take_a_walk(
     robotd: FakeRobotd,
 ) -> None:
-    """A link that holds the question quackd asks for longer than a call may wait is the link
+    """A link that holds the question Roboglot asks for longer than a call may wait is the link
     the heartbeat gives up on too. robotd cannot be shown to have read the twists, so they are
     held back as twists it has not taken, and the refusal says the question went unanswered."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
@@ -1957,7 +1957,7 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
     """While an emotion plays robotd reports a zero twist in place of the one it was asked for,
     and nothing in its state says one is playing (`up.MOVE_ECHO`), so a walk under way when
     somebody presses a stock pad's Y or a bumper stops as one robotd did not take, which is
-    right: the duck is not doing what quackd asked. The words named a twist robotd could not
+    right: the duck is not doing what Roboglot asked. The words named a twist robotd could not
     parse and another client's alone, which sent the pilot and the robot's owner looking for a
     bug or a second program when the pad was the thing to look at. They name an emotion too
     now, when the state said a zero twist, and not when it showed another client's moving one,
@@ -1989,7 +1989,7 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
     else:
         assert _moves(robotd) and not robotd.rejected, "robotd took every twist it was sent"
         assert "still says it was asked for [0, 0, 0]" in said, said
-        # the cause quackd cannot see, and where the pilot and the owner can
+        # the cause Roboglot cannot see, and where the pilot and the owner can
         assert "or an emotion was playing" in said, said
         assert "a stock pad's Y and bumpers" in said and "'emotion started'" in said, said
     assert "could not parse" in said and "another client" in said, said
@@ -2055,7 +2055,7 @@ async def test_a_verb_that_steers_stops_on_a_robotd_that_does_not_take_its_twist
 
 
 class _DelayingLink:
-    """A slow link between quackd and the fake, as an ssh tunnel to a duck is: every byte each
+    """A slow link between Roboglot and the fake, as an ssh tunnel to a duck is: every byte each
     way is held back `delay` seconds and passed on in the order it came, and nothing is lost.
 
     The delay is read as each piece is passed on, so a test can connect over a quick link and
@@ -2115,7 +2115,7 @@ class _DelayingLink:
                 await asyncio.wait_for(self._server.wait_closed(), timeout=2.0)
 
 
-#: One-way delays for the slow-link tests, in robotd's frame periods at the rate quackd
+#: One-way delays for the slow-link tests, in robotd's frame periods at the rate Roboglot
 #: subscribes at. The echo's verdict on a walk comes a round trip and `MOVE_ECHO_FRAMES` frame
 #: periods after its first twist, so over the first a verdict can land inside one of
 #: `search_scan`'s turns through an alpha's lens, and over the others only after the turn's last
@@ -2126,7 +2126,7 @@ SLOW_LINKS = (1.0, 2.5, 4.0)
 
 def _through(port: int) -> JsonRpcUnixTransport:
     """A transport to `port` on mediad's own `/frame`, whose camera hands out one picture as tall
-    as an alpha's upright 720p, so that quackd takes the lens it assumes for an alpha from it as
+    as an alpha's upright 720p, so that Roboglot takes the lens it assumes for an alpha from it as
     a run does (`up.ALPHA_UPRIGHT_FOV`), at the rate any other camera is asked at, which keeps
     the looks between turns as short as a test wants them."""
     t = JsonRpcUnixTransport(
@@ -2226,7 +2226,7 @@ async def test_a_scan_over_a_slow_link_stops_when_robotd_takes_no_turn(
     lasts until the scan ends now, a turn's twists are judged on every frame robotd sent before
     it read the stop, and the scan counts only the turns robotd's state showed it took: it stops
     at the first turn after the verdict, saying robotd has not taken robot.move and that robotd
-    confirmed none of the turns quackd sent."""
+    confirmed none of the turns Roboglot sent."""
     fake = FakeRobotd(drop_moves=True)
     result = await _over_a_slow_link(
         registry,
@@ -2308,7 +2308,7 @@ async def test_a_robotd_that_takes_every_twist_is_scanned_and_reached_over_a_slo
 
 
 def _alpha_lens() -> float:
-    """The lens quackd assumes for an alpha's upright `/frame`, worked out as `_through`'s
+    """The lens Roboglot assumes for an alpha's upright `/frame`, worked out as `_through`'s
     transport works it out from its picture (`up.ALPHA_UPRIGHT_FOV`)."""
     half = math.radians(up.IMX219_FOV_DEG) / 2
     return math.degrees(2 * math.atan(math.tan(half) * 9 / 16))
@@ -2473,13 +2473,13 @@ async def test_no_one_line_ends_the_link(robotd: FakeRobotd, junk: str, answer: 
     socket, and so did an answer to a waiting call whose `error` was not an object, a JSON-RPC
     1.0 peer's null beside its result among them. The task died without a word, and every
     answer after it, the real one right behind the bad line included, waited out its timeout.
-    An id quackd did not send answers nothing, a null error beside a result is the result,
+    An id Roboglot did not send answers nothing, a null error beside a result is the result,
     and an error that is not an object fails the call it answers, saying what came."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     robotd.junk = [junk.format(id=t._next_id)]
     if answer == "string-error":
-        with pytest.raises(TransportError, match="an error quackd cannot read: 'boom'"):
+        with pytest.raises(TransportError, match="an error Roboglot cannot read: 'boom'"):
             await t.request(up.ROBOT_HEALTH.name)
     else:
         health = await t.request(up.ROBOT_HEALTH.name)
@@ -2570,7 +2570,7 @@ async def test_an_answer_with_no_accepted_is_not_a_yes(
     member: Member, robot: FakeRobotd, answered: object
 ) -> None:
     """robotd writes `accepted` on every `IntentResult`, at the floor and at the pin, so an
-    answer without it is not one quackd has read: a robot newer than the read, which is served
+    answer without it is not one Roboglot has read: a robot newer than the read, which is served
     now, whose result moved. It read as accepted, so a kick the robot refused was reported as a
     kick. It is a refusal now, naming what came back, straight from `send_intent` and from the
     verb that sent it."""
@@ -2588,7 +2588,7 @@ async def test_a_socket_that_answers_hello_but_not_robot_subscribe_is_not_robotd
     """updaterd shares robotd's protocol and answers `hello` with a version of its own, and
     refuses every `robot.*` call by name (`up.OTHER_DAEMONS_ANSWER_HELLO`). An ssh forward to
     its socket passed the handshake, and the refusal of `robot.subscribe` was put down to a
-    robotd built from a protocol quackd had not read, which sent the reader to upstream's version
+    robotd built from a protocol Roboglot had not read, which sent the reader to upstream's version
     notes when the fix was the socket the forward points at."""
     fake = FakeRobotd(missing=frozenset({up.ROBOT_SUBSCRIBE.name}))
     await fake.start()
@@ -2621,7 +2621,7 @@ async def test_a_state_frame_longer_than_asyncios_default_line_is_read(
     assert ASYNCIO_DEFAULT_LIMIT < len(json.dumps(robotd.frame())) < READER_LIMIT
     await _eventually(
         lambda: len((t._last_state or {}).get("skeleton") or ()) == count,
-        "a state frame longer than asyncio's default line reaching quackd",
+        "a state frame longer than asyncio's default line reaching Roboglot",
     )
     assert (await t.get_state()).posture == "standing"
     await t.close()
@@ -2703,7 +2703,7 @@ async def test_the_state_says_whether_mediads_frame_answered(
     robotd: FakeRobotd, path: str, answers: bool, recorded: bool | None
 ) -> None:
     """mediad's `GET /frame` arrived in daemon-v0.13.0, so a robotd the floor serves may have
-    nothing there. quackd knows only when `--camera-url` asks it, and says so then."""
+    nothing there. Roboglot knows only when `--camera-url` asks it, and says so then."""
     t = JsonRpcUnixTransport(
         f"tcp://127.0.0.1:{robotd.port}", camera_url=f"http://127.0.0.1:1{path}"
     )
@@ -2721,8 +2721,8 @@ async def test_the_state_says_whether_mediads_frame_answered(
 
 
 def _probed(**kwargs: Any) -> Any:
-    from quackd import doctor
-    from quackd_microduck import describe
+    from roboglot import doctor
+    from roboglot_microduck import describe
 
     with on_its_own_loop(FakeRobotd, **kwargs) as fake:
         address = f"tcp://127.0.0.1:{fake.port}"
@@ -2733,7 +2733,7 @@ def _probed(**kwargs: Any) -> Any:
 
 def test_doctor_says_which_robotd_answered_and_what_it_cannot_see() -> None:
     """`doctor` is the hardware checklist's go/no-go gate, so the robot's release, a version
-    quackd has not read and a robotd with no pick-up detector are on its screen before
+    Roboglot has not read and a robotd with no pick-up detector are on its screen before
     anything moves: a row for the first, advice for the other two."""
     newer = CURRENT_API + 1
     report = _probed(api_version=newer, picked_up=None)
@@ -2748,7 +2748,7 @@ def test_doctor_says_which_robotd_answered_and_what_it_cannot_see() -> None:
     report = _probed()
     rows = {row.what: row for row in report.rows}
     assert (rows["  pickup_detection"].value, rows["  pickup_detection"].state) == ("True", "plain")
-    # what quackd holds back for a verb still running, which on doctor's own connection is none
+    # what Roboglot holds back for a verb still running, which on doctor's own connection is none
     assert (rows["  move_hold"].value, rows["  move_hold"].state) == ("none", "plain")
     advice = "\n".join(report.advisories)
     assert "API v" not in advice and "holding" not in advice, advice
@@ -2837,7 +2837,7 @@ async def test_a_stop_ends_the_held_gaze(
 ) -> None:
     """The `stop` verb is what the pilot is told to reach for when anything looks wrong, and the
     heartbeat sends the same stop when the link is in doubt. A hold that went on pulling the
-    head back every second after either would be quackd still steering the robot."""
+    head back every second after either would be Roboglot still steering the robot."""
     t = await _looked(robotd)
     if how == "stop()":
         await t.stop()
@@ -2857,7 +2857,7 @@ def _gaze_tasks() -> list[asyncio.Task[Any]]:
     return [
         task
         for task in asyncio.all_tasks()
-        if task.get_name() == "quackd-jsonrpc-gaze" and not task.done()
+        if task.get_name() == "roboglot-jsonrpc-gaze" and not task.done()
     ]
 
 
@@ -2979,7 +2979,7 @@ def _kick(fake: FakeRobotd, kicking: bool) -> None:
 async def test_a_held_gaze_waits_while_the_duck_is_not_standing_or_sitting(
     robotd: FakeRobotd, change: Callable[[FakeRobotd, bool], None], said: str
 ) -> None:
-    """quackd moves nothing of a duck it cannot vouch for, and the head is part of it, so no
+    """Roboglot moves nothing of a duck it cannot vouch for, and the head is part of it, so no
     `robot.head` goes out while the duck is in somebody's hands, limp, fallen or on a label
     other than `walk`, `stand` or `sit`. Those pass, so the hold waits rather than ends, and the
     head goes out again once the duck stands."""
@@ -3032,17 +3032,17 @@ async def test_a_gaze_an_emotion_may_have_taken_says_so_where_one_can_play(
     released = (await t.get_state()).extras["gaze_released"] or ""
     assert "another client is steering the head" in released
     assert ("an emotion is playing" in released) is named, released
-    assert "or robotd is not taking quackd's robot.head" in released
+    assert "or robotd is not taking Roboglot's robot.head" in released
     await t.close()
 
 
 async def test_a_head_held_still_off_the_gaze_is_somebody_elses(robotd: FakeRobotd) -> None:
     """robotd's smoothing is a setting, and at 1 it passes every head straight through. A gamepad
-    posing the head sends its pose at least ten times a second, so quackd's re-send has the slot
+    posing the head sends its pose at least ten times a second, so Roboglot's re-send has the slot
     only until the pad's next one, and long before the hold looks again the head is back on the
     pad's pose: the two frames it reads then show the same head. The hold let go only of a head
     moving away from the held one, so it went on pulling the head toward the gaze every period
-    for as long as the pad held it. With quackd alone robotd closes the head on the held one
+    for as long as the pad held it. With Roboglot alone robotd closes the head on the held one
     every frame, so a head off it that comes no closer is somebody else's.
 
     The fake's pad writes the slot before every frame, which is what the frames a robot's hold
@@ -3289,7 +3289,7 @@ async def test_a_dry_run_holds_no_gaze(registry: VerbRegistry, robotd: FakeRobot
 async def test_the_state_says_where_the_camera_points(
     robotd: FakeRobotd, yaw_deg: float, pitch_deg: float
 ) -> None:
-    """The simulators have always said where the head points as `head_yaw_deg`, and a flock
+    """The simulators have always said where the head points as `head_yaw_deg`, and a team
     member adds it to a camera bearing to get one from the body. The real duck never said, so on
     a robot the camera read as straight ahead wherever the head had turned. `frames.camera` is
     where robotd's own FK puts the camera, and its optical axis is the answer."""
@@ -3312,7 +3312,7 @@ async def test_without_frames_the_head_yaw_joint_says_where_the_camera_points(
     """A robotd from before API 24 reports no `frames`, and a Huebot's shim is not asked to. The
     measured head_yaw joint turns the camera left when it is positive, which upstream's FK test
     pins (`up.HEAD_YAW_SIGN`), so it gives the yaw, and nothing at all comes from a frame that is
-    too old. On a body quackd turns the head of the state also says there is no pitch and that
+    too old. On a body Roboglot turns the head of the state also says there is no pitch and that
     the yaw came from the joint; a body it sends no look has no pose to report."""
     robot.reports_frames = False
     adapter = await member.connected(robot)
@@ -3321,7 +3321,7 @@ async def test_without_frames_the_head_yaw_joint_says_where_the_camera_points(
     if member.body.looks:
         assert (await t.send_intent(Intent.look(math.cos(yaw), math.sin(yaw), 0.1))).accepted
     else:
-        robot.head[HEAD.index("head_yaw")] = yaw  # nothing quackd sends turns this head
+        robot.head[HEAD.index("head_yaw")] = yaw  # nothing Roboglot sends turns this head
     await _until(t, lambda s: (s.get("joints") or [0.0] * 15)[7] != 0.0)
     extras = (await t.get_state()).extras
     assert extras["head_yaw_deg"] == 30.0
@@ -3465,11 +3465,11 @@ async def test_a_glance_fading_out_is_not_somebody_elses_head(
 
 #: What mediad's `/frame` answers when it cannot hand a frame out (mediad/src/web.rs:123-124).
 UNAVAILABLE = b"Camera snapshot unavailable; retry when capture is running.\n"
-#: The words of it that a reader of quackd's error should be shown.
+#: The words of it that a reader of Roboglot's error should be shown.
 UNAVAILABLE_SAID = UNAVAILABLE.decode().strip()
 #: A contract under which the two verbs that need a frame may run.
-SEES = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, go_to]\n"
+SEES = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, go_to]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
 
@@ -3567,7 +3567,7 @@ def test_mediads_frame_is_asked_for_at_a_rate_of_its_own() -> None:
 async def test_a_503_at_connect_is_waited_through_until_a_frame_comes(robotd: FakeRobotd) -> None:
     """mediad's `/frame` answers 503 while it cannot hand a frame out, and its body says to try
     again. One failure of any kind used to end the wait at connect, and with it the camera for
-    the whole run, since whether a run can see is decided there once. quackd asks again now,
+    the whole run, since whether a run can see is decided there once. Roboglot asks again now,
     until a frame comes or the wait runs out."""
     with SnapshotServer((503, UNAVAILABLE), (503, UNAVAILABLE), (200, _png(720, 1280))) as camera:
         t = JsonRpcUnixTransport(
@@ -3770,7 +3770,7 @@ async def test_the_lens_is_the_first_frames_and_stays(
 
 async def test_a_frame_is_as_old_as_its_request_and_not_its_download(robotd: FakeRobotd) -> None:
     """mediad takes the picture a `/frame` answers with when the request reaches it, then encodes
-    it and sends it down the tunnel, and quackd started a frame's age only once the last of it
+    it and sends it down the tunnel, and Roboglot started a frame's age only once the last of it
     had arrived, which left all of that out: a PNG that took a while to come was handed out as
     if it had just been taken. Its age runs from the request now, and the moment the frame says
     it was taken is the request's."""
@@ -3798,7 +3798,7 @@ async def test_a_frame_slower_to_come_than_the_window_is_never_handed_out(
     """A PNG that trickled in over several seconds was handed out as fresh however long it took,
     since its age began once it had all come, and urllib's timeout bounds each read rather than
     the request. Counted from the request, a frame that took longer to come than the window
-    quackd steers on is already too old when it arrives: it is not handed out, and the camera
+    Roboglot steers on is already too old when it arrives: it is not handed out, and the camera
     says why."""
     window = camera_stale_after_s(MEDIAD_FRAME_FPS)
     with SnapshotServer((200, _png(720, 1280)), (200, _png(720, 1280), window + 0.3)) as camera:
@@ -3826,7 +3826,7 @@ async def test_only_mediads_frame_says_when_and_through_which_head_it_was_taken(
 ) -> None:
     """mediad's `/frame` takes its picture after the request reaches it, so the request's moment
     is one the picture is no older than, and the head the newest state frame showed then is the
-    head it was taken through, which a flock member adds a bearing to. Any other HTTP camera may
+    head it was taken through, which a team member adds a bearing to. Any other HTTP camera may
     hand out a picture it took before it was asked, so its frames say neither, and nor does a
     WebRTC frame, which comes some unknown while after the camera took it."""
     yaw = 30.0
@@ -3983,10 +3983,10 @@ async def test_a_verb_that_finds_no_frame_says_why(
 
 def test_doctor_prints_the_cameras_last_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """`doctor` is the checklist's go/no-go gate, and the camera's rows are where somebody sees
-    why a `/frame` camera gave nothing: mediad's own 503, the last thing it said after quackd
+    why a `/frame` camera gave nothing: mediad's own 503, the last thing it said after Roboglot
     waited through it."""
-    from quackd import doctor
-    from quackd_microduck import describe
+    from roboglot import doctor
+    from roboglot_microduck import describe
 
     monkeypatch.setattr(jsonrpc_unix, "FIRST_FRAME_WAIT_S", 1.0)
     with SnapshotServer((503, UNAVAILABLE)) as camera, on_its_own_loop(FakeRobotd) as fake:
@@ -4016,13 +4016,13 @@ def _x_of(t: JsonRpcUnixTransport) -> float | None:
 async def test_robotds_odometry_is_a_pose_in_extras_and_never_in_x_y_theta(
     robotd: FakeRobotd,
 ) -> None:
-    """robotd has sent `odom` on every frame since before the pin, and quackd passed it through
+    """robotd has sent `odom` on every frame since before the pin, and Roboglot passed it through
     raw and read nothing of it. It is a pose now, which says it is odometry, and the adapter
-    passes the source on by name. `x`, `y` and `theta` stay empty, since the flock reads those
+    passes the source on by name. `x`, `y` and `theta` stay empty, since the team reads those
     as one arena every member shares."""
     t = await _connected(robotd)
     robotd.odom = {"position": [0.4, -0.2, 0.06], "yaw": 0.5}
-    await _eventually(lambda: _x_of(t) == 0.4, "the duck's odometry reaching quackd")
+    await _eventually(lambda: _x_of(t) == 0.4, "the duck's odometry reaching Roboglot")
     state = await t.get_state()
     where = state.extras["where"]
     assert where["kind"] == "odometry" and where["frame"].startswith("odom:")

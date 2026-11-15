@@ -2,7 +2,7 @@
 
 The verbs this robot lacks are the point of the file. It has no beak, no kick policy, no sit
 policy and no way back up after a fall, so `kick`, `grab`, `sit`, `stand` and `stand_up` must
-be absent from the manifest, from the registry, from `.duck` validation and from the prompt.
+be absent from the manifest, from the registry, from `.glot` validation and from the prompt.
 """
 
 from __future__ import annotations
@@ -12,27 +12,27 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import RobotAdapter
-from quackd.adapters.factory import make_adapter, parse_robot_spec
-from quackd.agent.prompts import build_system_prompt
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.duckfile.validate import validate_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, allow_all
-from quackd.transport.base import Intent
-from quackd.verbs.core import scan_mode
-from quackd.verbs.registry import VerbNotFound, registry_from_manifest
-from quackd_open_duck import (
+from roboglot.adapters.base import RobotAdapter
+from roboglot.adapters.factory import make_adapter, parse_robot_spec
+from roboglot.agent.prompts import build_system_prompt
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.glotfile.validate import validate_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.base import Intent
+from roboglot.verbs.core import scan_mode
+from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
+from roboglot_open_duck import (
     OpenDuckAdapter,
     conditions,
     describe,
     implementations,
     open_duck_manifest,
 )
-from quackd_open_duck.mock import OpenDuckMock
-from quackd_open_duck.sim2d import OpenDuckSim2D
-from quackd_open_duck.verbs import GAZE_YAW_DEG, MAX_VX, MAX_VY, MAX_WZ, mood_for
+from roboglot_open_duck.mock import OpenDuckMock
+from roboglot_open_duck.sim2d import OpenDuckSim2D
+from roboglot_open_duck.verbs import GAZE_YAW_DEG, MAX_VX, MAX_VY, MAX_WZ, mood_for
 
 runner = CliRunner()
 
@@ -66,8 +66,8 @@ GATED = {
 #: Every skill the shared cartoon duck understands and this robot does not.
 NOT_THIS_DUCK = ("kick_left", "kick_right", "ground_pick", "sit_toggle", "roulade")
 
-DUCK = parse_duck_text(
-    "---\nduck: 1\nname: t\ndescription: d\nrequires: [observe, move, say]\nverbs:\n"
+DUCK = parse_glot_text(
+    "---\nglot: 1\nname: t\ndescription: d\nrequires: [observe, move, say]\nverbs:\n"
     "  allow: [observe, search_scan, go_to, move, gaze, express, say, quack, "
     "report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
 )
@@ -92,7 +92,7 @@ def test_manifest_is_a_slow_biped_that_cannot_kick() -> None:
     assert m.embodiment == "biped" and m.mobility == "legged"
     assert set(m.verb_names()) == OPEN_DUCK_VERBS
     assert not [v for v in GATED if m.provides(v)]
-    # the aliases an older .duck still spells resolve, because their canonical verbs exist
+    # the aliases an older .glot still spells resolve, because their canonical verbs exist
     assert m.provides("walk") and m.provides("walk_to") and m.provides("get_frame")
     assert m.limits == {
         "max_vx": MAX_VX,
@@ -100,7 +100,7 @@ def test_manifest_is_a_slow_biped_that_cannot_kick() -> None:
         "max_wz": MAX_WZ,
         "gaze_yaw_deg": round(GAZE_YAW_DEG, 1),
     }
-    # the deadman is quackd's own bridge on the robot, so it is real but it is not native
+    # the deadman is Roboglot's own bridge on the robot, so it is real but it is not native
     assert m.safety_authority.native == "none" and m.safety_authority.deadman
     assert m.extras["speech"] == "sounds"
     assert "get-up" in m.extras["no_recovery"] and "battery" in m.extras["no_battery"]
@@ -262,12 +262,12 @@ async def test_sim2d_walks_to_the_ball(seed: int) -> None:
 
 
 def test_a_kick_task_is_refused_against_this_duck_with_the_validator_s_words() -> None:
-    problems = validate_duck(load_duck("find-and-kick"), [describe("mock", "open-duck-01")])
+    problems = validate_glot(load_glot("find-and-kick"), [describe("mock", "open-duck-01")])
     assert any(
         p.message == "requires kick, but open-duck-01 (open-duck-mini-v2) does not provide it"
         for p in problems
     ), [p.message for p in problems]
-    cli = runner.invoke(app, ["validate", "ducks/find-and-kick.duck", "--robot", "open_duck:mock"])
+    cli = runner.invoke(app, ["validate", "tasks/find-and-kick.glot", "--robot", "open_duck:mock"])
     assert cli.exit_code == 1 and "does not provide it" in cli.output
 
 
@@ -294,7 +294,7 @@ def test_the_factory_makes_every_backend() -> None:
         adapter = make_adapter(parse_robot_spec(f"open_duck:{backend}"))
         assert adapter.name == "open_duck" and adapter.backend == backend
     with pytest.raises(ValueError, match="unknown open_duck backend"):
-        from quackd_open_duck import make
+        from roboglot_open_duck import make
 
         make("mujoco")
 
@@ -302,7 +302,7 @@ def test_the_factory_makes_every_backend() -> None:
 def test_the_bring_up_task_does_not_require_the_dangerous_flag() -> None:
     """`open-duck-lookout` is what you point at a real duck first. Head control is off by
     default and is the one thing that can damage this robot, so the task must not need it."""
-    lookout = load_duck("open-duck-lookout")
+    lookout = load_glot("open-duck-lookout")
     assert "gaze" not in lookout.frontmatter.requires
     assert "gaze" in lookout.frontmatter.verbs.allow, "still used when the duck has a head"
     headless = open_duck_manifest("bridge", head=False)
@@ -315,14 +315,14 @@ async def test_a_fall_blind_robot_asks_the_human_once_before_it_walks(tmp_path: 
     IMU has one owner and it is upstream's loop — so refusing per verb would refuse every
     locomotion verb forever and decommission the robot. Ask the person in the room once,
     before a leg moves, and let them say no."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd.duckfile.parser import parse_duck_text
-    from quackd.safety import Aborted
-    from quackd_open_duck.mock import OpenDuckMock
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.safety import Aborted
+    from roboglot_open_duck.mock import OpenDuckMock
 
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
         "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
     )
 

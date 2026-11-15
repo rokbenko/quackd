@@ -1,13 +1,13 @@
 """Two ways to answer `watch` without an LLM: at its seam, and where OpenAI's client would be.
 
-`ScriptedEyes` stands where `quackd.agent.decision.eyes.DecisionEyes` stands (`watch.Eyes`) and
+`ScriptedEyes` stands where `roboglot.agent.decision.eyes.DecisionEyes` stands (`watch.Eyes`) and
 answers from a script, which is how a test puts `watch` through one exit at a time on a body that
 does exactly what it is told. It records every picture, state and question it is handed.
 
-`BlobEyes` stands where `openai.AsyncOpenAI` stands, behind quackd's own client and its own
+`BlobEyes` stands where `openai.AsyncOpenAI` stands, behind Roboglot's own client and its own
 eyes, so everything between the verb and the wire runs as it does on a real run: the encoding,
 the copy kept, the line in the record, the translation out and back. It decodes the JPEG each
-request carries and finds the orange ball in it with quackd's own `ColorBlobDetector`, and
+request carries and finds the orange ball in it with Roboglot's own `ColorBlobDetector`, and
 answers where it is as a distribution over the sectors `watch` asks about, so a test can close
 the loop on a simulator and read the world's own truth after it. It is a far better perceiver
 than any LLM: what it proves is that the frame sent is the one the head was pointing at, upright
@@ -29,8 +29,8 @@ from typing import Any
 
 from PIL import Image
 
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.verbs.watch import ACROSS, HEIGHT, OUT_OF_VIEW, UP_DOWN, WHERE
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.verbs.watch import ACROSS, HEIGHT, OUT_OF_VIEW, UP_DOWN, WHERE
 from tests import fake_decisions_api as fake_api
 
 # ── answers in the shape `DecisionsAPILLM.decide` hands back ────────────────────────────
@@ -187,7 +187,7 @@ def picture_of(body: Mapping[str, Any]) -> Image.Image:
 
 class BlobEyes(fake_api.FakeOpenAI):
     """OpenAI's client, answering where the orange ball is by finding it in the JPEG it was handed
-    with quackd's own `ColorBlobDetector`: 0.9 on the sectors either side of where the ball's
+    with Roboglot's own `ColorBlobDetector`: 0.9 on the sectors either side of where the ball's
     middle is, split so their mean is that place, give or take `noise`, and 0.9 on `out_of_view`
     when there is no ball. `delay_s` holds each answer back on the wall's clock, and `on_post` is
     called with each request's body before it is answered, where a test can look at the run as

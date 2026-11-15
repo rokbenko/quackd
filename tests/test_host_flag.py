@@ -7,7 +7,7 @@ member's camera), the local preset moving to the board, and the token staying ou
 record a run writes. The client and the daemon are tested in their own files.
 
 Nothing here has touched a Jetson. Where a daemon has to be listening, it is the fake in
-`tests/fake_jetson_hostd.py`, which proves quackd reads the protocol and nothing about a board.
+`tests/fake_jetson_hostd.py`, which proves Roboglot reads the protocol and nothing about a board.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.host import (
+from roboglot.cli import app
+from roboglot.host import (
     HOST_ENV,
     PROTOCOL,
     PROTOCOL_VERSION,
@@ -30,8 +30,8 @@ from quackd.host import (
     HostHello,
     resolve_host,
 )
-from quackd.mcp_server import fleet_from_flags
-from quackd.registry import Registry, RobotEntry, StoredFlock
+from roboglot.mcp_server import fleet_from_flags
+from roboglot.registry import Registry, RobotEntry, StoredTeam
 from tests.conftest import help_text
 from tests.fake_jetson_hostd import FakeHostd
 
@@ -44,7 +44,7 @@ runner = CliRunner()
 def test_the_flag_beats_the_robot_which_beats_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The order every quackd setting uses, with the place that won written down, so a refusal
+    """The order every Roboglot setting uses, with the place that won written down, so a refusal
     later can send the reader to the line they typed rather than to one they did not."""
     monkeypatch.setenv(HOST_ENV, "usual.local")
     typed = resolve_host("typed.local", "stored.local", robot="jet")
@@ -58,7 +58,7 @@ def test_the_flag_beats_the_robot_which_beats_the_environment(
 
 
 def test_blank_is_absent_at_every_rung(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`QUACKD_HOST=` in a `.env` is a shell saying unset, and `--host "$BOARD"` with an empty
+    """`ROBOGLOT_HOST=` in a `.env` is a shell saying unset, and `--host "$BOARD"` with an empty
     variable is nothing typed. Neither is a machine named "", and neither may hide the rung
     below it."""
     monkeypatch.setenv(HOST_ENV, "usual.local")
@@ -85,7 +85,7 @@ def test_the_token_climbs_its_own_ladder_so_a_tunnel_still_carries_the_robots_to
 def test_a_token_from_the_environment_with_no_board_to_go_to_is_dropped_rather_than_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`QUACKD_HOST_TOKEN` in a `.env` is how the token of the board somebody usually uses is
+    """`ROBOGLOT_HOST_TOKEN` in a `.env` is how the token of the board somebody usually uses is
     kept out of their shell history, and it must not stop a run that names no board."""
     monkeypatch.setenv(TOKEN_ENV, "from-the-env")
     assert resolve_host(None, None) == HostChoice()
@@ -108,7 +108,7 @@ def test_a_typed_token_with_no_board_to_go_to_is_refused_and_not_quoted(
 def test_a_refused_token_is_answered_for_the_rung_it_came_from(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The robot's stored token outranks `QUACKD_HOST_TOKEN`, so telling somebody whose robot
+    """The robot's stored token outranks `ROBOGLOT_HOST_TOKEN`, so telling somebody whose robot
     stores one to set the variable sent them to change something the run never reads."""
     monkeypatch.setenv(TOKEN_ENV, "from-the-env")
     typed = resolve_host(None, "jetson.local", token="t", stored_token="s", robot="jet")
@@ -116,7 +116,7 @@ def test_a_refused_token_is_answered_for_the_rung_it_came_from(
     assert typed.token_fix == "pass the token the daemon was started with as --host-token"
     stored = resolve_host(None, "jetson.local", stored_token="s", robot="jet")
     assert stored.token_source == "robot jet (robots.json)"
-    assert stored.token_fix.startswith("quackd robot edit jet --host-token TOKEN")
+    assert stored.token_fix.startswith("roboglot robot edit jet --host-token TOKEN")
     assert TOKEN_ENV not in stored.token_fix
     usual = resolve_host(None, "jetson.local", robot="jet")
     assert usual.token_source == TOKEN_ENV and usual.token_fix.startswith(f"set {TOKEN_ENV}")
@@ -126,7 +126,7 @@ def test_the_robots_token_rides_only_when_the_robot_stores_a_board(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A token stored with a robot is the stored board's. When the robot stores no board, the
-    one `QUACKD_HOST` names is the environment's, and its token is `QUACKD_HOST_TOKEN`: sending
+    one `ROBOGLOT_HOST` names is the environment's, and its token is `ROBOGLOT_HOST_TOKEN`: sending
     the robot's there hands board A's credential to board B and is still refused. A typed
     `--host` on a robot with no board is not the tunnel case either, since there is no
     registered board for it to be a way to."""
@@ -155,7 +155,7 @@ def test_a_token_a_header_cannot_carry_is_refused_with_where_it_came_from(
         resolve_host(None, "jetson.local", stored_token="hunter2\x01", robot="jet")
     assert "hunter2" not in str(refused.value)
     monkeypatch.setenv(TOKEN_ENV, "hunter2\x01")
-    with pytest.raises(ValueError, match=r"^QUACKD_HOST_TOKEN: the host token") as refused:
+    with pytest.raises(ValueError, match=r"^ROBOGLOT_HOST_TOKEN: the host token") as refused:
         resolve_host("jetson.local")
     assert "hunter2" not in str(refused.value)
 
@@ -168,7 +168,7 @@ def test_a_host_that_is_not_one_is_refused_in_parse_hosts_words_with_where_it_ca
     with pytest.raises(ValueError, match=r"^--host takes a machine, not a URL"):
         resolve_host("http://jetson.local")
     monkeypatch.setenv(HOST_ENV, "http://jetson.local")
-    with pytest.raises(ValueError, match=r"^QUACKD_HOST: --host takes a machine, not a URL"):
+    with pytest.raises(ValueError, match=r"^ROBOGLOT_HOST: --host takes a machine, not a URL"):
         resolve_host(None)
 
 
@@ -186,7 +186,7 @@ def test_the_token_is_never_in_the_repr_and_a_header_breaking_one_is_never_quote
 def test_only_a_host_somebody_named_for_this_run_or_robot_is_explicit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`explicit` is what moves a local preset above `QUACKD_BASE_URL`. A host from the
+    """`explicit` is what moves a local preset above `ROBOGLOT_BASE_URL`. A host from the
     environment is left for the local provider to read at the bottom of its own ladder."""
     monkeypatch.setenv(HOST_ENV, "usual.local")
     assert resolve_host("typed.local").explicit == "typed.local"
@@ -223,17 +223,17 @@ def nothing_connects(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Every adapter the CLI asks for, recorded. A refusal that comes after one was built came
     after the point where a real body would have been reached.
 
-    The pilot flock's module first, and by name: it binds `make_adapter` when it is imported,
+    The pilot team's module first, and by name: it binds `make_adapter` when it is imported,
     so patching the factory alone would reach a first import made during this test and leave
-    every later flock in the session building adapters through this fixture."""
+    every later team in the session building adapters through this fixture."""
     built: list[Any] = []
 
     def refuse(spec: Any, **kw: Any) -> Any:
         built.append(spec)
         raise AssertionError(f"{spec} was built before the refusal")
 
-    monkeypatch.setattr("quackd.flock.pilots.make_adapter", refuse)
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", refuse)
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", refuse)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", refuse)
     return built
 
 
@@ -246,10 +246,10 @@ def _flat(result: Any) -> str:
     [
         ("hello-world", "--robots", "a=microduck:mock,b=microduck:mock"),
         ("hello-world", "--robots", "a=microduck:mock"),
-        ("flock-kick", "--flock", "2"),
-        ("flock-hello",),
+        ("team-kick", "--team", "2"),
+        ("team-hello",),
     ],
-    ids=["robots", "robots-of-one", "flock-n", "flock-section"],
+    ids=["robots", "robots-of-one", "team-n", "team-section"],
 )
 def test_a_host_on_the_line_is_refused_for_a_fleet_before_anything_connects(
     tmp_path: Path, nothing_connects: list[Any], fleet: tuple[str, ...]
@@ -266,30 +266,30 @@ def test_a_host_on_the_line_is_refused_for_a_fleet_before_anything_connects(
     assert not (tmp_path / "runs").exists(), "the refusal came after the run directory"
 
 
-def test_a_host_stored_with_a_flock_member_is_refused_by_that_members_name(
+def test_a_host_stored_with_a_team_member_is_refused_by_that_members_name(
     tmp_path: Path, nothing_connects: list[Any]
 ) -> None:
-    """The same claim made in robots.json. The member is named, because the flock was typed
+    """The same claim made in robots.json. The member is named, because the team was typed
     and the host was not: the reader has to be told which robot to edit."""
     registry = Registry(tmp_path / "reg")
     registry.add_robot(RobotEntry(name="duck", spec="microduck:mock"))
     registry.add_robot(RobotEntry(name="jet", spec="lerobot:mock", host="jetson.local"))
-    registry.add_flock(StoredFlock(name="pair", members=["duck", "jet"]))
-    result = _run(tmp_path, "flock-hello", "--flock", "pair")
+    registry.add_team(StoredTeam(name="pair", members=["duck", "jet"]))
+    result = _run(tmp_path, "team-hello", "--team", "pair")
     assert result.exit_code == 1, result.output
     flat = _flat(result)
     assert "jet has a host in robots.json" in flat, flat
-    assert "quackd robot edit jet --clear host" in flat
+    assert "roboglot robot edit jet --clear host" in flat
     assert nothing_connects == []
 
 
 def test_the_usual_board_in_the_environment_does_not_stop_a_fleet(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`QUACKD_HOST` is the board somebody usually uses, not a claim about these bodies, so a
-    flock still runs with it set; what it moves for a fleet is only a local preset's server."""
+    """`ROBOGLOT_HOST` is the board somebody usually uses, not a claim about these bodies, so a
+    team still runs with it set; what it moves for a fleet is only a local preset's server."""
     monkeypatch.setenv(HOST_ENV, "jetson.local")
-    result = _run(tmp_path, "flock-kick", "--flock", "2", "--seed", "3")
+    result = _run(tmp_path, "team-kick", "--team", "2", "--seed", "3")
     assert result.exit_code == 0, result.output
 
 
@@ -340,7 +340,7 @@ def test_a_stored_token_the_board_refuses_is_answered_with_robot_edit_and_doctor
     tmp_path: Path, nothing_connects: list[Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The board's daemon restarted with a new token, and the robot still stores the old one.
-    The stored token outranks QUACKD_HOST_TOKEN, so the variable is set here to show that
+    The stored token outranks ROBOGLOT_HOST_TOKEN, so the variable is set here to show that
     following the old advice changed nothing, and the refusal names the fix that lasts. The
     doctor it points at names the robot, since `doctor --host` alone carries no stored token
     and reported a healthy daemon while the run kept refusing. The daemon did answer, with a
@@ -356,11 +356,13 @@ def test_a_stored_token_the_board_refuses_is_answered_with_robot_edit_and_doctor
     assert stored.exit_code == 1, stored.output
     flat = _flat(stored)
     assert f"the host {address} from robot jet (robots.json) answered with HTTP 401" in flat, flat
-    assert "quackd robot edit jet --host-token TOKEN stores the one the daemon was started" in flat
+    assert (
+        "roboglot robot edit jet --host-token TOKEN stores the one the daemon was started" in flat
+    )
     assert f"set {TOKEN_ENV}" not in flat and "did not answer" not in flat
-    assert "quackd doctor --robot jet shows what the board says" in flat
+    assert "roboglot doctor --robot jet shows what the board says" in flat
     assert tunnel.exit_code == 1, tunnel.output
-    assert f"quackd doctor --robot jet --host {address} shows" in _flat(tunnel)
+    assert f"roboglot doctor --robot jet --host {address} shows" in _flat(tunnel)
     for result in (stored, tunnel):
         assert "old-token" not in result.output and "new-token" not in result.output
     assert nothing_connects == []
@@ -410,7 +412,7 @@ def test_a_hand_edited_bad_host_does_not_stop_a_run_of_another_robot(tmp_path: P
 def pilots(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """What `make_provider` was asked for, answered with the scripted pilot so the run
     completes without an LLM server or the OpenAI SDK."""
-    from quackd.agent.providers import factory
+    from roboglot.agent.providers import factory
 
     seen: list[dict[str, Any]] = []
     real = factory.make_provider
@@ -419,7 +421,7 @@ def pilots(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         seen.append({"name": name, **kw})
         return real("fake", duck_name=kw.get("duck_name"))
 
-    monkeypatch.setattr("quackd.agent.providers.factory.make_provider", recorder)
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     return seen
 
 
@@ -458,7 +460,7 @@ def any_board(monkeypatch: pytest.MonkeyPatch) -> list[str]:
                 board_model=None,
             )
 
-    monkeypatch.setattr("quackd.host.HostClient", Board)
+    monkeypatch.setattr("roboglot.host.HostClient", Board)
     return asked
 
 
@@ -491,7 +493,7 @@ def test_the_host_a_run_names_or_its_robot_stored_reaches_the_llm_preset(
 ) -> None:
     """The first thing `--host` does for real: the pilot's preset is moved to the board. The
     flag beats the robot's stored host, and a host from the environment is not handed over as
-    an explicit one, because it sits below `QUACKD_BASE_URL` and the provider reads it there.
+    an explicit one, because it sits below `ROBOGLOT_BASE_URL` and the provider reads it there.
     Every one of them is still the board the run asks for its daemon's hello."""
     Registry(tmp_path / "reg").add_robot(
         RobotEntry(name="jet", spec="microduck:mock", host="stored.local")
@@ -543,8 +545,8 @@ def test_the_host_token_never_reaches_any_file_the_run_writes(
             "--host-token",
             secret,
         ]
-        # `quackd.command` reads `sys.argv`, which CliRunner never touches
-        monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/quackd", *args])
+        # `roboglot.command` reads `sys.argv`, which CliRunner never touches
+        monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/roboglot", *args])
         result = runner.invoke(app, args, env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     runs = tmp_path / "runs"
@@ -570,8 +572,8 @@ def _seed(tmp_path: Path) -> Registry:
         RobotEntry(name="jet", spec="microduck:mock", host="jetson.local", host_token="stored")
     )
     registry.add_robot(RobotEntry(name="duck", spec="microduck:mock"))
-    registry.add_flock(StoredFlock(name="pair", members=["duck", "jet"]))
-    registry.add_flock(StoredFlock(name="plain", members=["duck"]))
+    registry.add_team(StoredTeam(name="pair", members=["duck", "jet"]))
+    registry.add_team(StoredTeam(name="plain", members=["duck"]))
     return registry
 
 
@@ -580,9 +582,9 @@ def _seed(tmp_path: Path) -> Registry:
     [
         {"robots": "a=microduck:mock,b=microduck:mock", "host": "jetson.local"},
         {"robots": "a=microduck:mock", "host": "jetson.local"},
-        {"flock": "plain", "host": "jetson.local"},
+        {"team": "plain", "host": "jetson.local"},
     ],
-    ids=["robots", "robots-of-one", "flock"],
+    ids=["robots", "robots-of-one", "team"],
 )
 def test_serve_mcp_refuses_a_host_for_a_fleet(tmp_path: Path, kwargs: dict[str, Any]) -> None:
     _seed(tmp_path)
@@ -590,12 +592,12 @@ def test_serve_mcp_refuses_a_host_for_a_fleet(tmp_path: Path, kwargs: dict[str, 
         fleet_from_flags(registry_dir=str(tmp_path), **kwargs)
 
 
-def test_serve_mcp_refuses_a_flock_whose_member_has_a_host_by_that_members_name(
+def test_serve_mcp_refuses_a_team_whose_member_has_a_host_by_that_members_name(
     tmp_path: Path,
 ) -> None:
     _seed(tmp_path)
     with pytest.raises(SystemExit, match=r"jet has a host in robots\.json"):
-        fleet_from_flags(flock="pair", registry_dir=str(tmp_path))
+        fleet_from_flags(team="pair", registry_dir=str(tmp_path))
 
 
 def test_serve_mcp_settles_one_robots_board_by_the_same_ladder(
@@ -638,17 +640,17 @@ def test_serve_mcp_takes_the_flag_on_its_command_line(tmp_path: Path) -> None:
 @pytest.mark.parametrize("command", [["run"], ["serve-mcp"]], ids=" ".join)
 def test_the_commands_that_use_a_board_offer_host_and_its_token(command: list[str]) -> None:
     text = help_text([*command, "--help"])
-    assert "--host HOST[:PORT] A machine quackd uses and never runs on" in text, text
+    assert "--host HOST[:PORT] A machine Roboglot uses and never runs on" in text, text
     assert "--robot still names the body" in text
-    assert "--host-token" in text and "QUACKD_HOST_TOKEN" in text
+    assert "--host-token" in text and "ROBOGLOT_HOST_TOKEN" in text
 
 
 @pytest.mark.parametrize("command", [["run"], ["serve-mcp"]], ids=" ".join)
 def test_the_detector_help_names_the_extra_yolo_needs(command: list[str]) -> None:
     """The help is Rich markup, which reads an unescaped `[yolo]` as a tag and drops it: the
-    help said yolo "needs quackd.", which is true of everything and names no extra."""
+    help said yolo "needs Roboglot.", which is true of everything and names no extra."""
     text = help_text([*command, "--help"])
-    assert "yolo is YOLO on this machine and needs quackd[yolo]." in text, text
+    assert "yolo is YOLO on this machine and needs roboglot[yolo]." in text, text
 
 
 @pytest.mark.parametrize("command", [["robot", "add"], ["robot", "edit"]], ids=" ".join)
@@ -657,8 +659,8 @@ def test_the_commands_that_register_a_board_say_so_in_their_own_help(command: li
     does the registering, and the token they take is written to robots.json, which is not
     the run record `run`'s help promises it never reaches."""
     text = help_text([*command, "--help"])
-    assert "--host HOST[:PORT] The board this robot uses and quackd never runs on" in text, text
-    assert "--host on a run beats this, and this beats QUACKD_HOST" in text
+    assert "--host HOST[:PORT] The board this robot uses and Roboglot never runs on" in text, text
+    assert "--host on a run beats this, and this beats ROBOGLOT_HOST" in text
     assert "Kept in robots.json, as --token is" in text
     assert "--robot still names the body" not in text
     assert "never reaches the run record" not in text

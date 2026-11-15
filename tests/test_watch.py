@@ -8,7 +8,7 @@ carries a frame is handed to the client. The rest is the reading of an answer, t
 and who is offered the verb at all.
 
 Nothing here needs the `openai` package or a key. The exits run on a mock body through
-`ScriptedEyes`, at the seam, and everything that has to show what reaches the wire runs quackd's
+`ScriptedEyes`, at the seam, and everything that has to show what reaches the wire runs Roboglot's
 own client for OpenAI's Decisions API on the fake SDK (`tests/fake_decisions_api.py`), with
 `BlobEyes` answering by finding the ball in the very JPEG it was handed. The closed loop on the
 physics simulator is in `tests/test_acceptance_mujoco.py`, where the physics job runs it.
@@ -35,26 +35,26 @@ from PIL import Image
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from quackd.adapters.base import AdapterError
-from quackd.agent.decision import eyes as eyes_module
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.eyes import DecisionEyes, eyes_for, keep_sent
-from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
-from quackd.agent.decision.frames import may_send_frames
-from quackd.agent.decision.stepper import Stepper, discrete_calls
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.cli import _DECISION_FRAMES, _frames_notice, app
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.schema import Budgets
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Aborted, Budget, Executor
-from quackd.transport.base import Ack, DuckState, Intent
-from quackd.transport.mock import MockTransport
-from quackd.verbs.core import CORE
-from quackd.verbs.registry import STOPPED, VerbNotFound, VerbRegistry, VerbResult
-from quackd.verbs.watch import (
+from roboglot.adapters.base import AdapterError
+from roboglot.agent.decision import eyes as eyes_module
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.eyes import DecisionEyes, eyes_for, keep_sent
+from roboglot.agent.decision.factory import make_decision_llm, resolve_decision_price
+from roboglot.agent.decision.frames import may_send_frames
+from roboglot.agent.decision.stepper import Stepper, discrete_calls
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.cli import _DECISION_FRAMES, _frames_notice, app
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.schema import Budgets
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Aborted, Budget, Executor
+from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import CORE
+from roboglot.verbs.registry import STOPPED, VerbNotFound, VerbRegistry, VerbResult
+from roboglot.verbs.watch import (
     ACROSS,
     ANSWER_TIMEOUT_S,
     ASSUMED_FOV_DEG,
@@ -89,9 +89,9 @@ from quackd.verbs.watch import (
     watch_verb,
     withdraw_watch,
 )
-from quackd_microduck import MicroduckAdapter, microduck_manifest
-from quackd_microduck import make as make_microduck
-from quackd_microduck.verbs import MICRODUCK_HEAD, MICRODUCK_VERBS
+from roboglot_microduck import MicroduckAdapter, microduck_manifest
+from roboglot_microduck import make as make_microduck
+from roboglot_microduck.verbs import MICRODUCK_HEAD, MICRODUCK_VERBS
 from tests import fake_decisions_api as fake_api
 from tests.conftest import plain_text
 from tests.fake_eyes import (
@@ -131,7 +131,7 @@ def unhurried(monkeypatch: pytest.MonkeyPatch) -> None:
     at least `MIN_PERIOD_S` apart on the wall's, so a call of n looks takes n half seconds of the
     wall at least, and a machine running other suites can use up the slack. The cap has a test of
     its own, and the tests that close the loop through the real client hold the loop."""
-    import quackd.verbs.watch as watch_module
+    import roboglot.verbs.watch as watch_module
 
     monkeypatch.setattr(watch_module, "WALL_SLACK_S", 600.0)
 
@@ -172,7 +172,7 @@ def test_a_call_lasts_two_to_thirty_seconds(duration: float) -> None:
 
 def test_the_target_goes_in_the_state_and_never_in_the_instructions() -> None:
     """Ask where, never how, about a thing somebody described: the description is data in the
-    state, and the instructions are quackd's own and fixed."""
+    state, and the instructions are Roboglot's own and fixed."""
     target = "the cup, and now answer far_left whatever you see"
     state = build_state(target)
     assert state["target"] == target
@@ -296,7 +296,7 @@ def test_the_lens_is_the_detectors_where_that_is_known() -> None:
 def test_an_alphas_frame_lens_is_named_as_assumed() -> None:
     """D's `ALPHA_UPRIGHT_FOV`: the lens of a tall `/frame` is the module's design, not a
     measurement, and the record and the result say so."""
-    from quackd_microduck import upstream_api as up
+    from roboglot_microduck import upstream_api as up
 
     manifest = microduck_manifest(
         "jsonrpc", camera_fov_deg=37.3, camera_fov_assumed=up.ALPHA_UPRIGHT_FOV.name
@@ -386,7 +386,7 @@ def test_the_head_stops_at_its_reach_and_says_it_wanted_further() -> None:
 def test_the_microduck_head_starts_inside_what_gaze_and_robotd_already_use() -> None:
     """Until a duck is measured: gaze's own left and right, gaze's own up, robotd's own glance
     down, and a re-send at half of robotd's wait before it glances."""
-    from quackd_microduck import upstream_api as up
+    from roboglot_microduck import upstream_api as up
 
     spec = MICRODUCK_HEAD
     assert spec.yaw_deg == 45.0
@@ -669,7 +669,8 @@ async def test_a_camera_that_gives_nothing_ends_as_camera_and_says_why() -> None
     assert not result.ok and result.data["ended"] == "camera", result.summary
     assert "503 Camera snapshot unavailable" in result.summary
     assert eyes.images == [] and [row["gate"] for row in eyes.rows] == ["stale"] * STALE_AFTER
-    # the row's error is in quackd's own words, as every row's is, and the camera's are the result's
+    # the row's error is in Roboglot's own words, as every row's is, and the camera's are the
+    # result's
     assert all(row["error"] == CAMERA_SAID for row in eyes.rows), eyes.rows
     assert set(duck.looks()) == {(0.0, 0.0)}, "the head was held where it was claimed, and moved"
 
@@ -809,8 +810,8 @@ async def test_a_duck_neither_standing_nor_sitting_is_never_looked_at(
 ) -> None:
     """The head moves only on a duck that reads as standing or sitting, the allowlist the
     Microduck's own gaze hold keeps, read the way it reads it (`posture_of`): a scoop, a rise, a
-    skill, one unwinding and a label quackd has not read each end the call before any look."""
-    from quackd_microduck.transports.jsonrpc_unix import posture_of
+    skill, one unwinding and a label Roboglot has not read each end the call before any look."""
+    from roboglot_microduck.transports.jsonrpc_unix import posture_of
 
     posture, why = posture_of(policy, {"fallen": False, "picked_up": False}, skills=skills)
     assert posture == "unknown" and why, (posture, why)
@@ -972,7 +973,7 @@ class Glancing(Duck):
     glance's share as `info["glance"]`, 0 for a picture of the head only where it was sent."""
 
     def __init__(self, *, unsteered_since: float = -10.0) -> None:
-        from quackd_microduck import upstream_api as up
+        from roboglot_microduck import upstream_api as up
 
         super().__init__()
         self.head_fade_s = up.IDLE_FADE_S
@@ -1295,7 +1296,7 @@ async def test_looks_begin_at_least_half_a_second_apart() -> None:
 
 
 async def test_a_call_takes_no_more_looks_than_it_may(monkeypatch: pytest.MonkeyPatch) -> None:
-    import quackd.verbs.watch as watch_module
+    import roboglot.verbs.watch as watch_module
 
     assert int(MAX_DURATION_S / MIN_PERIOD_S) == MAX_LOOKS
     monkeypatch.setattr(watch_module, "MAX_LOOKS", 3)
@@ -1310,7 +1311,7 @@ async def test_a_clock_slower_than_the_wall_is_capped_on_the_wall(
 ) -> None:
     """A simulator slower than real time would let a call outlive the executor's timeout, so a
     call ends at its duration and a slack on the wall's clock too, whichever comes first."""
-    import quackd.verbs.watch as watch_module
+    import roboglot.verbs.watch as watch_module
 
     monkeypatch.setattr(watch_module, "WALL_SLACK_S", 0.4)
 
@@ -1445,10 +1446,10 @@ def test_the_microduck_declares_watch_only_with_a_camera() -> None:
     assert WATCH not in CORE
 
 
-# ── a whole run, through quackd's own client for OpenAI's Decisions API ────────────────
+# ── a whole run, through Roboglot's own client for OpenAI's Decisions API ────────────────
 
 WATCH_DUCK = """---
-duck: 1
+glot: 1
 name: watch-test
 description: keep the ball in view
 verbs:
@@ -1496,7 +1497,7 @@ def _config(
     decision: str = "off",
 ) -> RunConfig:
     return RunConfig(
-        duck=parse_duck_text(duck),
+        duck=parse_glot_text(duck),
         provider=FakeProvider(script=script or WATCH_THEN_STOP),
         transport=transport,
         detector=ColorBlobDetector(),
@@ -1548,7 +1549,7 @@ async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
     fake = BlobEyes(on_post=on_post)
     adapter = make_microduck("sim2d", seed=0)
     _ball_at(adapter, 20.0)
-    result = await run_duck(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
+    result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     assert result.outcome == "success", result.reason
     assert named_first and all(named_first), named_first
     events = _events(result.run_dir)
@@ -1590,7 +1591,7 @@ async def test_a_run_with_a_stepper_folds_watchs_bill_into_the_decision_totals(
     adapter = make_microduck("sim2d", seed=0)
     _ball_at(adapter, 10.0)
     llm = _seeing(monkeypatch, fake)
-    result = await run_duck(_config(tmp_path, adapter, llm, decision="shadow"))
+    result = await run_glot(_config(tmp_path, adapter, llm, decision="shadow"))
     decision = result.summary["decision"]
     assert decision["mode"] == "shadow" and decision["asked"] > 0
     watched = decision["watch"]
@@ -1615,7 +1616,7 @@ async def test_a_frame_the_disk_refused_is_still_named_as_sent_and_leaves_no_par
     monkeypatch.setattr(eyes_module, "write_jpeg", half_then_full)
     fake = BlobEyes()
     adapter = make_microduck("sim2d", seed=0)
-    result = await run_duck(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
+    result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     events = _events(result.run_dir)
     frames = _of(events, "watch_frame")
     assert fake.posts and len(frames) == len(fake.posts)
@@ -1625,7 +1626,7 @@ async def test_a_frame_the_disk_refused_is_still_named_as_sent_and_leaves_no_par
 
 
 def test_keep_sent_says_whether_the_disk_took_the_frame(tmp_path: Path) -> None:
-    from quackd.agent.decision.frames import encode
+    from roboglot.agent.decision.frames import encode
 
     frame = encode(Image.new("RGB", (32, 32), (200, 120, 20)), "camera")
     assert keep_sent(tmp_path / "sent" / "watch-0001.jpg", frame) is True
@@ -1678,7 +1679,7 @@ async def test_the_gate_is_asked_again_before_every_frame(
 async def test_a_frame_too_large_to_send_is_neither_sent_nor_kept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd.agent.decision import frames as frames_module
+    from roboglot.agent.decision import frames as frames_module
 
     fake = BlobEyes()
     llm = _seeing(monkeypatch, fake)
@@ -1762,7 +1763,7 @@ async def test_an_abort_while_a_request_is_out_still_leaves_the_frame_on_the_rec
 ) -> None:
     """The plan's own case: an abort while an answer is pending leaves exactly one `sent/` file,
     one line naming it, one row, and `sent == 1`."""
-    from quackd.agent.loop import AgentLoop
+    from roboglot.agent.loop import AgentLoop
 
     posted = asyncio.Event()
     fake = BlobEyes(hold=asyncio.Event(), on_post=lambda _body: posted.set())
@@ -1786,7 +1787,7 @@ async def test_no_frame_reaches_a_plugin_or_a_server_of_your_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The one gate, `frames.may_send_frames`: a plugin-shaped object that says it sees, and
-    quackd's own client at an address that is not OpenAI's, get no eyes, so the run has no
+    Roboglot's own client at an address that is not OpenAI's, get no eyes, so the run has no
     `watch` and nothing is sent to either."""
     fake = BlobEyes()
     fake_api.install(monkeypatch, fake)
@@ -1802,7 +1803,7 @@ async def test_no_frame_reaches_a_plugin_or_a_server_of_your_own(
         with pytest.raises(ValueError, match="may not be shown the camera"):
             DecisionEyes(llm, resolve_decision_price(OPENAI), emit=print, run_dir=tmp_path)
     adapter = make_microduck("sim2d", seed=0)
-    result = await run_duck(_config(tmp_path / "run", adapter, local))
+    result = await run_glot(_config(tmp_path / "run", adapter, local))
     assert fake.posts == []
     notes = [e["text"] for e in _of(_events(result.run_dir), "note")]
     assert any(NO_EYES in note for note in notes), notes
@@ -1816,7 +1817,7 @@ async def test_a_run_with_nothing_to_look_through_withdraws_watch_and_says_so(
 ) -> None:
     adapter = make_microduck("sim2d", seed=0)
     script = [ToolCall(name="declare_success", arguments={"reason": "nothing to do"})]
-    result = await run_duck(_config(tmp_path, adapter, None, script=script))
+    result = await run_glot(_config(tmp_path, adapter, None, script=script))
     events = _events(result.run_dir)
     start = _of(events, "run_start")[0]
     assert WATCH not in start["tools"] and "watch" not in start and "decision_llm" not in start
@@ -1827,13 +1828,13 @@ async def test_a_run_with_nothing_to_look_through_withdraws_watch_and_says_so(
 
 async def test_a_run_that_never_asked_for_watch_is_told_nothing_about_it(tmp_path: Path) -> None:
     """The lookout allows no `watch`, so its record is what it always was."""
-    from quackd.duckfile.parser import load_duck
+    from roboglot.glotfile.parser import load_glot
 
     adapter = make_microduck("sim2d", seed=0)
     cfg = _config(tmp_path, adapter, None)
-    cfg.duck = load_duck("microduck-lookout")
-    cfg.provider = FakeProvider.for_duck("microduck-lookout")
-    result = await run_duck(cfg)
+    cfg.duck = load_glot("microduck-lookout")
+    cfg.provider = FakeProvider.for_glot("microduck-lookout")
+    result = await run_glot(cfg)
     events = _events(result.run_dir)
     assert not [e for e in _of(events, "note") if "watch" in e["text"]]
     assert not (result.run_dir / "sent").exists()
@@ -1846,7 +1847,7 @@ async def test_a_task_that_requires_watch_stops_before_anything_moves(tmp_path: 
         tmp_path, adapter, None, duck=WATCH_DUCK.replace("verbs:", "requires: [watch]\nverbs:")
     )
     with pytest.raises(AdapterError, match="requires watch, and watch looks through"):
-        await run_duck(cfg)
+        await run_glot(cfg)
     assert [i.kind for i in transport.intents if i.kind != "stop"] == []
 
 
@@ -1857,7 +1858,7 @@ async def test_frames_nobody_says_are_upright_withdraw_watch_even_with_eyes(
         frames_upright = False
 
     adapter = MicroduckAdapter(Sideways())
-    result = await run_duck(_config(tmp_path, adapter, _seeing(monkeypatch, BlobEyes())))
+    result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, BlobEyes())))
     notes = [e["text"] for e in _of(_events(result.run_dir), "note")]
     assert f"watch is not offered on this run: {NOT_UPRIGHT}" in notes
 
@@ -1866,8 +1867,8 @@ async def test_an_mcp_session_has_no_watch(monkeypatch: pytest.MonkeyPatch) -> N
     """serve-mcp names no decision LLM, so nothing a session runs could look through one: not
     in the vocabulary a session shows before its robot connects, the Microduck's own where it
     is installed, and not in the one the robot's manifest gives it once it has."""
-    from quackd.mcp_server import build_server
-    from quackd.transport.sim2d import Sim2DTransport
+    from roboglot.mcp_server import build_server
+    from roboglot.transport.sim2d import Sim2DTransport
     from tests.test_mcp_server import _data, connected
 
     _server, before = build_server(Sim2DTransport(seed=1), memory=False, log=False)
@@ -1879,11 +1880,11 @@ async def test_an_mcp_session_has_no_watch(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_on_a_real_duck_only_mediads_frame_route_offers_watch() -> None:
-    """mediad's `/frame`, which mediad turns upright and quackd stamps with when each frame was
+    """mediad's `/frame`, which mediad turns upright and Roboglot stamps with when each frame was
     asked for, and no other camera. Its WebRTC track is turned upright too, but hands out frames
     up to two seconds old with no time on them, so one from before the head settled would pass
     for one after: a duck on it withdraws `watch` when it connects, naming the route that has it."""
-    from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+    from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 
     def duck(url: str | None) -> MicroduckAdapter:
         return MicroduckAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=url))
@@ -1898,30 +1899,30 @@ def test_on_a_real_duck_only_mediads_frame_route_offers_watch() -> None:
     assert "--camera-url http://127.0.0.1:8080/frame" in NOT_UPRIGHT
 
 
-def test_a_flock_member_neither_has_watch_nor_says_it_provides_it(
+def test_a_team_member_neither_has_watch_nor_says_it_provides_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A flock builds no decision LLM, so its members' Microducks have nothing to look through:
+    """A team builds no decision LLM, so its members' Microducks have nothing to look through:
     `watch` is out of each one's vocabulary, and out of what it tells the coordinator it can do."""
-    from quackd.duckfile.parser import load_duck
-    from quackd.flock.member import FlockMember
-    from quackd.flock.runner import run_flock
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.team.member import TeamMember
+    from roboglot.team.runner import run_team
 
     kept: list[tuple[list[str], list[str]]] = []
-    run = FlockMember.run
+    run = TeamMember.run
 
-    async def recorded(self: FlockMember) -> None:
+    async def recorded(self: TeamMember) -> None:
         try:
             await run(self)
         finally:
             kept.append((list(self.provides), self.executor.registry.names()))
 
-    monkeypatch.setattr(FlockMember, "run", recorded)
+    monkeypatch.setattr(TeamMember, "run", recorded)
     asyncio.run(
         asyncio.wait_for(
-            run_flock(
-                load_duck("flock-kick"),
-                provider=FakeProvider.for_duck("flock-kick"),
+            run_team(
+                load_glot("team-kick"),
+                provider=FakeProvider.for_glot("team-kick"),
                 seed=3,
                 runs_dir=tmp_path,
             ),
@@ -1946,7 +1947,7 @@ async def test_on_the_cartoon_the_head_turns_onto_the_ball_and_holds_it(
     fake = BlobEyes(noise=0.02, seed=7)
     adapter = make_microduck("sim2d", seed=0)
     _ball_at(adapter, 30.0)
-    result = await run_duck(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
+    result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     assert result.outcome == "success", result.reason
     bearings = [math.degrees(math.atan(2 * at[0])) for at in fake.truth if at is not None]
     assert len(bearings) == len(fake.truth) > 6, "the ball went out of view"
@@ -1969,7 +1970,7 @@ async def test_on_the_cartoon_a_ball_out_of_view_ends_as_lost_after_four_looks(
     fake = BlobEyes()
     adapter = make_microduck("sim2d", seed=0)
     _ball_at(adapter, 180.0)
-    result = await run_duck(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
+    result = await run_glot(_config(tmp_path, adapter, _seeing(monkeypatch, fake)))
     events = _events(result.run_dir)
     ticks = _of(events, "watch_tick")
     assert len(ticks) == LOST_AFTER and ticks[-1]["ended"] == "lost"
@@ -2069,7 +2070,7 @@ def test_the_flag_says_it_gives_a_microduck_watch() -> None:
 def test_the_counters_split_out_watchs_seconds_and_fold_in_its_bill() -> None:
     """`watch` waits on its answers inside its own verb's time, so its seconds are a split of
     their own, and its bill is in the decision LLM's, which the cost counter already adds."""
-    from quackd.cli import run_counters
+    from roboglot.cli import run_counters
 
     end: dict[str, Any] = {
         "steps": 2,

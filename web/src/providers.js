@@ -1,7 +1,7 @@
 /**
  * Bring your own key. The page talks to the LLM; nothing talks to us.
  *
- * quackd hosts no server for this demo. Your key is read from an input, kept in a variable
+ * Roboglot hosts no server for this demo. Your key is read from an input, kept in a variable
  * for the life of the tab, and sent straight to the vendor you picked from your own
  * browser. It is never stored, never logged and never proxied, which also means every
  * request is billed to you and visible to you in your vendor's dashboard. If you would
@@ -12,7 +12,7 @@
  * list of tools, and return exactly one tool call. Where a vendor can be told to call a
  * tool it is told to; where it cannot, a missing call ends the run rather than being
  * guessed at. `toolChoice` below is that difference, per vendor, and it is copied from the
- * provider classes in `quackd/agent/providers/`: Mistral spells it `any`, Cohere documents
+ * provider classes in `roboglot/agent/providers/`: Mistral spells it `any`, Cohere documents
  * no such parameter at all and is therefore asked rather than told, and the rest take
  * `auto` or `required`. A row can say more than its vendor does: a Claude row the catalogue
  * marks `forced_tools: false` is asked with `auto`, through OpenRouter as through Anthropic.
@@ -27,7 +27,7 @@
  *
  * OpenAI is the one vendor here with two APIs that can do that job. Chat Completions is
  * asked first, and an LLM that refuses function tools there is moved to Responses for the
- * rest of the run, on the strength of what the 400 said. `quackd/agent/providers/openai.py`
+ * rest of the run, on the strength of what the 400 said. `roboglot/agent/providers/openai.py`
  * makes the same move for the CLI, and the two have to keep agreeing. Where the catalogue
  * already knows an LLM is Responses-only, `startingApi` says so up front and the failed
  * call is never paid for.
@@ -40,10 +40,10 @@ import { CATALOGUE } from "./catalogue.js";
  *
  * No `llms` and no `defaultLlm` on a cloud entry: both live in `catalogue.js`, generated
  * from the Python that is the single source of truth for LLM names. Local keeps its own,
- * because a local server serves whatever you pulled and quackd has no list for it.
+ * because a local server serves whatever you pulled and Roboglot has no list for it.
  */
 /**
- * Vendors quackd can drive from a terminal and this page cannot, with the reason and the day it
+ * Vendors Roboglot can drive from a terminal and this page cannot, with the reason and the day it
  * was measured.
  *
  * Written down rather than inferred from which keys are missing below, because "absent" and
@@ -102,7 +102,7 @@ export const PROVIDERS = {
     toolChoice: "required",
     // DeepSeek thinks by default, and thinking mode refuses `required` and wants every earlier
     // turn's reasoning sent back, which this page never keeps. So thinking goes off, the way
-    // `quackd/agent/providers/deepseek.py` turns it off for the CLI.
+    // `roboglot/agent/providers/deepseek.py` turns it off for the CLI.
     extraBody: { thinking: { type: "disabled" } },
     needsKey: true,
   },
@@ -149,21 +149,21 @@ export const PROVIDERS = {
     keyPlaceholder: "sk-or-v1-...",
     keyUrl: "https://openrouter.ai/settings/keys",
     baseUrl: "https://openrouter.ai/api/v1",
-    // `quackd/agent/providers/openrouter.py`, in JavaScript: one call insisted on except on the
+    // `roboglot/agent/providers/openrouter.py`, in JavaScript: one call insisted on except on the
     // Claude rows that refuse a forced one, OpenRouter told to route only to an endpoint that
-    // honours every parameter sent, quackd named in the two headers OpenRouter credits an app
+    // honours every parameter sent, Roboglot named in the two headers OpenRouter credits an app
     // by, no move to Responses, and an LLM's `reasoning_details` handed back on the turn that
     // made the call. The dropdown holds the seven rows the catalogue carries and no others.
     toolChoice: "required",
     extraBody: { provider: { require_parameters: true } },
-    headers: { "HTTP-Referer": "https://github.com/rokbenko/quackd", "X-OpenRouter-Title": "quackd" },
+    headers: { "HTTP-Referer": "https://github.com/rokbenko/quackd", "X-OpenRouter-Title": "roboglot" },
     responses: false,
     replaysReasoning: true,
     relaysUpstreamErrors: true,
     needsKey: true,
     note:
       "A router: what you send reaches OpenRouter and the provider it picks for the LLM. " +
-      "No OpenRouter LLM has answered a real quackd request, from this page or the CLI.",
+      "No OpenRouter LLM has answered a real Roboglot request, from this page or the CLI.",
   },
   local: {
     label: "Local (Ollama or any OpenAI-compatible server)",
@@ -225,7 +225,7 @@ function parseArguments(raw) {
  * LLM that produced it: `reasoning_effort: "none"` comes back as unsupported for that LLM,
  * and the tools are refused at every effort it does support. So the fix is the API.
  *
- * This is `_wants_the_responses_api` in `quackd/agent/providers/openai.py`, in JavaScript.
+ * This is `_wants_the_responses_api` in `roboglot/agent/providers/openai.py`, in JavaScript.
  */
 export function wantsTheResponsesApi(status, detail) {
   if (status !== 400) return false;
@@ -240,7 +240,7 @@ export function wantsTheResponsesApi(status, detail) {
  * sentence that opens with the parameter and says the type is not supported. Both halves are
  * matched, because a 400 about a tool the request never declared also opens with
  * `tool_choice`, and asking again with `auto` would not fix that one. This is
- * `_refuses_forced_tools` in `quackd/agent/providers/anthropic.py`, in JavaScript.
+ * `_refuses_forced_tools` in `roboglot/agent/providers/anthropic.py`, in JavaScript.
  */
 export function refusesForcedTools(status, detail) {
   if (status !== 400) return false;
@@ -342,7 +342,7 @@ function openaiCompatible({
 
   // `null` means the vendor documents no `tool_choice` at all, and an unknown field is a 400
   // on some gateways, so the key is left out of the body rather than sent as null.
-  // A vendor's own extra fields go underneath what quackd sends, so none of them can replace
+  // A vendor's own extra fields go underneath what Roboglot sends, so none of them can replace
   // the LLM, the turns or the tools.
   const insist = (body) => {
     const merged = extraBody ? { ...extraBody, ...body } : body;
@@ -538,12 +538,12 @@ export function makeProvider({ provider, key, llmId, baseUrl, api }) {
   if (!spec) throw new ProviderError(`unknown provider ${provider}`);
   if (spec.needsKey && !key) throw new ProviderError(`${spec.label} needs your API key`);
   // The default comes from the catalogue for a cloud vendor and from the spec for Local. The
-  // id itself is NOT checked against the catalogue: an LLM quackd has not heard of has to
+  // id itself is NOT checked against the catalogue: an LLM Roboglot has not heard of has to
   // reach the vendor and come back in the vendor's own words, which is the only answer that
   // can be right about a list this page does not own.
   const chosen = llmId || CATALOGUE[provider]?.default || spec.defaultLlm;
   // Where the caller said nothing, the catalogue decides, so a caller who reaches for
-  // `makeProvider` directly gets the same answer the page does. `quackd/agent/providers/
+  // `makeProvider` directly gets the same answer the page does. `roboglot/agent/providers/
   // openai.py` resolves it in the same order for the same reason.
   const startsOn = api || startingApi(provider, chosen);
   if (provider === "anthropic") return anthropic({ key, llmId: chosen });

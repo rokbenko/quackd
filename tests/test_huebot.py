@@ -2,11 +2,11 @@
 
 Huebot's own API is closed, and its maker is writing a shim for the robot that is to answer the
 JSON-RPC the Microduck's robotd speaks. `FakeShim` answers what docs/adapters/huebot/README.md asks
-the shim to answer, as robotd does at the pin quackd read it at: `hello`, `robot.subscribe` and its
-stream of `robot.state`, `robot.move` as notifications with robotd's deadman, `robot.stop`,
+the shim to answer, as robotd does at the pin Roboglot read it at: `hello`, `robot.subscribe` and
+its stream of `robot.state`, `robot.move` as notifications with robotd's deadman, `robot.stop`,
 `robot.health`, `robot.do` for the skills it lists, `robot.sound` and `robot.enable`. Every other
 call is `METHOD_NOT_FOUND`, `robot.look` and `robot.head` among them, since the shim has neither
-yet. So this proves quackd's half of that contract, and nothing about a real Huebot, which nobody
+yet. So this proves Roboglot's half of that contract, and nothing about a real Huebot, which nobody
 has run.
 """
 
@@ -23,22 +23,22 @@ import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
-from quackd.adapters.factory import describe as describe_spec
-from quackd.adapters.factory import make_adapter, parse_robot_spec
-from quackd.cli import app
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception.base import Detection
-from quackd.safety import Executor
-from quackd.transport.base import (
+from roboglot.adapters.factory import describe as describe_spec
+from roboglot.adapters.factory import make_adapter, parse_robot_spec
+from roboglot.cli import app
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception.base import Detection
+from roboglot.safety import Executor
+from roboglot.transport.base import (
     Ack,
     DuckState,
     Intent,
     Posture,
     TransportError,
 )
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import registry_from_manifest
-from quackd_huebot import (
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_huebot import (
     HUEBOT_VERBS,
     HuebotAdapter,
     describe,
@@ -46,11 +46,11 @@ from quackd_huebot import (
     make,
     offered_skill_verbs,
 )
-from quackd_huebot import upstream_api as up
-from quackd_huebot.body import HUEBOT, LOOK_REFUSED, NO_ADDRESS
-from quackd_huebot.verbs import SKILLS_OF, STAND_UP_POLL_S, STAND_UP_WAIT_S
-from quackd_microduck.transports import jsonrpc_unix
-from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+from roboglot_huebot import upstream_api as up
+from roboglot_huebot.body import HUEBOT, LOOK_REFUSED, NO_ADDRESS
+from roboglot_huebot.verbs import SKILLS_OF, STAND_UP_POLL_S, STAND_UP_WAIT_S
+from roboglot_microduck.transports import jsonrpc_unix
+from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 from tests.fake_robotd import (
     ALL_SKILLS,
     CURRENT_API,
@@ -63,8 +63,8 @@ Shim = functools.partial(JsonRpcUnixTransport, body=HUEBOT)
 """The family's transport, on Huebot's body, as `make` builds it."""
 
 #: Every verb, for the tests that run them through an executor and its allowlist.
-EVERYTHING = parse_duck_text(
-    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+EVERYTHING = parse_glot_text(
+    "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
     "  allow: [walk, go_to, search_scan, kick, sit, stand, stand_up, quack, say, observe]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
@@ -106,9 +106,9 @@ def _transport(adapter: HuebotAdapter) -> JsonRpcUnixTransport:
 # ── the description ─────────────────────────────────────────────────────────────────────
 
 
-def test_the_description_is_a_biped_with_no_gaze_and_quackds_own_speed_caps() -> None:
+def test_the_description_is_a_biped_with_no_gaze_and_roboglots_own_speed_caps() -> None:
     """The static manifest, which `validate` and `announce` read, before any shim is asked
-    anything: every verb the adapter has, none that turns the head, and quackd's own clamp."""
+    anything: every verb the adapter has, none that turns the head, and Roboglot's own clamp."""
     manifest = describe("jsonrpc")
     names = set(manifest.verb_names())
     assert {"move", "observe", "go_to", "search_scan", "approach_and", "say"} <= names
@@ -205,7 +205,7 @@ async def test_a_real_huebot_claims_no_deadman_until_one_has_been_seen(
     await adapter.disconnect()
     mock = describe("mock").safety_authority
     assert (mock.native, mock.deadman) == ("robotd_deadman", True)
-    monkeypatch.setattr("quackd_huebot.DEADMAN_SEEN", True)
+    monkeypatch.setattr("roboglot_huebot.DEADMAN_SEEN", True)
     seen = describe("jsonrpc").safety_authority
     assert (seen.native, seen.deadman) == ("robotd_deadman", True)
 
@@ -284,8 +284,8 @@ async def test_every_verb_runs_offline_through_the_executor() -> None:
     manifest = await adapter.connect()
     assert manifest.backend == "mock"
     every = manifest.verb_names()
-    contract = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+    contract = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
         f"  allow: [{', '.join(every)}]\nsuccess: [x]\n---\n# Task\nx\n"
     )
     ex = Executor(
@@ -384,7 +384,7 @@ def test_a_run_with_no_address_is_refused_before_anything_moves(tmp_path: Path) 
 
 @pytest.mark.parametrize("address", [None, ""])
 def test_no_address_is_refused_as_the_body_is_built(address: str | None) -> None:
-    """Refused as the body is built, before it connects, since a run and a pilot flock build
+    """Refused as the body is built, before it connects, since a run and a pilot team build
     every body before they write anything: refused at the connect, a run left its directory
     behind. A description builds no transport, so what `validate` and `doctor` read still
     answers without an address."""
@@ -395,19 +395,19 @@ def test_no_address_is_refused_as_the_body_is_built(address: str | None) -> None
     assert describe("jsonrpc").backend == "jsonrpc"
 
 
-def test_a_pilot_flock_with_no_address_for_its_huebot_writes_nothing(tmp_path: Path) -> None:
-    """A pilot flock builds its members before its run directory exists, so a Huebot with no
-    address stored refuses the flock with nothing on disk."""
-    from quackd.registry import Registry, RobotEntry, StoredFlock
+def test_a_pilot_team_with_no_address_for_its_huebot_writes_nothing(tmp_path: Path) -> None:
+    """A pilot team builds its members before its run directory exists, so a Huebot with no
+    address stored refuses the team with nothing on disk."""
+    from roboglot.registry import Registry, RobotEntry, StoredTeam
 
     registry = Registry(tmp_path / "registry")
     registry.add_robot(RobotEntry(name="hue", spec="huebot:jsonrpc"))
     registry.add_robot(RobotEntry(name="duck", spec="microduck:mock"))
-    registry.add_flock(StoredFlock(name="pair", members=["hue", "duck"]))
+    registry.add_team(StoredTeam(name="pair", members=["hue", "duck"]))
     result = CliRunner().invoke(
         app,
         [
-            *("run", "flock-hello", "--flock", "pair", "--llm", "fake", "--no-gif", "--no-log"),
+            *("run", "team-hello", "--team", "pair", "--llm", "fake", "--no-gif", "--no-log"),
             *("--runs-dir", str(tmp_path / "runs"), "--memory-dir", str(tmp_path / "memory")),
             *("--registry-dir", str(tmp_path / "registry")),
         ],
@@ -429,10 +429,10 @@ def test_a_pilot_flock_with_no_address_for_its_huebot_writes_nothing(tmp_path: P
 def test_a_robot_command_refuses_a_huebot_with_no_address_in_one_line(
     tmp_path: Path, command: str, refusal: str
 ) -> None:
-    """`quackd robot release` builds the robot to ask whether it is an arm, and catches only an
+    """`roboglot robot release` builds the robot to ask whether it is an arm, and catches only an
     adapter's refusal there, so a Huebot with no address went past it as a traceback. It is an
     adapter's refusal now. `rest-pose` refuses a body with no joints before it builds one."""
-    from quackd.registry import Registry, RobotEntry
+    from roboglot.registry import Registry, RobotEntry
 
     Registry(tmp_path).add_robot(RobotEntry(name="hue", spec="huebot:jsonrpc"))
     result = CliRunner().invoke(
@@ -460,14 +460,14 @@ async def test_a_shim_on_another_version_is_served_and_warned_about() -> None:
         await fake.stop()
 
 
-async def test_a_socket_with_no_robot_subscribe_is_not_a_shim_quackd_can_drive() -> None:
+async def test_a_socket_with_no_robot_subscribe_is_not_a_shim_roboglot_can_drive() -> None:
     fake = FakeShim(missing=frozenset({"robot.subscribe"}))
     await fake.start()
     try:
         with pytest.raises(TransportError) as refused:
             await _connected(fake)
         said = str(refused.value)
-        assert "not robotd and not a shim quackd can drive" in said
+        assert "not robotd and not a shim Roboglot can drive" in said
         assert "docs/adapters/huebot/README.md" in said
     finally:
         await fake.stop()
@@ -495,7 +495,7 @@ async def test_a_subscribe_answer_with_no_skill_list_offers_no_skill_verb() -> N
 async def test_a_walk_feeds_the_deadman_and_the_shim_echoes_it(shim: FakeShim) -> None:
     """A walk re-sends `robot.move` every 100 ms, so robotd's 500 ms deadman never fires while a
     verb walks, and the shim's own `move.requested` shows each twist it took. Clamped to
-    quackd's own caps first: 0.3 m/s asked is 0.15 m/s sent."""
+    Roboglot's own caps first: 0.3 m/s asked is 0.15 m/s sent."""
     adapter = await _connected(shim)
     t = _transport(adapter)
     result = await _executor(adapter).run_verb("walk", {"vx": 0.3, "duration_s": 1.0})
@@ -514,10 +514,10 @@ async def test_a_walk_feeds_the_deadman_and_the_shim_echoes_it(shim: FakeShim) -
 async def test_a_walk_whose_link_is_cut_leaves_the_robots_deadman_to_stop_it(
     shim: FakeShim,
 ) -> None:
-    """Pull the tunnel out mid-walk. quackd cannot deliver the stop, says so and does not
+    """Pull the tunnel out mid-walk. Roboglot cannot deliver the stop, says so and does not
     raise, and the next twist fails the verb rather than being reported. What stops the legs is
     the robot's own deadman, which the shim is asked to keep: the twist it drives on ages past
-    500 ms and goes to zero with nothing more from quackd."""
+    500 ms and goes to zero with nothing more from Roboglot."""
     adapter = await _connected(shim)
     t = _transport(adapter)
     walk = asyncio.create_task(_executor(adapter).run_verb("walk", {"vx": 0.1, "duration_s": 5.0}))
@@ -540,7 +540,7 @@ async def test_a_walk_whose_link_is_cut_leaves_the_robots_deadman_to_stop_it(
     last_move = max(at for at, m in shim.arrived if m == "robot.move")
     await asyncio.sleep(max(0.0, last_move + up.DEADMAN_S + 0.1 - time.monotonic()))
     assert shim.driving() == [0.0, 0.0, 0.0], "the deadman never fired"
-    assert shim.twist == [0.1, 0.0, 0.0], "nothing from quackd zeroed it: the deadman did"
+    assert shim.twist == [0.1, 0.0, 0.0], "nothing from Roboglot zeroed it: the deadman did"
     await t.stop()  # never raises on a dead link
     await adapter.disconnect()
 
@@ -551,7 +551,7 @@ async def test_a_walk_whose_link_is_cut_leaves_the_robots_deadman_to_stop_it(
         ("held", {}, "no network is driving the legs"),
         ("limp_fall", {}, "riding a fall down"),
         ("kick_left", {}, "one of its skills"),
-        ("dance", {}, "which quackd has not read"),
+        ("dance", {}, "which Roboglot has not read"),
         ("walk", {"limp": True}, "safety.limp"),
         ("walk", {"picked_up": True, "fallen": True}, "somebody is holding Huebot"),
         (None, {}, "names no policy"),
@@ -561,7 +561,7 @@ async def test_a_walk_whose_link_is_cut_leaves_the_robots_deadman_to_stop_it(
 async def test_only_walk_and_stand_stand_the_robot_up(
     policy: str | None, safety: dict[str, Any], why: str
 ) -> None:
-    """An allowlist: every other label, a skill's own name and one quackd has never read, is
+    """An allowlist: every other label, a skill's own name and one Roboglot has never read, is
     `unknown`, and a walk is refused on it before any twist goes out."""
     fake = FakeShim(policy=policy, skills=["kick_left", "kick_right"])
     fake.picked_up = safety.get("picked_up", False)
@@ -671,7 +671,7 @@ async def test_a_skill_the_shim_did_not_list_is_never_sent(shim: FakeShim) -> No
 def test_a_run_with_no_camera_drives_the_shim_without_a_verb_that_needs_one(
     tmp_path: Path,
 ) -> None:
-    """`quackd run` on huebot:jsonrpc against the fake shim, with no --camera-url: the pilot is
+    """`roboglot run` on huebot:jsonrpc against the fake shim, with no --camera-url: the pilot is
     offered nothing that needs a picture, quacks, walks and quacks, and the shim is sent nothing
     it does not answer."""
     with on_its_own_loop(FakeShim) as fake:

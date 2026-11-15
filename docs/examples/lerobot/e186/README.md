@@ -6,7 +6,7 @@
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Partly | SUCCESS | 2026-11-10 | 0.34.0 |
 
@@ -15,7 +15,7 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** In E118 an LLM was asked to stop the arm, and its stop could only land between moves, seconds late. `quackd drive` gives the person a brake that does not go through the LLM at all: an empty Enter drops whatever is waiting, ends the verb moving the arm and sends the stop straight to it. This example presses it during a move on the real arm, then cuts a second move short with a newer command, to see how fast the brake is and how far the arm carries on.
+**Why this example exists:** In E118 an LLM was asked to stop the arm, and its stop could only land between moves, seconds late. `roboglot drive` gives the person a brake that does not go through the LLM at all: an empty Enter drops whatever is waiting, ends the verb moving the arm and sends the stop straight to it. This example presses it during a move on the real arm, then cuts a second move short with a newer command, to see how fast the brake is and how far the arm carries on.
 
 **Why this result is important:** The brake is the fast path the card promised. Enter was routed in 0.208 ms and the stop went out 20.4 ms after the press, without asking the LLM anything. Right after the stop the arm read shoulder_pan -17.0, short of the last goal the move had sent, and stayed there. The number the card is after, how many degrees the arm carries on past the press, needs its position at the press, which nothing recorded, so it is still open. A newer command did the same job: `gripper false`, typed during the second move, ended it and then ran. For a person beside the arm, that is a brake that answers in milliseconds without waiting on the LLM.
 
@@ -23,7 +23,7 @@ The numbers and the trace below are copied from the run's own record.
 
 The other half of E118: an empty Enter brakes at once, with no LLM in the way. It drops every line that has not started, ends the verb moving the arm, and sends the stop straight to the body.
 
-**What we expected:** A brake line ending `Enter (0.2 ms)` for quackd's part, and `brake_ms` in the session's `summary.json` from the press to the stop, 15 ms on the arm's twin. The number to measure is how many degrees the arm carries on past the press, against E118's. Typed mid-sweep, `gripper false` is a newer command: it ends the verb it finds moving, waits for its stop, then runs, so the sweep ends and the jaws close.
+**What we expected:** A brake line ending `Enter (0.2 ms)` for Roboglot's part, and `brake_ms` in the session's `summary.json` from the press to the stop, 15 ms on the arm's twin. The number to measure is how many degrees the arm carries on past the press, against E118's. Typed mid-sweep, `gripper false` is a newer command: it ends the verb it finds moving, waits for its stop, then runs, so the sweep ends and the jaws close.
 
 ## What the run showed
 
@@ -51,10 +51,10 @@ The run ended with **SUCCESS**. The reason on record:
 
 ## The exact command
 
-The following command was run with quackd 0.34.0:
+The following command was run with Roboglot 0.34.0:
 
 ```text
-quackd drive --robot arm-01 --camera-url "opencv://1?name=arm" --llm openai:gpt-6-astra
+roboglot drive --robot arm-01 --camera-url "opencv://1?name=arm" --llm openai:gpt-6-astra
 drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
 drive>
 drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
@@ -66,7 +66,7 @@ drive> quit
 
 | | |
 |---|---|
-| quackd version | 0.34.0 |
+| roboglot version | 0.34.0 |
 | Started | 2026-11-10 14:36:06 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |
@@ -93,10 +93,10 @@ drive> quit
 This starts the same session with no arm attached, on `lerobot:mock`, an arm that lives in memory:
 type the lines under The exact command at its `drive>` prompt, a bare Enter where one is empty. It
 shows the rules a session is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd drive --robot lerobot:mock --llm openai:gpt-6-astra
+roboglot drive --robot lerobot:mock --llm openai:gpt-6-astra
 ```
 
 ## Full terminal trace
@@ -105,16 +105,16 @@ quackd drive --robot lerobot:mock --llm openai:gpt-6-astra
 <summary>Show the full terminal trace (41 lines)</summary>
 
 ```text
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd drive --robot arm-01 --camera-url "opencv://1?name=arm" --llm openai:gpt-6-astra
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot drive --robot arm-01 --camera-url "opencv://1?name=arm" --llm openai:gpt-6-astra
 drive    arm-01: type a command, a goal, or help; Enter brakes
 drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
-drive> WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
+drive> WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
 drive>
 brake    Enter (0.208 ms)
 pilot    goal 1 (5.339 ms)
 result   aborted: the brake, Enter; aborted mid-verb; the verb was cancelled and a stop was sent
 drive> Sweep your shoulder pan slowly from minus 40 to plus 40 degrees over twelve seconds.
-drive> WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
+drive> WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
 drive> gripper false
 pilot    goal 2 (2.657 ms)
 result   aborted: a newer command, gripper false; aborted mid-verb; the verb was cancelled and a stop was sent

@@ -1,4 +1,4 @@
-"""The MQTT flock bus on a fake broker: no sockets, no paho needed.
+"""The MQTT team bus on a fake broker: no sockets, no paho needed.
 
 Two `MqttBus` nodes share a synchronous fake broker that routes like a real one (it echoes
 the sender's own publications back). What is proven: every message kind round-trips, echo
@@ -19,25 +19,25 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from quackd.agent.providers.fake import FakeProvider
-from quackd.duckfile.parser import load_duck
-from quackd.flock.auction import Auction, AuctionPolicy
-from quackd.flock.bus import Subscription
-from quackd.flock.messages import (
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.glotfile.parser import load_glot
+from roboglot.lan import LanNotInstalled
+from roboglot.team.auction import Auction, AuctionPolicy
+from roboglot.team.bus import Subscription
+from roboglot.team.messages import (
     BidMsg,
     ClaimMsg,
-    FlockTask,
     HbMsg,
     Hint,
     HintMsg,
     ResultMsg,
     RoleMsg,
     TaskMsg,
+    TeamTask,
     VerdictMsg,
 )
-from quackd.flock.mqtt_bus import QOS_CTL, QOS_HB, MqttBus, decode, encode
-from quackd.flock.runner import run_flock
-from quackd.lan import LanNotInstalled
+from roboglot.team.mqtt_bus import QOS_CTL, QOS_HB, MqttBus, decode, encode
+from roboglot.team.runner import run_team
 
 
 class FakeMessage:
@@ -111,13 +111,13 @@ def node(broker: FakeBroker, *subscribers: str, tap: list[Any] | None = None) ->
 
 def one_of_each(src: str = "coordinator") -> list[Any]:
     base = {"t": 1.0, "src": src, "task_id": "abc"}
-    task = FlockTask(task_id="abc", name="kick", goal="kick the ball")
+    task = TeamTask(task_id="abc", name="kick", goal="kick the ball")
     hint = Hint(target="ball", x_m=1.0, y_m=2.0, by=src, est_dist_m=1.5, bearing_deg=10.0)
     return [
         TaskMsg(**base, task=task, members=["duck-0", "duck-1"]),
         BidMsg(**base, bearing_deg=10.0, ball_dist_m=0.5, confidence=0.9, role="kicker"),
         ClaimMsg(**base, kicker="duck-1", lease_s=6.0, assignments={"kicker": "duck-1"}),
-        RoleMsg(**base, duck="duck-1", role="KICK", flock_role="kicker", seq=1, hint=hint),
+        RoleMsg(**base, duck="duck-1", role="KICK", team_role="kicker", seq=1, hint=hint),
         HbMsg(**base, role="SEARCH", x=0.1, y=0.2),
         ResultMsg(**base, status="kick_done", ball_moved_m=0.2),
         HintMsg(**base, hint=hint),
@@ -163,11 +163,11 @@ def test_hb_is_qos0_control_is_qos1_and_nothing_is_retained() -> None:
     a = node(broker, "duck-0")
     client = a._client
     assert isinstance(client, FakeClient)
-    assert client.subscriptions == {"quackd/t1/ctl": QOS_CTL, "quackd/t1/hb": QOS_HB}
+    assert client.subscriptions == {"roboglot/t1/ctl": QOS_CTL, "roboglot/t1/hb": QOS_HB}
     for msg in one_of_each("duck-0"):
         a.publish(msg)
     by_topic = {topic: (qos, retain) for topic, _p, qos, retain in client.published}
-    assert by_topic == {"quackd/t1/ctl": (1, False), "quackd/t1/hb": (0, False)}
+    assert by_topic == {"roboglot/t1/ctl": (1, False), "roboglot/t1/hb": (0, False)}
     hb = [p for topic, p, _q, _r in client.published if topic.endswith("/hb")]
     assert len(hb) == 1 and json.loads(hb[0])["kind"] == "HB"
 
@@ -178,15 +178,15 @@ def test_unreadable_payloads_are_dropped_and_counted() -> None:
     b = MqttBus("t1", client=FakeClient(broker), log=logged.append)
     sub = b.subscribe("duck-1")
     b.start()
-    broker.inject("quackd/t1/ctl", b"not json")
+    broker.inject("roboglot/t1/ctl", b"not json")
     broker.inject(
-        "quackd/t1/ctl", json.dumps({"kind": "TASK", "src": "x"}).encode()
+        "roboglot/t1/ctl", json.dumps({"kind": "TASK", "src": "x"}).encode()
     )  # fields missing
     broker.inject(
-        "quackd/t1/ctl", json.dumps({"kind": "NOPE", "src": "x", "t": 0, "task_id": "a"}).encode()
+        "roboglot/t1/ctl", json.dumps({"kind": "NOPE", "src": "x", "t": 0, "task_id": "a"}).encode()
     )
     assert b.rejected == 3 and b.received == 0 and sub.drain() == []
-    assert len(logged) == 3 and "quackd/t1/ctl" in logged[0]
+    assert len(logged) == 3 and "roboglot/t1/ctl" in logged[0]
     with pytest.raises(ValidationError):
         decode(b"{}")
     assert decode(encode(one_of_each()[1])) == one_of_each()[1]
@@ -239,7 +239,7 @@ async def test_remote_messages_land_on_the_event_loop_not_the_network_thread() -
     b.start()  # inside the running loop: captures it
     payload = encode(one_of_each("coordinator")[0])
 
-    thread = threading.Thread(target=broker.inject, args=("quackd/t1/ctl", payload))
+    thread = threading.Thread(target=broker.inject, args=("roboglot/t1/ctl", payload))
     thread.start()
     thread.join()
     assert sub.drain() == [] and b.received == 0  # not delivered inline on the thread
@@ -268,19 +268,19 @@ def test_drain_loses_nothing_to_a_concurrent_producer() -> None:
     assert drained == n
 
 
-async def test_run_flock_over_the_mqtt_bus(tmp_path: Path) -> None:
+async def test_run_team_over_the_mqtt_bus(tmp_path: Path) -> None:
     broker = FakeBroker()
     buses: list[MqttBus] = []
 
     def factory(tap: Any) -> MqttBus:
-        bus = MqttBus("flock", tap=tap, client=FakeClient(broker))
+        bus = MqttBus("team", tap=tap, client=FakeClient(broker))
         buses.append(bus)
         return bus
 
     result = await asyncio.wait_for(
-        run_flock(
-            load_duck("flock-kick"),
-            provider=FakeProvider.for_duck("flock-kick"),
+        run_team(
+            load_glot("team-kick"),
+            provider=FakeProvider.for_glot("team-kick"),
             seed=3,
             runs_dir=tmp_path,
             bus_factory=factory,
@@ -292,7 +292,7 @@ async def test_run_flock_over_the_mqtt_bus(tmp_path: Path) -> None:
     assert bus.started is False and not broker.clients  # closed at the end of the run
     assert bus.published > 0 and bus.dropped == bus.published and bus.received == 0
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
-    lines = (result.run_dir / "flock.jsonl").read_text(encoding="utf-8").splitlines()
+    lines = (result.run_dir / "team.jsonl").read_text(encoding="utf-8").splitlines()
     assert summary["bus_messages"] == bus.published
     assert sum(1 for line in lines if json.loads(line)["kind"] == "bus") == bus.published
 
@@ -312,5 +312,5 @@ def test_the_real_client_is_paho_v2() -> None:
     importlib.util.find_spec("paho") is not None, reason="paho-mqtt is installed here"
 )
 def test_without_paho_the_message_names_the_extra() -> None:
-    with pytest.raises(LanNotInstalled, match=r"quackd\[lan\]"):
+    with pytest.raises(LanNotInstalled, match=r"roboglot\[lan\]"):
         MqttBus("t1")

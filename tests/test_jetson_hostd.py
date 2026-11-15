@@ -1,6 +1,6 @@
-"""The daemon quackd ships for a Jetson, exercised with no Jetson, no camera and no GPU.
+"""The daemon Roboglot ships for a Jetson, exercised with no Jetson, no camera and no GPU.
 
-The quackd that drives a robot from a laptop reaches the board through this daemon, with
+The Roboglot that drives a robot from a laptop reaches the board through this daemon, with
 `--host`. Every test loads it by path, the way the board runs it, and drives the real server
 in-process on port 0. None of
 them starts it as a subprocess, because subprocess-and-sleep tests flake on this project's
@@ -51,8 +51,8 @@ from tests.jetson_fixtures import (
 )
 
 REPO = Path(__file__).resolve().parents[1]
-HOSTD = REPO / "bridge" / "jetson" / "quackd_jetson_hostd.py"
-UNIT = REPO / "bridge" / "jetson" / "quackd-jetson-hostd.service"
+HOSTD = REPO / "bridge" / "jetson" / "roboglot_jetson_hostd.py"
+UNIT = REPO / "bridge" / "jetson" / "roboglot-jetson-hostd.service"
 SOURCE = HOSTD.read_text(encoding="utf-8")
 TOKEN = "correct-horse-battery-staple"
 FILES = (
@@ -76,13 +76,13 @@ def _load(path: Path, name: str) -> ModuleType:
 
 @pytest.fixture(scope="module")
 def hostd() -> ModuleType:
-    return _load(HOSTD, "quackd_jetson_hostd")
+    return _load(HOSTD, "roboglot_jetson_hostd")
 
 
 @pytest.fixture(autouse=True)
 def _no_token_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A developer with `QUACKD_HOST_TOKEN` exported must not be running a different suite."""
-    monkeypatch.delenv("QUACKD_HOST_TOKEN", raising=False)
+    """A developer with `ROBOGLOT_HOST_TOKEN` exported must not be running a different suite."""
+    monkeypatch.delenv("ROBOGLOT_HOST_TOKEN", raising=False)
 
 
 @contextlib.contextmanager
@@ -104,7 +104,7 @@ def call(
     body: bytes | None = None,
     token: str | None = None,
 ) -> tuple[int, dict[str, str], bytes]:
-    headers = {"X-Quackd-Token": token} if token is not None else {}
+    headers = {"X-Roboglot-Token": token} if token is not None else {}
     if body is not None:
         headers["Content-Type"] = "image/jpeg"
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
@@ -275,15 +275,15 @@ def fake_gpu(monkeypatch: pytest.MonkeyPatch) -> Callable[[bool], SimpleNamespac
 
 def test_the_constants_are_the_ones_the_protocol_names(hostd: ModuleType) -> None:
     """Both sides are built against one contract, so the names and values are pinned here."""
-    assert hostd.PROTOCOL == "quackd-jetson-hostd"
+    assert hostd.PROTOCOL == "roboglot-jetson-hostd"
     assert hostd.PROTOCOL_VERSION == 1
     assert hostd.HOSTD_VERSION == "0.1.0"
     assert hostd.DEFAULT_PORT == 9874
-    assert hostd.TOKEN_ENV == "QUACKD_HOST_TOKEN"
-    assert hostd.TOKEN_HEADER == "X-Quackd-Token"
+    assert hostd.TOKEN_ENV == "ROBOGLOT_HOST_TOKEN"
+    assert hostd.TOKEN_HEADER == "X-Roboglot-Token"
     assert hostd.MAX_JPEG_BYTES == 8 * 1024 * 1024
     assert hostd.BOARD_FILES == FILES
-    assert hostd.GPU_NODES == NODES, "the three node names quackd doctor has always read"
+    assert hostd.GPU_NODES == NODES, "the three node names roboglot doctor has always read"
     assert set(hostd.COMMANDS) == {"nvpmodel -q", "tegrastats"}
     handler = hostd.make_handler(hostd.Hostd())
     assert handler.protocol_version == "HTTP/1.1"
@@ -320,7 +320,7 @@ def test_hello_is_honest_when_opencv_and_ultralytics_are_absent(
             "detect_error",
             "board_model",
         }
-        assert hello["protocol"] == "quackd-jetson-hostd" and hello["protocol_version"] == 1
+        assert hello["protocol"] == "roboglot-jetson-hostd" and hello["protocol_version"] == 1
         assert hello["capabilities"] == {"camera": False, "detect": False, "tegra": False}
         assert hello["camera"] is None and hello["detect"] is None
         assert "OpenCV (cv2)" in hello["camera_error"]
@@ -352,14 +352,14 @@ def test_the_daemon_loads_and_fakes_a_camera_with_only_the_standard_library(
     for name in ("cv2", "numpy", "PIL", "PIL.Image", "PIL.ImageDraw", "torch", "ultralytics"):
         monkeypatch.setitem(sys.modules, name, None)
     try:
-        bare = _load(HOSTD, "quackd_jetson_hostd_bare")
+        bare = _load(HOSTD, "roboglot_jetson_hostd_bare")
         camera = bare.FakeCamera()
         jpeg, size = camera.jpeg()
         assert jpeg[:2] == b"\xff\xd8" and size == camera.size == (2, 2)
         engine, why = bare.open_engine(True, "yolov8n.pt", 0.4)
         assert engine is None and "ultralytics is not installed" in why
     finally:
-        sys.modules.pop("quackd_jetson_hostd_bare", None)
+        sys.modules.pop("roboglot_jetson_hostd_bare", None)
 
 
 @pytest.mark.parametrize("cuda", [True, False], ids=["cuda", "cpu"])
@@ -460,8 +460,8 @@ def test_every_path_refuses_a_missing_or_wrong_token_and_never_reads_one_from_th
                 assert (status, said["reason"]) == (401, "bad or missing token"), (method, path)
             for query in (
                 f"?token={TOKEN}",
-                f"?X-Quackd-Token={TOKEN}",
-                f"?x_quackd_token={TOKEN}",
+                f"?X-Roboglot-Token={TOKEN}",
+                f"?x_roboglot_token={TOKEN}",
             ):
                 status, _, _ = call(port, method, path + query, body=body)
                 assert status == 401, f"{method} {path}{query} took a token from the URL"
@@ -491,16 +491,16 @@ def test_a_refused_body_is_drained_so_the_connection_reads_the_next_request_clea
     with serving(hostd, daemon) as port:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         try:
-            conn.request("POST", "/detect", body=b"not a jpeg", headers={"X-Quackd-Token": TOKEN})
+            conn.request("POST", "/detect", body=b"not a jpeg", headers={"X-Roboglot-Token": TOKEN})
             resp = conn.getresponse()
             assert resp.status == 400 and resp.getheader("Connection") != "close"
             resp.read()
             big = bytes(5 * hostd.DRAIN_CHUNK_BYTES + 7)
-            conn.request("POST", "/hello", body=big, headers={"X-Quackd-Token": TOKEN})
+            conn.request("POST", "/hello", body=big, headers={"X-Roboglot-Token": TOKEN})
             resp = conn.getresponse()
             assert resp.status == 405 and resp.getheader("Connection") != "close"
             resp.read()
-            conn.request("GET", "/hello", headers={"X-Quackd-Token": TOKEN})
+            conn.request("GET", "/hello", headers={"X-Roboglot-Token": TOKEN})
             resp = conn.getresponse()
             assert resp.status == 200 and json.loads(resp.read())["protocol_version"] == 1
         finally:
@@ -526,7 +526,7 @@ def test_a_client_without_the_token_is_refused_before_its_body_and_the_refusal_a
     as it liked, and never be told no. So the 401 goes out on the head alone, and closes.
 
     Closing with the body unread makes the kernel reset the connection, which can throw the
-    401 away before the client reads it: quackd sending a frame with the wrong token would hear
+    401 away before the client reads it: Roboglot sending a frame with the wrong token would hear
     "connection reset" rather than which token was wrong. So the daemon lingers after the
     refusal, dropping what arrives, and the 401 gets through whatever size the body was."""
     fake_gpu(False)
@@ -750,12 +750,12 @@ def test_healthz_names_the_camera_when_it_is_the_sick_one(
 # ── the camera sources ──────────────────────────────────────────────────────────────────
 
 
-def test_the_fake_cameras_frame_is_one_quackds_colour_detector_can_see(
+def test_the_fake_cameras_frame_is_one_roboglots_colour_detector_can_see(
     hostd: ModuleType, tmp_path: Path
 ) -> None:
-    """Served over HTTP and read by quackd's own detector, so `--camera fake` checks the
+    """Served over HTTP and read by Roboglot's own detector, so `--camera fake` checks the
     detector's side of the chain as well as the plumbing."""
-    from quackd.perception.color_blob import ColorBlobDetector
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     daemon = hostd.Hostd(camera=hostd.FakeCamera(), fps=20.0, board_root=str(tmp_path))
     daemon.start()
@@ -766,7 +766,7 @@ def test_the_fake_cameras_frame_is_one_quackds_colour_detector_can_see(
         frame = Image.open(io.BytesIO(body)).convert("RGB")
         assert frame.size == (640, 480)
         balls = [d for d in ColorBlobDetector().detect(frame) if d.label == "ball"]
-        assert balls, "the synthetic scene has to be one quackd's own detector can see"
+        assert balls, "the synthetic scene has to be one Roboglot's own detector can see"
         assert balls[0].est_distance_m is not None
 
 
@@ -823,7 +823,7 @@ def test_csi_opens_the_default_pipeline_through_gstreamer_and_serves_a_frame_tha
 ) -> None:
     import cv2
 
-    from quackd.perception.color_blob import ColorBlobDetector
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     camera = hostd.Cv2Camera("csi", (640, 480))
     assert capture.opened[0] == (hostd.DEFAULT_CSI_PIPELINE, cv2.CAP_GSTREAMER)
@@ -909,7 +909,7 @@ def test_a_password_in_a_camera_pipeline_reaches_the_capture_and_nothing_else(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The pipeline is shown in `/hello`, in every reason that names the camera and in the log,
-    which is to say to every client and to journald. quackd puts a 503's reason in the error it
+    which is to say to every client and to journald. Roboglot puts a 503's reason in the error it
     raises, so a password there would reach the laptop's terminal and its transcripts."""
     import cv2
 
@@ -920,7 +920,7 @@ def test_a_password_in_a_camera_pipeline_reaches_the_capture_and_nothing_else(
     args = hostd.parser().parse_args(
         ["--camera", PASSWORDED, "--no-detect", "--board-root", str(tmp_path)]
     )
-    with caplog.at_level(logging.INFO, logger="quackd-jetson-hostd"):
+    with caplog.at_level(logging.INFO, logger="roboglot-jetson-hostd"):
         daemon = hostd.Hostd.from_args(args, None)
     assert capture.opened[0] == (PASSWORDED, cv2.CAP_GSTREAMER), "the capture gets it all"
     with serving(hostd, daemon) as port:
@@ -1003,7 +1003,7 @@ def test_a_capture_error_that_quotes_the_pipeline_is_redacted_in_healthz_and_the
     hostd: ModuleType, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Every reason that may name the camera is redacted, and a capture that fails mid-run is
-    one: `/healthz` serves its error, and quackd doctor prints it."""
+    one: `/healthz` serves its error, and roboglot doctor prints it."""
 
     class Quoting:
         source = f"gstreamer: {hostd.redact(PASSWORDED)}"
@@ -1016,7 +1016,7 @@ def test_a_capture_error_that_quotes_the_pipeline_is_redacted_in_healthz_and_the
             pass
 
     daemon = hostd.Hostd(camera=Quoting(), board_root=str(tmp_path))
-    with caplog.at_level(logging.WARNING, logger="quackd-jetson-hostd"):
+    with caplog.at_level(logging.WARNING, logger="roboglot-jetson-hostd"):
         daemon.start()
         try:
             end = time.monotonic() + 5.0
@@ -1142,7 +1142,7 @@ def test_a_board_file_is_capped_as_it_goes_on_the_wire_not_only_as_it_is_read(
 def test_a_board_with_no_device_tree_is_still_a_tegra_by_its_release_file(
     hostd: ModuleType, tmp_path: Path
 ) -> None:
-    """The two ways quackd doctor has always asked, and a laptop answers no to both."""
+    """The two ways roboglot doctor has always asked, and a laptop answers no to both."""
     orin = hostd.Hostd(board_root=str(tegra_tree(tmp_path / "orin"))).hello()
     assert orin["capabilities"]["tegra"] is True and orin["board_model"] == ORIN_NANO
     masked = tegra_tree(tmp_path / "masked", device_tree=False)
@@ -1221,7 +1221,7 @@ def test_run_quiet_never_forks_a_binary_that_is_not_on_the_path(
     monkeypatch.setattr(hostd.subprocess, "Popen", forbidden)
     monkeypatch.setattr(hostd.subprocess, "run", forbidden)
     for first_line in (False, True):
-        out = hostd.run_quiet(["quackd-no-such-binary-anywhere"], 1.0, first_line=first_line)
+        out = hostd.run_quiet(["roboglot-no-such-binary-anywhere"], 1.0, first_line=first_line)
         assert out == (None, "not on PATH")
     assert hostd.run_quiet([], 1.0) == (None, "no command")
     assert forked == []
@@ -1335,7 +1335,7 @@ def test_two_board_requests_at_once_never_run_its_commands_at_once(
     hostd: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """`/board` forks `nvpmodel` and a `tegrastats` it has to kill, and a monitoring script and
-    `quackd doctor` asking together must not fork them twice over, on a board that may also
+    `roboglot doctor` asking together must not fork them twice over, on a board that may also
     be running a robot's control loop."""
     overlap = Overlap(0.1)
 
@@ -1673,11 +1673,13 @@ def test_nothing_in_the_daemon_can_move_a_robot(hostd: ModuleType, tmp_path: Pat
             assert call(port, "POST", path, body=b"{}")[0] == 405, path
 
 
-def test_the_daemon_never_imports_quackd_and_loads_on_the_standard_library_alone() -> None:
+def test_the_daemon_never_imports_roboglot_and_loads_on_the_standard_library_alone() -> None:
     tree = ast.parse(SOURCE)
     at_load, lazily = _imports(tree)
     everything = at_load + lazily
-    assert not [m for m in everything if m == "quackd" or m.startswith(("quackd.", "quackd_"))]
+    assert not [
+        m for m in everything if m == "roboglot" or m.startswith(("Roboglot.", "roboglot_"))
+    ]
     stdlib = set(sys.stdlib_module_names) | {"__future__"}
     assert not [m for m in at_load if m.split(".")[0] not in stdlib], at_load
     optional = {"cv2", "PIL", "torch", "ultralytics", "numpy"}
@@ -1769,11 +1771,11 @@ def test_it_binds_loopback_by_default_and_the_units_exec_start_agrees(hostd: Mod
     default must not be the LAN. The unit's flags go through the daemon's own parser."""
     assert hostd.parser().parse_args([]).bind == "127.0.0.1"
     argv = _exec_start()
-    assert argv[:2] == ["/usr/bin/python3", "/opt/quackd/quackd_jetson_hostd.py"]
+    assert argv[:2] == ["/usr/bin/python3", "/opt/roboglot/roboglot_jetson_hostd.py"]
     args = hostd.parser().parse_args(argv[2:])
     assert args.bind == "127.0.0.1" and args.port == hostd.DEFAULT_PORT
     assert args.camera == "csi" and args.fps == 5.0 and args.size == (640, 480)
-    assert args.token_file == "/etc/quackd/jetson-hostd.token"
+    assert args.token_file == "/etc/roboglot/jetson-hostd.token"
     assert "--bind 0.0.0.0" not in UNIT.read_text(encoding="utf-8")
 
 
@@ -1924,7 +1926,7 @@ def test_once_prints_a_hello_whose_protocol_and_version_match(
     code = hostd.main(["--camera", "fake", "--no-detect", "--once", "--board-root", str(tmp_path)])
     assert code == 0
     hello = json.loads(capsys.readouterr().out)
-    assert hello["protocol"] == hostd.PROTOCOL == "quackd-jetson-hostd"
+    assert hello["protocol"] == hostd.PROTOCOL == "roboglot-jetson-hostd"
     assert hello["protocol_version"] == hostd.PROTOCOL_VERSION == 1
     assert hello["daemon_version"] == hostd.HOSTD_VERSION
     assert hello["capabilities"] == {"camera": True, "detect": False, "tegra": False}
@@ -1960,7 +1962,7 @@ def test_a_token_file_that_cannot_be_read_or_holds_no_token_refuses_to_start(
             pytest.skip("only a POSIX non-root user can be refused a file by its mode")
         path.write_text(TOKEN, encoding="utf-8")
         path.chmod(0)
-    with caplog.at_level(logging.ERROR, logger="quackd-jetson-hostd"):
+    with caplog.at_level(logging.ERROR, logger="roboglot-jetson-hostd"):
         code = hostd.main(["--once", "--token-file", str(path), "--board-root", str(tmp_path)])
     assert code == 2
     assert "Refusing to start" in caplog.text and str(path) in caplog.text
@@ -1973,12 +1975,12 @@ def test_a_token_comes_from_the_file_then_the_flag_then_the_environment(
     parse = hostd.parser().parse_args
     token_file = tmp_path / "jetson-hostd.token"
     token_file.write_text(f"  {TOKEN}\n", encoding="utf-8")
-    monkeypatch.setenv("QUACKD_HOST_TOKEN", "from-the-environment")
+    monkeypatch.setenv("ROBOGLOT_HOST_TOKEN", "from-the-environment")
     assert hostd.resolve_token(parse(["--token-file", str(token_file)])) == TOKEN
     assert hostd.resolve_token(parse(["--token", "from-the-flag"])) == "from-the-flag"
     assert hostd.resolve_token(parse([])) == "from-the-environment"
     assert hostd.resolve_token(parse(["--token", ""])) is None, "an empty token is no token"
-    monkeypatch.setenv("QUACKD_HOST_TOKEN", "")
+    monkeypatch.setenv("ROBOGLOT_HOST_TOKEN", "")
     assert hostd.resolve_token(parse([])) is None
 
     token_file.write_text("\n", encoding="utf-8")

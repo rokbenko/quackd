@@ -1,4 +1,4 @@
-"""The walks a word names in drive, derived from each body's clamps (`quackd.drive.presets`)."""
+"""The walks a word names in drive, derived from each body's clamps (`roboglot.drive.presets`)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
-from quackd.drive.presets import SHARE, TURN_DEG, presets_for
-from quackd.drive.run import SESSION_BUDGETS, session_duck
-from quackd.drive.terminal import QUIT_AGAIN_S
-from quackd.duckfile.schema import Budgets
-from quackd.verbs.aliases import ALIASES
-from quackd.verbs.core import MAX_VX, MAX_WZ, MoveParams, speed_limits
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+from roboglot.drive.presets import SHARE, TURN_DEG, presets_for
+from roboglot.drive.run import SESSION_BUDGETS, session_glot
+from roboglot.drive.terminal import QUIT_AGAIN_S
+from roboglot.glotfile.schema import Budgets
+from roboglot.verbs.aliases import ALIASES
+from roboglot.verbs.core import MAX_VX, MAX_WZ, MoveParams, speed_limits
 
 BODIES = [RobotSpec(a, b) for a in ADAPTER_NAMES for b in BACKENDS.get(a, ())]
 
@@ -92,7 +92,7 @@ def test_the_drive_guide_quotes_the_codes_own_numbers() -> None:
     assert rows == [(p.name, p.says().split(": ", 1)[1]) for p in presets.values()]
     max_vx, _max_vy, max_wz = speed_limits(manifest)
     assert max_vx == MAX_VX and max_wz != MAX_WZ, "the guide's sentence on the clamps is stale"
-    front = session_duck(["move", "stop"]).frontmatter
+    front = session_glot(["move", "stop"]).frontmatter
     assert front.battery_abort_percent is not None
     for needle in (
         f"turns at most {max_wz:g} rad/s",

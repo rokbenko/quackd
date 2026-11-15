@@ -4,11 +4,11 @@
 
 **Amended 2026-09-25 by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md):** a `Detector`
 whose model runs on another machine arrived before `mediad`'s feature stream did, and it is not
-that stream. `HostDetector` (`quackd/perception/host.py`) still takes the image. It sends the
+that stream. `HostDetector` (`roboglot/perception/host.py`) still takes the image. It sends the
 primary frame to the board `--host` names as one JPEG and turns the boxes it gets back into
 detections with the geometry `YoloDetector` uses, so the protocol is unchanged. The `Detector`
 that reads a socket instead of an image, which *Consequences* below anticipates, is still
-unbuilt. `HostDetector` waits on the network, so quackd runs it in a worker thread, and a
+unbuilt. `HostDetector` waits on the network, so Roboglot runs it in a worker thread, and a
 steering verb keeps re-sending its last twist while the board answers, for one deadman window
 and no longer.
 
@@ -34,7 +34,7 @@ at ~10 Hz on a laptop; the LLM needs a sentence, not a pixel grid, to decide the
   blue, a pet in green. Geometry: `bearing = -atan((cx - w/2) / f)` (positive = left,
   upstream's +yaw convention); `distance = f · r / radius_px` for round targets and
   `f · half_width / (w_px/2)` for upright ones, with `f = (w/2) / tan(FOV/2)`.
-- `YoloDetector` (`quackd[yolo]`, lazy `ultralytics` import) maps COCO classes to the same
+- `YoloDetector` (`roboglot[yolo]`, lazy `ultralytics` import) maps COCO classes to the same
   labels for real cameras. Not needed for the demo.
 - The LLM sees a summary line (`ball at bearing 12° left, ~0.80 m`) plus, for vision
   providers, the last frame or two as images; older images are dropped from history.
@@ -72,7 +72,7 @@ than two.
 
 ## Note (2026-09-18): a picture that comes with the task is not perception
 
-`quackd run --image sketch.png` hands a run a picture of something that is not in front of the
+`roboglot run --image sketch.png` hands a run a picture of something that is not in front of the
 robot: a drawing to copy, a photograph of the shelf as it should end up, a diagram of the knot.
 The flag repeats, and the pictures ride on the first observation and are never trimmed out of
 the history, so a task about a picture still is one twenty turns later.

@@ -18,26 +18,26 @@ read at
 the commit MOSS's own Software.md installs. Neither has a software release, and MOSS's CHANGELOG
 says nothing is frozen, so a commit is the only honest pin, and every name was read from code
 rather than from docs. The maker's own words and figures are the exception, read from MOSS's
-README, its BOM, one of its docs and an issue, and each ref says which. Every name quackd's
+README, its BOM, one of its docs and an issue, and each ref says which. Every name Roboglot's
 package spells in its code lives in
-[`adapters/moss/src/quackd_moss/upstream_api.py`](../../../adapters/moss/src/quackd_moss/upstream_api.py),
-and a test scans the package for any other spelling. The bridge imports nothing of quackd, so it
+[`adapters/moss/src/roboglot_moss/upstream_api.py`](../../../adapters/moss/src/roboglot_moss/upstream_api.py),
+and a test scans the package for any other spelling. The bridge imports nothing of Roboglot, so it
 spells its own, and its tests pin them to those refs.
 
-**quackd has never driven a MOSS rover.** The `cockpit` backend is exercised against a fake of
-MOSS's cockpit and against quackd's own bridge in `--fake`, both over loopback, and by hand
+**Roboglot has never driven a MOSS rover.** The `cockpit` backend is exercised against a fake of
+MOSS's cockpit and against Roboglot's own bridge in `--fake`, both over loopback, and by hand
 against MOSS's own cockpit in its `--demo` mode, on Windows and on Linux
 ([below](#the-check-against-mosss-own-cockpit)).
 Nothing here has run on a rover.
 
 ```bash
-uv pip install 'quackd[moss]'     # quackd's own adapter package, which needs no robot library
+uv pip install 'roboglot[moss]'     # Roboglot's own adapter package, which needs no robot library
 
 # offline, the default
-quackd run moss-lookout --robot moss:mock --llm fake
+roboglot run moss-lookout --robot moss:mock --llm fake
 
-# a real rover, once its cockpit, quackd's bridge and the tunnel are up (see "Before it will answer")
-quackd run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904
+# a real rover, once its cockpit, Roboglot's bridge and the tunnel are up (see "Before it will answer")
+roboglot run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904
 ```
 
 ## Backends
@@ -45,7 +45,7 @@ quackd run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904
 | `--robot` | What it is | Status |
 |---|---|---|
 | `moss:mock` | the rover in memory: the tracks with their power floor and full power pivots, the ramp, the planner, the explorer, the arm cycle, the litter mission and the idle stop, with a synthetic nose and wrist camera | ✅ every verb runs offline in the test suite |
-| `moss:cockpit` | the real rover: MOSS's own cockpit over HTTP, and quackd's bridge on the rover for what the cockpit has no command for | 🧪 names VERIFIED at the pin, exercised against fakes over loopback and against MOSS's `--demo` cockpit on Windows and on Linux, **never run against a rover** |
+| `moss:cockpit` | the real rover: MOSS's own cockpit over HTTP, and Roboglot's bridge on the rover for what the cockpit has no command for | 🧪 names VERIFIED at the pin, exercised against fakes over loopback and against MOSS's `--demo` cockpit on Windows and on Linux, **never run against a rover** |
 
 The mock takes the rover's shape from its address, which a test or a dry run uses to see what a
 rover without a bridge, an arm or a mission is offered:
@@ -55,32 +55,32 @@ the rover is. It reads `stack`, `bridge`, `arm`, `mission`, `camera`, `stamps`, 
 that x, which stalls the tracks), `idle` (the idle stop's limit in seconds) and `litter` (how many
 pieces of litter to lay out ahead).
 
-## How quackd reaches it
+## How Roboglot reaches it
 
 ```
-laptop: quackd, moss:cockpit                 the rover, with MOSS's own .venv
+laptop: Roboglot, moss:cockpit                 the rover, with MOSS's own .venv
   CockpitClient: HTTP :8904, no auth ──▶ MOSS's cockpit ──┐ LCM
-  BridgeClient:  HTTP :9876, token ────▶ quackd's bridge ─┤──▶ the dimOS stack: moss-nav, moss-explore or moss-litter
+  BridgeClient:  HTTP :9876, token ────▶ Roboglot's bridge ─┤──▶ the dimOS stack: moss-nav, moss-explore or moss-litter
                                               └── dimOS RPC ─▶ moss-arm (ArmCoordinator), LitterMission
 ```
 
 **MOSS's cockpit** (`tools/moss_cockpit.py`) is the rover's only network surface. It is a
-standard library HTTP server on port 8904 that taps the stack's LCM bus. quackd reads its
+standard library HTTP server on port 8904 that taps the stack's LCM bus. Roboglot reads its
 `/state.json` for the stack, the pose, the battery, the firmware's mode, the stall flag, the nav
 state and the idle stop, and sends its commands: a goal for the planner, the explorer's start
 and stop, the soft stop and the idle stop's keepalive. Every command carries the
 `X-Requested-With: moss-cockpit` header the cockpit asks for.
 
-**quackd's bridge** ([`bridge/moss/`](../../../bridge/moss/README.md)) is one file the owner copies
+**Roboglot's bridge** ([`bridge/moss/`](../../../bridge/moss/README.md)) is one file the owner copies
 to the rover and runs with MOSS's own interpreter, beside the cockpit. It is what the cockpit
 has no command for: a twist with a deadman of its own, a frame that says when it was taken, the
 maker's arm cycle with a cancel that leaves the arm holding, and the litter mission's own stop.
-It never imports quackd.
+It never imports Roboglot.
 
-**quackd imports neither MOSS nor dimOS.** Both run on the rover, in MOSS's own environment, and
+**Roboglot imports neither MOSS nor dimOS.** Both run on the rover, in MOSS's own environment, and
 dimOS's RPC is pickled Python on the rover's LCM bus, which is nothing a laptop should join. So
-`quackd[moss]` is `quackd-moss`, which speaks the two HTTP surfaces with the standard library and
-installs anywhere quackd does.
+`roboglot[moss]` is `roboglot-moss`, which speaks the two HTTP surfaces with the standard library and
+installs anywhere Roboglot does.
 
 ## What this robot cannot do
 
@@ -91,7 +91,7 @@ installs anywhere quackd does.
 - **Reach for anything.** The maker's cycle closes the jaws at one fixed point in front of the
   rover, so the body has to bring the object there. Where that point is, the maker marks to
   measure.
-- **Speak.** There is a speaker, used by MOSS's own sound pack, and nothing quackd can say through,
+- **Speak.** There is a speaker, used by MOSS's own sound pack, and nothing Roboglot can say through,
   so there is no `say`.
 - **Stop the litter mission any way but its own.** It listens to no stop at all: see
   [the stop contract](#the-stop-contract).
@@ -124,14 +124,14 @@ test demonstrated yet.
 | `safety_authority` | `native: none`, `deadman: true` with the bridge and `false` without it, `heartbeat_hz: 2` |
 | `extras` | the blueprint and the stacks the manifest covers, the cameras, the cockpit's URL, the bridge's URL and version or why there is none, the track width, the stop ramp, the firmware and driver names, `deadman_scope`, `speech: none` and `assumptions` |
 
-`max_vx` is quackd's schema cap of 0.3 m/s, which binds, since MOSS's full power is 0.32.
+`max_vx` is Roboglot's schema cap of 0.3 m/s, which binds, since MOSS's full power is 0.32.
 `max_wz` is MOSS's own `SERVO_W_MAX`, the litter mission's fastest servo turn. `deadman: true`
 is claimed only when the bridge answers and can publish on the rover's bus, and
 `extras.deadman_scope` says what its deadman covers: its own twist deadman, and three missed
 keepalives after a session goes quiet, the arm cycle and whatever that session started through
 the cockpit.
 
-`quackd list-verbs` describes every stack's verbs together, which is what a task is validated
+`roboglot list-verbs` describes every stack's verbs together, which is what a task is validated
 against before anything connects. Connect narrows it to what answered:
 
 | Verbs | `moss-nav` | `moss-explore` | `moss-litter` |
@@ -146,15 +146,15 @@ against before anything connects. Connect narrows it to what answered:
 
 **Refused at connect**, each in a sentence that names the fix: no cockpit, a cockpit that answers
 its state with an error, a cockpit in `--demo` mode, a bridge that refuses the token or speaks
-another version of quackd's protocol, no stack, a stack that is not MOSS's or one of MOSS's that
-quackd does not know, `moss-gamepad` or `moss-base` (the pad and the base alone, with no odometry),
+another version of Roboglot's protocol, no stack, a stack that is not MOSS's or one of MOSS's that
+Roboglot does not know, `moss-gamepad` or `moss-base` (the pad and the base alone, with no odometry),
 a cockpit that shows the `moss-arm` run, the newest whenever the arm runs, with no bridge to see the
 base stack behind it, a bus that is not LCM, and `moss-litter` without the bridge or without the
 mission's RPC answering. A bridge that answers but cannot publish on the rover's bus counts as no
 bridge, and says why. This is the mock's, refused as the rover would be:
 
 ```
-✗ error: moss:mock at mock://rover?stack=moss-litter&bridge=0&arm=0: moss: on moss-litter the mission listens to no stop the cockpit can send, and only quackd's bridge can call the mission's own:
+✗ error: moss:mock at mock://rover?stack=moss-litter&bridge=0&arm=0: moss: on moss-litter the mission listens to no stop the cockpit can send, and only Roboglot's bridge can call the mission's own:
 start the bridge on the rover (bridge/moss/README.md) (the mock was built with no bridge)
 ```
 
@@ -176,7 +176,7 @@ cockpit on the rover (tools/moss-fly.sh cockpit) and reach it through the tunnel
 | `pose_fresh` | the pose is older than four periods of the odometry rate the cockpit itself measured, and at least 2 s |
 | `battery_ok` | the battery is under the launcher's own 10.8 V floor |
 | `not_stalled` | the base's stall guard has stopped the tracks |
-| `bridge_up` | quackd's bridge does not answer |
+| `bridge_up` | Roboglot's bridge does not answer |
 | `arm_idle` | an arm cycle is playing |
 | `arm_folded` | the arm answers and is out of its drive pose, by the coordinator's own start tolerance, for every verb that moves the base, `collect_litter` among them |
 | `explore_stack` | the stack is not `moss-explore` |
@@ -184,14 +184,14 @@ cockpit on the rover (tools/moss-fly.sh cockpit) and reach it through the tunnel
 
 ## Where it is, and its places
 
-The cockpit's pose is the stack's odometry, and quackd reads it as where the rover is, dated on
+The cockpit's pose is the stack's odometry, and Roboglot reads it as where the rover is, dated on
 the rover's clock: the state's own `ts` less the pose's age. That date wanders by milliseconds,
 since the cockpit rounds the age to a hundredth of a second and reads its wall clock after other
 work, so the same pose read again is taken for the same reading and keeps its date. Its frame is
 the stack's run, `odom:moss:<run_id>`, and nothing but a new run begins it again, a date going
 back included: a place marked in one run is there to drive back to over any connection to the
 same run, and orphaned once the stack starts again. A pose older than the rover's own odom rate
-allows (`pose_limit_s`) is no reading. The map MOSS keeps is its own, and quackd draws none of
+allows (`pose_limit_s`) is no reading. The map MOSS keeps is its own, and Roboglot draws none of
 it: `map` says where the rover is and lists its places
 ([concepts/places.md](../../concepts/places.md)).
 
@@ -208,28 +208,28 @@ None of them is named `pick`, which is a policy verb.
 | `pick_and_drop(pick_pose)` | `confirm` | the maker's fixed cycle, about 37 s: out of the drive pose, the jaws closed at one point in front, and whatever they hold into the bin. `pick` for an object standing, `pick_low` for one lying down. Every parameter has a default, so `approach_and(then="pick_and_drop")` can run it |
 | `stow_arm` | `confirm` | the cycle from its own `back_to_clear`, which first moves the arm over the bin if it is elsewhere, then back to its drive pose. Nothing checks the scene on the way |
 
-`collect_litter` works **once per stack start**. Every stop quackd sends on `moss-litter` ends the
+`collect_litter` works **once per stack start**. Every stop Roboglot sends on `moss-litter` ends the
 mission, the `stop` verb's and the one at the end of every run among them, and a stopped mission
 stays stopped until the owner restarts the stack. A session that started nothing sends no stop
-when it closes, so a `quackd doctor` on `moss-litter` leaves the mission running and reports
+when it closes, so a `roboglot doctor` on `moss-litter` leaves the mission running and reports
 the rover healthy.
 
 `collect_litter` is `dangerous`, so it runs only when a person answers its confirm at a terminal.
-Under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin nobody is asked, and
+Under `--yes`, a team's standing answer, the MCP server or a pipe on stdin nobody is asked, and
 it is refused before its question is put. With no task file it is not allowed at all, so it needs
-a `.duck` that allows it ([ADR-0056](../../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
+a `.glot` that allows it ([ADR-0056](../../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 
 Over MCP, a verb that runs for minutes, `explore` among them, may outlast the client's own timeout
 for one tool call, and `collect_litter` does not run there at all. So may `stop` at its worst.
 Its own timeout is 72 s, the bridge's worst case with every RPC on the rover answering at its
-timeout and quackd's wait beyond it, and a client's own limit for a tool call, often about
+timeout and Roboglot's wait beyond it, and a client's own limit for a tool call, often about
 60 s, can fire first. With the rover answering, a stop off `moss-litter` takes a few round
 trips, a zero, one cancel and the soft stop, and on `moss-litter` it also waits for the
 mission's stop to be confirmed, at most 4 s after it went out.
 
 ## The stop contract
 
-| What is moving | quackd's `stop` | A dropped link, with the bridge | Without the bridge |
+| What is moving | Roboglot's `stop` | A dropped link, with the bridge | Without the bridge |
 |---|---|---|---|
 | a twist, through the bridge | a zero on the pad channel before anything else, and the soft stop beside it | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, a dead process, a dead link and a wedged loop alike, so within 3 s, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
@@ -240,19 +240,19 @@ mission's stop to be confirmed, at most 4 s after it went out.
 - **The transport's `stop()`** is the bridge's `/stop` and the cockpit's `/cmd/stop`, sent at
   once, every time. Each failure is kept and reported, and neither half skips the other or waits
   for it. Off `moss-litter` the bridge sends its zero first and cancels the arm after it, so a
-  coordinator that hangs never holds back the zero that ends a twist or a planner goal. quackd
+  coordinator that hangs never holds back the zero that ends a twist or a planner goal. Roboglot
   waits 67 s for the bridge's answer, which covers the bridge's own worst case with every RPC on
   the rover answering at its timeout, and a stop not answered by then is reported as not
   delivered. The stop verb's own timeout, 72 s, covers that wait, so a slow stop is waited out
   and never cut short into a second one, and a close after a stop that reached both surfaces,
   with nothing started since, sends nothing. Every stop does the same arm step, a verb's own at
   its end as much as the stop verb's: `cancel_trajectory`, and when it finds nothing executing,
-  with no cycle of quackd's and no pick of the mission's in play, that is all, with no reads
+  with no cycle of Roboglot's and no pick of the mission's in play, that is all, with no reads
   and no watch. The `stop` verb sends it, and so does the end of every run, a run refused
   before it moved anything among them, and of every MCP session. On `moss-litter` that ends the
   mission whoever started it, and that is by plan: the mission runs again once the owner
   restarts the stack.
-- **A stop is for the run quackd connected to.** The stop and every keepalive name the base
+- **A stop is for the run Roboglot connected to.** The stop and every keepalive name the base
   stack's run, and the bridge goes by whether that run is still alive, not by which run is
   newest: a second dimOS run started beside it by hand changes nothing, and the stop and a
   halt still reach it. Once it has ended, the owner having restarted the stack, the bridge's
@@ -268,7 +268,7 @@ mission's stop to be confirmed, at most 4 s after it went out.
   the whole stop. Otherwise it cancels the session's own arm cycle by its id, through the
   bridge's `/arm/cancel`, zeroes a twist of its own that the bridge may still be repeating, and
   sends the soft stop for a goal or an exploration it started. A session that started nothing
-  sends nothing when it closes, and one that sent no stop either, `quackd doctor` among them,
+  sends nothing when it closes, and one that sent no stop either, `roboglot doctor` among them,
   leaves no close note.
 - **The mission's stop goes out first, the zero at once after it, and then the arm's cancel.**
   The base stops whatever ending the pick and the arm's cancel take. A cycle cancelled under a
@@ -287,15 +287,15 @@ mission's stop to be confirmed, at most 4 s after it went out.
   so, and only the maker's script is looked for. A hold is always a reading: an arm whose
   joints did not answer after the cancel is reported unread, never held.
   Two still reads are not a hold on their own either, since a trajectory in one of its pauses
-  reads still: a last cancel must find nothing executing. A cycle of quackd's cancelled while
+  reads still: a last cancel must find nothing executing. A cycle of Roboglot's cancelled while
   it was still starting is cancelled once more half a second later, for an `execute_trajectory`
   its script sent just before it was ended. On `moss-litter`, once the mission's stop has had
   its time, the stack's picks are looked for again and ended, for one the mission's last tick
   started after the first look, and the arm is cancelled and read once more, no sooner than
   half a second after the first cancel. The watch starts after a stop whose cancel found a
-  trajectory executing, or that ended a cycle of quackd's or a pick of the mission's: the bridge
+  trajectory executing, or that ended a cycle of Roboglot's or a pick of the mission's: the bridge
   then watches the arm for `ARM_GUARD_S`, 12 s from the stop's last cancel, since a pick its
-  looks did not find sends its trajectory within the maker's script's startup, which quackd
+  looks did not find sends its trajectory within the maker's script's startup, which Roboglot
   bounds at 10 s (`ARM_PLAY_STARTUP`), and a trajectory once sent lands within one RPC's
   timeout, 2 s. Joints that move inside the window are cancelled again, and the arm is called
   held only once it has passed. Until then the stop says the arm read still, the verbs and the
@@ -306,7 +306,7 @@ mission's stop to be confirmed, at most 4 s after it went out.
   for an answer, because the module closes its RPC service as it stops. So after the cancel and
   the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop
   went out, and counts that silence only from a mission it heard answer before, as it does
-  when quackd connects. Each probe that still hears the mission sends its stop again, since a
+  when Roboglot connects. Each probe that still hears the mission sends its stop again, since a
   stop sent without an answer may never have arrived. The silence counts only when the arm's
   coordinator answers in the same breath: with both silent the bus itself may be down. A stop
   it cannot confirm is reported as a failure, the close note says the mission may still be
@@ -325,12 +325,12 @@ mission's stop to be confirmed, at most 4 s after it went out.
   with the reason. A prompt on the terminal holds the loop too, and nothing is started while a
   question is on the screen, so a halt then halts nothing and is no event. A start is said to
   the bridge before it goes out, and a start whose answer is lost is kept and stopped, so a
-  quackd that dies the instant after is still covered. A doctor or a second quackd beside a run
+  Roboglot that dies the instant after is still covered. A doctor or a second Roboglot beside a run
   never touches the run's session. On `moss-litter` the whole stop runs only for a session that
-  started the mission: a run that only watched the owner's mission, or a `quackd doctor`, leaves
+  started the mission: a run that only watched the owner's mission, or a `roboglot doctor`, leaves
   it running when its link drops, and an explicit stop, the end of every run among them, still
   ends it.
-- **`close()` never sends a go limp call**, and **quackd never posts `/cmd/stack`**, whose stop
+- **`close()` never sends a go limp call**, and **Roboglot never posts `/cmd/stack`**, whose stop
   ends every dimOS run and turns the arm's torque off. A test reads the package's source to
   prove no code path can send either.
 - **The arm and the idle stop.** A run that moved the arm and ends with it out of its drive
@@ -339,7 +339,7 @@ mission's stop to be confirmed, at most 4 s after it went out.
   idle stop counts idle time only while the newest dimOS run is `moss-nav` or `moss-explore`,
   so with moss-arm started after the base stack it counts none. A stack it does end, after
   300 s, goes with `tools/moss-fly.sh stop`, which ends the arm's run too, and the arm's adapter
-  turns its torque off as its run ends. quackd sends the cockpit's keepalive from its loop's own
+  turns its torque off as its run ends. Roboglot sends the cockpit's keepalive from its loop's own
   heartbeat while it is connected, and nothing does after. A prompt holds the loop, so none goes
   while a question waits: one left open longer than about two thirds of the cockpit's idle limit
   lets a stack the idle stop counts be ended under it, the arm's torque with it. Stow the arm
@@ -376,7 +376,7 @@ and every rule is the maker's own.
 - The pose is the lidar odometry's, in the frame the stack started in, with `yaw` in radians.
   `drive_to`'s world goals are in that frame.
 - The battery is volts, judged against the launcher's floor. The cockpit's percent is a linear
-  gauge from 10.2 V to 12.6 V, a voltage gauge rather than a measure of charge, and quackd
+  gauge from 10.2 V to 12.6 V, a voltage gauge rather than a measure of charge, and Roboglot
   reports it as the cockpit's.
 - The jaw gap is metres, 0.090 fully open.
 
@@ -406,7 +406,7 @@ declared and `--fov-deg` says it.
 On the rover, in the MOSS checkout, MOSS's launcher runs its gates, the stack and the cockpit, and
 the arm's coordinator runs on its own, as MOSS's own docs/litter.md starts it. Start the launcher
 first, since its first gate refuses to start beside any dimOS run, the arm's included, and start
-the stack without `EXPLORE=1`, which would set the rover exploring before quackd asks:
+the stack without `EXPLORE=1`, which would set the rover exploring before Roboglot asks:
 
 ```bash
 tools/moss-fly.sh explore                   # or map, or litter: first
@@ -415,25 +415,25 @@ tools/moss-fly.sh explore                   # or map, or litter: first
 
 The cockpit reads only the newest dimOS run, which is then moss-arm, so it cannot see the base
 stack behind it: its own nav never shows an exploration, its goal never waits for the explorer
-to stop, and its idle stop counts no idle time. quackd's bridge reads the base stack and the
-arm's run apart, so with the bridge up quackd takes the base stack's navigation from the bridge
+to stop, and its idle stop counts no idle time. Roboglot's bridge reads the base stack and the
+arm's run apart, so with the bridge up Roboglot takes the base stack's navigation from the bridge
 (`GET /nav`), off the same channels the cockpit's own reads, and `drive_to` stops an exploration
 the cockpit cannot see before it sends its goal. Without the bridge, a cockpit that shows
 moss-arm is refused at connect.
 
-Then start quackd's bridge, which [`bridge/moss/README.md`](../../../bridge/moss/README.md)
+Then start Roboglot's bridge, which [`bridge/moss/README.md`](../../../bridge/moss/README.md)
 installs as a service with its token. On the laptop, read the token once and open one tunnel for
 both:
 
 ```bash
-export QUACKD_MOSS_TOKEN="$(ssh <rover> cat /etc/quackd/moss-bridge.token)"
+export ROBOGLOT_MOSS_TOKEN="$(ssh <rover> cat /etc/roboglot/moss-bridge.token)"
 ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 ```
 
 `--address http://127.0.0.1:8904` then reaches the cockpit, and the bridge on 9876 beside it.
 A bridge on another port goes in the address as `?bridge=PORT`. The token comes from `--token`
-or `QUACKD_MOSS_TOKEN`, never from the address, which is printed and lands in transcripts.
-quackd takes no `--camera-url` here, since both cameras come from the rover itself.
+or `ROBOGLOT_MOSS_TOKEN`, never from the address, which is printed and lands in transcripts.
+Roboglot takes no `--camera-url` here, since both cameras come from the rover itself.
 
 **Nothing authenticates MOSS's cockpit.** It binds `0.0.0.0` on port 8904, and anything that
 reaches that port reads the rover and commands it. The header it asks for stops a cross site
@@ -441,11 +441,11 @@ form, not a stranger. Reach it through the tunnel, or keep the rover on a networ
 
 ## The check against MOSS's own cockpit
 
-On 2026-10-20 quackd's client was pointed by hand at MOSS's own cockpit at `d288647`, started with
-`--demo` from a copy outside this repository and never vendored, on Windows, with quackd's own
+On 2026-10-20 Roboglot's client was pointed by hand at MOSS's own cockpit at `d288647`, started with
+`--demo` from a copy outside this repository and never vendored, on Windows, with Roboglot's own
 Python 3.11.8. `--demo` serves a synthetic rover with no bus and no stack behind it.
 
-| Asked | The cockpit answered | quackd |
+| Asked | The cockpit answered | Roboglot |
 |---|---|---|
 | `GET /state.json` | 500, `AttributeError: 'NoneType' object has no attribute 'splitlines'` | took it as an answer that was not the rover's state, as data |
 | `GET /camera.mjpg?cam=nose` | a stream: the first frame a 4476 byte 320x240 JPEG, and frames still coming 1.06 s later | parsed the parts and kept one reader open |
@@ -463,15 +463,15 @@ left no line in the cockpit's log, because its handler logs failures through `lo
 the standard library sends through `log_message`, and the cockpit silences `log_message`.
 
 The same day the same copy ran on Linux, in a `python:3.12-slim` container, Python 3.12.15 with
-numpy 2.5.4 the only package added, its port published on the laptop's loopback, and quackd's
+numpy 2.5.4 the only package added, its port published on the laptop's loopback, and Roboglot's
 client read it from Windows:
 
-| Asked | The cockpit answered | quackd |
+| Asked | The cockpit answered | Roboglot |
 |---|---|---|
 | `GET /state.json` | 200, the state document: `mode` `demo`, a running `moss-explore` stack, `bus.transport` `demo`, the base at 11.58 V and 58% with its telemetry 0.3 s old, and the odometry at 10 Hz | `get_state` read the pose, the battery, both ages, the stall flag and the base's mode |
 | `MossCockpit.connect` | the same document | refused by name: "moss: the cockpit at http://127.0.0.1:18904 is in --demo mode, a synthetic rover with no bus behind it: start it without --demo on the rover" |
 
-So quackd reads the cockpit's own state document as the cockpit writes it. A connect that gets
+So Roboglot reads the cockpit's own state document as the cockpit writes it. A connect that gets
 past it needs a live cockpit, since a `--demo` one is refused on purpose, before the bridge is
 asked.
 
@@ -498,12 +498,12 @@ asked.
 | Stream framing | `boundary=frame` | the reader's parts, each with its `Content-Length` |
 | Stream period | `0.2` | at most 5 fps per viewer |
 | First frame wait | `2.0` | connect waits twice this for a nose frame with no bridge |
-| Viewers | `4` | per camera, so quackd takes one nose slot |
+| Viewers | `4` | per camera, so Roboglot takes one nose slot |
 | Goal | `POST /cmd/goal` | `drive_to` |
 | Goal while exploring | `3.0` | the deferral `drive_to` allows for |
 | Explorer | `POST /cmd/explore` | `explore` and `collect_litter` |
 | Soft stop | `POST /cmd/stop` | the second half of every stop |
-| Keepalive | `POST /cmd/keepalive` | holds the idle stop off while quackd is connected |
+| Keepalive | `POST /cmd/keepalive` | holds the idle stop off while Roboglot is connected |
 | Launcher | `POST /cmd/stack` | never posted |
 | Commands | `LiveCockpit.command` | no velocity and no arm command, which is what the bridge is for |
 | Idle stop | `300` | seconds |
@@ -518,7 +518,7 @@ asked.
 | Cameras | `"nose", "wrist"` | the two camera names |
 | Explorer channels | `"explore_cmd", "stop_explore_cmd"` | the bridge halts an exploration with the second |
 | Channel names | `/<stream>#<msg_name>` | how the bridge names what it publishes on |
-| Full power | `0.32` | m/s, above quackd's 0.3 cap |
+| Full power | `0.32` | m/s, above Roboglot's 0.3 cap |
 | Power floor | `20` | percent, which the mock applies too |
 | Pivot power | `100` | percent, for every turn on the spot |
 | Track mixing | `twist_to_tracks` | `+wz` turns left, and `vy` is dropped |
@@ -529,7 +529,7 @@ asked.
 | Velocity watchdog | `0.2` | s, dimOS zeroes the base's command after it |
 | Ramp | `MOSS_RAMP_MS` | the stop's length, which the bridge reports |
 | Launcher ramp | `"5 5"` | half a second from full power, and the mock ramps by it |
-| Explorer radius | `MOSS_EXPLORE_RADIUS_M` | 4 m by the launcher, where an exploration quackd lost goes on |
+| Explorer radius | `MOSS_EXPLORE_RADIUS_M` | 4 m by the launcher, where an exploration Roboglot lost goes on |
 | Stall | `1.0` | s, `not_stalled`, and the mock stalls the same way |
 | Track width | `0.266` | the arc clip, which uses the stack's own value |
 | Telemetry period | `0.5` | s, `cockpit_fresh` allows four |
@@ -573,16 +573,16 @@ asked.
 | Stow | `back_to_clear` | `stow_arm` plays from here |
 | Pick poses | `"pick", "pick_low"` | `pick_and_drop`'s `pick_pose` |
 | Still rule | `20.0` | ticks a second, whether the arm held after a cancel |
-| Torque off | `FeetechSo101Adapter.deactivate` | why quackd never ends the arm's run |
+| Torque off | `FeetechSo101Adapter.deactivate` | why Roboglot never ends the arm's run |
 | Joint reads | `ControlCoordinator.get_joint_positions` | `/arm` and the hold check |
 | Cancel | `ControlCoordinator.cancel_trajectory` | the arm's cancel |
 | Cancel result | `TrajectoryCancellationStatus` | the name `/stop` reports |
 | Launch floor | `10.8` | V, `battery_ok` |
 | BMS cut | `10.2` | V |
-| Blueprints | `"moss-base", "moss-gamepad", "moss-nav", "moss-explore", "moss-arm", "moss-litter"` | every stack name quackd reads, refuses or drives |
-| Launcher | `tools/moss-fly.sh` | the commands quackd's sentences tell a person to run |
+| Blueprints | `"moss-base", "moss-gamepad", "moss-nav", "moss-explore", "moss-arm", "moss-litter"` | every stack name Roboglot reads, refuses or drives |
+| Launcher | `tools/moss-fly.sh` | the commands Roboglot's sentences tell a person to run |
 | Launcher commands | `"check", "map", "explore", "litter", "stop", "log", "cockpit"` | those sentences, each command one the launcher names |
-| Hard stop | `tools/moss-fly.sh stop` | never sent by quackd, and what the idle stop runs |
+| Hard stop | `tools/moss-fly.sh stop` | never sent by Roboglot, and what the idle stop runs |
 | RPC names | `serve_module_rpc` | `LitterMission/stop` and `LitterMission/mission_status` |
 | A stop sent without an answer | `call_nowait` | why the stop is confirmed by silence |
 | RPC timeout | `120.0` | s, dimOS's default, where the bridge's own is 2 s |
@@ -599,9 +599,9 @@ asked.
 | Servos | `ST3215 12 V serial bus servo` | six actuated joints with the gripper's |
 | Battery bay | `not a claim about battery capacity or runtime` | why endurance stays not published |
 
-### UNVERIFIED, and what quackd does about it
+### UNVERIFIED, and what Roboglot does about it
 
-| Name | The assumption | What quackd does |
+| Name | The assumption | What Roboglot does |
 |---|---|---|
 | `MISSION_STAYS_STOPPED` | a mission whose stop has run stays stopped until the stack restarts. Nothing read restarts it, and no run has shown it | the bridge remembers the run it stopped, and `collect_litter` refuses until the run is a new one |
 | `MISSION_STOP_REACHES_IT` | a stop sent over LCM RPC from the bridge's process reaches the mission | confirmed only by the mission's RPC falling silent, from a mission heard before. Unconfirmed is a failure, and the arm's cancel and the zero go out either way |
@@ -618,13 +618,13 @@ asked.
 | `ARM_PLAY_STARTUP` | how long the maker's script takes to send its one trajectory after it starts, importing dimOS, reaching the coordinator and reading the joints. Nothing at the pin bounds it, and no run has timed it | the bridge takes 10 s as its bound, and after a stop that cancelled a trajectory, or ended a cycle or a pick, it watches the joints that long and one RPC's timeout more, cancelling again if they move and calling the arm held only once that has passed. Step 10 of the checklist reads it off a cycle |
 | `PIDS_NOT_REUSED` | a pid the bridge read for the mission's pick, and for the processes under it, still names that process when the bridge signals it, two graces later at most. Linux reuses a pid only once it has gone round the others, which nothing rules out within seconds | each command line is read once, before the first signal, and nothing is signalled that was not found under the stack's own pid |
 
-The bridge's own protocol is quackd's at both ends, so it is outside this table, and its names
+The bridge's own protocol is Roboglot's at both ends, so it is outside this table, and its names
 are pinned by tests that read both files instead.
 
-## What the cockpit would need to answer to retire quackd's bridge
+## What the cockpit would need to answer to retire Roboglot's bridge
 
-This part is for MOSS's maker. quackd runs a small bridge on the rover because the cockpit has no
-way to do six things. If the cockpit could do them, quackd would talk to the cockpit alone and
+This part is for MOSS's maker. Roboglot runs a small bridge on the rover because the cockpit has no
+way to do six things. If the cockpit could do them, Roboglot would talk to the cockpit alone and
 the bridge would not be needed.
 
 The first is driving with a velocity, with a deadman: for example `POST /cmd/twist {vx, wz}`,
@@ -652,7 +652,7 @@ protocol number.
 The sixth is asking for a token. The cockpit listens on `0.0.0.0`, and anything that can reach
 it can drive the rover. An optional token, read from a file and checked on every request, would
 turn away anything that does not hold it. Over plain HTTP it can be read off the network by
-anything else on it, as quackd's own bridge token can, so on a shared network a tunnel is still
+anything else on it, as Roboglot's own bridge token can, so on a shared network a tunnel is still
 what keeps the rover to its owner.
 
 A small thing we noticed while testing against the cockpit's demo mode: a request that fails
@@ -664,7 +664,7 @@ the log quiet.
 
 If you have built a MOSS, the useful thing is a first run. Work through
 [the hardware checklist](hardware-checklist.md) in order. It starts on blocks, as the maker asks,
-and the first thing it asks for is `quackd doctor --robot moss:cockpit --address
+and the first thing it asks for is `roboglot doctor --robot moss:cockpit --address
 http://127.0.0.1:8904`, which connects, rather than `list-verbs`, which does not.
 
 What most needs a real rover: how far a pulse turns it, whether the stamp on a nose frame is on

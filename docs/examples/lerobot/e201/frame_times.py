@@ -7,8 +7,8 @@ built on, and nothing has timed the detector on what a real camera sees. No arm 
     python frame_times.py --camera 1 --seconds 10
     python frame_times.py --image checkerboard.png
 
-`--camera` needs OpenCV, which `quackd[lerobot]` brings through LeRobot. A picture is read at
-640x480, as the frames quackd's detector was timed on were, so its time can be set beside the
+`--camera` needs OpenCV, which `roboglot[lerobot]` brings through LeRobot. A picture is read at
+640x480, as the frames Roboglot's detector was timed on were, so its time can be set beside the
 camera's.
 """
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quackd.perception.color_blob import ColorBlobDetector
+from roboglot.perception.color_blob import ColorBlobDetector
 
 
 def camera_frames(index: int, seconds: float, backend: str | None) -> Iterator[Image.Image]:

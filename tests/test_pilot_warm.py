@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import Exchange, ProviderTurn, ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.schema import DuckFile
-from quackd.transport.mock import MockTransport
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import Exchange, ProviderTurn, ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.schema import GlotFile
+from roboglot.transport.mock import MockTransport
 
 BOUND = 500
 """How many hundredths of a second a test waits on the other thread before it fails rather than
@@ -52,7 +52,7 @@ class _Warms:
 
 
 def _warming() -> list[threading.Thread]:
-    return [t for t in threading.enumerate() if t.name == "quackd-pilot-warm" and t.is_alive()]
+    return [t for t in threading.enumerate() if t.name == "roboglot-pilot-warm" and t.is_alive()]
 
 
 class _ConnectsBesideIt(MockTransport):
@@ -86,7 +86,7 @@ def _start(run_dir: Path) -> dict[str, Any]:
 
 
 async def test_the_warm_up_runs_in_its_own_thread_while_the_robot_connects(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     began, release = threading.Event(), threading.Event()
     ran_on: list[int] = []
@@ -97,8 +97,8 @@ async def test_the_warm_up_runs_in_its_own_thread_while_the_robot_connects(
         release.wait(BOUND / 100)
 
     body = _ConnectsBesideIt(began, release)
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert body.saw_it_begin, "the warm-up did not begin until the connect was over"
@@ -108,7 +108,7 @@ async def test_the_warm_up_runs_in_its_own_thread_while_the_robot_connects(
 
 
 async def test_a_warm_up_that_fails_is_a_line_in_the_record_and_nothing_else(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     began, release = threading.Event(), threading.Event()
 
@@ -118,8 +118,8 @@ async def test_a_warm_up_that_fails_is_a_line_in_the_record_and_nothing_else(
         raise OSError("ver would not start")
 
     body = _ConnectsBesideIt(began, release)
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     warmed = _start(result.run_dir)["pilot_warm"]
@@ -127,7 +127,7 @@ async def test_a_warm_up_that_fails_is_a_line_in_the_record_and_nothing_else(
 
 
 async def test_the_run_never_waits_for_a_warm_up_still_going(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Waiting for it would only move its seconds from the first call to before it, and a probe
     that hung would hang the run. So a warm-up still going when the run starts is left going, the
@@ -138,9 +138,9 @@ async def test_the_run_never_waits_for_a_warm_up_still_going(
         held.wait(BOUND / 100)
 
     try:
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
-                duck=hello_duck, provider=_Warms(warm), transport=MockTransport(), runs_dir=tmp_path
+                duck=hello_glot, provider=_Warms(warm), transport=MockTransport(), runs_dir=tmp_path
             )
         )
     finally:
@@ -150,12 +150,12 @@ async def test_the_run_never_waits_for_a_warm_up_still_going(
 
 
 async def test_a_pilot_with_no_warm_up_writes_the_record_it_always_did(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck(hello_duck.name),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -187,11 +187,11 @@ def test_each_sdks_own_look_at_its_platform_is_handed_to_the_pilots_client(
     monkeypatch.setitem(sys.modules, f"{sdk}._base_client", module)
     client = _KeepsItsPlatform()
     if sdk == "anthropic":
-        from quackd.agent.providers.anthropic import AnthropicProvider
+        from roboglot.agent.providers.anthropic import AnthropicProvider
 
         AnthropicProvider(llm_id="claude-opus-5-5", client=client).warm()
     else:
-        from quackd.agent.providers.openai import OpenAIProvider
+        from roboglot.agent.providers.openai import OpenAIProvider
 
         OpenAIProvider(llm_id="gpt-6-sol", client=client).warm()
     assert asked == [sdk]
